@@ -2,8 +2,8 @@
 
 import React, { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
-import { Conversation } from '@/db/db';
-import { getAllConversations } from '@/db/db';
+import { Conversation } from '@/lib/db/db';
+import { getAllConversations } from '@/lib/db/db';
 import { PlusIcon } from 'lucide-react';
 
 interface ChatSidebarProps {

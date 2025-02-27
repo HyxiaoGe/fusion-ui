@@ -1,0 +1,31 @@
+{
+    "app": {
+      "title": "AI Assistant",
+      "newChat": "New Chat",
+      "settings": "Settings"
+    },
+    "chat": {
+      "send": "Send",
+      "typing": "AI is generating a response...",
+      "placeholder": "Enter your question...",
+      "newChatTitle": "New Conversation"
+    },
+    "models": {
+      "title": "AI Models",
+      "ernie": "ERNIE",
+      "qwen": "Qwen",
+      "openai": "OpenAI",
+      "claude": "Claude",
+      "deepseek": "DeepSeek"
+    },
+    "settings": {
+      "theme": "Theme",
+      "light": "Light",
+      "dark": "Dark",
+      "system": "Follow System",
+      "language": "Language",
+      "fontSize": "Font Size",
+      "apiKeys": "API Keys",
+      "about": "About"
+    }
+  }

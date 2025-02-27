@@ -1,0 +1,31 @@
+{
+    "app": {
+      "title": "AI智能助手",
+      "newChat": "新建聊天",
+      "settings": "设置"
+    },
+    "chat": {
+      "send": "发送",
+      "typing": "AI正在思考...",
+      "placeholder": "输入您的问题...",
+      "newChatTitle": "新的对话"
+    },
+    "models": {
+      "title": "AI模型",
+      "ernie": "文心一言",
+      "qwen": "通义千问",
+      "openai": "OpenAI",
+      "claude": "Claude",
+      "deepseek": "Deepseek"
+    },
+    "settings": {
+      "theme": "主题",
+      "light": "浅色",
+      "dark": "深色",
+      "system": "跟随系统",
+      "language": "语言",
+      "fontSize": "字体大小",
+      "apiKeys": "API密钥",
+      "about": "关于"
+    }
+  }
