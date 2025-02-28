@@ -1,11 +1,14 @@
 import { configureStore } from '@reduxjs/toolkit';
 import { setupListeners } from '@reduxjs/toolkit/query';
 import themeReducer from './slices/themeSlice';
+import chatReducer from './slices/chatSlice';
+import modelsReducer from './slices/modelsSlice';
 
 export const store = configureStore({
     reducer: {
         theme: themeReducer,
-        // 稍后添加 reducers
+        chat: chatReducer,
+        models: modelsReducer,
     },
     middleware: (getDefaultMiddleware) => 
         getDefaultMiddleware({

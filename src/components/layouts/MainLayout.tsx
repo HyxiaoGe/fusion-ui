@@ -2,6 +2,7 @@
 
 import React from 'react';
 import { useAppSelector } from '@/redux/hooks';
+import Header from './Header';
 
 interface MainLayoutProps {
   children: React.ReactNode;
@@ -30,9 +31,7 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children, sidebar }) => {
 
   return (
     <div className="h-screen flex flex-col">
-      <header className="h-14 border-b flex items-center px-4">
-        <h1 className="text-xl font-bold">小助手</h1>
-      </header>
+      <Header />
       <div className="flex flex-1 overflow-hidden">
         {sidebar && (
           <aside className="w-64 border-r bg-slate-50 dark:bg-slate-900 overflow-y-auto">

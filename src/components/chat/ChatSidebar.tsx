@@ -1,69 +1,107 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React from 'react';
+import { useAppSelector, useAppDispatch } from '@/redux/hooks';
 import { Button } from '@/components/ui/button';
-import { Conversation } from '@/lib/db/db';
-import { getAllConversations } from '@/lib/db/db';
-import { PlusIcon } from 'lucide-react';
+import { 
+  PlusIcon, 
+  TrashIcon, 
+  MoreVerticalIcon, 
+  MessageSquareIcon 
+} from 'lucide-react';
+import { 
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger
+} from '@/components/ui/dropdown-menu';
+import { setActiveChat, deleteChat } from '@/redux/slices/chatSlice';
 
 interface ChatSidebarProps {
-  onSelectConversation: (conversation: Conversation) => void;
-  onNewConversation: () => void;
-  selectedConversationId?: number;
+  onNewChat: () => void;
 }
 
-const ChatSidebar: React.FC<ChatSidebarProps> = ({
-  onSelectConversation,
-  onNewConversation,
-  selectedConversationId
-}) => {
-  const [conversations, setConversations] = useState<Conversation[]>([]);
+const ChatSidebar: React.FC<ChatSidebarProps> = ({ onNewChat }) => {
+  const dispatch = useAppDispatch();
+  const { chats, activeChatId } = useAppSelector((state) => state.chat);
+  const { models } = useAppSelector((state) => state.models);
 
-  useEffect(() => {
-    const loadConversations = async () => {
-      const convs = await getAllConversations();
-      setConversations(convs);
-    };
+  // 格式化日期
+  const formatDate = (timestamp: number) => {
+    const date = new Date(timestamp);
+    return date.toLocaleDateString();
+  };
 
-    loadConversations();
-  }, []);
+  // 选择对话
+  const handleSelectChat = (chatId: string) => {
+    dispatch(setActiveChat(chatId));
+  };
+
+  // 删除对话
+  const handleDeleteChat = (e: React.MouseEvent, chatId: string) => {
+    e.stopPropagation();
+    dispatch(deleteChat(chatId));
+  };
 
   return (
-    <div className="flex flex-col h-full py-4">
+    <div className="flex flex-col h-full py-2">
       <div className="px-4 mb-4">
         <Button 
           className="w-full flex items-center gap-2" 
-          onClick={onNewConversation}
+          onClick={onNewChat}
         >
           <PlusIcon size={16} />
           <span>新对话</span>
         </Button>
       </div>
       
-      <div className="flex-1 overflow-y-auto">
-        {conversations.length === 0 ? (
-          <div className="text-center text-sm text-gray-500 dark:text-gray-400 py-4">
+      <div className="flex-1 overflow-y-auto px-2">
+        {chats.length === 0 ? (
+          <div className="text-center text-sm text-muted-foreground py-4">
             暂无聊天记录
           </div>
         ) : (
-          <ul className="space-y-1 px-2">
-            {conversations.map((conv) => (
-              <li key={conv.id}>
-                <button
-                  className={`w-full text-left px-3 py-2 rounded-md hover:bg-slate-100 dark:hover:bg-slate-800 text-sm ${
-                    selectedConversationId === conv.id
-                      ? 'bg-slate-200 dark:bg-slate-700'
-                      : ''
-                  }`}
-                  onClick={() => onSelectConversation(conv)}
-                >
-                  <div className="font-medium truncate">{conv.title}</div>
-                  <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                    {new Date(conv.updatedAt).toLocaleString()}
+          <ul className="space-y-1">
+            {chats.map((chat) => {
+              const model = models.find(m => m.id === chat.modelId);
+              
+              return (
+                <li key={chat.id}>
+                  <div
+                    className={`flex items-center justify-between py-2 px-3 rounded-md cursor-pointer hover:bg-accent/50 ${
+                      activeChatId === chat.id ? 'bg-accent' : ''
+                    }`}
+                    onClick={() => handleSelectChat(chat.id)}
+                  >
+                    <div className="flex items-center gap-3 min-w-0">
+                      <MessageSquareIcon className="h-5 w-5 shrink-0 text-muted-foreground" />
+                      <div className="min-w-0">
+                        <div className="font-medium truncate text-sm">{chat.title}</div>
+                        <div className="text-xs text-muted-foreground flex items-center gap-1">
+                          <span>{model?.name || '未知模型'}</span>
+                          <span>•</span>
+                          <span>{formatDate(chat.updatedAt)}</span>
+                        </div>
+                      </div>
+                    </div>
+                    
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button variant="ghost" size="icon" className="h-8 w-8">
+                          <MoreVerticalIcon className="h-4 w-4" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem className="text-destructive" onClick={(e) => handleDeleteChat(e, chat.id)}>
+                          <TrashIcon className="h-4 w-4 mr-2" />
+                          删除对话
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
                   </div>
-                </button>
-              </li>
-            ))}
+                </li>
+              );
+            })}
           </ul>
         )}
       </div>
