@@ -17,34 +17,43 @@ interface ChatMessageProps {
 
 const ChatMessage: React.FC<ChatMessageProps> = ({ message, isLastMessage = false }) => {
   const isUser = message.role === 'user';
+  
+  const formatTime = (timestamp: number) => {
+    return new Date(timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+  };
 
   return (
     <div
       className={cn(
-        'flex w-full gap-4 py-4',
+        'flex w-full gap-3 py-4 px-4',
         isLastMessage && 'mb-4',
         isUser ? 'justify-end' : 'justify-start'
       )}
     >
       {!isUser && (
-        <Avatar className="h-8 w-8 bg-primary/10 text-primary">
+        <Avatar className="h-8 w-8 mt-1 flex-shrink-0 shadow-sm">
           <AvatarFallback><Bot size={16} /></AvatarFallback>
-          {/* 如果有AI头像图片可以添加 */}
-          {/* <AvatarImage src="/ai-avatar.png" /> */}
         </Avatar>
       )}
       
       <div className={cn(
-        'flex flex-col space-y-2 max-w-[80%]',
+        'flex flex-col space-y-1 max-w-[80%]',
         isUser ? 'items-end' : 'items-start'
       )}>
-        <div className="font-medium text-sm text-muted-foreground">
-          {isUser ? '用户' : 'AI助手'}
+        <div className="flex items-center gap-2">
+          <span className="text-xs font-medium">
+            {isUser ? '用户' : 'AI助手'}
+          </span>
+          <span className="text-xs text-muted-foreground">
+            {formatTime(message.timestamp)}
+          </span>
         </div>
         
         <div className={cn(
-          'rounded-lg px-4 py-2',
-          isUser ? 'bg-primary text-primary-foreground' : 'bg-muted'
+          'rounded-2xl px-4 py-2.5 shadow-sm',
+          isUser 
+            ? 'bg-primary text-primary-foreground rounded-tr-sm' 
+            : 'bg-muted rounded-tl-sm'
         )}>
           {isUser ? (
             <div>{message.content}</div>
@@ -76,17 +85,11 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, isLastMessage = fals
             </div>
           )}
         </div>
-        
-        <div className="text-xs text-muted-foreground">
-          {new Date(message.timestamp).toLocaleString()}
-        </div>
       </div>
       
       {isUser && (
-        <Avatar className="h-8 w-8 bg-primary text-primary-foreground">
+        <Avatar className="h-8 w-8 mt-1 flex-shrink-0 shadow-sm">
           <AvatarFallback><User size={16} /></AvatarFallback>
-          {/* 如果有用户头像图片可以添加 */}
-          {/* <AvatarImage src="/user-avatar.png" /> */}
         </Avatar>
       )}
     </div>

@@ -1,12 +1,10 @@
-// src/components/settings/ThemeSelector.tsx
 'use client';
 
 import React from 'react';
 import { useAppSelector, useAppDispatch } from '@/redux/hooks';
 import { setThemeMode } from '@/redux/slices/themeSlice';
-import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
-import { Label } from '@/components/ui/label';
 import { SunIcon, MoonIcon, LaptopIcon } from 'lucide-react';
+import { cn } from '@/lib/utils';
 
 const ThemeSelector: React.FC = () => {
   const dispatch = useAppDispatch();
@@ -16,36 +14,56 @@ const ThemeSelector: React.FC = () => {
     dispatch(setThemeMode(value));
   };
   
+  // 简化组件，不使用复杂的嵌套RadioGroup
   return (
-    <RadioGroup
-      value={mode}
-      onValueChange={handleThemeChange as (value: string) => void}
-      className="flex gap-4"
-    >
-      <div className="flex items-center space-x-2">
-        <RadioGroupItem value="light" id="light" />
-        <Label htmlFor="light" className="flex items-center gap-1">
-          <SunIcon className="h-4 w-4" />
-          浅色
-        </Label>
+    <div className="border rounded-lg overflow-hidden">
+      <div className="p-4 border-b">
+        <h3 className="font-medium mb-2">主题设置</h3>
+        <div className="flex gap-2">
+          {/* 浅色模式按钮 */}
+          <button
+            onClick={() => handleThemeChange('light')}
+            className={cn(
+              "flex flex-col items-center justify-center p-3 rounded-md flex-1 transition-all",
+              mode === 'light' 
+                ? "bg-primary text-primary-foreground shadow-sm" 
+                : "bg-muted hover:bg-muted/80"
+            )}
+          >
+            <SunIcon className="h-5 w-5 mb-1" />
+            <span className="text-sm font-medium">浅色</span>
+          </button>
+          
+          {/* 深色模式按钮 */}
+          <button
+            onClick={() => handleThemeChange('dark')}
+            className={cn(
+              "flex flex-col items-center justify-center p-3 rounded-md flex-1 transition-all",
+              mode === 'dark' 
+                ? "bg-primary text-primary-foreground shadow-sm" 
+                : "bg-muted hover:bg-muted/80"
+            )}
+          >
+            <MoonIcon className="h-5 w-5 mb-1" />
+            <span className="text-sm font-medium">深色</span>
+          </button>
+          
+          {/* 跟随系统按钮 */}
+          <button
+            onClick={() => handleThemeChange('system')}
+            className={cn(
+              "flex flex-col items-center justify-center p-3 rounded-md flex-1 transition-all",
+              mode === 'system' 
+                ? "bg-primary text-primary-foreground shadow-sm" 
+                : "bg-muted hover:bg-muted/80"
+            )}
+          >
+            <LaptopIcon className="h-5 w-5 mb-1" />
+            <span className="text-sm font-medium">跟随系统</span>
+          </button>
+        </div>
       </div>
-      
-      <div className="flex items-center space-x-2">
-        <RadioGroupItem value="dark" id="dark" />
-        <Label htmlFor="dark" className="flex items-center gap-1">
-          <MoonIcon className="h-4 w-4" />
-          深色
-        </Label>
-      </div>
-      
-      <div className="flex items-center space-x-2">
-        <RadioGroupItem value="system" id="system" />
-        <Label htmlFor="system" className="flex items-center gap-1">
-          <LaptopIcon className="h-4 w-4" />
-          跟随系统
-        </Label>
-      </div>
-    </RadioGroup>
+    </div>
   );
 };
 
