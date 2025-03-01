@@ -35,7 +35,6 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, isLastMessage = fals
           <ReactMarkdown
             remarkPlugins={[remarkGfm]}
             rehypePlugins={[rehypeRaw, rehypeHighlight]}
-            className="markdown-content"
             components={{
               pre: ({ node, ...props }) => (
                 <pre className="bg-slate-100 dark:bg-slate-800 rounded-md overflow-auto p-4 my-2" {...props} />
