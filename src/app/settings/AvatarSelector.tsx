@@ -1,5 +1,4 @@
 import React from 'react';
-
 import { useAppSelector, useAppDispatch } from '@/redux/hooks';
 import { setUserAvatar, setAssistantAvatar, avatarOptions } from '@/redux/slices/settingsSlice';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -33,9 +32,8 @@ const AvatarItem: React.FC<AvatarItemProps> = ({ id, emoji, label, isSelected, o
 
 const AvatarSelector: React.FC = () => {
   const dispatch = useAppDispatch();
-  
-  const userAvatar = 'default-user';
-  const assistantAvatar = 'default-assistant';
+
+  const { userAvatar, assistantAvatar } = useAppSelector(state => state.settings);
 
   return (
     <Card>

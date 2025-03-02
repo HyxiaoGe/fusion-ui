@@ -18,8 +18,7 @@ interface ChatMessageProps {
 const ChatMessage: React.FC<ChatMessageProps> = ({ message, isLastMessage = false }) => {
   const isUser = message.role === 'user';
   
-  const userAvatar = 'default-user';
-  const assistantAvatar = 'default-assistant';
+  const { userAvatar, assistantAvatar } = useAppSelector(state => state.settings);
   
   // 获取当前选中的头像表情
   const getUserEmoji = () => {

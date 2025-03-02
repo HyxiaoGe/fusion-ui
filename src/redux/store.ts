@@ -14,7 +14,7 @@ export const store = configureStore({
         models: modelsReducer,
         fileUpload: fileUploadReducer,
         promptTemplates: promptTemplatesReducer,
-        settingsReducer: settingsReducer
+        settings: settingsReducer
     },
     middleware: (getDefaultMiddleware) => 
         getDefaultMiddleware({
