@@ -2,13 +2,13 @@
 
 import React from 'react';
 import { cn } from '@/lib/utils';
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeRaw from 'rehype-raw';
 import rehypeHighlight from 'rehype-highlight';
 import { Message } from '@/redux/slices/chatSlice';
-import { User, Bot } from 'lucide-react';
+import { useAppSelector } from '@/redux/hooks';
+import { avatarOptions } from '@/redux/slices/settingsSlice';
 
 interface ChatMessageProps {
   message: Message;
@@ -18,6 +18,20 @@ interface ChatMessageProps {
 const ChatMessage: React.FC<ChatMessageProps> = ({ message, isLastMessage = false }) => {
   const isUser = message.role === 'user';
   
+  const userAvatar = 'default-user';
+  const assistantAvatar = 'default-assistant';
+  
+  // 获取当前选中的头像表情
+  const getUserEmoji = () => {
+    const avatar = avatarOptions.user.find(a => a.id === userAvatar);
+    return avatar ? avatar.emoji : '👤';
+  };
+  
+  const getAssistantEmoji = () => {
+    const avatar = avatarOptions.assistant.find(a => a.id === assistantAvatar);
+    return avatar ? avatar.emoji : '🤖';
+  };
+
   const formatTime = (timestamp: number) => {
     return new Date(timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
   };
@@ -30,11 +44,11 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, isLastMessage = fals
         isUser ? 'justify-end' : 'justify-start'
       )}
     >
-      {!isUser && (
-        <Avatar className="h-8 w-8 mt-1 flex-shrink-0 shadow-sm">
-          <AvatarFallback><Bot size={16} /></AvatarFallback>
-        </Avatar>
-      )}
+    {!isUser && (
+      <div className="h-8 w-8 mt-1 flex-shrink-0 rounded-full bg-secondary/10 flex items-center justify-center border shadow-sm">
+        <span className="text-sm">{getAssistantEmoji()}</span>
+      </div>
+    )}
       
       <div className={cn(
         'flex flex-col space-y-1 max-w-[80%]',
@@ -88,9 +102,9 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, isLastMessage = fals
       </div>
       
       {isUser && (
-        <Avatar className="h-8 w-8 mt-1 flex-shrink-0 shadow-sm">
-          <AvatarFallback><User size={16} /></AvatarFallback>
-        </Avatar>
+        <div className="h-8 w-8 mt-1 flex-shrink-0 rounded-full bg-primary/10 flex items-center justify-center border shadow-sm">
+          <span className="text-sm">{getUserEmoji()}</span>
+        </div>
       )}
     </div>
   );

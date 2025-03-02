@@ -5,6 +5,7 @@ import chatReducer from './slices/chatSlice';
 import modelsReducer from './slices/modelsSlice';
 import fileUploadReducer from './slices/fileUploadSlice';
 import promptTemplatesReducer from './slices/promptTemplatesSlice';
+import settingsReducer from './slices/settingsSlice';
 
 export const store = configureStore({
     reducer: {
@@ -13,6 +14,7 @@ export const store = configureStore({
         models: modelsReducer,
         fileUpload: fileUploadReducer,
         promptTemplates: promptTemplatesReducer,
+        settingsReducer: settingsReducer
     },
     middleware: (getDefaultMiddleware) => 
         getDefaultMiddleware({

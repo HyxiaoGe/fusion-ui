@@ -7,6 +7,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import ThemeSelector from './ThemeSelector';
 import ModelSettings from '@/components/models/ModelSettings';
+import AvatarSelector from './AvatarSelector';
 
 export default function SettingsPage() {
   const { selectedModelId } = useAppSelector(state => state.models);
@@ -19,6 +20,7 @@ export default function SettingsPage() {
         <Tabs defaultValue="general">
           <TabsList>
             <TabsTrigger value="general">常规设置</TabsTrigger>
+            <TabsTrigger value="appearance">外观</TabsTrigger>
             <TabsTrigger value="models">模型配置</TabsTrigger>
             <TabsTrigger value="apikeys">API密钥</TabsTrigger>
           </TabsList>
@@ -34,6 +36,17 @@ export default function SettingsPage() {
             </Card>
           </TabsContent>
           
+          <TabsContent value="appearance" className="mt-4">
+            <Card>
+              <CardHeader>
+                <CardTitle>外观</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <AvatarSelector />
+              </CardContent>
+            </Card>
+          </TabsContent>
+
           <TabsContent value="models" className="mt-4">
             {selectedModelId && <ModelSettings modelId={selectedModelId} />}
           </TabsContent>
