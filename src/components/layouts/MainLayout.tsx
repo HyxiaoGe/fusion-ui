@@ -3,6 +3,7 @@
 import React from 'react';
 import { useAppSelector } from '@/redux/hooks';
 import Header from './Header';
+import ErrorToastContainer from '../ui/error-toast';
 
 interface MainLayoutProps {
   children: React.ReactNode;
@@ -42,6 +43,7 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children, sidebar }) => {
           {children}
         </main>
       </div>
+      <ErrorToastContainer />
     </div>
   );
 };

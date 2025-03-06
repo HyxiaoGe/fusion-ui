@@ -15,17 +15,7 @@ import {
   setLoading,
   setError
 } from '@/redux/slices/chatSlice';
-
-// 模拟 AI 响应的函数
-const simulateAIResponse = async (message: string): Promise<string> => {
-  // 这里应该是实际调用 AI 服务的代码
-  // 目前只是简单模拟
-  return new Promise((resolve) => {
-    setTimeout(() => {
-      resolve(`这是对 "${message}" 的模拟回复。在实际应用中，这里会调用 AI 服务获取回复。`);
-    }, 1000);
-  });
-};
+import { sendMessage } from '@/lib/api/chat';
 
 export default function Home() {
   const dispatch = useAppDispatch();
@@ -39,14 +29,22 @@ export default function Home() {
 
   // 创建新对话
   const handleNewChat = () => {
+    console.log('点击新建对话按钮', { selectedModelId });
     if (selectedModelId) {
-      dispatch(createChat({ modelId: selectedModelId }));
+      try {
+        dispatch(createChat({ modelId: selectedModelId }));
+        console.log('对话创建成功');
+      } catch (error) {
+        console.error('创建对话失败:', error);
+      }
+    } else {
+      console.warn('未选择模型，无法创建对话');
     }
   };
 
   // 发送消息
   const handleSendMessage = async (content: string) => {
-    if (!activeChatId || !content.trim()) return;
+    if (!activeChatId || !content.trim() || !selectedModelId) return;
     
     // 添加用户消息
     dispatch(addMessage({
@@ -62,21 +60,34 @@ export default function Home() {
     
     try {
       // 调用 AI 服务获取回复
-      const response = await simulateAIResponse(content);
+      const response = await sendMessage({
+        model: selectedModelId,
+        message: content.trim(),
+        conversation_id: activeChatId,
+        stream: false
+      })
       
       // 添加 AI 回复
       dispatch(addMessage({
         chatId: activeChatId,
         message: {
           role: 'assistant',
-          content: response
+          content: response.message.content
         }
       }));
       
-      dispatch(setError(null));
+      // dispatch(setError('错误信息'));
     } catch (error) {
       console.error('获取 AI 回复失败:', error);
       dispatch(setError('获取 AI 回复失败，请重试'));
+
+      dispatch(addMessage({
+        chatId: activeChatId,
+        message: {
+          role: 'assistant',
+          content: '抱歉，发生了错误，无法获取回复。请检查您的网络连接或稍后重试。'
+        }
+      }))
     } finally {
       dispatch(setLoading(false));
     }

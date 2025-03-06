@@ -3,7 +3,7 @@ import { createSlice, PayloadAction } from "@reduxjs/toolkit";
 export interface Model {
   id: string;
   name: string;
-  provider: 'ernie' | 'qwen' | 'claude' | 'deepseek';
+  provider: 'qwen' | 'wenxin' | 'openai' | 'deepseek';
   icon: string;
   maxTokens: number;
   temperature: number;
@@ -18,16 +18,7 @@ interface ModelsState {
 
 const initialModels: Model[] = [
   {
-    id: 'ernie-bot-4',
-    name: '文心一言',
-    provider: 'ernie',
-    icon: 'ernie',
-    maxTokens: 4096,
-    temperature: 0.7,
-    enabled: true
-  },
-  {
-    id: 'qwen-max',
+    id: 'qwen',
     name: '通义千问',
     provider: 'qwen',
     icon: 'qwen',
@@ -36,16 +27,25 @@ const initialModels: Model[] = [
     enabled: true
   },
   {
-    id: 'claude-3-5-sonnet',
-    name: 'Claude',
-    provider: 'claude',
-    icon: 'claude',
+    id: 'wenxin',
+    name: '文心一言',
+    provider: 'wenxin',
+    icon: 'wenxin',
+    maxTokens: 4096,
+    temperature: 0.7,
+    enabled: true
+  },
+  {
+    id: 'openai',
+    name: 'OpenAI',
+    provider: 'openai',
+    icon: 'openai',
     maxTokens: 16384,
     temperature: 0.7,
     enabled: true
   },
   {
-    id: 'deepseek-chat',
+    id: 'deepseek',
     name: 'DeepSeek',
     provider: 'deepseek',
     icon: 'deepseek',

@@ -1,6 +1,7 @@
 {
   "scripts": {
-    "dev": "concurrently \"next dev\" \"wait-on http://localhost:3000 && electron src/electron/main.js\"",
+    "dev:next": "next dev",
+    "dev": "cross-env NODE_ENV=development concurrently \"next dev\" \"wait-on http://localhost:3000 && electron src/electron/main.js --inspect=5858\"",
     "build": "next build && electron-builder",
     "start": "electron ."
   },
@@ -52,6 +53,8 @@
     "@commitlint/config-conventional": "^19.7.1",
     "@shadcn/ui": "^0.0.4",
     "autoprefixer": "^10.4.20",
+    "cross-env": "^7.0.3",
+    "electron-devtools-installer": "^4.0.0",
     "electron-is-dev": "^3.0.1",
     "husky": "^9.1.7",
     "lint-staged": "^15.4.3",

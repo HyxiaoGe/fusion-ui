@@ -3,6 +3,7 @@
 import React, { useEffect, useRef } from 'react';
 import { Message } from '@/redux/slices/chatSlice';
 import ChatMessage from './ChatMessage';
+import LoadingIndicator from '../ui/loading-indicator';
 
 interface ChatMessageListProps {
   messages: Message[];
@@ -44,16 +45,7 @@ const ChatMessageList: React.FC<ChatMessageListProps> = ({ messages, loading = f
         />
       ))}
       
-      {loading && (
-        <div className="flex items-center gap-2 py-4 text-muted-foreground">
-          <div className="animate-pulse flex space-x-2">
-            <div className="h-2 w-2 rounded-full bg-current"></div>
-            <div className="h-2 w-2 rounded-full bg-current"></div>
-            <div className="h-2 w-2 rounded-full bg-current"></div>
-          </div>
-          <span>AI 正在思考...</span>
-        </div>
-      )}
+      {loading && <LoadingIndicator />}
       
       <div ref={messagesEndRef} />
     </div>

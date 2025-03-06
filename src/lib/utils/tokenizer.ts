@@ -63,8 +63,8 @@ const TOKEN_ESTIMATIONS: Record<string, number> = {
   
   // 不同模型的token限制
   export const MODEL_TOKEN_LIMITS: Record<string, number> = {
-    'ernie-bot-4': 4096,
-    'qwen-max': 8192,
-    'claude-3-5-sonnet': 16384,
-    'deepseek-chat': 8192,
+    'wenxin': 4096,
+    'qwen': 8192,
+    'openai': 16384,
+    'deepseek': 8192,
   };
