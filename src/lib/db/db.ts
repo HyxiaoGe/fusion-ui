@@ -11,7 +11,7 @@ export interface Conversation {
 
 // 定义消息的类型
 export interface Message {
-  id?: number;
+  id: string;
   conversationId: number;
   role: 'user' | 'assistant' | 'system';
   content: string;

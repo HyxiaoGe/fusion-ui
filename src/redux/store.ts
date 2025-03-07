@@ -6,6 +6,7 @@ import modelsReducer from './slices/modelsSlice';
 import fileUploadReducer from './slices/fileUploadSlice';
 import promptTemplatesReducer from './slices/promptTemplatesSlice';
 import settingsReducer from './slices/settingsSlice';
+import persistMiddleware from './middleware/persistMiddleware';
 
 export const store = configureStore({
     reducer: {
@@ -19,7 +20,7 @@ export const store = configureStore({
     middleware: (getDefaultMiddleware) => 
         getDefaultMiddleware({
             serializableCheck: false,
-        }),
+        }).concat(persistMiddleware),
 });
 
 setupListeners(store.dispatch);

@@ -6,6 +6,7 @@ export interface Message {
   role: 'user' | 'assistant' | 'system';
   content: string;
   timestamp: number;
+  chatId?: string;
 }
 
 export interface Chat {
@@ -103,6 +104,10 @@ const chatSlice = createSlice({
         chat.updatedAt = Date.now();
       }
     },
+    // 一次性设置所有聊天数据（用于从数据库初始化）
+    setAllChats: (state, action: PayloadAction<Chat[]>) => {
+      state.chats = action.payload;
+    },
   },
 });
 
@@ -115,6 +120,7 @@ export const {
   setLoading,
   setError,
   clearMessages,
+  setAllChats
 } = chatSlice.actions;
 
 export default chatSlice.reducer;
