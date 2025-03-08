@@ -48,6 +48,81 @@ export async function sendMessage(data: ChatRequest): Promise<ChatResponse> {
   }
 }
 
+export async function sendMessageStream(data: ChatRequest, onChunk: (chunk: string, done: boolean, conversationId?: string) => void): Promise<void> {
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/chat/send`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        ...data,
+        stream: true, // 确保设置stream为true
+      }),
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.detail || '请求失败');
+    }
+
+    if (!response.body) {
+      throw new Error('响应体为空');
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let streamContent = '';
+    let conversationId = data.conversation_id;
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) {
+        break;
+      }
+
+      // 解码响应块
+      const chunk = decoder.decode(value, { stream: true });
+      
+      // 处理SSE格式的响应
+      const lines = chunk.split('\n').filter(line => line.trim() !== '');
+      
+      for (const line of lines) {
+        if (line.startsWith('data: ')) {
+          const data = line.substring(6); // 移除 "data: " 前缀
+          
+          try {
+            const parsedData = JSON.parse(data);
+
+            // 保存conversionId
+            if (parsedData.conversation_id) {
+              conversationId = parsedData.conversation_id;
+            }
+            
+            if (parsedData.content === "[DONE]") {
+              // 流结束
+              onChunk(streamContent, true, conversationId || undefined);
+              return;
+            } else {
+              // 添加新内容并更新回调
+              streamContent += parsedData.content;
+              onChunk(streamContent, false, conversationId || undefined);
+            }
+          } catch (e) {
+            console.error('解析响应数据失败:', e, data);
+          }
+        }
+      }
+    }
+    
+    // 如果没有收到[DONE]但流结束了，也标记为完成
+    onChunk(streamContent, true, conversationId || undefined);
+  } catch (error) {
+    console.error('流式消息请求失败:', error);
+    throw error;
+  }
+}
+
 // 获取所有对话
 export async function getConversations() {
   try {

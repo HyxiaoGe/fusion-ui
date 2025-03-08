@@ -23,6 +23,9 @@ interface ChatState {
   activeChatId: string | null;
   loading: boolean;
   error: string | null;
+  streamingContent: string | null;
+  isStreaming: boolean;
+  streamingMessageId: string | null; // 存储正在流式输出的消息ID
 }
 
 const initialState: ChatState = {
@@ -30,6 +33,9 @@ const initialState: ChatState = {
   activeChatId: null,
   loading: false,
   error: null,
+  streamingContent: null,
+  isStreaming: false,
+  streamingMessageId: null,
 };
 
 const chatSlice = createSlice({
@@ -90,6 +96,42 @@ const chatSlice = createSlice({
         }
       }
     },
+    startStreaming: (state, action: PayloadAction<string>) => {
+      state.isStreaming = true;
+      state.streamingContent = '';
+      const messageId = uuidv4();
+      state.streamingMessageId = messageId;
+      
+      // 添加一个空的助手消息作为占位符
+      const chatId = action.payload;
+      const chat = state.chats.find(c => c.id === chatId);
+      if (chat) {
+        chat.messages.push({
+          id: messageId,
+          role: 'assistant',
+          content: '',
+          timestamp: Date.now(),
+        });
+      }
+    },
+    updateStreamingContent: (state, action: PayloadAction<{chatId: string, content: string}>) => {
+      const { chatId, content } = action.payload;
+      state.streamingContent = content;
+      
+      // 更新最后一条助手消息的内容
+      const chat = state.chats.find(c => c.id === chatId);
+      if (chat && chat.messages.length > 0 && state.streamingMessageId) {
+        const streamingMessage  = chat.messages.find(m => m.id === state.streamingMessageId);
+        if (streamingMessage) {
+          streamingMessage.content = content;
+        }
+      }
+    },
+    endStreaming: (state) => {
+      state.isStreaming = false;
+      state.streamingContent = null;
+      state.streamingMessageId = null;
+    },
     setLoading: (state, action: PayloadAction<boolean>) => {
       state.loading = action.payload;
     },
@@ -120,7 +162,10 @@ export const {
   setLoading,
   setError,
   clearMessages,
-  setAllChats
+  setAllChats,
+  startStreaming,
+  updateStreamingContent,
+  endStreaming
 } = chatSlice.actions;
 
 export default chatSlice.reducer;

@@ -13,9 +13,10 @@ import { avatarOptions } from '@/redux/slices/settingsSlice';
 interface ChatMessageProps {
   message: Message;
   isLastMessage?: boolean;
+  isStreaming?: boolean;
 }
 
-const ChatMessage: React.FC<ChatMessageProps> = ({ message, isLastMessage = false }) => {
+const ChatMessage: React.FC<ChatMessageProps> = ({ message, isLastMessage = false, isStreaming = false }) => {
   const isUser = message.role === 'user';
   
   const { userAvatar, assistantAvatar } = useAppSelector(state => state.settings);
@@ -49,7 +50,7 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, isLastMessage = fals
       }
       
       // 返回格式化后的时间
-      return date.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+      return date.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit', second: '2-digit'});
     } catch (error) {
       console.error('格式化时间出错:', error);
       return '';
@@ -92,7 +93,10 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, isLastMessage = fals
           {isUser ? (
             <div>{message.content}</div>
           ) : (
-            <div className="prose prose-neutral dark:prose-invert max-w-none overflow-auto">
+            <div className={cn(
+              "prose prose-neutral dark:prose-invert max-w-none overflow-auto",
+              isStreaming && "typing"
+            )}>
               <ReactMarkdown
                 remarkPlugins={[remarkGfm]}
                 rehypePlugins={[rehypeRaw, rehypeHighlight]}
@@ -114,8 +118,11 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, isLastMessage = fals
                   },
                 }}
               >
-                {message.content}
+                {message.content || ''}
               </ReactMarkdown>
+              {isStreaming && (
+                <span className="ml-1 inline-block h-4 w-0.5 bg-current animate-pulse"></span>
+              )}
             </div>
           )}
         </div>

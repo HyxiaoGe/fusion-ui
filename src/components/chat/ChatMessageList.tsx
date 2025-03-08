@@ -8,14 +8,39 @@ import LoadingIndicator from '../ui/loading-indicator';
 interface ChatMessageListProps {
   messages: Message[];
   loading?: boolean;
+  isStreaming?: boolean;
 }
 
-const ChatMessageList: React.FC<ChatMessageListProps> = ({ messages, loading = false }) => {
+// 定义角色排序优先级
+const getRolePriority = (role: string): number => {
+  switch (role) {
+    case 'user': return 0; // 用户消息最高优先级
+    case 'system': return 1; // 系统消息次之
+    case 'assistant': return 2; // AI回复最低优先级
+    default: return 3;
+  }
+};
+
+const ChatMessageList: React.FC<ChatMessageListProps> = ({ messages, loading = false, isStreaming = false }) => {
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  // 按时间戳排序消息
+  // 按时间戳排序消息 - 确保使用完整毫秒精度
   const sortedMessages = useMemo(() => {
-    return [...messages].sort((a, b) => a.timestamp - b.timestamp);
+    return [...messages].sort((a, b) => {
+      // 确保转换为数字类型进行比较
+      const timestampA = Number(a.timestamp);
+      const timestampB = Number(b.timestamp);
+
+      const timestampDiff = timestampA - timestampB;
+      
+      // 如果时间戳相同（或非常接近，如在同一秒内）
+      if (Math.abs(timestampDiff) < 1000) {
+        // 根据角色排序：用户消息排在AI回复前面
+        return getRolePriority(a.role) - getRolePriority(b.role);
+      }
+      
+      return timestampDiff;
+    });
   }, [messages]);
 
   // 滚动到底部
@@ -46,11 +71,12 @@ const ChatMessageList: React.FC<ChatMessageListProps> = ({ messages, loading = f
         <ChatMessage 
           key={message.id} 
           message={message} 
-          isLastMessage={index === sortedMessages.length - 1} 
+          isLastMessage={index === sortedMessages.length - 1}
+          isStreaming={isStreaming && index === sortedMessages.length - 1 && message.role === 'assistant'}
         />
       ))}
       
-      {loading && <LoadingIndicator />}
+      {loading && !isStreaming && <LoadingIndicator />}
       
       <div ref={messagesEndRef} />
     </div>

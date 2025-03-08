@@ -16,17 +16,21 @@ import {
   setLoading,
   setError,
   setActiveChat,
-  setAllChats
+  setAllChats,
+  startStreaming,
+  updateStreamingContent,
+  endStreaming
 } from '@/redux/slices/chatSlice';
-import { sendMessage } from '@/lib/api/chat';
+import { sendMessageStream } from '@/lib/api/chat';
 import { chatStore } from '@/lib/db/chatStore';
+import { store } from '@/redux/store';
 
 export default function Home() {
   const dispatch = useAppDispatch();
   const pathname = usePathname();
   const searchParams = useSearchParams();
   
-  const { chats, activeChatId, loading } = useAppSelector((state) => state.chat);
+  const { chats, activeChatId, loading, isStreaming } = useAppSelector((state) => state.chat);
   const { models, selectedModelId } = useAppSelector((state) => state.models);
   const [isSyncing, setIsSyncing] = useState(false);
   const lastDatabaseSync = useAppSelector((state) => state.app.lastDatabaseSync);
@@ -106,40 +110,71 @@ export default function Home() {
     }));
     
     // 设置加载状态
-    dispatch(setLoading(true));
+    dispatch(startStreaming(activeChatId));
     
     try {
-      // 调用 AI 服务获取回复
-      const response = await sendMessage({
+      await sendMessageStream({
         model: selectedModelId,
         message: content.trim(),
         conversation_id: activeChatId,
-        stream: false
-      })
-      
-      // 添加 AI 回复
-      dispatch(addMessage({
-        chatId: activeChatId,
-        message: {
-          role: 'assistant',
-          content: response.message.content
+        stream: true
+      }, 
+      (content, done, conversationId) => {
+        // 如果服务器返回了不同的conversationId，需要更新它
+        if (conversationId && conversationId !== activeChatId) {
+          console.log(`服务器返回了新的conversationId: ${conversationId}`);
+          // 你可能需要在这里处理conversationId的更新
         }
-      }));
-      
-      // dispatch(setError('错误信息'));
+        if (!done) {
+          // 更新流式内容
+          dispatch(updateStreamingContent({
+            chatId: activeChatId,
+            content
+          }));
+        } else {
+          // 流式响应结束
+          dispatch(updateStreamingContent({
+            chatId: activeChatId,
+            content: content
+          }));
+
+          // 结束流式输出
+          setTimeout(() => {
+            dispatch(endStreaming());
+          }, 100);
+        }
+      });
     } catch (error) {
       console.error('获取 AI 回复失败:', error);
       dispatch(setError('获取 AI 回复失败，请重试'));
 
-      dispatch(addMessage({
-        chatId: activeChatId,
-        message: {
-          role: 'assistant',
-          content: '抱歉，发生了错误，无法获取回复。请检查您的网络连接或稍后重试。'
+      // 错误情况下，添加一条错误消息
+      if (activeChatId) {
+        // 查找之前创建的流式消息ID
+        const state = store.getState();
+        const chat = state.chat.chats.find(c => c.id === activeChatId);
+        const streamingMessageId = state.chat.streamingMessageId;
+        
+        if (chat && streamingMessageId) {
+          // 更新现有的流式消息为错误消息
+          dispatch(updateStreamingContent({
+            chatId: activeChatId,
+            content: '抱歉，发生了错误，无法获取回复。请检查您的网络连接或稍后重试。'
+          }));
+        } else {
+          // 添加新的错误消息
+          dispatch(addMessage({
+            chatId: activeChatId,
+            message: {
+              role: 'assistant',
+              content: '抱歉，发生了错误，无法获取回复。请检查您的网络连接或稍后重试。'
+            }
+          }));
         }
-      }))
-    } finally {
-      dispatch(setLoading(false));
+      }
+
+      // 结束流式输出
+      dispatch(endStreaming());
     }
   };
 
@@ -182,12 +217,13 @@ export default function Home() {
             <ChatMessageList 
               messages={activeChat.messages}
               loading={loading}
+              isStreaming={isStreaming}
             />
           </div>
           
           <ChatInput
             onSendMessage={handleSendMessage}
-            disabled={loading}
+            disabled={loading || isStreaming}
           />
         </div>
       ) : (

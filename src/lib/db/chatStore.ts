@@ -193,6 +193,11 @@ export const chatStore = {
         timestamp: Number(message.timestamp) // 确保是数字类型
       };
       
+      const existingMessageById = await db.messages.get(messageWithChatId.id);
+      if (existingMessageById) {
+        return;
+      }
+
       // 检查是否已存在相同内容的消息
       const existingMessage = await db.messages
         .where('[chatId+role+content]')
