@@ -7,6 +7,7 @@ import fileUploadReducer from './slices/fileUploadSlice';
 import promptTemplatesReducer from './slices/promptTemplatesSlice';
 import settingsReducer from './slices/settingsSlice';
 import persistMiddleware from './middleware/persistMiddleware';
+import appReducer from './slices/appSlice';
 
 export const store = configureStore({
     reducer: {
@@ -15,7 +16,8 @@ export const store = configureStore({
         models: modelsReducer,
         fileUpload: fileUploadReducer,
         promptTemplates: promptTemplatesReducer,
-        settings: settingsReducer
+        settings: settingsReducer,
+        app: appReducer
     },
     middleware: (getDefaultMiddleware) => 
         getDefaultMiddleware({

@@ -32,8 +32,29 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, isLastMessage = fals
   };
 
   const formatTime = (timestamp: number) => {
-    return new Date(timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
-  };
+    // 防止无效时间戳
+    if (!timestamp || isNaN(timestamp)) {
+      console.warn('无效的时间戳:', timestamp);
+      return '';
+    }
+    
+    try {
+      // 明确使用数值类型创建日期对象
+      const date = new Date(Number(timestamp));
+      
+      // 验证日期是否有效
+      if (isNaN(date.getTime())) {
+        console.warn('创建了无效的日期对象:', timestamp);
+        return '';
+      }
+      
+      // 返回格式化后的时间
+      return date.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+    } catch (error) {
+      console.error('格式化时间出错:', error);
+      return '';
+    }
+  }
 
   return (
     <div

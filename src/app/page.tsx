@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { usePathname, useSearchParams } from 'next/navigation';
 import { useAppSelector, useAppDispatch } from '@/redux/hooks';
 import MainLayout from '@/components/layouts/MainLayout';
 import ChatSidebar from '@/components/chat/ChatSidebar';
@@ -13,14 +14,63 @@ import {
   createChat, 
   addMessage, 
   setLoading,
-  setError
+  setError,
+  setActiveChat,
+  setAllChats
 } from '@/redux/slices/chatSlice';
 import { sendMessage } from '@/lib/api/chat';
+import { chatStore } from '@/lib/db/chatStore';
 
 export default function Home() {
   const dispatch = useAppDispatch();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  
   const { chats, activeChatId, loading } = useAppSelector((state) => state.chat);
   const { models, selectedModelId } = useAppSelector((state) => state.models);
+  const [isSyncing, setIsSyncing] = useState(false);
+  const lastDatabaseSync = useAppSelector((state) => state.app.lastDatabaseSync);
+
+  // 在组件挂载时进行数据同步检查
+  useEffect(() => {
+    const syncWithDatabase = async () => {
+      try {
+        setIsSyncing(true);
+        
+        // 获取数据库中的聊天记录
+        const dbChats = await chatStore.getAllChats();
+        
+        // 检查Redux中的聊天记录是否与数据库同步
+        const needsSync = chats.length !== dbChats.length || 
+          !chats.every(chat => dbChats.some(dbChat => dbChat.id === chat.id));
+        
+        if (needsSync) {
+          console.log('检测到Redux状态与数据库不同步，正在重新加载数据...');
+          
+          // 更新Redux状态
+          dispatch(setAllChats(dbChats));
+          
+          // 如果有活动聊天但在数据库中不存在，或者没有活动聊天但数据库有聊天记录
+          if ((activeChatId && !dbChats.some(chat => chat.id === activeChatId)) || 
+              (!activeChatId && dbChats.length > 0)) {
+            
+            // 设置最新的聊天为活动聊天，或设为null
+            const latestChat = dbChats.length > 0 
+              ? dbChats.reduce((latest, chat) => chat.updatedAt > latest.updatedAt ? chat : latest, dbChats[0])
+              : null;
+              
+            dispatch(setActiveChat(latestChat?.id || ''));
+          }
+        }
+      } catch (error) {
+        console.error('同步数据库数据失败:', error);
+      } finally {
+        setIsSyncing(false);
+      }
+    };
+    
+    syncWithDatabase();
+  }, [dispatch, lastDatabaseSync, pathname, searchParams]);
   
   // 获取当前活动的对话
   const activeChat = activeChatId ? chats.find(chat => chat.id === activeChatId) : null;
@@ -101,7 +151,15 @@ export default function Home() {
         />
       }
     >
-      {activeChat ? (
+      {isSyncing ? (
+        <div className="flex h-full items-center justify-center">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-primary mb-2"></div>
+            <p className="text-muted-foreground">同步数据中...</p>
+          </div>
+        </div>
+      ) : (
+      activeChat ? (
         <div className="flex flex-col h-full">
           <div className="flex items-center justify-between border-b p-4">
             <div>
@@ -145,7 +203,13 @@ export default function Home() {
             </Button>
           </div>
         </div>
+      )
       )}
+      {chats.length > 0 && (
+      <div className="absolute bottom-4 right-4 text-xs text-muted-foreground bg-background/80 px-2 py-1 rounded-md shadow-sm">
+        {isSyncing ? '同步中...' : '数据已同步'}
+      </div>
+    )}
     </MainLayout>
   );
 }

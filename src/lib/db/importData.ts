@@ -2,6 +2,7 @@ import db, { chatStore, settingsStore } from './chatStore';
 import { Chat, Message } from '@/redux/slices/chatSlice';
 import { AppDispatch } from '@/redux/store';
 import initializeStoreFromDB from './initializeStore';
+import { v4 as uuidv4 } from 'uuid';
 
 // 定义导入数据的类型
 interface ImportData {
@@ -34,16 +35,41 @@ export async function importDataFromFile(file: File, dispatch: AppDispatch): Pro
       
       // 导入聊天数据
       for (const chat of importData.chats) {
+        // 先获取该聊天ID是否已存在
+        const existingChat = await db.chats.get(chat.id);
+        
+        // 如果聊天已存在，先获取已有消息用于去重
+        const existingContents = new Map();
+        if (existingChat) {
+          const existingMessages = await db.messages
+            .where('chatId')
+            .equals(chat.id)
+            .toArray();
+          
+          existingMessages.forEach(msg => {
+            existingContents.set(`${msg.role}:${msg.content}`, true);
+          });
+        }
+        
         // 提取消息并添加chatId关联
         const messages = chat.messages || [];
         
-        // 将消息添加到messages表，并更新chatId
-        await db.messages.bulkPut(
-          messages.map(msg => ({
-            ...msg,
-            chatId: chat.id
-          }))
-        );
+        // 过滤出不重复的消息
+        const uniqueMessages = messages.filter(msg => {
+          const key = `${msg.role}:${msg.content}`;
+          return !existingContents.has(key);
+        });
+        
+        // 批量添加不重复的消息
+        if (uniqueMessages.length > 0) {
+          await db.messages.bulkAdd(
+            uniqueMessages.map(msg => ({
+              ...msg,
+              chatId: chat.id
+            }))
+          );
+          console.log(`导入了 ${uniqueMessages.length} 条新消息到聊天 ${chat.id}`);
+        }
         
         // 添加不含消息的聊天记录到chats表
         const { messages: _, ...chatWithoutMessages } = chat;

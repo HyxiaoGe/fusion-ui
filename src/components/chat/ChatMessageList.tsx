@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useMemo, useRef } from 'react';
 import { Message } from '@/redux/slices/chatSlice';
 import ChatMessage from './ChatMessage';
 import LoadingIndicator from '../ui/loading-indicator';
@@ -12,6 +12,11 @@ interface ChatMessageListProps {
 
 const ChatMessageList: React.FC<ChatMessageListProps> = ({ messages, loading = false }) => {
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  // 按时间戳排序消息
+  const sortedMessages = useMemo(() => {
+    return [...messages].sort((a, b) => a.timestamp - b.timestamp);
+  }, [messages]);
 
   // 滚动到底部
   const scrollToBottom = () => {
@@ -37,11 +42,11 @@ const ChatMessageList: React.FC<ChatMessageListProps> = ({ messages, loading = f
 
   return (
     <div className="flex flex-col px-4">
-      {messages.map((message, index) => (
+      {sortedMessages.map((message, index) => (
         <ChatMessage 
           key={message.id} 
           message={message} 
-          isLastMessage={index === messages.length - 1} 
+          isLastMessage={index === sortedMessages.length - 1} 
         />
       ))}
       

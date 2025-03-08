@@ -10,7 +10,10 @@ import { chatStore, settingsStore } from '@/lib/db/chatStore';
 import db from '@/lib/db/chatStore';
 import initializeStoreFromDB from '@/lib/db/initializeStore';
 import { importDataFromFile } from '@/lib/db/importData';
-
+import { setAllChats } from '@/redux/slices/chatSlice';
+import { setActiveChat } from '@/redux/slices/chatSlice';
+import { setSelectedModel } from '@/redux/slices/modelsSlice';
+import { triggerDatabaseSync } from '@/redux/slices/appSlice';
 export default function DatabaseDebugPage() {
   const dispatch = useAppDispatch();
   const [chats, setChats] = useState<any[]>([]);
@@ -41,13 +44,36 @@ export default function DatabaseDebugPage() {
     if (window.confirm('确定要清空数据库吗？此操作不可恢复！')) {
       setIsLoading(true);
       try {
-        await db.delete();
+        // 方法一：使用事务清空表内容而非删除数据库（推荐）
+        await db.transaction('rw', [db.chats, db.messages, db.settings], async () => {
+          await db.chats.clear();
+          await db.messages.clear();
+          await db.settings.clear();
+        });
+        
+        // 同时清空Redux状态
+        dispatch(setAllChats([]));         // 清空聊天记录
+        dispatch(setActiveChat(''));     // 清空活动聊天
+
         setMessage({ text: '数据库已清空', type: 'success' });
-        setChats([]);
-        setSettings({});
+        setChats([]);  // 清空本地UI状态
+        setSettings({}); // 清空设置状态
+        
+        dispatch(triggerDatabaseSync());
+
+        await loadData(); // 重新加载空数据
       } catch (error) {
         console.error('清空数据库失败:', error);
         setMessage({ text: '清空数据库失败: ' + (error as Error).message, type: 'error' });
+        
+        // 尝试重新连接数据库
+        try {
+          if (!db.isOpen()) {
+            await db.open();
+          }
+        } catch (reconnectError) {
+          console.error('重新连接数据库失败:', reconnectError);
+        }
       } finally {
         setIsLoading(false);
       }

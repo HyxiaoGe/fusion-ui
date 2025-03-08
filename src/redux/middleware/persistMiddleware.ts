@@ -43,18 +43,38 @@ export const persistMiddleware: Middleware = store => next => action => {
       }
       else if (addMessage.match(action)) {
         const { chatId, message } = payload;
-
+      
+        // 确保消息有ID
         if (!message.id) {
           message.id = uuidv4();
         }
-
-        await chatStore.addMessage(chatId, message);
-        
-        // 同时更新chat的title (如果是第一条消息)
-        const state = store.getState();
-        const chat = state.chat.chats.find(c => c.id === chatId);
-        if (chat) {
-          await chatStore.saveChat(chat);
+      
+        // 检查消息是否重复
+        try {
+          const existingMessages = await chatStore.getMessagesByContent(chatId, message.role, message.content);
+          
+          // 如果消息不是重复的，则添加它
+          if (existingMessages.length === 0) {
+            // 方法1：使用addMessage添加单条消息
+            await chatStore.addMessage(chatId, message);
+            
+            // 方法2：保存整个聊天对象（作为备份保存方式）
+            const state = store.getState();
+            const chat = state.chat.chats.find(c => c.id === chatId);
+            if (chat) {
+              await chatStore.saveChat(chat);
+            }
+          } else {
+            console.log('跳过重复消息:', message.content.substring(0, 30) + '...');
+          }
+        } catch (error) {
+          console.error('检查或保存消息时出错:', error);
+          // 出错时，仍然尝试保存聊天对象作为备份
+          const state = store.getState();
+          const chat = state.chat.chats.find(c => c.id === chatId);
+          if (chat) {
+            await chatStore.saveChat(chat);
+          }
         }
       }
       else if (updateChatTitle.match(action)) {
