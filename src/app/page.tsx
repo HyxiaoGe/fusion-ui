@@ -21,11 +21,13 @@ import {
   startStreaming,
   updateStreamingContent,
   endStreaming,
-  clearMessages
+  clearMessages,
+  updateChatTitle
 } from '@/redux/slices/chatSlice';
 import { sendMessageStream } from '@/lib/api/chat';
 import { chatStore } from '@/lib/db/chatStore';
 import { store } from '@/redux/store';
+import { generateChatTitle } from '@/lib/api/title';
 
 export default function Home() {
   const dispatch = useAppDispatch();
@@ -147,6 +149,12 @@ export default function Home() {
   const handleSendMessage = async (content: string) => {
     if (!activeChatId || !content.trim() || !selectedModelId) return;
     
+    console.log('发送消息', content);
+    const currentChatBeforeAdd = chats.find(chat => chat.id === activeChatId);
+    const isFirstMessage = currentChatBeforeAdd && 
+                        currentChatBeforeAdd.messages.filter(msg => msg.role === 'user').length === 0 &&
+                        currentChatBeforeAdd.title === '新对话';
+
     // 添加用户消息
     dispatch(addMessage({
       chatId: activeChatId,
@@ -155,7 +163,7 @@ export default function Home() {
         content: content.trim()
       }
     }));
-    
+
     // 设置加载状态
     dispatch(startStreaming(activeChatId));
     
@@ -167,11 +175,6 @@ export default function Home() {
         stream: true
       }, 
       (content, done, conversationId) => {
-        // 如果服务器返回了不同的conversationId，需要更新它
-        if (conversationId && conversationId !== activeChatId) {
-          console.log(`服务器返回了新的conversationId: ${conversationId}`);
-          // 你可能需要在这里处理conversationId的更新
-        }
         if (!done) {
           // 更新流式内容
           dispatch(updateStreamingContent({
@@ -190,6 +193,30 @@ export default function Home() {
             dispatch(endStreaming());
           }, 100);
         }
+
+        // 在消息流结束(done=true)且是第一条消息时生成标题
+      if (done && isFirstMessage) {
+        console.log('流处理完成，开始生成标题');
+        // 延迟一小段时间确保服务器已处理完毕
+        setTimeout(async () => {
+          try {
+            const generatedTitle = await generateChatTitle(
+              selectedModelId,
+              activeChatId || conversationId, // 使用可能从服务器返回的新conversationId
+              undefined, // 不传具体消息，让后端从对话ID获取完整消息链
+              { max_length: 20 }
+            );
+            
+            dispatch(updateChatTitle({
+              chatId: activeChatId || conversationId || '',
+              title: generatedTitle
+            }));
+          } catch (error) {
+            console.error('生成标题失败:', error);
+          }
+        }, 1000); // 延迟1秒确保服务器已处理
+      }
+
       });
     } catch (error) {
       console.error('获取 AI 回复失败:', error);

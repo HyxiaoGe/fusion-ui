@@ -22,6 +22,7 @@ import { setActiveChat, deleteChat, updateChatTitle } from '@/redux/slices/chatS
 import { Dialog, DialogContent, DialogTitle } from '@radix-ui/react-dialog';
 import { DialogFooter } from '../ui/dialog';
 import { DialogHeader } from '../ui/dialog';
+import { generateChatTitle } from '@/lib/api/title';
 
 interface ChatSidebarProps {
   onNewChat: () => void;
@@ -56,6 +57,50 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ onNewChat }) => {
     }
   };
 
+  const handleGenerateTitle = async (e: React.MouseEvent, chatId: string) => {
+    e.stopPropagation();
+    const chat = chats.find(chat => chat.id === chatId);
+    if (!chat || chat.messages.length === 0) {
+      alert('对话内容为空，无法生成标题');
+      return;
+    }
+  
+    try {
+      // 显示加载状态
+      dispatch(updateChatTitle({
+        chatId: chatId,
+        title: '正在生成标题...'
+      }));
+      
+      // 使用新的API生成标题
+      // 首先获取该聊天正在使用的模型ID
+      const modelId = chat.modelId;
+      
+      // 调用API生成标题
+      const generatedTitle = await generateChatTitle(
+        modelId,          // 模型ID
+        chatId,           // 对话ID
+        undefined,        // 不传具体消息，让后端从对话ID获取完整消息
+        { max_length: 20 } // 可选参数，限制标题长度
+      );
+      
+      // 更新对话标题
+      dispatch(updateChatTitle({
+        chatId: chatId,
+        title: generatedTitle
+      }));
+      
+    } catch (error) {
+      console.error('生成标题失败:', error);
+      // 恢复原标题
+      dispatch(updateChatTitle({
+        chatId: chatId,
+        title: chat.title
+      }));
+      alert('生成标题失败，请重试');
+    }
+  };
+
   // 打开重命名对话框
   const handleOpenRenameDialog = (e: React.MouseEvent, chatId: string) => {
     e.stopPropagation();
@@ -77,49 +122,6 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ onNewChat }) => {
       setIsRenameDialogOpen(false);
       setChatToRename(null);
       setNewTitle('');
-    }
-  };
-
-  // 处理AI生成标题
-  const handleGenerateTitle = async (e: React.MouseEvent, chatId: string) => {
-    e.stopPropagation();
-    const chat = chats.find(chat => chat.id === chatId);
-    if (!chat || chat.messages.length === 0) {
-      alert('对话内容为空，无法生成标题');
-      return;
-    }
-
-    // TODO: 这里将来会调用后端API
-    // 目前先用一个简单的模拟实现
-    try {
-      // 模拟后端请求
-      console.log('正在为对话生成标题:', chatId);
-      
-      // 模拟加载过程
-      const generatingTitle = '正在生成标题...';
-      dispatch(updateChatTitle({
-        chatId: chatId,
-        title: generatingTitle
-      }));
-      
-      // 这里将来会替换为实际的API调用
-      setTimeout(() => {
-        // 简单生成一个标题作为示例
-        const firstUserMessage = chat.messages.find(msg => msg.role === 'user')?.content || '';
-        let generatedTitle = firstUserMessage.slice(0, 15);
-        if (firstUserMessage.length > 15) generatedTitle += '...';
-        
-        if (!generatedTitle) generatedTitle = '新对话';
-        
-        dispatch(updateChatTitle({
-          chatId: chatId,
-          title: generatedTitle
-        }));
-      }, 1000);
-      
-    } catch (error) {
-      console.error('生成标题失败:', error);
-      alert('生成标题失败，请重试');
     }
   };
 
