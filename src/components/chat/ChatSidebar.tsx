@@ -1,6 +1,7 @@
+// src/components/chat/ChatSidebar.tsx 修改部分
 'use client';
 
-import React from 'react';
+import React, { useEffect } from 'react';
 import { useAppSelector, useAppDispatch } from '@/redux/hooks';
 import { Button } from '@/components/ui/button';
 import { 
@@ -63,6 +64,7 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ onNewChat }) => {
         ) : (
           <ul className="space-y-1">
             {chats.map((chat) => {
+              // 确保使用chat.modelId而不是从外部获取
               const model = models.find(m => m.id === chat.modelId);
               
               return (

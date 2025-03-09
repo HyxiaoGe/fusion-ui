@@ -10,7 +10,8 @@ import {
   updateStreamingContent,
   endStreaming,
   Chat,
-  Message
+  Message,
+  updateChatModel
 } from '@/redux/slices/chatSlice';
 import { 
   setThemeMode 
@@ -140,6 +141,13 @@ export const persistMiddleware: Middleware = store => next => action => {
           } catch (error) {
             console.error('保存最终流式消息时出错:', error);
           }
+        }
+      }
+      else if (updateChatModel.match(action)) {
+        const state = store.getState();
+        const chat = state.chat.chats.find((c: Chat) => c.id === payload.chatId);
+        if (chat) {
+          await chatStore.saveChat(chat);
         }
       }
       else if (updateChatTitle.match(action)) {

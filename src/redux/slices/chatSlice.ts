@@ -77,6 +77,14 @@ const chatSlice = createSlice({
         chat.updatedAt = Date.now();
       }
     },
+    updateChatModel: (state, action: PayloadAction<{chatId: string, modelId: string}>) => {
+      const { chatId, modelId } = action.payload;
+      const chat = state.chats.find(c => c.id === chatId);
+      if (chat) {
+        chat.modelId = modelId;
+        chat.updatedAt = Date.now();
+      }
+    },
     addMessage: (state, action: PayloadAction<{chatId: string, message: Omit<Message, 'id' | 'timestamp'>}>) => {
       const { chatId, message } = action.payload;
       const chat = state.chats.find(c => c.id === chatId);
@@ -158,6 +166,7 @@ export const {
   createChat,
   deleteChat,
   updateChatTitle,
+  updateChatModel,
   addMessage,
   setLoading,
   setError,

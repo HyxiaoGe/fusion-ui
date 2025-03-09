@@ -118,7 +118,7 @@ export default function Home() {
   // 获取当前选中的模型
   const selectedModel = models.find(model => model.id === selectedModelId);
 
-  // 创建新对话
+// 创建新对话
 const handleNewChat = () => {
   console.log('点击新建对话按钮', { selectedModelId });
   
@@ -132,8 +132,9 @@ const handleNewChat = () => {
   }
   
   try {
+    // 创建对话时传入当前选择的模型ID
     dispatch(createChat({ modelId: modelToUse }));
-    console.log('对话创建成功');
+    console.log('对话创建成功，使用模型：', modelToUse);
   } catch (error) {
     console.error('创建对话失败:', error);
     dispatch(setError('创建对话失败，请重试'));
