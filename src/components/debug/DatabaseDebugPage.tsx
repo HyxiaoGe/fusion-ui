@@ -10,10 +10,11 @@ import { chatStore, settingsStore } from '@/lib/db/chatStore';
 import db from '@/lib/db/chatStore';
 import initializeStoreFromDB from '@/lib/db/initializeStore';
 import { importDataFromFile } from '@/lib/db/importData';
-import { setAllChats } from '@/redux/slices/chatSlice';
+import { endStreaming, setLoading, setAllChats, setError } from '@/redux/slices/chatSlice';
 import { setActiveChat } from '@/redux/slices/chatSlice';
 import { setSelectedModel } from '@/redux/slices/modelsSlice';
 import { triggerDatabaseSync } from '@/redux/slices/appSlice';
+import { store } from '@/redux/store';
 export default function DatabaseDebugPage() {
   const dispatch = useAppDispatch();
   const [chats, setChats] = useState<any[]>([]);
@@ -44,36 +45,55 @@ export default function DatabaseDebugPage() {
     if (window.confirm('确定要清空数据库吗？此操作不可恢复！')) {
       setIsLoading(true);
       try {
-        // 方法一：使用事务清空表内容而非删除数据库（推荐）
-        await db.transaction('rw', [db.chats, db.messages, db.settings], async () => {
+        // 在清空数据库前，先获取当前选中的模型ID
+        const currentState = store.getState();
+        const selectedModelId = currentState.models.selectedModelId;
+        
+        // 清空聊天数据库
+        await db.transaction('rw', [db.chats, db.messages], async () => {
           await db.chats.clear();
           await db.messages.clear();
-          await db.settings.clear();
         });
         
-        // 同时清空Redux状态
-        dispatch(setAllChats([]));         // 清空聊天记录
-        dispatch(setActiveChat(''));     // 清空活动聊天
-
-        setMessage({ text: '数据库已清空', type: 'success' });
-        setChats([]);  // 清空本地UI状态
-        setSettings({}); // 清空设置状态
+        // 只保留模型选择相关的设置
+        await db.transaction('rw', [db.settings], async () => {
+          // 获取当前所有设置
+          const allSettings = await db.settings.toArray();
+          // 先清空设置表
+          await db.settings.clear();
+          
+          // 仅保留模型相关设置
+          for (const setting of allSettings) {
+            if (setting.id.startsWith('modelConfig_') || setting.id === 'selectedModelId') {
+              await db.settings.put(setting);
+            }
+          }
+          
+          // 确保selectedModelId设置存在
+          if (selectedModelId) {
+            await db.settings.put({ 
+              id: 'selectedModelId', 
+              value: selectedModelId 
+            });
+          }
+        });
         
-        dispatch(triggerDatabaseSync());
-
-        await loadData(); // 重新加载空数据
+        // 重置Redux状态，但保留模型选择
+        dispatch(setAllChats([]));
+        dispatch(setActiveChat(null));
+        // 确保不重置模型选择
+        // 不要调用 dispatch(setSelectedModel(null));
+        
+        setMessage({ text: '数据库已清空，保留了模型设置', type: 'success' });
+        
+        // 延迟后重定向
+        setTimeout(() => {
+          window.location.href = '/';
+        }, 1000);
+        
       } catch (error) {
         console.error('清空数据库失败:', error);
         setMessage({ text: '清空数据库失败: ' + (error as Error).message, type: 'error' });
-        
-        // 尝试重新连接数据库
-        try {
-          if (!db.isOpen()) {
-            await db.open();
-          }
-        } catch (reconnectError) {
-          console.error('重新连接数据库失败:', reconnectError);
-        }
       } finally {
         setIsLoading(false);
       }

@@ -23,7 +23,7 @@ export async function initializeStoreFromDB(dispatch: AppDispatch): Promise<void
     if (chatCount === 0) {
       // 数据库为空，确保Redux状态也是空的
       dispatch(setAllChats([]));
-      dispatch(setActiveChat(''));
+      dispatch(setActiveChat(null));
       console.log('数据库为空，已重置Redux状态');
       return;
     }

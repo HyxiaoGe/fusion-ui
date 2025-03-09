@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { usePathname, useSearchParams } from 'next/navigation';
 import { useAppSelector, useAppDispatch } from '@/redux/hooks';
 import MainLayout from '@/components/layouts/MainLayout';
@@ -30,10 +30,26 @@ export default function Home() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   
+  const [inputKey, setInputKey] = useState(Date.now());
+
   const { chats, activeChatId, loading, isStreaming } = useAppSelector((state) => state.chat);
   const { models, selectedModelId } = useAppSelector((state) => state.models);
   const [isSyncing, setIsSyncing] = useState(false);
   const lastDatabaseSync = useAppSelector((state) => state.app.lastDatabaseSync);
+
+  const chatInputRef = useRef<HTMLDivElement>(null);
+
+  // 监听数据库同步事件，强制重新挂载输入组件
+  useEffect(() => {
+    setInputKey(Date.now());
+    console.log("强制重新挂载输入组件", Date.now());
+  }, [lastDatabaseSync]);
+
+  // 监听activeChatId变化，强制重新挂载输入组件
+  useEffect(() => {
+    setInputKey(Date.now());
+    console.log("聊天ID变化，重新挂载输入组件", activeChatId);
+  }, [activeChatId]);
 
   // 在组件挂载时进行数据同步检查
   useEffect(() => {
@@ -63,7 +79,7 @@ export default function Home() {
               ? dbChats.reduce((latest, chat) => chat.updatedAt > latest.updatedAt ? chat : latest, dbChats[0])
               : null;
               
-            dispatch(setActiveChat(latestChat?.id || ''));
+            dispatch(setActiveChat(latestChat?.id || null));
           }
         }
       } catch (error) {
@@ -76,25 +92,53 @@ export default function Home() {
     syncWithDatabase();
   }, [dispatch, lastDatabaseSync, pathname, searchParams]);
   
+  // 监听活动聊天变化和数据库同步
+  useEffect(() => {
+    // 当活动聊天ID发生变化时，重置UI焦点
+    const resetFocus = () => {
+      // 创建一个临时按钮获取焦点然后移除它，强制打破焦点陷阱
+      const tempButton = document.createElement('button');
+      document.body.appendChild(tempButton);
+      tempButton.focus();
+      document.body.removeChild(tempButton);
+      
+      // 然后将焦点移到聊天区域
+      if (chatInputRef.current) {
+        chatInputRef.current.click();
+      }
+    };
+    
+    // 短暂延时确保DOM已更新
+    const timer = setTimeout(resetFocus, 200);
+    return () => clearTimeout(timer);
+  }, [activeChatId, lastDatabaseSync]);
+
   // 获取当前活动的对话
   const activeChat = activeChatId ? chats.find(chat => chat.id === activeChatId) : null;
   // 获取当前选中的模型
   const selectedModel = models.find(model => model.id === selectedModelId);
 
   // 创建新对话
-  const handleNewChat = () => {
-    console.log('点击新建对话按钮', { selectedModelId });
-    if (selectedModelId) {
-      try {
-        dispatch(createChat({ modelId: selectedModelId }));
-        console.log('对话创建成功');
-      } catch (error) {
-        console.error('创建对话失败:', error);
-      }
-    } else {
-      console.warn('未选择模型，无法创建对话');
-    }
-  };
+const handleNewChat = () => {
+  console.log('点击新建对话按钮', { selectedModelId });
+  
+  // 确保有选中的模型ID
+  const modelToUse = selectedModelId || (models.length > 0 ? models[0].id : null);
+  
+  if (!modelToUse) {
+    console.error('没有可用的模型，无法创建对话');
+    dispatch(setError('没有可用的模型，无法创建对话'));
+    return;
+  }
+  
+  try {
+    dispatch(createChat({ modelId: modelToUse }));
+    console.log('对话创建成功');
+  } catch (error) {
+    console.error('创建对话失败:', error);
+    dispatch(setError('创建对话失败，请重试'));
+  }
+};
 
   // 发送消息
   const handleSendMessage = async (content: string) => {
@@ -220,11 +264,14 @@ export default function Home() {
               isStreaming={isStreaming}
             />
           </div>
-          
-          <ChatInput
-            onSendMessage={handleSendMessage}
-            disabled={loading || isStreaming}
-          />
+          <div ref={chatInputRef}>
+            <ChatInput
+              key={`chat-input-${inputKey}`}
+              onSendMessage={handleSendMessage}
+              disabled={!activeChatId || loading || isStreaming}
+              placeholder={activeChatId ? '输入您的问题...' : '请先选择或创建一个聊天'}
+            />
+          </div>
         </div>
       ) : (
         <div className="flex h-full items-center justify-center">
