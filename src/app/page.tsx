@@ -10,6 +10,7 @@ import ModelSelector from '@/components/models/ModelSelector';
 import ChatInput from '@/components/chat/ChatInput';
 import { Button } from '@/components/ui/button';
 import { PlusIcon } from 'lucide-react';
+import { EraserIcon } from 'lucide-react';
 import { 
   createChat, 
   addMessage, 
@@ -19,7 +20,8 @@ import {
   setAllChats,
   startStreaming,
   updateStreamingContent,
-  endStreaming
+  endStreaming,
+  clearMessages
 } from '@/redux/slices/chatSlice';
 import { sendMessageStream } from '@/lib/api/chat';
 import { chatStore } from '@/lib/db/chatStore';
@@ -118,28 +120,28 @@ export default function Home() {
   // 获取当前选中的模型
   const selectedModel = models.find(model => model.id === selectedModelId);
 
-// 创建新对话
-const handleNewChat = () => {
-  console.log('点击新建对话按钮', { selectedModelId });
-  
-  // 确保有选中的模型ID
-  const modelToUse = selectedModelId || (models.length > 0 ? models[0].id : null);
-  
-  if (!modelToUse) {
-    console.error('没有可用的模型，无法创建对话');
-    dispatch(setError('没有可用的模型，无法创建对话'));
-    return;
-  }
-  
-  try {
-    // 创建对话时传入当前选择的模型ID
-    dispatch(createChat({ modelId: modelToUse }));
-    console.log('对话创建成功，使用模型：', modelToUse);
-  } catch (error) {
-    console.error('创建对话失败:', error);
-    dispatch(setError('创建对话失败，请重试'));
-  }
-};
+  // 创建新对话
+  const handleNewChat = () => {
+    console.log('点击新建对话按钮', { selectedModelId });
+    
+    // 确保有选中的模型ID
+    const modelToUse = selectedModelId || (models.length > 0 ? models[0].id : null);
+    
+    if (!modelToUse) {
+      console.error('没有可用的模型，无法创建对话');
+      dispatch(setError('没有可用的模型，无法创建对话'));
+      return;
+    }
+    
+    try {
+      // 创建对话时传入当前选择的模型ID
+      dispatch(createChat({ modelId: modelToUse }));
+      console.log('对话创建成功，使用模型：', modelToUse);
+    } catch (error) {
+      console.error('创建对话失败:', error);
+      dispatch(setError('创建对话失败，请重试'));
+    }
+  };
 
   // 发送消息
   const handleSendMessage = async (content: string) => {
@@ -223,6 +225,14 @@ const handleNewChat = () => {
     }
   };
 
+  const handleClearChat = () => {
+    if (!activeChatId) return;
+    
+    if (window.confirm('确定要清空当前聊天内容吗？此操作不可恢复。')) {
+      dispatch(clearMessages(activeChatId));
+    }
+  };
+
   return (
     <MainLayout
       sidebar={
@@ -248,13 +258,23 @@ const handleNewChat = () => {
                 使用模型: {models.find(m => m.id === activeChat.modelId)?.name || '未知模型'}
               </p>
             </div>
-            <div className="w-48">
-              <ModelSelector 
-                onChange={(modelId) => {
-                  // 可以在这里添加切换模型的逻辑
-                  console.log(`切换到模型: ${modelId}`);
-                }}
-              />
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleClearChat}
+                title="清空当前聊天"
+              >
+                <EraserIcon className="h-4 w-4 mr-1" />
+                清空聊天
+              </Button>
+              <div className="w-48">
+                <ModelSelector 
+                  onChange={(modelId) => {
+                    console.log(`切换到模型: ${modelId}`);
+                  }}
+                />
+              </div>
             </div>
           </div>
           
