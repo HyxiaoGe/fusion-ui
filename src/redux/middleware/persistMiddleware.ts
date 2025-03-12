@@ -23,6 +23,7 @@ import {
 import { 
   updateModelConfig 
 } from '@/redux/slices/modelsSlice';
+import { setContextMaxItems, toggleContextEnhancement } from '../slices/searchSlice';
 
 // 创建持久化中间件
 export const persistMiddleware: Middleware = store => next => action => {
@@ -171,7 +172,12 @@ export const persistMiddleware: Middleware = store => next => action => {
       else if (setAssistantAvatar.match(action)) {
         await settingsStore.saveSetting('assistantAvatar', payload);
       }
-      
+      else if (toggleContextEnhancement.match(action)) {
+        await settingsStore.saveSetting('contextEnhancementEnabled', action.payload);
+      }
+      else if (setContextMaxItems.match(action)) {
+        await settingsStore.saveSetting('contextMaxItems', action.payload);
+      }
       // 处理模型相关action
       else if (updateModelConfig.match(action)) {
         const { modelId, config } = payload;

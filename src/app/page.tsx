@@ -8,6 +8,8 @@ import ChatSidebar from '@/components/chat/ChatSidebar';
 import ChatMessageList from '@/components/chat/ChatMessageList';
 import ModelSelector from '@/components/models/ModelSelector';
 import ChatInput from '@/components/chat/ChatInput';
+import ContextEnhancementControl from '@/components/context/ContextEnhancementControl';
+import RelatedDiscussions from '@/components/search/RelatedDiscussions';
 import { Button } from '@/components/ui/button';
 import { PlusIcon } from 'lucide-react';
 import { EraserIcon } from 'lucide-react';
@@ -24,6 +26,7 @@ import {
   clearMessages,
   updateChatTitle
 } from '@/redux/slices/chatSlice';
+import { fetchEnhancedContext } from '@/redux/slices/searchSlice';
 import { sendMessageStream } from '@/lib/api/chat';
 import { chatStore } from '@/lib/db/chatStore';
 import { store } from '@/redux/store';
@@ -38,6 +41,7 @@ export default function Home() {
 
   const { chats, activeChatId, loading, isStreaming } = useAppSelector((state) => state.chat);
   const { models, selectedModelId } = useAppSelector((state) => state.models);
+  const [currentUserQuery, setCurrentUserQuery] = useState('');
   const [isSyncing, setIsSyncing] = useState(false);
   const lastDatabaseSync = useAppSelector((state) => state.app.lastDatabaseSync);
 
@@ -150,6 +154,8 @@ export default function Home() {
     if (!activeChatId || !content.trim() || !selectedModelId) return;
     
     console.log('发送消息', content);
+    setCurrentUserQuery(content); // 保存当前查询用于相关推荐
+
     const currentChatBeforeAdd = chats.find(chat => chat.id === activeChatId);
     const isFirstMessage = currentChatBeforeAdd && 
                         currentChatBeforeAdd.messages.filter(msg => msg.role === 'user').length === 0 &&
@@ -164,6 +170,14 @@ export default function Home() {
       }
     }));
 
+    // 检查是否启用上下文增强
+    const { contextEnhancementEnabled } = store.getState().search;
+
+    // 如果启用上下文增强，获取相关上下文
+    if (contextEnhancementEnabled) {
+      dispatch(fetchEnhancedContext({ query: content, conversationId: activeChatId }));
+    }
+
     // 设置加载状态
     dispatch(startStreaming(activeChatId));
     
@@ -172,7 +186,10 @@ export default function Home() {
         model: selectedModelId,
         message: content.trim(),
         conversation_id: activeChatId,
-        stream: true
+        stream: true,
+        options: {
+          use_enhancement: contextEnhancementEnabled
+        }
       }, 
       (content, done, conversationId) => {
         if (!done) {
@@ -305,12 +322,30 @@ export default function Home() {
             </div>
           </div>
           
-          <div className="flex-1 overflow-y-auto pb-4">
-            <ChatMessageList 
-              messages={activeChat.messages}
-              loading={loading}
-              isStreaming={isStreaming}
-            />
+          <div className="flex flex-1 overflow-hidden">
+            <div className="flex-1 overflow-y-auto pb-4">
+              <ChatMessageList 
+                messages={activeChat.messages}
+                loading={loading}
+                isStreaming={isStreaming}
+              />
+            </div>
+            
+            {/* 添加右侧边栏 */}
+            {currentUserQuery && (
+              <div className="w-80 border-l p-4 overflow-y-auto hidden lg:block">
+                <div className="space-y-4">
+                  <RelatedDiscussions 
+                    currentQuery={currentUserQuery} 
+                    chatId={activeChatId || undefined} 
+                  />
+                  <ContextEnhancementControl 
+                    currentQuery={currentUserQuery}
+                    chatId={activeChatId || undefined}
+                  />
+                </div>
+              </div>
+            )}
           </div>
           <div ref={chatInputRef}>
             <ChatInput

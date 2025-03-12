@@ -9,7 +9,13 @@ export interface ChatRequest {
   message: string;
   conversation_id?: string | null;
   stream?: boolean;
-  options?: Record<string, any> | null;
+  options?: {
+    use_enhancement?: boolean;
+    max_context_items?: number;
+    temperature?: number;
+    max_tokens?: number;
+    [key: string]: any;
+  } | null;
 }
 
 export interface ChatResponse {
@@ -50,6 +56,12 @@ export async function sendMessage(data: ChatRequest): Promise<ChatResponse> {
 
 export async function sendMessageStream(data: ChatRequest, onChunk: (chunk: string, done: boolean, conversationId?: string) => void): Promise<void> {
   try {
+
+    // 确保设置了options对象
+    if (!data.options) {
+      data.options = {};
+    }
+
     const response = await fetch(`${API_BASE_URL}/api/chat/send`, {
       method: 'POST',
       headers: {

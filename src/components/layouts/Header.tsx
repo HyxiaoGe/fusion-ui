@@ -6,6 +6,7 @@ import { usePathname } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { SettingsIcon, HomeIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import GlobalSearch from '../search/GlobalSearch';
 
 const Header: React.FC = () => {
   const pathname = usePathname();
@@ -16,6 +17,10 @@ const Header: React.FC = () => {
         <span>AI助手</span>
       </Link>
       
+      <div className="flex-1 max-w-lg mx-4">
+        <GlobalSearch />
+      </div>
+
       <div className="flex items-center gap-2">
         <Link href="/" passHref>
           <Button 

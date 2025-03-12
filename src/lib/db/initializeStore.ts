@@ -4,6 +4,10 @@ import { setAllChats, setActiveChat } from '@/redux/slices/chatSlice';
 import { setThemeMode } from '@/redux/slices/themeSlice';
 import { setUserAvatar, setAssistantAvatar } from '@/redux/slices/settingsSlice';
 import { updateModelConfig } from '@/redux/slices/modelsSlice';
+import {
+  toggleContextEnhancement,
+  setContextMaxItems
+} from '@/redux/slices/searchSlice';
 
 /**
  * 从IndexedDB加载数据并初始化Redux状态
@@ -87,6 +91,16 @@ export async function initializeStoreFromDB(dispatch: AppDispatch): Promise<void
       }
     }
     
+    const contextEnhancementEnabled = await settingsStore.getSetting('contextEnhancementEnabled');
+    if (contextEnhancementEnabled !== null) {
+      dispatch(toggleContextEnhancement(contextEnhancementEnabled));
+    }
+    
+    const contextMaxItems = await settingsStore.getSetting('contextMaxItems');
+    if (contextMaxItems !== null) {
+      dispatch(setContextMaxItems(contextMaxItems));
+    }
+
     console.log('数据库数据加载完成');
   } catch (error) {
     console.error('从数据库加载数据失败:', error);

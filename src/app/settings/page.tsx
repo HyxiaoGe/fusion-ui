@@ -9,6 +9,7 @@ import ThemeSelector from './ThemeSelector';
 import ModelSettings from '@/components/models/ModelSettings';
 import AvatarSelector from './AvatarSelector';
 import DataManagement from './DataManagement';
+import SearchSettings from './SearchSettings';
 
 export default function SettingsPage() {
   const { selectedModelId } = useAppSelector(state => state.models);
@@ -22,6 +23,7 @@ export default function SettingsPage() {
           <TabsList>
             <TabsTrigger value="general">常规设置</TabsTrigger>
             <TabsTrigger value="appearance">外观</TabsTrigger>
+            <TabsTrigger value="search">搜索设置</TabsTrigger>
             <TabsTrigger value="models">模型配置</TabsTrigger>
             <TabsTrigger value="apikeys">API密钥</TabsTrigger>
             <TabsTrigger value="data">数据管理</TabsTrigger>
@@ -67,6 +69,10 @@ export default function SettingsPage() {
 
           <TabsContent value="data" className="mt-4">
             <DataManagement />
+          </TabsContent>
+
+          <TabsContent value="search" className="mt-4">
+            <SearchSettings />
           </TabsContent>
 
         </Tabs>
