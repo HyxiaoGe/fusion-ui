@@ -80,7 +80,7 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, isLastMessage = fals
   return (
     <div
       className={cn(
-        'flex w-full gap-3 py-4 px-4',
+        'flex w-full gap-3 py-4 px-4 group',
         isLastMessage && 'mb-4',
         isUser ? 'justify-end' : 'justify-start'
       )}
@@ -111,7 +111,39 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, isLastMessage = fals
             : 'bg-muted rounded-tl-sm'
         )}>
           {isUser ? (
-            <div>{message.content}</div>
+            isEditing ? (
+              // 编辑模式下显示文本框和保存/取消按钮
+              <div className="w-full space-y-3 animate-in fade-in-50 duration-200">
+                <textarea
+                  value={editContent}
+                  onChange={(e) => setEditContent(e.target.value)}
+                  className="w-full p-3 border border-primary/20 focus:border-primary/50 rounded-lg bg-background text-foreground min-h-[100px] text-sm resize-none shadow-sm focus:ring-2 focus:ring-primary/20 focus:outline-none transition-all"
+                  autoFocus
+                  placeholder="编辑您的消息..."
+                />
+                <div className="flex justify-end gap-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={handleCancelEdit}
+                    className="rounded-full px-4 hover:bg-muted/80 transition-colors"
+                  >
+                    取消
+                  </Button>
+                  <Button
+                    size="sm"
+                    onClick={handleSaveEdit}
+                    disabled={!editContent.trim()}
+                    className="rounded-full px-4 bg-primary hover:bg-primary/90 text-primary-foreground transition-colors"
+                  >
+                    保存
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              // 非编辑模式下显示普通消息内容
+              <div>{message.content}</div>
+            )
           ) : (
             <div className={cn(
               "prose prose-neutral dark:prose-invert max-w-none overflow-auto",
@@ -170,7 +202,7 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, isLastMessage = fals
             <Button 
               variant="ghost" 
               size="sm" 
-              className="h-6 px-2 text-xs text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity"
+              className="h-6 px-2 text-xs text-muted-foreground"
               onClick={() => setIsEditing(true)}
             >
               <Edit2 className="h-3 w-3 mr-1" />

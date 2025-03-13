@@ -26,7 +26,8 @@ import {
   endStreaming,
   clearMessages,
   updateChatTitle,
-  setMessageStatus
+  setMessageStatus,
+  deleteMessage
 } from '@/redux/slices/chatSlice';
 import { fetchEnhancedContext } from '@/redux/slices/searchSlice';
 import { sendMessageStream } from '@/lib/api/chat';
@@ -392,25 +393,28 @@ export default function Home() {
     const messageIndex = chat.messages.findIndex(m => m.id === messageId);
     if (messageIndex < 0) return;
     
-    // 删除该消息之后的所有消息（通常是AI的回复）
-    const messagesToDelete = chat.messages.slice(messageIndex + 1);
-    if (messagesToDelete.length > 0) {
-      // 这里我们可以添加一个新的reducer来批量删除消息
-      // 或者逐个删除
-      // 为简化示例，暂不实现删除功能
-    }
+    // 如果后面有AI回复，需要删除
+  if (messageIndex < chat.messages.length - 1 && 
+      chat.messages[messageIndex + 1].role === 'assistant') {
+      const nextMessage = chat.messages[messageIndex + 1];
+      dispatch(deleteMessage({
+        chatId: activeChatId,
+        messageId: nextMessage.id
+      }));
+  }
+
+  // 设置消息状态为发送中
+  dispatch(setMessageStatus({
+    chatId: activeChatId,
+    messageId,
+    status: 'pending'
+  }));
+  
+  // 开始流式输出
+  dispatch(startStreaming(activeChatId));
     
     // 重新发送编辑后的消息
     try {
-      // 设置消息状态为发送中
-      dispatch(setMessageStatus({
-        chatId: activeChatId,
-        messageId,
-        status: 'pending'
-      }));
-      
-      // 开始流式输出
-      dispatch(startStreaming(activeChatId));
       
       await sendMessageStream({
         model: selectedModelId,

@@ -118,6 +118,14 @@ const chatSlice = createSlice({
         }
       }
     },
+    deleteMessage: (state, action: PayloadAction<{chatId: string, messageId: string}>) => {
+      const { chatId, messageId } = action.payload;
+      const chat = state.chats.find(c => c.id === chatId);
+      if (chat) {
+        chat.messages = chat.messages.filter(m => m.id !== messageId);
+        chat.updatedAt = Date.now();
+      }
+    },
     setMessageStatus: (state, action: PayloadAction<{chatId: string, messageId: string, status: 'pending' | 'failed' | null}>) => {
       const { chatId, messageId, status } = action.payload;
       const chat = state.chats.find(c => c.id === chatId);
@@ -193,6 +201,7 @@ export const {
   updateChatModel,
   addMessage,
   editMessage,
+  deleteMessage,
   setLoading,
   setError,
   clearMessages,
