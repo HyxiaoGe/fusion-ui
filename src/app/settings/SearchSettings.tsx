@@ -3,6 +3,7 @@
 import React, { useEffect } from 'react';
 import { useAppSelector, useAppDispatch } from '@/redux/hooks';
 import {
+  toggleSearchEnabled,
   toggleContextEnhancement,
   setContextMaxItems,
   loadSearchSettings,
@@ -13,10 +14,11 @@ import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
 import { Slider } from '@/components/ui/slider';
 import { Button } from '@/components/ui/button';
+import { AlertCircle } from 'lucide-react';
 
 const SearchSettings: React.FC = () => {
   const dispatch = useAppDispatch();
-  const { contextEnhancementEnabled, contextMaxItems } = useAppSelector(
+  const { searchEnabled, contextEnhancementEnabled, contextMaxItems } = useAppSelector(
     (state) => state.search
   );
   
@@ -29,6 +31,7 @@ const SearchSettings: React.FC = () => {
   const handleSaveSettings = () => {
     dispatch(
       saveSearchSettings({
+        searchEnabled,
         contextEnhancementEnabled,
         contextMaxItems
       })
@@ -46,35 +49,62 @@ const SearchSettings: React.FC = () => {
         </CardHeader>
         <CardContent className="space-y-6">
           <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <div className="space-y-0.5">
-                <Label htmlFor="context-enhancement-setting">启用上下文增强</Label>
-                <p className="text-sm text-muted-foreground">
-                  自动检索相关历史对话，帮助AI更好理解您的问题
-                </p>
+            {/* 向量搜索全局开关 */}
+            <div className="flex items-center justify-between p-3 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded-md">
+              <div className="space-y-0.5 flex gap-2">
+                <AlertCircle className="h-5 w-5 text-amber-500 flex-shrink-0" />
+                <div>
+                  <Label htmlFor="search-enabled-setting" className="font-medium">启用向量搜索功能</Label>
+                  <p className="text-sm text-muted-foreground">
+                    开启后将可使用基于AI的语义搜索和上下文增强功能，可能会增加资源消耗
+                  </p>
+                </div>
               </div>
               <Switch
-                id="context-enhancement-setting"
-                checked={contextEnhancementEnabled}
-                onCheckedChange={(checked) => dispatch(toggleContextEnhancement(checked))}
+                id="search-enabled-setting"
+                checked={searchEnabled}
+                onCheckedChange={(checked) => dispatch(toggleSearchEnabled(checked))}
               />
             </div>
             
-            {contextEnhancementEnabled && (
-              <div className="space-y-3 pt-2">
-                <div className="flex justify-between">
-                  <Label>上下文数量: {contextMaxItems}</Label>
+            {searchEnabled ? (
+              <>
+                <div className="flex items-center justify-between">
+                  <div className="space-y-0.5">
+                    <Label htmlFor="context-enhancement-setting">启用上下文增强</Label>
+                    <p className="text-sm text-muted-foreground">
+                      自动检索相关历史对话，帮助AI更好理解您的问题
+                    </p>
+                  </div>
+                  <Switch
+                    id="context-enhancement-setting"
+                    checked={contextEnhancementEnabled}
+                    onCheckedChange={(checked) => dispatch(toggleContextEnhancement(checked))}
+                  />
                 </div>
-                <Slider
-                  value={[contextMaxItems]}
-                  min={1}
-                  max={5}
-                  step={1}
-                  onValueChange={(value) => dispatch(setContextMaxItems(value[0]))}
-                />
-                <p className="text-xs text-muted-foreground">
-                  控制自动添加的相关上下文数量，更多上下文可能提供更全面的回答，但也可能稀释焦点
-                </p>
+                
+                {contextEnhancementEnabled && (
+                  <div className="space-y-3 pt-2">
+                    <div className="flex justify-between">
+                      <Label>上下文数量: {contextMaxItems}</Label>
+                    </div>
+                    <Slider
+                      value={[contextMaxItems]}
+                      min={1}
+                      max={5}
+                      step={1}
+                      onValueChange={(value) => dispatch(setContextMaxItems(value[0]))}
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      控制自动添加的相关上下文数量，更多上下文可能提供更全面的回答，但也可能稀释焦点
+                    </p>
+                  </div>
+                )}
+              </>
+            ) : (
+              <div className="p-4 bg-muted rounded-md text-center">
+                <p className="text-muted-foreground">向量搜索功能当前已关闭</p>
+                <p className="text-xs text-muted-foreground mt-1">开启此功能后可使用语义搜索和上下文增强</p>
               </div>
             )}
           </div>

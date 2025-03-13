@@ -22,6 +22,7 @@ export interface ContextItem {
 
 // 定义状态类型
 interface SearchState {
+  searchEnabled: boolean; // 全局向量搜索功能开关
   query: string;
   activeTab: 'conversations' | 'messages';
   isSearching: boolean;
@@ -39,6 +40,7 @@ interface SearchState {
 
 // 初始状态
 const initialState: SearchState = {
+  searchEnabled: false, // 默认关闭向量搜索功能
   query: '',
   activeTab: 'conversations',
   isSearching: false,
@@ -113,16 +115,19 @@ export const fetchEnhancedContext = createAsyncThunk(
 export const saveSearchSettings = createAsyncThunk(
   'search/saveSearchSettings',
   async ({
+    searchEnabled,
     contextEnhancementEnabled,
     contextMaxItems,
   }: {
+    searchEnabled: boolean;
     contextEnhancementEnabled: boolean;
     contextMaxItems: number;
   }) => {
     try {
+      await settingsStore.saveSetting('searchEnabled', searchEnabled);
       await settingsStore.saveSetting('contextEnhancementEnabled', contextEnhancementEnabled);
       await settingsStore.saveSetting('contextMaxItems', contextMaxItems);
-      return { contextEnhancementEnabled, contextMaxItems };
+      return { searchEnabled, contextEnhancementEnabled, contextMaxItems };
     } catch (error) {
       console.error('保存搜索设置失败:', error);
       throw error;
@@ -133,10 +138,12 @@ export const saveSearchSettings = createAsyncThunk(
 // 从IndexedDB加载搜索设置
 export const loadSearchSettings = createAsyncThunk('search/loadSearchSettings', async () => {
   try {
+    const searchEnabled = await settingsStore.getSetting('searchEnabled');
     const contextEnhancementEnabled = await settingsStore.getSetting('contextEnhancementEnabled');
     const contextMaxItems = await settingsStore.getSetting('contextMaxItems');
     
     return {
+      searchEnabled: searchEnabled !== null ? searchEnabled : false, // 默认关闭
       contextEnhancementEnabled: contextEnhancementEnabled !== null ? contextEnhancementEnabled : true,
       contextMaxItems: contextMaxItems !== null ? contextMaxItems : 3,
     };
@@ -151,6 +158,12 @@ const searchSlice = createSlice({
   name: 'search',
   initialState,
   reducers: {
+    toggleSearchEnabled(state, action: PayloadAction<boolean>) {
+      state.searchEnabled = action.payload;
+      // 异步保存到IndexedDB，但不等待结果
+      settingsStore.saveSetting('searchEnabled', action.payload)
+        .catch(err => console.error('保存向量搜索开关设置失败:', err));
+    },
     setQuery(state, action: PayloadAction<string>) {
       state.query = action.payload;
     },
@@ -246,12 +259,14 @@ const searchSlice = createSlice({
       
       // 加载搜索设置
       .addCase(loadSearchSettings.fulfilled, (state, action) => {
+        state.searchEnabled = action.payload.searchEnabled;
         state.contextEnhancementEnabled = action.payload.contextEnhancementEnabled;
         state.contextMaxItems = action.payload.contextMaxItems;
       })
       
       // 保存搜索设置
       .addCase(saveSearchSettings.fulfilled, (state, action) => {
+        state.searchEnabled = action.payload.searchEnabled;
         state.contextEnhancementEnabled = action.payload.contextEnhancementEnabled;
         state.contextMaxItems = action.payload.contextMaxItems;
       });
@@ -259,6 +274,7 @@ const searchSlice = createSlice({
 });
 
 export const {
+  toggleSearchEnabled,
   setQuery,
   clearSearchResults,
   setActiveTab,

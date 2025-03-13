@@ -28,6 +28,7 @@ const ContextEnhancementControl: React.FC<ContextEnhancementControlProps> = ({
 }) => {
   const dispatch = useAppDispatch();
   const {
+    searchEnabled,
     contextEnhancementEnabled,
     contextMaxItems,
     enhancedContext,
@@ -69,6 +70,11 @@ const ContextEnhancementControl: React.FC<ContextEnhancementControlProps> = ({
     }
     return source;
   };
+  
+  // 如果向量搜索功能未启用，不显示此组件
+  if (!searchEnabled) {
+    return null;
+  }
   
   return (
     <Card>

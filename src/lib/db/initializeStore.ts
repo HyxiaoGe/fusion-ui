@@ -6,7 +6,8 @@ import { setUserAvatar, setAssistantAvatar } from '@/redux/slices/settingsSlice'
 import { updateModelConfig } from '@/redux/slices/modelsSlice';
 import {
   toggleContextEnhancement,
-  setContextMaxItems
+  setContextMaxItems,
+  toggleSearchEnabled
 } from '@/redux/slices/searchSlice';
 
 /**
@@ -89,6 +90,11 @@ export async function initializeStoreFromDB(dispatch: AppDispatch): Promise<void
           config: value
         }));
       }
+    }
+    
+    const searchEnabled = await settingsStore.getSetting('searchEnabled');
+    if (searchEnabled !== null) {
+      dispatch(toggleSearchEnabled(searchEnabled));
     }
     
     const contextEnhancementEnabled = await settingsStore.getSetting('contextEnhancementEnabled');

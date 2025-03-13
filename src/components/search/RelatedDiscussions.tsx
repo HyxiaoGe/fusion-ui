@@ -16,14 +16,14 @@ interface RelatedDiscussionsProps {
 
 const RelatedDiscussions: React.FC<RelatedDiscussionsProps> = ({ currentQuery, chatId }) => {
   const dispatch = useAppDispatch();
-  const { relatedDiscussions, isLoadingRelated } = useAppSelector((state) => state.search);
+  const { searchEnabled, relatedDiscussions, isLoadingRelated } = useAppSelector((state) => state.search);
   
   // 当查询变化时加载相关对话
   useEffect(() => {
-    if (currentQuery && currentQuery.length > 5) {
+    if (searchEnabled && currentQuery && currentQuery.length > 5) {
       dispatch(fetchRelatedDiscussions({ query: currentQuery, conversationId: chatId }));
     }
-  }, [currentQuery, chatId, dispatch]);
+  }, [searchEnabled, currentQuery, chatId, dispatch]);
   
   // 处理选择对话
   const handleSelectConversation = (conversationId: string) => {
@@ -41,8 +41,8 @@ const RelatedDiscussions: React.FC<RelatedDiscussionsProps> = ({ currentQuery, c
     });
   };
   
-  // 如果没有查询，不显示组件
-  if (!currentQuery || currentQuery.length <= 5) {
+  // 如果向量搜索功能未启用或没有查询，不显示组件
+  if (!searchEnabled || !currentQuery || currentQuery.length <= 5) {
     return null;
   }
   

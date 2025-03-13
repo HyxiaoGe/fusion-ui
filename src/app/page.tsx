@@ -170,11 +170,11 @@ export default function Home() {
       }
     }));
 
-    // 检查是否启用上下文增强
-    const { contextEnhancementEnabled } = store.getState().search;
+    // 检查是否启用向量搜索和上下文增强
+    const { searchEnabled, contextEnhancementEnabled } = store.getState().search;
 
-    // 如果启用上下文增强，获取相关上下文
-    if (contextEnhancementEnabled) {
+    // 如果启用了向量搜索和上下文增强，获取相关上下文
+    if (searchEnabled && contextEnhancementEnabled) {
       dispatch(fetchEnhancedContext({ query: content, conversationId: activeChatId }));
     }
 
@@ -188,7 +188,7 @@ export default function Home() {
         conversation_id: activeChatId,
         stream: true,
         options: {
-          use_enhancement: contextEnhancementEnabled
+          use_enhancement: searchEnabled && contextEnhancementEnabled
         }
       }, 
       (content, done, conversationId) => {

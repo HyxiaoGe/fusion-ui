@@ -29,6 +29,7 @@ import { zhCN } from 'date-fns/locale';
 const GlobalSearch: React.FC = () => {
   const dispatch = useAppDispatch();
   const {
+    searchEnabled,
     query,
     activeTab,
     isSearching,
@@ -97,6 +98,20 @@ const GlobalSearch: React.FC = () => {
     });
   };
   
+  // 如果功能未启用，显示禁用状态的搜索框
+  if (!searchEnabled) {
+    return (
+      <Button 
+        variant="outline" 
+        className="gap-2 w-full md:w-64 opacity-70 cursor-not-allowed"
+        disabled={true}
+      >
+        <SearchIcon className="h-4 w-4" />
+        <span className="text-muted-foreground">向量搜索功能已关闭</span>
+      </Button>
+    );
+  }
+
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
