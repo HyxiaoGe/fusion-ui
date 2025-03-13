@@ -11,6 +11,7 @@ import { useAppSelector } from '@/redux/hooks';
 import { avatarOptions } from '@/redux/slices/settingsSlice';
 import { AlertCircle, RefreshCw, Edit2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import TextareaAutosize from 'react-textarea-autosize';
 
 interface ChatMessageProps {
   message: Message;
@@ -113,28 +114,32 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, isLastMessage = fals
           {isUser ? (
             isEditing ? (
               // 编辑模式下显示文本框和保存/取消按钮
-              <div className="w-full space-y-3 animate-in fade-in-50 duration-200">
-                <textarea
-                  value={editContent}
-                  onChange={(e) => setEditContent(e.target.value)}
-                  className="w-full p-3 border border-primary/20 focus:border-primary/50 rounded-lg bg-background text-foreground min-h-[100px] text-sm resize-none shadow-sm focus:ring-2 focus:ring-primary/20 focus:outline-none transition-all"
-                  autoFocus
-                  placeholder="编辑您的消息..."
-                />
+              <div className="w-full animate-in fade-in-50 duration-200">
+                <div className="relative mb-2 rounded-2xl overflow-hidden">
+                  <TextareaAutosize
+                    value={editContent}
+                    onChange={(e) => setEditContent(e.target.value)}
+                    minRows={2}
+                    maxRows={8}
+                    className="w-full px-4 py-3 bg-primary text-primary-foreground text-sm resize-none focus:outline-none border-none"
+                    autoFocus
+                    placeholder="编辑您的消息..."
+                  />
+                </div>
                 <div className="flex justify-end gap-2">
                   <Button
                     size="sm"
-                    variant="outline"
+                    variant="secondary"
                     onClick={handleCancelEdit}
-                    className="rounded-full px-4 hover:bg-muted/80 transition-colors"
+                    className="h-8 px-3"
                   >
                     取消
                   </Button>
                   <Button
                     size="sm"
                     onClick={handleSaveEdit}
-                    disabled={!editContent.trim()}
-                    className="rounded-full px-4 bg-primary hover:bg-primary/90 text-primary-foreground transition-colors"
+                    disabled={!editContent.trim() || editContent === message.content}
+                    className="h-8 px-3"
                   >
                     保存
                   </Button>
@@ -198,11 +203,11 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, isLastMessage = fals
         </div>
         {/* 编辑按钮 - 仅用户消息显示且非编辑状态 */}
         {isUser && !isEditing && !message.status && (
-          <div className="flex justify-end">
+          <div className="opacity-0 group-hover:opacity-100 transition-opacity duration-150">
             <Button 
               variant="ghost" 
               size="sm" 
-              className="h-6 px-2 text-xs text-muted-foreground"
+              className="h-6 text-xs text-primary-foreground/70 hover:text-primary-foreground hover:bg-transparent"
               onClick={() => setIsEditing(true)}
             >
               <Edit2 className="h-3 w-3 mr-1" />
