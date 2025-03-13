@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useAppSelector, useAppDispatch } from '@/redux/hooks';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -33,10 +33,47 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ onNewChat }) => {
   const { chats, activeChatId } = useAppSelector((state) => state.chat);
   const { models } = useAppSelector((state) => state.models);
 
+  // 添加编辑状态管理
+  const [editingChatId, setEditingChatId] = useState<string | null>(null);
+  const [editingTitle, setEditingTitle] = useState('');
+  const editInputRef = useRef<HTMLInputElement>(null);
+
   // 添加状态管理重命名对话框
   const [isRenameDialogOpen, setIsRenameDialogOpen] = useState(false);
   const [chatToRename, setChatToRename] = useState<string | null>(null);
   const [newTitle, setNewTitle] = useState('');
+
+  // 开始编辑
+  const handleStartEditing = (e: React.MouseEvent, chatId: string, currentTitle: string) => {
+    e.stopPropagation();
+    setEditingChatId(chatId);
+    setEditingTitle(currentTitle);
+    // 使用setTimeout确保DOM更新后再聚焦
+    setTimeout(() => {
+      editInputRef.current?.focus();
+      editInputRef.current?.select();
+    }, 50);
+  };
+
+  // 保存编辑
+  const handleSaveEdit = (chatId: string) => {
+    if (editingTitle.trim()) {
+      dispatch(updateChatTitle({
+        chatId: chatId,
+        title: editingTitle.trim()
+      }));
+    }
+    setEditingChatId(null);
+  };
+
+  // 处理按键事件
+  const handleKeyDown = (e: React.KeyboardEvent, chatId: string) => {
+    if (e.key === 'Enter') {
+      handleSaveEdit(chatId);
+    } else if (e.key === 'Escape') {
+      setEditingChatId(null);
+    }
+  };
 
   // 格式化日期
   const formatDate = (timestamp: number) => {
@@ -146,6 +183,7 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ onNewChat }) => {
           <ul className="space-y-1">
             {chats.map((chat) => {
               const model = models.find(m => m.id === chat.modelId);
+              const isEditing = editingChatId === chat.id;
               
               return (
                 <li key={chat.id}>
@@ -158,7 +196,25 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ onNewChat }) => {
                     <div className="flex items-center gap-3 min-w-0">
                       <MessageSquareIcon className="h-5 w-5 shrink-0 text-muted-foreground" />
                       <div className="min-w-0">
-                        <div className="font-medium truncate text-sm">{chat.title}</div>
+                      {isEditing ? (
+                          <input
+                            ref={editInputRef}
+                            value={editingTitle}
+                            onChange={(e) => setEditingTitle(e.target.value)}
+                            onBlur={() => handleSaveEdit(chat.id)}
+                            onKeyDown={(e) => handleKeyDown(e, chat.id)}
+                            className="w-full bg-background border rounded px-2 py-1 text-sm"
+                            autoFocus
+                          />
+                        ) : (
+                          <div 
+                            className="font-medium truncate text-sm"
+                            onDoubleClick={(e) => handleStartEditing(e, chat.id, chat.title)}
+                          >
+                            {chat.title}
+                          </div>
+                        )}
+                        {/* <div className="font-medium truncate text-sm">{chat.title}</div> */}
                         <div className="text-xs text-muted-foreground flex items-center gap-1">
                           <span>{model?.name || '未知模型'}</span>
                           <span>•</span>
@@ -166,8 +222,9 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ onNewChat }) => {
                         </div>
                       </div>
                     </div>
+
                     
-                    <DropdownMenu>
+                    {/* <DropdownMenu>
                       <DropdownMenuTrigger asChild>
                         <Button variant="ghost" size="icon" className="h-8 w-8">
                           <MoreVerticalIcon className="h-4 w-4" />
@@ -187,7 +244,31 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ onNewChat }) => {
                           删除对话
                         </DropdownMenuItem>
                       </DropdownMenuContent>
-                    </DropdownMenu>
+                    </DropdownMenu> */}
+
+                    {!isEditing && (
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button variant="ghost" size="icon" className="h-8 w-8">
+                            <MoreVerticalIcon className="h-4 w-4" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuItem onClick={(e) => handleStartEditing(e, chat.id, chat.title)}>
+                            <PencilIcon className="h-4 w-4 mr-2" />
+                            重命名
+                          </DropdownMenuItem>
+                          <DropdownMenuItem onClick={(e) => handleGenerateTitle(e, chat.id)}>
+                            <RefreshCwIcon className="h-4 w-4 mr-2" />
+                            生成标题
+                          </DropdownMenuItem>
+                          <DropdownMenuItem className="text-destructive" onClick={(e) => handleDeleteChat(e, chat.id)}>
+                            <TrashIcon className="h-4 w-4 mr-2" />
+                            删除对话
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    )}
                   </div>
                 </li>
               );

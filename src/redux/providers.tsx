@@ -5,6 +5,7 @@ import { store } from './store';
 import { useEffect, useState } from 'react';
 import initializeStoreFromDB from '@/lib/db/initializeStore';
 import { useAppDispatch } from './hooks';
+import LoadingIndicator from '@/components/ui/loading-indicator';
 
 // 数据加载组件
 const StoreInitializer = ({ children }: { children: React.ReactNode }) => {
@@ -31,8 +32,7 @@ const StoreInitializer = ({ children }: { children: React.ReactNode }) => {
     return (
       <div className="flex items-center justify-center h-screen bg-background">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-16 w-16 border-t-2 border-b-2 border-primary mb-4"></div>
-          <p className="text-foreground">加载数据中...</p>
+          <LoadingIndicator size="lg" text="加载数据中..." />
         </div>
       </div>
     );

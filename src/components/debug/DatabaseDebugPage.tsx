@@ -1,7 +1,7 @@
-// src/components/debug/DatabaseDebugPage.tsx
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
+import { Eye } from 'lucide-react';
 import { useAppDispatch } from '@/redux/hooks';
 import MainLayout from '@/components/layouts/MainLayout';
 import { Button } from '@/components/ui/button';
@@ -15,6 +15,15 @@ import { setActiveChat } from '@/redux/slices/chatSlice';
 import { setSelectedModel } from '@/redux/slices/modelsSlice';
 import { triggerDatabaseSync } from '@/redux/slices/appSlice';
 import { store } from '@/redux/store';
+import { 
+  Dialog, 
+  DialogContent, 
+  DialogHeader, 
+  DialogTitle,
+} from '@/components/ui/dialog';
+import ChatMessage from '@/components/chat/ChatMessage';
+import { Message } from '@/redux/slices/chatSlice';
+
 export default function DatabaseDebugPage() {
   const dispatch = useAppDispatch();
   const [chats, setChats] = useState<any[]>([]);
@@ -22,6 +31,32 @@ export default function DatabaseDebugPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [message, setMessage] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const [previewChatId, setPreviewChatId] = useState<string | null>(null);
+  const [previewMessages, setPreviewMessages] = useState<Message[]>([]);
+  const [previewTitle, setPreviewTitle] = useState('');
+  const [isPreviewOpen, setIsPreviewOpen] = useState(false);
+
+  // 打开消息预览对话框
+  const handlePreviewChat = async (chatId: string, title: string) => {
+    try {
+      setIsLoading(true);
+      const chat = await chatStore.getChatById(chatId);
+      if (chat) {
+        setPreviewMessages(chat.messages);
+        setPreviewTitle(title);
+        setPreviewChatId(chatId);
+        setIsPreviewOpen(true);
+      } else {
+        setMessage({ text: '无法加载聊天记录', type: 'error' });
+      }
+    } catch (error) {
+      console.error('加载预览消息失败:', error);
+      setMessage({ text: '加载预览消息失败: ' + (error as Error).message, type: 'error' });
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   // 加载数据
   const loadData = async () => {
@@ -228,7 +263,18 @@ export default function DatabaseDebugPage() {
                 <div className="space-y-4">
                   {chats.map((chat) => (
                     <div key={chat.id} className="border p-3 rounded">
-                      <h3 className="font-medium">{chat.title}</h3>
+                      <div className="flex justify-between items-center">
+                        <h3 className="font-medium">{chat.title}</h3>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8" 
+                          onClick={() => handlePreviewChat(chat.id, chat.title)}
+                          title="预览消息"
+                        >
+                          <Eye className="h-4 w-4" />
+                        </Button>
+                      </div>
                       <p className="text-sm text-muted-foreground">ID: {chat.id}</p>
                       <p className="text-sm text-muted-foreground">模型: {chat.modelId}</p>
                       <p className="text-sm text-muted-foreground">
@@ -239,6 +285,29 @@ export default function DatabaseDebugPage() {
                       </p>
                     </div>
                   ))}
+
+                  {/* 添加预览对话框 */}
+                  <Dialog open={isPreviewOpen} onOpenChange={setIsPreviewOpen}>
+                    <DialogContent className="sm:max-w-3xl max-h-[80vh] overflow-hidden flex flex-col">
+                      <DialogHeader>
+                        <DialogTitle>{previewTitle}</DialogTitle>
+                      </DialogHeader>
+                      <div className="overflow-y-auto flex-1 p-2">
+                        {previewMessages.length > 0 ? (
+                          previewMessages.map((message) => (
+                            <ChatMessage 
+                              key={message.id} 
+                              message={message} 
+                            />
+                          ))
+                        ) : (
+                          <div className="text-center py-4 text-muted-foreground">
+                            没有消息记录
+                          </div>
+                        )}
+                      </div>
+                    </DialogContent>
+                  </Dialog>
                 </div>
               ) : (
                 <p>没有聊天数据</p>
