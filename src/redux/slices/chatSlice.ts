@@ -7,6 +7,7 @@ export interface Message {
   content: string;
   timestamp: number;
   chatId?: string;
+  status?: 'pending' | 'failed' | null;
 }
 
 export interface Chat {
@@ -93,6 +94,7 @@ const chatSlice = createSlice({
           ...message,
           id: uuidv4(),
           timestamp: Date.now(),
+          status: null,
         };
         chat.messages.push(newMessage);
         chat.updatedAt = Date.now();
@@ -101,6 +103,28 @@ const chatSlice = createSlice({
         if (chat.messages.length === 1 && message.role === 'user') {
           // 使用用户消息的前20个字符作为标题
           chat.title = message.content.substring(0, 20) + (message.content.length > 20 ? '...' : '');
+        }
+      }
+    },
+    editMessage: (state, action: PayloadAction<{chatId: string, messageId: string, content: string}>) => {
+      const { chatId, messageId, content } = action.payload;
+      const chat = state.chats.find(c => c.id === chatId);
+      if (chat) {
+        const message = chat.messages.find(m => m.id === messageId);
+        if (message) {
+          message.content = content;
+          message.timestamp = Date.now(); // 更新时间戳
+          chat.updatedAt = Date.now();
+        }
+      }
+    },
+    setMessageStatus: (state, action: PayloadAction<{chatId: string, messageId: string, status: 'pending' | 'failed' | null}>) => {
+      const { chatId, messageId, status } = action.payload;
+      const chat = state.chats.find(c => c.id === chatId);
+      if (chat) {
+        const message = chat.messages.find(m => m.id === messageId);
+        if (message) {
+          message.status = status;
         }
       }
     },
@@ -168,13 +192,15 @@ export const {
   updateChatTitle,
   updateChatModel,
   addMessage,
+  editMessage,
   setLoading,
   setError,
   clearMessages,
   setAllChats,
   startStreaming,
   updateStreamingContent,
-  endStreaming
+  endStreaming,
+  setMessageStatus
 } = chatSlice.actions;
 
 export default chatSlice.reducer;

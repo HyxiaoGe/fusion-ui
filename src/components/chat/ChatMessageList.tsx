@@ -9,6 +9,8 @@ interface ChatMessageListProps {
   messages: Message[];
   loading?: boolean;
   isStreaming?: boolean;
+  onRetry?: (messageId: string) => void;
+  onEdit?: (messageId: string, content: string) => void;
 }
 
 // 定义角色排序优先级
@@ -21,7 +23,7 @@ const getRolePriority = (role: string): number => {
   }
 };
 
-const ChatMessageList: React.FC<ChatMessageListProps> = ({ messages, loading = false, isStreaming = false }) => {
+const ChatMessageList: React.FC<ChatMessageListProps> = ({ messages, loading = false, isStreaming = false, onRetry, onEdit }) => {
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   // 按时间戳排序消息 - 确保使用完整毫秒精度
@@ -73,6 +75,8 @@ const ChatMessageList: React.FC<ChatMessageListProps> = ({ messages, loading = f
           message={message} 
           isLastMessage={index === sortedMessages.length - 1}
           isStreaming={isStreaming && index === sortedMessages.length - 1 && message.role === 'assistant'}
+          onRetry={onRetry}
+          onEdit={onEdit}
         />
       ))}
       

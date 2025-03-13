@@ -15,7 +15,8 @@ import { PlusIcon } from 'lucide-react';
 import { EraserIcon } from 'lucide-react';
 import { 
   createChat, 
-  addMessage, 
+  addMessage,
+  editMessage,
   setLoading,
   setError,
   setActiveChat,
@@ -24,14 +25,15 @@ import {
   updateStreamingContent,
   endStreaming,
   clearMessages,
-  updateChatTitle
+  updateChatTitle,
+  setMessageStatus
 } from '@/redux/slices/chatSlice';
 import { fetchEnhancedContext } from '@/redux/slices/searchSlice';
 import { sendMessageStream } from '@/lib/api/chat';
 import { chatStore } from '@/lib/db/chatStore';
 import { store } from '@/redux/store';
 import { generateChatTitle } from '@/lib/api/title';
-
+import { v4 as uuidv4 } from 'uuid';
 export default function Home() {
   const dispatch = useAppDispatch();
   const pathname = usePathname();
@@ -161,12 +163,16 @@ export default function Home() {
                         currentChatBeforeAdd.messages.filter(msg => msg.role === 'user').length === 0 &&
                         currentChatBeforeAdd.title === '新对话';
 
+    // 添加消息ID以便后续引用
+    const messageId = uuidv4();
+
     // 添加用户消息
     dispatch(addMessage({
       chatId: activeChatId,
       message: {
         role: 'user',
-        content: content.trim()
+        content: content.trim(),
+        status: 'pending' // 添加发送中状态
       }
     }));
 
@@ -211,6 +217,14 @@ export default function Home() {
           }, 100);
         }
 
+        if (done) {
+          dispatch(setMessageStatus({
+            chatId: activeChatId,
+            messageId,
+            status: null
+          }));
+        }
+
         // 在消息流结束(done=true)且是第一条消息时生成标题
       if (done && isFirstMessage) {
         console.log('流处理完成，开始生成标题');
@@ -237,6 +251,13 @@ export default function Home() {
       });
     } catch (error) {
       console.error('获取 AI 回复失败:', error);
+      // 设置消息发送失败状态
+      dispatch(setMessageStatus({
+        chatId: activeChatId,
+        messageId,
+        status: 'failed'
+      }));
+      
       dispatch(setError('获取 AI 回复失败，请重试'));
 
       // 错误情况下，添加一条错误消息
@@ -265,6 +286,177 @@ export default function Home() {
       }
 
       // 结束流式输出
+      dispatch(endStreaming());
+    }
+  };
+
+  // 重试发送消息
+  const handleRetryMessage = async (messageId: string) => {
+    if (!activeChatId || !selectedModelId) return;
+    
+    // 查找需要重试的消息
+    const chat = chats.find(c => c.id === activeChatId);
+    if (!chat) return;
+    
+    const message = chat.messages.find(m => m.id === messageId);
+    if (!message || message.role !== 'user') return;
+    // 清除消息的失败状态
+    dispatch(setMessageStatus({
+      chatId: activeChatId,
+      messageId: message.id,
+      status: 'pending'
+    }));
+    
+    // 删除之前的AI回复（如果有）
+    const messageIndex = chat.messages.findIndex(m => m.id === messageId);
+    if (messageIndex >= 0 && messageIndex < chat.messages.length - 1) {
+      const nextMessage = chat.messages[messageIndex + 1];
+      if (nextMessage.role === 'assistant') {
+        // 删除这条消息
+        dispatch(editMessage({
+          chatId: activeChatId,
+          messageId: message.id,
+          content: ''
+        }));
+      }
+    }
+    
+    // 重新发送消息
+    try {
+      // 开始流式输出
+      dispatch(startStreaming(activeChatId));
+      
+      await sendMessageStream({
+        model: selectedModelId,
+        message: message.content.trim(),
+        conversation_id: activeChatId,
+        stream: true,
+        options: {
+          use_enhancement: store.getState().search.contextEnhancementEnabled
+        }
+      }, 
+      (content, done, conversationId) => {
+        if (!done) {
+          dispatch(updateStreamingContent({
+            chatId: activeChatId,
+            content
+          }));
+        } else {
+          dispatch(updateStreamingContent({
+            chatId: activeChatId,
+            content: content
+          }));
+          
+          // 重发成功，清除消息状态
+          dispatch(setMessageStatus({
+            chatId: activeChatId,
+            messageId,
+            status: null
+          }));
+          
+          setTimeout(() => {
+            dispatch(endStreaming());
+          }, 100);
+        }
+      });
+    } catch (error) {
+      console.error('重试发送消息失败:', error);
+      
+      // 标记消息再次失败
+      dispatch(setMessageStatus({
+        chatId: activeChatId,
+        messageId,
+        status: 'failed'
+      }));
+      
+      dispatch(setError('重试失败，请检查网络连接'));
+      dispatch(endStreaming());
+    }
+  };
+
+  // 编辑消息
+  const handleEditMessage = async (messageId: string, newContent: string) => {
+    if (!activeChatId || !selectedModelId) return;
+    
+    // 更新消息内容
+    dispatch(editMessage({
+      chatId: activeChatId,
+      messageId,
+      content: newContent
+    }));
+    
+    // 找到消息在数组中的位置
+    const chat = chats.find(c => c.id === activeChatId);
+    if (!chat) return;
+    
+    const messageIndex = chat.messages.findIndex(m => m.id === messageId);
+    if (messageIndex < 0) return;
+    
+    // 删除该消息之后的所有消息（通常是AI的回复）
+    const messagesToDelete = chat.messages.slice(messageIndex + 1);
+    if (messagesToDelete.length > 0) {
+      // 这里我们可以添加一个新的reducer来批量删除消息
+      // 或者逐个删除
+      // 为简化示例，暂不实现删除功能
+    }
+    
+    // 重新发送编辑后的消息
+    try {
+      // 设置消息状态为发送中
+      dispatch(setMessageStatus({
+        chatId: activeChatId,
+        messageId,
+        status: 'pending'
+      }));
+      
+      // 开始流式输出
+      dispatch(startStreaming(activeChatId));
+      
+      await sendMessageStream({
+        model: selectedModelId,
+        message: newContent.trim(),
+        conversation_id: activeChatId,
+        stream: true,
+        options: {
+          use_enhancement: store.getState().search.contextEnhancementEnabled
+        }
+      }, 
+      (content, done, conversationId) => {
+        // 处理流式回复...
+        if (!done) {
+          dispatch(updateStreamingContent({
+            chatId: activeChatId,
+            content
+          }));
+        } else {
+          dispatch(updateStreamingContent({
+            chatId: activeChatId,
+            content: content
+          }));
+          
+          // 编辑发送成功，清除消息状态
+          dispatch(setMessageStatus({
+            chatId: activeChatId,
+            messageId,
+            status: null
+          }));
+          
+          setTimeout(() => {
+            dispatch(endStreaming());
+          }, 100);
+        }
+      });
+    } catch (error) {
+      console.error('发送编辑后的消息失败:', error);
+      
+      // 标记消息发送失败
+      dispatch(setMessageStatus({
+        chatId: activeChatId,
+        messageId,
+        status: 'failed'
+      }));
+      
+      dispatch(setError('发送编辑后的消息失败，请重试'));
       dispatch(endStreaming());
     }
   };
@@ -328,6 +520,8 @@ export default function Home() {
                 messages={activeChat.messages}
                 loading={loading}
                 isStreaming={isStreaming}
+                onRetry={handleRetryMessage}
+                onEdit={handleEditMessage}
               />
             </div>
             

@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { useState } from 'react';
 import { cn } from '@/lib/utils';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -9,15 +9,21 @@ import rehypeHighlight from 'rehype-highlight';
 import { Message } from '@/redux/slices/chatSlice';
 import { useAppSelector } from '@/redux/hooks';
 import { avatarOptions } from '@/redux/slices/settingsSlice';
+import { AlertCircle, RefreshCw, Edit2 } from 'lucide-react';
+import { Button } from '@/components/ui/button';
 
 interface ChatMessageProps {
   message: Message;
   isLastMessage?: boolean;
   isStreaming?: boolean;
+  onRetry?: (messageId: string) => void; // 添加重试回调
+  onEdit?: (messageId: string, content: string) => void; // 添加编辑回调
 }
 
-const ChatMessage: React.FC<ChatMessageProps> = ({ message, isLastMessage = false, isStreaming = false }) => {
+const ChatMessage: React.FC<ChatMessageProps> = ({ message, isLastMessage = false, isStreaming = false, onRetry, onEdit }) => {
   const isUser = message.role === 'user';
+  const [isEditing, setIsEditing] = useState(false);
+  const [editContent, setEditContent] = useState(message.content);
   
   const { userAvatar, assistantAvatar } = useAppSelector(state => state.settings);
   
@@ -56,6 +62,20 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, isLastMessage = fals
       return '';
     }
   }
+
+  // 处理编辑内容
+  const handleSaveEdit = () => {
+    if (editContent.trim() && onEdit) {
+      onEdit(message.id, editContent);
+    }
+    setIsEditing(false);
+  };
+
+  // 取消编辑
+  const handleCancelEdit = () => {
+    setEditContent(message.content);
+    setIsEditing(false);
+  };
 
   return (
     <div
@@ -125,7 +145,39 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, isLastMessage = fals
               )}
             </div>
           )}
+          {/* 显示错误状态和操作按钮 */}
+          {message.status === 'failed' && (
+                <div className="flex items-center mt-2 text-destructive gap-2">
+                  <AlertCircle className="h-4 w-4" />
+                  <span className="text-xs">发送失败</span>
+                  {onRetry && (
+                    <Button 
+                      size="sm" 
+                      variant="ghost" 
+                      className="h-7 px-2 ml-2"
+                      onClick={() => onRetry(message.id)}
+                    >
+                      <RefreshCw className="h-3 w-3 mr-1" />
+                      重试
+                    </Button>
+                  )}
+                </div>
+              )}
         </div>
+        {/* 编辑按钮 - 仅用户消息显示且非编辑状态 */}
+        {isUser && !isEditing && !message.status && (
+          <div className="flex justify-end">
+            <Button 
+              variant="ghost" 
+              size="sm" 
+              className="h-6 px-2 text-xs text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity"
+              onClick={() => setIsEditing(true)}
+            >
+              <Edit2 className="h-3 w-3 mr-1" />
+              编辑
+            </Button>
+          </div>
+        )}
       </div>
       
       {isUser && (
