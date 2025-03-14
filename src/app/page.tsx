@@ -169,7 +169,7 @@ export default function Home() {
       message: {
         role: 'user',
         content: content.trim(),
-        status: 'pending' // 添加发送中状态
+        status: 'pending'
       }
     }));
 
@@ -181,8 +181,14 @@ export default function Home() {
       dispatch(fetchEnhancedContext({ query: content, conversationId: activeChatId }));
     }
 
-    // 设置加载状态
+    setTimeout(() => {
+    // 设置加载状态，添加占位符
     dispatch(startStreaming(activeChatId));
+    
+  }, 500);
+
+    // 设置加载状态
+    // dispatch(startStreaming(activeChatId));
     
     try {
       await sendMessageStream({

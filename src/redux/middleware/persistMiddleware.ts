@@ -121,23 +121,42 @@ export const persistMiddleware: Middleware = store => next => action => {
         // 流式结束后，确保最后的消息被保存
         const state = store.getState();
         const activeChatId = state.chat.activeChatId;
-        const streamingMessageId = state.chat.streamingMessageId;
         
-        if (activeChatId && streamingMessageId) {
+        // 不再依赖streamingMessageId
+        if (activeChatId) {
           try {
             const chat = state.chat.chats.find((c: Chat) => c.id === activeChatId);
-            const message = chat?.messages.find((m: Message) => m.id === streamingMessageId);
             
-            if (message) {
-              // 更新消息内容
-              await db.messages.update(streamingMessageId, {
-                content: message.content
-              });
-              
-              // 更新聊天的updatedAt
-              await db.chats.update(activeChatId, {
-                updatedAt: Date.now()
-              });
+            if (chat && chat.messages.length > 0) {
+              // 查找最后一条AI消息
+              const assistantMessages = chat.messages.filter((m: Message) => m.role === 'assistant');
+              if (assistantMessages.length > 0) {
+                const lastAssistantMessage = assistantMessages[assistantMessages.length - 1];
+                
+                console.log('保存最终AI回复:', lastAssistantMessage.content.substring(0, 30) + '...');
+                
+                // 使用put而不是update，确保消息被保存
+                await db.messages.put({
+                  id: lastAssistantMessage.id,
+                  chatId: activeChatId,
+                  role: 'assistant',
+                  content: lastAssistantMessage.content,
+                  timestamp: lastAssistantMessage.timestamp || Date.now()
+                });
+                
+                // 更新聊天的updatedAt
+                await db.chats.update(activeChatId, {
+                  updatedAt: Date.now()
+                });
+                
+                // 验证保存结果
+                const savedMessage = await db.messages.get(lastAssistantMessage.id);
+                if (savedMessage) {
+                  console.log('AI回复已成功保存到数据库');
+                } else {
+                  console.error('AI回复保存验证失败');
+                }
+              }
             }
           } catch (error) {
             console.error('保存最终流式消息时出错:', error);

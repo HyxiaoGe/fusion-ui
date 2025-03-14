@@ -129,7 +129,7 @@ export const chatStore = {
         })
       );
       
-      return chatsWithMessages;
+      return chatsWithMessages.sort((a, b) => b.updatedAt - a.updatedAt);
     } catch (error) {
       console.error('获取所有聊天失败:', error);
       throw error;
