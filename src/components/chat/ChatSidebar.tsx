@@ -137,17 +137,6 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ onNewChat }) => {
     }
   };
 
-  // 打开重命名对话框
-  const handleOpenRenameDialog = (e: React.MouseEvent, chatId: string) => {
-    e.stopPropagation();
-    const chat = chats.find(chat => chat.id === chatId);
-    if (chat) {
-      setChatToRename(chatId);
-      setNewTitle(chat.title);
-      setIsRenameDialogOpen(true);
-    }
-  };
-
   // 提交重命名操作
   const handleRename = () => {
     if (chatToRename && newTitle.trim()) {

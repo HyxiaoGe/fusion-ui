@@ -124,8 +124,6 @@ export default function Home() {
 
   // 获取当前活动的对话
   const activeChat = activeChatId ? chats.find(chat => chat.id === activeChatId) : null;
-  // 获取当前选中的模型
-  const selectedModel = models.find(model => model.id === selectedModelId);
 
   // 创建新对话
   const handleNewChat = () => {
@@ -334,7 +332,7 @@ export default function Home() {
           use_enhancement: store.getState().search.contextEnhancementEnabled
         }
       }, 
-      (content, done, conversationId) => {
+      (content, done) => {
         if (!done) {
           dispatch(updateStreamingContent({
             chatId: activeChatId,
@@ -423,7 +421,7 @@ export default function Home() {
           use_enhancement: store.getState().search.contextEnhancementEnabled
         }
       }, 
-      (content, done, conversationId) => {
+      (content, done) => {
         // 处理流式回复...
         if (!done) {
           dispatch(updateStreamingContent({
