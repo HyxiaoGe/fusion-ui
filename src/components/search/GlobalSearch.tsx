@@ -1,19 +1,6 @@
 'use client';
 
-import React, { useEffect, useState, useRef } from 'react';
-import { useAppSelector, useAppDispatch } from '@/redux/hooks';
-import {
-  setQuery,
-  setActiveTab,
-  fetchConversationResults,
-  fetchMessageResults,
-  clearSearchResults,
-  clearError
-} from '@/redux/slices/searchSlice';
-import { setActiveChat } from '@/redux/slices/chatSlice';
-import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
-import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import {
   Dialog,
   DialogContent,
@@ -21,10 +8,23 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog';
-import { Search as SearchIcon, Loader2, X, MessageSquare, MessageCircle } from 'lucide-react';
+import { Input } from '@/components/ui/input';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useDebounce } from '@/lib/hooks/useDebounce';
+import { useAppDispatch, useAppSelector } from '@/redux/hooks';
+import { setActiveChat } from '@/redux/slices/chatSlice';
+import {
+  clearError,
+  clearSearchResults,
+  fetchConversationResults,
+  fetchMessageResults,
+  setActiveTab,
+  setQuery
+} from '@/redux/slices/searchSlice';
 import { formatDistanceToNow } from 'date-fns';
 import { zhCN } from 'date-fns/locale';
+import { Loader2, MessageCircle, MessageSquare, Search as SearchIcon, X } from 'lucide-react';
+import React, { useEffect, useRef, useState } from 'react';
 
 const GlobalSearch: React.FC = () => {
   const dispatch = useAppDispatch();

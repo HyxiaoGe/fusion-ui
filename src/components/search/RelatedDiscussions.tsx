@@ -1,13 +1,13 @@
 'use client';
 
-import React, { useEffect } from 'react';
-import { useAppSelector, useAppDispatch } from '@/redux/hooks';
-import { fetchRelatedDiscussions } from '@/redux/slices/searchSlice';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { useAppDispatch, useAppSelector } from '@/redux/hooks';
 import { setActiveChat } from '@/redux/slices/chatSlice';
-import { Card, CardHeader, CardContent, CardTitle } from '@/components/ui/card';
-import { Loader2 } from 'lucide-react';
+import { fetchRelatedDiscussions } from '@/redux/slices/searchSlice';
 import { formatDistanceToNow } from 'date-fns';
 import { zhCN } from 'date-fns/locale';
+import { Loader2 } from 'lucide-react';
+import React, { useEffect } from 'react';
 
 interface RelatedDiscussionsProps {
   currentQuery: string;

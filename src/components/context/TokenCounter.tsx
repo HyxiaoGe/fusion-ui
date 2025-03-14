@@ -1,8 +1,8 @@
 'use client';
 
-import React from 'react';
 import { Progress } from '@/components/ui/progress';
 import { estimateConversationTokens, MODEL_TOKEN_LIMITS } from '@/lib/utils/tokenizer';
+import React from 'react';
 
 interface TokenCounterProps {
   messages: Array<{role: string, content: string}>;

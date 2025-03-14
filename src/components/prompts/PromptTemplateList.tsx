@@ -1,16 +1,15 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
-import { useAppSelector, useAppDispatch } from '@/redux/hooks';
-import {
-  fetchAllTemplates,
-  initializeTemplates,
-  setSelectedTemplate,
-} from '@/redux/slices/promptTemplatesSlice';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { useAppDispatch, useAppSelector } from '@/redux/hooks';
+import {
+  initializeTemplates,
+  setSelectedTemplate
+} from '@/redux/slices/promptTemplatesSlice';
 import { PlusIcon, Search } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
 import PromptTemplateItem from './PromptTemplateItem';
 
 interface PromptTemplateListProps {

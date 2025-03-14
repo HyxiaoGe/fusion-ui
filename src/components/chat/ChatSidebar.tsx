@@ -1,28 +1,27 @@
 'use client';
 
-import React, { useEffect, useRef, useState } from 'react';
-import { useAppSelector, useAppDispatch } from '@/redux/hooks';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { 
-  PlusIcon, 
-  TrashIcon, 
-  MoreVerticalIcon, 
-  MessageSquareIcon,
-  PencilIcon,
-  RefreshCwIcon,
-} from 'lucide-react';
-import { 
+import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger
 } from '@/components/ui/dropdown-menu';
-import { setActiveChat, deleteChat, updateChatTitle } from '@/redux/slices/chatSlice';
-import { Dialog, DialogContent, DialogTitle } from '@radix-ui/react-dialog';
-import { DialogFooter } from '../ui/dialog';
-import { DialogHeader } from '../ui/dialog';
+import { Input } from '@/components/ui/input';
 import { generateChatTitle } from '@/lib/api/title';
+import { useAppDispatch, useAppSelector } from '@/redux/hooks';
+import { deleteChat, setActiveChat, updateChatTitle } from '@/redux/slices/chatSlice';
+import { Dialog, DialogContent, DialogTitle } from '@radix-ui/react-dialog';
+import {
+  MessageSquareIcon,
+  MoreVerticalIcon,
+  PencilIcon,
+  PlusIcon,
+  RefreshCwIcon,
+  TrashIcon,
+} from 'lucide-react';
+import React, { useRef, useState } from 'react';
+import { DialogFooter, DialogHeader } from '../ui/dialog';
 
 interface ChatSidebarProps {
   onNewChat: () => void;

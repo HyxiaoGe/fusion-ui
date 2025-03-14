@@ -1,15 +1,14 @@
 'use client';
 
-import React from 'react';
-import { useAppSelector } from '@/redux/hooks';
 import MainLayout from '@/components/layouts/MainLayout';
-import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
-import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
-import ThemeSelector from './ThemeSelector';
 import ModelSettings from '@/components/models/ModelSettings';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { useAppSelector } from '@/redux/hooks';
 import AvatarSelector from './AvatarSelector';
 import DataManagement from './DataManagement';
 import SearchSettings from './SearchSettings';
+import ThemeSelector from './ThemeSelector';
 
 export default function SettingsPage() {
   const { selectedModelId } = useAppSelector(state => state.models);

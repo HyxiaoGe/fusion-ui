@@ -2,11 +2,9 @@
 
 import React from 'react';
 import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
-import rehypeRaw from 'rehype-raw';
 import rehypeHighlight from 'rehype-highlight';
-import { Button } from '@/components/ui/button';
-import { ClipboardCopy } from 'lucide-react';
+import rehypeRaw from 'rehype-raw';
+import remarkGfm from 'remark-gfm';
 import CodeBlock from './CodeBlock';
 
 interface MarkdownRendererProps {

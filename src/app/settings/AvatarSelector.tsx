@@ -1,8 +1,8 @@
-import React from 'react';
-import { useAppSelector, useAppDispatch } from '@/redux/hooks';
-import { setUserAvatar, setAssistantAvatar, avatarOptions } from '@/redux/slices/settingsSlice';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { useAppDispatch, useAppSelector } from '@/redux/hooks';
+import { avatarOptions, setAssistantAvatar, setUserAvatar } from '@/redux/slices/settingsSlice';
+import React from 'react';
 
 interface AvatarItemProps {
   id: string;

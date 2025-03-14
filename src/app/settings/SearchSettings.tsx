@@ -1,20 +1,20 @@
 'use client';
 
-import React, { useEffect } from 'react';
-import { useAppSelector, useAppDispatch } from '@/redux/hooks';
-import {
-  toggleSearchEnabled,
-  toggleContextEnhancement,
-  setContextMaxItems,
-  loadSearchSettings,
-  saveSearchSettings
-} from '@/redux/slices/searchSlice';
-import { Card, CardHeader, CardTitle, CardContent, CardDescription } from '@/components/ui/card';
-import { Switch } from '@/components/ui/switch';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
 import { Slider } from '@/components/ui/slider';
-import { Button } from '@/components/ui/button';
+import { Switch } from '@/components/ui/switch';
+import { useAppDispatch, useAppSelector } from '@/redux/hooks';
+import {
+  loadSearchSettings,
+  saveSearchSettings,
+  setContextMaxItems,
+  toggleContextEnhancement,
+  toggleSearchEnabled
+} from '@/redux/slices/searchSlice';
 import { AlertCircle } from 'lucide-react';
+import React, { useEffect } from 'react';
 
 const SearchSettings: React.FC = () => {
   const dispatch = useAppDispatch();

@@ -1,11 +1,11 @@
 'use client';
 
-import { Provider } from 'react-redux';
-import { store } from './store';
-import { useEffect, useState } from 'react';
-import initializeStoreFromDB from '@/lib/db/initializeStore';
-import { useAppDispatch } from './hooks';
 import LoadingIndicator from '@/components/ui/loading-indicator';
+import initializeStoreFromDB from '@/lib/db/initializeStore';
+import { useEffect, useState } from 'react';
+import { Provider } from 'react-redux';
+import { useAppDispatch } from './hooks';
+import { store } from './store';
 
 // 数据加载组件
 const StoreInitializer = ({ children }: { children: React.ReactNode }) => {

@@ -1,16 +1,16 @@
 'use client';
 
-import React from 'react';
-import { useAppSelector, useAppDispatch } from '@/redux/hooks';
-import { setSelectedModel } from '@/redux/slices/modelsSlice';
-import { updateChatModel } from '@/redux/slices/chatSlice'; // 添加这个新动作
-import { 
-  Select, 
-  SelectContent, 
-  SelectItem, 
-  SelectTrigger, 
-  SelectValue 
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue
 } from '@/components/ui/select';
+import { useAppDispatch, useAppSelector } from '@/redux/hooks';
+import { updateChatModel } from '@/redux/slices/chatSlice'; // 添加这个新动作
+import { setSelectedModel } from '@/redux/slices/modelsSlice';
+import React from 'react';
 
 interface ModelSelectorProps {
   onChange?: (modelId: string) => void;

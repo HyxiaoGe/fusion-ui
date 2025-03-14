@@ -1,11 +1,11 @@
 'use client';
 
-import React from 'react';
+import { Button } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
+import { HomeIcon, SettingsIcon } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Button } from '@/components/ui/button';
-import { SettingsIcon, HomeIcon } from 'lucide-react';
-import { cn } from '@/lib/utils';
+import React from 'react';
 import GlobalSearch from '../search/GlobalSearch';
 
 const Header: React.FC = () => {

@@ -1,12 +1,12 @@
 'use client';
 
-import React from 'react';
-import { useAppSelector, useAppDispatch } from '@/redux/hooks';
-import { updateModelConfig } from '@/redux/slices/modelsSlice';
-import { Slider } from '@/components/ui/slider';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Slider } from '@/components/ui/slider';
+import { useAppDispatch, useAppSelector } from '@/redux/hooks';
+import { updateModelConfig } from '@/redux/slices/modelsSlice';
+import React from 'react';
 
 interface ModelSettingsProps {
   modelId: string;

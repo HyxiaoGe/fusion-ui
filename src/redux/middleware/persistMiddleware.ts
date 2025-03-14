@@ -1,28 +1,28 @@
-import { v4 as uuidv4 } from 'uuid';
-import { Middleware } from '@reduxjs/toolkit';
 import db, { chatStore, settingsStore } from '@/lib/db/chatStore';
-import { 
-  addMessage, 
-  createChat, 
-  deleteChat, 
-  updateChatTitle,
-  clearMessages,
-  updateStreamingContent,
-  endStreaming,
-  Chat,
-  Message,
-  updateChatModel
-} from '@/redux/slices/chatSlice';
-import { 
-  setThemeMode 
-} from '@/redux/slices/themeSlice';
 import {
-  setUserAvatar,
-  setAssistantAvatar
-} from '@/redux/slices/settingsSlice';
-import { 
-  updateModelConfig 
+  addMessage,
+  Chat,
+  clearMessages,
+  createChat,
+  deleteChat,
+  endStreaming,
+  Message,
+  updateChatModel,
+  updateChatTitle,
+  updateStreamingContent
+} from '@/redux/slices/chatSlice';
+import {
+  updateModelConfig
 } from '@/redux/slices/modelsSlice';
+import {
+  setAssistantAvatar,
+  setUserAvatar
+} from '@/redux/slices/settingsSlice';
+import {
+  setThemeMode
+} from '@/redux/slices/themeSlice';
+import { Middleware } from '@reduxjs/toolkit';
+import { v4 as uuidv4 } from 'uuid';
 import { setContextMaxItems, toggleContextEnhancement } from '../slices/searchSlice';
 
 // 创建持久化中间件

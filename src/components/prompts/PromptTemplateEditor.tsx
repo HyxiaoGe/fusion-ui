@@ -1,23 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
-import { useAppDispatch } from '@/redux/hooks';
-import {
-  createTemplate,
-  updateTemplate,
-  removeTemplate,
-} from '@/redux/slices/promptTemplatesSlice';
-import { PromptTemplate } from '@/lib/db/promptTemplates';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Textarea } from '@/components/ui/textarea';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
 import {
   Dialog,
   DialogContent,
@@ -25,8 +8,25 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import { Textarea } from '@/components/ui/textarea';
+import { PromptTemplate } from '@/lib/db/promptTemplates';
+import { useAppDispatch } from '@/redux/hooks';
+import {
+  createTemplate,
+  removeTemplate,
+  updateTemplate,
+} from '@/redux/slices/promptTemplatesSlice';
 import { Trash } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
 
 interface PromptTemplateEditorProps {
   template?: PromptTemplate;

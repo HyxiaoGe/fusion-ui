@@ -1,14 +1,14 @@
 import { configureStore } from '@reduxjs/toolkit';
 import { setupListeners } from '@reduxjs/toolkit/query';
-import themeReducer from './slices/themeSlice';
-import chatReducer from './slices/chatSlice';
-import modelsReducer from './slices/modelsSlice';
-import fileUploadReducer from './slices/fileUploadSlice';
-import promptTemplatesReducer from './slices/promptTemplatesSlice';
-import settingsReducer from './slices/settingsSlice';
 import persistMiddleware from './middleware/persistMiddleware';
 import appReducer from './slices/appSlice';
+import chatReducer from './slices/chatSlice';
+import fileUploadReducer from './slices/fileUploadSlice';
+import modelsReducer from './slices/modelsSlice';
+import promptTemplatesReducer from './slices/promptTemplatesSlice';
 import searchReducer from './slices/searchSlice';
+import settingsReducer from './slices/settingsSlice';
+import themeReducer from './slices/themeSlice';
 
 export const store = configureStore({
     reducer: {

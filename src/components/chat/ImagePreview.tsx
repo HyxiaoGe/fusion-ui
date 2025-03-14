@@ -1,10 +1,10 @@
 'use client';
 
-import React, { useState } from 'react';
-import { Dialog, DialogContent, DialogTrigger } from '@/components/ui/dialog';
-import { X, Download, ZoomIn, ZoomOut, RotateCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Dialog, DialogContent, DialogTrigger } from '@/components/ui/dialog';
 import { FileWithPreview } from '@/lib/utils/fileHelpers';
+import { Download, RotateCw, X, ZoomIn, ZoomOut } from 'lucide-react';
+import React, { useState } from 'react';
 
 interface ImagePreviewProps {
   file: FileWithPreview;

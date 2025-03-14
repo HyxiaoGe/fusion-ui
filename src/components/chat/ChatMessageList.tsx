@@ -1,9 +1,9 @@
 'use client';
 
-import React, { useEffect, useMemo, useRef } from 'react';
 import { Message } from '@/redux/slices/chatSlice';
-import ChatMessage from './ChatMessage';
+import React, { useEffect, useMemo, useRef } from 'react';
 import LoadingIndicator from '../ui/loading-indicator';
+import ChatMessage from './ChatMessage';
 
 interface ChatMessageListProps {
   messages: Message[];

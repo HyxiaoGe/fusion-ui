@@ -1,5 +1,5 @@
-import { createSlice, PayloadAction } from '@reduxjs/toolkit';
 import { FileWithPreview, revokeFilePreview } from '@/lib/utils/fileHelpers';
+import { createSlice, PayloadAction } from '@reduxjs/toolkit';
 
 interface FileUploadState {
   files: { [chatId: string]: FileWithPreview[] };

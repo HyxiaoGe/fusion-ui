@@ -1,21 +1,21 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
-import { useAppSelector, useAppDispatch } from '@/redux/hooks';
-import {
-  toggleContextEnhancement,
-  setContextMaxItems,
-  loadSearchSettings,
-  fetchEnhancedContext,
-  clearEnhancedContext
-} from '@/redux/slices/searchSlice';
-import { Card, CardHeader, CardContent, CardTitle, CardDescription } from '@/components/ui/card';
-import { Switch } from '@/components/ui/switch';
-import { Label } from '@/components/ui/label';
-import { Slider } from '@/components/ui/slider';
-import { Loader2, ChevronDown, ChevronUp, RefreshCw } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Label } from '@/components/ui/label';
+import { Slider } from '@/components/ui/slider';
+import { Switch } from '@/components/ui/switch';
+import { useAppDispatch, useAppSelector } from '@/redux/hooks';
+import {
+  clearEnhancedContext,
+  fetchEnhancedContext,
+  loadSearchSettings,
+  setContextMaxItems,
+  toggleContextEnhancement
+} from '@/redux/slices/searchSlice';
+import { ChevronDown, ChevronUp, Loader2, RefreshCw } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
 
 interface ContextEnhancementControlProps {
   currentQuery?: string;

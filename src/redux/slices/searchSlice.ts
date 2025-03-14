@@ -1,6 +1,6 @@
-import { createSlice, createAsyncThunk, PayloadAction } from '@reduxjs/toolkit';
-import { searchConversations, searchMessages, getEnhancedContext } from '@/lib/api/search';
+import { getEnhancedContext, searchConversations, searchMessages } from '@/lib/api/search';
 import { settingsStore } from '@/lib/db/chatStore';
+import { createAsyncThunk, createSlice, PayloadAction } from '@reduxjs/toolkit';
 
 // 定义搜索结果类型
 export interface SearchResultItem {

@@ -1,9 +1,9 @@
 'use client';
 
-import React, { useState, useRef, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
-import { SendIcon } from 'lucide-react';
 import { Textarea } from '@/components/ui/textarea';
+import { SendIcon } from 'lucide-react';
+import React, { useEffect, useRef, useState } from 'react';
 
 interface ChatInputProps {
   onSendMessage: (content: string) => void;

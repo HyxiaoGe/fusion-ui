@@ -1,28 +1,23 @@
 'use client';
 
-import React, { useState, useEffect, useRef } from 'react';
-import { Eye } from 'lucide-react';
-import { useAppDispatch } from '@/redux/hooks';
+import ChatMessage from '@/components/chat/ChatMessage';
 import MainLayout from '@/components/layouts/MainLayout';
 import { Button } from '@/components/ui/button';
-import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
-import { chatStore, settingsStore } from '@/lib/db/chatStore';
-import db from '@/lib/db/chatStore';
-import initializeStoreFromDB from '@/lib/db/initializeStore';
-import { importDataFromFile } from '@/lib/db/importData';
-import { endStreaming, setLoading, setAllChats, setError } from '@/redux/slices/chatSlice';
-import { setActiveChat } from '@/redux/slices/chatSlice';
-import { setSelectedModel } from '@/redux/slices/modelsSlice';
-import { triggerDatabaseSync } from '@/redux/slices/appSlice';
-import { store } from '@/redux/store';
-import { 
-  Dialog, 
-  DialogContent, 
-  DialogHeader, 
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import ChatMessage from '@/components/chat/ChatMessage';
-import { Message } from '@/redux/slices/chatSlice';
+import db, { chatStore, settingsStore } from '@/lib/db/chatStore';
+import { importDataFromFile } from '@/lib/db/importData';
+import initializeStoreFromDB from '@/lib/db/initializeStore';
+import { useAppDispatch } from '@/redux/hooks';
+import { Message, setActiveChat, setAllChats } from '@/redux/slices/chatSlice';
+import { store } from '@/redux/store';
+import { Eye } from 'lucide-react';
+import React, { useEffect, useRef, useState } from 'react';
 
 export default function DatabaseDebugPage() {
   const dispatch = useAppDispatch();
@@ -315,15 +310,26 @@ export default function DatabaseDebugPage() {
             </CardContent>
           </Card>
 
-          <Card>
-            <CardHeader>
-              <CardTitle>设置数据</CardTitle>
-            </CardHeader>
-            <CardContent>
-              {isLoading ? (
-                <p>加载中...</p>
-              ) : Object.keys(settings).length > 0 ? (
-                <div className="space-y-4">
+          {/* <Collapsible
+            open={showAdvancedData}
+            onOpenChange={setShowAdvancedData}
+            className="w-full"
+          >
+            <CollapsibleTrigger className="flex items-center justify-between w-full p-3 border rounded-md hover:bg-accent/10">
+              <div className="flex items-center gap-2">
+                {showAdvancedData ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                <span className="font-medium">高级设置数据</span>
+              </div>
+              <span className="text-xs text-muted-foreground">
+                {showAdvancedData ? "点击隐藏" : "仅限开发者使用"}
+              </span>
+            </CollapsibleTrigger>
+            <CollapsibleContent className="mt-2">
+              <Card>
+                <CardHeader>
+                  <CardTitle>设置数据</CardTitle>
+                </CardHeader>
+                <CardContent>
                   {Object.entries(settings).map(([key, value]) => (
                     <div key={key} className="border p-3 rounded">
                       <h3 className="font-medium">{key}</h3>
@@ -332,12 +338,10 @@ export default function DatabaseDebugPage() {
                       </pre>
                     </div>
                   ))}
-                </div>
-              ) : (
-                <p>没有设置数据</p>
-              )}
-            </CardContent>
-          </Card>
+                </CardContent>
+              </Card>
+            </CollapsibleContent>
+          </Collapsible> */}
         </div>
       </div>
     </MainLayout>

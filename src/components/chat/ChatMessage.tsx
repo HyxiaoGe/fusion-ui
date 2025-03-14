@@ -1,17 +1,17 @@
 'use client';
 
-import React, { useState } from 'react';
-import { cn } from '@/lib/utils';
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
-import rehypeRaw from 'rehype-raw';
-import rehypeHighlight from 'rehype-highlight';
-import { Message } from '@/redux/slices/chatSlice';
-import { useAppSelector } from '@/redux/hooks';
-import { avatarOptions } from '@/redux/slices/settingsSlice';
-import { AlertCircle, RefreshCw, Edit2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
+import { useAppSelector } from '@/redux/hooks';
+import { Message } from '@/redux/slices/chatSlice';
+import { avatarOptions } from '@/redux/slices/settingsSlice';
+import { AlertCircle, Edit2, RefreshCw } from 'lucide-react';
+import React, { useState } from 'react';
+import ReactMarkdown from 'react-markdown';
 import TextareaAutosize from 'react-textarea-autosize';
+import rehypeHighlight from 'rehype-highlight';
+import rehypeRaw from 'rehype-raw';
+import remarkGfm from 'remark-gfm';
 
 interface ChatMessageProps {
   message: Message;

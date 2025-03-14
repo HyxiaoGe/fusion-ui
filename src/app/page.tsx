@@ -1,39 +1,37 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
-import { usePathname, useSearchParams } from 'next/navigation';
-import { useAppSelector, useAppDispatch } from '@/redux/hooks';
-import MainLayout from '@/components/layouts/MainLayout';
-import ChatSidebar from '@/components/chat/ChatSidebar';
-import ChatMessageList from '@/components/chat/ChatMessageList';
-import ModelSelector from '@/components/models/ModelSelector';
 import ChatInput from '@/components/chat/ChatInput';
+import ChatMessageList from '@/components/chat/ChatMessageList';
+import ChatSidebar from '@/components/chat/ChatSidebar';
 import ContextEnhancementControl from '@/components/context/ContextEnhancementControl';
+import MainLayout from '@/components/layouts/MainLayout';
+import ModelSelector from '@/components/models/ModelSelector';
 import RelatedDiscussions from '@/components/search/RelatedDiscussions';
 import { Button } from '@/components/ui/button';
-import { PlusIcon } from 'lucide-react';
-import { EraserIcon } from 'lucide-react';
-import { 
-  createChat, 
+import { sendMessageStream } from '@/lib/api/chat';
+import { generateChatTitle } from '@/lib/api/title';
+import { chatStore } from '@/lib/db/chatStore';
+import { useAppDispatch, useAppSelector } from '@/redux/hooks';
+import {
   addMessage,
+  clearMessages,
+  createChat,
+  deleteMessage,
   editMessage,
-  setLoading,
-  setError,
+  endStreaming,
   setActiveChat,
   setAllChats,
-  startStreaming,
-  updateStreamingContent,
-  endStreaming,
-  clearMessages,
-  updateChatTitle,
+  setError,
   setMessageStatus,
-  deleteMessage
+  startStreaming,
+  updateChatTitle,
+  updateStreamingContent
 } from '@/redux/slices/chatSlice';
 import { fetchEnhancedContext } from '@/redux/slices/searchSlice';
-import { sendMessageStream } from '@/lib/api/chat';
-import { chatStore } from '@/lib/db/chatStore';
 import { store } from '@/redux/store';
-import { generateChatTitle } from '@/lib/api/title';
+import { EraserIcon, PlusIcon } from 'lucide-react';
+import { usePathname, useSearchParams } from 'next/navigation';
+import { useEffect, useRef, useState } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 export default function Home() {
   const dispatch = useAppDispatch();

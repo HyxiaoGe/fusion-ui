@@ -1,13 +1,13 @@
-import { createSlice, createAsyncThunk, PayloadAction } from '@reduxjs/toolkit';
 import {
-  PromptTemplate,
+  addPromptTemplate,
+  deletePromptTemplate,
   getAllPromptTemplates,
   getPromptTemplateById,
-  addPromptTemplate,
-  updatePromptTemplate,
-  deletePromptTemplate,
   initializeDefaultPromptTemplates,
+  PromptTemplate,
+  updatePromptTemplate,
 } from '@/lib/db/promptTemplates';
+import { createAsyncThunk, createSlice, PayloadAction } from '@reduxjs/toolkit';
 
 interface PromptTemplatesState {
   templates: PromptTemplate[];

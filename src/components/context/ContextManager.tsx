@@ -1,13 +1,13 @@
 'use client';
 
-import React, { useState } from 'react';
-import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Switch } from '@/components/ui/switch';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
-import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
+import { Switch } from '@/components/ui/switch';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Message } from '@/redux/slices/chatSlice';
-import { Trash2, Eraser, BrainCircuit } from 'lucide-react';
+import { BrainCircuit, Eraser } from 'lucide-react';
+import React, { useState } from 'react';
 import TokenCounter from './TokenCounter';
 
 interface ContextManagerProps {

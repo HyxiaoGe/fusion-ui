@@ -1,10 +1,10 @@
 'use client';
 
-import React from 'react';
-import { X, FileIcon, ImageIcon, FileTextIcon, FileCodeIcon, ArchiveIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import { FileWithPreview, getFileType, formatFileSize } from '@/lib/utils/fileHelpers';
+import { FileWithPreview, formatFileSize, getFileType } from '@/lib/utils/fileHelpers';
+import { ArchiveIcon, FileCodeIcon, FileIcon, FileTextIcon, X } from 'lucide-react';
+import React from 'react';
 import ImagePreview from './ImagePreview';
 
 interface FileCardProps {

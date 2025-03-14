@@ -1,9 +1,9 @@
 'use client';
 
-import React from 'react';
 import { useAppSelector } from '@/redux/hooks';
-import Header from './Header';
+import React from 'react';
 import ErrorToastContainer from '../ui/error-toast';
+import Header from './Header';
 
 interface MainLayoutProps {
   children: React.ReactNode;

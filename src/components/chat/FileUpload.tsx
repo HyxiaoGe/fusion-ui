@@ -1,9 +1,9 @@
 'use client';
 
-import React, { useState, useRef } from 'react';
-import { PaperclipIcon, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { createFileWithPreview, FileWithPreview, formatFileSize } from '@/lib/utils/fileHelpers';
+import { createFileWithPreview, FileWithPreview } from '@/lib/utils/fileHelpers';
+import { PaperclipIcon } from 'lucide-react';
+import React, { useRef, useState } from 'react';
 import FileCard from './FileCard';
 
 interface FileUploadProps {

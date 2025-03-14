@@ -1,10 +1,10 @@
 'use client';
 
-import React from 'react';
-import { useAppSelector, useAppDispatch } from '@/redux/hooks';
-import { setThemeMode } from '@/redux/slices/themeSlice';
-import { SunIcon, MoonIcon, LaptopIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { useAppDispatch, useAppSelector } from '@/redux/hooks';
+import { setThemeMode } from '@/redux/slices/themeSlice';
+import { LaptopIcon, MoonIcon, SunIcon } from 'lucide-react';
+import React from 'react';
 
 const ThemeSelector: React.FC = () => {
   const dispatch = useAppDispatch();
