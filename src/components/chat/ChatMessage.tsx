@@ -2,6 +2,7 @@
 
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
+import { FileWithPreview } from '@/lib/utils/fileHelpers';
 import { useAppSelector } from '@/redux/hooks';
 import { Message } from '@/redux/slices/chatSlice';
 import { avatarOptions } from '@/redux/slices/settingsSlice';
@@ -12,16 +13,18 @@ import TextareaAutosize from 'react-textarea-autosize';
 import rehypeHighlight from 'rehype-highlight';
 import rehypeRaw from 'rehype-raw';
 import remarkGfm from 'remark-gfm';
+import FileCard from './FileCard';
 
 interface ChatMessageProps {
   message: Message;
+  files?: FileWithPreview[];
   isLastMessage?: boolean;
   isStreaming?: boolean;
   onRetry?: (messageId: string) => void; // 添加重试回调
   onEdit?: (messageId: string, content: string) => void; // 添加编辑回调
 }
 
-const ChatMessage: React.FC<ChatMessageProps> = ({ message, isLastMessage = false, isStreaming = false, onRetry, onEdit }) => {
+const ChatMessage: React.FC<ChatMessageProps> = ({ message, files, isLastMessage = false, isStreaming = false, onRetry, onEdit }) => {
   const isUser = message.role === 'user';
   const [isEditing, setIsEditing] = useState(false);
   const [editContent, setEditContent] = useState(message.content);
@@ -179,6 +182,19 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, isLastMessage = fals
               </ReactMarkdown>
               {isStreaming && (
                 <span className="ml-1 inline-block h-4 w-0.5 bg-current animate-pulse"></span>
+              )}
+              {files && files.length > 0 && (
+                <div className="mt-3">
+                  <div className="flex flex-wrap gap-2">
+                    {files.map((file, index) => (
+                      <FileCard
+                        key={`${file.name}-${index}`}
+                        file={file}
+                        onRemove={() => {}} // 在消息中不允许删除文件
+                      />
+                    ))}
+                  </div>
+                </div>
               )}
             </div>
           )}

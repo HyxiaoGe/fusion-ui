@@ -2,11 +2,15 @@
 
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
-import { SendIcon } from 'lucide-react';
+import { FileWithPreview } from '@/lib/utils/fileHelpers';
+import { useAppDispatch, useAppSelector } from '@/redux/hooks';
+import { addFiles, clearFiles } from '@/redux/slices/fileUploadSlice';
+import { PaperclipIcon, SendIcon, X } from 'lucide-react';
 import React, { useEffect, useRef, useState } from 'react';
+import FileUpload from './FileUpload';
 
 interface ChatInputProps {
-  onSendMessage: (content: string) => void;
+  onSendMessage: (content: string, files?: FileWithPreview[]) => void;
   disabled?: boolean;
   placeholder?: string;
 }
@@ -16,9 +20,29 @@ const ChatInput: React.FC<ChatInputProps> = ({
   disabled = false,
   placeholder = '输入您的问题...'
 }) => {
+  const dispatch = useAppDispatch();
   const [message, setMessage] = useState('');
-  const [isEditable, setIsEditable] = useState(true); // 添加可编辑状态追踪
+  const [isEditable, setIsEditable] = useState(true);
+  const [showFileUpload, setShowFileUpload] = useState(false);
+  const [files, setFiles] = useState<FileWithPreview[]>([]);
+  const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  
+  // 获取当前活跃聊天ID
+  const activeChatId = useAppSelector(state => state.chat.activeChatId) || "default-chat";
+  
+  // 从Redux获取文件状态
+  const reduxFiles = useAppSelector(state => 
+    state.fileUpload.files[activeChatId] || []
+  );
+  
+  // 初始化或同步Redux中的文件
+  useEffect(() => {
+    if (reduxFiles.length > 0) {
+      setFiles(reduxFiles);
+    }
+  }, [reduxFiles]);
   
   // 组件挂载时记录日志
   useEffect(() => {
@@ -47,42 +71,6 @@ const ChatInput: React.FC<ChatInputProps> = ({
     };
   }, [disabled]);
   
-  // 监听文本框事件
-  useEffect(() => {
-    const textarea = textareaRef.current;
-    if (!textarea) return;
-    
-    // 添加测试事件监听器
-    const handleFocus = () => {
-      console.log("文本框获得焦点");
-      setIsEditable(true);
-    };
-    
-    const handleBlur = () => {
-      console.log("文本框失去焦点");
-    };
-    
-    const handleClick = () => {
-      console.log("文本框被点击");
-      // 尝试强制可编辑
-      if (!isEditable) {
-        setIsEditable(true);
-        textarea.disabled = disabled;
-        textarea.readOnly = false;
-      }
-    };
-    
-    textarea.addEventListener('focus', handleFocus);
-    textarea.addEventListener('blur', handleBlur);
-    textarea.addEventListener('click', handleClick);
-    
-    return () => {
-      textarea.removeEventListener('focus', handleFocus);
-      textarea.removeEventListener('blur', handleBlur);
-      textarea.removeEventListener('click', handleClick);
-    };
-  }, [disabled, isEditable]);
-
   // 调整文本框高度
   useEffect(() => {
     if (textareaRef.current) {
@@ -92,11 +80,34 @@ const ChatInput: React.FC<ChatInputProps> = ({
   }, [message]);
 
   const handleSendMessage = () => {
-    console.log("尝试发送消息", { message, disabled });
-    if (!message.trim() || disabled) return;
+    console.log("尝试发送消息", { message, disabled, files });
+    if ((!message.trim() && files.length === 0) || disabled) return;
     
-    onSendMessage(message);
-    setMessage('');
+    // 模拟上传进度
+    if (files.length > 0) {
+      setUploading(true);
+      const interval = setInterval(() => {
+        setUploadProgress(prev => {
+          if (prev >= 100) {
+            clearInterval(interval);
+            setUploading(false);
+            // 发送消息和文件
+            onSendMessage(message, files);
+            setMessage('');
+            setFiles([]);
+            // 清除Redux中的文件
+            dispatch(clearFiles(activeChatId));
+            setShowFileUpload(false);
+            return 0;
+          }
+          return prev + 10;
+        });
+      }, 300);
+    } else {
+      // 只发送文本消息
+      onSendMessage(message);
+      setMessage('');
+    }
     
     // 重置文本框高度
     if (textareaRef.current) {
@@ -111,39 +122,92 @@ const ChatInput: React.FC<ChatInputProps> = ({
     }
   };
 
-  // 添加一个点击外部重置方法
-  const resetTextarea = () => {
-    console.log("执行重置方法");
-    if (textareaRef.current) {
-      textareaRef.current.disabled = disabled;
-      textareaRef.current.readOnly = false;
-      setIsEditable(true);
-    }
+  // 处理文件变化
+  const handleFilesChange = (newFiles: FileWithPreview[]) => {
+    setFiles(newFiles);
+    dispatch(addFiles({ chatId: activeChatId, files: newFiles }));
+  };
+
+  // 切换文件上传区域显示
+  const toggleFileUpload = () => {
+    setShowFileUpload(!showFileUpload);
+  };
+
+  // 清除所有文件
+  const handleClearFiles = () => {
+    setFiles([]);
+    dispatch(clearFiles(activeChatId));
   };
 
   return (
     <div className="flex flex-col space-y-2 p-4 border-t">
+      {showFileUpload && (
+        <div className="p-4 border rounded-md bg-muted/30 relative">
+          <Button 
+            variant="ghost" 
+            size="icon" 
+            className="absolute top-2 right-2 h-6 w-6" 
+            onClick={toggleFileUpload}
+          >
+            <X className="h-4 w-4" />
+          </Button>
+          <div className="mb-2 font-medium">上传文件</div>
+          <FileUpload 
+            files={files} // 传递文件列表
+            onFilesChange={handleFilesChange} 
+            disabled={disabled || uploading}
+            uploading={uploading}
+            progress={uploadProgress}
+          />
+        </div>
+      )}
+      
       <div className="flex items-end gap-2">
+        <Button
+          onClick={toggleFileUpload}
+          disabled={disabled || uploading}
+          variant="ghost"
+          size="icon"
+          className="h-10 w-10"
+        >
+          <PaperclipIcon className="h-5 w-5" />
+        </Button>
+        
         <Textarea
           ref={textareaRef}
           value={message}
           onChange={(e) => setMessage(e.target.value)}
           onKeyDown={handleKeyDown}
           placeholder={placeholder}
-          disabled={disabled}
+          disabled={disabled || uploading}
           className="min-h-10 max-h-64 flex-1 resize-none"
           rows={1}
-          onClick={resetTextarea} // 添加点击重置
         />
+        
         <Button
           onClick={handleSendMessage}
-          disabled={!message.trim() || disabled}
+          disabled={(!message.trim() && files.length === 0) || disabled || uploading}
           size="icon"
           className="h-10 w-10"
         >
           <SendIcon className="h-5 w-5" />
         </Button>
       </div>
+      
+      {files.length > 0 && (
+        <div className="pl-12 flex items-center text-xs text-muted-foreground">
+          <span>{files.length} 个文件已选择</span>
+          <Button 
+            variant="link" 
+            size="sm" 
+            className="h-auto p-0 ml-2 text-xs"
+            onClick={handleClearFiles}
+          >
+            清除
+          </Button>
+        </div>
+      )}
+      
       <div className="text-xs text-muted-foreground">
         按 Enter 发送，Shift + Enter 换行
       </div>

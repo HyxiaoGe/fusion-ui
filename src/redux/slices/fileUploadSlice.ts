@@ -36,7 +36,7 @@ const fileUploadSlice = createSlice({
       if (!state.files[chatId]) {
         state.files[chatId] = [];
       }
-      state.files[chatId] = [...state.files[chatId], ...files];
+      state.files[chatId] = files;
     },
     removeFile: (
       state,

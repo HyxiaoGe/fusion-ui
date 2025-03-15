@@ -11,6 +11,7 @@ import { Button } from '@/components/ui/button';
 import { sendMessageStream } from '@/lib/api/chat';
 import { generateChatTitle } from '@/lib/api/title';
 import { chatStore } from '@/lib/db/chatStore';
+import { FileWithPreview } from '@/lib/utils/fileHelpers';
 import { useAppDispatch, useAppSelector } from '@/redux/hooks';
 import {
   addMessage,
@@ -149,8 +150,8 @@ export default function Home() {
   };
 
   // 发送消息
-  const handleSendMessage = async (content: string) => {
-    if (!activeChatId || !content.trim() || !selectedModelId) return;
+  const handleSendMessage = async (content: string, files?: FileWithPreview[]) => {
+    if ((!content.trim() && (!files || files.length === 0)) || !activeChatId || !selectedModelId) return;
     
     console.log('发送消息', content);
     setCurrentUserQuery(content); // 保存当前查询用于相关推荐
@@ -169,7 +170,13 @@ export default function Home() {
       message: {
         role: 'user',
         content: content.trim(),
-        status: 'pending'
+        status: 'pending',
+        fileInfo: files ? files.map(file => ({
+          name: file.name,
+          size: file.size,
+          type: file.type,
+          previewUrl: file.preview
+        })) : undefined
       }
     }));
 

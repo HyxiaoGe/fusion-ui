@@ -8,6 +8,12 @@ export interface Message {
   timestamp: number;
   chatId?: string;
   status?: 'pending' | 'failed' | null;
+  fileInfo?: {
+    name: string;
+    size: number;
+    type: string;
+    previewUrl: string;
+  }[];
 }
 
 export interface Chat {

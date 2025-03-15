@@ -1,7 +1,12 @@
 'use client';
 
 import { Button } from '@/components/ui/button';
-import { Dialog, DialogContent, DialogTrigger } from '@/components/ui/dialog';
+import {
+  Dialog,
+  DialogContent,
+  DialogTitle,
+  DialogTrigger
+} from '@/components/ui/dialog';
 import { FileWithPreview } from '@/lib/utils/fileHelpers';
 import { Download, RotateCw, X, ZoomIn, ZoomOut } from 'lucide-react';
 import React, { useState } from 'react';
@@ -51,6 +56,9 @@ const ImagePreview: React.FC<ImagePreviewProps> = ({ file, className }) => {
         </div>
       </DialogTrigger>
       <DialogContent className="sm:max-w-3xl max-h-[90vh] p-0 overflow-hidden">
+        {/* 添加必要的DialogTitle */}
+        <DialogTitle className="sr-only">图片预览：{file.name}</DialogTitle>
+        
         <div className="flex flex-col h-full">
           <div className="flex justify-between items-center p-4 border-b">
             <h3 className="text-lg font-medium truncate max-w-md">{file.name}</h3>
