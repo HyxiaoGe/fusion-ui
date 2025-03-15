@@ -257,7 +257,7 @@ export default function Home() {
       // 设置消息发送失败状态
       dispatch(setMessageStatus({
         chatId: activeChatId,
-        messageId,
+        messageId: messageId,
         status: 'failed'
       }));
       
@@ -368,7 +368,7 @@ export default function Home() {
       // 标记消息再次失败
       dispatch(setMessageStatus({
         chatId: activeChatId,
-        messageId,
+        messageId: messageId,
         status: 'failed'
       }));
       

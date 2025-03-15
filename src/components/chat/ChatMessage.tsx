@@ -203,7 +203,7 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, isLastMessage = fals
         </div>
         {/* 编辑按钮 - 仅用户消息显示且非编辑状态 */}
         {isUser && !isEditing && !message.status && (
-          <div className="opacity-0 group-hover:opacity-100 transition-opacity duration-150">
+          <div className="opacity-100 transition-opacity duration-150">
             <Button 
               variant="ghost" 
               size="sm" 
