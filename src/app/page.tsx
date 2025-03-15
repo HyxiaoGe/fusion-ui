@@ -302,78 +302,67 @@ export default function Home() {
     if (!chat) return;
     
     const message = chat.messages.find(m => m.id === messageId);
-    if (!message || message.role !== 'user') return;
-    // 清除消息的失败状态
-    dispatch(setMessageStatus({
-      chatId: activeChatId,
-      messageId: message.id,
-      status: 'pending'
-    }));
+    if (!message) return;
     
-    // 删除之前的AI回复（如果有）
-    const messageIndex = chat.messages.findIndex(m => m.id === messageId);
-    if (messageIndex >= 0 && messageIndex < chat.messages.length - 1) {
-      const nextMessage = chat.messages[messageIndex + 1];
-      if (nextMessage.role === 'assistant') {
-        // 删除这条消息
-        dispatch(editMessage({
-          chatId: activeChatId,
-          messageId: message.id,
-          content: ''
-        }));
+    // 对于AI消息的重新生成，我们需要找到前一条用户消息
+    if (message.role === 'assistant') {
+      // 找到前面的用户消息
+      const messageIndex = chat.messages.findIndex(m => m.id === messageId);
+      if (messageIndex <= 0) return; // 如果是第一条消息或找不到索引，直接返回
+      
+      // 假设用户消息在AI消息之前
+      let userMessageIndex = messageIndex - 1;
+      // 寻找最近的用户消息
+      while (userMessageIndex >= 0 && chat.messages[userMessageIndex].role !== 'user') {
+        userMessageIndex--;
       }
-    }
-    
-    // 重新发送消息
-    try {
-      // 开始流式输出
-      dispatch(startStreaming(activeChatId));
       
-      await sendMessageStream({
-        model: selectedModelId,
-        message: message.content.trim(),
-        conversation_id: activeChatId,
-        stream: true,
-        options: {
-          use_enhancement: store.getState().search.contextEnhancementEnabled
+      if (userMessageIndex >= 0) {
+        const userMessage = chat.messages[userMessageIndex];
+        
+        // 删除当前的AI回复
+        dispatch(deleteMessage({
+          chatId: activeChatId,
+          messageId: message.id
+        }));
+        
+        // 使用用户消息内容重新生成
+        dispatch(startStreaming(activeChatId));
+        
+        try {
+          await sendMessageStream({
+            model: selectedModelId,
+            message: userMessage.content.trim(),
+            conversation_id: activeChatId,
+            stream: true,
+            options: {
+              use_enhancement: store.getState().search.contextEnhancementEnabled
+            }
+          }, 
+          (content, done) => {
+            if (!done) {
+              dispatch(updateStreamingContent({
+                chatId: activeChatId,
+                content
+              }));
+            } else {
+              dispatch(updateStreamingContent({
+                chatId: activeChatId,
+                content: content
+              }));
+              
+              setTimeout(() => {
+                dispatch(endStreaming());
+              }, 100);
+            }
+          });
+        } catch (error) {
+          console.error('重新生成回复失败:', error);
+          dispatch(setError('重新生成失败，请检查网络连接'));
+          dispatch(endStreaming());
         }
-      }, 
-      (content, done) => {
-        if (!done) {
-          dispatch(updateStreamingContent({
-            chatId: activeChatId,
-            content
-          }));
-        } else {
-          dispatch(updateStreamingContent({
-            chatId: activeChatId,
-            content: content
-          }));
-          
-          // 重发成功，清除消息状态
-          dispatch(setMessageStatus({
-            chatId: activeChatId,
-            messageId,
-            status: null
-          }));
-          
-          setTimeout(() => {
-            dispatch(endStreaming());
-          }, 100);
-        }
-      });
-    } catch (error) {
-      console.error('重试发送消息失败:', error);
-      
-      // 标记消息再次失败
-      dispatch(setMessageStatus({
-        chatId: activeChatId,
-        messageId: messageId,
-        status: 'failed'
-      }));
-      
-      dispatch(setError('重试失败，请检查网络连接'));
-      dispatch(endStreaming());
+      }
+      return;
     }
   };
 

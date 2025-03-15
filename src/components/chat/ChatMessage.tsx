@@ -5,7 +5,7 @@ import { cn } from '@/lib/utils';
 import { useAppSelector } from '@/redux/hooks';
 import { Message } from '@/redux/slices/chatSlice';
 import { avatarOptions } from '@/redux/slices/settingsSlice';
-import { AlertCircle, Edit2, RefreshCw } from 'lucide-react';
+import { Edit2, RefreshCw } from 'lucide-react';
 import React, { useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import TextareaAutosize from 'react-textarea-autosize';
@@ -182,24 +182,19 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, isLastMessage = fals
               )}
             </div>
           )}
-          {/* 显示错误状态和操作按钮 */}
-          {message.status === 'failed' && (
-                <div className="flex items-center mt-2 text-destructive gap-2">
-                  <AlertCircle className="h-4 w-4" />
-                  <span className="text-xs">发送失败</span>
-                  {onRetry && (
-                    <Button 
-                      size="sm" 
-                      variant="ghost" 
-                      className="h-7 px-2 ml-2"
-                      onClick={() => onRetry(message.id)}
-                    >
-                      <RefreshCw className="h-3 w-3 mr-1" />
-                      重试
-                    </Button>
-                  )}
-                </div>
-              )}
+          {!isUser && !isStreaming && (
+            <div className="opacity-0 group-hover:opacity-100 transition-opacity duration-150">
+              <Button 
+                variant="ghost" 
+                size="sm" 
+                className="h-6 text-xs text-muted-foreground hover:text-foreground hover:bg-transparent"
+                onClick={() => onRetry && onRetry(message.id)}
+              >
+                <RefreshCw className="h-3 w-3 mr-1" />
+                重新生成
+              </Button>
+            </div>
+          )}
         </div>
         {/* 编辑按钮 - 仅用户消息显示且非编辑状态 */}
         {isUser && !isEditing && !message.status && (
