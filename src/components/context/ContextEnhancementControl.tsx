@@ -166,7 +166,7 @@ const ContextEnhancementControl: React.FC<ContextEnhancementControlProps> = ({
                               {formatSourceName(item.source)}
                             </span>
                             <span className="text-xs text-muted-foreground">
-                              相关度: {Math.round(item.relevance * 100)}%
+                              相关度: {Math.round(item.similarity * 100)}%
                             </span>
                           </div>
                           <p className="text-xs line-clamp-3">{item.content}</p>

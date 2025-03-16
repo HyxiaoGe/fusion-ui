@@ -77,7 +77,7 @@ const RelatedDiscussions: React.FC<RelatedDiscussionsProps> = ({ currentQuery, c
                 </div>
                 <div className="text-xs text-muted-foreground mt-2 flex justify-between">
                   <span>{discussion.timestamp && formatDate(discussion.timestamp)}</span>
-                  <span>相关度: {Math.round(discussion.relevance * 100)}%</span>
+                  <span>相关度: {Math.round(discussion.similarity * 100)}%</span>
                 </div>
               </div>
             ))}

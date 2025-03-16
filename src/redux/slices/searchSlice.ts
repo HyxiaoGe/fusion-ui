@@ -7,7 +7,7 @@ export interface SearchResultItem {
   id: string;
   title?: string;
   content: string;
-  relevance: number;
+  similarity: number;
   timestamp?: number;
   conversationId?: string;
 }
@@ -17,7 +17,7 @@ export interface ContextItem {
   id: string;
   content: string;
   source: string;
-  relevance: number;
+  similarity: number;
 }
 
 // 定义状态类型

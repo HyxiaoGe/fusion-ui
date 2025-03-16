@@ -194,7 +194,7 @@ const GlobalSearch: React.FC = () => {
                         {result.title || '未命名对话'}
                       </div>
                       <div className="text-xs text-muted-foreground">
-                        相关度: {Math.round(result.relevance * 100)}%
+                        相关度: {Math.round(result.similarity * 100)}%
                       </div>
                     </div>
                     <div className="text-sm text-muted-foreground line-clamp-2 mt-1">
@@ -236,7 +236,7 @@ const GlobalSearch: React.FC = () => {
                         {result.title || '对话片段'}
                       </div>
                       <div className="text-xs text-muted-foreground">
-                        相关度: {Math.round(result.relevance * 100)}%
+                        相关度: {Math.round(result.similarity * 100)}%
                       </div>
                     </div>
                     <div className="text-sm line-clamp-2 mt-1">
