@@ -10,9 +10,10 @@ import ImagePreview from './ImagePreview';
 interface FileCardProps {
   file: FileWithPreview;
   onRemove: () => void;
+  readOnly?: boolean;
 }
 
-const FileCard: React.FC<FileCardProps> = ({ file, onRemove }) => {
+const FileCard: React.FC<FileCardProps> = ({ file, onRemove, readOnly = false }) => {
   const fileType = getFileType(file);
   const fileSize = formatFileSize(file.size);
 
@@ -55,14 +56,16 @@ const FileCard: React.FC<FileCardProps> = ({ file, onRemove }) => {
         </Tooltip>
         <p className="text-xs text-muted-foreground">{fileSize}</p>
       </div>
-      <Button
-        variant="ghost"
-        size="icon"
-        className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity"
-        onClick={onRemove}
-      >
-        <X className="h-4 w-4" />
-      </Button>
+      {!readOnly && (
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity"
+          onClick={onRemove}
+        >
+          <X className="h-4 w-4" />
+        </Button>
+      )}
     </div>
   );
 };

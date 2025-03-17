@@ -33,7 +33,6 @@ import { store } from '@/redux/store';
 import { EraserIcon, PlusIcon } from 'lucide-react';
 import { usePathname, useSearchParams } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
-import { v4 as uuidv4 } from 'uuid';
 export default function Home() {
   const dispatch = useAppDispatch();
   const pathname = usePathname();
@@ -161,9 +160,6 @@ export default function Home() {
                         currentChatBeforeAdd.messages.filter(msg => msg.role === 'user').length === 0 &&
                         currentChatBeforeAdd.title === '新对话';
 
-    // 添加消息ID以便后续引用
-    const messageId = uuidv4();
-
     // 添加用户消息
     dispatch(addMessage({
       chatId: activeChatId,
@@ -171,12 +167,6 @@ export default function Home() {
         role: 'user',
         content: content.trim(),
         status: 'pending',
-        fileInfo: files ? files.map(file => ({
-          name: file.name,
-          size: file.size,
-          type: file.type,
-          previewUrl: file.preview
-        })) : undefined
       }
     }));
 
@@ -191,12 +181,12 @@ export default function Home() {
     setTimeout(() => {
     // 设置加载状态，添加占位符
     dispatch(startStreaming(activeChatId));
-    
   }, 500);
-
-    // 设置加载状态
-    // dispatch(startStreaming(activeChatId));
     
+    const sendMessage = async (fileIds: string[]) => {
+
+    }
+
     try {
       await sendMessageStream({
         model: selectedModelId,
@@ -205,7 +195,8 @@ export default function Home() {
         stream: true,
         options: {
           use_enhancement: searchEnabled && contextEnhancementEnabled
-        }
+        },
+        file_ids: fileIds || []
       }, 
       (content, done, conversationId) => {
         if (!done) {

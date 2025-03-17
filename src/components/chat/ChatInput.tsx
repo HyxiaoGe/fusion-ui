@@ -22,20 +22,27 @@ const ChatInput: React.FC<ChatInputProps> = ({
 }) => {
   const dispatch = useAppDispatch();
   const [message, setMessage] = useState('');
-  const [isEditable, setIsEditable] = useState(true);
   const [showFileUpload, setShowFileUpload] = useState(false);
   const [files, setFiles] = useState<FileWithPreview[]>([]);
-  const [uploading, setUploading] = useState(false);
-  const [uploadProgress, setUploadProgress] = useState(0);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   
   // 获取当前活跃聊天ID
   const activeChatId = useAppSelector(state => state.chat.activeChatId) || "default-chat";
+  const isNewChat = useAppSelector(state => {
+    // 判断是否为新对话（没有消息的对话）
+    if (!activeChatId) return true;
+    const chat = state.chat.chats.find(c => c.id === activeChatId);
+    return !chat || chat.messages.length === 0;
+  });
   
   // 从Redux获取文件状态
   const reduxFiles = useAppSelector(state => 
     state.fileUpload.files[activeChatId] || []
   );
+  
+  // 文件上传状态
+  const isUploading = useAppSelector(state => state.fileUpload.isUploading);
+  const uploadProgress = useAppSelector(state => state.fileUpload.uploadProgress);
   
   // 初始化或同步Redux中的文件
   useEffect(() => {
@@ -43,71 +50,44 @@ const ChatInput: React.FC<ChatInputProps> = ({
       setFiles(reduxFiles);
     }
   }, [reduxFiles]);
+
+  // 获取当前选中的模型，检查是否支持文件上传
+  const selectedModel = useAppSelector(state => {
+    const modelId = state.models.selectedModelId;
+    return modelId ? state.models.models.find(m => m.id === modelId) : null;
+  });
   
-  // 组件挂载时记录日志
-  useEffect(() => {
-    console.log("ChatInput组件已挂载", { disabled });
-    
-    // 检查文本框是否可交互
-    if (textareaRef.current) {
-      const isDisabled = textareaRef.current.hasAttribute('disabled');
-      const isReadOnly = textareaRef.current.hasAttribute('readonly');
-      console.log("文本框状态检查:", { isDisabled, isReadOnly });
-      
-      // 尝试强制确保文本框可编辑
-      setTimeout(() => {
-        if (textareaRef.current) {
-          textareaRef.current.disabled = disabled;
-          textareaRef.current.readOnly = false;
-          textareaRef.current.blur(); // 先失去焦点
-          textareaRef.current.focus(); // 再获取焦点
-          console.log("已重置文本框状态");
-        }
-      }, 100);
-    }
-    
-    return () => {
-      console.log("ChatInput组件将卸载");
-    };
-  }, [disabled]);
+  // 简单判断模型是否支持文件上传
+  const supportsFileUpload = selectedModel && ['qwen', 'openai', 'deepseek'].includes(selectedModel.provider);
   
-  // 调整文本框高度
-  useEffect(() => {
-    if (textareaRef.current) {
-      textareaRef.current.style.height = 'auto';
-      textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, 200)}px`;
-    }
-  }, [message]);
+  // 处理文件选择变更
+  const handleFilesChange = (newFiles: FileWithPreview[]) => {
+    setFiles(newFiles);
+    dispatch(addFiles({ chatId: activeChatId, files: newFiles }));
+  };
+
+  // 清除所有文件
+  const handleClearFiles = () => {
+    setFiles([]);
+    dispatch(clearFiles(activeChatId));
+  };
+
+  // 切换文件上传区域显示
+  const toggleFileUpload = () => {
+    setShowFileUpload(!showFileUpload);
+  };
 
   const handleSendMessage = () => {
-    console.log("尝试发送消息", { message, disabled, files });
-    if ((!message.trim() && files.length === 0) || disabled) return;
+    if ((!message.trim() && files.length === 0) || disabled || isUploading) return;
     
-    // 模拟上传进度
-    if (files.length > 0) {
-      setUploading(true);
-      const interval = setInterval(() => {
-        setUploadProgress(prev => {
-          if (prev >= 100) {
-            clearInterval(interval);
-            setUploading(false);
-            // 发送消息和文件
-            onSendMessage(message, files);
-            setMessage('');
-            setFiles([]);
-            // 清除Redux中的文件
-            dispatch(clearFiles(activeChatId));
-            setShowFileUpload(false);
-            return 0;
-          }
-          return prev + 10;
-        });
-      }, 300);
-    } else {
-      // 只发送文本消息
-      onSendMessage(message);
-      setMessage('');
-    }
+    // 发送消息和文件
+    onSendMessage(message, files);
+    setMessage('');
+    setFiles([]);
+    
+    // 清除Redux中的文件
+    dispatch(clearFiles(activeChatId));
+    setShowFileUpload(false);
     
     // 重置文本框高度
     if (textareaRef.current) {
@@ -120,23 +100,6 @@ const ChatInput: React.FC<ChatInputProps> = ({
       e.preventDefault();
       handleSendMessage();
     }
-  };
-
-  // 处理文件变化
-  const handleFilesChange = (newFiles: FileWithPreview[]) => {
-    setFiles(newFiles);
-    dispatch(addFiles({ chatId: activeChatId, files: newFiles }));
-  };
-
-  // 切换文件上传区域显示
-  const toggleFileUpload = () => {
-    setShowFileUpload(!showFileUpload);
-  };
-
-  // 清除所有文件
-  const handleClearFiles = () => {
-    setFiles([]);
-    dispatch(clearFiles(activeChatId));
   };
 
   return (
@@ -152,12 +115,23 @@ const ChatInput: React.FC<ChatInputProps> = ({
             <X className="h-4 w-4" />
           </Button>
           <div className="mb-2 font-medium">上传文件</div>
+          {!supportsFileUpload && (
+            <div className="bg-amber-100 dark:bg-amber-950/30 text-amber-800 dark:text-amber-200 p-2 rounded mb-2 text-sm">
+              当前选择的模型不支持文件上传功能
+            </div>
+          )}
+          {isNewChat && (
+            <div className="bg-blue-100 dark:bg-blue-950/30 text-blue-800 dark:text-blue-200 p-2 rounded mb-2 text-sm">
+              这是新对话，文件将会在发送消息时一起上传
+            </div>
+          )}
           <FileUpload 
-            files={files} // 传递文件列表
-            onFilesChange={handleFilesChange} 
-            disabled={disabled || uploading}
-            uploading={uploading}
-            progress={uploadProgress}
+            files={files}
+            onFilesChange={handleFilesChange}
+            disabled={!supportsFileUpload || disabled}
+            uploading={false} // 不在这里上传，而是在发送消息时上传
+            progress={0}
+            simulateMode={true} // 新增模拟模式，不实际上传
           />
         </div>
       )}
@@ -165,10 +139,11 @@ const ChatInput: React.FC<ChatInputProps> = ({
       <div className="flex items-end gap-2">
         <Button
           onClick={toggleFileUpload}
-          disabled={disabled || uploading}
-          variant="ghost"
+          disabled={disabled || isUploading}
+          variant={supportsFileUpload ? "ghost" : "outline"}
           size="icon"
-          className="h-10 w-10"
+          className={`h-10 w-10 ${!supportsFileUpload ? 'opacity-50' : ''}`}
+          title={supportsFileUpload ? "上传文件" : "当前模型不支持文件上传"}
         >
           <PaperclipIcon className="h-5 w-5" />
         </Button>
@@ -179,14 +154,14 @@ const ChatInput: React.FC<ChatInputProps> = ({
           onChange={(e) => setMessage(e.target.value)}
           onKeyDown={handleKeyDown}
           placeholder={placeholder}
-          disabled={disabled || uploading}
+          disabled={disabled || isUploading}
           className="min-h-10 max-h-64 flex-1 resize-none"
           rows={1}
         />
         
         <Button
           onClick={handleSendMessage}
-          disabled={(!message.trim() && files.length === 0) || disabled || uploading}
+          disabled={(!message.trim() && files.length === 0) || disabled || isUploading}
           size="icon"
           className="h-10 w-10"
         >

@@ -10,21 +10,25 @@ import FileCard from './FileCard';
 interface FileUploadProps {
   files: FileWithPreview[]; 
   onFilesChange: (files: FileWithPreview[]) => void;
+  conversationId?: string; // 设为可选
   maxFiles?: number;
   maxSizeMB?: number;
   disabled?: boolean;
   uploading?: boolean;
   progress?: number;
+  simulateMode?: boolean; // 新增，是否为模拟模式
 }
 
 const FileUpload: React.FC<FileUploadProps> = ({
   files,
   onFilesChange,
+  conversationId,
   maxFiles = 5,
   maxSizeMB = 10,
   disabled = false,
   uploading = false,
   progress = 0,
+  simulateMode = false // 默认为非模拟模式
 }) => {
   const [error, setError] = useState<string | null>(null);
   const maxSizeBytes = maxSizeMB * 1024 * 1024;
@@ -105,8 +109,6 @@ const FileUpload: React.FC<FileUploadProps> = ({
         className={`border-2 border-dashed rounded-md p-4 transition-colors ${
           isDragActive ? 'border-primary bg-primary/5' : 'border-muted'
         } ${disabled || uploading ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
-        role="button"
-        tabIndex={0}
       >
         <input {...getInputProps()} />
         
@@ -118,6 +120,11 @@ const FileUpload: React.FC<FileUploadProps> = ({
           <p className="text-xs text-muted-foreground mt-1">
             支持图片、PDF、Word、Excel和文本文件，最大 {maxSizeMB}MB
           </p>
+          {simulateMode && (
+            <p className="text-xs text-blue-600 dark:text-blue-400 mt-1">
+              文件将在发送消息时上传
+            </p>
+          )}
         </div>
       </div>
       
