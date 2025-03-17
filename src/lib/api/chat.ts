@@ -1,4 +1,3 @@
-import { Message } from '@/redux/slices/chatSlice';
 import { API_CONFIG } from '../config';
 
 const API_BASE_URL = API_CONFIG.BASE_URL
@@ -16,6 +15,7 @@ export interface ChatRequest {
     max_tokens?: number;
     [key: string]: any;
   } | null;
+  file_ids?: string[];
 }
 
 export interface ChatResponse {

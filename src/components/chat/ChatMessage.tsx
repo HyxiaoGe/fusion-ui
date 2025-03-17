@@ -2,11 +2,11 @@
 
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
-import { FileWithPreview } from '@/lib/utils/fileHelpers';
+import { FileWithPreview, formatFileSize } from '@/lib/utils/fileHelpers';
 import { useAppSelector } from '@/redux/hooks';
 import { Message } from '@/redux/slices/chatSlice';
 import { avatarOptions } from '@/redux/slices/settingsSlice';
-import { Edit2, RefreshCw } from 'lucide-react';
+import { Edit2, FileIcon, RefreshCw } from 'lucide-react';
 import React, { useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import TextareaAutosize from 'react-textarea-autosize';
@@ -150,7 +150,33 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, files, isLastMessage
               </div>
             ) : (
               // 非编辑模式下显示普通消息内容
-              <div>{message.content}</div>
+              <div>
+                {message.content}
+                {/* 添加文件显示 */}
+                {message.fileInfo && message.fileInfo.length > 0 && (
+                  <div className="mt-3">
+                    <div className="flex flex-wrap gap-2">
+                      {message.fileInfo.map((file, index) => (
+                        <div key={`${file.name}-${index}`} className="flex items-center space-x-2 rounded-md border border-border p-2 bg-card/80">
+                          <div className="shrink-0">
+                            {file.type.startsWith('image/') ? (
+                              <div className="w-10 h-10 relative rounded-md overflow-hidden border">
+                                <img src={file.previewUrl} alt={file.name} className="object-cover w-full h-full" />
+                              </div>
+                            ) : (
+                              <FileIcon className="h-8 w-8 text-muted-foreground" />
+                            )}
+                          </div>
+                          <div className="min-w-0">
+                            <p className="text-xs font-medium truncate max-w-[180px]">{file.name}</p>
+                            <p className="text-xs text-muted-foreground">{formatFileSize(file.size)}</p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
             )
           ) : (
             <div className={cn(
@@ -189,6 +215,7 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, files, isLastMessage
                     {files.map((file, index) => (
                       <FileCard
                         key={`${file.name}-${index}`}
+                        chatId={message.id}
                         file={file}
                         onRemove={() => {}} // 在消息中不允许删除文件
                       />
