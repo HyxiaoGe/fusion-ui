@@ -103,12 +103,12 @@ const ChatInput: React.FC<ChatInputProps> = ({
     }
   };
 
-  // 处理文件变化
+  // 处理文件变化 - 适配FilePond
   const handleFilesChange = (newFiles: FileWithPreview[]) => {
     setFiles(newFiles);
   };
 
-  // 处理文件上传完成
+  // 处理文件上传完成 - 适配FilePond
   const handleUploadComplete = (fileIds: string[]) => {
     console.log("文件上传完成，获取到文件ID:", fileIds);
   };
