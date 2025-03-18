@@ -33,6 +33,8 @@ import { store } from '@/redux/store';
 import { EraserIcon, PlusIcon } from 'lucide-react';
 import { usePathname, useSearchParams } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
+import { v4 as uuidv4 } from 'uuid';
+
 export default function Home() {
   const dispatch = useAppDispatch();
   const pathname = usePathname();
@@ -160,6 +162,16 @@ export default function Home() {
       currentChatBeforeAdd.messages.filter(msg => msg.role === 'user').length === 0 &&
       currentChatBeforeAdd.title === '新对话';
 
+      const messageId = uuidv4();
+
+      const fileInfo = files && files.length > 0 ? [{
+      name: files[0].name,
+      size: files[0].size,
+      type: files[0].type,
+      previewUrl: files[0].preview,
+      fileId: (files[0] as any).fileId
+    }] : undefined;
+
     // 添加用户消息
     dispatch(addMessage({
       chatId: activeChatId,
@@ -167,13 +179,7 @@ export default function Home() {
         role: 'user',
         content: content.trim(),
         status: 'pending',
-        fileInfo: files ? files.map(file => ({
-          name: file.name,
-          size: file.size,
-          type: file.type,
-          previewUrl: file.preview,
-          fileId: (file as any).fileId // 添加文件ID
-        })) : undefined
+        fileInfo: fileInfo
       }
     }));
 
@@ -224,7 +230,7 @@ export default function Home() {
           if (done) {
             dispatch(setMessageStatus({
               chatId: activeChatId,
-              messageId: messageId,
+              messageId,
               status: null
             }));
           }

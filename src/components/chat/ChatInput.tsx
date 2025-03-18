@@ -25,36 +25,36 @@ const ChatInput: React.FC<ChatInputProps> = ({
   const [showFileUpload, setShowFileUpload] = useState(false);
   const [files, setFiles] = useState<FileWithPreview[]>([]);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  
+
   // 获取当前活跃聊天ID
   const activeChatId = useAppSelector(state => state.chat.activeChatId) || "default-chat";
-  
+
   // 从Redux获取文件状态
   const reduxFiles = useAppSelector(state => state.fileUpload.files[activeChatId] || []);
   const fileIds = useAppSelector(state => state.fileUpload.fileIds[activeChatId] || []);
   const isUploading = useAppSelector(state => state.fileUpload.isUploading);
   const uploadProgress = useAppSelector(state => state.fileUpload.uploadProgress);
-  
+
   // 初始化或同步Redux中的文件
   useEffect(() => {
     if (reduxFiles.length > 0 && files.length === 0) {
       setFiles(reduxFiles);
     }
   }, [reduxFiles, files.length]);
-  
+
   // 组件挂载或activeChatId变化时重置状态
   useEffect(() => {
     console.log("ChatInput组件已挂载或activeChatId变化", { disabled, activeChatId });
-    
+
     // 清空文件状态，避免聊天切换时文件状态混乱
     setFiles([]);
-    
+
     // 检查文本框是否可交互
     if (textareaRef.current) {
       const isDisabled = textareaRef.current.hasAttribute('disabled');
       const isReadOnly = textareaRef.current.hasAttribute('readonly');
       console.log("文本框状态检查:", { isDisabled, isReadOnly });
-      
+
       // 尝试强制确保文本框可编辑
       setTimeout(() => {
         if (textareaRef.current) {
@@ -64,12 +64,12 @@ const ChatInput: React.FC<ChatInputProps> = ({
         }
       }, 100);
     }
-    
+
     return () => {
       console.log("ChatInput组件将卸载或activeChatId即将变化");
     };
   }, [disabled, activeChatId]);
-  
+
   // 调整文本框高度
   useEffect(() => {
     if (textareaRef.current) {
@@ -81,21 +81,21 @@ const ChatInput: React.FC<ChatInputProps> = ({
   const handleSendMessage = () => {
     console.log("尝试发送消息", { message, disabled, files, fileIds });
     if ((!message.trim() && files.length === 0) || disabled || isUploading) return;
-    
+
     // 收集实际的文件ID
     const actualFileIds = files
       .map(file => (file as any).fileId)
       .filter(id => id !== undefined);
-    
+
     // 发送消息和文件ID
     onSendMessage(message, files, actualFileIds);
     setMessage('');
-    
+
     // 清除文件和关闭上传区域
     setFiles([]);
     dispatch(clearFiles(activeChatId));
     setShowFileUpload(false);
-    
+
     // 重置文本框高度
     if (textareaRef.current) {
       textareaRef.current.style.height = 'auto';
@@ -111,8 +111,12 @@ const ChatInput: React.FC<ChatInputProps> = ({
 
   // 处理文件变化
   const handleFilesChange = (newFiles: FileWithPreview[]) => {
-    console.log("文件列表已更新:", newFiles);
-    setFiles(newFiles);
+    // 如果有多个文件，只保留第一个
+    if (newFiles.length > 0) {
+      setFiles([newFiles[0]]);
+    } else {
+      setFiles([]);
+    }
   };
 
   // 处理文件上传完成
@@ -136,10 +140,10 @@ const ChatInput: React.FC<ChatInputProps> = ({
     const modelId = state.models.selectedModelId;
     return modelId ? state.models.models.find(m => m.id === modelId) : null;
   });
-  
+
   // 简单判断模型是否支持文件上传（可根据具体要求调整）
   const supportsFileUpload = selectedModel && ['qwen', 'openai', 'deepseek'].includes(selectedModel.provider);
-  
+
   // 如果模型不支持文件上传，显示禁用状态
   const fileUploadDisabled = !supportsFileUpload || disabled;
 
@@ -147,21 +151,21 @@ const ChatInput: React.FC<ChatInputProps> = ({
     <div className="flex flex-col space-y-2 p-4 border-t">
       {showFileUpload && (
         <div className="p-4 border rounded-md bg-muted/30 relative">
-          <Button 
-            variant="ghost" 
-            size="icon" 
-            className="absolute top-2 right-2 h-6 w-6" 
+          <Button
+            variant="ghost"
+            size="icon"
+            className="absolute top-2 right-2 h-6 w-6"
             onClick={toggleFileUpload}
           >
             <X className="h-4 w-4" />
           </Button>
-          <div className="mb-2 font-medium">上传文件</div>
+          <div className="mb-2 font-medium">上传文件 (单个文件)</div>
           {!supportsFileUpload && (
             <div className="bg-amber-100 dark:bg-amber-950/30 text-amber-800 dark:text-amber-200 p-2 rounded mb-2 text-sm">
               当前选择的模型不支持文件上传功能
             </div>
           )}
-          <FileUpload 
+          <FileUpload
             files={files}
             onFilesChange={handleFilesChange}
             conversationId={activeChatId}
@@ -169,10 +173,11 @@ const ChatInput: React.FC<ChatInputProps> = ({
             uploading={isUploading}
             progress={uploadProgress}
             onUploadComplete={handleUploadComplete}
+            maxFiles={1} // 明确设置为1
           />
         </div>
       )}
-      
+
       <div className="flex items-end gap-2">
         <Button
           onClick={toggleFileUpload}
@@ -184,7 +189,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
         >
           <PaperclipIcon className="h-5 w-5" />
         </Button>
-        
+
         <Textarea
           ref={textareaRef}
           value={message}
@@ -195,7 +200,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
           className="min-h-10 max-h-64 flex-1 resize-none"
           rows={1}
         />
-        
+
         <Button
           onClick={handleSendMessage}
           disabled={(!message.trim() && files.length === 0) || disabled || isUploading}
@@ -205,13 +210,13 @@ const ChatInput: React.FC<ChatInputProps> = ({
           <SendIcon className="h-5 w-5" />
         </Button>
       </div>
-      
+
       {files.length > 0 && (
         <div className="pl-12 flex items-center text-xs text-muted-foreground">
-          <span>{files.length} 个文件已选择</span>
-          <Button 
-            variant="link" 
-            size="sm" 
+          <span>已选择文件: {files[0]?.name}</span>
+          <Button
+            variant="link"
+            size="sm"
             className="h-auto p-0 ml-2 text-xs"
             onClick={handleClearFiles}
           >
@@ -219,7 +224,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
           </Button>
         </div>
       )}
-      
+
       <div className="text-xs text-muted-foreground">
         按 Enter 发送，Shift + Enter 换行
       </div>

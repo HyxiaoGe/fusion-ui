@@ -51,7 +51,7 @@ const FileUpload: React.FC<FileUploadProps> = ({
   files,
   onFilesChange,
   conversationId,
-  maxFiles = 5,
+  maxFiles = 1,
   maxSizeMB = 10,
   disabled = false,
   uploading = false,
@@ -59,27 +59,125 @@ const FileUpload: React.FC<FileUploadProps> = ({
   onUploadComplete,
 }) => {
   const dispatch = useAppDispatch();
+  const [uploadedFiles, setUploadedFiles] = useState<Set<string>>(new Set());
   const [localFiles, setLocalFiles] = useState<any[]>([]);
   const [error, setLocalError] = useState<string | null>(null);
   const maxSizeBytes = maxSizeMB * 1024 * 1024;
 
   // 当外部files变化时更新本地状态
   useEffect(() => {
+    // 当files有内容且localFiles为空时，正确恢复FilePond状态
     if (files.length > 0 && localFiles.length === 0) {
-      const pondFiles = files.map((file) => ({
+      // 创建已完成状态的pond文件
+      const pondFiles = files.map(file => ({
         source: file,
         options: {
-          type: "local",
+          type: 'local',
           file: {
             name: file.name,
             size: file.size,
             type: file.type,
           },
-        },
+          // 关键:设置文件状态为已处理，防止再次上传
+          metadata: {
+            status: 'processing-complete'
+          }
+        }
       }));
       setLocalFiles(pondFiles);
     }
-  }, [files, localFiles.length]);
+  }, [files, localFiles]);
+
+  const [processedFileIds, setProcessedFileIds] = useState<Set<string>>(new Set());
+
+  // 自定义server配置来控制上传行为
+  const serverConfig = {
+    process: (fieldName: string, file: File, metadata: any, load: Function, error: Function, progress: Function, abort: Function) => {
+      // 为文件创建唯一ID（可以使用名称+大小的组合）
+      const fileId = `${file.name}-${file.size}`;
+
+      // 如果文件已经上传过，直接标记为完成
+      if (processedFileIds.has(fileId)) {
+        console.log('文件已处理，不再重复上传:', file.name);
+        // 直接调用load完成上传过程，但不实际发送请求
+        setTimeout(() => load(fileId), 100);
+        return;
+      }
+
+      // 正常上传流程
+      dispatch(setUploading(true));
+      dispatch(setUploadProgress(0));
+
+      // 进度条模拟
+      let progressValue = 0;
+      const interval = setInterval(() => {
+        progressValue += 10;
+        if (progressValue >= 90) {
+          clearInterval(interval);
+        }
+        progress(progressValue);
+        dispatch(setUploadProgress(progressValue));
+      }, 300);
+
+      // 执行实际上传
+      uploadFiles(conversationId, [file]).then(fileIds => {
+        clearInterval(interval);
+        progress(100);
+        dispatch(setUploadProgress(100));
+
+        if (fileIds.length > 0) {
+          const uploadedFileId = fileIds[0];
+
+          // 保存到已处理文件集合
+          setProcessedFileIds(prev => {
+            const newSet = new Set(prev);
+            newSet.add(fileId);
+            return newSet;
+          });
+
+          // 处理文件预览和ID
+          const fileWithPreview = createFileWithPreview(file);
+          (fileWithPreview as any).fileId = uploadedFileId;
+          onFilesChange([fileWithPreview]);
+
+          dispatch(addFileId({
+            chatId: conversationId,
+            fileId: uploadedFileId,
+            fileIndex: 0,
+          }));
+        }
+
+        if (onUploadComplete) {
+          onUploadComplete(fileIds);
+        }
+
+        setTimeout(() => {
+          dispatch(setUploading(false));
+          dispatch(setUploadProgress(0));
+        }, 500);
+
+        // 完成上传处理
+        load(fileId);
+      }).catch(err => {
+        clearInterval(interval);
+        console.error("文件上传失败:", err);
+        setLocalError("文件上传失败，请重试");
+        dispatch(setError("文件上传失败"));
+        dispatch(setUploading(false));
+        error('上传失败');
+      });
+
+      // 返回中止函数
+      return {
+        abort: () => {
+          abort();
+          dispatch(setUploading(false));
+        }
+      };
+    },
+    // 不需要实现revert，因为我们在关闭时保留文件
+    revert: null
+  };
 
   // 处理文件上传
   const handleProcessFile = async (error: any, file: FilePondFile) => {
@@ -89,55 +187,59 @@ const FileUpload: React.FC<FileUploadProps> = ({
     }
 
     try {
+
       const originalFile = file.file as File;
       dispatch(setUploading(true));
       dispatch(setUploadProgress(0));
 
+      // 检查文件是否已上传过
+      if (uploadedFiles.has(originalFile.name)) {
+        console.log("文件已上传，跳过重复上传:", originalFile.name);
+        return; // 直接返回，不再上传
+      }
+
       // 设置进度更新的模拟
-      let uploadProgress = 0;
-      const uploadProgressInterval = setInterval(() => {
-        if (uploadProgress >= 90) {
-          clearInterval(uploadProgressInterval);
-          dispatch(setUploadProgress(90));
-        } else {
-          uploadProgress += 10;
-          dispatch(setUploadProgress(uploadProgress));
+      let progress = 0;
+      const interval = setInterval(() => {
+        progress += 10;
+        if (progress >= 90) {
+          clearInterval(interval);
         }
-      }, 500);
+        dispatch(setUploadProgress(progress));
+      }, 300);
 
       // 上传文件
       const fileIds = await uploadFiles(conversationId, [originalFile]);
-
-      // 清除定时器并设置进度为100%
-      clearInterval(uploadProgressInterval);
+      clearInterval(interval);
       dispatch(setUploadProgress(100));
 
       // 保存文件ID到Redux
       if (fileIds.length > 0) {
-        const fileIndex = files.length;
-        const fileId = fileIds[0]; // 一次只处理一个文件
+        const fileId = fileIds[0];
 
-        dispatch(
-          addFileId({
-            chatId: conversationId,
-            fileId,
-            fileIndex,
-          })
-        );
-
-        // 创建带预览的文件对象
+        // 清除旧文件，只保留新文件
         const fileWithPreview = createFileWithPreview(originalFile);
         (fileWithPreview as any).fileId = fileId;
 
-        // 更新文件列表
-        const newFiles = [...files, fileWithPreview];
-        onFilesChange(newFiles);
+        onFilesChange([fileWithPreview]);
+
+        dispatch(addFileId({
+          chatId: conversationId,
+          fileId,
+          fileIndex: 0, // 始终是第一个文件
+        }));
       }
 
       // 通知上传完成
       if (onUploadComplete) {
         onUploadComplete(fileIds);
       }
+
+      setUploadedFiles(prev => {
+        const newSet = new Set(prev);
+        newSet.add(originalFile.name);
+        return newSet;
+      });
 
       // 短暂延迟后重置上传状态
       setTimeout(() => {
@@ -164,8 +266,9 @@ const FileUpload: React.FC<FileUploadProps> = ({
       <FilePond
         files={localFiles}
         onupdatefiles={setLocalFiles}
-        allowMultiple={true}
+        allowMultiple={false}
         maxFiles={maxFiles}
+        server={serverConfig}
         maxFileSize={`${maxSizeMB}MB`}
         name="files"
         labelIdle='拖放文件 <span class="filepond--label-action">或点击浏览</span>'
@@ -180,6 +283,14 @@ const FileUpload: React.FC<FileUploadProps> = ({
         labelButtonAbortItemLoad="取消"
         labelButtonProcessItem="上传"
         onaddfile={handleProcessFile}
+        beforeAddFile={(file) => {
+          // 如果文件已上传过，将其标记为已处理，避免再次上传
+          if (uploadedFiles.has(file.filename)) {
+            file.setMetadata('status', 'processed');
+            return false; // 返回false不阻止添加，但会跳过上传
+          }
+          return true;
+        }}
         onremovefile={(error, file, index) => handleRemoveFile(file, index)}
         disabled={disabled || uploading}
         acceptedFileTypes={[
@@ -197,6 +308,9 @@ const FileUpload: React.FC<FileUploadProps> = ({
         ]}
         className="filepond-upload-container"
       />
+      <p className="text-muted-foreground text-xs mt-2">
+        单次对话仅支持上传1个文件，最大 {maxSizeMB}MB
+      </p>
 
       {uploading && (
         <div className="mt-4">
