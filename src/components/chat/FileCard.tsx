@@ -2,20 +2,43 @@
 
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { deleteFile } from '@/lib/api/files';
 import { FileWithPreview, formatFileSize, getFileType } from '@/lib/utils/fileHelpers';
-import { ArchiveIcon, FileCodeIcon, FileIcon, FileTextIcon, X } from 'lucide-react';
-import React from 'react';
+import { useAppDispatch } from '@/redux/hooks';
+import { removeFileId } from '@/redux/slices/fileUploadSlice';
+import { ArchiveIcon, FileCodeIcon, FileIcon, FileTextIcon, Loader2, X } from 'lucide-react';
+import React, { useState } from 'react';
 import ImagePreview from './ImagePreview';
 
 interface FileCardProps {
-  file: FileWithPreview;
+  file: FileWithPreview & { fileId?: string };
+  chatId: string;
   onRemove: () => void;
   readOnly?: boolean;
 }
 
-const FileCard: React.FC<FileCardProps> = ({ file, onRemove, readOnly = false }) => {
+const FileCard: React.FC<FileCardProps> = ({ file, chatId, onRemove, readOnly = false }) => {
+  const dispatch = useAppDispatch();
+  const [isDeleting, setIsDeleting] = useState(false);
   const fileType = getFileType(file);
   const fileSize = formatFileSize(file.size);
+
+  const handleDelete = async () => {
+    if (file.fileId && !readOnly) {
+      try {
+        setIsDeleting(true);
+        await deleteFile(file.fileId);
+        dispatch(removeFileId({ chatId, fileId: file.fileId }));
+        onRemove();
+      } catch (error) {
+        console.error('删除文件失败:', error);
+      } finally {
+        setIsDeleting(false);
+      }
+    } else {
+      onRemove();
+    }
+  };
 
   const renderFileIcon = () => {
     switch (fileType) {
@@ -55,15 +78,21 @@ const FileCard: React.FC<FileCardProps> = ({ file, onRemove, readOnly = false })
           </TooltipContent>
         </Tooltip>
         <p className="text-xs text-muted-foreground">{fileSize}</p>
+        {file.fileId && <p className="text-xs text-muted-foreground truncate">ID: {file.fileId}</p>}
       </div>
       {!readOnly && (
         <Button
           variant="ghost"
           size="icon"
           className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity"
-          onClick={onRemove}
+          onClick={handleDelete}
+          disabled={isDeleting}
         >
-          <X className="h-4 w-4" />
+          {isDeleting ? (
+            <Loader2 className="h-4 w-4 animate-spin" />
+          ) : (
+            <X className="h-4 w-4" />
+          )}
         </Button>
       )}
     </div>

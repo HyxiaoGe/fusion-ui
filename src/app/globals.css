@@ -132,3 +132,78 @@
     @apply bg-background text-foreground;
   }
 }
+
+.filepond--panel-root {
+  background-color: var(--color-muted);
+  border: 1px dashed var(--color-border);
+}
+
+.filepond--drop-label {
+  color: var(--color-muted-foreground);
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+
+.filepond--drop-label.filepond--drop-label label {
+  font-weight: 500;
+}
+
+.filepond--label-action {
+  text-decoration-color: var(--color-primary);
+  color: var(--color-primary);
+}
+
+/* 适配暗黑模式 */
+.dark .filepond--panel-root {
+  background-color: hsl(var(--muted)/50%);
+}
+
+.dark .filepond--drop-label {
+  color: var(--color-muted-foreground);
+}
+
+/* 上传按钮样式 */
+.filepond--file-action-button {
+  background-color: rgba(0, 0, 0, 0.5);
+  color: white;
+}
+
+.filepond--image-preview-overlay-success {
+  color: var(--color-primary);
+}
+
+/* 文件项容器 */
+.filepond--item {
+  margin-top: 0.5rem;
+}
+
+/* 进度条样式 */
+.filepond--progress-indicator {
+  background-color: var(--color-primary);
+}
+
+/* 文件标签样式 */
+.filepond--file {
+  color: var(--color-foreground);
+}
+
+/* 给上传区域添加圆角 */
+.filepond-upload-container .filepond--panel-root {
+  border-radius: 0.5rem;
+}
+
+/* 改善拖拽时的视觉效果 */
+.filepond--drip {
+  background-color: var(--color-primary);
+  opacity: 0.1;
+}
+
+/* 上传状态指示器 */
+.filepond--file-status {
+  margin-top: 0.25rem;
+}
+
+/* 文件信息 */
+.filepond--file-info {
+  margin-top: 0.25rem;
+}
