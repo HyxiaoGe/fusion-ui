@@ -11,8 +11,8 @@ export interface FileInfo {
   created_at: string;
 }
 
-// 上传文件
-export async function uploadFiles(conversationId: string, files: File[]): Promise<string[]> {
+// 上传文件 - 添加错误处理和重试逻辑
+export async function uploadFiles(conversationId: string, files: File[], retryCount = 3): Promise<string[]> {
   try {
     const formData = new FormData();
     formData.append('conversation_id', conversationId);
@@ -21,20 +21,42 @@ export async function uploadFiles(conversationId: string, files: File[]): Promis
       formData.append('files', file);
     });
     
+    // 设置超时
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 30000); // 30秒超时
+    
     const response = await fetch(`${API_BASE_URL}/api/files/upload`, {
       method: 'POST',
       body: formData,
+      signal: controller.signal
     });
     
+    clearTimeout(timeoutId);
+    
     if (!response.ok) {
-      const errorData = await response.json();
-      throw new Error(errorData.detail || '文件上传失败');
+      // 尝试获取详细错误信息
+      let errorDetail = '文件上传失败';
+      try {
+        const errorData = await response.json();
+        errorDetail = errorData.detail || errorDetail;
+      } catch (e) {
+        // 无法解析错误详情，使用默认错误消息
+      }
+      
+      throw new Error(errorDetail);
     }
     
     const data = await response.json();
     return data.file_ids;
   } catch (error) {
     console.error('上传文件失败:', error);
+    
+    // 如果是超时或网络错误，尝试重试
+    if (retryCount > 0 && (error instanceof TypeError || (error as any).name === 'AbortError')) {
+      console.log(`上传失败，进行第${4 - retryCount}次重试...`);
+      return uploadFiles(conversationId, files, retryCount - 1);
+    }
+    
     throw error;
   }
 }
@@ -69,7 +91,7 @@ export async function deleteFile(fileId: string): Promise<void> {
       throw new Error(errorData.detail || '删除文件失败');
     }
   } catch (error) {
-    console.error('删除文件失败:', error);
+    console.error("删除文件失败:", error);
     throw error;
   }
 }
