@@ -9,11 +9,10 @@ const API_BASE_URL = API_CONFIG.BASE_URL;
  * @param message 可选，单条消息用于生成标题
  * @param options 可选，额外选项
  */
-export async function generateChatTitle(model: string, conversationId?: string, message?: string, options?: any) {
+export async function generateChatTitle(conversationId?: string, message?: string, options?: any) {
   try {
     // 构建请求体，与API文档一致
     const requestBody = {
-      model: model,
       conversation_id: conversationId,
       message: message,
       options: options

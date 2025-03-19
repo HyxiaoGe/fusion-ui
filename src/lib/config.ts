@@ -1,7 +1,7 @@
 // API配置
 export const API_CONFIG = {
     // 基础URL
-    BASE_URL: process.env.NEXT_PUBLIC_API_BASE_URL || 'http://39.108.189.204:8000',
+    BASE_URL: process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000',
     
     // 超时时间（毫秒）
     TIMEOUT: 30000,

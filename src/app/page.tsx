@@ -157,14 +157,20 @@ export default function Home() {
     console.log('发送消息', { content, files, fileIds });
     setCurrentUserQuery(content); // 保存当前查询用于相关推荐
 
+    const selectedModel = models.find(m => m.id === selectedModelId);
+    if (!selectedModel) {
+      dispatch(setError('找不到选中的模型信息'));
+      return;
+    }
+
     const currentChatBeforeAdd = chats.find(chat => chat.id === activeChatId);
     const isFirstMessage = currentChatBeforeAdd &&
       currentChatBeforeAdd.messages.filter(msg => msg.role === 'user').length === 0 &&
       currentChatBeforeAdd.title === '新对话';
 
-      const messageId = uuidv4();
+    const messageId = uuidv4();
 
-      const fileInfo = files && files.length > 0 ? [{
+    const fileInfo = files && files.length > 0 ? [{
       name: files[0].name,
       size: files[0].size,
       type: files[0].type,
@@ -198,7 +204,8 @@ export default function Home() {
 
     try {
       await sendMessageStream({
-        model: selectedModelId,
+        provider: selectedModel.provider,
+        model: selectedModel.id,
         message: content.trim(),
         conversation_id: activeChatId,
         stream: true,
@@ -242,8 +249,7 @@ export default function Home() {
             setTimeout(async () => {
               try {
                 const generatedTitle = await generateChatTitle(
-                  selectedModelId,
-                  activeChatId || conversationId, // 使用可能从服务器返回的新conversationId
+                  activeChatId || conversationId || '', // 使用可能从服务器返回的新conversationId
                   undefined, // 不传具体消息，让后端从对话ID获取完整消息链
                   { max_length: 20 }
                 );
@@ -333,12 +339,19 @@ export default function Home() {
           messageId: message.id
         }));
 
+        const selectedModel = models.find(m => m.id === selectedModelId);
+        if (!selectedModel) {
+          dispatch(setError('找不到选中的模型信息'));
+          return;
+        }
+
         // 使用用户消息内容重新生成
         dispatch(startStreaming(activeChatId));
 
         try {
           await sendMessageStream({
-            model: selectedModelId,
+            provider: selectedModel.provider,
+            model: selectedModel.id,
             message: userMessage.content.trim(),
             conversation_id: activeChatId,
             stream: true,
@@ -401,6 +414,12 @@ export default function Home() {
       }));
     }
 
+    const selectedModel = models.find(m => m.id === selectedModelId);
+    if (!selectedModel) {
+      dispatch(setError('找不到选中的模型信息'));
+      return;
+    }
+
     // 设置消息状态为发送中
     dispatch(setMessageStatus({
       chatId: activeChatId,
@@ -415,7 +434,8 @@ export default function Home() {
     try {
 
       await sendMessageStream({
-        model: selectedModelId,
+        provider: selectedModel.provider,
+        model: selectedModel.id,
         message: newContent.trim(),
         conversation_id: activeChatId,
         stream: true,

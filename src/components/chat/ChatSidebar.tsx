@@ -114,7 +114,6 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ onNewChat }) => {
       
       // 调用API生成标题
       const generatedTitle = await generateChatTitle(
-        modelId,          // 模型ID
         chatId,           // 对话ID
         undefined,        // 不传具体消息，让后端从对话ID获取完整消息
         { max_length: 20 } // 可选参数，限制标题长度

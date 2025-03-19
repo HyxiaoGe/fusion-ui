@@ -4,6 +4,7 @@ const API_BASE_URL = API_CONFIG.BASE_URL
 
 // API请求类型定义
 export interface ChatRequest {
+  provider: string;
   model: string;
   message: string;
   conversation_id?: string | null;
