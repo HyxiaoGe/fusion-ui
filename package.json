@@ -68,6 +68,7 @@
     "@commitlint/cli": "^19.7.1",
     "@commitlint/config-conventional": "^19.7.1",
     "@shadcn/ui": "^0.0.4",
+    "@types/react-dom": "^19.0.4",
     "autoprefixer": "^10.4.20",
     "cross-env": "^7.0.3",
     "electron-devtools-installer": "^4.0.0",

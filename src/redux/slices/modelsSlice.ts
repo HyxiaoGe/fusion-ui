@@ -1,63 +1,20 @@
+import { ModelInfo, models, ProviderInfo, providers } from "@/lib/config/modelConfig";
 import { createSlice, PayloadAction } from "@reduxjs/toolkit";
 
-export interface Model {
-  id: string;
-  name: string;
-  provider: 'qwen' | 'wenxin' | 'openai' | 'deepseek';
-  icon: string;
-  maxTokens: number;
-  temperature: number;
-  enabled: boolean;
-}
+// 原有接口保持兼容
+export interface Model extends ModelInfo {}
 
 interface ModelsState {
   models: Model[];
+  providers: ProviderInfo[];
   selectedModelId: string | null;
   isLoading: boolean;
 }
 
-const initialModels: Model[] = [
-  {
-    id: 'qwen',
-    name: '通义千问',
-    provider: 'qwen',
-    icon: 'qwen',
-    maxTokens: 8192,
-    temperature: 0.7,
-    enabled: true
-  },
-  {
-    id: 'wenxin',
-    name: '文心一言',
-    provider: 'wenxin',
-    icon: 'wenxin',
-    maxTokens: 4096,
-    temperature: 0.7,
-    enabled: true
-  },
-  {
-    id: 'openai',
-    name: 'OpenAI',
-    provider: 'openai',
-    icon: 'openai',
-    maxTokens: 16384,
-    temperature: 0.7,
-    enabled: true
-  },
-  {
-    id: 'deepseek',
-    name: 'DeepSeek',
-    provider: 'deepseek',
-    icon: 'deepseek',
-    maxTokens: 8192,
-    temperature: 0.7,
-    enabled: true
-  }
-];
-
 const initialState: ModelsState = {
-  models: initialModels,
-  selectedModelId: initialModels[0].id,
+  models: models,
+  providers: providers,
+  selectedModelId: models.length > 0 ? models[0].id : null,
   isLoading: false,
 };
 

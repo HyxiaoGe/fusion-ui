@@ -30,7 +30,7 @@ import {
 } from '@/redux/slices/chatSlice';
 import { fetchEnhancedContext } from '@/redux/slices/searchSlice';
 import { store } from '@/redux/store';
-import { EraserIcon, PlusIcon } from 'lucide-react';
+import { PlusIcon } from 'lucide-react';
 import { usePathname, useSearchParams } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
 import { v4 as uuidv4 } from 'uuid';
@@ -497,16 +497,7 @@ export default function Home() {
                 </p>
               </div>
               <div className="flex items-center gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={handleClearChat}
-                  title="清空当前聊天"
-                >
-                  <EraserIcon className="h-4 w-4 mr-1" />
-                  清空聊天
-                </Button>
-                <div className="w-48">
+                <div className="w-64">
                   <ModelSelector
                     onChange={(modelId) => {
                       console.log(`切换到模型: ${modelId}`);
@@ -547,6 +538,7 @@ export default function Home() {
               <ChatInput
                 key={`chat-input-${inputKey}`}
                 onSendMessage={handleSendMessage}
+                onClearMessage={activeChat ? handleClearChat : undefined}
                 disabled={!activeChatId || loading || isStreaming}
                 placeholder={activeChatId ? '输入您的问题...' : '请先选择或创建一个聊天'}
               />

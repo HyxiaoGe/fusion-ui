@@ -1,9 +1,10 @@
-'use client';
+"use client";
 
-import { useAppSelector } from '@/redux/hooks';
-import React from 'react';
-import ErrorToastContainer from '../ui/error-toast';
-import Header from './Header';
+import { useAppSelector } from "@/redux/hooks";
+import React from "react";
+import ErrorToastContainer from "../ui/error-toast";
+import Header from "./Header";
+import ResizableSidebar from "./ResizableSidebar";
 
 interface MainLayoutProps {
   children: React.ReactNode;
@@ -16,16 +17,17 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children, sidebar }) => {
   // 根据系统和用户设置应用主题
   React.useEffect(() => {
     const root = window.document.documentElement;
-    
-    if (themeMode === 'system') {
-      const systemTheme = window.matchMedia('(prefers-color-scheme: dark)').matches
-        ? 'dark'
-        : 'light';
-      
-      root.classList.remove('light', 'dark');
+
+    if (themeMode === "system") {
+      const systemTheme = window.matchMedia("(prefers-color-scheme: dark)")
+        .matches
+        ? "dark"
+        : "light";
+
+      root.classList.remove("light", "dark");
       root.classList.add(systemTheme);
     } else {
-      root.classList.remove('light', 'dark');
+      root.classList.remove("light", "dark");
       root.classList.add(themeMode);
     }
   }, [themeMode]);
@@ -35,13 +37,11 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children, sidebar }) => {
       <Header />
       <div className="flex flex-1 overflow-hidden">
         {sidebar && (
-          <aside className="w-64 border-r bg-slate-50 dark:bg-slate-900 overflow-y-auto">
+          <ResizableSidebar defaultWidth={240} minWidth={180} maxWidth={400}>
             {sidebar}
-          </aside>
+          </ResizableSidebar>
         )}
-        <main className="flex-1 overflow-y-auto">
-          {children}
-        </main>
+        <main className="flex-1 overflow-y-auto">{children}</main>
       </div>
       <ErrorToastContainer />
     </div>

@@ -175,6 +175,7 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ onNewChat }) => {
               
               return (
                 <li key={chat.id}>
+                  
                   <div
                     className={`flex items-center justify-between py-2 px-3 rounded-md cursor-pointer hover:bg-accent/50 ${
                       activeChatId === chat.id ? 'bg-accent' : ''
@@ -202,7 +203,6 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ onNewChat }) => {
                             {chat.title}
                           </div>
                         )}
-                        {/* <div className="font-medium truncate text-sm">{chat.title}</div> */}
                         <div className="text-xs text-muted-foreground flex items-center gap-1">
                           <span>{model?.name || '未知模型'}</span>
                           <span>•</span>
@@ -210,29 +210,6 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ onNewChat }) => {
                         </div>
                       </div>
                     </div>
-
-                    
-                    {/* <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button variant="ghost" size="icon" className="h-8 w-8">
-                          <MoreVerticalIcon className="h-4 w-4" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuItem onClick={(e) => handleOpenRenameDialog(e, chat.id)}>
-                          <PencilIcon className="h-4 w-4 mr-2" />
-                          重命名
-                        </DropdownMenuItem>
-                        <DropdownMenuItem onClick={(e) => handleGenerateTitle(e, chat.id)}>
-                          <RefreshCwIcon className="h-4 w-4 mr-2" />
-                          生成标题
-                        </DropdownMenuItem>
-                        <DropdownMenuItem className="text-destructive" onClick={(e) => handleDeleteChat(e, chat.id)}>
-                          <TrashIcon className="h-4 w-4 mr-2" />
-                          删除对话
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu> */}
 
                     {!isEditing && (
                       <DropdownMenu>
