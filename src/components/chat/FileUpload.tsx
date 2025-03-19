@@ -1,3 +1,4 @@
+// FileUpload.tsx
 "use client";
 
 import { uploadFiles } from "@/lib/api/files";
@@ -69,11 +70,39 @@ const FileUpload = forwardRef<any, FileUploadProps>(({
   const abortControllerRef = useRef<AbortController | null>(null);
   const progressIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
+  // 暴露更完整的重置方法
   useImperativeHandle(ref, () => ({
     resetFiles: () => {
+      // 通知父组件清除文件
+      onFilesChange([]);
+      
+      // 清除本地状态
+      setLocalFiles([]);
+      setUploadedFiles(new Set());
+      setLocalError(null);
+      
+      // 清除FilePond实例的文件
       if (pondRef.current) {
         pondRef.current.removeFiles();
       }
+      
+      // 中止任何正在进行的上传
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+        abortControllerRef.current = null;
+      }
+      
+      // 清除进度条
+      if (progressIntervalRef.current) {
+        clearInterval(progressIntervalRef.current);
+        progressIntervalRef.current = null;
+      }
+      
+      // 重置上传状态
+      dispatch(setUploading(false));
+      dispatch(setUploadProgress(0));
+      
+      console.log('已完全重置文件状态');
     }
   }));
 
@@ -93,6 +122,18 @@ const FileUpload = forwardRef<any, FileUploadProps>(({
 
   // 当外部files变化时更新本地状态
   useEffect(() => {
+    console.log('外部files变化:', files);
+    
+    // 如果外部files为空，完全清除FilePond
+    if (files.length === 0) {
+      setLocalFiles([]);
+      // 直接清除FilePond实例
+      if (pondRef.current) {
+        pondRef.current.removeFiles();
+      }
+      return;
+    }
+    
     // 当外部files变化时，更新FilePond的本地状态
     if (files.length > 0) {
       // 转换为FilePond可识别的格式
@@ -209,7 +250,7 @@ const FileUpload = forwardRef<any, FileUploadProps>(({
 
       // 执行实际上传，但增加中止控制
       try {
-        // 注意：uploadFiles函数需要支持AbortController
+        // 修改uploadFiles调用，确保传递abort controller
         uploadFiles(conversationId, [file], abortControllerRef.current)
           .then(fileIds => {
             // 如果用户已取消，不处理结果
@@ -237,6 +278,8 @@ const FileUpload = forwardRef<any, FileUploadProps>(({
               // 处理文件预览和ID
               const fileWithPreview = createFileWithPreview(file);
               (fileWithPreview as any).fileId = uploadedFileId;
+              
+              // 更新父组件的文件列表 - 只替换而不是追加
               onFilesChange([fileWithPreview]);
 
               dispatch(addFileId({
@@ -293,6 +336,18 @@ const FileUpload = forwardRef<any, FileUploadProps>(({
     revert: null
   };
 
+  // 处理文件上传完成后的移除
+  const handleRemoveFile = (error: any, file: FilePondFile, index: number) => {
+    console.log('移除文件:', file.filename);
+    
+    // 通知父组件清除文件
+    onFilesChange([]);
+    
+    // 重置上传状态
+    dispatch(setUploading(false));
+    dispatch(setUploadProgress(0));
+  };
+
   // 添加对上传取消的处理
   const handleAbortItemLoad = (file: FilePondFile) => {
     console.log('处理文件取消事件:', file.filename);
@@ -312,6 +367,9 @@ const FileUpload = forwardRef<any, FileUploadProps>(({
     // 重置上传状态
     dispatch(setUploading(false));
     dispatch(setUploadProgress(0));
+    
+    // 重要：通知父组件文件已被取消
+    onFilesChange([]);
   };
 
   return (
@@ -319,7 +377,15 @@ const FileUpload = forwardRef<any, FileUploadProps>(({
       <FilePond
         ref={pondRef}
         files={localFiles}
-        onupdatefiles={setLocalFiles}
+        onupdatefiles={(files) => {
+          console.log('FilePond onupdatefiles:', files);
+          setLocalFiles(files);
+          
+          // 如果FilePond中没有文件，通知父组件
+          if (files.length === 0) {
+            onFilesChange([]);
+          }
+        }}
         allowMultiple={false}
         maxFiles={maxFiles}
         server={serverConfig}
@@ -347,6 +413,8 @@ const FileUpload = forwardRef<any, FileUploadProps>(({
         }}
         /* 关键：添加取消事件处理 */
         onabortprocessing={handleAbortItemLoad}
+        /* 确保处理文件移除 */
+        onremovefile={handleRemoveFile}
         /* 确保其他事件处理也正常工作 */
         onprocessfileabort={handleAbortItemLoad}
         disabled={disabled || uploading}
