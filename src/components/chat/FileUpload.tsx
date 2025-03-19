@@ -13,7 +13,7 @@ import {
   setUploading,
 } from "@/redux/slices/fileUploadSlice";
 import { AlertCircle } from "lucide-react";
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, forwardRef, useRef, useImperativeHandle } from "react";
 
 // 导入FilePond相关组件和插件
 import FilePondPluginFileValidateSize from "filepond-plugin-file-validate-size";
@@ -23,7 +23,7 @@ import FilePondPluginImagePreview from "filepond-plugin-image-preview";
 import { FilePond, registerPlugin } from "react-filepond";
 
 // 导入FilePond CSS
-import { FilePondFile } from "filepond";
+import { FilePondFile, FileStatus } from "filepond";
 import "filepond-plugin-image-preview/dist/filepond-plugin-image-preview.css";
 import "filepond/dist/filepond.min.css";
 
@@ -47,46 +47,74 @@ interface FileUploadProps {
   onUploadComplete?: (fileIds: string[]) => void;
 }
 
-const FileUpload: React.FC<FileUploadProps> = ({
+// 修复：删除了fileUploadRef属性，添加了ref参数
+const FileUpload = forwardRef<any, FileUploadProps>(({
   files,
   onFilesChange,
   conversationId,
-  maxFiles = 1,
+  maxFiles = 5,
   maxSizeMB = 10,
   disabled = false,
   uploading = false,
   progress = 0,
   onUploadComplete,
-}) => {
+}, ref) => {
   const dispatch = useAppDispatch();
   const [uploadedFiles, setUploadedFiles] = useState<Set<string>>(new Set());
   const [localFiles, setLocalFiles] = useState<any[]>([]);
   const [error, setLocalError] = useState<string | null>(null);
   const maxSizeBytes = maxSizeMB * 1024 * 1024;
+  const pondRef = useRef<FilePond>(null);
+
+  useImperativeHandle(ref, () => ({
+    resetFiles: () => {
+      if (pondRef.current) {
+        pondRef.current.removeFiles();
+      }
+    }
+  }));
 
   // 当外部files变化时更新本地状态
   useEffect(() => {
-    // 当files有内容且localFiles为空时，正确恢复FilePond状态
-    if (files.length > 0 && localFiles.length === 0) {
-      // 创建已完成状态的pond文件
-      const pondFiles = files.map(file => ({
-        source: file,
-        options: {
-          type: 'local',
-          file: {
-            name: file.name,
-            size: file.size,
-            type: file.type,
-          },
-          // 关键:设置文件状态为已处理，防止再次上传
-          metadata: {
-            status: 'processing-complete'
-          }
+    // 当外部files变化时，更新FilePond的本地状态
+    if (files.length > 0) {
+      // 转换为FilePond可识别的格式
+      const pondFiles = files.map((file) => {
+        // 标记已上传的文件，包含fileId信息
+        if ((file as any).fileId) {
+          return {
+            source: file,
+            options: {
+              type: "local",
+              file: {
+                name: file.name,
+                size: file.size,
+                type: file.type,
+                // 标记文件已上传
+                fileId: (file as any).fileId
+              },
+              // 标记为已处理状态，避免再次处理
+              metadata: {
+                processed: true
+              }
+            }
+          };
         }
-      }));
+        return {
+          source: file,
+          options: {
+            type: "local",
+            file: {
+              name: file.name,
+              size: file.size,
+              type: file.type
+            }
+          }
+        };
+      });
       setLocalFiles(pondFiles);
     }
-  }, [files, localFiles]);
+  }, [files]);
 
   const [processedFileIds, setProcessedFileIds] = useState<Set<string>>(new Set());
 
@@ -186,8 +214,13 @@ const FileUpload: React.FC<FileUploadProps> = ({
       return;
     }
 
-    try {
+    // 检查文件是否已上传过（通过自定义属性）
+    if (file.file && (file.file as any).fileId) {
+      console.log('文件已上传，跳过处理', (file.file as any).fileId);
+      return;
+    }
 
+    try {
       const originalFile = file.file as File;
       dispatch(setUploading(true));
       dispatch(setUploadProgress(0));
@@ -215,19 +248,19 @@ const FileUpload: React.FC<FileUploadProps> = ({
 
       // 保存文件ID到Redux
       if (fileIds.length > 0) {
-        const fileId = fileIds[0];
+        const fileIndex = files.length;
+        const fileId = fileIds[0]; // 一次只处理一个文件
 
-        // 清除旧文件，只保留新文件
+        // 标记文件已上传
+        (file.file as any).fileId = fileId;
+
+        // 创建带预览的文件对象
         const fileWithPreview = createFileWithPreview(originalFile);
         (fileWithPreview as any).fileId = fileId;
 
-        onFilesChange([fileWithPreview]);
-
-        dispatch(addFileId({
-          chatId: conversationId,
-          fileId,
-          fileIndex: 0, // 始终是第一个文件
-        }));
+        // 更新文件列表
+        const newFiles = [...files, fileWithPreview];
+        onFilesChange(newFiles);
       }
 
       // 通知上传完成
@@ -264,6 +297,7 @@ const FileUpload: React.FC<FileUploadProps> = ({
   return (
     <div className="w-full">
       <FilePond
+        ref={pondRef}
         files={localFiles}
         onupdatefiles={setLocalFiles}
         allowMultiple={false}
@@ -282,15 +316,16 @@ const FileUpload: React.FC<FileUploadProps> = ({
         labelButtonRemoveItem="移除"
         labelButtonAbortItemLoad="取消"
         labelButtonProcessItem="上传"
-        onaddfile={handleProcessFile}
         beforeAddFile={(file) => {
-          // 如果文件已上传过，将其标记为已处理，避免再次上传
-          if (uploadedFiles.has(file.filename)) {
-            file.setMetadata('status', 'processed');
-            return false; // 返回false不阻止添加，但会跳过上传
+          // 如果文件已经有fileId，说明已上传
+          if (file.file && (file.file as any).fileId) {
+            console.log('检测到已上传的文件:', (file.file as any).fileId);
+            // 返回true允许添加，但后续会跳过上传处理
+            return true;
           }
-          return true;
+          return true; // 允许添加新文件
         }}
+        onaddfile={handleProcessFile}
         onremovefile={(error, file, index) => handleRemoveFile(file, index)}
         disabled={disabled || uploading}
         acceptedFileTypes={[
@@ -332,6 +367,8 @@ const FileUpload: React.FC<FileUploadProps> = ({
       </p>
     </div>
   );
-};
+});
+
+FileUpload.displayName = 'FileUpload';
 
 export default FileUpload;

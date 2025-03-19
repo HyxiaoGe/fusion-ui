@@ -34,6 +34,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
   const fileIds = useAppSelector(state => state.fileUpload.fileIds[activeChatId] || []);
   const isUploading = useAppSelector(state => state.fileUpload.isUploading);
   const uploadProgress = useAppSelector(state => state.fileUpload.uploadProgress);
+  const fileUploadRef = useRef<any>(null);
 
   // 初始化或同步Redux中的文件
   useEffect(() => {
@@ -131,8 +132,15 @@ const ChatInput: React.FC<ChatInputProps> = ({
 
   // 清除所有文件
   const handleClearFiles = () => {
+    // 清除React状态
     setFiles([]);
+    // 清除Redux状态
     dispatch(clearFiles(activeChatId));
+
+    // 直接清除FilePond实例中的文件
+    if (fileUploadRef.current) {
+      fileUploadRef.current.resetFiles();
+    }
   };
 
   // 获取当前选中的模型，检查是否支持文件上传
@@ -166,6 +174,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
             </div>
           )}
           <FileUpload
+            ref={fileUploadRef}
             files={files}
             onFilesChange={handleFilesChange}
             conversationId={activeChatId}
