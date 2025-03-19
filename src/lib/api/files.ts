@@ -12,7 +12,12 @@ export interface FileInfo {
 }
 
 // 上传文件 - 添加错误处理和重试逻辑
-export async function uploadFiles(conversationId: string, files: File[], retryCount = 3): Promise<string[]> {
+export async function uploadFiles(
+  conversationId: string, 
+  files: File[], 
+  abortController?: AbortController,
+  retryCount = 3
+): Promise<string[]> {
   try {
     const formData = new FormData();
     formData.append('conversation_id', conversationId);
@@ -21,14 +26,17 @@ export async function uploadFiles(conversationId: string, files: File[], retryCo
       formData.append('files', file);
     });
     
+    // 使用传入的中止控制器或创建新的
+    const controller = abortController || new AbortController();
+    const signal = controller.signal;
+    
     // 设置超时
-    const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 30000); // 30秒超时
     
     const response = await fetch(`${API_BASE_URL}/api/files/upload`, {
       method: 'POST',
       body: formData,
-      signal: controller.signal
+      signal // 使用中止信号
     });
     
     clearTimeout(timeoutId);
@@ -49,12 +57,18 @@ export async function uploadFiles(conversationId: string, files: File[], retryCo
     const data = await response.json();
     return data.file_ids;
   } catch (error) {
+    // 检查是否是中止错误
+    if ((error as any).name === 'AbortError') {
+      console.log('上传已被用户取消');
+      throw error; // 重新抛出中止错误，让调用者知道
+    }
+    
     console.error('上传文件失败:', error);
     
     // 如果是超时或网络错误，尝试重试
-    if (retryCount > 0 && (error instanceof TypeError || (error as any).name === 'AbortError')) {
+    if (retryCount > 0 && (error instanceof TypeError || (error as any).name !== 'AbortError')) {
       console.log(`上传失败，进行第${4 - retryCount}次重试...`);
-      return uploadFiles(conversationId, files, retryCount - 1);
+      return uploadFiles(conversationId, files, abortController, retryCount - 1);
     }
     
     throw error;
