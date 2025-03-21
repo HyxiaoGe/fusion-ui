@@ -3,8 +3,8 @@
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { FileWithPreview, formatFileSize } from '@/lib/utils/fileHelpers';
-import { useAppSelector } from '@/redux/hooks';
-import { Message } from '@/redux/slices/chatSlice';
+import { useAppDispatch, useAppSelector } from '@/redux/hooks';
+import { Message, toggleReasoningVisibility } from '@/redux/slices/chatSlice';
 import { avatarOptions } from '@/redux/slices/settingsSlice';
 import { Edit2, FileIcon, RefreshCw } from 'lucide-react';
 import React, { useState } from 'react';
@@ -14,6 +14,7 @@ import rehypeHighlight from 'rehype-highlight';
 import rehypeRaw from 'rehype-raw';
 import remarkGfm from 'remark-gfm';
 import FileCard from './FileCard';
+import ReasoningContent from './ReasoningContent';
 
 interface ChatMessageProps {
   message: Message;
@@ -25,6 +26,7 @@ interface ChatMessageProps {
 }
 
 const ChatMessage: React.FC<ChatMessageProps> = ({ message, files, isLastMessage = false, isStreaming = false, onRetry, onEdit }) => {
+  const dispatch = useAppDispatch();
   const isUser = message.role === 'user';
   const [isEditing, setIsEditing] = useState(false);
   const [editContent, setEditContent] = useState(message.content);
@@ -80,6 +82,28 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, files, isLastMessage
     setEditContent(message.content);
     setIsEditing(false);
   };
+
+  const handleToggleReasoning = () => {
+    if (message.chatId) {
+      dispatch(toggleReasoningVisibility({
+        chatId: message.chatId,
+        messageId: message.id,
+        visible: !message.isReasoningVisible
+      }));
+    } else {
+      // 如果消息没有chatId，直接切换局部状态
+      console.log('切换推理可见性:', message.id, !message.isReasoningVisible);
+    }
+  };
+  
+  // const streamingReasoningContent = useAppSelector(
+  //   state => isStreaming && isLastMessage ? state.chat.streamingReasoningContent : null
+  // );
+  
+  // // 使用实际推理内容或流式推理内容
+  // const displayReasoning = isStreaming && isLastMessage && streamingReasoningContent 
+  //   ? streamingReasoningContent 
+  //   : message.reasoning;
 
   return (
     <div
@@ -183,6 +207,14 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, files, isLastMessage
               "prose prose-neutral dark:prose-invert max-w-none overflow-auto",
               isStreaming && "typing"
             )}>
+              {message.reasoning && (
+                <ReasoningContent
+                  reasoning={message.reasoning || ''}
+                  isVisible={message.isReasoningVisible || isStreaming}
+                  onToggleVisibility={handleToggleReasoning}
+                  className="mb-2"
+                />
+              )}
               <ReactMarkdown
                 remarkPlugins={[remarkGfm]}
                 rehypePlugins={[rehypeRaw, rehypeHighlight]}

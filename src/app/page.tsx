@@ -20,13 +20,18 @@ import {
   deleteMessage,
   editMessage,
   endStreaming,
+  endStreamingReasoning,
   setActiveChat,
   setAllChats,
   setError,
   setMessageStatus,
   startStreaming,
+  startStreamingReasoning,
   updateChatTitle,
-  updateStreamingContent
+  updateMessageReasoning,
+  updateStreamingContent,
+  updateStreamingReasoning,
+  updateStreamingReasoningContent
 } from '@/redux/slices/chatSlice';
 import { fetchEnhancedContext } from '@/redux/slices/searchSlice';
 import { store } from '@/redux/store';
@@ -197,9 +202,15 @@ export default function Home() {
       dispatch(fetchEnhancedContext({ query: content, conversationId: activeChatId }));
     }
 
+    const { reasoningEnabled } = store.getState().chat;
+    const supportsReasoning = selectedModel.capabilities?.deepThinking || false;
+    const useReasoning = reasoningEnabled && supportsReasoning;
+
     setTimeout(() => {
-      // 设置加载状态，添加占位符
       dispatch(startStreaming(activeChatId));
+      if (useReasoning) {
+        dispatch(startStreamingReasoning());
+      }
     }, 500);
 
     try {
@@ -210,17 +221,22 @@ export default function Home() {
         conversation_id: activeChatId,
         stream: true,
         options: {
+          use_reasoning: useReasoning,
           use_enhancement: searchEnabled && contextEnhancementEnabled
         },
         file_ids: fileIds || []
       },
-        (content, done, conversationId) => {
+        (content, done, conversationId, reasoning) => {
           if (!done) {
             // 更新流式内容
             dispatch(updateStreamingContent({
               chatId: activeChatId,
               content
             }));
+
+            if (useReasoning && reasoning) {
+              dispatch(updateStreamingReasoningContent(reasoning));
+            }
           } else {
             // 流式响应结束
             dispatch(updateStreamingContent({
@@ -230,6 +246,22 @@ export default function Home() {
 
             // 结束流式输出
             setTimeout(() => {
+              // 如果有推理内容，保存推理内容
+              if (reasoning && reasoning.trim()) {
+                // 这里是关键：确保将推理内容保存到消息中
+                const streamingMessageId = store.getState().chat.streamingMessageId;
+                if (streamingMessageId) {
+                  console.log('更新消息推理内容:', streamingMessageId, reasoning);
+                  dispatch(updateMessageReasoning({
+                    chatId: activeChatId,
+                    messageId: streamingMessageId,
+                    reasoning: reasoning,
+                    isVisible: true
+                  }));
+                }
+                dispatch(endStreamingReasoning());
+              }
+              
               dispatch(endStreaming());
             }, 100);
           }
@@ -302,6 +334,7 @@ export default function Home() {
       }
 
       // 结束流式输出
+      dispatch(endStreamingReasoning());
       dispatch(endStreaming());
     }
   };

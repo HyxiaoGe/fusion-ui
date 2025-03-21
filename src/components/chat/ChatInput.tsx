@@ -6,9 +6,13 @@ import { showToast } from "@/components/ui/toast";
 import { FileWithPreview } from "@/lib/utils/fileHelpers";
 import { useAppDispatch, useAppSelector } from "@/redux/hooks";
 import { clearFiles } from "@/redux/slices/fileUploadSlice";
-import { EraserIcon, PaperclipIcon, SendIcon, X } from "lucide-react";
+import { BrainCircuit, EraserIcon, PaperclipIcon, SendIcon, X } from "lucide-react";
 import React, { useEffect, useRef, useState } from "react";
 import FileUpload from "./FileUpload";
+import { Switch } from "@radix-ui/react-switch";
+import { Label } from "@radix-ui/react-label";
+import { toggleReasoning } from "@/redux/slices/chatSlice";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@radix-ui/react-tooltip";
 
 interface ChatInputProps {
   onSendMessage: (
@@ -169,6 +173,11 @@ const ChatInput: React.FC<ChatInputProps> = ({
     state.models.models.find((m) => m.id === selectedModelId)
   );
 
+  const reasoningEnabled = useAppSelector((state) => state.chat.reasoningEnabled);
+
+  // 检查当前模型是否支持推理
+  const supportsReasoning = selectedModel?.capabilities?.deepThinking || false;
+
   // 检查当前模型是否支持文件上传
   const supportsFileUpload = selectedModel?.capabilities?.fileSupport || false;
 
@@ -251,6 +260,31 @@ const ChatInput: React.FC<ChatInputProps> = ({
         >
           <PaperclipIcon className="h-5 w-5" />
         </Button>
+
+        <TooltipProvider>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <div className={`flex items-center gap-1 mr-1 ${!supportsReasoning ? 'opacity-50' : ''}`}>
+                <Switch
+                  id="reasoning-switch"
+                  checked={reasoningEnabled && supportsReasoning}
+                  onCheckedChange={(checked) => dispatch(toggleReasoning(checked))}
+                  disabled={!supportsReasoning || disabled}
+                />
+                <Label
+                  htmlFor="reasoning-switch"
+                  className={`ml-1 flex items-center text-xs cursor-pointer ${!supportsReasoning ? 'cursor-not-allowed' : ''}`}
+                >
+                  <BrainCircuit className="h-3 w-3 mr-1" />
+                  思考
+                </Label>
+              </div>
+            </TooltipTrigger>
+            <TooltipContent>
+              {supportsReasoning ? '开启/关闭AI思考过程' : '当前模型不支持思考过程'}
+            </TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
 
         <Textarea
           ref={textareaRef}

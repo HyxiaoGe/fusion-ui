@@ -14,6 +14,8 @@ export interface Message {
     type: string;
     previewUrl: string;
   }[];
+  reasoning?: string;
+  isReasoningVisible?: boolean;
 }
 
 export interface Chat {
@@ -32,7 +34,11 @@ interface ChatState {
   error: string | null;
   streamingContent: string | null;
   isStreaming: boolean;
+  streamingReasoningContent: string;
   streamingMessageId: string | null; // 存储正在流式输出的消息ID
+  reasoningEnabled: boolean;
+  streamingReasoning: string | null;
+  isStreamingReasoning: boolean;
 }
 
 const initialState: ChatState = {
@@ -42,7 +48,11 @@ const initialState: ChatState = {
   error: null,
   streamingContent: null,
   isStreaming: false,
+  streamingReasoningContent: '',
   streamingMessageId: null,
+  reasoningEnabled: true,
+  streamingReasoning: null,
+  isStreamingReasoning: false,
 };
 
 const chatSlice = createSlice({
@@ -142,6 +152,50 @@ const chatSlice = createSlice({
         }
       }
     },
+    updateMessageReasoning: (state, action: PayloadAction<{
+      chatId: string, 
+      messageId: string | null, 
+      reasoning: string,
+      isVisible: boolean
+    }>) => {
+      const { chatId, messageId, reasoning, isVisible } = action.payload;
+      if (!messageId) return;
+      
+      const chat = state.chats.find(c => c.id === chatId);
+      if (chat) {
+        const message = chat.messages.find(m => m.id === messageId);
+        if (message) {
+          message.reasoning = reasoning;
+          message.isReasoningVisible = isVisible;
+        }
+      }
+    },
+    updateStreamingReasoningContent: (state, action: PayloadAction<string>) => {
+      state.streamingReasoningContent = action.payload;
+    },
+    toggleReasoning: (state, action: PayloadAction<boolean>) => {
+      state.reasoningEnabled = action.payload;
+    },
+    startStreamingReasoning: (state) => {
+      state.isStreamingReasoning = true;
+      state.streamingReasoning = '';
+    },
+    updateStreamingReasoning: (state, action: PayloadAction<string>) => {
+      state.streamingReasoning = action.payload;
+    },
+    endStreamingReasoning: (state) => {
+      state.isStreamingReasoning = false;
+    },
+    toggleReasoningVisibility: (state, action: PayloadAction<{chatId: string, messageId: string, visible: boolean}>) => {
+      const { chatId, messageId, visible } = action.payload;
+      const chat = state.chats.find(c => c.id === chatId);
+      if (chat) {
+        const message = chat.messages.find(m => m.id === messageId);
+        if (message) {
+          message.isReasoningVisible = visible;
+        }
+      }
+    },
     startStreaming: (state, action: PayloadAction<string>) => {
       state.isStreaming = true;
       state.streamingContent = '';
@@ -215,7 +269,14 @@ export const {
   startStreaming,
   updateStreamingContent,
   endStreaming,
-  setMessageStatus
+  setMessageStatus,
+  toggleReasoning,
+  startStreamingReasoning,
+  updateStreamingReasoning,
+  endStreamingReasoning,
+  toggleReasoningVisibility,
+  updateMessageReasoning,
+  updateStreamingReasoningContent
 } = chatSlice.actions;
 
 export default chatSlice.reducer;
