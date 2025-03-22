@@ -58,13 +58,11 @@ export default function Home() {
   // 监听数据库同步事件，强制重新挂载输入组件
   useEffect(() => {
     setInputKey(Date.now());
-    console.log("强制重新挂载输入组件", Date.now());
   }, [lastDatabaseSync]);
 
   // 监听activeChatId变化，强制重新挂载输入组件
   useEffect(() => {
     setInputKey(Date.now());
-    console.log("聊天ID变化，重新挂载输入组件", activeChatId);
   }, [activeChatId]);
 
   // 在组件挂载时进行数据同步检查
@@ -261,7 +259,7 @@ export default function Home() {
                 }
                 dispatch(endStreamingReasoning());
               }
-              
+
               dispatch(endStreaming());
             }, 100);
           }
@@ -378,8 +376,16 @@ export default function Home() {
           return;
         }
 
+        // 检查推理功能
+        const { reasoningEnabled } = store.getState().chat;
+        const supportsReasoning = selectedModel.capabilities?.deepThinking || false;
+        const useReasoning = reasoningEnabled && supportsReasoning;
+
         // 使用用户消息内容重新生成
         dispatch(startStreaming(activeChatId));
+        if (useReasoning) {
+          dispatch(startStreamingReasoning())
+        }
 
         try {
           await sendMessageStream({
@@ -389,15 +395,20 @@ export default function Home() {
             conversation_id: activeChatId,
             stream: true,
             options: {
+              use_reasoning: useReasoning,
               use_enhancement: store.getState().search.contextEnhancementEnabled
             }
           },
-            (content, done) => {
+            (content, done, conversationId, reasoning) => {
               if (!done) {
                 dispatch(updateStreamingContent({
                   chatId: activeChatId,
                   content
                 }));
+
+                if (reasoning) {
+                  dispatch(updateStreamingReasoningContent(reasoning))
+                }
               } else {
                 dispatch(updateStreamingContent({
                   chatId: activeChatId,
@@ -405,6 +416,18 @@ export default function Home() {
                 }));
 
                 setTimeout(() => {
+                  if (reasoning && reasoning.trim()) {
+                    const streamingMessageId = store.getState().chat.streamingMessageId;
+                    if (streamingMessageId) {
+                      dispatch(updateMessageReasoning({
+                        chatId: activeChatId,
+                        messageId: streamingMessageId,
+                        reasoning: reasoning,
+                        isVisible: true
+                      }));
+                    }
+                    dispatch(endStreamingReasoning());
+                  }
                   dispatch(endStreaming());
                 }, 100);
               }
@@ -412,6 +435,7 @@ export default function Home() {
         } catch (error) {
           console.error('重新生成回复失败:', error);
           dispatch(setError('重新生成失败，请检查网络连接'));
+          dispatch(endStreamingReasoning())
           dispatch(endStreaming());
         }
       }
@@ -460,8 +484,16 @@ export default function Home() {
       status: 'pending'
     }));
 
+    // 检查推理功能
+    const { reasoningEnabled } = store.getState().chat;
+    const supportsReasoning = selectedModel.capabilities?.deepThinking || false;
+    const useReasoning = reasoningEnabled && supportsReasoning;
+
     // 开始流式输出
     dispatch(startStreaming(activeChatId));
+    if (useReasoning) {
+      dispatch(startStreamingReasoning());
+    }
 
     // 重新发送编辑后的消息
     try {
@@ -473,16 +505,21 @@ export default function Home() {
         conversation_id: activeChatId,
         stream: true,
         options: {
+          use_reasoning: useReasoning,
           use_enhancement: store.getState().search.contextEnhancementEnabled
         }
       },
-        (content, done) => {
+        (content, done, conversationId, reasoning) => {
           // 处理流式回复...
           if (!done) {
             dispatch(updateStreamingContent({
               chatId: activeChatId,
               content
             }));
+
+            if (reasoning) {
+              dispatch(updateStreamingReasoningContent(reasoning));
+            }
           } else {
             dispatch(updateStreamingContent({
               chatId: activeChatId,
@@ -497,6 +534,18 @@ export default function Home() {
             }));
 
             setTimeout(() => {
+              if (reasoning && reasoning.trim()) {
+                const streamingMessageId = store.getState().chat.streamingMessageId;
+                if (streamingMessageId) {
+                  dispatch(updateMessageReasoning({
+                    chatId: activeChatId,
+                    messageId: streamingMessageId,
+                    reasoning: reasoning,
+                    isVisible: true
+                  }));
+                }
+                dispatch(endStreamingReasoning());
+              }
               dispatch(endStreaming());
             }, 100);
           }
@@ -512,6 +561,7 @@ export default function Home() {
       }));
 
       dispatch(setError('发送编辑后的消息失败，请重试'));
+      dispatch(endStreamingReasoning())
       dispatch(endStreaming());
     }
   };

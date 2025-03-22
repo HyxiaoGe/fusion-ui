@@ -188,12 +188,19 @@ const chatSlice = createSlice({
     },
     toggleReasoningVisibility: (state, action: PayloadAction<{chatId: string, messageId: string, visible: boolean}>) => {
       const { chatId, messageId, visible } = action.payload;
+      console.log('切换推理可见性 action:', chatId, messageId, visible);
+
       const chat = state.chats.find(c => c.id === chatId);
       if (chat) {
         const message = chat.messages.find(m => m.id === messageId);
         if (message) {
           message.isReasoningVisible = visible;
+          console.log('已更新消息状态:', message.id, message.isReasoningVisible);
+        } else {
+          console.log('未找到消息:', messageId);
         }
+      } else {
+        console.log('未找到聊天:', chatId);
       }
     },
     startStreaming: (state, action: PayloadAction<string>) => {

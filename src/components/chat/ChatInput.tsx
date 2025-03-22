@@ -63,32 +63,23 @@ const ChatInput: React.FC<ChatInputProps> = ({
 
   // 组件挂载或activeChatId变化时重置状态
   useEffect(() => {
-    console.log("ChatInput组件已挂载或activeChatId变化", {
-      disabled,
-      activeChatId,
-    });
 
     // 清空文件状态，避免聊天切换时文件状态混乱
     setFiles([]);
 
     // 检查文本框是否可交互
     if (textareaRef.current) {
-      const isDisabled = textareaRef.current.hasAttribute("disabled");
-      const isReadOnly = textareaRef.current.hasAttribute("readonly");
-      console.log("文本框状态检查:", { isDisabled, isReadOnly });
 
       // 尝试强制确保文本框可编辑
       setTimeout(() => {
         if (textareaRef.current) {
           textareaRef.current.disabled = disabled;
           textareaRef.current.readOnly = false;
-          console.log("已重置文本框状态");
         }
       }, 100);
     }
 
     return () => {
-      console.log("ChatInput组件将卸载或activeChatId即将变化");
     };
   }, [disabled, activeChatId]);
 
