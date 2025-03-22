@@ -246,7 +246,7 @@ export default function Home() {
             setTimeout(() => {
               // 如果有推理内容，保存推理内容
               if (reasoning && reasoning.trim()) {
-                // 这里是关键：确保将推理内容保存到消息中
+                // 确保将推理内容保存到消息中
                 const streamingMessageId = store.getState().chat.streamingMessageId;
                 if (streamingMessageId) {
                   console.log('更新消息推理内容:', streamingMessageId, reasoning);
@@ -259,7 +259,7 @@ export default function Home() {
                 }
                 dispatch(endStreamingReasoning());
               }
-
+              
               dispatch(endStreaming());
             }, 100);
           }

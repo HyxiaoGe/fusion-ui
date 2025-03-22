@@ -21,8 +21,8 @@ interface ChatMessageProps {
   files?: FileWithPreview[];
   isLastMessage?: boolean;
   isStreaming?: boolean;
-  onRetry?: (messageId: string) => void; // 添加重试回调
-  onEdit?: (messageId: string, content: string) => void; // 添加编辑回调
+  onRetry?: (messageId: string) => void;
+  onEdit?: (messageId: string, content: string) => void;
 }
 
 const ChatMessage: React.FC<ChatMessageProps> = ({ message, files, isLastMessage = false, isStreaming = false, onRetry, onEdit }) => {
@@ -30,39 +30,35 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, files, isLastMessage
   const isUser = message.role === 'user';
   const [isEditing, setIsEditing] = useState(false);
   const [editContent, setEditContent] = useState(message.content);
-
+  
   const { userAvatar, assistantAvatar } = useAppSelector(state => state.settings);
-
-  // 获取当前选中的头像表情
+  
+  // 获取头像表情
   const getUserEmoji = () => {
     const avatar = avatarOptions.user.find(a => a.id === userAvatar);
     return avatar ? avatar.emoji : '👤';
   };
-
+  
   const getAssistantEmoji = () => {
     const avatar = avatarOptions.assistant.find(a => a.id === assistantAvatar);
     return avatar ? avatar.emoji : '🤖';
   };
 
   const formatTime = (timestamp: number) => {
-    // 防止无效时间戳
     if (!timestamp || isNaN(timestamp)) {
       console.warn('无效的时间戳:', timestamp);
       return '';
     }
-
+    
     try {
-      // 明确使用数值类型创建日期对象
       const date = new Date(Number(timestamp));
-
-      // 验证日期是否有效
+      
       if (isNaN(date.getTime())) {
         console.warn('创建了无效的日期对象:', timestamp);
         return '';
       }
-
-      // 返回格式化后的时间
-      return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+      
+      return date.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit', second: '2-digit'});
     } catch (error) {
       console.error('格式化时间出错:', error);
       return '';
@@ -83,44 +79,25 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, files, isLastMessage
     setIsEditing(false);
   };
 
+  // 切换推理内容可见性
   const handleToggleReasoning = () => {
     if (message.chatId) {
       dispatch(toggleReasoningVisibility({
         chatId: message.chatId,
         messageId: message.id,
-        visible: !(message.isReasoningVisible || false)
+        visible: !message.isReasoningVisible
       }));
-    } else {
-      // 如果消息没有chatId，直接切换局部状态
-      console.log('[handleToggleReasoning] 切换推理可见性:', message.id, !message.isReasoningVisible);
     }
   };
-
-  const separateContent = (fullContent: string) => {
-    // 尝试提取推理部分
-    const thinkingMatch = fullContent.match(/【thinking】([\s\S]*?)【\/thinking】|\[thinking\]([\s\S]*?)\[\/thinking\]/);
-    // 尝试提取回答部分
-    const answeringMatch = fullContent.match(/【answering】([\s\S]*?)【\/answering】|\[answering\]([\s\S]*?)\[\/answering\]/);
-
-    let reasoning = '';
-    let answer = fullContent;
-
-    if (thinkingMatch) {
-      reasoning = thinkingMatch[1] || thinkingMatch[2] || '';
-      // 从原内容中移除推理部分
-      answer = answer.replace(thinkingMatch[0], '');
-    }
-
-    if (answeringMatch) {
-      answer = answeringMatch[1] || answeringMatch[2] || '';
-    }
-
-    return { reasoning, answer: answer.trim() };
-  };
-
-  const { reasoning, answer } = message.reasoning ?
-    { reasoning: message.reasoning, answer: message.content } :
-    separateContent(message.content);
+  
+  // 获取流式推理内容
+  const streamingReasoningContent = useAppSelector(
+    state => isStreaming && isLastMessage ? state.chat.streamingReasoningContent : ''
+  );
+  
+  const displayReasoning = isStreaming && isLastMessage && streamingReasoningContent 
+    ? streamingReasoningContent 
+    : message.reasoning;
 
   return (
     <div
@@ -135,7 +112,7 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, files, isLastMessage
           <span className="text-sm">{getAssistantEmoji()}</span>
         </div>
       )}
-
+      
       <div className={cn(
         'flex flex-col space-y-1 max-w-[80%]',
         isUser ? 'items-end' : 'items-start'
@@ -148,16 +125,16 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, files, isLastMessage
             {formatTime(message.timestamp)}
           </span>
         </div>
-
+        
         <div className={cn(
           'rounded-2xl px-4 py-2.5 shadow-sm',
-          isUser
-            ? 'bg-primary text-primary-foreground rounded-tr-sm'
+          isUser 
+            ? 'bg-primary text-primary-foreground rounded-tr-sm' 
             : 'bg-muted rounded-tl-sm'
         )}>
           {isUser ? (
             isEditing ? (
-              // 编辑模式下显示文本框和保存/取消按钮
+              // 编辑模式
               <div className="w-full animate-in fade-in-50 duration-200">
                 <div className="relative mb-2 rounded-2xl overflow-hidden">
                   <TextareaAutosize
@@ -190,10 +167,10 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, files, isLastMessage
                 </div>
               </div>
             ) : (
-              // 非编辑模式下显示普通消息内容
+              // 用户消息显示
               <div>
                 {message.content}
-                {/* 添加文件显示 */}
+                {/* 文件显示 */}
                 {message.fileInfo && message.fileInfo.length > 0 && (
                   <div className="mt-3">
                     <div className="flex flex-wrap gap-2">
@@ -220,18 +197,23 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, files, isLastMessage
               </div>
             )
           ) : (
+            // AI助手消息显示
             <div className={cn(
               "prose prose-neutral dark:prose-invert max-w-none overflow-auto",
               isStreaming && "typing"
             )}>
-              {(message.reasoning || reasoning) && (
+              {/* 推理内容显示 - 现在直接使用reasoning属性，不需要解析内容 */}
+              {displayReasoning && (
                 <ReasoningContent
-                  reasoning={message.reasoning || reasoning}
+                  reasoning={displayReasoning}
                   isVisible={message.isReasoningVisible || isStreaming}
                   onToggleVisibility={handleToggleReasoning}
                   className="mb-2"
+                  isStreaming={isStreaming && isLastMessage}
                 />
               )}
+              
+              {/* 消息内容显示 */}
               <ReactMarkdown
                 remarkPlugins={[remarkGfm]}
                 rehypePlugins={[rehypeRaw, rehypeHighlight]}
@@ -255,9 +237,12 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, files, isLastMessage
               >
                 {message.content || ''}
               </ReactMarkdown>
+              
               {isStreaming && (
                 <span className="ml-1 inline-block h-4 w-0.5 bg-current animate-pulse"></span>
               )}
+              
+              {/* 文件显示 */}
               {files && files.length > 0 && (
                 <div className="mt-3">
                   <div className="flex flex-wrap gap-2">
@@ -266,7 +251,8 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, files, isLastMessage
                         key={`${file.name}-${index}`}
                         chatId={message.id}
                         file={file}
-                        onRemove={() => { }} // 在消息中不允许删除文件
+                        onRemove={() => {}} // 在消息中不允许删除文件
+                        readOnly={true}
                       />
                     ))}
                   </div>
@@ -274,11 +260,13 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, files, isLastMessage
               )}
             </div>
           )}
+          
+          {/* 重新生成按钮 */}
           {!isUser && !isStreaming && (
             <div className="opacity-0 group-hover:opacity-100 transition-opacity duration-150">
-              <Button
-                variant="ghost"
-                size="sm"
+              <Button 
+                variant="ghost" 
+                size="sm" 
                 className="h-6 text-xs text-muted-foreground hover:text-foreground hover:bg-transparent"
                 onClick={() => onRetry && onRetry(message.id)}
               >
@@ -288,12 +276,13 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, files, isLastMessage
             </div>
           )}
         </div>
+        
         {/* 编辑按钮 - 仅用户消息显示且非编辑状态 */}
         {isUser && !isEditing && !message.status && (
           <div className="opacity-100 transition-opacity duration-150">
-            <Button
-              variant="ghost"
-              size="sm"
+            <Button 
+              variant="ghost" 
+              size="sm" 
               className="h-6 text-xs text-primary-foreground/70 hover:text-primary-foreground hover:bg-transparent"
               onClick={() => setIsEditing(true)}
             >
@@ -303,7 +292,7 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, files, isLastMessage
           </div>
         )}
       </div>
-
+      
       {isUser && (
         <div className="h-8 w-8 mt-1 flex-shrink-0 rounded-full bg-primary/10 flex items-center justify-center border shadow-sm">
           <span className="text-sm">{getUserEmoji()}</span>

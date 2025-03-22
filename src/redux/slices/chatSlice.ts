@@ -178,7 +178,8 @@ const chatSlice = createSlice({
     },
     startStreamingReasoning: (state) => {
       state.isStreamingReasoning = true;
-      state.streamingReasoning = '';
+      state.streamingReasoning = null;
+      state.streamingReasoningContent = '';
     },
     updateStreamingReasoning: (state, action: PayloadAction<string>) => {
       state.streamingReasoning = action.payload;
@@ -206,6 +207,7 @@ const chatSlice = createSlice({
     startStreaming: (state, action: PayloadAction<string>) => {
       state.isStreaming = true;
       state.streamingContent = '';
+      state.streamingReasoningContent = '';
       const messageId = uuidv4();
       state.streamingMessageId = messageId;
       

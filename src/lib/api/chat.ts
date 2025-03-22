@@ -88,7 +88,6 @@ export async function sendMessageStream(data: ChatRequest, onChunk: (chunk: stri
     const decoder = new TextDecoder();
     let streamContent = '';
     let streamReasoning = '';
-    let isReasoningPhase = false;
     let conversationId = data.conversation_id;
 
     while (true) {
@@ -116,41 +115,71 @@ export async function sendMessageStream(data: ChatRequest, onChunk: (chunk: stri
               conversationId = parsedData.conversation_id;
             }
             
-            // 处理推理开始标记
-            if (parsedData.reasoning_start) {
-              isReasoningPhase = true;
-              console.log("推理开始", parsedData.reasoning_start);
-              continue;
+            // 处理事件类型
+            switch(parsedData.type) {
+              case "reasoning_start":
+                console.log("推理开始");
+                break;
+                
+              case "reasoning_content":
+                if (parsedData.content) {
+                  streamReasoning += parsedData.content;
+                  console.log("推理内容更新", streamReasoning);
+                  onChunk(streamContent, false, conversationId || undefined, streamReasoning);
+                }
+                break;
+                
+              case "reasoning_end":
+              case "reasoning_complete":
+                // 推理完成，可能会收到完整的reasoning
+                if (parsedData.reasoning) {
+                  streamReasoning = parsedData.reasoning;
+                }
+                console.log("推理结束，完整内容：", streamReasoning);
+                onChunk(streamContent, false, conversationId || undefined, streamReasoning);
+                break;
+                
+              case "answering_start":
+                console.log("回答开始");
+                break;
+                
+              case "answering_content":
+                if (parsedData.content) {
+                  streamContent += parsedData.content;
+                  console.log("回答内容更新", streamContent);
+                  onChunk(streamContent, false, conversationId || undefined, streamReasoning);
+                }
+                break;
+                
+              case "answering_complete":
+                console.log("回答结束");
+                break;
+                
+              case "done":
+                // 流结束
+                console.log("流结束，最终内容:", streamContent, "推理:", streamReasoning);
+                onChunk(streamContent, true, conversationId || undefined, streamReasoning);
+                return;
+                
+              default:
+                // 兼容旧格式或者其他格式
+                if (parsedData.content === "[DONE]") {
+                  console.log("流结束标志");
+                  onChunk(streamContent, true, conversationId || undefined, streamReasoning);
+                  return;
+                } else if (parsedData.content) {
+                  streamContent += parsedData.content;
+                  console.log("收到内容", streamContent);
+                  onChunk(streamContent, false, conversationId || undefined, streamReasoning);
+                }
+                
+                // 兼容旧版本的推理内容处理
+                if (parsedData.reasoning_content) {
+                  streamReasoning += parsedData.reasoning_content;
+                  onChunk(streamContent, false, conversationId || undefined, streamReasoning);
+                }
             }
             
-            // 处理推理内容
-            if (parsedData.reasoning_content) {
-              streamReasoning += parsedData.reasoning_content;
-              console.log("推理内容", streamReasoning);
-              onChunk(streamContent, false, conversationId || undefined, streamReasoning);
-              continue;
-            }
-            
-            // 处理推理结束
-            if (parsedData.reasoning_end) {
-              isReasoningPhase = false;
-              streamReasoning = parsedData.reasoning || streamReasoning;
-              console.log("推理结束，完整内容：", streamReasoning);
-              onChunk(streamContent, false, conversationId || undefined, streamReasoning);
-              continue;
-            }
-            
-            if (parsedData.content === "[DONE]") {
-              // 流结束
-              console.log("流结束，最终内容:", streamContent, "最终推理:", streamReasoning);
-              onChunk(streamContent, true, conversationId || undefined, streamReasoning);
-              return;
-            } else {
-              // 添加新内容并更新回调
-              streamContent += parsedData.content;
-              console.log("收到新内容", streamContent);
-              onChunk(streamContent, false, conversationId || undefined, streamReasoning);
-            }
           } catch (e) {
             console.error('解析响应数据失败:', e, data);
           }
