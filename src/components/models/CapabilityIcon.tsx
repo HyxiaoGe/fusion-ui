@@ -1,10 +1,9 @@
-// src/components/models/CapabilityIcon.tsx
 import {
     Tooltip,
     TooltipContent,
     TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { BrainCircuit, Eye, FileText, ImageIcon } from "lucide-react";
+import { Lightbulb, Eye, FileText, ImageIcon } from "lucide-react";
 import React from "react";
 
 interface CapabilityIconProps {
@@ -28,7 +27,7 @@ const CapabilityIcon: React.FC<CapabilityIconProps> = ({
       tooltip: "支持文件处理",
     },
     deepThinking: {
-      icon: <BrainCircuit className={`${className} text-amber-500`} />,
+      icon: <Lightbulb className={`${className} text-amber-500`} />,
       tooltip: "支持深度思考",
     },
     imageGen: {

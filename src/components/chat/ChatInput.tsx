@@ -6,7 +6,7 @@ import { showToast } from "@/components/ui/toast";
 import { FileWithPreview } from "@/lib/utils/fileHelpers";
 import { useAppDispatch, useAppSelector } from "@/redux/hooks";
 import { clearFiles } from "@/redux/slices/fileUploadSlice";
-import { BrainCircuit, EraserIcon, PaperclipIcon, SendIcon, X } from "lucide-react";
+import { Lightbulb, EraserIcon, PaperclipIcon, SendIcon, X } from "lucide-react";
 import React, { useEffect, useRef, useState } from "react";
 import FileUpload from "./FileUpload";
 import { Switch } from "@radix-ui/react-switch";
@@ -252,30 +252,21 @@ const ChatInput: React.FC<ChatInputProps> = ({
           <PaperclipIcon className="h-5 w-5" />
         </Button>
 
-        <TooltipProvider>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <div className={`flex items-center gap-1 mr-1 ${!supportsReasoning ? 'opacity-50' : ''}`}>
-                <Switch
-                  id="reasoning-switch"
-                  checked={reasoningEnabled && supportsReasoning}
-                  onCheckedChange={(checked) => dispatch(toggleReasoning(checked))}
-                  disabled={!supportsReasoning || disabled}
-                />
-                <Label
-                  htmlFor="reasoning-switch"
-                  className={`ml-1 flex items-center text-xs cursor-pointer ${!supportsReasoning ? 'cursor-not-allowed' : ''}`}
-                >
-                  <BrainCircuit className="h-3 w-3 mr-1" />
-                  思考
-                </Label>
-              </div>
-            </TooltipTrigger>
-            <TooltipContent>
-              {supportsReasoning ? '开启/关闭AI思考过程' : '当前模型不支持思考过程'}
-            </TooltipContent>
-          </Tooltip>
-        </TooltipProvider>
+        <Button
+          variant="ghost"
+          size="icon"
+          className={`h-10 w-10 flex items-center justify-center ${!supportsReasoning ? "opacity-50 cursor-not-allowed" : ""}`}
+          onClick={() => {
+            if (!supportsReasoning || disabled) return;
+            dispatch(toggleReasoning(!reasoningEnabled));
+          }}
+          disabled={!supportsReasoning || disabled}
+          title={supportsReasoning ? '开启/关闭AI思考过程' : '当前模型不支持思考过程'}
+        >
+          <Lightbulb
+            className={`h-5 w-5 ${reasoningEnabled && supportsReasoning ? 'text-amber-400' : ''}`}
+          />
+        </Button>
 
         <Textarea
           ref={textareaRef}

@@ -6,7 +6,7 @@ import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Message } from '@/redux/slices/chatSlice';
-import { BrainCircuit, Eraser } from 'lucide-react';
+import { Lightbulb, Eraser } from 'lucide-react';
 import React, { useState } from 'react';
 import TokenCounter from './TokenCounter';
 
@@ -110,7 +110,7 @@ const ContextManager: React.FC<ContextManagerProps> = ({
                   onClick={handleKeepSelected}
                   disabled={selectedMessageIds.length === 0}
                 >
-                  <BrainCircuit className="h-4 w-4 mr-1" />
+                  <Lightbulb className="h-4 w-4 mr-1" />
                   仅保留选中
                 </Button>
                 <Button

@@ -111,6 +111,7 @@ const chatSlice = createSlice({
           id: uuidv4(),
           timestamp: Date.now(),
           status: null,
+          chatId: chatId,
         };
         chat.messages.push(newMessage);
         chat.updatedAt = Date.now();
@@ -220,6 +221,7 @@ const chatSlice = createSlice({
           role: 'assistant',
           content: '',
           timestamp: Date.now(),
+          chatId: chatId,
         });
       }
     },

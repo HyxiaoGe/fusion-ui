@@ -26,15 +26,124 @@ export interface ProviderInfo {
 
 // 提供商信息(id 对应 svg图标名称)
 export const providers: ProviderInfo[] = [
-  { id: "openai", name: "OpenAI", order: 1 },
-  { id: "anthropic", name: "Anthropic", order: 2 },
-  { id: "gemini", name: "Gemini", order: 3 },
-  { id: "qwen", name: "通义千问", order: 4 },
-  { id: "deepseek", name: "DeepSeek", order: 5 },
+  { id: "qwen", name: "通义千问", order: 1 },
+  { id: "deepseek", name: "DeepSeek", order: 2 },
+  { id: "openai", name: "OpenAI", order: 3 },
+  { id: "anthropic", name: "Anthropic", order: 4 },
+  { id: "gemini", name: "Gemini", order: 5 },
 ];
 
 // 模型信息
 export const models: ModelInfo[] = [
+  // 通义千问 模型
+  {
+    id: "qwq-32b",
+    name: "QwQ 32B",
+    provider: "qwen",
+    maxTokens: 32768,
+    temperature: 0.7,
+    contextWindow: "128K",
+    capabilities: {
+      vision: false,
+      deepThinking: true,
+      fileSupport: false,
+    },
+    enabled: true,
+    experimental: false,
+  },
+  {
+    id: "qwq-plus",
+    name: "QwQ Plus",
+    provider: "qwen",
+    maxTokens: 32768,
+    temperature: 0.7,
+    contextWindow: "128K",
+    capabilities: {
+      vision: false,
+      deepThinking: true,
+      fileSupport: false,
+    },
+    enabled: true,
+    experimental: false,
+  },
+  {
+    id: "qwen-max-latest",
+    name: "Qwen Max Latest",
+    provider: "qwen",
+    maxTokens: 32768,
+    temperature: 0.7,
+    contextWindow: "32K",
+    capabilities: {
+      vision: true,
+      deepThinking: false,
+      fileSupport: false,
+    },
+    enabled: true,
+    experimental: false,
+  },
+  {
+    id: "qwq-plus-2025-03-05",
+    name: "QwQ Plus 2025-03-05",
+    provider: "qwen",
+    maxTokens: 32768,
+    temperature: 0.7,
+    contextWindow: "128K",
+    capabilities: {
+      vision: false,
+      deepThinking: true,
+      fileSupport: false,
+    },
+    enabled: true,
+    experimental: false,
+  },
+  {
+    id: "qwen2.5-vl-72b-instruct",
+    name: "QwQ 2.5 VL 72B Instruct",
+    provider: "qwen",
+    maxTokens: 32768,
+    temperature: 0.7,
+    contextWindow: "128K",
+    capabilities: {
+      vision: true,
+      deepThinking: false,
+      fileSupport: false,
+    },
+    enabled: true,
+    experimental: false,
+  },
+
+  // DeepSeek 模型
+  {
+    id: "deepseek-reasoner",
+    name: "DeepSeek-R1",
+    provider: "deepseek",
+    maxTokens: 32768,
+    temperature: 0.7,
+    contextWindow: "200K",
+    capabilities: {
+      vision: true,
+      deepThinking: true,
+      fileSupport: true,
+    },
+    enabled: true,
+    experimental: false,
+  },
+  {
+    id: "deepseek-chat",
+    name: "DeepSeek-V3",
+    provider: "deepseek",
+    maxTokens: 32768,
+    temperature: 0.7,
+    contextWindow: "200K",
+    capabilities: {
+      vision: true,
+      deepThinking: true,
+      fileSupport: true,
+    },
+    enabled: true,
+    experimental: false,
+  },
+
   // OpenAI 模型
   {
     id: "gpt-4-turbo",
@@ -125,114 +234,5 @@ export const models: ModelInfo[] = [
     },
     enabled: true,
     experimental: true,
-  },
-
-  // 通义千问 模型
-  {
-    id: "qwen-max-latest",
-    name: "Qwen Max Latest",
-    provider: "qwen",
-    maxTokens: 32768,
-    temperature: 0.7,
-    contextWindow: "32K",
-    capabilities: {
-      vision: true,
-      deepThinking: false,
-      fileSupport: false,
-    },
-    enabled: true,
-    experimental: false,
-  },
-  {
-    id: "qwq-32b",
-    name: "QwQ 32B",
-    provider: "qwen",
-    maxTokens: 32768,
-    temperature: 0.7,
-    contextWindow: "128K",
-    capabilities: {
-      vision: false,
-      deepThinking: true,
-      fileSupport: false,
-    },
-    enabled: true,
-    experimental: false,
-  },
-  {
-    id: "qwq-plus",
-    name: "QwQ Plus",
-    provider: "qwen",
-    maxTokens: 32768,
-    temperature: 0.7,
-    contextWindow: "128K",
-    capabilities: {
-      vision: false,
-      deepThinking: true,
-      fileSupport: false,
-    },
-    enabled: true,
-    experimental: false,
-  },
-  {
-    id: "qwq-plus-2025-03-05",
-    name: "QwQ Plus 2025-03-05",
-    provider: "qwen",
-    maxTokens: 32768,
-    temperature: 0.7,
-    contextWindow: "128K",
-    capabilities: {
-      vision: false,
-      deepThinking: true,
-      fileSupport: false,
-    },
-    enabled: true,
-    experimental: false,
-  },
-  {
-    id: "qwen2.5-vl-72b-instruct",
-    name: "QwQ 2.5 VL 72B Instruct",
-    provider: "qwen",
-    maxTokens: 32768,
-    temperature: 0.7,
-    contextWindow: "128K",
-    capabilities: {
-      vision: true,
-      deepThinking: false,
-      fileSupport: false,
-    },
-    enabled: true,
-    experimental: false,
-  },
-
-  // DeepSeek 模型
-  {
-    id: "deepseek-reasoner",
-    name: "DeepSeek-R1",
-    provider: "deepseek",
-    maxTokens: 32768,
-    temperature: 0.7,
-    contextWindow: "200K",
-    capabilities: {
-      vision: true,
-      deepThinking: true,
-      fileSupport: true,
-    },
-    enabled: true,
-    experimental: false,
-  },
-  {
-    id: "deepseek-chat",
-    name: "DeepSeek-V3",
-    provider: "deepseek",
-    maxTokens: 32768,
-    temperature: 0.7,
-    contextWindow: "200K",
-    capabilities: {
-      vision: true,
-      deepThinking: true,
-      fileSupport: true,
-    },
-    enabled: true,
-    experimental: false,
-  },
+  }
 ];

@@ -31,6 +31,9 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, files, isLastMessage
   const [isEditing, setIsEditing] = useState(false);
   const [editContent, setEditContent] = useState(message.content);
   
+  const [localReasoningVisible, setLocalReasoningVisible] = useState(message.isReasoningVisible || false);
+  const activeChatId = useAppSelector(state => state.chat.activeChatId);
+
   const { userAvatar, assistantAvatar } = useAppSelector(state => state.settings);
   
   // 获取头像表情
@@ -81,12 +84,16 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, files, isLastMessage
 
   // 切换推理内容可见性
   const handleToggleReasoning = () => {
-    if (message.chatId) {
+
+    if (activeChatId) {
       dispatch(toggleReasoningVisibility({
-        chatId: message.chatId,
+        chatId: activeChatId,
         messageId: message.id,
         visible: !message.isReasoningVisible
       }));
+    } else {
+      // 如果没有活跃聊天ID，可以直接在本地更新状态
+      setLocalReasoningVisible(!localReasoningVisible);
     }
   };
   
@@ -206,7 +213,7 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, files, isLastMessage
               {displayReasoning && (
                 <ReasoningContent
                   reasoning={displayReasoning}
-                  isVisible={message.isReasoningVisible || isStreaming}
+                  isVisible={message.isReasoningVisible || localReasoningVisible || isStreaming}
                   onToggleVisibility={handleToggleReasoning}
                   className="mb-2"
                   isStreaming={isStreaming && isLastMessage}
