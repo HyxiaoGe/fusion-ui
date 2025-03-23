@@ -65,7 +65,11 @@ export const persistMiddleware: Middleware = store => next => action => {
           // 如果消息不是重复的，则添加它
           if (existingMessages.length === 0) {
             // 方法1：使用addMessage添加单条消息
-            await chatStore.addMessage(chatId, message);
+            await chatStore.addMessage(chatId, {
+              ...message,
+              reasoning: message.reasoning || '',
+              isReasoningVisible: message.isReasoningVisible || false
+            });
             
             // 方法2：保存整个聊天对象（作为备份保存方式）
             const state = store.getState();
@@ -122,7 +126,6 @@ export const persistMiddleware: Middleware = store => next => action => {
         const state = store.getState();
         const activeChatId = state.chat.activeChatId;
         
-        // 不再依赖streamingMessageId
         if (activeChatId) {
           try {
             const chat = state.chat.chats.find((c: Chat) => c.id === activeChatId);
@@ -133,29 +136,20 @@ export const persistMiddleware: Middleware = store => next => action => {
               if (assistantMessages.length > 0) {
                 const lastAssistantMessage = assistantMessages[assistantMessages.length - 1];
                 
-                console.log('保存最终AI回复:', lastAssistantMessage.content.substring(0, 30) + '...');
-                
-                // 使用put而不是update，确保消息被保存
                 await db.messages.put({
                   id: lastAssistantMessage.id,
                   chatId: activeChatId,
                   role: 'assistant',
                   content: lastAssistantMessage.content,
-                  timestamp: lastAssistantMessage.timestamp || Date.now()
+                  timestamp: lastAssistantMessage.timestamp || Date.now(),
+                  reasoning: lastAssistantMessage.reasoning,
+                  isReasoningVisible: lastAssistantMessage.isReasoningVisible
                 });
                 
                 // 更新聊天的updatedAt
                 await db.chats.update(activeChatId, {
                   updatedAt: Date.now()
                 });
-                
-                // 验证保存结果
-                const savedMessage = await db.messages.get(lastAssistantMessage.id);
-                if (savedMessage) {
-                  console.log('AI回复已成功保存到数据库');
-                } else {
-                  console.error('AI回复保存验证失败');
-                }
               }
             }
           } catch (error) {

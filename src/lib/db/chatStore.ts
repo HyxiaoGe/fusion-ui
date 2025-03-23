@@ -190,7 +190,9 @@ export const chatStore = {
         ...message,
         chatId,
         id: message.id || uuidv4(),
-        timestamp: Number(message.timestamp) // 确保是数字类型
+        timestamp: Number(message.timestamp),
+        reasoning: message.reasoning || '',
+        isReasoningVisible: message.isReasoningVisible || false
       };
       
       const existingMessageById = await db.messages.get(messageWithChatId.id);

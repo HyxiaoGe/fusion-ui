@@ -209,7 +209,7 @@ export default function Home() {
       if (useReasoning) {
         dispatch(startStreamingReasoning());
       }
-    }, 500);
+    }, 1000);
 
     try {
       await sendMessageStream({

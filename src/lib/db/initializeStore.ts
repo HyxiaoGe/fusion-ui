@@ -43,7 +43,11 @@ export async function initializeStoreFromDB(dispatch: AppDispatch): Promise<void
         chat.messages.forEach(msg => {
           const key = `${msg.role}:${msg.content}`;
           if (!uniqueMessages.has(key)) {
-            uniqueMessages.set(key, msg);
+            uniqueMessages.set(key, {
+              ...msg,
+              reasoning: msg.reasoning || '',
+              isReasoningVisible: msg.isReasoningVisible || false
+            });
           }
         });
         

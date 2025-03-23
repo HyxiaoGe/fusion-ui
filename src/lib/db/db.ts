@@ -16,6 +16,8 @@ export interface Message {
   role: 'user' | 'assistant' | 'system';
   content: string;
   timestamp: Date;
+  reasoning?: string;
+  isReasoningVisible?: boolean;
 }
 
 // 定义设置的类型
