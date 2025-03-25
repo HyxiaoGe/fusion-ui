@@ -46,7 +46,7 @@ export const models: ModelInfo[] = [
     capabilities: {
       vision: false,
       deepThinking: true,
-      fileSupport: false,
+      fileSupport: true,
     },
     enabled: true,
     experimental: false,
