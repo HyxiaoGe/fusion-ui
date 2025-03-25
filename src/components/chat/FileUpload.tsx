@@ -9,9 +9,8 @@ import {
 import { useAppDispatch } from "@/redux/hooks";
 import {
   addFileId,
-  setError,
   setUploadProgress,
-  setUploading,
+  setUploading
 } from "@/redux/slices/fileUploadSlice";
 import { AlertCircle } from "lucide-react";
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
@@ -27,6 +26,7 @@ import { FilePond, registerPlugin } from "react-filepond";
 import { FilePondFile } from "filepond";
 import "filepond-plugin-image-preview/dist/filepond-plugin-image-preview.css";
 import "filepond/dist/filepond.min.css";
+import { toast } from "../ui/toast";
 
 // 注册FilePond插件
 registerPlugin(
@@ -277,8 +277,7 @@ const FileUpload = forwardRef<any, FileUploadProps>(({
           .catch(err => {
             if (!isAborted) {
               console.error("文件上传失败:", err);
-              setLocalError("文件上传失败，请重试");
-              dispatch(setError("文件上传失败"));
+              toast.error("文件上传失败，请重试");
               dispatch(setUploading(false));
               error('上传失败');
             }

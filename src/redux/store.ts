@@ -1,6 +1,7 @@
 import { configureStore } from '@reduxjs/toolkit';
 import { setupListeners } from '@reduxjs/toolkit/query';
 import persistMiddleware from './middleware/persistMiddleware';
+import toastMiddleware from './middleware/toastMiddleware';
 import appReducer from './slices/appSlice';
 import chatReducer from './slices/chatSlice';
 import fileUploadReducer from './slices/fileUploadSlice';
@@ -9,7 +10,6 @@ import promptTemplatesReducer from './slices/promptTemplatesSlice';
 import searchReducer from './slices/searchSlice';
 import settingsReducer from './slices/settingsSlice';
 import themeReducer from './slices/themeSlice';
-
 export const store = configureStore({
     reducer: {
         theme: themeReducer,
@@ -24,7 +24,7 @@ export const store = configureStore({
     middleware: (getDefaultMiddleware) => 
         getDefaultMiddleware({
             serializableCheck: false,
-        }).concat(persistMiddleware),
+        }).concat(persistMiddleware, toastMiddleware),
 });
 
 setupListeners(store.dispatch);

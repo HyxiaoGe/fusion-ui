@@ -29,6 +29,15 @@ module.exports = {
         input: 'var(--input)',
         ring: 'var(--ring)',
       },
+      animation: {
+        'slide-in-from-top': 'slideInFromTop 0.3s ease-out',
+      },
+      keyframes: {
+        slideInFromTop: {
+          '0%': { transform: 'translateY(-100%)', opacity: 0 },
+          '100%': { transform: 'translateY(0)', opacity: 1 },
+        },
+      },
       borderRadius: {
         lg: 'var(--radius)',
         md: 'calc(var(--radius) - 2px)',

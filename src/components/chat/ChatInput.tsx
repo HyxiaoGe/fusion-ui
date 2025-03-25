@@ -2,17 +2,14 @@
 
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { showToast } from "@/components/ui/toast";
 import { FileWithPreview } from "@/lib/utils/fileHelpers";
 import { useAppDispatch, useAppSelector } from "@/redux/hooks";
-import { clearFiles } from "@/redux/slices/fileUploadSlice";
-import { Lightbulb, EraserIcon, PaperclipIcon, SendIcon, X } from "lucide-react";
-import React, { useEffect, useRef, useState } from "react";
-import FileUpload from "./FileUpload";
-import { Switch } from "@radix-ui/react-switch";
-import { Label } from "@radix-ui/react-label";
 import { toggleReasoning } from "@/redux/slices/chatSlice";
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@radix-ui/react-tooltip";
+import { clearFiles } from "@/redux/slices/fileUploadSlice";
+import { EraserIcon, Lightbulb, PaperclipIcon, SendIcon, X } from "lucide-react";
+import React, { useEffect, useRef, useState } from "react";
+import { useToast } from "../ui/toast";
+import FileUpload from "./FileUpload";
 
 interface ChatInputProps {
   onSendMessage: (
@@ -32,6 +29,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
   placeholder = "输入您的问题...",
 }) => {
   const dispatch = useAppDispatch();
+  const { toast } = useToast();
   const [message, setMessage] = useState("");
   const [showFileUpload, setShowFileUpload] = useState(false);
   const [files, setFiles] = useState<FileWithPreview[]>([]);
@@ -183,11 +181,10 @@ const ChatInput: React.FC<ChatInputProps> = ({
   const handleFileUploadClick = () => {
     console.log("handleFileUploadClick", { supportsFileUpload });
     if (!supportsFileUpload) {
-      console.log("当前选择的模型不支持文件上传功能");
-      showToast({
+      toast({
         message: "当前选择的模型不支持文件上传功能",
         type: "warning",
-        duration: 3000,
+        duration: 3000
       });
       return;
     }

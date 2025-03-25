@@ -1,9 +1,10 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { useAppSelector, useAppDispatch } from '@/redux/hooks';
+import { useAppDispatch, useAppSelector } from '@/redux/hooks';
 import { setError } from '@/redux/slices/chatSlice';
 import { AlertCircle, X } from 'lucide-react';
+import { useEffect } from 'react';
+import { useToast } from './toast';
 
 interface ErrorToastProps {
   message: string;
@@ -34,14 +35,24 @@ const ErrorToast: React.FC<ErrorToastProps> = ({ message, onClose }) => {
 const ErrorToastContainer: React.FC = () => {
   const dispatch = useAppDispatch();
   const error = useAppSelector((state) => state.chat.error);
+  const { toast } = useToast();
 
-  const handleClose = () => {
-    dispatch(setError(null));
-  };
+  useEffect(() => {
+    if (error) {
+      toast({
+        message: error,
+        type: 'error',
+        duration: 5000
+      });
+      
+      // 清除错误，防止重复显示
+      setTimeout(() => {
+        dispatch(setError(null));
+      }, 100);
+    }
+  }, [error, toast, dispatch]);
 
-  if (!error) return null;
-
-  return <ErrorToast message={error} onClose={handleClose} />;
+  return null;
 };
 
 export default ErrorToastContainer;
