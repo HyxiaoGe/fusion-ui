@@ -1,3 +1,4 @@
+import { FileProcessingStatus } from '@/redux/slices/fileUploadSlice';
 import { API_CONFIG } from '../config';
 
 const API_BASE_URL = API_CONFIG.BASE_URL;
@@ -9,6 +10,14 @@ export interface FileInfo {
   mimetype: string;
   size: number;
   created_at: string;
+  status: FileProcessingStatus;
+  error_message: string;
+}
+
+export interface FileStatusResponse {
+  id: string;
+  status: FileProcessingStatus;
+  error_message?: string;
 }
 
 // 上传文件 - 添加错误处理和重试逻辑
@@ -40,11 +49,6 @@ export async function uploadFiles(
     // 使用传入的中止控制器或创建新的
     const controller = abortController || new AbortController();
     const signal = controller.signal;
-
-    console.log('上传请求数据:', {
-      files: Array.from(addedFiles),
-      conversationId
-    });
     
     // 设置超时
     const timeoutId = setTimeout(() => controller.abort(), 15000); // 15秒超时
@@ -124,6 +128,27 @@ export async function deleteFile(fileId: string): Promise<void> {
     }
   } catch (error) {
     console.error("删除文件失败:", error);
+    throw error;
+  }
+}
+
+export async function getFileStatus(fileId: string): Promise<FileStatusResponse> {
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/files/${fileId}/status`);
+    
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.detail || '获取文件状态失败');
+    }
+    
+    const data = await response.json();
+    return {
+      id: data.id,
+      status: data.status as FileProcessingStatus,
+      error_message: data.error_message
+    };
+  } catch (error) {
+    console.error("获取文件状态失败:", error);
     throw error;
   }
 }

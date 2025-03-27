@@ -9,8 +9,10 @@ import {
 import { useAppDispatch } from "@/redux/hooks";
 import {
   addFileId,
+  setError,
   setUploadProgress,
-  setUploading
+  setUploading,
+  FileProcessingStatus
 } from "@/redux/slices/fileUploadSlice";
 import { AlertCircle } from "lucide-react";
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
@@ -26,7 +28,7 @@ import { FilePond, registerPlugin } from "react-filepond";
 import { FilePondFile } from "filepond";
 import "filepond-plugin-image-preview/dist/filepond-plugin-image-preview.css";
 import "filepond/dist/filepond.min.css";
-import { toast } from "../ui/toast";
+import { startPollingFileStatus, stopAllPolling, stopPollingFileStatus } from "@/lib/api/FileStatusPoller";
 
 // 注册FilePond插件
 registerPlugin(
@@ -74,7 +76,6 @@ const FileUpload = forwardRef<any, FileUploadProps>(({
   const abortControllerRef = useRef<AbortController | null>(null);
   const progressIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
-  // 暴露更完整的重置方法
   useImperativeHandle(ref, () => ({
     resetFiles: () => {
       // 通知父组件清除文件
@@ -102,6 +103,8 @@ const FileUpload = forwardRef<any, FileUploadProps>(({
         progressIntervalRef.current = null;
       }
 
+      // 停止所有轮询
+      stopAllPolling();
       // 重置上传状态
       dispatch(setUploading(false));
       dispatch(setUploadProgress(0));
@@ -121,6 +124,8 @@ const FileUpload = forwardRef<any, FileUploadProps>(({
       if (progressIntervalRef.current) {
         clearInterval(progressIntervalRef.current);
       }
+      // 停止所有轮询
+      stopAllPolling();
     }
   }, []);
 
@@ -142,6 +147,9 @@ const FileUpload = forwardRef<any, FileUploadProps>(({
     if (files.length > 0) {
       // 转换为FilePond可识别的格式
       const pondFiles = files.map((file) => {
+        // 获取文件状态
+        const status = (file as any).status || 'pending';
+
         // 标记已上传的文件，包含fileId信息
         if ((file as any).fileId) {
           return {
@@ -153,11 +161,14 @@ const FileUpload = forwardRef<any, FileUploadProps>(({
                 size: file.size,
                 type: file.type,
                 // 标记文件已上传
-                fileId: (file as any).fileId
+                fileId: (file as any).fileId,
+                // 文件状态
+                status: status
               },
               // 标记为已处理状态，避免再次处理
               metadata: {
-                processed: true
+                processed: status === 'processed',
+                status: status
               }
             }
           };
@@ -169,7 +180,11 @@ const FileUpload = forwardRef<any, FileUploadProps>(({
             file: {
               name: file.name,
               size: file.size,
-              type: file.type
+              type: file.type,
+              status: status
+            },
+            metadata: {
+              status: status
             }
           }
         };
@@ -195,7 +210,7 @@ const FileUpload = forwardRef<any, FileUploadProps>(({
         progressIntervalRef.current = null;
       }
     };
-  }, [provider, model, conversationId]);
+  }, [conversationId]);
 
   const [processedFileIds, setProcessedFileIds] = useState<Set<string>>(new Set());
 
@@ -207,21 +222,21 @@ const FileUpload = forwardRef<any, FileUploadProps>(({
 
       // 如果文件已经上传过，直接标记为完成
       if (processedFileIds.has(fileId)) {
-        console.log('文件已处理，跳过上传:', file.name);
+        console.log('文件已处理，不再重复上传:', file.name);
+        // 直接调用load完成上传过程，但不实际发送请求
         setTimeout(() => load(fileId), 100);
         return;
       }
 
-      // 添加锁定机制，防止并发上传
+      // 重要: 清理任何之前的控制器
       if (abortControllerRef.current) {
-        console.log('已有上传任务正在进行，取消旧任务');
         abortControllerRef.current.abort();
       }
 
       // 创建新的中止控制器
       abortControllerRef.current = new AbortController();
 
-      // 清理任何现有的进度定时器
+      // 清理之前的进度条定时器
       if (progressIntervalRef.current) {
         clearInterval(progressIntervalRef.current);
       }
@@ -230,40 +245,110 @@ const FileUpload = forwardRef<any, FileUploadProps>(({
       dispatch(setUploading(true));
       dispatch(setUploadProgress(0));
 
-      progress(0);
+      // 进度条模拟
+      let progressValue = 0;
+      progressIntervalRef.current = setInterval(() => {
+        progressValue += 10;
+        if (progressValue >= 90) {
+          if (progressIntervalRef.current) {
+            clearInterval(progressIntervalRef.current);
+            progressIntervalRef.current = null;
+          }
+        }
+        progress(progressValue);
+        dispatch(setUploadProgress(progressValue));
+      }, 300);
 
       let isAborted = false;
+
+      // 定义明确的中止处理函数
+      const abortUpload = () => {
+        console.log('用户取消了上传:', file.name);
+        isAborted = true;
+
+        // 清理进度定时器
+        if (progressIntervalRef.current) {
+          clearInterval(progressIntervalRef.current);
+          progressIntervalRef.current = null;
+        }
+
+        // 中止网络请求
+        if (abortControllerRef.current) {
+          abortControllerRef.current.abort();
+          abortControllerRef.current = null;
+        }
+
+        // 重置上传状态
+        dispatch(setUploading(false));
+        dispatch(setUploadProgress(0));
+
+        // 通知FilePond上传已中止
+        abort();
+      };
 
       // 执行实际上传，但增加中止控制
       try {
         // 修改uploadFiles调用，确保传递abort controller
-        uploadFiles(provider, model, conversationId, [file], abortControllerRef.current, 0)
+        uploadFiles(provider, model, conversationId, [file], abortControllerRef.current)
           .then(fileIds => {
             // 如果用户已取消，不处理结果
             if (isAborted) return;
+
+            // 正常上传完成流程
+            if (progressIntervalRef.current) {
+              clearInterval(progressIntervalRef.current);
+              progressIntervalRef.current = null;
+            }
 
             progress(100);
             dispatch(setUploadProgress(100));
 
             if (fileIds.length > 0) {
-              setProcessedFileIds(prev => new Set(prev).add(fileId));
+              const uploadedFileId = fileIds[0];
+
+              // 保存到已处理文件集合
+              setProcessedFileIds(prev => {
+                const newSet = new Set(prev);
+                newSet.add(fileId);
+                return newSet;
+              });
 
               // 处理文件预览和ID
               const fileWithPreview = createFileWithPreview(file);
-              (fileWithPreview as any).fileId = fileIds[0];
+              (fileWithPreview as any).fileId = uploadedFileId;
+              (fileWithPreview as any).status = 'parsing' as FileProcessingStatus;
 
               // 更新父组件的文件列表 - 只替换而不是追加
               onFilesChange([fileWithPreview]);
 
               dispatch(addFileId({
                 chatId: conversationId,
-                fileId: fileIds[0],
+                fileId: uploadedFileId,
                 fileIndex: 0,
               }));
-            }
 
-            if (onUploadComplete) {
-              onUploadComplete(fileIds);
+              // 上传完成后，开始轮询文件状态
+              console.log('文件上传完成，开始轮询状态:', uploadedFileId);
+              startPollingFileStatus(
+                uploadedFileId,
+                conversationId,
+                dispatch,
+                (success) => {
+                  // 轮询完成回调
+                  if (success) {
+                    console.log('文件处理成功:', uploadedFileId);
+                    // 可以在这里触发其他操作
+                  } else {
+                    console.log('文件处理失败:', uploadedFileId);
+                    // 显示错误状态
+                    setLocalError('文件处理失败，请重试');
+                  }
+                  // 处理完成后，完成上传流程
+                  if (onUploadComplete) {
+                    onUploadComplete(fileIds);
+                  }
+                }
+              );
             }
 
             setTimeout(() => {
@@ -275,9 +360,16 @@ const FileUpload = forwardRef<any, FileUploadProps>(({
             load(fileId);
           })
           .catch(err => {
-            if (!isAborted) {
+            // 只处理非中止的错误
+            if (!isAborted && err.name !== 'AbortError') {
+              if (progressIntervalRef.current) {
+                clearInterval(progressIntervalRef.current);
+                progressIntervalRef.current = null;
+              }
+
               console.error("文件上传失败:", err);
-              toast.error("文件上传失败，请重试");
+              setLocalError("文件上传失败，请重试");
+              dispatch(setError("文件上传失败"));
               dispatch(setUploading(false));
               error('上传失败');
             }
@@ -286,6 +378,8 @@ const FileUpload = forwardRef<any, FileUploadProps>(({
         // 处理同步错误
         if (!isAborted) {
           console.error("文件上传处理错误:", err);
+          setLocalError("文件处理失败");
+          dispatch(setError("文件处理失败"));
           dispatch(setUploading(false));
           error('处理失败');
         }
@@ -293,28 +387,24 @@ const FileUpload = forwardRef<any, FileUploadProps>(({
 
       // 返回中止函数，这是关键部分
       return {
-        abort: () => {
-          console.log('用户取消了上传:', file.name);
-          isAborted = true;
-
-          if (abortControllerRef.current) {
-            abortControllerRef.current.abort();
-            abortControllerRef.current = null;
-          }
-
-          // 重置上传状态
-          dispatch(setUploading(false));
-          dispatch(setUploadProgress(0));
-          abort();
-        }
+        abort: abortUpload
       };
     },
+    // 不需要实现revert，因为我们在关闭时保留文件
     revert: null
   };
 
   // 处理文件上传完成后的移除
   const handleRemoveFile = (error: any, file: FilePondFile, index: number) => {
     console.log('移除文件:', file.filename);
+
+    // 获取文件ID
+    const fileId = (file.file as any)?.fileId;
+
+    // 如果文件已上传并正在轮询，停止轮询
+    if (fileId) {
+      stopPollingFileStatus(fileId);
+    }
 
     // 通知父组件清除文件
     onFilesChange([]);
@@ -348,16 +438,29 @@ const FileUpload = forwardRef<any, FileUploadProps>(({
     onFilesChange([]);
   };
 
+  const getStatusLabel = (file: any): string => {
+    const status = file.status || 'pending';
+    switch (status) {
+      case 'pending': return '等待上传';
+      case 'uploading': return '正在上传...';
+      case 'parsing': return '正在处理文件...';
+      case 'processed': return '文件已就绪';
+      case 'error': return file.errorMessage || '处理失败';
+      default: return '未知状态';
+    }
+  };
+
   return (
     <div className="w-full">
       <FilePond
         ref={pondRef}
         files={localFiles}
         onupdatefiles={(files) => {
+          console.log('FilePond onupdatefiles:', files);
           setLocalFiles(files);
 
           // 如果FilePond中没有文件，通知父组件
-          if (files.length === 0 && localFiles.length > 0) {
+          if (files.length === 0) {
             onFilesChange([]);
           }
         }}
@@ -367,13 +470,13 @@ const FileUpload = forwardRef<any, FileUploadProps>(({
         maxFileSize={`${maxSizeMB}MB`}
         name="files"
         beforeAddFile={(file) => {
-          console.log('beforeAddFile检查:', file.filename);
-          // 检查是否已经在上传队列
-          if (localFiles.some(f => f.filename === file.filename)) {
-            console.log('文件已在队列中，不重复添加');
-            return false;
+          // 如果文件已经有fileId，说明已上传
+          if (file.file && (file.file as any).fileId) {
+            console.log('检测到已上传的文件:', (file.file as any).fileId);
+            // 返回true允许添加，但后续会跳过上传处理
+            return true;
           }
-          return true;
+          return true; // 允许添加新文件
         }}
         onaddfile={(error, file) => {
           console.log('onaddfile:', file?.filename);
@@ -424,10 +527,25 @@ const FileUpload = forwardRef<any, FileUploadProps>(({
         </div>
       )}
 
-      {error && (
-        <div className="flex items-center p-2 mt-2 bg-destructive/10 text-destructive rounded-md">
-          <AlertCircle className="h-4 w-4 mr-2 flex-shrink-0" />
-          <p className="text-sm">{error}</p>
+      {/* 显示当前处理状态 */}
+      {files.length > 0 && (files[0] as any).status && (files[0] as any).status !== 'processed' && (
+        <div className={`flex items-center p-2 mt-2 rounded-md
+          ${(files[0] as any).status === 'error'
+            ? 'bg-destructive/10 text-destructive'
+            : (files[0] as any).status === 'parsing'
+              ? 'bg-amber-100 dark:bg-amber-950/30 text-amber-800 dark:text-amber-200'
+              : 'bg-blue-100 dark:bg-blue-950/30 text-blue-800 dark:text-blue-200'
+          }`}>
+          <div className="flex-1">
+            <p className="text-sm font-medium">
+              {getStatusLabel(files[0])}
+            </p>
+            {(files[0] as any).status === 'parsing' && (
+              <div className="w-full bg-amber-200 dark:bg-amber-800 h-1 mt-1 rounded-full overflow-hidden">
+                <div className="bg-amber-500 h-full animate-pulse rounded-full" style={{ width: '100%' }}></div>
+              </div>
+            )}
+          </div>
         </div>
       )}
 
