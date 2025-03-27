@@ -4,6 +4,7 @@ import ChatInput from '@/components/chat/ChatInput';
 import ChatMessageList from '@/components/chat/ChatMessageList';
 import ChatSidebar from '@/components/chat/ChatSidebar';
 import ContextEnhancementControl from '@/components/context/ContextEnhancementControl';
+import HomePage from '@/components/home/HomePage';
 import MainLayout from '@/components/layouts/MainLayout';
 import ModelSelector from '@/components/models/ModelSelector';
 import RelatedDiscussions from '@/components/search/RelatedDiscussions';
@@ -30,7 +31,6 @@ import {
   updateChatTitle,
   updateMessageReasoning,
   updateStreamingContent,
-  updateStreamingReasoning,
   updateStreamingReasoningContent
 } from '@/redux/slices/chatSlice';
 import { fetchEnhancedContext } from '@/redux/slices/searchSlice';
@@ -48,6 +48,9 @@ export default function Home() {
   const [inputKey, setInputKey] = useState(Date.now());
 
   const { chats, activeChatId, loading, isStreaming } = useAppSelector((state) => state.chat);
+
+  const showWelcome = !activeChatId && chats.length === 0;
+
   const { models, selectedModelId } = useAppSelector((state) => state.models);
   const [currentUserQuery, setCurrentUserQuery] = useState('');
   const [isSyncing, setIsSyncing] = useState(false);
@@ -589,6 +592,8 @@ export default function Home() {
             <p className="text-muted-foreground">同步数据中...</p>
           </div>
         </div>
+      ) : showWelcome ? (
+        <HomePage />
       ) : (
         activeChat ? (
           <div className="flex flex-col h-full">
