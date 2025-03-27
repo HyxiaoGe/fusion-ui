@@ -1,36 +1,71 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Fusion UI
 
-## Getting Started
+一个基于Next.js和Electron的AI对话应用程序，提供桌面客户端体验。
 
-First, run the development server:
+## 功能特点
+
+- 💬 多模型AI对话支持
+- 🔄 上下文增强和相关讨论推荐
+- 📝 Markdown渲染与代码高亮
+- 📂 文件上传与处理功能
+- 💾 本地数据库存储聊天记录
+- 🌐 桌面应用体验（Electron）
+- 🔍 向量搜索功能
+- 🌙 支持多语言（i18n）
+
+## 技术栈
+
+- **前端框架**: Next.js 15.x
+- **桌面集成**: Electron
+- **UI组件**: Radix UI, Shadcn/UI
+- **样式**: Tailwind CSS
+- **状态管理**: Redux Toolkit
+- **本地数据库**: Dexie.js (IndexedDB)
+- **编辑器**: TipTap
+- **表单处理**: React Hook Form, Zod
+- **文件处理**: FilePond, React Dropzone
+
+## 快速开始
+
+### 开发环境
 
 ```bash
+# 安装依赖
+npm install
+
+# 启动开发服务器（Next.js + Electron）
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+### 构建应用
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```bash
+# 构建桌面应用
+npm run build
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+### 启动应用
 
-## Learn More
+```bash
+# 启动已构建的应用
+npm start
+```
 
-To learn more about Next.js, take a look at the following resources:
+## 项目结构
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+```
+src/
+  ├── app/           # Next.js 应用页面
+  ├── components/    # UI组件
+  ├── electron/      # Electron主进程代码
+  ├── lib/           # 工具函数和API封装
+  └── redux/         # Redux状态管理
+```
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## 功能扩展
 
-## Deploy on Vercel
+本项目支持通过添加新的模型和功能进行扩展。查看代码中的相关组件以了解如何添加新功能。
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## 许可证
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+[MIT](LICENSE)
