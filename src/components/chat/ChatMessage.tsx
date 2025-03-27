@@ -15,6 +15,7 @@ import rehypeRaw from 'rehype-raw';
 import remarkGfm from 'remark-gfm';
 import FileCard from './FileCard';
 import ReasoningContent from './ReasoningContent';
+import ProviderIcon from '../models/ProviderIcon';
 
 interface ChatMessageProps {
   message: Message;
@@ -35,6 +36,15 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, files, isLastMessage
   const activeChatId = useAppSelector(state => state.chat.activeChatId);
 
   const { userAvatar, assistantAvatar } = useAppSelector(state => state.settings);
+  
+  // 获取当前聊天使用的模型信息
+  const chats = useAppSelector(state => state.chat.chats);
+  const models = useAppSelector(state => state.models.models);
+  
+  // 查找消息所属的聊天及其使用的模型
+  const chat = chats.find(c => c.id === message.chatId || c.id === activeChatId);
+  const model = chat ? models.find(m => m.id === chat.modelId) : null;
+  const providerId = model?.provider;
   
   // 获取头像表情
   const getUserEmoji = () => {
@@ -116,7 +126,11 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, files, isLastMessage
     >
       {!isUser && (
         <div className="h-8 w-8 mt-1 flex-shrink-0 rounded-full bg-secondary/10 flex items-center justify-center border shadow-sm">
-          <span className="text-sm">{getAssistantEmoji()}</span>
+          {providerId ? (
+            <ProviderIcon providerId={providerId} size={16} />
+          ) : (
+            <span className="text-sm">{getAssistantEmoji()}</span>
+          )}
         </div>
       )}
       

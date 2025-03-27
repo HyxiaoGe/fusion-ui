@@ -9,8 +9,9 @@ import {
     CardTitle,
 } from "@/components/ui/card";
 import { sendMessageStream } from "@/lib/api/chat";
+import { generateChatTitle } from "@/lib/api/title";
 import { useAppDispatch, useAppSelector } from "@/redux/hooks";
-import { addMessage, createChat, endStreaming, endStreamingReasoning, setError, startStreaming, startStreamingReasoning, updateMessageReasoning, updateStreamingContent, updateStreamingReasoningContent } from "@/redux/slices/chatSlice";
+import { addMessage, createChat, endStreaming, endStreamingReasoning, setError, startStreaming, startStreamingReasoning, updateChatTitle, updateMessageReasoning, updateStreamingContent, updateStreamingReasoningContent } from "@/redux/slices/chatSlice";
 import { store } from "@/redux/store";
 import { FileText, Image, Lightbulb, MessageSquare, Plus } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
@@ -202,6 +203,7 @@ const BulletScreen = () => {
     }
 
     const chatId = newChat.id;
+    // 记录是否是第一条消息（用于后续生成标题）
 
     // 添加用户消息
     dispatch(
@@ -276,6 +278,26 @@ const BulletScreen = () => {
             dispatch(endStreamingReasoning());
           }
           dispatch(endStreaming());
+          
+          // 在消息流结束后自动生成对话标题（弹幕点击创建的对话总是新对话，所以可以直接生成标题）
+          console.log('弹幕对话流处理完成，开始生成标题');
+          // 延迟一小段时间确保服务器已处理完毕
+          setTimeout(async () => {
+            try {
+              const generatedTitle = await generateChatTitle(
+                chatId || conversationId || '', // 使用可能从服务器返回的新conversationId
+                undefined, // 不传具体消息，让后端从对话ID获取完整消息链
+                { max_length: 20 }
+              );
+
+              dispatch(updateChatTitle({
+                chatId: chatId || conversationId || '',
+                title: generatedTitle
+              }));
+            } catch (error) {
+              console.error('生成标题失败:', error);
+            }
+          }, 1000); // 延迟1秒确保服务器已处理
         }, 100);
       }
     }).catch(error => {
