@@ -298,7 +298,7 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({ onChange, className }) =>
                         )}
                       </div>
                       <span className="text-xs font-medium min-w-[50px] px-2 py-1 rounded-full bg-blue-100/50 dark:bg-blue-900/30 text-center">
-                        {model.contextWindow}
+                        {model.contextWindow} 
                       </span>
                     </div>
                   </div>
