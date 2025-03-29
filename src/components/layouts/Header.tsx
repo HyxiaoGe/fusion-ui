@@ -6,7 +6,6 @@ import { HomeIcon, SettingsIcon } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import React from 'react';
-import GlobalSearch from '../search/GlobalSearch';
 
 const Header: React.FC = () => {
   const pathname = usePathname();
@@ -17,9 +16,9 @@ const Header: React.FC = () => {
         <span className="bg-gradient-to-r from-blue-600 via-purple-500 to-pink-500 text-transparent bg-clip-text">Fusion AI</span>
       </Link>
       
-      <div className="flex-1 max-w-lg mx-4">
+      {/* <div className="flex-1 max-w-lg mx-4">
         <GlobalSearch />
-      </div>
+      </div> */}
 
       <div className="flex items-center gap-2">
         <Link href="/" passHref>
