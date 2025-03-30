@@ -172,12 +172,16 @@ const chatSlice = createSlice({
       }
     },
     updateStreamingReasoningContent: (state, action: PayloadAction<string>) => {
-      state.streamingReasoningContent = action.payload;
+      console.log('【Redux状态】更新流式推理内容:', action.payload ? action.payload.length : '空');
+      // 每次接收到推理内容更新时，无条件设置流式推理标志为true
+      state.isStreamingReasoning = true;
+      state.streamingReasoningContent = action.payload || '';
     },
     toggleReasoning: (state, action: PayloadAction<boolean>) => {
       state.reasoningEnabled = action.payload;
     },
     startStreamingReasoning: (state) => {
+      console.log('【Redux状态】开始流式推理');
       state.isStreamingReasoning = true;
       state.streamingReasoning = null;
       state.streamingReasoningContent = '';
@@ -186,6 +190,7 @@ const chatSlice = createSlice({
       state.streamingReasoning = action.payload;
     },
     endStreamingReasoning: (state) => {
+      console.log('【Redux状态】结束流式推理');
       state.isStreamingReasoning = false;
     },
     toggleReasoningVisibility: (state, action: PayloadAction<{chatId: string, messageId: string, visible: boolean}>) => {

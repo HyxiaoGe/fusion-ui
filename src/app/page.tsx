@@ -209,10 +209,9 @@ export default function Home() {
 
     setTimeout(() => {
       dispatch(startStreaming(activeChatId));
-      if (useReasoning) {
-        dispatch(startStreamingReasoning());
-      }
-    }, 1000);
+      dispatch(startStreamingReasoning());
+      dispatch(updateStreamingReasoningContent(''));
+    }, 100);
 
     try {
       await sendMessageStream({
@@ -222,12 +221,20 @@ export default function Home() {
         conversation_id: activeChatId,
         stream: true,
         options: {
-          use_reasoning: useReasoning,
+          use_reasoning: true, // 强制启用推理功能
           use_enhancement: searchEnabled && contextEnhancementEnabled
         },
         file_ids: fileIds || []
       },
         (content, done, conversationId, reasoning) => {
+          console.log("流式回调: ", { 
+            time: new Date().toISOString(),
+            contentLen: content?.length || 0, 
+            hasReasoning: !!reasoning, 
+            reasoningLen: reasoning?.length || 0,
+            done 
+          });
+          
           if (!done) {
             // 更新流式内容
             dispatch(updateStreamingContent({
@@ -235,9 +242,10 @@ export default function Home() {
               content
             }));
 
-            if (useReasoning && reasoning) {
-              dispatch(updateStreamingReasoningContent(reasoning));
-            }
+            // 无论是否为空，始终更新推理内容
+            // 强制直接更新推理内容状态，确保UI能够立即响应
+            dispatch(updateStreamingReasoningContent(reasoning || ''));
+            console.log("已派发推理内容更新:", reasoning?.length || 0);
           } else {
             // 流式响应结束
             dispatch(updateStreamingContent({
@@ -247,56 +255,21 @@ export default function Home() {
 
             // 结束流式输出
             setTimeout(() => {
-              // 如果有推理内容，保存推理内容
-              if (reasoning && reasoning.trim()) {
-                // 确保将推理内容保存到消息中
-                const streamingMessageId = store.getState().chat.streamingMessageId;
-                if (streamingMessageId) {
-                  console.log('更新消息推理内容:', streamingMessageId, reasoning);
-                  dispatch(updateMessageReasoning({
-                    chatId: activeChatId,
-                    messageId: streamingMessageId,
-                    reasoning: reasoning,
-                    isVisible: true
-                  }));
-                }
-                dispatch(endStreamingReasoning());
+              // 保存推理内容
+              const streamingMessageId = store.getState().chat.streamingMessageId;
+              if (streamingMessageId) {
+                console.log('更新消息推理内容:', streamingMessageId, reasoning?.length || 0);
+                dispatch(updateMessageReasoning({
+                  chatId: activeChatId,
+                  messageId: streamingMessageId,
+                  reasoning: reasoning || '',
+                  isVisible: true
+                }));
               }
-              
+              dispatch(endStreamingReasoning());
               dispatch(endStreaming());
             }, 100);
           }
-
-          if (done) {
-            dispatch(setMessageStatus({
-              chatId: activeChatId,
-              messageId,
-              status: null
-            }));
-          }
-
-          // 在消息流结束(done=true)且是第一条消息时生成标题
-          if (done && isFirstMessage) {
-            console.log('流处理完成，开始生成标题');
-            // 延迟一小段时间确保服务器已处理完毕
-            setTimeout(async () => {
-              try {
-                const generatedTitle = await generateChatTitle(
-                  activeChatId || conversationId || '', // 使用可能从服务器返回的新conversationId
-                  undefined, // 不传具体消息，让后端从对话ID获取完整消息链
-                  { max_length: 20 }
-                );
-
-                dispatch(updateChatTitle({
-                  chatId: activeChatId || conversationId || '',
-                  title: generatedTitle
-                }));
-              } catch (error) {
-                console.error('生成标题失败:', error);
-              }
-            }, 1000); // 延迟1秒确保服务器已处理
-          }
-
         });
     } catch (error) {
       console.error('获取 AI 回复失败:', error);

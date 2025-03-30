@@ -9,6 +9,7 @@ import { removeFileId } from '@/redux/slices/fileUploadSlice';
 import { ArchiveIcon, FileCodeIcon, FileIcon, FileTextIcon, Loader2, X } from 'lucide-react';
 import React, { useState } from 'react';
 import ImagePreview from './ImagePreview';
+import { ImageIcon } from 'lucide-react';
 
 interface FileCardProps {
   file: FileWithPreview & { fileId?: string };
@@ -43,30 +44,26 @@ const FileCard: React.FC<FileCardProps> = ({ file, chatId, onRemove, readOnly = 
   const renderFileIcon = () => {
     switch (fileType) {
       case 'image':
-        return <ImagePreview file={file} />;
+        return <ImageIcon className="h-10 w-10 text-blue-500" />;
       case 'document':
-        return <FileTextIcon className="h-10 w-10 text-blue-500" />;
+        return <FileTextIcon className="h-10 w-10 text-green-500" />;
       case 'pdf':
         return <FileTextIcon className="h-10 w-10 text-red-500" />;
       case 'code':
-        return <FileCodeIcon className="h-10 w-10 text-green-500" />;
+        return <FileCodeIcon className="h-10 w-10 text-purple-500" />;
       case 'archive':
-        return <ArchiveIcon className="h-10 w-10 text-amber-500" />;
+        return <ArchiveIcon className="h-10 w-10 text-yellow-500" />;
       default:
-        return <FileIcon className="h-10 w-10 text-gray-500" />;
+        return <FileIcon className="h-10 w-10 text-muted-foreground" />;
     }
   };
 
   return (
     <div className="group relative flex items-center space-x-3 rounded-md border border-border p-2 bg-card">
       <div className="shrink-0">
-        {fileType === 'image' ? (
-          <ImagePreview file={file} />
-        ) : (
-          <div className="flex items-center justify-center w-12 h-12">
-            {renderFileIcon()}
-          </div>
-        )}
+        <div className="flex items-center justify-center w-12 h-12 bg-muted/20 rounded-md border">
+          {renderFileIcon()}
+        </div>
       </div>
       <div className="min-w-0 flex-1">
         <Tooltip>
@@ -78,6 +75,7 @@ const FileCard: React.FC<FileCardProps> = ({ file, chatId, onRemove, readOnly = 
           </TooltipContent>
         </Tooltip>
         <p className="text-xs text-muted-foreground">{fileSize}</p>
+        {fileType === 'image' && <p className="text-xs text-blue-500">图片文件</p>}
         {file.fileId && <p className="text-xs text-muted-foreground truncate">ID: {file.fileId}</p>}
       </div>
       {!readOnly && (

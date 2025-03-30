@@ -26,6 +26,12 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="zh-CN">
+      <head>
+        <meta
+          httpEquiv="Content-Security-Policy"
+          content="default-src * 'unsafe-inline' 'unsafe-eval'; img-src 'self' data: blob: *; font-src 'self' data: *; style-src 'self' 'unsafe-inline' *;"
+        />
+      </head>
       <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
         <Providers>
           <ClientLayout>{children}</ClientLayout>

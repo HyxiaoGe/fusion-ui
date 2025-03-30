@@ -2,7 +2,7 @@
 
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { FileWithPreview } from "@/lib/utils/fileHelpers";
+import { FileWithPreview, createFileWithPreview } from "@/lib/utils/fileHelpers";
 import { useAppDispatch, useAppSelector } from "@/redux/hooks";
 import { toggleReasoning } from "@/redux/slices/chatSlice";
 import { clearFiles } from "@/redux/slices/fileUploadSlice";
@@ -10,6 +10,8 @@ import { EraserIcon, Lightbulb, PaperclipIcon, SendIcon, X } from "lucide-react"
 import React, { useEffect, useRef, useState } from "react";
 import { useToast } from "../ui/toast";
 import FileUpload from "./FileUpload";
+import { v4 as uuidv4 } from 'uuid';
+import FilePreviewList from "./FilePreviewList";
 
 interface ChatInputProps {
   onSendMessage: (
@@ -34,6 +36,137 @@ const ChatInput: React.FC<ChatInputProps> = ({
   const [showFileUpload, setShowFileUpload] = useState(false);
   const [files, setFiles] = useState<FileWithPreview[]>([]);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  const [localFiles, setLocalFiles] = useState<Array<{
+    file: File;
+    previewUrl: string;
+    id: string;
+  }>>([]);
+
+  const [useNewFileUpload, setUseNewFileUpload] = useState(true);
+
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleFileSelect = () => {
+    if (fileInputRef.current) {
+      fileInputRef.current.click();
+    }
+  };
+
+  // 处理文件变化
+  const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = event.target.files;
+    if (!files || files.length === 0) return;
+
+    addFiles(Array.from(files));
+
+    // 重置input，以便能够重新选择同一文件
+    if (event.target) {
+      event.target.value = '';
+    }
+  };
+
+  // 处理粘贴事件
+  const handlePaste = (event: React.ClipboardEvent) => {
+    const items = event.clipboardData.items;
+    const files: File[] = [];
+
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      if (item.kind === 'file') {
+        const file = item.getAsFile();
+        if (file) files.push(file);
+      }
+    }
+
+    if (files.length > 0) {
+      addFiles(files);
+      // 如果只粘贴了文件，阻止默认行为（避免粘贴文本）
+      if (items.length === files.length) {
+        event.preventDefault();
+      }
+    }
+  };
+
+  // 添加文件到本地状态
+  const addFiles = (files: File[]) => {
+    const newFiles = files.map(file => {
+      return {
+        file,
+        previewUrl: '', // FilePreviewItem现在会内部使用FileReader，不需要在这里创建URL
+        id: uuidv4()
+      };
+    });
+
+    setLocalFiles(prev => {
+      const combined = [...prev, ...newFiles];
+      console.log('更新后的文件列表:', combined);
+      return combined;
+    });
+  };
+
+  // 移除文件
+  const handleRemoveFile = (id: string) => {
+    setLocalFiles(prev => {
+      const filtered = prev.filter(f => f.id !== id);
+      return filtered;
+    });
+  };
+
+  // 释放所有URL对象 - 不再需要
+  useEffect(() => {
+    return () => {
+      // 不再需要释放URL
+    };
+  }, []);
+
+  // 发送消息
+  const handleSendMessage = () => {
+    if ((!message.trim() && localFiles.length === 0) || disabled) return;
+
+    // 检查是否有文件需要发送
+    if (localFiles.length > 0) {
+      // 将localFiles转换为FileWithPreview格式
+      const filesToSend: FileWithPreview[] = localFiles.map(item => {
+        // 使用工具函数创建FileWithPreview对象
+        // 但将preview设为空字符串，避免CSP问题
+        const fileWithPreview = createFileWithPreview(item.file);
+        fileWithPreview.preview = ''; // 不再使用预览URL，避免CSP问题
+        return fileWithPreview;
+      });
+
+      // 收集文件ID（如果有的话）
+      const actualFileIds = filesToSend
+        .map((file) => (file as any).fileId)
+        .filter((id) => id !== undefined);
+
+      console.log("发送带文件的消息", { 
+        messageText: message, 
+        filesCount: filesToSend.length,
+        fileIds: actualFileIds 
+      });
+
+      // 发送包含文件的消息
+      onSendMessage(message, filesToSend, actualFileIds);
+      
+      // 清除redux中的文件状态
+      dispatch(clearFiles(activeChatId));
+    } else {
+      // 仅发送文本消息
+      onSendMessage(message);
+    }
+
+    // 清理状态
+    setMessage("");
+    setLocalFiles([]);
+    setFiles([]);
+    setShowFileUpload(false);
+
+    // 重置文本框高度
+    if (textareaRef.current) {
+      textareaRef.current.style.height = "auto";
+    }
+  };
 
   // 获取当前活跃聊天ID
   const activeChatId =
@@ -88,31 +221,6 @@ const ChatInput: React.FC<ChatInputProps> = ({
       textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, 200)}px`;
     }
   }, [message]);
-
-  const handleSendMessage = () => {
-    console.log("尝试发送消息", { message, disabled, files, fileIds });
-    if ((!message.trim() && files.length === 0) || disabled || isUploading)
-      return;
-
-    // 收集实际的文件ID
-    const actualFileIds = files
-      .map((file) => (file as any).fileId)
-      .filter((id) => id !== undefined);
-
-    // 发送消息和文件ID
-    onSendMessage(message, files, actualFileIds);
-    setMessage("");
-
-    // 清除文件和关闭上传区域
-    setFiles([]);
-    dispatch(clearFiles(activeChatId));
-    setShowFileUpload(false);
-
-    // 重置文本框高度
-    if (textareaRef.current) {
-      textareaRef.current.style.height = "auto";
-    }
-  };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter" && !e.shiftKey) {
@@ -194,6 +302,12 @@ const ChatInput: React.FC<ChatInputProps> = ({
 
   return (
     <div className="flex flex-col space-y-2 p-4 border-t">
+      {useNewFileUpload && localFiles.length > 0 && (
+        <FilePreviewList
+          files={localFiles}
+          onRemove={handleRemoveFile}
+        />
+      )}
       {showFileUpload && (
         <div className="p-4 border rounded-md bg-muted/30 relative">
           {!supportsFileUpload && (
@@ -241,17 +355,6 @@ const ChatInput: React.FC<ChatInputProps> = ({
         )}
 
         <Button
-          onClick={handleFileUploadClick}
-          disabled={disabled}
-          variant={supportsFileUpload ? "ghost" : "outline"}
-          size="icon"
-          className={`h-10 w-10 ${!supportsFileUpload ? "opacity-50 cursor-not-allowed" : ""}`}
-          title={supportsFileUpload ? "上传文件" : "当前模型不支持文件上传"}
-        >
-          <PaperclipIcon className="h-5 w-5" />
-        </Button>
-
-        <Button
           variant="ghost"
           size="icon"
           className={`h-10 w-10 flex items-center justify-center ${!supportsReasoning ? "opacity-50 cursor-not-allowed" : ""}`}
@@ -267,11 +370,31 @@ const ChatInput: React.FC<ChatInputProps> = ({
           />
         </Button>
 
+        <Button
+          onClick={useNewFileUpload ? handleFileSelect : undefined}
+          disabled={disabled}
+          variant="ghost"
+          size="icon"
+          className="h-10 w-10"
+          title="上传文件"
+        >
+          <PaperclipIcon className="h-5 w-5" />
+        </Button>
+
+        <input
+          type="file"
+          ref={fileInputRef}
+          onChange={handleFileChange}
+          className="hidden"
+          multiple
+        />
+
         <Textarea
           ref={textareaRef}
           value={message}
           onChange={(e) => setMessage(e.target.value)}
           onKeyDown={handleKeyDown}
+          onPaste={useNewFileUpload ? handlePaste : undefined}
           placeholder={placeholder}
           disabled={disabled}
           className="min-h-10 max-h-64 flex-1 resize-none"
@@ -280,9 +403,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
 
         <Button
           onClick={handleSendMessage}
-          disabled={
-            (!message.trim() && files.length === 0) || disabled || isUploading
-          }
+          disabled={(!message.trim() && localFiles.length === 0) || disabled}
           size="icon"
           className="h-10 w-10"
         >
