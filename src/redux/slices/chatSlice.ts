@@ -172,10 +172,7 @@ const chatSlice = createSlice({
       }
     },
     updateStreamingReasoningContent: (state, action: PayloadAction<string>) => {
-      console.log('【Redux状态】更新流式推理内容:', action.payload ? action.payload.length : '空');
-      // 每次接收到推理内容更新时，无条件设置流式推理标志为true
-      state.isStreamingReasoning = true;
-      state.streamingReasoningContent = action.payload || '';
+      state.streamingReasoningContent = action.payload;
     },
     toggleReasoning: (state, action: PayloadAction<boolean>) => {
       state.reasoningEnabled = action.payload;
