@@ -13,8 +13,9 @@ import { generateChatTitle } from "@/lib/api/title";
 import { useAppDispatch, useAppSelector } from "@/redux/hooks";
 import { addMessage, createChat, endStreaming, endStreamingReasoning, setError, startStreaming, startStreamingReasoning, updateChatTitle, updateMessageReasoning, updateStreamingContent, updateStreamingReasoningContent } from "@/redux/slices/chatSlice";
 import { store } from "@/redux/store";
-import { FileText, Image, Lightbulb, MessageSquare, Plus } from "lucide-react";
+import { FileText, Image, Lightbulb, MessageSquare, Plus, RefreshCw } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { cn } from "@/lib/utils";
 
 // 热门问题示例数据 - 后期可以通过API获取
 const hotTopics = [
@@ -442,9 +443,9 @@ const BulletScreen = () => {
 // 欢迎卡片组件
 const WelcomeCard = () => {
   return (
-    <Card className="bg-gradient-to-br from-primary/5 via-secondary/10 to-primary/5 border-none shadow-md">
-      <CardContent className="pt-6">
-        <div className="flex flex-col items-center text-center space-y-4">
+    <Card className="bg-gradient-to-br from-primary/5 via-secondary/10 to-primary/5 border-none shadow-md h-full">
+      <CardContent className="flex items-center h-full">
+        <div className="flex flex-col items-center text-center space-y-4 w-full">
           <div className="relative">
             <h1 className="text-4xl font-bold tracking-tight">
               欢迎使用 <span className="bg-gradient-to-r from-blue-600 via-purple-500 to-pink-500 text-transparent bg-clip-text">Fusion AI</span> 助手
@@ -547,34 +548,293 @@ const QuickStartCard = () => {
       <div className="absolute -bottom-12 -right-12 w-40 h-40 bg-primary/5 rounded-full blur-xl"></div>
       <div className="absolute top-10 -left-10 w-20 h-20 bg-secondary/5 rounded-full blur-xl"></div>
 
-      <CardHeader>
-        <CardTitle className="text-xl">开始新对话</CardTitle>
-      </CardHeader>
-      <CardContent className="relative z-10 space-y-4">
-        <div className="bg-muted/30 p-4 rounded-lg backdrop-blur-sm border border-border/50">
-          <p className="text-sm font-medium mb-2">选择AI模型</p>
-          <div className="relative">
-            <ModelSelector />
-            <style jsx global>{`
-              :root {
-                --select-dropdown-max-height: 400px;
-              }
-            `}</style>
+      <div className="flex flex-col h-full">
+        <CardHeader>
+          <CardTitle className="text-xl">开始新对话</CardTitle>
+        </CardHeader>
+        <CardContent className="relative z-10 space-y-4 flex-1">
+          <div className="bg-muted/30 p-4 rounded-lg backdrop-blur-sm border border-border/50">
+            <p className="text-sm font-medium mb-2">选择AI模型</p>
+            <div className="relative">
+              <ModelSelector />
+            </div>
           </div>
-        </div>
 
-        <Button
-          onClick={handleNewChat}
-          className="w-full h-10 text-sm gap-2 relative overflow-hidden group bg-gradient-to-r from-blue-600 via-purple-500 to-pink-500 hover:opacity-90 transition-opacity"
-        >
-          <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-1000"></div>
-          <Plus className="h-4 w-4 group-hover:rotate-90 transition-transform duration-300" />
-          <span className="z-10">开始新对话</span>
-        </Button>
+          <Button
+            onClick={handleNewChat}
+            className="w-full h-10 text-sm gap-2 relative overflow-hidden group bg-gradient-to-r from-blue-600 via-purple-500 to-pink-500 hover:opacity-90 transition-opacity"
+          >
+            <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-1000"></div>
+            <Plus className="h-4 w-4 group-hover:rotate-90 transition-transform duration-300" />
+            <span className="z-10">开始新对话</span>
+          </Button>
+        </CardContent>
+        <CardFooter className="text-xs text-muted-foreground border-t border-border/50 pt-4 relative z-10">
+          选择合适的模型开始智能对话，探索AI的无限可能
+        </CardFooter>
+      </div>
+    </Card>
+  );
+};
+
+// 对话示例数据
+const dialogueExamples = [
+  [
+    {
+      title: "智能写作",
+      desc: "生成文章、报告",
+      examples: ["写一篇科技新闻", "生成产品说明书", "编写商业计划书"]
+    },
+    {
+      title: "代码助手",
+      desc: "编程帮助、Debug",
+      examples: ["React性能优化", "Python爬虫示例", "Vue组件开发"]
+    },
+    {
+      title: "数据分析",
+      desc: "数据处理分析",
+      examples: ["分析销售数据", "生成数据报表", "市场趋势分析"]
+    },
+    {
+      title: "知识问答",
+      desc: "解答问题讲解",
+      examples: ["量子计算原理", "机器学习基础", "区块链技术"]
+    }
+  ],
+  [
+    {
+      title: "文案创作",
+      desc: "营销内容生成",
+      examples: ["产品推广文案", "社交媒体文案", "品牌故事"]
+    },
+    {
+      title: "翻译助手",
+      desc: "多语言翻译",
+      examples: ["中英互译", "技术文档翻译", "本地化建议"]
+    },
+    {
+      title: "教育辅导",
+      desc: "学习解惑",
+      examples: ["数学题解析", "物理概念讲解", "历史事件分析"]
+    },
+    {
+      title: "创意激发",
+      desc: "创意头脑风暴",
+      examples: ["产品创新点子", "设计灵感启发", "剧情构思"]
+    }
+  ],
+  [
+    {
+      title: "项目管理",
+      desc: "项目规划建议",
+      examples: ["项目进度规划", "风险评估", "团队协作建议"]
+    },
+    {
+      title: "技术咨询",
+      desc: "技术方案建议",
+      examples: ["架构设计建议", "技术选型分析", "性能优化方案"]
+    },
+    {
+      title: "研究助手",
+      desc: "研究方法指导",
+      examples: ["文献综述建议", "研究方法选择", "数据分析方法"]
+    },
+    {
+      title: "生活助手",
+      desc: "日常生活建议",
+      examples: ["健康饮食建议", "运动计划制定", "时间管理技巧"]
+    }
+  ]
+];
+
+// 右侧：热门问题和对话示例
+const DialogueExamplesCard = () => {
+  const [currentSetIndex, setCurrentSetIndex] = useState(0);
+  const [isRotating, setIsRotating] = useState(false);
+  const [isChanging, setIsChanging] = useState(false);
+  const dispatch = useAppDispatch();
+  const { selectedModelId, models } = useAppSelector((state) => state.models);
+
+  const handleExampleClick = (example: string) => {
+    if (!selectedModelId) return;
+
+    dispatch(
+      createChat({
+        modelId: selectedModelId,
+        title: example.length > 20 ? example.substring(0, 20) + "..." : example,
+      })
+    );
+
+    const state = store.getState();
+    const newChat = state.chat.chats[state.chat.chats.length - 1];
+    if (!newChat) {
+      dispatch(setError('创建对话失败'));
+      return;
+    }
+
+    const chatId = newChat.id;
+
+    dispatch(
+      addMessage({
+        chatId,
+        message: {
+          role: "user",
+          content: example,
+          status: "pending",
+        }
+      })
+    );
+
+    dispatch(startStreaming(chatId));
+
+    const selectedModel = models.find(m => m.id === selectedModelId);
+    if (!selectedModel) {
+      dispatch(setError('找不到选中的模型信息'));
+      return;
+    }
+
+    const { reasoningEnabled } = store.getState().chat;
+    const supportsReasoning = selectedModel.capabilities?.deepThinking || false;
+    const useReasoning = reasoningEnabled && supportsReasoning;
+
+    if (useReasoning) {
+      dispatch(startStreamingReasoning());
+    }
+
+    sendMessageStream({
+      provider: selectedModel.provider,
+      model: selectedModel.id,
+      message: example.trim(),
+      conversation_id: chatId,
+      stream: true,
+      options: {
+        use_reasoning: useReasoning,
+        use_enhancement: store.getState().search.contextEnhancementEnabled
+      }
+    },
+    (content, done, conversationId, reasoning) => {
+      if (!done) {
+        dispatch(updateStreamingContent({
+          chatId,
+          content
+        }));
+
+        if (useReasoning && reasoning) {
+          dispatch(updateStreamingReasoningContent(reasoning));
+        }
+      } else {
+        dispatch(updateStreamingContent({
+          chatId,
+          content
+        }));
+
+        setTimeout(() => {
+          if (reasoning && reasoning.trim()) {
+            const streamingMessageId = store.getState().chat.streamingMessageId;
+            if (streamingMessageId) {
+              dispatch(updateMessageReasoning({
+                chatId,
+                messageId: streamingMessageId,
+                reasoning: reasoning,
+                isVisible: true
+              }));
+            }
+            dispatch(endStreamingReasoning());
+          }
+          dispatch(endStreaming());
+          
+          setTimeout(async () => {
+            try {
+              const generatedTitle = await generateChatTitle(
+                chatId || conversationId || '',
+                undefined,
+                { max_length: 20 }
+              );
+
+              dispatch(updateChatTitle({
+                chatId: chatId || conversationId || '',
+                title: generatedTitle
+              }));
+            } catch (error) {
+              console.error('生成标题失败:', error);
+            }
+          }, 1000);
+        }, 100);
+      }
+    }).catch(error => {
+      console.error('发送消息失败:', error);
+      dispatch(setError('发送消息失败，请重试'));
+      dispatch(endStreamingReasoning());
+      dispatch(endStreaming());
+    });
+  };
+
+  const handleNextSet = () => {
+    setIsRotating(true);
+    setIsChanging(true);
+    
+    // 先淡出当前内容
+    setTimeout(() => {
+      setCurrentSetIndex((prev) => (prev + 1) % dialogueExamples.length);
+      // 淡入新内容
+      setTimeout(() => {
+        setIsChanging(false);
+      }, 150);
+    }, 150);
+
+    // 重置旋转动画
+    setTimeout(() => {
+      setIsRotating(false);
+    }, 500);
+  };
+
+  return (
+    <Card>
+      <CardHeader className="pb-2">
+        <div className="flex items-center justify-between">
+          <CardTitle className="text-lg flex items-center gap-2">
+            <MessageSquare className="h-5 w-5 text-primary" />
+            对话示例
+          </CardTitle>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={handleNextSet}
+            className="h-8 px-2 hover:bg-muted/50 group"
+            disabled={isRotating}
+          >
+            <span className="text-xs mr-1">换一批</span>
+            <RefreshCw className={cn(
+              "h-4 w-4 transition-transform duration-500",
+              isRotating && "rotate-180"
+            )} />
+          </Button>
+        </div>
+      </CardHeader>
+      <CardContent>
+        <div className={cn(
+          "grid grid-cols-2 gap-4 transition-opacity duration-150",
+          isChanging ? "opacity-0" : "opacity-100"
+        )}>
+          {dialogueExamples[currentSetIndex].map((item, index) => (
+            <div 
+              key={index} 
+              className="p-3 rounded-lg border bg-card hover:bg-accent/5 transition-colors cursor-pointer"
+              onClick={() => handleExampleClick(item.examples[0])}
+            >
+              <h3 className="font-medium text-sm mb-1">{item.title}</h3>
+              <p className="text-xs text-muted-foreground mb-2">{item.desc}</p>
+              <div className="space-y-2">
+                {item.examples.slice(0, 1).map((example, i) => (
+                  <div key={i} className="text-xs px-2 py-1.5 bg-muted/50 rounded-md hover:bg-muted">
+                    {example}
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
       </CardContent>
-      <CardFooter className="text-xs text-muted-foreground border-t border-border/50 pt-4 relative z-10">
-        选择合适的模型开始智能对话，探索AI的无限可能
-      </CardFooter>
     </Card>
   );
 };
@@ -611,25 +871,25 @@ const ModelCapabilitiesSection = () => {
       id: "reasoning",
       title: "深度思考",
       description: "先思考、逐步分析再回答问题",
-      icon: <Lightbulb className="h-10 w-10 text-amber-500" />,
+      icon: <Lightbulb className="h-8 w-8 text-amber-500" />,
     },
     {
       id: "vision",
       title: "视觉识别",
       description: "理解和分析图像内容",
-      icon: <Image className="h-10 w-10 text-blue-500" />,
+      icon: <Image className="h-8 w-8 text-blue-500" />,
     },
     {
       id: "files",
       title: "文件处理",
       description: "处理各种类型的文件和数据",
-      icon: <FileText className="h-10 w-10 text-green-500" />,
+      icon: <FileText className="h-8 w-8 text-green-500" />,
     },
     {
       id: "chatting",
       title: "智能对话",
       description: "自然流畅的多轮对话",
-      icon: <MessageSquare className="h-10 w-10 text-purple-500" />,
+      icon: <MessageSquare className="h-8 w-8 text-purple-500" />,
     },
   ];
 
@@ -639,17 +899,19 @@ const ModelCapabilitiesSection = () => {
         <CardTitle className="text-xl">AI 能力展示</CardTitle>
       </CardHeader>
       <CardContent className="flex-1">
-        <div className="grid grid-cols-4 gap-4 h-full">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           {modelCapabilities.map((capability) => (
             <div
               key={capability.id}
-              className="flex flex-col items-center text-center p-4 bg-muted/20 rounded-lg 
+              className="flex flex-col items-center text-center p-3 bg-muted/20 rounded-lg 
                         hover:bg-accent/20 transition-all duration-300 transform hover:-translate-y-1 
                         border border-border/50 hover:border-primary/30"
             >
-              {capability.icon}
-              <h3 className="font-medium mt-3">{capability.title}</h3>
-              <p className="text-xs text-muted-foreground mt-1">
+              <div className="p-2 rounded-full bg-background/50 backdrop-blur-sm">
+                {capability.icon}
+              </div>
+              <h3 className="font-medium mt-2 text-sm">{capability.title}</h3>
+              <p className="text-xs text-muted-foreground mt-1 line-clamp-2">
                 {capability.description}
               </p>
             </div>
@@ -663,17 +925,68 @@ const ModelCapabilitiesSection = () => {
 // 主页组件
 const HomePage = () => {
   return (
-    <div className="flex flex-col h-full p-6 overflow-hidden">
-      <WelcomeCard />
-
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mt-6 flex-1">
-        <div className="lg:col-span-1 flex flex-col">
-          <QuickStartCard />
+    <div className="h-[calc(100vh-4rem)] flex flex-col">
+      <div className="flex-1 p-4 md:p-6 grid grid-rows-[auto,1fr] gap-6">
+        {/* 欢迎区域 */}
+        <div className="flex flex-col lg:flex-row gap-6">
+          <div className="flex-1">
+            <WelcomeCard />
+          </div>
+          <div className="w-full lg:w-[380px]">
+            <QuickStartCard />
+          </div>
         </div>
-        <div className="lg:col-span-2 flex flex-col">
-          <div className="grid grid-cols-1 gap-6 h-full">
+
+        {/* 主要内容区域 */}
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 h-full">
+          {/* 左侧：能力展示 */}
+          <div className="lg:col-span-5 grid grid-rows-[auto,1fr] gap-6">
             <ModelCapabilitiesSection />
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-lg flex items-center gap-2">
+                  <FileText className="h-5 w-5 text-primary" />
+                  使用指南
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-3">
+                  <div className="flex items-start gap-3 p-3 rounded-lg bg-muted/30 hover:bg-muted/50 transition-colors">
+                    <div className="size-8 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
+                      <span className="text-primary font-medium">1</span>
+                    </div>
+                    <div>
+                      <h3 className="font-medium text-sm">选择合适的模型</h3>
+                      <p className="text-xs text-muted-foreground">根据您的需求选择不同特点的AI模型。</p>
+                    </div>
+                  </div>
+                  <div className="flex items-start gap-3 p-3 rounded-lg bg-muted/30 hover:bg-muted/50 transition-colors">
+                    <div className="size-8 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
+                      <span className="text-primary font-medium">2</span>
+                    </div>
+                    <div>
+                      <h3 className="font-medium text-sm">描述您的需求</h3>
+                      <p className="text-xs text-muted-foreground">清晰地描述问题，AI会给出相应解答。</p>
+                    </div>
+                  </div>
+                  <div className="flex items-start gap-3 p-3 rounded-lg bg-muted/30 hover:bg-muted/50 transition-colors">
+                    <div className="size-8 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
+                      <span className="text-primary font-medium">3</span>
+                    </div>
+                    <div>
+                      <h3 className="font-medium text-sm">多轮对话优化</h3>
+                      <p className="text-xs text-muted-foreground">通过多轮对话逐步完善结果。</p>
+                    </div>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* 右侧：热门问题和对话示例 */}
+          <div className="lg:col-span-7 grid grid-rows-[1fr,auto] gap-6">
             <HotTopicsCard />
+            <DialogueExamplesCard />
           </div>
         </div>
       </div>
