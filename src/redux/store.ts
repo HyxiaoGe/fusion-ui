@@ -10,6 +10,28 @@ import promptTemplatesReducer from './slices/promptTemplatesSlice';
 import searchReducer from './slices/searchSlice';
 import settingsReducer from './slices/settingsSlice';
 import themeReducer from './slices/themeSlice';
+
+// 用于清理已同步标记的中间件
+const dbSyncMiddleware = (store: any) => (next: any) => (action: any) => {
+  const result = next(action);
+  
+  // 检查是否有消息在使用updateMessageReasoning后被标记为shouldSyncToDb
+  if (action.type === 'chat/updateMessageReasoning') {
+    const state = store.getState();
+    const { chatId, messageId } = action.payload;
+    
+    // 在下一个事件循环中清除标记(给足够时间让组件同步)
+    setTimeout(() => {
+      store.dispatch({
+        type: 'chat/clearDbSyncFlag',
+        payload: { chatId, messageId }
+      });
+    }, 2000); // 2秒后清除标记，确保组件有足够时间同步
+  }
+  
+  return result;
+};
+
 export const store = configureStore({
     reducer: {
         theme: themeReducer,
@@ -24,7 +46,7 @@ export const store = configureStore({
     middleware: (getDefaultMiddleware) => 
         getDefaultMiddleware({
             serializableCheck: false,
-        }).concat(persistMiddleware, toastMiddleware),
+        }).concat(persistMiddleware, toastMiddleware, dbSyncMiddleware),
 });
 
 setupListeners(store.dispatch);

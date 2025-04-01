@@ -328,7 +328,7 @@ const FileUpload = forwardRef<any, FileUploadProps>(({
               }));
 
               // 上传完成后，开始轮询文件状态
-              console.log('文件上传完成，开始轮询状态:', uploadedFileId);
+              console.log('文件上传成功，立即开始轮询状态检查:', uploadedFileId);
               startPollingFileStatus(
                 uploadedFileId,
                 conversationId,
@@ -336,10 +336,10 @@ const FileUpload = forwardRef<any, FileUploadProps>(({
                 (success) => {
                   // 轮询完成回调
                   if (success) {
-                    console.log('文件处理成功:', uploadedFileId);
+                    console.log('文件处理成功，状态已变为processed:', uploadedFileId);
                     // 可以在这里触发其他操作
                   } else {
-                    console.log('文件处理失败:', uploadedFileId);
+                    console.log('文件处理失败，状态已变为error:', uploadedFileId);
                     // 显示错误状态
                     setLocalError('文件处理失败，请重试');
                   }

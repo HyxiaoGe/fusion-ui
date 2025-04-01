@@ -3,10 +3,10 @@ import { AppDispatch } from '@/redux/store';
 import { updateFileStatus } from '@/redux/slices/fileUploadSlice';
 
 // 轮询间隔配置（毫秒）
-const INITIAL_INTERVAL = 1000;  // 初始轮询间隔：1秒
-const MAX_INTERVAL = 10000;     // 最大轮询间隔：10秒
-const BACKOFF_FACTOR = 1.5;     // 退避因子：每次增加50%
-const MAX_RETRIES = 30;         // 最大重试次数：30次（大约5分钟）
+const INITIAL_INTERVAL = 500;   // 初始轮询间隔：0.5秒，改短以更快获取状态
+const MAX_INTERVAL = 3000;      // 最大轮询间隔：3秒，改短以确保更频繁的状态更新
+const BACKOFF_FACTOR = 1.2;     // 退避因子：每次增加20%，减小以使增长更平缓
+const MAX_RETRIES = 60;         // 最大重试次数：60次（约3分钟）
 
 interface PollerConfig {
   fileId: string;
@@ -42,6 +42,9 @@ export class FileStatusPoller {
     if (this.isPolling) return;
     
     this.isPolling = true;
+    console.log(`开始轮询文件 ${this.fileId} 状态`);
+    
+    // 立即执行一次查询，不等待初始间隔
     this.pollStatus();
   }
 
@@ -63,6 +66,7 @@ export class FileStatusPoller {
     if (!this.isPolling || this.attempts >= MAX_RETRIES) {
       // 如果已达到最大重试次数，标记为错误
       if (this.attempts >= MAX_RETRIES) {
+        console.log(`文件 ${this.fileId} 轮询达到最大次数(${MAX_RETRIES})，标记为错误`);
         this.dispatch(updateFileStatus({
           fileId: this.fileId,
           chatId: this.chatId,
@@ -78,6 +82,7 @@ export class FileStatusPoller {
     }
 
     try {
+      console.log(`轮询文件 ${this.fileId} 状态，尝试次数: ${this.attempts}, 间隔: ${this.currentInterval}ms`);
       const statusResponse = await getFileStatus(this.fileId);
       console.log(`文件 ${this.fileId} 状态更新: ${statusResponse.status}`);
       

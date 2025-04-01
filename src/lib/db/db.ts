@@ -18,6 +18,8 @@ export interface Message {
   timestamp: Date;
   reasoning?: string;
   isReasoningVisible?: boolean;
+  reasoningStartTime?: number;
+  reasoningEndTime?: number;
 }
 
 // 定义设置的类型

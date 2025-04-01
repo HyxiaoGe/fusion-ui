@@ -6,8 +6,8 @@ import { FileWithPreview, formatFileSize } from '@/lib/utils/fileHelpers';
 import { useAppDispatch, useAppSelector } from '@/redux/hooks';
 import { Message, toggleReasoningVisibility } from '@/redux/slices/chatSlice';
 import { avatarOptions } from '@/redux/slices/settingsSlice';
-import { Edit2, FileIcon, RefreshCw, Lightbulb } from 'lucide-react';
-import React, { useState } from 'react';
+import { Edit2, FileIcon, RefreshCw, Lightbulb, FileText, Image, Film, PenLine, RotateCcw, FileArchive } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
 import ReactMarkdown from 'react-markdown';
 import TextareaAutosize from 'react-textarea-autosize';
 import rehypeHighlight from 'rehype-highlight';
@@ -17,6 +17,7 @@ import FileCard from './FileCard';
 import ReasoningContent from './ReasoningContent';
 import ProviderIcon from '../models/ProviderIcon';
 import { ImageIcon } from 'lucide-react';
+import { chatStore } from '@/lib/db/chatStore';
 
 interface ChatMessageProps {
   message: Message;
@@ -58,7 +59,7 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, files, isLastMessage
     return avatar ? avatar.emoji : '🤖';
   };
 
-  const formatTime = (timestamp: number) => {
+  const formatTime = (timestamp?: number) => {
     if (!timestamp || isNaN(timestamp)) {
       console.warn('无效的时间戳:', timestamp);
       return '';
@@ -116,6 +117,34 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, files, isLastMessage
   const displayReasoning = isStreaming && isLastMessage && streamingReasoningContent
     ? streamingReasoningContent
     : message.reasoning;
+
+  // 同步思考时间到数据库
+  useEffect(() => {
+    // 只在shouldSyncToDb为true时同步到数据库
+    if (message.shouldSyncToDb) {
+      // 提取需要更新的字段
+      const updates = {
+        content: message.content,
+        reasoning: message.reasoning,
+        isReasoningVisible: message.isReasoningVisible,
+        reasoningStartTime: message.reasoningStartTime,
+        reasoningEndTime: message.reasoningEndTime
+      };
+      
+      // 异步更新数据库，不阻塞UI
+      const syncToDb = async () => {
+        try {
+          await chatStore.updateMessage(message.id, updates);
+          console.log('思考时间已同步到数据库');
+        } catch (error) {
+          console.error('同步到数据库失败:', error);
+        }
+      };
+      
+      syncToDb();
+    }
+  }, [message.shouldSyncToDb, message.id, message.content, message.reasoning, 
+      message.isReasoningVisible, message.reasoningStartTime, message.reasoningEndTime]);
 
   return (
     <div
@@ -209,6 +238,8 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, files, isLastMessage
                     onToggleVisibility={handleToggleReasoning}
                     className="mb-2"
                     isStreaming={isStreaming && isLastMessage}
+                    startTime={message.reasoningStartTime}
+                    endTime={message.reasoningEndTime}
                   />
                 )}
 

@@ -1,7 +1,7 @@
 'use client';
 
 import { Button } from '@/components/ui/button';
-import { Lightbulb, ChevronDown, ChevronUp } from 'lucide-react';
+import { Lightbulb, ChevronDown, ChevronUp, Clock, Copy, Check } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import ReactMarkdown from 'react-markdown';
 import rehypeHighlight from 'rehype-highlight';
@@ -16,6 +16,8 @@ interface ReasoningContentProps {
   className?: string;
   isStreaming?: boolean;
   forceShow?: boolean;
+  startTime?: number;
+  endTime?: number;
 }
 
 const ReasoningContent: React.FC<ReasoningContentProps> = ({
@@ -24,7 +26,9 @@ const ReasoningContent: React.FC<ReasoningContentProps> = ({
   onToggleVisibility,
   isStreaming = false,
   className,
-  forceShow = false
+  forceShow = false,
+  startTime,
+  endTime
 }) => {
   console.log('ReasoningContent渲染:', {
     hasReasoning: !!reasoning,
@@ -53,6 +57,13 @@ const ReasoningContent: React.FC<ReasoningContentProps> = ({
   // 引用滚动容器
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   
+  // 在流式思考状态下，确保组件立即加载并显示内容
+  useEffect(() => {
+    if (isStreaming && !reasoning && startTime) {
+      console.log('流式思考启动，但内容尚未生成');
+    }
+  }, [isStreaming, reasoning, startTime]);
+  
   // 计算内容预览和高度
   useEffect(() => {
     // 生成简短预览（仅第一行文本）
@@ -78,24 +89,175 @@ const ReasoningContent: React.FC<ReasoningContentProps> = ({
     }
   }, [reasoning, actuallyVisible]);
 
+  // 计算思考时间
+  const [thinkingDuration, setThinkingDuration] = useState<string>('');
+  const [liveTime, setLiveTime] = useState<number>(0);
+  const timerRef = useRef<HTMLSpanElement>(null);
+  const lastTimeRef = useRef<string>('');
+  
+  // 在组件挂载时或isStreaming/startTime/endTime变化时计算思考时间
+  useEffect(() => {
+    // 如果正在流式状态，实时计算思考时间
+    if (isStreaming && startTime) {
+      // 立即设置初始时间，不等待第一次间隔
+      const initialElapsed = Date.now() - startTime;
+      setLiveTime(initialElapsed);
+      
+      const timerInterval = setInterval(() => {
+        const elapsed = Date.now() - startTime;
+        setLiveTime(elapsed);
+      }, 50); // 更快的更新频率，50毫秒更新一次
+      
+      return () => clearInterval(timerInterval);
+    } else if (startTime && endTime) {
+      // 如果有开始和结束时间，计算固定思考时间
+      const elapsed = endTime - startTime;
+      setLiveTime(elapsed);
+    }
+  }, [isStreaming, startTime, endTime]);
+  
+  // 格式化思考时间
+  useEffect(() => {
+    // 即使liveTime为0，但如果正在流式思考中，也应该显示计时器
+    if (liveTime > 0 || (isStreaming && startTime)) {
+      // 将毫秒转换为易读格式，提高精度
+      const seconds = Math.floor(liveTime / 1000);
+      const ms = liveTime % 1000;
+      
+      let newTime = '';
+      if (seconds < 60) {
+        newTime = `${seconds}.${ms.toString().padStart(3, '0').substring(0, 2)}秒`;
+      } else {
+        const minutes = Math.floor(seconds / 60);
+        const remainingSeconds = seconds % 60;
+        newTime = `${minutes}分${remainingSeconds}.${ms.toString().padStart(3, '0').substring(0, 2)}秒`;
+      }
+      
+      // 检测时间是否变化
+      if (newTime !== lastTimeRef.current && timerRef.current && isStreaming) {
+        // 添加动画效果
+        timerRef.current.classList.add('updated');
+        setTimeout(() => {
+          if (timerRef.current) {
+            timerRef.current.classList.remove('updated');
+          }
+        }, 200); // 动画持续时间
+      }
+      
+      lastTimeRef.current = newTime;
+      setThinkingDuration(newTime);
+    } else {
+      setThinkingDuration('');
+    }
+  }, [liveTime, isStreaming, startTime]);
+
+  // 复制成功状态
+  const [isCopied, setIsCopied] = useState(false);
+  
+  // 处理复制功能
+  const handleCopy = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (navigator.clipboard && reasoning) {
+      navigator.clipboard.writeText(reasoning.trim())
+        .then(() => {
+          // 设置复制成功状态
+          setIsCopied(true);
+          
+          // 2秒后重置状态
+          setTimeout(() => {
+            setIsCopied(false);
+          }, 2000);
+        })
+        .catch(err => {
+          console.error('复制失败:', err);
+        });
+    }
+  };
+
   return (
-    <div className={cn("mb-3 relative border border-border rounded-md", className)}>
-      <div className="flex justify-between items-center px-3 py-2">
-        <div className="flex items-center text-xs text-muted-foreground">
-          <Lightbulb className={cn("h-3 w-3 mr-1", isStreaming ? "text-amber-400 animate-pulse" : "text-amber-400")}/>
-          <span>思考过程</span>
-          {isStreaming && (!reasoning || !reasoning.trim()) && (
-            <span className="ml-1 text-amber-400 animate-pulse">实时思考中...</span>
+    <div className={cn("mb-3 relative border border-border rounded-md shadow-sm", className)}>
+      <div 
+        className="flex justify-between items-center px-3 py-2 bg-muted/30 cursor-pointer hover:bg-muted/50 transition-colors relative group/header"
+        onClick={onToggleVisibility}
+        title={actuallyVisible ? "点击隐藏思考过程" : "点击显示思考过程"}
+      >
+        <div className="flex items-center gap-2">
+          <div className="flex items-center text-xs text-muted-foreground">
+            <Lightbulb className={cn("h-4 w-4 mr-1", isStreaming ? "text-amber-400 animate-pulse" : "text-amber-400")}/>
+            <span className="font-medium">思考过程</span>
+            {isStreaming && (!reasoning || !reasoning.trim()) && (
+              <span className="ml-1 text-amber-400 animate-pulse">实时思考中...</span>
+            )}
+          </div>
+          
+          {/* 思考时间显示 - 修改条件，确保在流式思考时即使没有duration也显示 */}
+          {(thinkingDuration || (isStreaming && startTime)) && (
+            <div className={cn(
+              "text-xs px-2 py-0.5 rounded-full transition-all duration-150",
+              isStreaming 
+                ? "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300" 
+                : "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300"
+            )}>
+              <span className={cn(
+                "flex items-center gap-1",
+                isStreaming && "animate-pulse-slow"
+              )}>
+                <Clock className={cn("h-3 w-3", isStreaming && "animate-spin-slow")} />
+                <span className="font-mono">
+                  {isStreaming ? '思考用时: ' : '思考用时: '}
+                  <span className={cn(
+                    "inline-block min-w-[3.5em] text-right",
+                    isStreaming && "timer-digits"
+                  )}
+                  ref={timerRef}>
+                    {thinkingDuration || '0.00秒'}
+                  </span>
+                </span>
+              </span>
+            </div>
           )}
         </div>
-        <Button
-          variant="ghost"
-          size="sm"
-          className="h-6 w-6 p-0"
-          onClick={onToggleVisibility}
-        >
-          {actuallyVisible ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
-        </Button>
+        <div className="flex gap-1" onClick={e => e.stopPropagation()}>
+          {actuallyVisible && (
+            <Button
+              variant="outline"
+              size="sm"
+              className={cn(
+                "h-6 w-6 p-0 transition-all duration-200",
+                isCopied 
+                  ? "text-green-600 border-green-600 dark:text-green-400 dark:border-green-400" 
+                  : "text-muted-foreground"
+              )}
+              onClick={handleCopy}
+              title={isCopied ? "已复制" : "复制思考过程"}
+            >
+              {isCopied ? (
+                <Check className="h-3 w-3" />
+              ) : (
+                <Copy className="h-3 w-3" />
+              )}
+            </Button>
+          )}
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-6 w-6 p-0 text-muted-foreground"
+            onClick={(e) => {
+              e.stopPropagation();
+              onToggleVisibility();
+            }}
+            title={actuallyVisible ? "隐藏思考过程" : "显示思考过程"}
+          >
+            {actuallyVisible ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+          </Button>
+        </div>
+        
+        {/* 点击提示覆盖层 - 仅在鼠标悬停时显示 */}
+        <div className="absolute inset-0 bg-primary/5 opacity-0 group-hover/header:opacity-100 pointer-events-none transition-opacity flex items-center justify-center">
+          <span className="text-xs text-muted-foreground/70 font-medium tracking-wider">
+            {actuallyVisible ? "点击隐藏" : "点击显示"}
+          </span>
+        </div>
       </div>
       
       <div className={cn(
@@ -110,59 +272,138 @@ const ReasoningContent: React.FC<ReasoningContentProps> = ({
         
         <div 
           ref={scrollContainerRef}
-          style={{ maxHeight: actuallyVisible ? `${Math.min(contentHeight || 240, 240)}px` : '0' }}
+          style={{ maxHeight: actuallyVisible ? `${Math.min(contentHeight || 320, 320)}px` : '0' }}
           className={cn(
-            "bg-slate-100 dark:bg-slate-800 p-3 rounded-b-md text-sm overflow-auto transition-all duration-300"
+            "bg-slate-50 dark:bg-slate-900 p-3 rounded-b-md text-sm overflow-auto transition-all duration-300"
           )}
         >
           <div ref={contentRef}>
-            {reasoning && reasoning.trim() ? (
-              <ReactMarkdown
-                remarkPlugins={[remarkGfm]}
-                rehypePlugins={[rehypeRaw, rehypeHighlight]}
-                components={{
-                  pre: ({ node, ...props }) => (
-                    <pre className="bg-slate-200 dark:bg-slate-700 rounded-md overflow-auto p-2 my-2" {...props} />
-                  ),
-                  code: ({ node, className, children, ...props }) => {
-                    const match = /language-(\w+)/.exec(className || '');
-                    return match ? (
-                      <code className={className} {...props}>
-                        {children}
-                      </code>
-                    ) : (
-                      <code className="bg-slate-200 dark:bg-slate-700 px-1 py-0.5 rounded text-xs" {...props}>
-                        {children}
-                      </code>
-                    );
-                  },
-                }}
-              >
-                {reasoning.trim()}
-              </ReactMarkdown>
-            ) : isStreaming ? (
-              <div className="flex flex-col space-y-2">
-                <div className="flex items-center">
-                  <span className="mr-2 text-amber-400 font-medium">AI正在组织思路...</span>
-                  <div className="typing-indicator">
-                    <span></span>
-                    <span></span>
-                    <span></span>
+            {isStreaming ? (
+              <>
+                {reasoning && reasoning.trim() ? (
+                  <>
+                    <ReactMarkdown
+                      remarkPlugins={[remarkGfm]}
+                      rehypePlugins={[rehypeRaw, rehypeHighlight]}
+                      components={{
+                        pre: ({ node, ...props }) => (
+                          <pre className="bg-slate-100 dark:bg-slate-800 rounded-md overflow-auto p-2 my-2" {...props} />
+                        ),
+                        code: ({ node, className, children, ...props }) => {
+                          const match = /language-(\w+)/.exec(className || '');
+                          return match ? (
+                            <code className={className} {...props}>
+                              {children}
+                            </code>
+                          ) : (
+                            <code className="bg-slate-100 dark:bg-slate-800 px-1 py-0.5 rounded text-xs" {...props}>
+                              {children}
+                            </code>
+                          );
+                        },
+                        h1: ({ node, ...props }) => (
+                          <h1 className="text-lg font-bold mt-3 mb-2" {...props} />
+                        ),
+                        h2: ({ node, ...props }) => (
+                          <h2 className="text-md font-bold mt-3 mb-2" {...props} />
+                        ),
+                        h3: ({ node, ...props }) => (
+                          <h3 className="text-sm font-bold mt-2 mb-1" {...props} />
+                        ),
+                        p: ({ node, ...props }) => (
+                          <p className="my-1.5" {...props} />
+                        ),
+                        ul: ({ node, ...props }) => (
+                          <ul className="list-disc pl-5 my-1.5" {...props} />
+                        ),
+                        ol: ({ node, ...props }) => (
+                          <ol className="list-decimal pl-5 my-1.5" {...props} />
+                        ),
+                        li: ({ node, ...props }) => (
+                          <li className="my-0.5" {...props} />
+                        ),
+                      }}
+                    >
+                      {reasoning.trim()}
+                    </ReactMarkdown>
+                    
+                    <div className="h-4 mt-2">
+                      <span className="inline-block h-3 w-3 bg-amber-400 rounded-full animate-pulse"></span>
+                    </div>
+                  </>
+                ) : (
+                  <div className="py-2">
+                    <div className="thinking-animation">
+                      <div className="flex items-center mb-2">
+                        <span className="mr-2 text-amber-500 font-medium">AI正在组织思路...</span>
+                        <div className="typing-indicator">
+                          <span></span>
+                          <span></span>
+                          <span></span>
+                        </div>
+                      </div>
+                      <div className="thought-bubbles">
+                        <div className="bubble"></div>
+                        <div className="bubble"></div>
+                        <div className="bubble"></div>
+                      </div>
+                      <div className="thought-lines">
+                        <div className="line"></div>
+                        <div className="line"></div>
+                        <div className="line"></div>
+                        <div className="line"></div>
+                      </div>
+                    </div>
                   </div>
-                </div>
-                <div className="thinking-animation">
-                  <div className="line"></div>
-                  <div className="line"></div>
-                  <div className="line"></div>
-                  <div className="line"></div>
-                </div>
-              </div>
-            ) : null}
-            
-            {isStreaming && reasoning && reasoning.trim() && (
-              <div className="h-4 mt-2">
-                <span className="inline-block h-3 w-3 bg-amber-400 rounded-full animate-pulse"></span>
-              </div>
+                )}
+              </>
+            ) : (
+              reasoning && reasoning.trim() && (
+                <ReactMarkdown
+                  remarkPlugins={[remarkGfm]}
+                  rehypePlugins={[rehypeRaw, rehypeHighlight]}
+                  components={{
+                    pre: ({ node, ...props }) => (
+                      <pre className="bg-slate-100 dark:bg-slate-800 rounded-md overflow-auto p-2 my-2" {...props} />
+                    ),
+                    code: ({ node, className, children, ...props }) => {
+                      const match = /language-(\w+)/.exec(className || '');
+                      return match ? (
+                        <code className={className} {...props}>
+                          {children}
+                        </code>
+                      ) : (
+                        <code className="bg-slate-100 dark:bg-slate-800 px-1 py-0.5 rounded text-xs" {...props}>
+                          {children}
+                        </code>
+                      );
+                    },
+                    h1: ({ node, ...props }) => (
+                      <h1 className="text-lg font-bold mt-3 mb-2" {...props} />
+                    ),
+                    h2: ({ node, ...props }) => (
+                      <h2 className="text-md font-bold mt-3 mb-2" {...props} />
+                    ),
+                    h3: ({ node, ...props }) => (
+                      <h3 className="text-sm font-bold mt-2 mb-1" {...props} />
+                    ),
+                    p: ({ node, ...props }) => (
+                      <p className="my-1.5" {...props} />
+                    ),
+                    ul: ({ node, ...props }) => (
+                      <ul className="list-disc pl-5 my-1.5" {...props} />
+                    ),
+                    ol: ({ node, ...props }) => (
+                      <ol className="list-decimal pl-5 my-1.5" {...props} />
+                    ),
+                    li: ({ node, ...props }) => (
+                      <li className="my-0.5" {...props} />
+                    ),
+                  }}
+                >
+                  {reasoning.trim()}
+                </ReactMarkdown>
+              )
             )}
           </div>
         </div>
@@ -196,6 +437,66 @@ const ReasoningContent: React.FC<ReasoningContentProps> = ({
           animation: pulse 1.5s infinite ease-in-out 0.8s;
         }
         
+        .thought-bubbles {
+          display: flex;
+          justify-content: space-between;
+          margin: 10px 0;
+        }
+        
+        .bubble {
+          width: 30%;
+          height: 6px;
+          background: rgba(251, 191, 36, 0.2);
+          border-radius: 10px;
+          margin-bottom: 6px;
+          position: relative;
+          animation: bubble-pulse 2s infinite ease-in-out;
+        }
+        
+        .bubble:nth-child(2) {
+          animation-delay: 0.3s;
+        }
+        
+        .bubble:nth-child(3) {
+          animation-delay: 0.6s;
+        }
+        
+        .thought-lines {
+          margin-top: 10px;
+          padding: 8px;
+          background-color: rgba(251, 191, 36, 0.1);
+          border-radius: 8px;
+        }
+        
+        .line {
+          height: 4px;
+          width: 100%;
+          margin: 8px 0;
+          background: linear-gradient(90deg, 
+            rgba(251, 191, 36, 0.2) 0%, 
+            rgba(251, 191, 36, 0.5) 30%, 
+            rgba(251, 191, 36, 0.2) 60%,
+            rgba(251, 191, 36, 0.5) 100%);
+          background-size: 200% 100%;
+          animation: shimmer 2s infinite;
+          border-radius: 4px;
+        }
+        
+        .line:nth-child(2) {
+          animation-delay: 0.2s;
+          width: 85%;
+        }
+        
+        .line:nth-child(3) {
+          animation-delay: 0.4s;
+          width: 92%;
+        }
+        
+        .line:nth-child(4) {
+          animation-delay: 0.6s;
+          width: 78%;
+        }
+        
         @keyframes pulse {
           0%, 100% {
             opacity: 0.6;
@@ -207,40 +508,15 @@ const ReasoningContent: React.FC<ReasoningContentProps> = ({
           }
         }
         
-        .thinking-animation {
-          margin-top: 8px;
-          padding: 10px;
-          background-color: rgba(251, 191, 36, 0.1);
-          border-radius: 4px;
-        }
-        
-        .line {
-          height: 3px;
-          width: 100%;
-          margin: 6px 0;
-          background: linear-gradient(90deg, 
-            rgba(251, 191, 36, 0.2) 0%, 
-            rgba(251, 191, 36, 0.5) 30%, 
-            rgba(251, 191, 36, 0.2) 60%,
-            rgba(251, 191, 36, 0.5) 100%);
-          background-size: 200% 100%;
-          animation: shimmer 2s infinite;
-          border-radius: 2px;
-        }
-        
-        .line:nth-child(2) {
-          animation-delay: 0.2s;
-          width: 80%;
-        }
-        
-        .line:nth-child(3) {
-          animation-delay: 0.4s;
-          width: 90%;
-        }
-        
-        .line:nth-child(4) {
-          animation-delay: 0.6s;
-          width: 65%;
+        @keyframes bubble-pulse {
+          0%, 100% {
+            opacity: 0.4;
+            transform: scale(0.95);
+          }
+          50% {
+            opacity: 0.8;
+            transform: scale(1);
+          }
         }
         
         @keyframes shimmer {
@@ -250,6 +526,52 @@ const ReasoningContent: React.FC<ReasoningContentProps> = ({
           100% {
             background-position: -200% 0;
           }
+        }
+        
+        @keyframes pulse-slow {
+          0%, 100% {
+            opacity: 0.9;
+            transform: scale(1);
+          }
+          50% {
+            opacity: 1;
+            transform: scale(1.02);
+          }
+        }
+        
+        @keyframes spin-slow {
+          from {
+            transform: rotate(0deg);
+          }
+          to {
+            transform: rotate(360deg);
+          }
+        }
+        
+        @keyframes digit-flip {
+          0%, 100% {
+            transform: translateY(0);
+          }
+          50% {
+            transform: translateY(-2px);
+          }
+        }
+        
+        .timer-digits {
+          transition: all 0.1s ease-in-out;
+        }
+        
+        .timer-digits:global(.updated) {
+          animation: digit-flip 0.2s ease-in-out;
+          color: rgb(251, 191, 36);
+        }
+        
+        :global(.animate-pulse-slow) {
+          animation: pulse-slow 2s infinite ease-in-out;
+        }
+        
+        :global(.animate-spin-slow) {
+          animation: spin-slow 4s linear infinite;
         }
       `}</style>
     </div>

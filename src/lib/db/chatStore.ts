@@ -22,6 +22,11 @@ class ChatDatabase extends Dexie {
     this.version(2).stores({
       messages: 'id, chatId, role, timestamp, [chatId+timestamp], [chatId+role+content]'
     });
+    
+    // 升级数据库版本，支持思考时间字段
+    this.version(3).stores({
+      messages: 'id, chatId, role, timestamp, [chatId+timestamp], [chatId+role+content]'
+    });
   }
 }
 
@@ -192,7 +197,9 @@ export const chatStore = {
         id: message.id || uuidv4(),
         timestamp: Number(message.timestamp),
         reasoning: message.reasoning || '',
-        isReasoningVisible: message.isReasoningVisible || false
+        isReasoningVisible: message.isReasoningVisible || false,
+        reasoningStartTime: message.reasoningStartTime || undefined,
+        reasoningEndTime: message.reasoningEndTime || undefined
       };
       
       const existingMessageById = await db.messages.get(messageWithChatId.id);
@@ -217,6 +224,36 @@ export const chatStore = {
       }
     } catch (error) {
       console.error(`添加消息到聊天ID ${chatId} 失败:`, error);
+      throw error;
+    }
+  },
+  
+  // 更新已有消息
+  async updateMessage(messageId: string, updates: Partial<Message>): Promise<void> {
+    try {
+      const existingMessage = await db.messages.get(messageId);
+      
+      if (existingMessage) {
+        // 更新消息字段
+        await db.messages.update(messageId, {
+          ...updates,
+          // 确保不覆盖chat ID
+          chatId: existingMessage.chatId
+        });
+        
+        // 如果有聊天ID，更新聊天的updatedAt
+        if (existingMessage.chatId) {
+          await db.chats.update(existingMessage.chatId, {
+            updatedAt: Date.now()
+          });
+        }
+        
+        console.log(`已更新消息 ${messageId}`);
+      } else {
+        console.warn(`未找到要更新的消息: ${messageId}`);
+      }
+    } catch (error) {
+      console.error(`更新消息 ${messageId} 失败:`, error);
       throw error;
     }
   },

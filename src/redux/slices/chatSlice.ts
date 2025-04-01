@@ -5,17 +5,21 @@ export interface Message {
   id: string;
   role: 'user' | 'assistant' | 'system';
   content: string;
-  timestamp: number;
+  timestamp?: number;
   chatId?: string;
   status?: 'pending' | 'failed' | null;
   fileInfo?: {
     name: string;
     size: number;
     type: string;
-    previewUrl: string;
+    previewUrl?: string;
+    fileId?: string;
   }[];
   reasoning?: string;
   isReasoningVisible?: boolean;
+  reasoningStartTime?: number;
+  reasoningEndTime?: number;
+  shouldSyncToDb?: boolean;
 }
 
 export interface Chat {
@@ -35,6 +39,7 @@ interface ChatState {
   streamingContent: string | null;
   isStreaming: boolean;
   streamingReasoningContent: string;
+  streamingReasoningStartTime: number | null; // 记录思考开始时间
   streamingMessageId: string | null; // 存储正在流式输出的消息ID
   reasoningEnabled: boolean;
   streamingReasoning: string | null;
@@ -49,6 +54,7 @@ const initialState: ChatState = {
   streamingContent: null,
   isStreaming: false,
   streamingReasoningContent: '',
+  streamingReasoningStartTime: null,
   streamingMessageId: null,
   reasoningEnabled: true,
   streamingReasoning: null,
@@ -153,21 +159,21 @@ const chatSlice = createSlice({
         }
       }
     },
-    updateMessageReasoning: (state, action: PayloadAction<{
-      chatId: string, 
-      messageId: string | null, 
-      reasoning: string,
-      isVisible: boolean
-    }>) => {
-      const { chatId, messageId, reasoning, isVisible } = action.payload;
-      if (!messageId) return;
-      
+    updateMessageReasoning: (state, action: PayloadAction<{messageId: string, chatId: string, reasoning: string, isVisible?: boolean}>) => {
+      const { messageId, chatId, reasoning, isVisible = true } = action.payload;
       const chat = state.chats.find(c => c.id === chatId);
       if (chat) {
         const message = chat.messages.find(m => m.id === messageId);
         if (message) {
           message.reasoning = reasoning;
           message.isReasoningVisible = isVisible;
+          // 记录思考的开始和结束时间
+          message.reasoningStartTime = state.streamingReasoningStartTime || undefined;
+          message.reasoningEndTime = Date.now();
+          
+          // 添加一个标记，表示这个消息需要保存到数据库
+          // 不在reducer中执行异步操作
+          message.shouldSyncToDb = true;
         }
       }
     },
@@ -178,17 +184,18 @@ const chatSlice = createSlice({
       state.reasoningEnabled = action.payload;
     },
     startStreamingReasoning: (state) => {
-      console.log('【Redux状态】开始流式推理');
       state.isStreamingReasoning = true;
-      state.streamingReasoning = null;
-      state.streamingReasoningContent = '';
+      state.streamingReasoning = '';
+      // 记录开始思考的时间
+      state.streamingReasoningStartTime = Date.now();
     },
     updateStreamingReasoning: (state, action: PayloadAction<string>) => {
       state.streamingReasoning = action.payload;
     },
     endStreamingReasoning: (state) => {
-      console.log('【Redux状态】结束流式推理');
       state.isStreamingReasoning = false;
+      state.streamingReasoning = null;
+      // 结束时保存结束时间，不要清除开始时间，以便传递给消息
     },
     toggleReasoningVisibility: (state, action: PayloadAction<{chatId: string, messageId: string, visible: boolean}>) => {
       const { chatId, messageId, visible } = action.payload;
@@ -199,6 +206,8 @@ const chatSlice = createSlice({
         const message = chat.messages.find(m => m.id === messageId);
         if (message) {
           message.isReasoningVisible = visible;
+          // 添加同步到数据库的标记
+          message.shouldSyncToDb = true;
           console.log('已更新消息状态:', message.id, message.isReasoningVisible);
         } else {
           console.log('未找到消息:', messageId);
@@ -259,6 +268,17 @@ const chatSlice = createSlice({
         chat.updatedAt = Date.now();
       }
     },
+    // 清除数据库同步标记
+    clearDbSyncFlag: (state, action: PayloadAction<{chatId: string, messageId: string}>) => {
+      const { chatId, messageId } = action.payload;
+      const chat = state.chats.find(c => c.id === chatId);
+      if (chat) {
+        const message = chat.messages.find(m => m.id === messageId);
+        if (message && message.shouldSyncToDb) {
+          message.shouldSyncToDb = false;
+        }
+      }
+    },
     // 一次性设置所有聊天数据（用于从数据库初始化）
     setAllChats: (state, action: PayloadAction<Chat[]>) => {
       state.chats = action.payload;
@@ -289,7 +309,8 @@ export const {
   endStreamingReasoning,
   toggleReasoningVisibility,
   updateMessageReasoning,
-  updateStreamingReasoningContent
+  updateStreamingReasoningContent,
+  clearDbSyncFlag
 } = chatSlice.actions;
 
 export default chatSlice.reducer;

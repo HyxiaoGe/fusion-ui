@@ -88,9 +88,9 @@ export async function uploadFiles(
     console.error('上传文件失败:', error);
     
     // 如果是超时或网络错误，尝试重试
-    if (false && retryCount > 0) {
+    if (retryCount > 0) {
       console.log(`上传失败，重试(${retryCount})...`);
-      return uploadFiles(conversationId, files, abortController, retryCount - 1);
+      return uploadFiles(provider, model, conversationId, files, abortController, retryCount - 1);
     }
     
     throw error;
@@ -134,21 +134,24 @@ export async function deleteFile(fileId: string): Promise<void> {
 
 export async function getFileStatus(fileId: string): Promise<FileStatusResponse> {
   try {
+    console.log(`正在查询文件状态: ${fileId}`);
     const response = await fetch(`${API_BASE_URL}/api/files/${fileId}/status`);
     
     if (!response.ok) {
       const errorData = await response.json();
+      console.error(`文件 ${fileId} 状态查询失败:`, errorData);
       throw new Error(errorData.detail || '获取文件状态失败');
     }
     
     const data = await response.json();
+    console.log(`文件 ${fileId} 状态查询成功:`, data.status);
     return {
       id: data.id,
       status: data.status as FileProcessingStatus,
       error_message: data.error_message
     };
   } catch (error) {
-    console.error("获取文件状态失败:", error);
+    console.error(`文件 ${fileId} 状态查询出错:`, error);
     throw error;
   }
 }
