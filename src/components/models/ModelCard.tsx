@@ -16,21 +16,30 @@ interface ModelCardProps {
 
 const ModelCard: React.FC<ModelCardProps> = ({ model }) => {
   return (
-    <Card>
+    <Card className={!model.enabled ? 'opacity-60' : ''}>
       <CardHeader className="pb-2">
         <div className="flex justify-between items-center">
           <CardTitle>{model.name}</CardTitle>
-          {model.experimental && (
-            <Badge
-              variant="outline"
-              className="text-amber-500 border-amber-500"
-            >
-              实验性
-            </Badge>
-          )}
+          <div className="flex gap-2">
+            {!model.enabled && (
+              <Badge variant="outline" className="text-gray-500 border-gray-500">
+                即将开放
+              </Badge>
+            )}
+            {model.experimental && (
+              <Badge variant="outline" className="text-amber-500 border-amber-500">
+                实验性
+              </Badge>
+            )}
+          </div>
         </div>
         <CardDescription>
           上下文窗口: {model.contextWindow || `${model.maxTokens / 1000}K`}
+          {!model.enabled && (
+            <div className="text-gray-500 mt-1">
+              此模型当前未接入或暂时不可用
+            </div>
+          )}
         </CardDescription>
       </CardHeader>
       <CardContent>

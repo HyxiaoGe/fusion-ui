@@ -28,19 +28,22 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({ onChange, className }) =>
   const { activeChatId } = useAppSelector((state) => state.chat);
   const { mode } = useAppSelector(state => state.theme);
 
-  // 只显示启用的模型
-  const enabledModels = models.filter((model) => model.enabled);
-
-  // 按提供商分组模型
+  // 按提供商分组所有模型
   const modelsByProvider = [...providers]
     .sort((a, b) => a.order - b.order)
     .map((provider) => ({
       ...provider,
-      models: enabledModels.filter((model) => model.provider === provider.id),
+      models: models.filter((model) => model.provider === provider.id),
     }))
     .filter((group) => group.models.length > 0);
 
   const handleModelChange = (value: string) => {
+    // 检查选择的模型是否启用
+    const selectedModel = models.find(m => m.id === value);
+    if (!selectedModel?.enabled) {
+      return;
+    }
+
     dispatch(setSelectedModel(value));
 
     // 如果有活动聊天，同时更新聊天的模型ID
@@ -58,7 +61,7 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({ onChange, className }) =>
     }
   };
 
-  const selectedModel = enabledModels.find(
+  const selectedModel = models.find(
     (model) => model.id === selectedModelId
   );
 
@@ -261,6 +264,7 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({ onChange, className }) =>
                 <SelectItem
                   key={model.id}
                   value={model.id}
+                  disabled={!model.enabled}
                   className={cn(
                     "model-item-ultra mx-1 my-1.5 px-3 py-3 rounded-lg",
                     "border border-transparent",
@@ -270,17 +274,23 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({ onChange, className }) =>
                     model.id === selectedModelId 
                       ? "highlight-selected selected-item border-blue-400/30 bg-blue-500/10" 
                       : "hover:border-blue-300/20",
-                    "data-[highlighted]:bg-blue-100 dark:data-[highlighted]:bg-blue-900/30"
+                    "data-[highlighted]:bg-blue-100 dark:data-[highlighted]:bg-blue-900/30",
+                    !model.enabled && "opacity-60 cursor-not-allowed"
                   )}
                 >
-                  <div className="flex justify-between w-full items-center gap-2 relative z-10">
+                  <div className="flex items-center justify-between w-full">
                     <div className="flex flex-col min-w-[120px]">
                       <span className="font-medium truncate" title={model.name}>
                         {model.name}
                       </span>
-                      {model.experimental && (
-                        <span className="text-[10px] text-amber-500 font-medium mt-0.5">实验性</span>
-                      )}
+                      <div className="flex gap-1 items-center mt-0.5">
+                        {!model.enabled && (
+                          <span className="text-[10px] text-gray-500 font-medium">即将开放</span>
+                        )}
+                        {model.experimental && (
+                          <span className="text-[10px] text-amber-500 font-medium">实验性</span>
+                        )}
+                      </div>
                     </div>
                     <div className="flex items-center gap-3 ml-auto">
                       <div className="flex items-center gap-2">

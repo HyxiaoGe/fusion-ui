@@ -75,10 +75,35 @@ const ReasoningContent: React.FC<ReasoningContentProps> = ({
     }
     
     // 计算展开内容的高度
-    if (contentRef.current && actuallyVisible) {
-      setContentHeight(contentRef.current.scrollHeight);
+    if (contentRef.current) {
+      const newHeight = contentRef.current.scrollHeight;
+      if (newHeight !== contentHeight) {
+        setContentHeight(newHeight);
+      }
     }
   }, [reasoning, actuallyVisible]);
+
+  // 当内容变化时重新计算高度
+  useEffect(() => {
+    const updateHeight = () => {
+      if (contentRef.current && actuallyVisible) {
+        const newHeight = contentRef.current.scrollHeight;
+        if (newHeight !== contentHeight) {
+          setContentHeight(newHeight);
+        }
+      }
+    };
+
+    // 初始更新
+    updateHeight();
+
+    // 监听窗口大小变化
+    window.addEventListener('resize', updateHeight);
+    
+    return () => {
+      window.removeEventListener('resize', updateHeight);
+    };
+  }, [reasoning, actuallyVisible, contentHeight]);
 
   // 当推理内容更新时自动滚动到底部
   useEffect(() => {
@@ -261,7 +286,7 @@ const ReasoningContent: React.FC<ReasoningContentProps> = ({
       </div>
       
       <div className={cn(
-        "overflow-hidden transition-all duration-300",
+        "overflow-hidden transition-all duration-500 ease-in-out",
         actuallyVisible ? "opacity-100" : "opacity-40 max-h-0"
       )}>
         {!actuallyVisible && (
@@ -272,9 +297,12 @@ const ReasoningContent: React.FC<ReasoningContentProps> = ({
         
         <div 
           ref={scrollContainerRef}
-          style={{ maxHeight: actuallyVisible ? `${Math.min(contentHeight || 320, 320)}px` : '0' }}
+          style={{ 
+            maxHeight: actuallyVisible ? `${Math.max(contentHeight, 200)}px` : '0',
+            transition: 'max-height 0.5s ease-in-out'
+          }}
           className={cn(
-            "bg-slate-50 dark:bg-slate-900 p-3 rounded-b-md text-sm overflow-auto transition-all duration-300"
+            "bg-slate-50 dark:bg-slate-900 p-3 rounded-b-md text-sm overflow-auto"
           )}
         >
           <div ref={contentRef}>

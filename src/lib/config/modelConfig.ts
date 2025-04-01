@@ -13,7 +13,7 @@ export interface ModelInfo {
   maxTokens: number; // 最大token数
   temperature: number; // 默认温度
   capabilities: ModelCapability; // 能力标识
-  enabled: boolean; // 是否启用
+  enabled: boolean; // 模型是否可用 - true: 模型已接入且可用; false: 模型未接入或暂时不可用
   experimental?: boolean; // 是否实验性功能
   contextWindow?: string; // 上下文窗口大小（如"128K"）
 }
@@ -114,23 +114,23 @@ export const models: ModelInfo[] = [
 
   // DeepSeek 模型
   {
-    id: "deepseek-reasoner",
-    name: "DeepSeek-R1",
+    name: "DeepSeek-V3",
+    id: "deepseek-chat",
     provider: "deepseek",
     maxTokens: 32768,
     temperature: 0.7,
     contextWindow: "200K",
     capabilities: {
       vision: true,
-      deepThinking: true,
+      deepThinking: false,
       fileSupport: true,
     },
     enabled: true,
     experimental: false,
   },
   {
-    id: "deepseek-chat",
-    name: "DeepSeek-V3",
+    name: "DeepSeek-R1",
+    id: "deepseek-reasoner",
     provider: "deepseek",
     maxTokens: 32768,
     temperature: 0.7,
@@ -156,7 +156,7 @@ export const models: ModelInfo[] = [
       vision: true,
       fileSupport: true,
     },
-    enabled: true,
+    enabled: false,
     experimental: false,
   },
   {
@@ -167,10 +167,10 @@ export const models: ModelInfo[] = [
     temperature: 0.7,
     contextWindow: "128K",
     capabilities: {
-      vision: true,
+      vision: false,
       fileSupport: true,
     },
-    enabled: true,
+    enabled: false,
     experimental: false,
   },
   {
@@ -183,7 +183,7 @@ export const models: ModelInfo[] = [
     capabilities: {
       fileSupport: true,
     },
-    enabled: true,
+    enabled: false,
     experimental: false,
   },
 
@@ -200,7 +200,7 @@ export const models: ModelInfo[] = [
       deepThinking: true,
       fileSupport: true,
     },
-    enabled: true,
+    enabled: false,
     experimental: false,
   },
   {
@@ -215,7 +215,7 @@ export const models: ModelInfo[] = [
       deepThinking: true,
       fileSupport: true,
     },
-    enabled: true,
+    enabled: false,
     experimental: false,
   },
 
@@ -232,7 +232,7 @@ export const models: ModelInfo[] = [
       deepThinking: true,
       fileSupport: true,
     },
-    enabled: true,
+    enabled: false,
     experimental: true,
   }
 ];

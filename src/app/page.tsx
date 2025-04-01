@@ -622,22 +622,6 @@ export default function Home() {
                   onEdit={handleEditMessage}
                 />
               </div>
-
-              {/* 添加右侧边栏 */}
-              {currentUserQuery && (
-                <div className="w-80 border-l p-4 overflow-y-auto hidden lg:block">
-                  <div className="space-y-4">
-                    <RelatedDiscussions
-                      currentQuery={currentUserQuery}
-                      chatId={activeChatId || undefined}
-                    />
-                    <ContextEnhancementControl
-                      currentQuery={currentUserQuery}
-                      chatId={activeChatId || undefined}
-                    />
-                  </div>
-                </div>
-              )}
             </div>
             <div ref={chatInputRef}>
               <ChatInput
