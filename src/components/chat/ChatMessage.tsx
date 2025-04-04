@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { FileWithPreview, formatFileSize } from '@/lib/utils/fileHelpers';
 import { useAppDispatch, useAppSelector } from '@/redux/hooks';
-import { Message, toggleReasoningVisibility } from '@/redux/slices/chatSlice';
+import { Message, toggleReasoningVisibility, completeThinkingPhase } from '@/redux/slices/chatSlice';
 import { avatarOptions } from '@/redux/slices/settingsSlice';
 import { Edit2, FileIcon, RefreshCw, Lightbulb, FileText, Image, Film, PenLine, RotateCcw, FileArchive } from 'lucide-react';
 import React, { useState, useEffect, useRef } from 'react';
@@ -36,6 +36,10 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, files, isLastMessage
 
   const [localReasoningVisible, setLocalReasoningVisible] = useState(message.isReasoningVisible || false);
   const activeChatId = useAppSelector(state => state.chat.activeChatId);
+  
+  // 获取流式状态的时间戳
+  const streamingStartTime = useAppSelector(state => state.chat.streamingReasoningStartTime);
+  const streamingEndTime = useAppSelector(state => state.chat.streamingReasoningEndTime);
 
   const { userAvatar, assistantAvatar } = useAppSelector(state => state.settings);
 
@@ -146,6 +150,13 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, files, isLastMessage
   }, [message.shouldSyncToDb, message.id, message.content, message.reasoning, 
       message.isReasoningVisible, message.reasoningStartTime, message.reasoningEndTime]);
 
+  // 当推理内容生成完成时，标记思考阶段结束
+  useEffect(() => {
+    if (message.reasoning && !isStreaming) {
+      dispatch(completeThinkingPhase());
+    }
+  }, [message.reasoning, isStreaming, dispatch]);
+
   return (
     <div
       className={cn(
@@ -238,8 +249,8 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, files, isLastMessage
                     onToggleVisibility={handleToggleReasoning}
                     className="mb-2"
                     isStreaming={isStreaming && isLastMessage}
-                    startTime={message.reasoningStartTime}
-                    endTime={message.reasoningEndTime}
+                    startTime={isStreaming && isLastMessage ? streamingStartTime || undefined : message.reasoningStartTime}
+                    endTime={isStreaming && isLastMessage ? streamingEndTime : message.reasoningEndTime}
                   />
                 )}
 

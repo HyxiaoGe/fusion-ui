@@ -39,11 +39,13 @@ interface ChatState {
   streamingContent: string | null;
   isStreaming: boolean;
   streamingReasoningContent: string;
-  streamingReasoningStartTime: number | null; // 记录思考开始时间
-  streamingMessageId: string | null; // 存储正在流式输出的消息ID
+  streamingReasoningStartTime: number | null;
+  streamingReasoningEndTime: number | undefined;
+  streamingMessageId: string | null;
   reasoningEnabled: boolean;
   streamingReasoning: string | null;
   isStreamingReasoning: boolean;
+  isThinkingPhaseComplete: boolean;
 }
 
 const initialState: ChatState = {
@@ -55,10 +57,12 @@ const initialState: ChatState = {
   isStreaming: false,
   streamingReasoningContent: '',
   streamingReasoningStartTime: null,
+  streamingReasoningEndTime: undefined,
   streamingMessageId: null,
   reasoningEnabled: true,
   streamingReasoning: null,
   isStreamingReasoning: false,
+  isThinkingPhaseComplete: false,
 };
 
 const chatSlice = createSlice({
@@ -167,18 +171,35 @@ const chatSlice = createSlice({
         if (message) {
           message.reasoning = reasoning;
           message.isReasoningVisible = isVisible;
-          // 记录思考的开始和结束时间
-          message.reasoningStartTime = state.streamingReasoningStartTime || undefined;
-          message.reasoningEndTime = Date.now();
           
-          // 添加一个标记，表示这个消息需要保存到数据库
-          // 不在reducer中执行异步操作
+          // 确保时间戳被正确设置
+          message.reasoningStartTime = state.streamingReasoningStartTime || undefined;
+          if (state.isThinkingPhaseComplete && state.streamingReasoningEndTime) {
+            message.reasoningEndTime = state.streamingReasoningEndTime;
+          }
+          
           message.shouldSyncToDb = true;
         }
       }
     },
     updateStreamingReasoningContent: (state, action: PayloadAction<string>) => {
-      state.streamingReasoningContent = action.payload;
+      // 第一次收到内容时设置开始时间
+      if (!state.streamingReasoningStartTime && action.payload.trim()) {
+        state.streamingReasoningStartTime = Date.now();
+      }
+      
+      // 检查是否包含推理完成标记
+      if (action.payload.endsWith("[REASONING_COMPLETE]")) {
+        // 移除标记并更新内容
+        state.streamingReasoningContent = action.payload.replace("[REASONING_COMPLETE]", "");
+        // 设置结束时间并标记完成
+        if (!state.streamingReasoningEndTime) {
+          state.streamingReasoningEndTime = Date.now();
+        }
+        state.isThinkingPhaseComplete = true;
+      } else {
+        state.streamingReasoningContent = action.payload;
+      }
     },
     toggleReasoning: (state, action: PayloadAction<boolean>) => {
       state.reasoningEnabled = action.payload;
@@ -186,16 +207,27 @@ const chatSlice = createSlice({
     startStreamingReasoning: (state) => {
       state.isStreamingReasoning = true;
       state.streamingReasoning = '';
-      // 记录开始思考的时间
-      state.streamingReasoningStartTime = Date.now();
+      state.streamingReasoningStartTime = null;
+      state.isThinkingPhaseComplete = false;
+      state.streamingReasoningEndTime = undefined;
+    },
+    completeThinkingPhase: (state) => {
+      if (!state.streamingReasoningEndTime) {
+        state.streamingReasoningEndTime = Date.now();
+      }
+      state.isThinkingPhaseComplete = true;
+      state.isStreamingReasoning = false;  // 停止流式状态
     },
     updateStreamingReasoning: (state, action: PayloadAction<string>) => {
       state.streamingReasoning = action.payload;
     },
     endStreamingReasoning: (state) => {
+      if (!state.isThinkingPhaseComplete) {
+        state.streamingReasoningEndTime = Date.now();
+        state.isThinkingPhaseComplete = true;
+      }
       state.isStreamingReasoning = false;
       state.streamingReasoning = null;
-      // 结束时保存结束时间，不要清除开始时间，以便传递给消息
     },
     toggleReasoningVisibility: (state, action: PayloadAction<{chatId: string, messageId: string, visible: boolean}>) => {
       const { chatId, messageId, visible } = action.payload;
@@ -310,7 +342,8 @@ export const {
   toggleReasoningVisibility,
   updateMessageReasoning,
   updateStreamingReasoningContent,
-  clearDbSyncFlag
+  clearDbSyncFlag,
+  completeThinkingPhase
 } = chatSlice.actions;
 
 export default chatSlice.reducer;

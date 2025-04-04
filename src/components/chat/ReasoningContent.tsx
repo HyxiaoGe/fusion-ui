@@ -120,32 +120,31 @@ const ReasoningContent: React.FC<ReasoningContentProps> = ({
   const timerRef = useRef<HTMLSpanElement>(null);
   const lastTimeRef = useRef<string>('');
   
-  // 在组件挂载时或isStreaming/startTime/endTime变化时计算思考时间
+  // 在组件挂载时或startTime/endTime变化时计算思考时间
   useEffect(() => {
-    // 如果正在流式状态，实时计算思考时间
-    if (isStreaming && startTime) {
-      // 立即设置初始时间，不等待第一次间隔
-      const initialElapsed = Date.now() - startTime;
-      setLiveTime(initialElapsed);
-      
+    if (!startTime) {
+      setLiveTime(0);
+      return;
+    }
+
+    // 立即设置初始时间
+    const initialElapsed = endTime ? (endTime - startTime) : (Date.now() - startTime);
+    setLiveTime(initialElapsed);
+
+    // 如果还在思考中（没有结束时间），则启动计时器
+    if (!endTime) {
       const timerInterval = setInterval(() => {
         const elapsed = Date.now() - startTime;
         setLiveTime(elapsed);
-      }, 50); // 更快的更新频率，50毫秒更新一次
+      }, 100);
       
       return () => clearInterval(timerInterval);
-    } else if (startTime && endTime) {
-      // 如果有开始和结束时间，计算固定思考时间
-      const elapsed = endTime - startTime;
-      setLiveTime(elapsed);
     }
-  }, [isStreaming, startTime, endTime]);
+  }, [startTime, endTime]);
   
   // 格式化思考时间
   useEffect(() => {
-    // 即使liveTime为0，但如果正在流式思考中，也应该显示计时器
-    if (liveTime > 0 || (isStreaming && startTime)) {
-      // 将毫秒转换为易读格式，提高精度
+    if (liveTime > 0) {
       const seconds = Math.floor(liveTime / 1000);
       const ms = liveTime % 1000;
       
@@ -159,22 +158,22 @@ const ReasoningContent: React.FC<ReasoningContentProps> = ({
       }
       
       // 检测时间是否变化
-      if (newTime !== lastTimeRef.current && timerRef.current && isStreaming) {
+      if (newTime !== lastTimeRef.current && timerRef.current && !endTime) {
         // 添加动画效果
         timerRef.current.classList.add('updated');
         setTimeout(() => {
           if (timerRef.current) {
             timerRef.current.classList.remove('updated');
           }
-        }, 200); // 动画持续时间
+        }, 200);
       }
       
       lastTimeRef.current = newTime;
       setThinkingDuration(newTime);
     } else {
-      setThinkingDuration('');
+      setThinkingDuration('0.00秒');
     }
-  }, [liveTime, isStreaming, startTime]);
+  }, [liveTime, endTime]);
 
   // 复制成功状态
   const [isCopied, setIsCopied] = useState(false);
@@ -208,39 +207,37 @@ const ReasoningContent: React.FC<ReasoningContentProps> = ({
       >
         <div className="flex items-center gap-2">
           <div className="flex items-center text-xs text-muted-foreground">
-            <Lightbulb className={cn("h-4 w-4 mr-1", isStreaming ? "text-amber-400 animate-pulse" : "text-amber-400")}/>
+            <Lightbulb className={cn("h-4 w-4 mr-1", !endTime ? "text-amber-400 animate-pulse" : "text-amber-400")}/>
             <span className="font-medium">思考过程</span>
-            {isStreaming && (!reasoning || !reasoning.trim()) && (
+            {!endTime && (!reasoning || !reasoning.trim()) && (
               <span className="ml-1 text-amber-400 animate-pulse">实时思考中...</span>
             )}
           </div>
           
-          {/* 思考时间显示 - 修改条件，确保在流式思考时即使没有duration也显示 */}
-          {(thinkingDuration || (isStreaming && startTime)) && (
-            <div className={cn(
-              "text-xs px-2 py-0.5 rounded-full transition-all duration-150",
-              isStreaming 
-                ? "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300" 
-                : "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300"
+          {/* 思考时间显示 */}
+          <div className={cn(
+            "text-xs px-2 py-0.5 rounded-full transition-all duration-150",
+            !endTime 
+              ? "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300" 
+              : "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300"
+          )}>
+            <span className={cn(
+              "flex items-center gap-1",
+              !endTime && "animate-pulse-slow"
             )}>
-              <span className={cn(
-                "flex items-center gap-1",
-                isStreaming && "animate-pulse-slow"
-              )}>
-                <Clock className={cn("h-3 w-3", isStreaming && "animate-spin-slow")} />
-                <span className="font-mono">
-                  {isStreaming ? '思考用时: ' : '思考用时: '}
-                  <span className={cn(
-                    "inline-block min-w-[3.5em] text-right",
-                    isStreaming && "timer-digits"
-                  )}
-                  ref={timerRef}>
-                    {thinkingDuration || '0.00秒'}
-                  </span>
+              <Clock className={cn("h-3 w-3", !endTime && "animate-spin-slow")} />
+              <span className="font-mono">
+                思考用时: 
+                <span className={cn(
+                  "inline-block min-w-[4em] text-right ml-1",
+                  !endTime && "timer-digits"
+                )}
+                ref={timerRef}>
+                  {thinkingDuration}
                 </span>
               </span>
-            </div>
-          )}
+            </span>
+          </div>
         </div>
         <div className="flex gap-1" onClick={e => e.stopPropagation()}>
           {actuallyVisible && (

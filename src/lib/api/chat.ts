@@ -120,15 +120,17 @@ export async function sendMessageStream(data: ChatRequest, onChunk: (chunk: stri
             switch(parsedData.type) {
               case "reasoning_start":
                 console.log("【流式处理】推理开始");
-                // // 推理开始时就通知回调，便于UI立即显示推理区域
-                // onChunk(streamContent, false, conversationId || undefined, '');
+                // 不在这里通知回调，等待第一个实际内容
                 break;
                 
               case "reasoning_content":
                 if (parsedData.content) {
+                  // 第一次收到内容时才通知开始
+                  if (streamReasoning === '') {
+                    onChunk(streamContent, false, conversationId || undefined, '');
+                  }
                   streamReasoning += parsedData.content;
                   console.log("【流式处理】推理内容更新", streamReasoning.length);
-                  // 每次收到推理内容都立即回调，确保UI及时更新
                   onChunk(streamContent, false, conversationId || undefined, streamReasoning);
                 }
                 break;
@@ -140,7 +142,8 @@ export async function sendMessageStream(data: ChatRequest, onChunk: (chunk: stri
                   streamReasoning = parsedData.reasoning;
                 }
                 console.log("推理结束，完整内容：", streamReasoning);
-                onChunk(streamContent, false, conversationId || undefined, streamReasoning);
+                // 添加完成标记
+                onChunk(streamContent, false, conversationId || undefined, streamReasoning + "[REASONING_COMPLETE]");
                 break;
                 
               case "answering_start":

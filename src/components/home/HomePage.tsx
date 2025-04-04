@@ -69,9 +69,11 @@ const BulletScreen: React.FC<BulletScreenProps> = ({ hotTopics }) => {
 
   // 轨道数量
   const TRACK_COUNT = 8;
-  const TOP_MARGIN = 10; // 顶部边距百分比
-  const BOTTOM_MARGIN = 10; // 底部边距百分比
-  const MIN_TRACK_SPACING = 30; // 最小轨道间距（像素）
+  const TOP_MARGIN = 15; // 顶部边距百分比
+  const BOTTOM_MARGIN = 15; // 底部边距百分比
+  const MIN_TRACK_SPACING = 40; // 最小轨道间距（像素）
+  const MIN_BULLET_SPACING = 300; // 最小弹幕水平间距（像素）
+  const MIN_VERTICAL_SPACING = 60; // 最小垂直间距（像素）
 
   // 记录每个轨道上最后一个弹幕的信息
   const tracksInfo = useRef(
@@ -100,8 +102,6 @@ const BulletScreen: React.FC<BulletScreenProps> = ({ hotTopics }) => {
   const getAvailableTrack = (bulletWidth: number) => {
     const now = Date.now();
     const containerWidth = containerRef.current?.offsetWidth || 1000;
-    const minSpacing = 200; // 增加水平最小间距
-    const safetyMargin = 2000; // 增加安全时间间隔
 
     // 找出所有当前可用的轨道
     const availableTracks = [];
@@ -110,26 +110,29 @@ const BulletScreen: React.FC<BulletScreenProps> = ({ hotTopics }) => {
       const timeSinceLastUse = now - trackInfo.lastUsedTime;
 
       // 检查轨道是否可用
-      if (!trackInfo.bulletInProgress && timeSinceLastUse > safetyMargin) {
+      if (!trackInfo.bulletInProgress && timeSinceLastUse > 2000) {
         // 检查与其他弹幕的垂直和水平间距
         const hasEnoughSpacing = visibleTopics.every(topic => {
+          const bulletElement = document.getElementById(`bullet-${topic.id}`);
+          if (!bulletElement) return true;
+
+          const rect = bulletElement.getBoundingClientRect();
+          const horizontalSpacing = rect.left - containerWidth;
+          
+          // 检查水平间距
           if (topic.track === i) {
-            const bulletElement = document.getElementById(`bullet-${topic.id}`);
-            if (bulletElement) {
-              const rect = bulletElement.getBoundingClientRect();
-              const horizontalSpacing = rect.left - containerWidth;
-              return horizontalSpacing <= -bulletElement.offsetWidth - minSpacing;
+            if (horizontalSpacing > -MIN_BULLET_SPACING) {
+              return false;
             }
           }
-          // 检查相邻轨道
+
+          // 检查相邻轨道的垂直间距
           if (Math.abs(topic.track - i) === 1) {
-            const bulletElement = document.getElementById(`bullet-${topic.id}`);
-            if (bulletElement) {
-              const rect = bulletElement.getBoundingClientRect();
-              const horizontalSpacing = rect.left - containerWidth;
-              return horizontalSpacing <= -bulletElement.offsetWidth - (minSpacing * 1.5);
+            if (horizontalSpacing > -MIN_BULLET_SPACING * 1.5) {
+              return false;
             }
           }
+
           return true;
         });
 
@@ -139,25 +142,31 @@ const BulletScreen: React.FC<BulletScreenProps> = ({ hotTopics }) => {
       }
     }
 
-    // 优先选择使用较少的轨道，特别是下半部分的轨道
+    // 优先选择间隔较大的轨道
     if (availableTracks.length > 0) {
-      // 计算每个轨道的使用频率
-      const trackUsage = availableTracks.map(track => ({
-        track,
-        usage: visibleTopics.filter(t => t.track === track).length,
-        // 给下半部分轨道更高的优先级
-        priority: track >= TRACK_COUNT / 2 ? 2 : 1
-      }));
+      // 计算每个轨道的适合度分数
+      const trackScores = availableTracks.map(track => {
+        let score = 0;
+        
+        // 检查与其他弹幕的间距
+        visibleTopics.forEach(topic => {
+          const distance = Math.abs(track - topic.track);
+          if (distance <= 1) {
+            score -= (2 - distance) * 10; // 相邻轨道减分更多
+          }
+        });
 
-      // 按使用频率和优先级排序
-      trackUsage.sort((a, b) => {
-        if (a.usage !== b.usage) return a.usage - b.usage;
-        return b.priority - a.priority;
+        // 优先选择中间的轨道
+        const distanceFromCenter = Math.abs(track - TRACK_COUNT / 2);
+        score -= distanceFromCenter * 5;
+
+        return { track, score };
       });
 
-      const bestTrack = trackUsage[0].track;
+      // 选择得分最高的轨道
+      trackScores.sort((a, b) => b.score - a.score);
+      const bestTrack = trackScores[0].track;
 
-      // 更新轨道信息
       tracksInfo.current[bestTrack] = {
         lastUsedTime: now,
         lastBulletWidth: bulletWidth,
@@ -168,26 +177,7 @@ const BulletScreen: React.FC<BulletScreenProps> = ({ hotTopics }) => {
       return bestTrack;
     }
 
-    // 如果没有理想的轨道，选择最长时间未使用的轨道
-    let bestTrack = 0;
-    let longestTime = 0;
-
-    for (let i = 0; i < TRACK_COUNT; i++) {
-      const timeSinceLastUse = now - tracksInfo.current[i].lastUsedTime;
-      if (timeSinceLastUse > longestTime) {
-        longestTime = timeSinceLastUse;
-        bestTrack = i;
-      }
-    }
-
-    tracksInfo.current[bestTrack] = {
-      lastUsedTime: now,
-      lastBulletWidth: bulletWidth,
-      bulletInProgress: true,
-      lastBulletPosition: containerWidth,
-    };
-
-    return bestTrack;
+    return null; // 如果没有合适的轨道，返回null
   };
 
   // 随机生成弹幕样式，基于轨道
@@ -195,13 +185,9 @@ const BulletScreen: React.FC<BulletScreenProps> = ({ hotTopics }) => {
     // 计算可用区域的高度百分比
     const availableHeight = 100 - TOP_MARGIN - BOTTOM_MARGIN;
     
-    // 计算轨道位置，使用正弦函数使弹幕分布更均匀
-    // 将轨道索引映射到0-1之间的值
-    const normalizedTrack = track / (TRACK_COUNT - 1);
-    // 使用正弦函数创建非线性分布
-    const distribution = Math.sin(normalizedTrack * Math.PI);
-    // 将分布映射到可用区域
-    const topPosition = TOP_MARGIN + (distribution * 0.5 + 0.5) * availableHeight;
+    // 计算轨道位置，使用更均匀的分布
+    const trackSpacing = availableHeight / (TRACK_COUNT - 1);
+    const topPosition = TOP_MARGIN + (track * trackSpacing);
 
     // 动态计算时间，让较长的文本有更长的动画时间
     const duration = 15 + Math.random() * 5; // 增加动画时间，使弹幕移动更慢
@@ -210,23 +196,23 @@ const BulletScreen: React.FC<BulletScreenProps> = ({ hotTopics }) => {
       position: "absolute" as const,
       top: `${topPosition}%`,
       left: "100%",
-      fontSize: `${14 + Math.floor(Math.random() * 3)}px`,
-      opacity: 0.8 + Math.random() * 0.2,
+      fontSize: "16px",
+      opacity: 0.9,
       whiteSpace: "nowrap",
       cursor: "pointer",
       padding: "6px 12px",
       borderRadius: "20px",
-      background: "rgba(100, 100, 255, 0.1)",
+      background: "rgba(100, 100, 255, 0.08)",
       backdropFilter: "blur(8px)",
-      boxShadow: "0 2px 10px rgba(0, 0, 0, 0.1)",
+      boxShadow: "0 2px 10px rgba(0, 0, 0, 0.05)",
       transform: "translateY(-50%)",
       zIndex: 10,
-      border: "1px solid rgba(255, 255, 255, 0.1)",
+      border: "1px solid rgba(255, 255, 255, 0.08)",
       animation: `bullet-fly ${duration}s linear forwards`,
       height: "fit-content",
       minHeight: "32px", // 确保最小高度
-      marginTop: "10px", // 添加垂直间距
-      marginBottom: "10px"
+      marginTop: "15px", // 增加垂直间距
+      marginBottom: "15px" // 增加垂直间距
     };
   };
 
@@ -378,7 +364,7 @@ const BulletScreen: React.FC<BulletScreenProps> = ({ hotTopics }) => {
   // 添加弹幕的逻辑
   useEffect(() => {
     // 限制同屏弹幕数量
-    const MAX_BULLETS = 12;
+    const MAX_BULLETS = 8; // 减少最大同屏弹幕数量
 
     const addBullet = () => {
       // 动态控制生成频率，弹幕多时放慢生成
@@ -391,7 +377,7 @@ const BulletScreen: React.FC<BulletScreenProps> = ({ hotTopics }) => {
       const width = measureTextWidth(topic.title);
       const track = getAvailableTrack(width);
 
-      if (track !== undefined) {
+      if (track !== null) {
         const id = Date.now();
         const newBullet: BulletTopic = {
           text: topic.title,
@@ -409,8 +395,7 @@ const BulletScreen: React.FC<BulletScreenProps> = ({ hotTopics }) => {
     };
 
     // 弹幕生成间隔时间随机化，但与屏幕上当前弹幕数量相关
-    const dynamicInterval =
-      1200 + visibleTopics.length * 200 + Math.random() * 800;
+    const dynamicInterval = 2000 + visibleTopics.length * 300 + Math.random() * 1000;
     const interval = setInterval(addBullet, dynamicInterval);
 
     // 清理过期弹幕
@@ -420,7 +405,6 @@ const BulletScreen: React.FC<BulletScreenProps> = ({ hotTopics }) => {
         prev.filter((topic) => {
           const keep = now - topic.id < 20000;
           if (!keep) {
-            // 清理轨道信息
             tracksInfo.current[topic.track].bulletInProgress = false;
           }
           return keep;
@@ -911,14 +895,14 @@ const DialogueExamplesCard = () => {
           {dialogueExamples[currentSetIndex].map((item, index) => (
             <div 
               key={index} 
-              className="p-3 rounded-lg border bg-card hover:bg-accent/5 transition-colors cursor-pointer"
+              className="p-4 rounded-lg border bg-card hover:bg-accent/5 transition-colors cursor-pointer min-h-[180px] flex flex-col"
               onClick={() => handleExampleClick(item.examples[0])}
             >
-              <h3 className="font-medium text-sm mb-1">{item.title}</h3>
-              <p className="text-xs text-muted-foreground mb-2">{item.desc}</p>
-              <div className="space-y-2">
-                {item.examples.slice(0, 1).map((example, i) => (
-                  <div key={i} className="text-xs px-2 py-1.5 bg-muted/50 rounded-md hover:bg-muted">
+              <h3 className="font-medium text-base mb-2">{item.title}</h3>
+              <p className="text-sm text-muted-foreground mb-3">{item.desc}</p>
+              <div className="space-y-2.5 flex-1">
+                {item.examples.slice(0, 2).map((example, i) => (
+                  <div key={i} className="text-sm px-3 py-2 bg-muted/50 rounded-md hover:bg-muted">
                     {example}
                   </div>
                 ))}
