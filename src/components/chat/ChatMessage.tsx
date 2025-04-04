@@ -170,7 +170,7 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, files, isLastMessage
       )}>
         <div className="flex items-center gap-2">
           <span className="text-xs font-medium">
-            {isUser ? '用户' : 'AI助手'}
+            {isUser ? '用户' : model ? model.name : 'AI助手'}
           </span>
           <span className="text-xs text-muted-foreground">
             {formatTime(message.timestamp)}

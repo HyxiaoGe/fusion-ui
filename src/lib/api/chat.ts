@@ -8,6 +8,7 @@ export interface ChatRequest {
   model: string;
   message: string;
   conversation_id?: string | null;
+  topic_id?: string | null;
   stream?: boolean;
   options?: {
     use_reasoning?: boolean;

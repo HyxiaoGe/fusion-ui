@@ -16,6 +16,12 @@ import { store } from "@/redux/store";
 import { FileText, Image, Lightbulb, MessageSquare, Plus, RefreshCw } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
+import { fetchHotTopics, HotTopic, refreshHotTopics } from "@/lib/api/hotTopics";
+import {
+  HoverCard,
+  HoverCardContent,
+  HoverCardTrigger,
+} from "@/components/ui/hover-card";
 
 // 热门问题示例数据 - 后期可以通过API获取
 const hotTopics = [
@@ -47,15 +53,26 @@ interface BulletTopic {
   id: number;
   track: number;
   width?: number;
+  topic: HotTopic;
 }
 
-const BulletScreen = () => {
+interface BulletScreenProps {
+  hotTopics: HotTopic[];
+}
+
+const BulletScreen: React.FC<BulletScreenProps> = ({ hotTopics }) => {
   const [visibleTopics, setVisibleTopics] = useState<BulletTopic[]>([]);
+  const [currentTopicIndex, setCurrentTopicIndex] = useState(0);
   const dispatch = useAppDispatch();
   const { selectedModelId, models } = useAppSelector((state) => state.models);
+  const refreshIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
   // 轨道数量
   const TRACK_COUNT = 8;
+  const TOP_MARGIN = 10; // 顶部边距百分比
+  const BOTTOM_MARGIN = 10; // 底部边距百分比
+  const MIN_TRACK_SPACING = 30; // 最小轨道间距（像素）
+
   // 记录每个轨道上最后一个弹幕的信息
   const tracksInfo = useRef(
     Array(TRACK_COUNT)
@@ -79,12 +96,12 @@ const BulletScreen = () => {
     return tempMeasureRef.current.offsetWidth + 24; // 加上padding
   };
 
-  // 获取可用轨道，考虑水平间距
+  // 获取可用轨道，优化轨道选择逻辑
   const getAvailableTrack = (bulletWidth: number) => {
     const now = Date.now();
     const containerWidth = containerRef.current?.offsetWidth || 1000;
-    const minSpacing = 50; // 最小间距
-    const safetyMargin = 800; // 弹幕之间的最小时间间隔(毫秒)
+    const minSpacing = 200; // 增加水平最小间距
+    const safetyMargin = 2000; // 增加安全时间间隔
 
     // 找出所有当前可用的轨道
     const availableTracks = [];
@@ -94,14 +111,23 @@ const BulletScreen = () => {
 
       // 检查轨道是否可用
       if (!trackInfo.bulletInProgress && timeSinceLastUse > safetyMargin) {
-        // 检查与同一轨道上的其他弹幕的间距
+        // 检查与其他弹幕的垂直和水平间距
         const hasEnoughSpacing = visibleTopics.every(topic => {
           if (topic.track === i) {
             const bulletElement = document.getElementById(`bullet-${topic.id}`);
             if (bulletElement) {
               const rect = bulletElement.getBoundingClientRect();
-              const spacing = rect.left - containerWidth;
-              return spacing <= -bulletElement.offsetWidth - minSpacing;
+              const horizontalSpacing = rect.left - containerWidth;
+              return horizontalSpacing <= -bulletElement.offsetWidth - minSpacing;
+            }
+          }
+          // 检查相邻轨道
+          if (Math.abs(topic.track - i) === 1) {
+            const bulletElement = document.getElementById(`bullet-${topic.id}`);
+            if (bulletElement) {
+              const rect = bulletElement.getBoundingClientRect();
+              const horizontalSpacing = rect.left - containerWidth;
+              return horizontalSpacing <= -bulletElement.offsetWidth - (minSpacing * 1.5);
             }
           }
           return true;
@@ -113,23 +139,36 @@ const BulletScreen = () => {
       }
     }
 
-    // 如果有可用轨道，随机选择一个
+    // 优先选择使用较少的轨道，特别是下半部分的轨道
     if (availableTracks.length > 0) {
-      const selectedTrack =
-        availableTracks[Math.floor(Math.random() * availableTracks.length)];
+      // 计算每个轨道的使用频率
+      const trackUsage = availableTracks.map(track => ({
+        track,
+        usage: visibleTopics.filter(t => t.track === track).length,
+        // 给下半部分轨道更高的优先级
+        priority: track >= TRACK_COUNT / 2 ? 2 : 1
+      }));
+
+      // 按使用频率和优先级排序
+      trackUsage.sort((a, b) => {
+        if (a.usage !== b.usage) return a.usage - b.usage;
+        return b.priority - a.priority;
+      });
+
+      const bestTrack = trackUsage[0].track;
 
       // 更新轨道信息
-      tracksInfo.current[selectedTrack] = {
+      tracksInfo.current[bestTrack] = {
         lastUsedTime: now,
         lastBulletWidth: bulletWidth,
         bulletInProgress: true,
         lastBulletPosition: containerWidth,
       };
 
-      return selectedTrack;
+      return bestTrack;
     }
 
-    // 如果没有理想的轨道，找一个最长时间未使用的
+    // 如果没有理想的轨道，选择最长时间未使用的轨道
     let bestTrack = 0;
     let longestTime = 0;
 
@@ -141,7 +180,6 @@ const BulletScreen = () => {
       }
     }
 
-    // 更新该轨道信息
     tracksInfo.current[bestTrack] = {
       lastUsedTime: now,
       lastBulletWidth: bulletWidth,
@@ -154,13 +192,19 @@ const BulletScreen = () => {
 
   // 随机生成弹幕样式，基于轨道
   const generateBulletStyle = (track: number): React.CSSProperties => {
-    const trackHeight = 100 / TRACK_COUNT;
-    const basePosition = trackHeight * track;
-    const randomOffset = Math.random() * trackHeight * 0.3 - trackHeight * 0.15;
-    const topPosition = basePosition + randomOffset + trackHeight / 2;
+    // 计算可用区域的高度百分比
+    const availableHeight = 100 - TOP_MARGIN - BOTTOM_MARGIN;
+    
+    // 计算轨道位置，使用正弦函数使弹幕分布更均匀
+    // 将轨道索引映射到0-1之间的值
+    const normalizedTrack = track / (TRACK_COUNT - 1);
+    // 使用正弦函数创建非线性分布
+    const distribution = Math.sin(normalizedTrack * Math.PI);
+    // 将分布映射到可用区域
+    const topPosition = TOP_MARGIN + (distribution * 0.5 + 0.5) * availableHeight;
 
     // 动态计算时间，让较长的文本有更长的动画时间
-    const duration = 13 + Math.random() * 3;
+    const duration = 15 + Math.random() * 5; // 增加动画时间，使弹幕移动更慢
 
     return {
       position: "absolute" as const,
@@ -169,7 +213,6 @@ const BulletScreen = () => {
       fontSize: `${14 + Math.floor(Math.random() * 3)}px`,
       opacity: 0.8 + Math.random() * 0.2,
       whiteSpace: "nowrap",
-      animation: `bulletfly ${duration}s linear forwards`,
       cursor: "pointer",
       padding: "6px 12px",
       borderRadius: "20px",
@@ -179,19 +222,23 @@ const BulletScreen = () => {
       transform: "translateY(-50%)",
       zIndex: 10,
       border: "1px solid rgba(255, 255, 255, 0.1)",
-      animationPlayState: "running",
+      animation: `bullet-fly ${duration}s linear forwards`,
+      height: "fit-content",
+      minHeight: "32px", // 确保最小高度
+      marginTop: "10px", // 添加垂直间距
+      marginBottom: "10px"
     };
   };
 
   // 处理点击弹幕创建对话
-  const handleTopicClick = (topic: string) => {
+  const handleTopicClick = (topic: HotTopic) => {
     if (!selectedModelId) return;
 
     // 先创建对话
     dispatch(
       createChat({
         modelId: selectedModelId,
-        title: topic.length > 20 ? topic.substring(0, 20) + "..." : topic,
+        title: topic.title.length > 20 ? topic.title.substring(0, 20) + "..." : topic.title,
       })
     );
 
@@ -204,7 +251,6 @@ const BulletScreen = () => {
     }
 
     const chatId = newChat.id;
-    // 记录是否是第一条消息（用于后续生成标题）
 
     // 添加用户消息
     dispatch(
@@ -212,7 +258,7 @@ const BulletScreen = () => {
         chatId,
         message: {
           role: "user",
-          content: topic,
+          content: topic.title,
           status: "pending",
         }
       })
@@ -241,8 +287,9 @@ const BulletScreen = () => {
     sendMessageStream({
       provider: selectedModel.provider,
       model: selectedModel.id,
-      message: topic.trim(),
+      message: topic.title,
       conversation_id: chatId,
+      topic_id: topic.id || null,
       stream: true,
       options: {
         use_reasoning: useReasoning,
@@ -280,14 +327,12 @@ const BulletScreen = () => {
           }
           dispatch(endStreaming());
           
-          // 在消息流结束后自动生成对话标题（弹幕点击创建的对话总是新对话，所以可以直接生成标题）
-          console.log('弹幕对话流处理完成，开始生成标题');
-          // 延迟一小段时间确保服务器已处理完毕
+          // 在消息流结束后自动生成对话标题
           setTimeout(async () => {
             try {
               const generatedTitle = await generateChatTitle(
-                chatId || conversationId || '', // 使用可能从服务器返回的新conversationId
-                undefined, // 不传具体消息，让后端从对话ID获取完整消息链
+                chatId || conversationId || '',
+                undefined,
                 { max_length: 20 }
               );
 
@@ -298,7 +343,7 @@ const BulletScreen = () => {
             } catch (error) {
               console.error('生成标题失败:', error);
             }
-          }, 1000); // 延迟1秒确保服务器已处理
+          }, 1000);
         }, 100);
       }
     }).catch(error => {
@@ -337,27 +382,29 @@ const BulletScreen = () => {
 
     const addBullet = () => {
       // 动态控制生成频率，弹幕多时放慢生成
-      if (visibleTopics.length >= MAX_BULLETS) return;
+      if (visibleTopics.length >= MAX_BULLETS || hotTopics.length === 0) return;
 
-      const randomIndex = Math.floor(Math.random() * hotTopics.length);
-      const topic = hotTopics[randomIndex];
+      // 获取当前要展示的话题
+      const topic = hotTopics[currentTopicIndex];
       
       // 预先测量文本宽度
-      const bulletWidth = measureTextWidth(topic);
-      const track = getAvailableTrack(bulletWidth);
+      const width = measureTextWidth(topic.title);
+      const track = getAvailableTrack(width);
 
       if (track !== undefined) {
         const id = Date.now();
-        setVisibleTopics((prev) => [
-          ...prev,
-          {
-            text: topic,
-            style: generateBulletStyle(track),
-            id,
-            track,
-            width: bulletWidth,
-          },
-        ]);
+        const newBullet: BulletTopic = {
+          text: topic.title,
+          style: generateBulletStyle(track),
+          id,
+          track,
+          width,
+          topic
+        };
+        setVisibleTopics((prev) => [...prev, newBullet]);
+        
+        // 更新下一个要展示的话题索引
+        setCurrentTopicIndex((prev) => (prev + 1) % hotTopics.length);
       }
     };
 
@@ -385,7 +432,12 @@ const BulletScreen = () => {
       clearInterval(interval);
       clearInterval(cleanupInterval);
     };
-  }, [visibleTopics.length]);
+  }, [visibleTopics.length, hotTopics, currentTopicIndex]);
+
+  // 当hotTopics变化时，重置currentTopicIndex
+  useEffect(() => {
+    setCurrentTopicIndex(0);
+  }, [hotTopics]);
 
   return (
     <div
@@ -393,20 +445,8 @@ const BulletScreen = () => {
       className="w-full h-full relative overflow-hidden"
       style={{ minHeight: "200px" }}
     >
-      {/* 用于测量文本宽度的隐藏元素 */}
-      <div
-        ref={tempMeasureRef}
-        style={{
-          position: 'absolute',
-          visibility: 'hidden',
-          whiteSpace: 'nowrap',
-          fontSize: '14px',
-          padding: '6px 12px',
-        }}
-      />
-
       <style jsx global>{`
-        @keyframes bulletfly {
+        @keyframes bullet-fly {
           from {
             transform: translateX(0) translateY(-50%);
           }
@@ -417,7 +457,7 @@ const BulletScreen = () => {
         .bullet {
           animation-play-state: running;
         }
-        .bullet:hover {
+        .bullet[data-hovered="true"] {
           animation-play-state: paused !important;
           background: rgba(100, 100, 255, 0.2) !important;
           border-color: rgba(255, 255, 255, 0.2) !important;
@@ -425,16 +465,68 @@ const BulletScreen = () => {
       `}</style>
 
       {visibleTopics.map((topic) => (
-        <div
-          key={topic.id}
-          id={`bullet-${topic.id}`}
-          ref={(el) => measureBullet(el, topic.track, topic.id)}
-          style={topic.style}
-          onClick={() => handleTopicClick(topic.text)}
-          className="bullet hover:bg-primary/20 transition-colors duration-300"
-        >
-          {topic.text}
-        </div>
+        <HoverCard key={topic.id} openDelay={0}>
+          <HoverCardTrigger asChild>
+            <div
+              id={`bullet-${topic.id}`}
+              ref={(el) => measureBullet(el, topic.track, topic.id)}
+              style={topic.style}
+              onClick={() => handleTopicClick(topic.topic)}
+              className="bullet transition-colors duration-300"
+              data-hovered="false"
+              onMouseEnter={(e) => {
+                e.currentTarget.setAttribute('data-hovered', 'true');
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.setAttribute('data-hovered', 'false');
+              }}
+            >
+              {topic.text}
+            </div>
+          </HoverCardTrigger>
+          <HoverCardContent 
+            className="w-80 p-3 bg-popover/95 backdrop-blur-sm border-border/50"
+            side="top"
+            align="start"
+            sideOffset={5}
+            onMouseEnter={(e) => {
+              const bullet = document.getElementById(`bullet-${topic.id}`);
+              if (bullet) {
+                bullet.setAttribute('data-hovered', 'true');
+              }
+            }}
+            onMouseLeave={(e) => {
+              const bullet = document.getElementById(`bullet-${topic.id}`);
+              if (bullet) {
+                bullet.setAttribute('data-hovered', 'false');
+              }
+            }}
+          >
+            <div className="space-y-2">
+              <div className="text-sm font-medium">{topic.topic.title}</div>
+              {topic.topic.description && (
+                <p className="text-sm text-muted-foreground line-clamp-3">
+                  {topic.topic.description}
+                </p>
+              )}
+              <div className="flex items-center justify-between text-xs text-muted-foreground pt-2 border-t border-border/50">
+                <span>{topic.topic.source}</span>
+                <a
+                  href={topic.topic.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-primary hover:underline hover:text-primary/80 transition-colors"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    window.open(topic.topic.url, '_blank');
+                  }}
+                >
+                  查看原文
+                </a>
+              </div>
+            </div>
+          </HoverCardContent>
+        </HoverCard>
       ))}
     </div>
   );
@@ -841,23 +933,134 @@ const DialogueExamplesCard = () => {
 
 // 热点弹幕卡片
 const HotTopicsCard = () => {
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [lastRefreshTime, setLastRefreshTime] = useState<number>(0);
+  const [hotTopics, setHotTopics] = useState<HotTopic[]>([]);
+  const [refreshResult, setRefreshResult] = useState<{ newCount: number; timestamp: string } | null>(null);
+  const refreshIntervalRef = useRef<NodeJS.Timeout | null>(null);
+
+  // 加载热点话题
+  const loadHotTopics = async () => {
+    try {
+      const topics = await fetchHotTopics();
+      setHotTopics(topics);
+    } catch (error) {
+      console.error('加载热点话题失败:', error);
+    }
+  };
+
+  // 处理手动刷新
+  const handleRefresh = async () => {
+    const now = Date.now();
+    // 如果距离上次刷新时间小于5分钟，不允许刷新
+    if (now - lastRefreshTime < 5 * 60 * 1000) {
+      return;
+    }
+
+    setIsRefreshing(true);
+    try {
+      const result = await refreshHotTopics();
+      if (result.status === 'success') {
+        setLastRefreshTime(now);
+        setRefreshResult({
+          newCount: result.new_count,
+          timestamp: result.timestamp
+        });
+        // 等待5分钟后自动刷新数据
+        setTimeout(loadHotTopics, 5 * 60 * 1000);
+      }
+    } finally {
+      setIsRefreshing(false);
+    }
+  };
+
+  // 初始化加载和设置定时刷新
+  useEffect(() => {
+    loadHotTopics();
+
+    // 设置每小时自动刷新
+    refreshIntervalRef.current = setInterval(loadHotTopics, 60 * 60 * 1000);
+
+    return () => {
+      if (refreshIntervalRef.current) {
+        clearInterval(refreshIntervalRef.current);
+      }
+    };
+  }, []);
+
+  // 计算距离下次可刷新的时间
+  const getNextRefreshTime = () => {
+    const now = Date.now();
+    const timeSinceLastRefresh = now - lastRefreshTime;
+    const timeUntilNextRefresh = Math.max(0, 5 * 60 * 1000 - timeSinceLastRefresh);
+    return Math.ceil(timeUntilNextRefresh / 1000);
+  };
+
+  const [nextRefreshTime, setNextRefreshTime] = useState(getNextRefreshTime());
+
+  // 更新倒计时
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setNextRefreshTime(getNextRefreshTime());
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, [lastRefreshTime]);
+
+  // 清除刷新结果提示
+  useEffect(() => {
+    if (refreshResult) {
+      const timer = setTimeout(() => {
+        setRefreshResult(null);
+      }, 5000); // 5秒后清除提示
+      return () => clearTimeout(timer);
+    }
+  }, [refreshResult]);
+
   return (
     <Card className="h-full flex flex-col">
       <CardHeader>
-        <CardTitle className="text-xl flex items-center">
-          <span className="relative mr-2">
-            <span className="absolute -left-1 -top-1 w-2 h-2 bg-red-500 rounded-full animate-ping"></span>
-            <span className="absolute -left-1 -top-1 w-2 h-2 bg-red-500 rounded-full"></span>
-          </span>
-          热门问题
-        </CardTitle>
+        <div className="flex items-center justify-between">
+          <CardTitle className="text-xl flex items-center">
+            <span className="relative mr-2">
+              <span className="absolute -left-1 -top-1 w-2 h-2 bg-red-500 rounded-full animate-ping"></span>
+              <span className="absolute -left-1 -top-1 w-2 h-2 bg-red-500 rounded-full"></span>
+            </span>
+            热门话题
+          </CardTitle>
+          <div className="flex items-center gap-2">
+            {nextRefreshTime > 0 && (
+              <span className="text-sm text-muted-foreground">
+                {Math.floor(nextRefreshTime / 60)}:{(nextRefreshTime % 60).toString().padStart(2, '0')}
+              </span>
+            )}
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleRefresh}
+              disabled={isRefreshing || nextRefreshTime > 0}
+              className="h-8 px-2"
+              title={nextRefreshTime > 0 ? `请等待${nextRefreshTime}秒后刷新` : '刷新热点话题'}
+            >
+              <RefreshCw className={cn(
+                "h-4 w-4",
+                isRefreshing && "animate-spin"
+              )} />
+            </Button>
+          </div>
+        </div>
+        {refreshResult && (
+          <div className="mt-2 text-sm text-muted-foreground">
+            已更新 {refreshResult.newCount} 条新话题
+          </div>
+        )}
       </CardHeader>
       <CardContent className="flex-1 overflow-hidden pb-4">
         <div className="text-sm text-muted-foreground mb-2">
-          点击任意热门问题，开始一个新的对话
+          点击任意热门话题，开始一个新的对话
         </div>
         <div className="mt-2 h-[200px]">
-          <BulletScreen />
+          <BulletScreen hotTopics={hotTopics} />
         </div>
       </CardContent>
     </Card>

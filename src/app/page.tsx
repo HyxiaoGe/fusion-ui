@@ -263,7 +263,7 @@ export default function Home() {
                 dispatch(endStreamingReasoning());
               }
               dispatch(endStreaming());
-            }, 100);
+            }, 1000);
           }
           if (done) {
             dispatch(setMessageStatus({
@@ -429,7 +429,7 @@ export default function Home() {
                     dispatch(endStreamingReasoning());
                   }
                   dispatch(endStreaming());
-                }, 100);
+                }, 1000);
               }
             });
         } catch (error) {
@@ -547,7 +547,7 @@ export default function Home() {
                 dispatch(endStreamingReasoning());
               }
               dispatch(endStreaming());
-            }, 100);
+            }, 1000);
           }
         });
     } catch (error) {
