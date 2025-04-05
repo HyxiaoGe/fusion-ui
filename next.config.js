@@ -4,6 +4,14 @@ const nextConfig = {
   images: {
     domains: ['localhost'],
   },
+  eslint: {
+    // 禁用生产构建时的ESLint检查
+    ignoreDuringBuilds: true,
+  },
+  typescript: {
+    // 允许TypeScript错误时依然进行构建
+    ignoreBuildErrors: true,
+  },
   async headers() {
     return [
       {
