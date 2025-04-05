@@ -1,0 +1,150 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 800" width="1200" height="800">
+  <!-- 背景 -->
+  <rect width="1200" height="800" fill="#f8f9fa" />
+  
+  <!-- 左侧导航栏背景 -->
+  <rect x="0" y="0" width="240" height="800" fill="#ffffff" stroke="#e5e7eb" stroke-width="1" />
+  
+  <!-- 顶部导航栏 -->
+  <rect x="240" y="0" width="960" height="60" fill="#ffffff" stroke="#e5e7eb" stroke-width="1" />
+  
+  <!-- 主体内容区 -->
+  <rect x="240" y="60" width="960" height="740" fill="#f9fafb" />
+  
+  <!-- 左侧导航栏标题 -->
+  <text x="20" y="30" font-family="Arial, sans-serif" font-size="18" fill="#4F46E5" font-weight="bold">Fusion AI</text>
+  
+  <!-- 左侧导航栏内容 - 新结构 -->
+  <!-- 新对话按钮 -->
+  <rect x="20" y="50" width="200" height="40" rx="6" fill="#4F46E5" />
+  <text x="110" y="75" font-family="Arial, sans-serif" font-size="14" fill="#ffffff" text-anchor="middle">新对话</text>
+  
+  <!-- 导航分组: 主页 -->
+  <text x="20" y="130" font-family="Arial, sans-serif" font-size="12" fill="#6b7280" text-anchor="start">主要导航</text>
+  
+  <!-- 首页导航项 -->
+  <rect x="20" y="140" width="200" height="36" rx="4" fill="#EFF6FF" />
+  <circle cx="35" cy="158" r="8" fill="#4F46E5" />
+  <text x="50" y="162" font-family="Arial, sans-serif" font-size="14" fill="#4F46E5" font-weight="bold">首页</text>
+  
+  <!-- AI功能导航分组 -->
+  <text x="20" y="210" font-family="Arial, sans-serif" font-size="12" fill="#6b7280" text-anchor="start">AI 功能</text>
+  
+  <!-- AI聊天导航项 - 当前激活 -->
+  <rect x="20" y="220" width="200" height="36" rx="4" fill="#EFF6FF" stroke="#4F46E5" stroke-width="2" />
+  <circle cx="35" cy="238" r="8" fill="#3B82F6" />
+  <text x="50" y="242" font-family="Arial, sans-serif" font-size="14" fill="#3B82F6" font-weight="bold">AI 聊天</text>
+  
+  <!-- AI图像导航项 - 即将推出 -->
+  <rect x="20" y="260" width="200" height="36" rx="4" fill="transparent" />
+  <circle cx="35" cy="278" r="8" fill="#9CA3AF" fill-opacity="0.5" />
+  <text x="50" y="282" font-family="Arial, sans-serif" font-size="14" fill="#9CA3AF">AI 图像</text>
+  <text x="175" y="280" font-family="Arial, sans-serif" font-size="10" fill="#9CA3AF">即将推出</text>
+  
+  <!-- 文档分析导航项 -->
+  <rect x="20" y="300" width="200" height="36" rx="4" fill="transparent" />
+  <circle cx="35" cy="318" r="8" fill="#F59E0B" fill-opacity="0.5" />
+  <text x="50" y="322" font-family="Arial, sans-serif" font-size="14" fill="#6b7280">文档分析</text>
+  
+  <!-- 代码助手导航项 -->
+  <rect x="20" y="340" width="200" height="36" rx="4" fill="transparent" />
+  <circle cx="35" cy="358" r="8" fill="#8B5CF6" fill-opacity="0.5" />
+  <text x="50" y="362" font-family="Arial, sans-serif" font-size="14" fill="#6b7280">代码助手</text>
+  
+  <!-- 我的内容导航分组 -->
+  <text x="20" y="410" font-family="Arial, sans-serif" font-size="12" fill="#6b7280" text-anchor="start">我的内容</text>
+  
+  <!-- 历史对话导航项 -->
+  <rect x="20" y="420" width="200" height="36" rx="4" fill="transparent" />
+  <circle cx="35" cy="438" r="8" fill="#6b7280" fill-opacity="0.5" />
+  <text x="50" y="442" font-family="Arial, sans-serif" font-size="14" fill="#6b7280">历史对话</text>
+  
+  <!-- 收藏导航项 -->
+  <rect x="20" y="460" width="200" height="36" rx="4" fill="transparent" />
+  <circle cx="35" cy="478" r="8" fill="#6b7280" fill-opacity="0.5" />
+  <text x="50" y="482" font-family="Arial, sans-serif" font-size="14" fill="#6b7280">收藏</text>
+  
+  <!-- 设置导航项 -->
+  <text x="20" y="530" font-family="Arial, sans-serif" font-size="12" fill="#6b7280" text-anchor="start">应用</text>
+  <rect x="20" y="540" width="200" height="36" rx="4" fill="transparent" />
+  <circle cx="35" cy="558" r="8" fill="#6b7280" fill-opacity="0.5" />
+  <text x="50" y="562" font-family="Arial, sans-serif" font-size="14" fill="#6b7280">设置</text>
+  
+  <!-- 顶部面包屑导航 -->
+  <text x="260" y="35" font-family="Arial, sans-serif" font-size="14" fill="#6b7280">首页</text>
+  <text x="295" y="35" font-family="Arial, sans-serif" font-size="14" fill="#6b7280">></text>
+  <text x="310" y="35" font-family="Arial, sans-serif" font-size="14" fill="#3B82F6" font-weight="bold">AI 聊天</text>
+  
+  <!-- 对话标题 -->
+  <text x="640" y="35" font-family="Arial, sans-serif" font-size="16" fill="#111827" text-anchor="middle" font-weight="bold">与 Claude 3.5 的对话</text>
+  
+  <!-- 右上角工具栏 -->
+  <circle cx="1140" cy="30" r="18" fill="#f3f4f6" stroke="#e5e7eb" stroke-width="1" />
+  <text x="1140" y="35" font-family="Arial, sans-serif" font-size="18" fill="#6b7280" text-anchor="middle">👤</text>
+  
+  <circle cx="1090" cy="30" r="18" fill="#f3f4f6" stroke="#e5e7eb" stroke-width="1" />
+  <text x="1090" y="35" font-family="Arial, sans-serif" font-size="16" fill="#6b7280" text-anchor="middle">⚙️</text>
+  
+  <circle cx="1040" cy="30" r="18" fill="#f3f4f6" stroke="#e5e7eb" stroke-width="1" />
+  <text x="1040" y="35" font-family="Arial, sans-serif" font-size="16" fill="#6b7280" text-anchor="middle">🌙</text>
+  
+  <!-- 聊天内容区 -->
+  <!-- 消息气泡1 - 用户 -->
+  <rect x="440" y="100" width="600" height="60" rx="8" fill="#EFF6FF" />
+  <text x="460" y="125" font-family="Arial, sans-serif" font-size="14" fill="#111827">请帮我写一个Python函数来分析CSV文件中的数据</text>
+  <text x="460" y="145" font-family="Arial, sans-serif" font-size="12" fill="#6b7280">用户 · 10:45 AM</text>
+  
+  <!-- 消息气泡2 - AI -->
+  <rect x="440" y="180" width="600" height="120" rx="8" fill="#ffffff" stroke="#e5e7eb" stroke-width="1" />
+  <text x="460" y="205" font-family="Arial, sans-serif" font-size="14" fill="#111827">好的，这里是一个Python函数来分析CSV文件：</text>
+  <rect x="460" y="220" width="560" height="60" rx="4" fill="#f9fafb" />
+  <text x="470" y="240" font-family="Arial, sans-serif" font-size="12" fill="#111827" style="white-space: pre">def analyze_csv(filename):
+    import pandas as pd
+    data = pd.read_csv(filename)
+    return data.describe()</text>
+  <text x="460" y="285" font-family="Arial, sans-serif" font-size="12" fill="#6b7280">AI助手 · 10:46 AM</text>
+  
+  <!-- 模型选择器 -->
+  <rect x="260" y="70" width="220" height="36" rx="4" fill="#ffffff" stroke="#e5e7eb" stroke-width="1" />
+  <text x="280" y="92" font-family="Arial, sans-serif" font-size="14" fill="#111827">模型: Claude 3.5 Sonnet</text>
+  <text x="460" y="92" font-family="Arial, sans-serif" font-size="14" fill="#6b7280">▼</text>
+  
+  <!-- 底部输入框 -->
+  <rect x="260" y="710" width="920" height="70" rx="8" fill="#ffffff" stroke="#e5e7eb" stroke-width="1" />
+  <text x="620" y="750" font-family="Arial, sans-serif" font-size="14" fill="#9ca3af" text-anchor="middle">输入您的问题...</text>
+  <circle cx="1140" cy="745" r="20" fill="#4F46E5" />
+  <text x="1140" y="750" font-family="Arial, sans-serif" font-size="14" fill="#ffffff" text-anchor="middle">↑</text>
+  
+  <!-- 标注文字 -->
+  <rect x="500" y="650" width="400" height="30" rx="15" fill="rgba(59, 130, 246, 0.1)" />
+  <text x="700" y="670" font-family="Arial, sans-serif" font-size="14" fill="#3B82F6" text-anchor="middle">导航结构优化示例</text>
+  
+  <!-- 设计说明文本箭头 -->
+  <!-- 左侧导航说明 -->
+  <line x1="160" y1="140" x2="280" y2="100" stroke="#3B82F6" stroke-width="1" stroke-dasharray="2,2" />
+  <rect x="280" y="80" width="160" height="40" rx="4" fill="rgba(59, 130, 246, 0.1)" />
+  <text x="360" y="105" font-family="Arial, sans-serif" font-size="12" fill="#3B82F6" text-anchor="middle">独立的首页导航</text>
+  
+  <line x1="160" y1="230" x2="280" y2="180" stroke="#3B82F6" stroke-width="1" stroke-dasharray="2,2" />
+  <rect x="280" y="160" width="160" height="40" rx="4" fill="rgba(59, 130, 246, 0.1)" />
+  <text x="360" y="185" font-family="Arial, sans-serif" font-size="12" fill="#3B82F6" text-anchor="middle">突出显示当前功能</text>
+  
+  <line x1="150" y1="420" x2="200" y2="380" stroke="#3B82F6" stroke-width="1" stroke-dasharray="2,2" />
+  <rect x="200" y="360" width="140" height="40" rx="4" fill="rgba(59, 130, 246, 0.1)" />
+  <text x="270" y="385" font-family="Arial, sans-serif" font-size="12" fill="#3B82F6" text-anchor="middle">分组导航结构</text>
+  
+  <!-- 面包屑说明 -->
+  <line x1="320" y1="35" x2="320" y2="60" stroke="#3B82F6" stroke-width="1" stroke-dasharray="2,2" />
+  <rect x="260" y="60" width="140" height="30" rx="4" fill="rgba(59, 130, 246, 0.1)" />
+  <text x="330" y="80" font-family="Arial, sans-serif" font-size="12" fill="#3B82F6" text-anchor="middle">面包屑导航</text>
+  
+  <!-- 右上角工具栏说明 -->
+  <line x1="1090" y1="30" x2="1000" y2="80" stroke="#3B82F6" stroke-width="1" stroke-dasharray="2,2" />
+  <rect x="880" y="80" width="200" height="40" rx="4" fill="rgba(59, 130, 246, 0.1)" />
+  <text x="980" y="105" font-family="Arial, sans-serif" font-size="12" fill="#3B82F6" text-anchor="middle">仅保留全局操作按钮</text>
+  
+  <!-- 标题说明 -->
+  <line x1="640" y1="35" x2="640" y2="60" stroke="#3B82F6" stroke-width="1" stroke-dasharray="2,2" />
+  <rect x="560" y="60" width="160" height="30" rx="4" fill="rgba(59, 130, 246, 0.1)" />
+  <text x="640" y="80" font-family="Arial, sans-serif" font-size="12" fill="#3B82F6" text-anchor="middle">描述性页面标题</text>
+</svg>

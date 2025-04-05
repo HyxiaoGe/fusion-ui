@@ -16,6 +16,7 @@ export interface ModelInfo {
   enabled: boolean; // 模型是否可用 - true: 模型已接入且可用; false: 模型未接入或暂时不可用
   experimental?: boolean; // 是否实验性功能
   contextWindow?: string; // 上下文窗口大小（如"128K"）
+  description?: string; // 模型简要描述，用于悬停提示
 }
 
 export interface ProviderInfo {
@@ -37,22 +38,7 @@ export const providers: ProviderInfo[] = [
 export const models: ModelInfo[] = [
   // 通义千问 模型
   {
-    id: "qwq-32b",
-    name: "QwQ 32B",
-    provider: "qwen",
-    maxTokens: 32768,
-    temperature: 0.7,
-    contextWindow: "128K",
-    capabilities: {
-      vision: false,
-      deepThinking: true,
-      fileSupport: true,
-    },
-    enabled: true,
-    experimental: false,
-  },
-  {
-    id: "qwq-plus",
+    id: "qwq-plus-2025-03-05",
     name: "QwQ Plus",
     provider: "qwen",
     maxTokens: 32768,
@@ -65,10 +51,11 @@ export const models: ModelInfo[] = [
     },
     enabled: true,
     experimental: false,
+    description: "通义千问 QwQ 推理模型增强版, 通过强化学习大幅度提升了模型推理能力, 数学、代码能力等核心指标均达到 DeepSeek-R1 满血版水平。",
   },
   {
     id: "qwen-max-latest",
-    name: "Qwen Max Latest",
+    name: "Qwen Max",
     provider: "qwen",
     maxTokens: 32768,
     temperature: 0.7,
@@ -80,36 +67,7 @@ export const models: ModelInfo[] = [
     },
     enabled: true,
     experimental: false,
-  },
-  {
-    id: "qwq-plus-2025-03-05",
-    name: "QwQ Plus 2025-03-05",
-    provider: "qwen",
-    maxTokens: 32768,
-    temperature: 0.7,
-    contextWindow: "128K",
-    capabilities: {
-      vision: false,
-      deepThinking: true,
-      fileSupport: false,
-    },
-    enabled: true,
-    experimental: false,
-  },
-  {
-    id: "qwen2.5-vl-72b-instruct",
-    name: "QwQ 2.5 VL 72B Instruct",
-    provider: "qwen",
-    maxTokens: 32768,
-    temperature: 0.7,
-    contextWindow: "128K",
-    capabilities: {
-      vision: true,
-      deepThinking: false,
-      fileSupport: false,
-    },
-    enabled: true,
-    experimental: false,
+    description: "通义千问高级多模态模型, 模型推理能力和复杂指令理解能力显著增强, 困难任务上的表现更优, 数学、代码能力显著提升, 提升对Table、JSON等结构化数据的理解和生成能力。",
   },
 
   // DeepSeek 模型
@@ -127,6 +85,7 @@ export const models: ModelInfo[] = [
     },
     enabled: true,
     experimental: false,
+    description: "DeepSeek最新多模态大模型，支持视觉分析和文件处理，拥有超长上下文理解能力。",
   },
   {
     name: "DeepSeek-R1",
@@ -142,6 +101,7 @@ export const models: ModelInfo[] = [
     },
     enabled: true,
     experimental: false,
+    description: "DeepSeek推理增强版大模型，擅长复杂思考和推理任务，可展示详细思考过程。",
   },
 
   // OpenAI 模型
@@ -158,6 +118,7 @@ export const models: ModelInfo[] = [
     },
     enabled: false,
     experimental: false,
+    description: "OpenAI的高级模型，在保持GPT-4核心能力的同时提供了更快的响应速度和更新的知识库。",
   },
   {
     id: "gpt-4o",
@@ -172,6 +133,7 @@ export const models: ModelInfo[] = [
     },
     enabled: false,
     experimental: false,
+    description: "OpenAI最新优化版GPT-4，提供更高效的性能和更准确的回答，支持文件处理。",
   },
   {
     id: "gpt-3.5-turbo",
@@ -185,6 +147,7 @@ export const models: ModelInfo[] = [
     },
     enabled: false,
     experimental: false,
+    description: "OpenAI高效且经济的模型，适合日常对话和一般性任务，反应速度快。",
   },
 
   // Anthropic 模型
@@ -202,10 +165,11 @@ export const models: ModelInfo[] = [
     },
     enabled: false,
     experimental: false,
+    description: "Anthropic的最强大模型，擅长复杂推理、创意写作和深度分析，支持多模态输入。",
   },
   {
     id: "claude-3.5-sonnet",
-    name: "Claude 3.5 Sonnet",
+    name: "Claude-3.5-Sonnet",
     provider: "anthropic",
     maxTokens: 32768,
     temperature: 0.7,
@@ -217,12 +181,13 @@ export const models: ModelInfo[] = [
     },
     enabled: false,
     experimental: false,
+    description: "Anthropic的平衡型模型，结合了高性能和高效率，支持视觉理解和详细思考过程。",
   },
 
   //  Google 模型
   {
     id: "gemini-2.0-pro-exp-02-05",
-    name: "Gemini 2.0 Pro Experimental",
+    name: "Gemini 2.0",
     provider: "gemini",
     maxTokens: 32768,
     temperature: 0.7,
@@ -234,5 +199,6 @@ export const models: ModelInfo[] = [
     },
     enabled: false,
     experimental: true,
+    description: "Google的实验性新一代多模态大模型，提供强大的视觉分析、推理能力和超长上下文支持。",
   }
 ];

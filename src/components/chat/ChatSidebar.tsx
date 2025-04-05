@@ -15,6 +15,9 @@ import {
   PlusIcon,
   RefreshCwIcon,
   TrashIcon,
+  HomeIcon,
+  SettingsIcon,
+  FileText,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -32,6 +35,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { useToast } from "../ui/toast";
+import Link from "next/link";
 
 interface ChatSidebarProps {
   onNewChat: () => void;
@@ -206,16 +210,71 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ onNewChat }) => {
 
   return (
     <div className="flex flex-col h-full py-2">
-      <div className="px-4 mb-4">
+      <div className="px-4 mb-5">
         <Button className="w-full flex items-center gap-2" onClick={onNewChat}>
           <PlusIcon size={16} />
           <span>新对话</span>
         </Button>
       </div>
 
+      {/* 主要导航分组 */}
+      <div className="px-3 mb-4">
+        <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-2 px-2">主要导航</p>
+        <Link href="/">
+          <div className="flex items-center gap-2 px-3 py-2 rounded-md hover:bg-accent/50 cursor-pointer transition-colors">
+            <HomeIcon size={16} className="text-muted-foreground" />
+            <span className="text-sm">首页</span>
+          </div>
+        </Link>
+      </div>
+
+      {/* AI功能分组 */}
+      <div className="px-3 mb-4">
+        <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-2 px-2">AI 功能</p>
+        {/* 当前激活的功能：AI聊天 */}
+        <div className="flex items-center gap-2 px-3 py-2 rounded-md bg-accent/80 border-l-2 border-primary cursor-pointer transition-colors">
+          <MessageSquareIcon size={16} className="text-primary" />
+          <span className="text-sm font-medium text-primary">AI 聊天</span>
+        </div>
+        
+        {/* 即将推出的功能 */}
+        <div className="flex items-center justify-between px-3 py-2 rounded-md hover:bg-accent/50 cursor-pointer text-muted-foreground mt-1 transition-colors">
+          <div className="flex items-center gap-2">
+            <MessageSquareIcon size={16} />
+            <span className="text-sm">AI 图像</span>
+          </div>
+          <span className="text-xs bg-muted px-1.5 py-0.5 rounded-full text-muted-foreground">即将推出</span>
+        </div>
+
+        {/* 更多即将推出的功能 */}
+        <div className="flex items-center justify-between px-3 py-2 rounded-md hover:bg-accent/50 cursor-pointer text-muted-foreground mt-1 transition-colors">
+          <div className="flex items-center gap-2">
+            <FileText size={16} />
+            <span className="text-sm">文档分析</span>
+          </div>
+          <span className="text-xs bg-muted px-1.5 py-0.5 rounded-full text-muted-foreground">即将推出</span>
+        </div>
+
+        <div className="flex items-center justify-between px-3 py-2 rounded-md hover:bg-accent/50 cursor-pointer text-muted-foreground mt-1 transition-colors">
+          <div className="flex items-center gap-2">
+            <div className="w-4 h-4 flex items-center justify-center">
+              <span className="text-muted-foreground">⌨️</span>
+            </div>
+            <span className="text-sm">代码助手</span>
+          </div>
+          <span className="text-xs bg-muted px-1.5 py-0.5 rounded-full text-muted-foreground">即将推出</span>
+        </div>
+      </div>
+
+      {/* 我的内容分组 */}
+      <div className="px-3 mb-4">
+        <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-2 px-2">我的内容</p>
+      </div>
+
+      {/* 聊天记录列表 */}
       <div className="flex-1 overflow-y-auto px-2">
         {chats.length === 0 ? (
-          <div className="text-center text-sm text-muted-foreground py-4">
+          <div className="text-center text-sm text-muted-foreground py-4 px-3">
             暂无聊天记录
           </div>
         ) : (
@@ -227,13 +286,17 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ onNewChat }) => {
               return (
                 <li key={chat.id}>
                   <div
-                    className={`flex items-center justify-between py-2 px-3 rounded-md cursor-pointer hover:bg-accent/50 ${
-                      activeChatId === chat.id ? "bg-accent" : ""
+                    className={`flex items-center justify-between py-2 px-3 rounded-md cursor-pointer transition-all ${
+                      activeChatId === chat.id 
+                        ? "bg-accent border-l-2 border-primary" 
+                        : "hover:bg-accent/50 border-l-2 border-transparent"
                     }`}
                     onClick={() => handleSelectChat(chat.id)}
                   >
                     <div className="flex items-center gap-3 flex-1 min-w-0">
-                      <MessageSquareIcon className="h-5 w-5 shrink-0 text-muted-foreground" />
+                      <MessageSquareIcon className={`h-5 w-5 shrink-0 ${
+                        activeChatId === chat.id ? "text-primary" : "text-muted-foreground"
+                      }`} />
                       <div className="min-w-0 flex-1">
                         {isEditing ? (
                           <input
@@ -247,7 +310,9 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ onNewChat }) => {
                           />
                         ) : (
                           <div
-                            className="font-medium truncate text-sm"
+                            className={`truncate text-sm ${
+                              activeChatId === chat.id ? "font-medium" : ""
+                            }`}
                             onDoubleClick={(e) =>
                               handleStartEditing(e, chat.id, chat.title)
                             }
@@ -306,19 +371,26 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ onNewChat }) => {
         )}
       </div>
 
+      {/* 应用分组 */}
+      <div className="px-3 mt-2 mb-4">
+        <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-2 px-2">应用</p>
+        <Link href="/settings">
+          <div className="flex items-center gap-2 px-3 py-2 rounded-md hover:bg-accent/50 cursor-pointer transition-colors">
+            <SettingsIcon size={16} className="text-muted-foreground" />
+            <span className="text-sm">设置</span>
+          </div>
+        </Link>
+      </div>
+
+      {/* 删除对话确认对话框 */}
       <Dialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent>
           <DialogHeader>
             <DialogTitle>确认删除</DialogTitle>
           </DialogHeader>
-          <div className="py-4">
-            <p>确定要删除此对话吗？此操作不可恢复。</p>
-          </div>
-          <DialogFooter className="flex justify-end gap-2">
-            <Button
-              variant="outline"
-              onClick={() => setIsDeleteDialogOpen(false)}
-            >
+          <p>确定要删除这个对话吗？此操作无法撤销。</p>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsDeleteDialogOpen(false)}>
               取消
             </Button>
             <Button variant="destructive" onClick={confirmDelete}>
@@ -328,30 +400,22 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ onNewChat }) => {
         </DialogContent>
       </Dialog>
 
+      {/* 重命名对话框 */}
       <Dialog open={isRenameDialogOpen} onOpenChange={setIsRenameDialogOpen}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent>
           <DialogHeader>
             <DialogTitle>重命名对话</DialogTitle>
           </DialogHeader>
-          <div className="py-4">
-            <Input
-              value={newTitle}
-              onChange={(e) => setNewTitle(e.target.value)}
-              placeholder="输入新标题"
-              className="w-full"
-              autoFocus
-            />
-          </div>
+          <Input
+            placeholder="输入新标题..."
+            value={newTitle}
+            onChange={(e) => setNewTitle(e.target.value)}
+          />
           <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => setIsRenameDialogOpen(false)}
-            >
+            <Button variant="outline" onClick={() => setIsRenameDialogOpen(false)}>
               取消
             </Button>
-            <Button onClick={handleRename} disabled={!newTitle.trim()}>
-              确定
-            </Button>
+            <Button onClick={handleRename}>保存</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

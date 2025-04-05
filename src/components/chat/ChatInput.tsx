@@ -26,6 +26,7 @@ interface ChatInputProps {
   onClearMessage?: () => void;
   disabled?: boolean;
   placeholder?: string;
+  activeChatId?: string;
 }
 
 interface LocalFileWithStatus {
@@ -42,6 +43,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
   onClearMessage,
   disabled = false,
   placeholder = "输入您的问题...",
+  activeChatId,
 }) => {
   const dispatch = useAppDispatch();
   const { toast } = useToast();
@@ -55,6 +57,10 @@ const ChatInput: React.FC<ChatInputProps> = ({
   const [useNewFileUpload, setUseNewFileUpload] = useState(true);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const { models, selectedModelId } = useAppSelector((state) => state.models);
+  const { activeChatId: currentActiveChatId } = useAppSelector((state) => state.chat);
+  const chatId = activeChatId || currentActiveChatId || "default-chat";
 
   const handleFileSelect = () => {
     if (fileInputRef.current) {
@@ -142,11 +148,10 @@ const ChatInput: React.FC<ChatInputProps> = ({
 
   // 处理文件上传
   const handleUploadFiles = async (filesToUpload: File[]) => {
-    if (!selectedModel || !activeChatId) {
+    if (!selectedModel || !chatId) {
       toast({
         message: "无法上传文件，请先选择模型",
         type: "error",
-        duration: 3000
       });
       return;
     }
@@ -169,7 +174,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
       // 将状态设置为上传中
       dispatch(updateFileStatus({
         fileId: 'temp',
-        chatId: activeChatId,
+        chatId: chatId,
         status: 'uploading'
       }));
       
@@ -178,7 +183,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
       const fileIds = await uploadFiles(
         selectedModel.provider,
         selectedModel.id,
-        activeChatId,
+        chatId,
         filesToUpload
       );
       
@@ -208,7 +213,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
         
         // 更新Redux中的文件ID
         dispatch(addFileId({
-          chatId: activeChatId,
+          chatId: chatId,
           fileId: fileId,
           fileIndex: index,
         }));
@@ -216,7 +221,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
         // 设置文件状态为parsing
         dispatch(updateFileStatus({
           fileId: fileId,
-          chatId: activeChatId,
+          chatId: chatId,
           status: 'parsing'
         }));
         
@@ -224,7 +229,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
         console.log(`开始轮询文件 ${fileId} 的处理状态...`);
         startPollingFileStatus(
           fileId,
-          activeChatId,
+          chatId,
           dispatch,
           (success) => {
             if (success) {
@@ -337,7 +342,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
       onSendMessage(message, filesToSend, actualFileIds);
       
       // 清除redux中的文件状态
-      dispatch(clearFiles(activeChatId));
+      dispatch(clearFiles(chatId));
     } else {
       // 仅发送文本消息
       onSendMessage(message);
@@ -355,16 +360,12 @@ const ChatInput: React.FC<ChatInputProps> = ({
     }
   };
 
-  // 获取当前活跃聊天ID
-  const activeChatId =
-    useAppSelector((state) => state.chat.activeChatId) || "default-chat";
-
   // 从Redux获取文件状态
   const reduxFiles = useAppSelector(
-    (state) => state.fileUpload.files[activeChatId] || []
+    (state) => state.fileUpload.files[chatId] || []
   );
   const fileIds = useAppSelector(
-    (state) => state.fileUpload.fileIds[activeChatId] || []
+    (state) => state.fileUpload.fileIds[chatId] || []
   );
   const isUploading = useAppSelector((state) => state.fileUpload.isUploading);
   const uploadProgress = useAppSelector(
@@ -399,7 +400,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
 
     return () => {
     };
-  }, [disabled, activeChatId]);
+  }, [disabled, chatId]);
 
   // 调整文本框高度
   useEffect(() => {
@@ -441,7 +442,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
     // 清除React状态
     setFiles([]);
     // 清除Redux状态
-    dispatch(clearFiles(activeChatId));
+    dispatch(clearFiles(chatId));
 
     // 直接清除FilePond实例中的文件
     if (fileUploadRef.current) {
@@ -450,9 +451,6 @@ const ChatInput: React.FC<ChatInputProps> = ({
   };
 
   // 从Redux获取当前选中的模型信息
-  const selectedModelId = useAppSelector(
-    (state) => state.models.selectedModelId
-  );
   const selectedModel = useAppSelector((state) =>
     state.models.models.find((m) => m.id === selectedModelId)
   );
@@ -614,6 +612,13 @@ const ChatInput: React.FC<ChatInputProps> = ({
     return null;
   };
 
+  // 获取上传文件的状态
+  const fileUploads = useAppSelector((state) => {
+    // 从Redux中获取文件上传状态
+    const chatFileUploads = state.fileUpload.processingFiles || {};
+    return Object.values(chatFileUploads);
+  });
+
   return (
     <div className="flex flex-col space-y-2 p-4 border-t">
       {useNewFileUpload && localFiles.length > 0 && (
@@ -676,7 +681,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
             onFilesChange={handleFilesChange}
             provider={selectedModel?.provider || ''}
             model={selectedModelId || ''}
-            conversationId={activeChatId}
+            conversationId={chatId}
             disabled={!supportsFileUpload || disabled}
             uploading={isUploading}
             progress={uploadProgress}

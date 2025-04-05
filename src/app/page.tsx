@@ -613,70 +613,93 @@ export default function Home() {
     }
   };
 
+  // 获取当前对话的标题
+  const getChatTitle = () => {
+    if (!activeChatId) return "";
+    const chat = chats.find(chat => chat.id === activeChatId);
+    return chat?.title || "AI 聊天";
+  };
+
   // 渲染界面
   return (
-    <MainLayout sidebar={<ChatSidebar onNewChat={handleNewChat} />}>
-      <div className="flex flex-col h-full relative">
-        {/* 添加首页按钮，仅在聊天界面显示 */}
-        {!showHomePage && activeChatId && (
-          <div className="absolute top-4 left-4 z-10">
-            <Button 
-              onClick={handleGoToHome} 
-              variant="ghost" 
-              size="icon" 
-              className="rounded-full h-10 w-10 bg-background/80 backdrop-blur-sm shadow-sm hover:bg-accent/80"
-            >
-              <HomeIcon className="h-5 w-5" />
-            </Button>
+    <MainLayout sidebar={<ChatSidebar onNewChat={handleNewChat} />} title={getChatTitle()}>
+      <div className="h-full flex flex-col">
+        {/* 页面内容，根据不同状态选择不同组件 */}
+        {showHomePage ? (
+          <div className="flex-1 p-4">
+            <HomePage onNewChat={handleNewChat} onChatSelected={handleChatSelected} />
           </div>
-        )}
-
-        {/* 显示首页或聊天界面 */}
-        {(shouldShowWelcome || showHomePage) ? (
-          <HomePage onNewChat={handleNewChat} />
         ) : (
           <div className="flex flex-col h-full">
-            <div className="flex items-center justify-between border-b p-4">
-              <div>
-                <h2 className="text-xl font-bold">{activeChat?.title || "新对话"}</h2>
-                <p className="text-sm text-muted-foreground">
-                  使用模型: {models.find(m => m.id === activeChat?.modelId)?.name || '未知模型'}
-                </p>
+            {activeChat && (
+              <div className="flex justify-between items-center px-4 py-3 border-b bg-muted/20">
+                <div className="flex items-center gap-2">
+                  <ModelSelector 
+                    modelId={activeChat.modelId} 
+                    disabled={activeChat.messages.length > 0 || isStreaming}
+                  />
+                  {selectedModelId && models.find(m => m.id === selectedModelId)?.capabilities?.deepThinking && (
+                    <span className="px-4 py-2 bg-amber-100 text-amber-800 dark:bg-amber-900/70 dark:text-amber-100 text-sm rounded-full whitespace-nowrap">支持思考过程</span>
+                  )}
+                  {selectedModelId && models.find(m => m.id === selectedModelId)?.capabilities?.fileSupport && (
+                    <span className="px-4 py-2 bg-blue-100 text-blue-800 dark:bg-blue-900/70 dark:text-blue-100 text-sm rounded-full whitespace-nowrap">支持文件上传</span>
+                  )}
+                  {selectedModelId && models.find(m => m.id === selectedModelId)?.capabilities?.vision && (
+                    <span className="px-4 py-2 bg-green-100 text-green-800 dark:bg-green-900/70 dark:text-green-100 text-sm rounded-full whitespace-nowrap">支持视觉识别</span>
+                  )}
+                  {selectedModelId && models.find(m => m.id === selectedModelId)?.capabilities?.imageGen && (
+                    <span className="px-4 py-2 bg-purple-100 text-purple-800 dark:bg-purple-900/70 dark:text-purple-100 text-sm rounded-full whitespace-nowrap">支持图像生成</span>
+                  )}
+                </div>
+                
+                <div>
+                  {activeChat.messages.length > 0 ? (
+                    <Button 
+                      variant="outline" 
+                      size="sm" 
+                      onClick={handleClearChat}
+                      disabled={isStreaming}
+                      title="清除所有消息"
+                    >
+                      清除对话
+                    </Button>
+                  ) : null}
+                </div>
               </div>
-              <div className="flex items-center gap-2">
-                <div className="w-64">
-                  <ModelSelector
-                    onChange={(modelId) => {
-                      console.log(`切换到模型: ${modelId}`);
-                    }}
+            )}
+            
+            <div className="flex-1 overflow-y-auto">
+              {/* 没有活动对话时展示欢迎消息 */}
+              {!activeChatId ? (
+                <div className="flex flex-col items-center justify-center h-full">
+                  <HomeIcon className="w-12 h-12 text-muted-foreground mb-4" />
+                  <h2 className="text-lg font-medium mb-1">欢迎使用 Fusion AI</h2>
+                  <p className="text-muted-foreground mb-6">
+                    请创建一个新对话或选择现有对话继续
+                  </p>
+                  <Button onClick={handleNewChat}>新对话</Button>
+                </div>
+              ) : (
+                <div className="relative flex flex-col h-full">
+                  {/* 消息列表 */}
+                  <ChatMessageList
+                    messages={activeChat?.messages || []}
+                    isStreaming={isStreaming}
+                    onRetry={handleRetryMessage}
+                    onEdit={handleEditMessage}
                   />
                 </div>
-              </div>
+              )}
             </div>
-
-            <div className="flex flex-1 overflow-hidden">
-              <div className="flex-1 overflow-y-auto pb-4">
-                <ChatMessageList
-                  messages={activeChat?.messages || []}
-                  loading={loading}
-                  isStreaming={isStreaming}
-                  onRetry={handleRetryMessage}
-                  onEdit={handleEditMessage}
+            
+            {/* 输入框组件，根据活动对话状态控制是否禁用 */}
+            <div className="p-4 border-t" ref={chatInputRef}>
+              {activeChatId && (
+                <ChatInput
+                  key={inputKey}
+                  onSendMessage={handleSendMessage}
+                  disabled={isStreaming}
                 />
-              </div>
-            </div>
-            <div ref={chatInputRef} className="border-t">
-              <ChatInput
-                key={`chat-input-${inputKey}`}
-                onSendMessage={handleSendMessage}
-                onClearMessage={activeChat ? handleClearChat : undefined}
-                disabled={!activeChatId || loading || isStreaming}
-                placeholder={activeChatId ? '输入您的问题...' : '请先选择或创建一个聊天'}
-              />
-              {currentUserQuery && (
-                <div className="pt-2 pb-4">
-                  <RelatedDiscussions currentQuery={currentUserQuery} chatId={activeChatId || undefined} />
-                </div>
               )}
             </div>
           </div>

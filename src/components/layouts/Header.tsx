@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { useAppDispatch, useAppSelector } from '@/redux/hooks';
 import { setThemeMode } from '@/redux/slices/themeSlice';
-import { HomeIcon, MoonIcon, SettingsIcon, SunIcon, LaptopIcon } from 'lucide-react';
+import { HomeIcon, MoonIcon, SettingsIcon, SunIcon, LaptopIcon, ChevronRightIcon } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import React, { useEffect, useState } from 'react';
@@ -15,11 +15,17 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 
-const Header: React.FC = () => {
+interface HeaderProps {
+  title?: string;
+}
+
+const Header: React.FC<HeaderProps> = ({ title }) => {
   const pathname = usePathname();
   const dispatch = useAppDispatch();
   const { mode } = useAppSelector((state) => state.theme);
   const [mounted, setMounted] = useState(false);
+  const { activeChatId, chats } = useAppSelector((state) => state.chat);
+  const { models, selectedModelId } = useAppSelector((state) => state.models);
   
   // 确保组件挂载后再渲染主题图标，避免服务端和客户端不一致
   useEffect(() => {
@@ -46,15 +52,67 @@ const Header: React.FC = () => {
     }
   };
   
+  // 获取当前选中的模型名称
+  const getSelectedModelName = () => {
+    if (!selectedModelId) return '';
+    const model = models.find(m => m.id === selectedModelId);
+    return model ? model.name : '';
+  };
+
+  // 获取当前页面显示的标题
+  const getCurrentPageTitle = () => {
+    if (pathname === '/') return '首页';
+    if (pathname.startsWith('/settings')) return '设置';
+    
+    // 优先使用传入的标题，如果存在
+    if (title) return title;
+    
+    // 否则根据当前选择的聊天生成标题
+    if (activeChatId) {
+      const activeChat = chats.find(chat => chat.id === activeChatId);
+      if (activeChat && activeChat.title) {
+        return activeChat.title;
+      }
+      return `与 ${getSelectedModelName()} 的对话`;
+    }
+    
+    return '';
+  };
+  
   return (
     <header className="h-14 border-b flex items-center justify-between px-5 sticky top-0 z-10 shadow-sm bg-background">
-      <Link href="/" className="text-xl font-bold flex items-center">
-        <span className="bg-gradient-to-r from-blue-600 via-purple-500 to-pink-500 text-transparent bg-clip-text">Fusion AI</span>
-      </Link>
-      
-      {/* <div className="flex-1 max-w-lg mx-4">
-        <GlobalSearch />
-      </div> */}
+      <div className="flex items-center">
+        <Link href="/" className="text-xl font-bold flex items-center mr-6">
+          <span className="bg-gradient-to-r from-blue-600 via-purple-500 to-pink-500 text-transparent bg-clip-text">Fusion AI</span>
+        </Link>
+        
+        {/* 面包屑导航 */}
+        <div className="hidden sm:flex items-center text-sm">
+          <Link href="/" className="text-muted-foreground hover:text-foreground transition-colors">首页</Link>
+          {(activeChatId || pathname.startsWith('/settings')) && (
+            <>
+              <ChevronRightIcon className="h-4 w-4 mx-1.5 text-muted-foreground" />
+              <span className={cn(
+                "transition-colors",
+                pathname.startsWith('/settings') 
+                  ? 'text-muted-foreground hover:text-foreground' 
+                  : 'text-primary font-medium'
+              )}>
+                {pathname.startsWith('/settings') ? (
+                  <Link href="/settings">设置</Link>
+                ) : (
+                  'AI 聊天'
+                )}
+              </span>
+            </>
+          )}
+        </div>
+      </div>
+
+      {/* 中间部分：页面标题 */}
+      <div className="absolute left-1/2 transform -translate-x-1/2 font-medium text-base">
+        {getCurrentPageTitle()}
+      </div>
 
       <div className="flex items-center gap-3">
         <Link href="/" passHref>
@@ -66,19 +124,22 @@ const Header: React.FC = () => {
               "hover:scale-110 hover:shadow-md",
               pathname === '/' ? "bg-primary text-primary-foreground" : "text-foreground"
             )}
+            aria-label="首页"
           >
             <HomeIcon className="h-4 w-4 transition-transform" />
           </Button>
         </Link>
+        
         <Link href="/settings" passHref>
           <Button 
-            variant={pathname === '/settings' ? 'default' : 'ghost'} 
+            variant={pathname.startsWith('/settings') ? 'default' : 'ghost'} 
             size="icon" 
             className={cn(
               "h-9 w-9 rounded-full shadow-sm transition-all duration-300",
               "hover:scale-110 hover:shadow-md",
               pathname.startsWith('/settings') ? "bg-primary text-primary-foreground" : "text-foreground"
-            )} 
+            )}
+            aria-label="设置"
           >
             <SettingsIcon className="h-4 w-4 transition-transform" />
           </Button>
@@ -96,6 +157,7 @@ const Header: React.FC = () => {
                 "bg-muted",
                 getIconColorClass()
               )}
+              aria-label="切换主题"
             >
               {ThemeIcon && <ThemeIcon className="h-4 w-4 transition-transform" />}
             </Button>

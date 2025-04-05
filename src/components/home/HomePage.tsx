@@ -1111,7 +1111,8 @@ const ModelCapabilitiesSection = () => {
 
 // 添加接口定义
 interface HomePageProps {
-  onNewChat?: () => void;
+  onNewChat: () => void;
+  onChatSelected?: () => void;
 }
 
 // 主页组件
