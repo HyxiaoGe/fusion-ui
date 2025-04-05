@@ -1,8 +1,13 @@
 {
+  "name": "fusion-ui",
+  "version": "1.0.0",
+  "description": "A modern chat interface built with Next.js",
+  "author": "Your Name",
   "scripts": {
     "dev:next": "next dev",
     "dev": "cross-env NODE_ENV=development concurrently \"next dev\" \"wait-on http://localhost:3000 && electron src/electron/main.js --inspect=5858\"",
-    "build": "next build && electron-builder",
+    "build": "next build",
+    "build:electron": "next build && electron-builder",
     "start": "electron ."
   },
   "dependencies": {
@@ -34,8 +39,6 @@
     "date-fns": "^4.1.0",
     "dexie": "^4.0.11",
     "dexie-react-hooks": "^1.1.7",
-    "electron": "^34.3.0",
-    "electron-builder": "^25.1.8",
     "electron-serve": "^2.1.1",
     "file-icon-vectors": "^1.0.0",
     "filepond": "^4.32.7",
@@ -73,6 +76,8 @@
     "@types/react-dom": "^19.0.4",
     "autoprefixer": "^10.4.20",
     "cross-env": "^7.0.3",
+    "electron": "^34.3.0",
+    "electron-builder": "^25.1.8",
     "electron-devtools-installer": "^4.0.0",
     "electron-is-dev": "^3.0.1",
     "eslint": "^9.24.0",
