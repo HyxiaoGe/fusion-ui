@@ -1,0 +1,8 @@
+# 忽略Next.js构建文件
+.next/
+out/
+build/
+dist/
+
+# 忽略node_modules
+node_modules/ 
