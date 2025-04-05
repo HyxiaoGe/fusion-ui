@@ -1109,73 +1109,355 @@ const ModelCapabilitiesSection = () => {
   );
 };
 
+// 添加接口定义
+interface HomePageProps {
+  onNewChat?: () => void;
+}
+
 // 主页组件
-const HomePage = () => {
+const HomePage: React.FC<HomePageProps> = ({ onNewChat }) => {
+  // 获取dispatch函数以便可以调用Redux操作
+  const dispatch = useAppDispatch();
+  const { models, selectedModelId } = useAppSelector((state) => state.models);
+
+  // 创建新对话处理函数
+  const handleNewChat = () => {
+    // 确保有选中的模型ID
+    const modelToUse = selectedModelId || (models.length > 0 ? models[0].id : null);
+
+    if (!modelToUse) {
+      console.error("没有可用的模型，无法创建对话");
+      dispatch(setError('没有可用的模型，无法创建对话'));
+      return;
+    }
+
+    // 不再自己创建对话，而是调用传入的回调函数
+    if (onNewChat) {
+      onNewChat();
+    }
+  };
+
   return (
-    <div className="h-[calc(100vh-4rem)] flex flex-col">
-      <div className="flex-1 p-4 md:p-6 grid grid-rows-[auto,1fr] gap-6">
-        {/* 欢迎区域 */}
-        <div className="flex flex-col lg:flex-row gap-6">
-          <div className="flex-1">
-            <WelcomeCard />
-          </div>
-          <div className="w-full lg:w-[380px]">
-            <QuickStartCard />
-          </div>
+    <div className="h-[calc(100vh-4rem)] flex flex-col overflow-auto">
+      <div className="flex-1 p-4 md:p-6 space-y-6">
+        {/* 欢迎标题和说明 */}
+        <div className="text-center space-y-2 mb-6">
+          <h1 className="text-3xl font-bold">欢迎使用 <span className="bg-gradient-to-r from-blue-600 via-purple-500 to-pink-500 text-transparent bg-clip-text">Fusion AI</span> 助手</h1>
+          <p className="text-muted-foreground max-w-2xl mx-auto">
+            强大的AI助手，支持多种大型语言模型，为您提供智能对话、文档分析、代码生成等多种功能。
+          </p>
         </div>
 
-        {/* 主要内容区域 */}
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 h-full">
-          {/* 左侧：能力展示 */}
-          <div className="lg:col-span-5 grid grid-rows-[auto,1fr] gap-6">
-            <ModelCapabilitiesSection />
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-lg flex items-center gap-2">
-                  <FileText className="h-5 w-5 text-primary" />
-                  使用指南
-                </CardTitle>
+        {/* AI 能力中心标题 */}
+        <div>
+          <h2 className="text-2xl font-semibold mb-4">AI 能力中心</h2>
+          
+          <style jsx global>{`
+            @keyframes iconBounce {
+              0%, 100% { transform: translateY(0) scale(1); }
+              40% { transform: translateY(-8px) scale(1.05); }
+              60% { transform: translateY(-8px) scale(1.05); }
+              80% { transform: translateY(2px) scale(0.95); }
+            }
+            
+            @keyframes shineEffect {
+              0% {
+                background-position: -100% 0;
+                opacity: 0.2;
+              }
+              100% {
+                background-position: 300% 0;
+                opacity: 1;
+              }
+            }
+            
+            @keyframes borderGlow {
+              0%, 100% { border-color: rgba(99, 102, 241, 0.2); }
+              50% { border-color: rgba(99, 102, 241, 0.5); }
+            }
+            
+            .card-border-effect {
+              position: relative;
+              border: 1px solid transparent;
+              background-clip: padding-box;
+              transition: all 0.3s ease;
+            }
+            
+            .card-border-effect::before {
+              content: '';
+              position: absolute;
+              top: -1px;
+              left: -1px;
+              right: -1px;
+              bottom: -1px;
+              z-index: -1;
+              margin: -1px;
+              border-radius: inherit;
+              background: linear-gradient(
+                60deg, 
+                rgba(99, 102, 241, 0), 
+                rgba(99, 102, 241, 0)
+              );
+              transition: opacity 0.2s ease;
+              opacity: 0;
+            }
+            
+            .card-border-effect-blue:hover::before {
+              background: linear-gradient(
+                90deg, 
+                rgba(59, 130, 246, 0.1), 
+                rgba(99, 102, 241, 0.2), 
+                rgba(59, 130, 246, 0.1)
+              );
+              opacity: 1;
+            }
+            
+            .card-border-effect-amber:hover::before {
+              background: linear-gradient(
+                90deg, 
+                rgba(245, 158, 11, 0.1), 
+                rgba(252, 211, 77, 0.2), 
+                rgba(245, 158, 11, 0.1)
+              );
+              opacity: 1;
+            }
+            
+            .card-border-effect-emerald:hover::before {
+              background: linear-gradient(
+                90deg, 
+                rgba(16, 185, 129, 0.1), 
+                rgba(5, 150, 105, 0.2), 
+                rgba(16, 185, 129, 0.1)
+              );
+              opacity: 1;
+            }
+            
+            .card-border-effect-purple:hover::before {
+              background: linear-gradient(
+                90deg, 
+                rgba(139, 92, 246, 0.1), 
+                rgba(124, 58, 237, 0.2), 
+                rgba(139, 92, 246, 0.1)
+              );
+              opacity: 1;
+            }
+            
+            /* 添加卡片内容闪光效果 */
+            .card-shine-effect {
+              position: relative;
+              overflow: hidden;
+            }
+            
+            .card-shine-effect::after {
+              content: '';
+              position: absolute;
+              top: -50%;
+              left: -50%;
+              width: 200%;
+              height: 200%;
+              background: transparent;
+              transform: rotate(30deg);
+              opacity: 0;
+              pointer-events: none;
+            }
+            
+            @keyframes shine-sweep {
+              0% {
+                opacity: 0;
+                transform: rotate(30deg) translate(-100%, -100%);
+              }
+              20% {
+                opacity: 0.2;
+              }
+              80% {
+                opacity: 0.2;
+              }
+              100% {
+                opacity: 0;
+                transform: rotate(30deg) translate(100%, 100%);
+              }
+            }
+          `}</style>
+          
+          {/* 功能卡片网格 */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            
+            {/* AI 聊天卡片 - 可用状态 */}
+            <Card className="group hover:border-primary/50 hover:shadow-lg hover:scale-[1.02] transition-all duration-300 overflow-hidden relative border-border/30 card-border-effect card-border-effect-blue">
+              {/* 背景装饰 */}
+              <div className="absolute -right-8 -bottom-10 w-32 h-32 bg-blue-600/10 rounded-full blur-xl opacity-70 group-hover:opacity-100 transition-opacity"></div>
+              <div className="absolute right-10 bottom-0 w-12 h-12 bg-blue-600/20 rounded-full blur-xl opacity-70 group-hover:opacity-100 transition-opacity"></div>
+              <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-blue-600/40 to-transparent"></div>
+              
+              <CardHeader className="pb-2 relative z-10">
+                <div className="absolute -top-3 right-5">
+                  <Badge variant="outline" className="bg-emerald-50 text-emerald-700 border-emerald-200 text-xs group-hover:shadow-sm">
+                    可用
+                  </Badge>
+                </div>
+                <div className="size-14 flex items-center justify-center">
+                  <div className="size-12 rounded-lg bg-gradient-to-br from-blue-500/30 to-blue-600/20 flex items-center justify-center border border-blue-500/40 shadow-[0_0_12px_rgba(59,130,246,0.25)] dark:shadow-[0_0_12px_rgba(59,130,246,0.35)] group-hover:shadow-[0_0_16px_rgba(59,130,246,0.4)] transition-all duration-300">
+                    <MessageSquare className="h-6 w-6 text-blue-600 drop-shadow-sm group-hover:scale-110 transition-transform" />
+                  </div>
+                </div>
+                <CardTitle className="text-xl mt-1">AI 聊天</CardTitle>
               </CardHeader>
-              <CardContent>
-                <div className="space-y-3">
-                  <div className="flex items-start gap-3 p-3 rounded-lg bg-muted/30 hover:bg-muted/50 transition-colors">
-                    <div className="size-8 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
-                      <span className="text-primary font-medium">1</span>
-                    </div>
-                    <div>
-                      <h3 className="font-medium text-sm">选择合适的模型</h3>
-                      <p className="text-xs text-muted-foreground">根据您的需求选择不同特点的AI模型。</p>
-                    </div>
+              <CardContent className="relative z-10">
+                <p className="text-sm text-muted-foreground">
+                  智能对话，深度思考，支持多种语言模型与上下文记忆功能。
+                </p>
+              </CardContent>
+              <CardFooter>
+                <Button 
+                  className="w-full relative overflow-hidden group bg-gradient-to-r from-blue-600 to-indigo-600 hover:opacity-90 transition-opacity"
+                  onClick={handleNewChat}
+                >
+                  <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-700 ease-out"></div>
+                  <span className="z-10">开始对话</span>
+                </Button>
+              </CardFooter>
+            </Card>
+            
+            {/* AI 图像卡片 - 测试中状态 */}
+            <Card className="group hover:border-primary/50 hover:shadow-lg hover:scale-[1.02] transition-all duration-300 overflow-hidden relative border-border/30 card-border-effect card-border-effect-amber">
+              {/* 背景装饰 */}
+              <div className="absolute -right-8 -bottom-10 w-32 h-32 bg-amber-500/10 rounded-full blur-xl opacity-70 group-hover:opacity-100 transition-opacity"></div>
+              <div className="absolute right-10 bottom-0 w-12 h-12 bg-amber-500/20 rounded-full blur-xl opacity-70 group-hover:opacity-100 transition-opacity"></div>
+              <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-amber-500/40 to-transparent"></div>
+              
+              <CardHeader className="pb-2 relative z-10">
+                <div className="absolute -top-3 right-5">
+                  <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-200 text-xs group-hover:shadow-sm">
+                    测试中
+                  </Badge>
+                </div>
+                <div className="size-14 flex items-center justify-center">
+                  <div className="size-12 rounded-lg bg-gradient-to-br from-amber-500/30 to-orange-500/20 flex items-center justify-center border border-amber-500/40 shadow-[0_0_12px_rgba(245,158,11,0.25)] dark:shadow-[0_0_12px_rgba(245,158,11,0.35)] group-hover:shadow-[0_0_16px_rgba(245,158,11,0.4)] transition-all duration-300">
+                    <Image className="h-6 w-6 text-amber-600 drop-shadow-sm group-hover:scale-110 transition-transform" />
                   </div>
-                  <div className="flex items-start gap-3 p-3 rounded-lg bg-muted/30 hover:bg-muted/50 transition-colors">
-                    <div className="size-8 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
-                      <span className="text-primary font-medium">2</span>
-                    </div>
-                    <div>
-                      <h3 className="font-medium text-sm">描述您的需求</h3>
-                      <p className="text-xs text-muted-foreground">清晰地描述问题，AI会给出相应解答。</p>
-                    </div>
+                </div>
+                <CardTitle className="text-xl mt-1">AI 图像</CardTitle>
+              </CardHeader>
+              <CardContent className="relative z-10">
+                <p className="text-sm text-muted-foreground">
+                  文本生成图像，视觉处理，支持多种风格与定制化选项。
+                </p>
+              </CardContent>
+              <CardFooter>
+                <Button 
+                  className="w-full relative" 
+                  variant="outline"
+                  disabled
+                >
+                  即将推出
+                </Button>
+              </CardFooter>
+            </Card>
+            
+            {/* 文档分析卡片 - 规划中状态 */}
+            <Card className="group hover:border-primary/50 hover:shadow-lg hover:scale-[1.02] transition-all duration-300 overflow-hidden relative border-border/30 card-border-effect card-border-effect-emerald">
+              {/* 背景装饰 */}
+              <div className="absolute -right-8 -bottom-10 w-32 h-32 bg-emerald-500/10 rounded-full blur-xl opacity-70 group-hover:opacity-100 transition-opacity"></div>
+              <div className="absolute right-10 bottom-0 w-12 h-12 bg-emerald-500/20 rounded-full blur-xl opacity-70 group-hover:opacity-100 transition-opacity"></div>
+              <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-emerald-500/40 to-transparent"></div>
+              
+              <CardHeader className="pb-2 relative z-10">
+                <div className="absolute -top-3 right-5">
+                  <Badge variant="outline" className="bg-slate-100 text-slate-700 border-slate-200 text-xs group-hover:shadow-sm">
+                    规划中
+                  </Badge>
+                </div>
+                <div className="size-14 flex items-center justify-center">
+                  <div className="size-12 rounded-lg bg-gradient-to-br from-emerald-500/30 to-teal-500/20 flex items-center justify-center border border-emerald-500/40 shadow-[0_0_12px_rgba(16,185,129,0.25)] dark:shadow-[0_0_12px_rgba(16,185,129,0.35)] group-hover:shadow-[0_0_16px_rgba(16,185,129,0.4)] transition-all duration-300">
+                    <FileText className="h-6 w-6 text-emerald-600 drop-shadow-sm group-hover:scale-110 transition-transform" />
                   </div>
-                  <div className="flex items-start gap-3 p-3 rounded-lg bg-muted/30 hover:bg-muted/50 transition-colors">
-                    <div className="size-8 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
-                      <span className="text-primary font-medium">3</span>
-                    </div>
-                    <div>
-                      <h3 className="font-medium text-sm">多轮对话优化</h3>
-                      <p className="text-xs text-muted-foreground">通过多轮对话逐步完善结果。</p>
+                </div>
+                <CardTitle className="text-xl mt-1">文档分析</CardTitle>
+              </CardHeader>
+              <CardContent className="relative z-10">
+                <p className="text-sm text-muted-foreground">
+                  智能处理文档，提取信息，支持多种文件格式与精准摘要。
+                </p>
+              </CardContent>
+              <CardFooter>
+                <Button 
+                  className="w-full" 
+                  variant="outline"
+                  disabled
+                >
+                  即将推出
+                </Button>
+              </CardFooter>
+            </Card>
+            
+            {/* 代码助手卡片 - 规划中状态 */}
+            <Card className="group hover:border-primary/50 hover:shadow-lg hover:scale-[1.02] transition-all duration-300 overflow-hidden relative border-border/30 card-border-effect card-border-effect-purple">
+              {/* 背景装饰 */}
+              <div className="absolute -right-8 -bottom-10 w-32 h-32 bg-purple-500/10 rounded-full blur-xl opacity-70 group-hover:opacity-100 transition-opacity"></div>
+              <div className="absolute right-10 bottom-0 w-12 h-12 bg-purple-500/20 rounded-full blur-xl opacity-70 group-hover:opacity-100 transition-opacity"></div>
+              <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-purple-500/40 to-transparent"></div>
+              
+              <CardHeader className="pb-2 relative z-10">
+                <div className="absolute -top-3 right-5">
+                  <Badge variant="outline" className="bg-slate-100 text-slate-700 border-slate-200 text-xs group-hover:shadow-sm">
+                    规划中
+                  </Badge>
+                </div>
+                <div className="size-14 flex items-center justify-center">
+                  <div className="size-12 rounded-lg bg-gradient-to-br from-purple-500/30 to-violet-500/20 flex items-center justify-center border border-purple-500/40 shadow-[0_0_12px_rgba(139,92,246,0.25)] dark:shadow-[0_0_12px_rgba(139,92,246,0.35)] group-hover:shadow-[0_0_16px_rgba(139,92,246,0.4)] transition-all duration-300">
+                    <div className="h-6 w-6 flex items-center justify-center text-purple-600 font-mono font-bold drop-shadow-sm group-hover:scale-110 transition-transform">
+                      { "<>" }
                     </div>
                   </div>
                 </div>
+                <CardTitle className="text-xl mt-1">代码助手</CardTitle>
+              </CardHeader>
+              <CardContent className="relative z-10">
+                <p className="text-sm text-muted-foreground">
+                  编程帮助，代码生成，支持多种编程语言与自动化解决方案。
+                </p>
               </CardContent>
+              <CardFooter>
+                <Button 
+                  className="w-full" 
+                  variant="outline"
+                  disabled
+                >
+                  即将推出
+                </Button>
+              </CardFooter>
             </Card>
           </div>
-
-          {/* 右侧：热门问题和对话示例 */}
-          <div className="lg:col-span-7 grid grid-rows-[1fr,auto] gap-6">
+        </div>
+        
+        {/* 热门话题区域 */}
+        <div className="pt-4">
+          <h2 className="text-2xl font-semibold mb-4">探索热门话题</h2>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             <HotTopicsCard />
             <DialogueExamplesCard />
           </div>
         </div>
+        
+        {/* 快速开始区域 - 暂时隐藏
+        <Card className="mt-6 border-primary/20">
+          <CardContent className="flex flex-col md:flex-row items-center justify-between gap-4 py-4">
+            <div>
+              <h3 className="text-lg font-medium">快速开始:</h3>
+              <p className="text-sm text-muted-foreground">创建新对话或查看使用教程</p>
+            </div>
+            <div className="flex gap-3">
+              <Button onClick={handleNewChat}>
+                <Plus className="mr-2 h-4 w-4" />
+                新建AI对话
+              </Button>
+              <Button variant="outline">
+                查看使用教程
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+        */}
       </div>
     </div>
   );

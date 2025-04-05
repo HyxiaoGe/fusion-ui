@@ -1,20 +1,6 @@
 "use client";
 
-import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle
-} from "@/components/ui/dialog";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import { Input } from "@/components/ui/input";
+import React, { useRef, useState } from "react";
 import { generateChatTitle } from "@/lib/api/title";
 import { useAppDispatch, useAppSelector } from "@/redux/hooks";
 import {
@@ -30,7 +16,21 @@ import {
   RefreshCwIcon,
   TrashIcon,
 } from "lucide-react";
-import React, { useRef, useState } from "react";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle
+} from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Input } from "@/components/ui/input";
 import { useToast } from "../ui/toast";
 
 interface ChatSidebarProps {
@@ -232,9 +232,9 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ onNewChat }) => {
                     }`}
                     onClick={() => handleSelectChat(chat.id)}
                   >
-                    <div className="flex items-center gap-3 min-w-0">
+                    <div className="flex items-center gap-3 flex-1 min-w-0">
                       <MessageSquareIcon className="h-5 w-5 shrink-0 text-muted-foreground" />
-                      <div className="min-w-0">
+                      <div className="min-w-0 flex-1">
                         {isEditing ? (
                           <input
                             ref={editInputRef}
@@ -263,42 +263,41 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ onNewChat }) => {
                       </div>
                     </div>
 
-                    {!isEditing && (
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-8 w-8"
-                          >
-                            <MoreVerticalIcon className="h-4 w-4" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          <DropdownMenuItem
-                            onClick={(e) =>
-                              handleStartEditing(e, chat.id, chat.title)
-                            }
-                          >
-                            <PencilIcon className="h-4 w-4 mr-2" />
-                            重命名
-                          </DropdownMenuItem>
-                          <DropdownMenuItem
-                            onClick={(e) => handleGenerateTitle(e, chat.id)}
-                          >
-                            <RefreshCwIcon className="h-4 w-4 mr-2" />
-                            生成标题
-                          </DropdownMenuItem>
-                          <DropdownMenuItem
-                            className="text-destructive"
-                            onClick={(e) => handleDeleteChat(e, chat.id)}
-                          >
-                            <TrashIcon className="h-4 w-4 mr-2" />
-                            删除对话
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    )}
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8 opacity-50 hover:opacity-100"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <MoreVerticalIcon className="h-4 w-4" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem
+                          onClick={(e) =>
+                            handleStartEditing(e, chat.id, chat.title)
+                          }
+                        >
+                          <PencilIcon className="h-4 w-4 mr-2" />
+                          重命名
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          onClick={(e) => handleGenerateTitle(e, chat.id)}
+                        >
+                          <RefreshCwIcon className="h-4 w-4 mr-2" />
+                          生成标题
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          className="text-destructive"
+                          onClick={(e) => handleDeleteChat(e, chat.id)}
+                        >
+                          <TrashIcon className="h-4 w-4 mr-2" />
+                          删除对话
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
                   </div>
                 </li>
               );

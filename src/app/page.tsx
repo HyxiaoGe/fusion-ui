@@ -3,7 +3,6 @@
 import ChatInput from '@/components/chat/ChatInput';
 import ChatMessageList from '@/components/chat/ChatMessageList';
 import ChatSidebar from '@/components/chat/ChatSidebar';
-import ContextEnhancementControl from '@/components/context/ContextEnhancementControl';
 import HomePage from '@/components/home/HomePage';
 import MainLayout from '@/components/layouts/MainLayout';
 import ModelSelector from '@/components/models/ModelSelector';
@@ -35,7 +34,7 @@ import {
 } from '@/redux/slices/chatSlice';
 import { fetchEnhancedContext } from '@/redux/slices/searchSlice';
 import { store } from '@/redux/store';
-import { PlusIcon } from 'lucide-react';
+import { HomeIcon, PlusIcon } from 'lucide-react';
 import { usePathname, useSearchParams } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
 import { v4 as uuidv4 } from 'uuid';
@@ -46,10 +45,21 @@ export default function Home() {
   const searchParams = useSearchParams();
 
   const [inputKey, setInputKey] = useState(Date.now());
+  const [showHomePage, setShowHomePage] = useState(false);
 
   const { chats, activeChatId, loading, isStreaming } = useAppSelector((state) => state.chat);
 
-  const showWelcome = !activeChatId && chats.length === 0;
+  // 判断是否显示欢迎页面
+  const shouldShowWelcome = !activeChatId && chats.length === 0;
+  
+  // 根据当前状态决定是否显示主页
+  useEffect(() => {
+    if (shouldShowWelcome) {
+      setShowHomePage(true);
+    } else if (activeChatId) {
+      setShowHomePage(false);
+    }
+  }, [shouldShowWelcome, activeChatId]);
 
   const { models, selectedModelId } = useAppSelector((state) => state.models);
   const [currentUserQuery, setCurrentUserQuery] = useState('');
@@ -149,6 +159,16 @@ export default function Home() {
     try {
       // 创建对话时传入当前选择的模型ID
       dispatch(createChat({ modelId: modelToUse }));
+      setShowHomePage(false); // 创建新对话后显示聊天界面
+      
+      // 使用setTimeout确保状态已更新
+      setTimeout(() => {
+        // 确保聊天界面已加载，再重置焦点
+        if (chatInputRef.current) {
+          chatInputRef.current.click();
+        }
+      }, 100);
+      
       console.log('对话创建成功，使用模型：', modelToUse);
     } catch (error) {
       console.error('创建对话失败:', error);
@@ -156,9 +176,26 @@ export default function Home() {
     }
   };
 
+  // 跳转到首页
+  const handleGoToHome = () => {
+    setShowHomePage(true);
+  };
+
+  // 当显示聊天界面时，关闭首页
+  const handleChatSelected = () => {
+    if (showHomePage) {
+      setShowHomePage(false);
+    }
+  };
+
   // 发送消息
   const handleSendMessage = async (content: string, files?: FileWithPreview[], fileIds?: string[]) => {
     if ((!content.trim() && (!files || files.length === 0)) || !activeChatId || !selectedModelId) return;
+
+    // 如果当前在首页，切换到聊天界面
+    if (showHomePage) {
+      setShowHomePage(false);
+    }
 
     console.log('发送消息', { content, files, fileIds });
     setCurrentUserQuery(content); // 保存当前查询用于相关推荐
@@ -210,8 +247,10 @@ export default function Home() {
     setTimeout(() => {
       dispatch(startStreaming(activeChatId));
       
-      dispatch(startStreamingReasoning())
-      dispatch(updateStreamingReasoningContent(''));
+      if (useReasoning) {
+        dispatch(startStreamingReasoning())
+        dispatch(updateStreamingReasoningContent(''));
+      }
     }, 1000);
 
     try {
@@ -574,31 +613,34 @@ export default function Home() {
     }
   };
 
+  // 渲染界面
   return (
-    <MainLayout
-      sidebar={
-        <ChatSidebar
-          onNewChat={handleNewChat}
-        />
-      }
-    >
-      {isSyncing ? (
-        <div className="flex h-full items-center justify-center">
-          <div className="text-center">
-            <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-primary mb-2"></div>
-            <p className="text-muted-foreground">同步数据中...</p>
+    <MainLayout sidebar={<ChatSidebar onNewChat={handleNewChat} />}>
+      <div className="flex flex-col h-full relative">
+        {/* 添加首页按钮，仅在聊天界面显示 */}
+        {!showHomePage && activeChatId && (
+          <div className="absolute top-4 left-4 z-10">
+            <Button 
+              onClick={handleGoToHome} 
+              variant="ghost" 
+              size="icon" 
+              className="rounded-full h-10 w-10 bg-background/80 backdrop-blur-sm shadow-sm hover:bg-accent/80"
+            >
+              <HomeIcon className="h-5 w-5" />
+            </Button>
           </div>
-        </div>
-      ) : showWelcome ? (
-        <HomePage />
-      ) : (
-        activeChat ? (
+        )}
+
+        {/* 显示首页或聊天界面 */}
+        {(shouldShowWelcome || showHomePage) ? (
+          <HomePage onNewChat={handleNewChat} />
+        ) : (
           <div className="flex flex-col h-full">
             <div className="flex items-center justify-between border-b p-4">
               <div>
-                <h2 className="text-xl font-bold">{activeChat.title}</h2>
+                <h2 className="text-xl font-bold">{activeChat?.title || "新对话"}</h2>
                 <p className="text-sm text-muted-foreground">
-                  使用模型: {models.find(m => m.id === activeChat.modelId)?.name || '未知模型'}
+                  使用模型: {models.find(m => m.id === activeChat?.modelId)?.name || '未知模型'}
                 </p>
               </div>
               <div className="flex items-center gap-2">
@@ -615,7 +657,7 @@ export default function Home() {
             <div className="flex flex-1 overflow-hidden">
               <div className="flex-1 overflow-y-auto pb-4">
                 <ChatMessageList
-                  messages={activeChat.messages}
+                  messages={activeChat?.messages || []}
                   loading={loading}
                   isStreaming={isStreaming}
                   onRetry={handleRetryMessage}
@@ -623,7 +665,7 @@ export default function Home() {
                 />
               </div>
             </div>
-            <div ref={chatInputRef}>
+            <div ref={chatInputRef} className="border-t">
               <ChatInput
                 key={`chat-input-${inputKey}`}
                 onSendMessage={handleSendMessage}
@@ -631,28 +673,15 @@ export default function Home() {
                 disabled={!activeChatId || loading || isStreaming}
                 placeholder={activeChatId ? '输入您的问题...' : '请先选择或创建一个聊天'}
               />
+              {currentUserQuery && (
+                <div className="pt-2 pb-4">
+                  <RelatedDiscussions currentQuery={currentUserQuery} chatId={activeChatId || undefined} />
+                </div>
+              )}
             </div>
           </div>
-        ) : (
-          <div className="flex h-full items-center justify-center">
-            <div className="text-center space-y-4">
-              <h2 className="text-2xl font-bold">欢迎使用 AI 助手</h2>
-              <p className="text-muted-foreground max-w-md mx-auto">
-                开始一个新的对话，探索 AI 的无限可能。选择不同的模型，体验各种智能对话。
-              </p>
-              <Button onClick={handleNewChat} className="mt-2">
-                <PlusIcon className="mr-2 h-4 w-4" />
-                开始新对话
-              </Button>
-            </div>
-          </div>
-        )
-      )}
-      {chats.length > 0 && (
-        <div className="absolute bottom-4 right-4 text-xs text-muted-foreground bg-background/80 px-2 py-1 rounded-md shadow-sm">
-          {isSyncing ? '同步中...' : '数据已同步'}
-        </div>
-      )}
+        )}
+      </div>
     </MainLayout>
   );
 }
