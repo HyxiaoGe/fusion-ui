@@ -7,6 +7,7 @@ import {
   deleteChat,
   setActiveChat,
   updateChatTitle,
+  Chat
 } from "@/redux/slices/chatSlice";
 import {
   MessageSquareIcon,
@@ -110,6 +111,44 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ onNewChat }) => {
     const date = new Date(timestamp);
     return date.toLocaleDateString();
   };
+
+  // 获取日期分组标签
+  const getDateGroupLabel = (timestamp: number) => {
+    const now = new Date();
+    const date = new Date(timestamp);
+    
+    // 设置时间为0点，只比较日期
+    const nowDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const chatDate = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+    
+    const diffDays = Math.floor((nowDate.getTime() - chatDate.getTime()) / (1000 * 60 * 60 * 24));
+    
+    if (diffDays === 0) return "今天";
+    if (diffDays === 1) return "昨天";
+    if (diffDays <= 3) return "三天内";
+    if (diffDays <= 7) return "一周内";
+    if (diffDays <= 30) return "一个月内";
+    return "更早";
+  };
+
+  // 对聊天记录进行排序和分组
+  const sortedAndGroupedChats = React.useMemo(() => {
+    // 按更新时间降序排序
+    const sortedChats = [...chats].sort((a, b) => b.updatedAt - a.updatedAt);
+    
+    // 按日期分组
+    const groups: Record<string, Chat[]> = {};
+    
+    sortedChats.forEach(chat => {
+      const groupLabel = getDateGroupLabel(chat.updatedAt);
+      if (!groups[groupLabel]) {
+        groups[groupLabel] = [];
+      }
+      groups[groupLabel].push(chat);
+    });
+    
+    return groups;
+  }, [chats]);
 
   // 选择对话
   const handleSelectChat = (chatId: string) => {
@@ -226,93 +265,100 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ onNewChat }) => {
             暂无对话记录
           </div>
         ) : (
-          <div className="space-y-2">
-            {chats.map((chat) => (
-              <div
-                key={chat.id}
-                className={`flex items-center group rounded-lg p-3 text-sm cursor-pointer transition-all duration-200 ${
-                  chat.id === activeChatId
-                    ? "bg-primary/15 dark:bg-primary/20 shadow-lg border border-primary/20 dark:border-primary/30 pl-4 relative z-10"
-                    : "hover:bg-muted/50 hover:shadow-sm"
-                }`}
-                onClick={() => handleSelectChat(chat.id)}
-              >
-                <div className="flex-1 min-w-0 relative">
-                  {editingChatId === chat.id ? (
-                    <Input
-                      ref={editInputRef}
-                      value={editingTitle}
-                      onChange={(e) => setEditingTitle(e.target.value)}
-                      onBlur={() => handleSaveEdit(chat.id)}
-                      onKeyDown={(e) => handleKeyDown(e, chat.id)}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setIgnoreNextBlur(false);
-                      }}
-                      className="h-6 py-1 text-xs"
-                    />
-                  ) : (
-                    <div className="flex items-start gap-2">
-                      <MessageSquareIcon size={16} className={`shrink-0 mt-0.5 ${chat.id === activeChatId ? "text-primary" : "text-muted-foreground"}`} />
-                      <div className="truncate flex-1 pr-1">
-                        <div className={`font-medium truncate ${chat.id === activeChatId ? "text-primary font-semibold" : ""}`} title={chat.title}>
-                          {chat.title || "新对话"}
-                        </div>
-                        <div className="text-xs text-muted-foreground truncate mt-0.5">
-                          {/* 显示最近更新时间 */}
-                          {formatDate(chat.updatedAt || chat.createdAt)}
-                          
-                          {/* 显示使用的模型 */}
-                          {chat.modelId && models.find(m => m.id === chat.modelId) && (
-                            <span className="ml-1">
-                              · {models.find(m => m.id === chat.modelId)?.name}
-                            </span>
-                          )}
-                        </div>
+          <div>
+            {Object.entries(sortedAndGroupedChats).map(([groupLabel, groupChats]) => (
+              <div key={groupLabel} className="mb-4">
+                <h3 className="text-xs font-medium text-muted-foreground px-2 mb-2">{groupLabel}</h3>
+                <div className="space-y-2">
+                  {groupChats.map((chat) => (
+                    <div
+                      key={chat.id}
+                      className={`flex items-center group rounded-lg p-3 text-sm cursor-pointer transition-all duration-200 ${
+                        chat.id === activeChatId
+                          ? "bg-primary/15 dark:bg-primary/20 shadow-lg border border-primary/20 dark:border-primary/30 pl-4 relative z-10"
+                          : "hover:bg-muted/50 hover:shadow-sm"
+                      }`}
+                      onClick={() => handleSelectChat(chat.id)}
+                    >
+                      <div className="flex-1 min-w-0 relative">
+                        {editingChatId === chat.id ? (
+                          <Input
+                            ref={editInputRef}
+                            value={editingTitle}
+                            onChange={(e) => setEditingTitle(e.target.value)}
+                            onBlur={() => handleSaveEdit(chat.id)}
+                            onKeyDown={(e) => handleKeyDown(e, chat.id)}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setIgnoreNextBlur(false);
+                            }}
+                            className="h-6 py-1 text-xs"
+                          />
+                        ) : (
+                          <div className="flex items-start gap-2">
+                            <MessageSquareIcon size={16} className={`shrink-0 mt-0.5 ${chat.id === activeChatId ? "text-primary" : "text-muted-foreground"}`} />
+                            <div className="truncate flex-1 pr-1">
+                              <div className={`font-medium truncate ${chat.id === activeChatId ? "text-primary font-semibold" : ""}`} title={chat.title}>
+                                {chat.title || "新对话"}
+                              </div>
+                              <div className="text-xs text-muted-foreground truncate mt-0.5">
+                                {/* 显示时间和模型 */}
+                                {formatDate(chat.updatedAt || chat.createdAt)}
+                                
+                                {/* 显示使用的模型 */}
+                                {chat.modelId && models.find(m => m.id === chat.modelId) && (
+                                  <span className="ml-1">
+                                    · {models.find(m => m.id === chat.modelId)?.name}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                      <div
+                        className={`ml-2 ${
+                          chat.id === activeChatId ? "opacity-100" : "opacity-0 group-hover:opacity-100"
+                        } transition-opacity duration-200`}
+                      >
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-6 w-6"
+                              title="更多操作"
+                            >
+                              <MoreVerticalIcon size={14} />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end" className="w-36">
+                            <DropdownMenuItem onClick={(e) => {
+                              e.stopPropagation();
+                              handleStartEditing(e, chat.id, chat.title);
+                            }}>
+                              <PencilIcon size={14} className="mr-2" />
+                              重命名
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onClick={(e) => {
+                              e.stopPropagation();
+                              handleDeleteChat(e, chat.id);
+                            }}>
+                              <TrashIcon size={14} className="mr-2" />
+                              删除对话
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onClick={(e) => {
+                              e.stopPropagation();
+                              handleGenerateTitle(e, chat.id);
+                            }}>
+                              <RefreshCwIcon size={14} className="mr-2" />
+                              生成标题
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
                       </div>
                     </div>
-                  )}
-                </div>
-                <div
-                  className={`ml-2 ${
-                    chat.id === activeChatId ? "opacity-100" : "opacity-0 group-hover:opacity-100"
-                  } transition-opacity duration-200`}
-                >
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-6 w-6"
-                        title="更多操作"
-                      >
-                        <MoreVerticalIcon size={14} />
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end" className="w-36">
-                      <DropdownMenuItem onClick={(e) => {
-                        e.stopPropagation();
-                        handleStartEditing(e, chat.id, chat.title);
-                      }}>
-                        <PencilIcon size={14} className="mr-2" />
-                        重命名
-                      </DropdownMenuItem>
-                      <DropdownMenuItem onClick={(e) => {
-                        e.stopPropagation();
-                        handleDeleteChat(e, chat.id);
-                      }}>
-                        <TrashIcon size={14} className="mr-2" />
-                        删除对话
-                      </DropdownMenuItem>
-                      <DropdownMenuItem onClick={(e) => {
-                        e.stopPropagation();
-                        handleGenerateTitle(e, chat.id);
-                      }}>
-                        <RefreshCwIcon size={14} className="mr-2" />
-                        生成标题
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
+                  ))}
                 </div>
               </div>
             ))}

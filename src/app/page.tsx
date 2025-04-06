@@ -659,11 +659,11 @@ export default function Home() {
 
           <div className="flex items-center gap-3">
             <Button 
-              variant={showHomePage ? "default" : "ghost"} 
+              variant={!showHomePage ? "default" : "ghost"} 
               size="icon" 
               className={cn(
                 "h-9 w-9 rounded-full shadow-sm transition-all duration-300 hover:scale-110 hover:shadow-md",
-                showHomePage ? "bg-primary text-primary-foreground" : "text-foreground"
+                !showHomePage ? "bg-primary text-primary-foreground" : "text-foreground"
               )}
               aria-label="首页"
               onClick={handleGoToHome}
@@ -707,7 +707,7 @@ export default function Home() {
         <div 
           ref={chatInputRef} 
           tabIndex={-1} 
-          className="flex-shrink-0 p-4 border-t"
+          className="flex-shrink-0 p-4"
         >
           <ChatInput
             key={inputKey}
