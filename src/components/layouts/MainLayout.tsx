@@ -43,7 +43,7 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children, sidebar, title, heade
       )}
       <div className="flex flex-1 overflow-hidden">
         {sidebar && (
-          <ResizableSidebar defaultWidth={240} minWidth={180} maxWidth={400}>
+          <ResizableSidebar defaultWidth={320} minWidth={280} maxWidth={400}>
             {sidebar}
           </ResizableSidebar>
         )}

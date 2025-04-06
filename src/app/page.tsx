@@ -146,6 +146,18 @@ export default function Home() {
   // 获取当前活动的对话
   const activeChat = activeChatId ? chats.find(chat => chat.id === activeChatId) : null;
 
+  // 添加新的状态变量来跟踪聊天中是否有消息
+  const [hasMessages, setHasMessages] = useState(false);
+
+  // 在useEffect中检测活动对话是否有消息
+  useEffect(() => {
+    if (activeChat && activeChat.messages && activeChat.messages.length > 0) {
+      setHasMessages(true);
+    } else {
+      setHasMessages(false);
+    }
+  }, [activeChat]);
+
   // 创建新对话
   const handleNewChat = () => {
     console.log('点击新建对话按钮', { selectedModelId });
@@ -642,7 +654,7 @@ export default function Home() {
             <div className="font-medium text-base">
               {getChatTitle()}
             </div>
-            {!showHomePage && <ModelSelector />}
+            <ModelSelector />
           </div>
 
           <div className="flex items-center gap-3">
@@ -677,31 +689,31 @@ export default function Home() {
       }
     >
       <div className="h-full flex flex-col relative">
-        {showHomePage ? (
-          <HomePage onNewChat={handleNewChat} onChatSelected={handleChatSelected} />
+        {showHomePage || !hasMessages ? (
+          <div className="flex-1 overflow-y-auto">
+            <HomePage onNewChat={handleNewChat} onChatSelected={handleChatSelected} />
+          </div>
         ) : (
-          <>
-            <div className="flex-1 overflow-y-auto px-4 pt-4">
-              <ChatMessageList
-                messages={activeChat?.messages || []}
-                loading={loading}
-                isStreaming={isStreaming}
-                onRetry={handleRetryMessage}
-                onEdit={handleEditMessage}
-              />
-            </div>
-            <div 
-              ref={chatInputRef} 
-              tabIndex={-1} 
-              className="flex-shrink-0 p-4 border-t"
-            >
-              <ChatInput
-                key={inputKey}
-                onSendMessage={handleSendMessage}
-              />
-            </div>
-          </>
+          <div className="flex-1 overflow-y-auto px-4 pt-4">
+            <ChatMessageList
+              messages={activeChat?.messages || []}
+              loading={loading}
+              isStreaming={isStreaming}
+              onRetry={handleRetryMessage}
+              onEdit={handleEditMessage}
+            />
+          </div>
         )}
+        <div 
+          ref={chatInputRef} 
+          tabIndex={-1} 
+          className="flex-shrink-0 p-4 border-t"
+        >
+          <ChatInput
+            key={inputKey}
+            onSendMessage={handleSendMessage}
+          />
+        </div>
       </div>
     </MainLayout>
   );

@@ -56,30 +56,31 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ onNewChat }) => {
   const [editingChatId, setEditingChatId] = useState<string | null>(null);
   const [editingTitle, setEditingTitle] = useState("");
   const editInputRef = useRef<HTMLInputElement>(null);
+  const [ignoreNextBlur, setIgnoreNextBlur] = useState(false);
 
   // 添加状态管理重命名对话框
   const [isRenameDialogOpen, setIsRenameDialogOpen] = useState(false);
   const [chatToRename, setChatToRename] = useState<string | null>(null);
   const [newTitle, setNewTitle] = useState("");
 
-  // 开始编辑
+  // 开始编辑 - 改用对话框
   const handleStartEditing = (
     e: React.MouseEvent,
     chatId: string,
     currentTitle: string
   ) => {
     e.stopPropagation();
-    setEditingChatId(chatId);
-    setEditingTitle(currentTitle);
-    // 使用setTimeout确保DOM更新后再聚焦
-    setTimeout(() => {
-      editInputRef.current?.focus();
-      editInputRef.current?.select();
-    }, 50);
+    setChatToRename(chatId);
+    setNewTitle(currentTitle);
+    setIsRenameDialogOpen(true);
   };
 
   // 保存编辑
   const handleSaveEdit = (chatId: string) => {
+    if (ignoreNextBlur) {
+      return;
+    }
+    
     if (editingTitle.trim()) {
       dispatch(
         updateChatTitle({
@@ -218,21 +219,21 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ onNewChat }) => {
       </div>
 
       {/* 最近对话列表 */}
-      <div className="px-3 flex-1 overflow-y-auto">
-        <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-2 px-2">最近对话</p>
+      <div className="px-4 flex-1 overflow-y-auto">
+        <p className="text-sm font-medium text-muted-foreground tracking-wider mb-3 px-2">最近对话</p>
         {chats.length === 0 ? (
           <div className="text-sm text-muted-foreground mt-4 text-center">
             暂无对话记录
           </div>
         ) : (
-          <div className="space-y-1.5">
+          <div className="space-y-2">
             {chats.map((chat) => (
               <div
                 key={chat.id}
-                className={`flex items-center group rounded-md p-2 text-sm cursor-pointer ${
+                className={`flex items-center group rounded-lg p-3 text-sm cursor-pointer transition-all duration-200 ${
                   chat.id === activeChatId
-                    ? "bg-muted/80"
-                    : "hover:bg-muted/50"
+                    ? "bg-primary/15 dark:bg-primary/20 shadow-lg border border-primary/20 dark:border-primary/30 pl-4 relative z-10"
+                    : "hover:bg-muted/50 hover:shadow-sm"
                 }`}
                 onClick={() => handleSelectChat(chat.id)}
               >
@@ -244,17 +245,20 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ onNewChat }) => {
                       onChange={(e) => setEditingTitle(e.target.value)}
                       onBlur={() => handleSaveEdit(chat.id)}
                       onKeyDown={(e) => handleKeyDown(e, chat.id)}
-                      onClick={(e) => e.stopPropagation()}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setIgnoreNextBlur(false);
+                      }}
                       className="h-6 py-1 text-xs"
                     />
                   ) : (
                     <div className="flex items-start gap-2">
-                      <MessageSquareIcon size={14} className="text-muted-foreground shrink-0 mt-0.5" />
-                      <div className="truncate flex-1">
-                        <div className="font-medium truncate" title={chat.title}>
+                      <MessageSquareIcon size={16} className={`shrink-0 mt-0.5 ${chat.id === activeChatId ? "text-primary" : "text-muted-foreground"}`} />
+                      <div className="truncate flex-1 pr-1">
+                        <div className={`font-medium truncate ${chat.id === activeChatId ? "text-primary font-semibold" : ""}`} title={chat.title}>
                           {chat.title || "新对话"}
                         </div>
-                        <div className="text-xs text-muted-foreground truncate">
+                        <div className="text-xs text-muted-foreground truncate mt-0.5">
                           {/* 显示最近更新时间 */}
                           {formatDate(chat.updatedAt || chat.createdAt)}
                           
@@ -270,37 +274,45 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ onNewChat }) => {
                   )}
                 </div>
                 <div
-                  className={`ml-2 flex space-x-1 opacity-0 ${
-                    chat.id === activeChatId ? "opacity-100" : "group-hover:opacity-100"
-                  }`}
+                  className={`ml-2 ${
+                    chat.id === activeChatId ? "opacity-100" : "opacity-0 group-hover:opacity-100"
+                  } transition-opacity duration-200`}
                 >
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-6 w-6"
-                    onClick={(e) => handleStartEditing(e, chat.id, chat.title)}
-                    title="重命名"
-                  >
-                    <PencilIcon size={14} />
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-6 w-6"
-                    onClick={(e) => handleDeleteChat(e, chat.id)}
-                    title="删除对话"
-                  >
-                    <TrashIcon size={14} />
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-6 w-6"
-                    onClick={(e) => handleGenerateTitle(e, chat.id)}
-                    title="生成标题"
-                  >
-                    <RefreshCwIcon size={14} />
-                  </Button>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-6 w-6"
+                        title="更多操作"
+                      >
+                        <MoreVerticalIcon size={14} />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" className="w-36">
+                      <DropdownMenuItem onClick={(e) => {
+                        e.stopPropagation();
+                        handleStartEditing(e, chat.id, chat.title);
+                      }}>
+                        <PencilIcon size={14} className="mr-2" />
+                        重命名
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={(e) => {
+                        e.stopPropagation();
+                        handleDeleteChat(e, chat.id);
+                      }}>
+                        <TrashIcon size={14} className="mr-2" />
+                        删除对话
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={(e) => {
+                        e.stopPropagation();
+                        handleGenerateTitle(e, chat.id);
+                      }}>
+                        <RefreshCwIcon size={14} className="mr-2" />
+                        生成标题
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
                 </div>
               </div>
             ))}
@@ -329,6 +341,38 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ onNewChat }) => {
               onClick={confirmDelete}
             >
               删除
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* 重命名对话框 */}
+      <Dialog open={isRenameDialogOpen} onOpenChange={setIsRenameDialogOpen}>
+        <DialogContent className="sm:max-w-[425px]">
+          <DialogHeader>
+            <DialogTitle>重命名对话</DialogTitle>
+          </DialogHeader>
+          <div className="py-4">
+            <Input
+              value={newTitle}
+              onChange={(e) => setNewTitle(e.target.value)}
+              placeholder="输入新标题"
+              className="w-full"
+              autoFocus
+            />
+          </div>
+          <DialogFooter>
+            <Button
+              variant="ghost"
+              onClick={() => setIsRenameDialogOpen(false)}
+            >
+              取消
+            </Button>
+            <Button
+              variant="default"
+              onClick={handleRename}
+            >
+              保存
             </Button>
           </DialogFooter>
         </DialogContent>

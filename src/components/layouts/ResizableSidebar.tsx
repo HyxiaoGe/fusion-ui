@@ -59,17 +59,17 @@ const ResizableSidebar: React.FC<ResizableSidebarProps> = ({
   return (
     <div 
       ref={sidebarRef} 
-      className={cn("relative border-r bg-slate-50 dark:bg-slate-900 overflow-y-auto", className)}
+      className={cn("relative border-r bg-slate-50 dark:bg-slate-900 overflow-y-auto w-[360px] shadow-md", className)}
       style={{ width: `${width}px` }}
     >
       {children}
       
       <div
         ref={resizeRef}
-        className="absolute top-0 right-0 h-full w-1 cursor-ew-resize hover:bg-primary/50 group"
+        className="absolute top-0 right-0 h-full w-2 cursor-ew-resize hover:bg-primary/50 group"
         onMouseDown={startResizing}
       >
-        <div className="absolute right-0 h-full w-1 opacity-0 group-hover:opacity-100 bg-primary/50"></div>
+        <div className="absolute right-0 h-full w-2 opacity-0 group-hover:opacity-100 bg-primary/50"></div>
       </div>
     </div>
   );
