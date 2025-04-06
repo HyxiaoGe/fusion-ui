@@ -16,7 +16,7 @@ import { store } from "@/redux/store";
 import { FileText, Image, Lightbulb, MessageSquare, Plus, RefreshCw } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
-import { fetchHotTopics, HotTopic, refreshHotTopics } from "@/lib/api/hotTopics";
+import { fetchHotTopics, HotTopic, getCachedHotTopics } from "@/lib/api/hotTopics";
 import {
   HoverCard,
   HoverCardContent,
@@ -58,9 +58,10 @@ interface BulletTopic {
 
 interface BulletScreenProps {
   hotTopics: HotTopic[];
+  onChatSelected?: () => void;
 }
 
-const BulletScreen: React.FC<BulletScreenProps> = ({ hotTopics }) => {
+const BulletScreen: React.FC<BulletScreenProps> = ({ hotTopics, onChatSelected }) => {
   const [visibleTopics, setVisibleTopics] = useState<BulletTopic[]>([]);
   const [currentTopicIndex, setCurrentTopicIndex] = useState(0);
   const dispatch = useAppDispatch();
@@ -918,142 +919,6 @@ const DialogueExamplesCard = () => {
   );
 };
 
-// 热点弹幕卡片
-const HotTopicsCard = () => {
-  const [isRefreshing, setIsRefreshing] = useState(false);
-  const [lastRefreshTime, setLastRefreshTime] = useState<number>(0);
-  const [hotTopics, setHotTopics] = useState<HotTopic[]>([]);
-  const [refreshResult, setRefreshResult] = useState<{ newCount: number; timestamp: string } | null>(null);
-  const refreshIntervalRef = useRef<NodeJS.Timeout | null>(null);
-
-  // 加载热点话题
-  const loadHotTopics = async () => {
-    try {
-      const topics = await fetchHotTopics();
-      setHotTopics(topics);
-    } catch (error) {
-      console.error('加载热点话题失败:', error);
-    }
-  };
-
-  // 处理手动刷新
-  const handleRefresh = async () => {
-    const now = Date.now();
-    // 如果距离上次刷新时间小于5分钟，不允许刷新
-    if (now - lastRefreshTime < 5 * 60 * 1000) {
-      return;
-    }
-
-    setIsRefreshing(true);
-    try {
-      const result = await refreshHotTopics();
-      if (result.status === 'success') {
-        setLastRefreshTime(now);
-        setRefreshResult({
-          newCount: result.new_count,
-          timestamp: result.timestamp
-        });
-        // 等待5分钟后自动刷新数据
-        setTimeout(loadHotTopics, 5 * 60 * 1000);
-      }
-    } finally {
-      setIsRefreshing(false);
-    }
-  };
-
-  // 初始化加载和设置定时刷新
-  useEffect(() => {
-    loadHotTopics();
-
-    // 设置每小时自动刷新
-    refreshIntervalRef.current = setInterval(loadHotTopics, 60 * 60 * 1000);
-
-    return () => {
-      if (refreshIntervalRef.current) {
-        clearInterval(refreshIntervalRef.current);
-      }
-    };
-  }, []);
-
-  // 计算距离下次可刷新的时间
-  const getNextRefreshTime = () => {
-    const now = Date.now();
-    const timeSinceLastRefresh = now - lastRefreshTime;
-    const timeUntilNextRefresh = Math.max(0, 5 * 60 * 1000 - timeSinceLastRefresh);
-    return Math.ceil(timeUntilNextRefresh / 1000);
-  };
-
-  const [nextRefreshTime, setNextRefreshTime] = useState(getNextRefreshTime());
-
-  // 更新倒计时
-  useEffect(() => {
-    const timer = setInterval(() => {
-      setNextRefreshTime(getNextRefreshTime());
-    }, 1000);
-
-    return () => clearInterval(timer);
-  }, [lastRefreshTime]);
-
-  // 清除刷新结果提示
-  useEffect(() => {
-    if (refreshResult) {
-      const timer = setTimeout(() => {
-        setRefreshResult(null);
-      }, 5000); // 5秒后清除提示
-      return () => clearTimeout(timer);
-    }
-  }, [refreshResult]);
-
-  return (
-    <Card className="h-full flex flex-col">
-      <CardHeader>
-        <div className="flex items-center justify-between">
-          <CardTitle className="text-xl flex items-center">
-            <span className="relative mr-2">
-              <span className="absolute -left-1 -top-1 w-2 h-2 bg-red-500 rounded-full animate-ping"></span>
-              <span className="absolute -left-1 -top-1 w-2 h-2 bg-red-500 rounded-full"></span>
-            </span>
-            热门话题
-          </CardTitle>
-          <div className="flex items-center gap-2">
-            {nextRefreshTime > 0 && (
-              <span className="text-sm text-muted-foreground">
-                {Math.floor(nextRefreshTime / 60)}:{(nextRefreshTime % 60).toString().padStart(2, '0')}
-              </span>
-            )}
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={handleRefresh}
-              disabled={isRefreshing || nextRefreshTime > 0}
-              className="h-8 px-2"
-              title={nextRefreshTime > 0 ? `请等待${nextRefreshTime}秒后刷新` : '刷新热点话题'}
-            >
-              <RefreshCw className={cn(
-                "h-4 w-4",
-                isRefreshing && "animate-spin"
-              )} />
-            </Button>
-          </div>
-        </div>
-        {refreshResult && (
-          <div className="mt-2 text-sm text-muted-foreground">
-            已更新 {refreshResult.newCount} 条新话题
-          </div>
-        )}
-      </CardHeader>
-      <CardContent className="flex-1 overflow-hidden pb-4">
-        <div className="text-sm text-muted-foreground mb-2">
-          点击任意热门话题，开始一个新的对话
-        </div>
-        <div className="mt-2 h-[200px]">
-          <BulletScreen hotTopics={hotTopics} />
-        </div>
-      </CardContent>
-    </Card>
-  );
-};
-
 // 模型能力展示
 const ModelCapabilitiesSection = () => {
   const modelCapabilities = [
@@ -1123,6 +988,52 @@ const HomePage: React.FC<HomePageProps> = ({ onNewChat, onChatSelected }) => {
   const { selectedModelId, models } = useAppSelector((state) => state.models);
   const { chats } = useAppSelector((state) => state.chat);
   const dispatch = useAppDispatch();
+  const [allHotTopics, setAllHotTopics] = useState<HotTopic[]>([]);  // 存储所有缓存的热点话题
+  const [displayTopics, setDisplayTopics] = useState<HotTopic[]>([]); // 当前显示的热点话题
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  
+  // 加载热点话题数据
+  const loadHotTopics = async () => {
+    try {
+      // 只使用缓存数据，不直接请求API
+      const topics = await getCachedHotTopics(30);  // 获取30条数据
+      setAllHotTopics(topics);
+      
+      // 首次加载时，随机选择6条显示
+      if (topics.length > 0 && displayTopics.length === 0) {
+        const initialTopics = [...topics].sort(() => 0.5 - Math.random()).slice(0, 6);
+        setDisplayTopics(initialTopics);
+      }
+    } catch (error) {
+      console.error('加载热点话题失败:', error);
+    }
+  };
+  
+  // 初始加载热点话题
+  useEffect(() => {
+    loadHotTopics();
+    
+    // 设置定期检查缓存是否更新
+    const interval = setInterval(() => {
+      loadHotTopics();
+    }, 30 * 1000); // 每30秒检查一次缓存
+    
+    return () => clearInterval(interval);
+  }, []);
+
+  // 从缓存中随机选择6条数据显示
+  const refreshDisplayTopics = () => {
+    if (allHotTopics.length === 0) return;
+    
+    setIsRefreshing(true);
+    
+    // 从所有话题中随机选择6条
+    const shuffled = [...allHotTopics].sort(() => 0.5 - Math.random());
+    const selected = shuffled.slice(0, 6);
+    setDisplayTopics(selected);
+    
+    setTimeout(() => setIsRefreshing(false), 300);  // 添加一点延迟让动画效果更明显
+  };
 
   const handleNewChat = () => {
     if (onNewChat) {
@@ -1271,7 +1182,7 @@ const HomePage: React.FC<HomePageProps> = ({ onNewChat, onChatSelected }) => {
         modelId: selectedModelId,
         title: example.length > 20 ? example.substring(0, 20) + "..." : example,
       })
-              );
+    );
 
     // 获取最新创建的对话ID并发送消息
     const state = store.getState();
@@ -1291,13 +1202,13 @@ const HomePage: React.FC<HomePageProps> = ({ onNewChat, onChatSelected }) => {
           status: "pending",
         }
       })
-              );
+    );
 
     // 如果有回调函数，通知外部组件已选择聊天
     if (onChatSelected) {
       onChatSelected();
-            }
-            
+    }
+
     // 开始流式输出
     dispatch(startStreaming(newChat.id));
 
@@ -1306,8 +1217,8 @@ const HomePage: React.FC<HomePageProps> = ({ onNewChat, onChatSelected }) => {
     if (!selectedModel) {
       dispatch(setError('找不到选中的模型信息'));
       return;
-            }
-            
+    }
+
     const { reasoningEnabled } = store.getState().chat;
     const supportsReasoning = selectedModel.capabilities?.deepThinking || false;
     const useReasoning = reasoningEnabled && supportsReasoning;
@@ -1336,7 +1247,7 @@ const HomePage: React.FC<HomePageProps> = ({ onNewChat, onChatSelected }) => {
 
         if (useReasoning && reasoning) {
           dispatch(updateStreamingReasoningContent(reasoning));
-              }
+        }
       } else {
         dispatch(updateStreamingContent({
           chatId: newChat.id,
@@ -1389,140 +1300,56 @@ const HomePage: React.FC<HomePageProps> = ({ onNewChat, onChatSelected }) => {
       <div className="pt-8 text-center">
         <h1 className="text-3xl font-bold mb-2">开始一个新对话</h1>
         <p className="text-muted-foreground">选择下方话题开始，或直接输入您的问题</p>
-                </div>
+      </div>
 
       {/* 热门话题区域 */}
       <div className="space-y-4">
         <div className="flex items-center justify-between">
           <h2 className="text-xl font-semibold">热门话题</h2>
-          <Button variant="ghost" size="sm" className="gap-1" onClick={() => {}}>
-            <RefreshCw className="h-4 w-4" />
+          <Button 
+            variant="ghost" 
+            size="sm" 
+            className="gap-1" 
+            onClick={refreshDisplayTopics}
+          >
+            <RefreshCw className={cn(
+              "h-4 w-4",
+              isRefreshing && "animate-spin"
+            )} />
             <span>刷新</span>
           </Button>
-                  </div>
+        </div>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {/* 热门话题卡片 */}
-          <Card 
-            className="cursor-pointer hover:bg-muted/50 transition-colors" 
-            onClick={() => handleTopicClick({
-              id: "1",
-              title: "如何优化React应用性能？",
-              source: "技术热点",
-              url: "",
-              published_at: "",
-              created_at: "",
-              view_count: 0
-            })}
-          >
-            <CardHeader className="pb-3">
-              <CardTitle className="text-base">如何优化React应用性能？</CardTitle>
-              </CardHeader>
-            <CardFooter className="pt-1 text-xs text-muted-foreground">
-              前端开发 • 技术热点
-            </CardFooter>
-          </Card>
-
-          <Card 
-            className="cursor-pointer hover:bg-muted/50 transition-colors" 
-            onClick={() => handleTopicClick({
-              id: "2",
-              title: "2025年AI技术发展趋势",
-              source: "行业分析",
-              url: "",
-              published_at: "",
-              created_at: "",
-              view_count: 0
-            })}
-          >
-            <CardHeader className="pb-3">
-              <CardTitle className="text-base">2025年AI技术发展趋势</CardTitle>
-            </CardHeader>
-            <CardFooter className="pt-1 text-xs text-muted-foreground">
-              人工智能 • 行业分析
-              </CardFooter>
-            </Card>
-            
-          <Card 
-            className="cursor-pointer hover:bg-muted/50 transition-colors" 
-            onClick={() => handleTopicClick({
-              id: "3",
-              title: "量子计算入门指南",
-              source: "学术研究",
-              url: "",
-              published_at: "",
-              created_at: "",
-              view_count: 0
-            })}
-          >
-            <CardHeader className="pb-3">
-              <CardTitle className="text-base">量子计算入门指南</CardTitle>
-            </CardHeader>
-            <CardFooter className="pt-1 text-xs text-muted-foreground">
-              科技前沿 • 学术研究
-            </CardFooter>
-          </Card>
-          
-          <Card 
-            className="cursor-pointer hover:bg-muted/50 transition-colors" 
-            onClick={() => handleTopicClick({
-              id: "4",
-              title: "如何使用TensorFlow构建神经网络",
-              source: "编程实践",
-              url: "",
-              published_at: "",
-              created_at: "",
-              view_count: 0
-            })}
-          >
-            <CardHeader className="pb-3">
-              <CardTitle className="text-base">如何使用TensorFlow构建神经网络</CardTitle>
-            </CardHeader>
-            <CardFooter className="pt-1 text-xs text-muted-foreground">
-              机器学习 • 编程实践
-            </CardFooter>
-          </Card>
-
-          <Card 
-            className="cursor-pointer hover:bg-muted/50 transition-colors" 
-            onClick={() => handleTopicClick({
-              id: "5",
-              title: "撰写高效的产品需求文档",
-              source: "职场技能",
-              url: "",
-              published_at: "",
-              created_at: "",
-              view_count: 0
-            })}
-          >
-            <CardHeader className="pb-3">
-              <CardTitle className="text-base">撰写高效的产品需求文档</CardTitle>
-            </CardHeader>
-            <CardFooter className="pt-1 text-xs text-muted-foreground">
-              产品管理 • 职场技能
-            </CardFooter>
-          </Card>
-
-          <Card 
-            className="cursor-pointer hover:bg-muted/50 transition-colors" 
-            onClick={() => handleTopicClick({
-              id: "6",
-              title: "区块链技术与去中心化应用",
-              source: "技术解析",
-              url: "",
-              published_at: "",
-              created_at: "",
-              view_count: 0
-            })}
-          >
-            <CardHeader className="pb-3">
-              <CardTitle className="text-base">区块链技术与去中心化应用</CardTitle>
-            </CardHeader>
-            <CardFooter className="pt-1 text-xs text-muted-foreground">
-              区块链 • 技术解析
-            </CardFooter>
-          </Card>
-                </div>
-                  </div>
+          {displayTopics.length > 0 ? (
+            displayTopics.map((topic) => (
+              <Card 
+                key={topic.id}
+                className="cursor-pointer hover:bg-muted/50 transition-colors" 
+                onClick={() => handleTopicClick(topic)}
+              >
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-base">{topic.title}</CardTitle>
+                </CardHeader>
+                <CardFooter className="pt-1 text-xs text-muted-foreground">
+                  {topic.source} {topic.source && '•'} {topic.category || '热门话题'}
+                </CardFooter>
+              </Card>
+            ))
+          ) : (
+            // 如果没有数据，显示加载状态或占位卡片
+            Array(6).fill(0).map((_, index) => (
+              <Card key={index} className="cursor-pointer hover:bg-muted/50 transition-colors opacity-50">
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-base h-5 bg-muted/50 rounded animate-pulse"></CardTitle>
+                </CardHeader>
+                <CardFooter className="pt-1 text-xs text-muted-foreground">
+                  <div className="h-4 w-24 bg-muted/50 rounded animate-pulse"></div>
+                </CardFooter>
+              </Card>
+            ))
+          )}
+        </div>
+      </div>
 
       {/* 对话示例区域 */}
       <div className="space-y-4">
@@ -1532,7 +1359,7 @@ const HomePage: React.FC<HomePageProps> = ({ onNewChat, onChatSelected }) => {
             <RefreshCw className="h-4 w-4" />
             <span>刷新</span>
           </Button>
-                </div>
+        </div>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {/* 智能写作 */}
           <Card className="border shadow-sm">
@@ -1542,15 +1369,15 @@ const HomePage: React.FC<HomePageProps> = ({ onNewChat, onChatSelected }) => {
                 智能写作
               </CardTitle>
               <p className="text-sm text-muted-foreground">生成文章、报告、内容创作</p>
-              </CardHeader>
+            </CardHeader>
             <CardContent className="space-y-2">
-                <Button 
+              <Button 
                 variant="ghost" 
                 className="w-full justify-start text-muted-foreground hover:text-foreground"
                 onClick={() => handleExampleClick("写一篇科技新闻")}
               >
                 写一篇科技新闻
-                </Button>
+              </Button>
               <Button 
                 variant="ghost" 
                 className="w-full justify-start text-muted-foreground hover:text-foreground"
@@ -1559,8 +1386,8 @@ const HomePage: React.FC<HomePageProps> = ({ onNewChat, onChatSelected }) => {
                 生成产品说明书
               </Button>
             </CardContent>
-            </Card>
-            
+          </Card>
+          
           {/* 代码助手 */}
           <Card className="border shadow-sm">
             <CardHeader>
@@ -1569,7 +1396,7 @@ const HomePage: React.FC<HomePageProps> = ({ onNewChat, onChatSelected }) => {
                 代码助手
               </CardTitle>
               <p className="text-sm text-muted-foreground">编程问题、调试、代码生成</p>
-              </CardHeader>
+            </CardHeader>
             <CardContent className="space-y-2">
               <Button 
                 variant="ghost" 
@@ -1585,7 +1412,7 @@ const HomePage: React.FC<HomePageProps> = ({ onNewChat, onChatSelected }) => {
               >
                 Python数据分析示例
               </Button>
-              </CardContent>
+            </CardContent>
           </Card>
 
           {/* 数据分析 */}
@@ -1598,13 +1425,13 @@ const HomePage: React.FC<HomePageProps> = ({ onNewChat, onChatSelected }) => {
               <p className="text-sm text-muted-foreground">数据处理、统计分析、可视化</p>
             </CardHeader>
             <CardContent className="space-y-2">
-                <Button 
+              <Button 
                 variant="ghost" 
                 className="w-full justify-start text-muted-foreground hover:text-foreground"
                 onClick={() => handleExampleClick("分析销售数据趋势")}
               >
                 分析销售数据趋势
-                </Button>
+              </Button>
               <Button 
                 variant="ghost" 
                 className="w-full justify-start text-muted-foreground hover:text-foreground"
@@ -1613,8 +1440,8 @@ const HomePage: React.FC<HomePageProps> = ({ onNewChat, onChatSelected }) => {
                 创建数据可视化图表
               </Button>
             </CardContent>
-            </Card>
-            
+          </Card>
+          
           {/* 知识问答 */}
           <Card className="border shadow-sm">
             <CardHeader>
@@ -1623,7 +1450,7 @@ const HomePage: React.FC<HomePageProps> = ({ onNewChat, onChatSelected }) => {
                 知识问答
               </CardTitle>
               <p className="text-sm text-muted-foreground">概念解释、学术知识、百科</p>
-              </CardHeader>
+            </CardHeader>
             <CardContent className="space-y-2">
               <Button 
                 variant="ghost" 
@@ -1639,7 +1466,7 @@ const HomePage: React.FC<HomePageProps> = ({ onNewChat, onChatSelected }) => {
               >
                 人工智能的发展历程
               </Button>
-              </CardContent>
+            </CardContent>
           </Card>
 
           {/* 创意写作 */}
@@ -1652,13 +1479,13 @@ const HomePage: React.FC<HomePageProps> = ({ onNewChat, onChatSelected }) => {
               <p className="text-sm text-muted-foreground">故事创作、剧本、创意构思</p>
             </CardHeader>
             <CardContent className="space-y-2">
-                <Button 
+              <Button 
                 variant="ghost" 
                 className="w-full justify-start text-muted-foreground hover:text-foreground"
                 onClick={() => handleExampleClick("写一个科幻短篇故事")}
               >
                 写一个科幻短篇故事
-                </Button>
+              </Button>
               <Button 
                 variant="ghost" 
                 className="w-full justify-start text-muted-foreground hover:text-foreground"
@@ -1667,8 +1494,8 @@ const HomePage: React.FC<HomePageProps> = ({ onNewChat, onChatSelected }) => {
                 构思一个电影情节
               </Button>
             </CardContent>
-            </Card>
-        
+          </Card>
+
           {/* 工作助手 */}
           <Card className="border shadow-sm">
             <CardHeader>
@@ -1693,8 +1520,8 @@ const HomePage: React.FC<HomePageProps> = ({ onNewChat, onChatSelected }) => {
               >
                 生成工作周报模板
               </Button>
-          </CardContent>
-        </Card>
+            </CardContent>
+          </Card>
         </div>
       </div>
     </div>

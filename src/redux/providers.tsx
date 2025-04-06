@@ -6,6 +6,7 @@ import { useEffect, useState } from 'react';
 import { Provider } from 'react-redux';
 import { useAppDispatch } from './hooks';
 import { store } from './store';
+import { initHotTopicsPolling } from '@/lib/api/hotTopics';
 
 // 数据加载组件
 const StoreInitializer = ({ children }: { children: React.ReactNode }) => {
@@ -16,6 +17,10 @@ const StoreInitializer = ({ children }: { children: React.ReactNode }) => {
     const loadData = async () => {
       try {
         await initializeStoreFromDB(dispatch);
+        
+        // 初始化热点话题数据拉取，设置10分钟刷新一次
+        initHotTopicsPolling(10);
+        
         setIsLoaded(true);
       } catch (error) {
         console.error('初始化存储失败:', error);
