@@ -85,7 +85,7 @@ export const models: ModelInfo[] = [
     },
     enabled: true,
     experimental: false,
-    description: "DeepSeek最新多模态大模型，支持视觉分析和文件处理，拥有超长上下文理解能力。",
+    description: "DeepSeek-V3 模型借鉴 DeepSeek-R1 模型训练过程中所使用的强化学习技术，大幅提高了在推理类任务上的表现水平，在数学、代码类相关评测集上取得了超过 GPT-4.5 的得分成绩。",
   },
   {
     name: "DeepSeek-R1",
@@ -101,7 +101,7 @@ export const models: ModelInfo[] = [
     },
     enabled: true,
     experimental: false,
-    description: "DeepSeek推理增强版大模型，擅长复杂思考和推理任务，可展示详细思考过程。",
+    description: "DeepSeek-R1 在后训练阶段大规模使用了强化学习技术，在仅有极少标注数据的情况下，极大提升了模型推理能力。在数学、代码、自然语言推理等任务上，性能比肩 OpenAI o1 正式版。",
   },
 
   // OpenAI 模型

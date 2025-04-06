@@ -126,11 +126,7 @@ const chatSlice = createSlice({
         chat.messages.push(newMessage);
         chat.updatedAt = Date.now();
         
-        // 如果是第一条用户消息，更新对话标题
-        if (chat.messages.length === 1 && message.role === 'user') {
-          // 使用用户消息的前20个字符作为标题
-          chat.title = message.content.substring(0, 20) + (message.content.length > 20 ? '...' : '');
-        }
+        // 不再自动更新第一条消息为标题，因为我们现在已经有了默认标题
       }
     },
     editMessage: (state, action: PayloadAction<{chatId: string, messageId: string, content: string}>) => {
