@@ -15,6 +15,12 @@ import React, { useState, useRef, useEffect } from "react";
 import CapabilityIcon from "./CapabilityIcon";
 import ProviderIcon from "./ProviderIcon";
 import { createPortal } from 'react-dom';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 
 interface ModelSelectorProps {
   onChange?: (modelId: string) => void;
@@ -28,11 +34,26 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({ onChange, modelId, disabl
   const { models, providers, selectedModelId } = useAppSelector(
     (state) => state.models
   );
-  const { activeChatId } = useAppSelector((state) => state.chat);
+  const { activeChatId, chats } = useAppSelector((state) => state.chat);
   const { mode } = useAppSelector(state => state.theme);
   const [hoveredModel, setHoveredModel] = useState<string | null>(null);
   const [tooltipPosition, setTooltipPosition] = useState({ x: 0, y: 0 });
   const dropdownRef = useRef<HTMLDivElement>(null);
+
+  // 检查当前聊天是否有消息
+  const activeChat = activeChatId ? chats.find(chat => chat.id === activeChatId) : null;
+  const hasMessages = activeChat?.messages?.some(msg => msg.role === 'user') || false;
+  
+  // 优先使用当前聊天的模型ID，如果存在活动聊天
+  const activeChatModelId = activeChat?.modelId;
+
+  // 只有当当前聊天存在且有消息时，才禁用模型选择器
+  const isDisabled = disabled || (!!activeChatId && hasMessages);
+  
+  // 禁用提示信息
+  const disabledReason = hasMessages
+    ? "会话开始后无法更改模型" 
+    : disabled ? "模型选择器已禁用" : "";
 
   // 确保当下拉框关闭时，重置悬停状态
   useEffect(() => {
@@ -80,7 +101,7 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({ onChange, modelId, disabl
   };
 
   const selectedModel = models.find(
-    (model) => model.id === (modelId || selectedModelId)
+    (model) => model.id === (modelId || activeChatModelId || selectedModelId)
   );
 
   // 确定当前模式，用于应用正确的样式
@@ -348,105 +369,153 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({ onChange, modelId, disabl
         }
       `}</style>
 
-      <Select value={modelId || selectedModelId || ""} onValueChange={handleModelChange} disabled={disabled}>
-        <SelectTrigger 
-          className={`w-[300px] transition-all duration-300 hover:shadow-lg focus:ring-2 focus:ring-offset-2 
-                      ${isDarkMode ? 'focus:ring-blue-500' : 'focus:ring-blue-400'}
-                      ${className || ''}`}
-        >
-          <SelectValue placeholder="选择AI模型">
-            {selectedModel && selectedModel.name}
-          </SelectValue>
-        </SelectTrigger>
-        <SelectContent 
-          ref={dropdownRef}
-          className="max-h-[var(--select-dropdown-max-height)] w-[300px] overflow-y-auto p-0 bg-background border-border shadow-lg animate-in fade-in-20 zoom-in-95">
-          {modelsByProvider.map((provider) => (
-            <div key={provider.id} className="py-1 first:pt-2 last:pb-2">
-              <div className={cn(
-                "mx-1 mb-1 px-3 py-1.5 text-xs font-medium rounded-md flex items-center",
-                "bg-gradient-to-r from-primary/20 via-primary/10 to-primary/20"
-              )}>
-                <ProviderIcon
-                  providerId={provider.id}
-                  className="mr-1.5"
-                  size={14}
-                />
-                {provider.name}
+      {/* 全局选择器 */}
+      <div ref={dropdownRef} className={cn(
+        "relative w-auto transition-all", 
+        className
+      )}>
+        <TooltipProvider>
+          <Tooltip delayDuration={300}>
+            <TooltipTrigger asChild>
+              <div className={isDisabled ? "cursor-not-allowed" : ""}>
+                <Select value={modelId || activeChatModelId || selectedModelId || ""} onValueChange={handleModelChange} disabled={isDisabled}>
+                  <SelectTrigger 
+                    className={`w-[300px] transition-all duration-300 hover:shadow-lg focus:ring-2 focus:ring-offset-2 
+                    ${isDisabled ? 'opacity-70' : 'hover:border-primary/50'}`}
+                  >
+                    {selectedModel ? (
+                      <div className="flex items-center justify-between gap-2 w-full">
+                        <div className="flex items-center gap-2 overflow-hidden">
+                          <div className="shrink-0">
+                            <ProviderIcon 
+                              providerId={selectedModel.provider} 
+                              size={20} 
+                              className="text-primary/80" 
+                            />
+                          </div>
+                          <span className="truncate font-medium">{selectedModel.name}</span>
+                        </div>
+                        <div className="flex items-center gap-0.5">
+                          {selectedModel.capabilities?.deepThinking && (
+                            <span title="支持深度思考">
+                              <CapabilityIcon 
+                                type="deepThinking" 
+                                className="text-amber-500" 
+                              />
+                            </span>
+                          )}
+                          {selectedModel.capabilities?.vision && (
+                            <span title="支持图像理解">
+                              <CapabilityIcon 
+                                type="vision" 
+                                className="text-blue-500" 
+                              />
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    ) : (
+                      <span className="text-muted-foreground">请选择模型...</span>
+                    )}
+                  </SelectTrigger>
+                  <SelectContent 
+                    ref={dropdownRef}
+                    className="max-h-[var(--select-dropdown-max-height)] w-[300px] overflow-y-auto p-0 bg-background border-border shadow-lg animate-in fade-in-20 zoom-in-95"
+                  >
+                    {modelsByProvider.map((provider) => (
+                      <div key={provider.id} className="py-1 first:pt-2 last:pb-2">
+                        <div className={cn(
+                          "mx-1 mb-1 px-3 py-1.5 text-xs font-medium rounded-md flex items-center",
+                          "bg-gradient-to-r from-primary/20 via-primary/10 to-primary/20"
+                        )}>
+                          <ProviderIcon 
+                            providerId={provider.id}
+                            className="mr-1.5"
+                            size={14}
+                          />
+                          {provider.name}
+                        </div>
+                        {provider.models.map((model) => (
+                          <SelectItem
+                            key={model.id}
+                            value={model.id}
+                            disabled={!model.enabled || isDisabled}
+                            className={cn(
+                              "model-item-ultra mx-1 my-1.5 px-3 py-3 rounded-lg",
+                              "border border-transparent",
+                              "transition-all duration-300 ease-out",
+                              "focus:outline-none",
+                              model.id === (modelId || selectedModelId) 
+                                ? "highlight-selected selected-item border-blue-400/30 bg-blue-500/10" 
+                                : "hover:border-blue-300/20",
+                              !model.enabled && "opacity-60 cursor-not-allowed"
+                            )}
+                            onMouseEnter={(e) => {
+                              setHoveredModel(model.id);
+                              // 计算提示框位置
+                              const rect = e.currentTarget.getBoundingClientRect();
+                              setTooltipPosition({
+                                x: rect.left + rect.width + 10,
+                                y: rect.top + rect.height / 2
+                              });
+                            }}
+                            onMouseLeave={() => {
+                              setHoveredModel(null);
+                            }}
+                          >
+                            {/* 对整个布局进行重新设计，确保窗口大小在最右，能力图标紧靠左侧 */}
+                            <div className="flex items-center w-full pr-20">
+                              <div className="flex-grow overflow-hidden">
+                                <div className="font-medium truncate" title={model.name}>
+                                  {model.name}
+                                </div>
+                                <div className="flex gap-1 items-center mt-0.5">
+                                  {!model.enabled && (
+                                    <span className="text-[10px] text-gray-500 font-medium">即将开放</span>
+                                  )}
+                                  {model.experimental && (
+                                    <span className="text-[10px] text-amber-500 font-medium">实验性</span>
+                                  )}
+                                </div>
+                              </div>
+                              
+                              {/* 能力图标组放在右侧 */}
+                              <div className="capability-icons">
+                                {model.capabilities?.vision && (
+                                  <CapabilityIcon type="vision" className="ultra-icon h-4 w-4" />
+                                )}
+                                {model.capabilities?.imageGen && (
+                                  <CapabilityIcon type="imageGen" className="ultra-icon h-4 w-4" />
+                                )}
+                                {model.capabilities?.deepThinking && (
+                                  <CapabilityIcon type="deepThinking" className="ultra-icon h-4 w-4" />
+                                )}
+                                {model.capabilities?.fileSupport && (
+                                  <CapabilityIcon type="fileSupport" className="ultra-icon h-4 w-4" />
+                                )}
+                              </div>
+                              
+                              {/* 上下文窗口大小放在最右侧 */}
+                              <span className="context-window-badge text-xs font-medium px-2 py-1 rounded-full bg-blue-100/50 dark:bg-blue-900/30 text-center">
+                                {model.contextWindow} 
+                              </span>
+                            </div>
+                          </SelectItem>
+                        ))}
+                      </div>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
-              {provider.models.map((model) => (
-                <SelectItem
-                  key={model.id}
-                  value={model.id}
-                  disabled={!model.enabled || disabled}
-                  className={cn(
-                    "model-item-ultra mx-1 my-1.5 px-3 py-3 rounded-lg",
-                    "border border-transparent",
-                    "transition-all duration-300 ease-out",
-                    "focus:outline-none",
-                    isDarkMode ? "dark-mode-glow" : "light-mode-highlight",
-                    model.id === (modelId || selectedModelId) 
-                      ? "highlight-selected selected-item border-blue-400/30 bg-blue-500/10" 
-                      : "hover:border-blue-300/20",
-                    "data-[highlighted]:bg-blue-100 dark:data-[highlighted]:bg-blue-900/30",
-                    !model.enabled && "opacity-60 cursor-not-allowed"
-                  )}
-                  onMouseEnter={(e) => {
-                    setHoveredModel(model.id);
-                    // 计算提示框位置
-                    const rect = e.currentTarget.getBoundingClientRect();
-                    setTooltipPosition({
-                      x: rect.left + rect.width + 10,
-                      y: rect.top + rect.height / 2
-                    });
-                  }}
-                  onMouseLeave={() => {
-                    setHoveredModel(null);
-                  }}
-                >
-                  {/* 对整个布局进行重新设计，确保窗口大小在最右，能力图标紧靠左侧 */}
-                  <div className="flex items-center w-full pr-20">
-                    <div className="flex-grow overflow-hidden">
-                      <div className="font-medium truncate" title={model.name}>
-                        {model.name}
-                      </div>
-                      <div className="flex gap-1 items-center mt-0.5">
-                        {!model.enabled && (
-                          <span className="text-[10px] text-gray-500 font-medium">即将开放</span>
-                        )}
-                        {model.experimental && (
-                          <span className="text-[10px] text-amber-500 font-medium">实验性</span>
-                        )}
-                      </div>
-                    </div>
-                    
-                    {/* 能力图标组放在右侧 */}
-                    <div className="capability-icons">
-                      {model.capabilities.vision && (
-                        <CapabilityIcon type="vision" className="ultra-icon h-4 w-4" />
-                      )}
-                      {model.capabilities.imageGen && (
-                        <CapabilityIcon type="imageGen" className="ultra-icon h-4 w-4" />
-                      )}
-                      {model.capabilities.deepThinking && (
-                        <CapabilityIcon type="deepThinking" className="ultra-icon h-4 w-4" />
-                      )}
-                      {model.capabilities.fileSupport && (
-                        <CapabilityIcon type="fileSupport" className="ultra-icon h-4 w-4" />
-                      )}
-                    </div>
-                    
-                    {/* 上下文窗口大小放在最右侧 */}
-                    <span className="context-window-badge text-xs font-medium px-2 py-1 rounded-full bg-blue-100/50 dark:bg-blue-900/30 text-center">
-                      {model.contextWindow} 
-                    </span>
-                  </div>
-                </SelectItem>
-              ))}
-            </div>
-          ))}
-        </SelectContent>
-      </Select>
+            </TooltipTrigger>
+            {isDisabled && (
+              <TooltipContent>
+                <p>{disabledReason}</p>
+              </TooltipContent>
+            )}
+          </Tooltip>
+        </TooltipProvider>
+      </div>
 
       {/* 模型悬停提示（使用Portal渲染到body上） */}
       {hoveredModel && typeof document !== 'undefined' && createPortal((() => {
