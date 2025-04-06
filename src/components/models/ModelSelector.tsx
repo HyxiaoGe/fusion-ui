@@ -14,6 +14,7 @@ import { setSelectedModel } from "@/redux/slices/modelsSlice";
 import React, { useState, useRef, useEffect } from "react";
 import CapabilityIcon from "./CapabilityIcon";
 import ProviderIcon from "./ProviderIcon";
+import { createPortal } from 'react-dom';
 
 interface ModelSelectorProps {
   onChange?: (modelId: string) => void;
@@ -291,31 +292,29 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({ onChange, modelId, disabl
         /* 模型描述悬停提示 */
         .model-tooltip {
           position: fixed;
-          z-index: 9999;
+          z-index: 99999;
           width: 280px;
           padding: 12px;
           border-radius: 8px;
           background-color: var(--popover-bg, rgba(255, 255, 255, 0.98));
-          box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+          box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.1), 0 4px 20px rgba(0, 0, 0, 0.2);
           font-size: 13px;
           line-height: 1.5;
           color: var(--popover-fg, #333);
           pointer-events: none;
-          opacity: 0;
-          transform: translateY(10px);
           transition: opacity 0.2s, transform 0.2s;
-          border: 1px solid rgba(0, 0, 0, 0.1);
+        }
+
+        .model-tooltip.visible {
+          opacity: 1 !important;
+          transform: translateY(0) !important;
+          display: block !important;
         }
 
         .dark .model-tooltip {
           background-color: rgba(30, 30, 30, 0.98);
           color: #eee;
           border-color: rgba(255, 255, 255, 0.1);
-        }
-
-        .model-tooltip.visible {
-          opacity: 1;
-          transform: translateY(0);
         }
 
         .model-tooltip-header {
@@ -449,8 +448,8 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({ onChange, modelId, disabl
         </SelectContent>
       </Select>
 
-      {/* 模型悬停提示（移动到组件外部，使用fixed定位） */}
-      {hoveredModel && (() => {
+      {/* 模型悬停提示（使用Portal渲染到body上） */}
+      {hoveredModel && typeof document !== 'undefined' && createPortal((() => {
         const model = models.find(m => m.id === hoveredModel);
         if (!model) return null;
         
@@ -460,7 +459,10 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({ onChange, modelId, disabl
             style={{ 
               left: `${tooltipPosition.x}px`, 
               top: `${tooltipPosition.y}px`,
-              transform: 'translate(0, -50%)'
+              transform: 'translate(0, -50%)',
+              opacity: 1,
+              display: 'block',
+              visibility: 'visible'
             }}
           >
             <div className="model-tooltip-header">{model.name}</div>
@@ -500,7 +502,7 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({ onChange, modelId, disabl
             </div>
           </div>
         );
-      })()}
+      })(), document.body)}
     </>
   );
 };

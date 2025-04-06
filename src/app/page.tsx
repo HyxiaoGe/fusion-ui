@@ -34,10 +34,13 @@ import {
 } from '@/redux/slices/chatSlice';
 import { fetchEnhancedContext } from '@/redux/slices/searchSlice';
 import { store } from '@/redux/store';
-import { HomeIcon } from 'lucide-react';
+import { HomeIcon, ChevronRightIcon, SettingsIcon } from 'lucide-react';
 import { usePathname, useSearchParams } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
 import { v4 as uuidv4 } from 'uuid';
+import Link from 'next/link';
+import { ThemeToggle } from '@/components/ui/theme-toggle';
+import { cn } from '@/lib/utils';
 
 export default function Home() {
   const dispatch = useAppDispatch();
@@ -50,7 +53,7 @@ export default function Home() {
   const { chats, activeChatId, loading, isStreaming } = useAppSelector((state) => state.chat);
 
   // 判断是否显示欢迎页面
-  const shouldShowWelcome = !activeChatId && chats.length === 0;
+  const shouldShowWelcome = !activeChatId || chats.length === 0;
   
   // 根据当前状态决定是否显示主页
   useEffect(() => {
@@ -622,87 +625,82 @@ export default function Home() {
 
   // 渲染界面
   return (
-    <MainLayout sidebar={<ChatSidebar onNewChat={handleNewChat} />} title={getChatTitle()}>
-      <div className="h-full flex flex-col">
-        {/* 页面内容，根据不同状态选择不同组件 */}
+    <MainLayout
+      sidebar={
+        <ChatSidebar onNewChat={handleNewChat} />
+      }
+      header={
+        <header className="h-14 border-b flex items-center justify-between px-5 sticky top-0 z-10 shadow-sm bg-background">
+          <div className="flex items-center">
+            <Link href="/" className="text-xl font-bold flex items-center mr-6">
+              <span className="bg-gradient-to-r from-blue-600 via-purple-500 to-pink-500 text-transparent bg-clip-text">Fusion AI</span>
+            </Link>
+          </div>
+
+          {/* 中间部分：显示当前对话标题和模型选择器 */}
+          <div className="absolute left-1/2 transform -translate-x-1/2 flex items-center gap-4">
+            <div className="font-medium text-base">
+              {getChatTitle()}
+            </div>
+            {!showHomePage && <ModelSelector />}
+          </div>
+
+          <div className="flex items-center gap-3">
+            <Button 
+              variant={showHomePage ? "default" : "ghost"} 
+              size="icon" 
+              className={cn(
+                "h-9 w-9 rounded-full shadow-sm transition-all duration-300 hover:scale-110 hover:shadow-md",
+                showHomePage ? "bg-primary text-primary-foreground" : "text-foreground"
+              )}
+              aria-label="首页"
+              onClick={handleGoToHome}
+            >
+              <HomeIcon className="h-4 w-4 transition-transform" />
+            </Button>
+            
+            <Link href="/settings" passHref>
+              <Button 
+                variant="ghost" 
+                size="icon" 
+                className="h-9 w-9 rounded-full shadow-sm transition-all duration-300 hover:scale-110 hover:shadow-md"
+                aria-label="设置"
+              >
+                <SettingsIcon className="h-4 w-4 transition-transform" />
+              </Button>
+            </Link>
+            
+            {/* 主题切换按钮 */}
+            <ThemeToggle />
+          </div>
+        </header>
+      }
+    >
+      <div className="h-full flex flex-col relative">
         {showHomePage ? (
-          <div className="flex-1 p-4">
-            <HomePage onNewChat={handleNewChat} onChatSelected={handleChatSelected} />
-          </div>
+          <HomePage onNewChat={handleNewChat} onChatSelected={handleChatSelected} />
         ) : (
-          <div className="flex flex-col h-full">
-            {activeChat && (
-              <div className="flex justify-between items-center px-4 py-3 border-b bg-muted/20">
-                <div className="flex items-center gap-2">
-                  <ModelSelector 
-                    modelId={activeChat.modelId} 
-                    disabled={activeChat.messages.length > 0 || isStreaming}
-                  />
-                  {selectedModelId && models.find(m => m.id === selectedModelId)?.capabilities?.deepThinking && (
-                    <span className="px-4 py-2 bg-amber-100 text-amber-800 dark:bg-amber-900/70 dark:text-amber-100 text-sm rounded-full whitespace-nowrap">支持思考过程</span>
-                  )}
-                  {selectedModelId && models.find(m => m.id === selectedModelId)?.capabilities?.fileSupport && (
-                    <span className="px-4 py-2 bg-blue-100 text-blue-800 dark:bg-blue-900/70 dark:text-blue-100 text-sm rounded-full whitespace-nowrap">支持文件上传</span>
-                  )}
-                  {selectedModelId && models.find(m => m.id === selectedModelId)?.capabilities?.vision && (
-                    <span className="px-4 py-2 bg-green-100 text-green-800 dark:bg-green-900/70 dark:text-green-100 text-sm rounded-full whitespace-nowrap">支持视觉识别</span>
-                  )}
-                  {selectedModelId && models.find(m => m.id === selectedModelId)?.capabilities?.imageGen && (
-                    <span className="px-4 py-2 bg-purple-100 text-purple-800 dark:bg-purple-900/70 dark:text-purple-100 text-sm rounded-full whitespace-nowrap">支持图像生成</span>
-                  )}
-                </div>
-                
-                <div>
-                  {activeChat.messages.length > 0 ? (
-                    <Button 
-                      variant="outline" 
-                      size="sm" 
-                      onClick={handleClearChat}
-                      disabled={isStreaming}
-                      title="清除所有消息"
-                    >
-                      清除对话
-                    </Button>
-                  ) : null}
-                </div>
-              </div>
-            )}
-            
-            <div className="flex-1 overflow-y-auto">
-              {/* 没有活动对话时展示欢迎消息 */}
-              {!activeChatId ? (
-                <div className="flex flex-col items-center justify-center h-full">
-                  <HomeIcon className="w-12 h-12 text-muted-foreground mb-4" />
-                  <h2 className="text-lg font-medium mb-1">欢迎使用 Fusion AI</h2>
-                  <p className="text-muted-foreground mb-6">
-                    请创建一个新对话或选择现有对话继续
-                  </p>
-                  <Button onClick={handleNewChat}>新对话</Button>
-                </div>
-              ) : (
-                <div className="relative flex flex-col h-full">
-                  {/* 消息列表 */}
-                  <ChatMessageList
-                    messages={activeChat?.messages || []}
-                    isStreaming={isStreaming}
-                    onRetry={handleRetryMessage}
-                    onEdit={handleEditMessage}
-                  />
-                </div>
-              )}
+          <>
+            <div className="flex-1 overflow-y-auto px-4 pt-4">
+              <ChatMessageList
+                messages={activeChat?.messages || []}
+                loading={loading}
+                isStreaming={isStreaming}
+                onRetry={handleRetryMessage}
+                onEdit={handleEditMessage}
+              />
             </div>
-            
-            {/* 输入框组件，根据活动对话状态控制是否禁用 */}
-            <div className="p-4 border-t" ref={chatInputRef}>
-              {activeChatId && (
-                <ChatInput
-                  key={inputKey}
-                  onSendMessage={handleSendMessage}
-                  disabled={isStreaming}
-                />
-              )}
+            <div 
+              ref={chatInputRef} 
+              tabIndex={-1} 
+              className="flex-shrink-0 p-4 border-t"
+            >
+              <ChatInput
+                key={inputKey}
+                onSendMessage={handleSendMessage}
+              />
             </div>
-          </div>
+          </>
         )}
       </div>
     </MainLayout>

@@ -10,9 +10,10 @@ interface MainLayoutProps {
   children: React.ReactNode;
   sidebar?: React.ReactNode;
   title?: string;
+  header?: React.ReactNode;
 }
 
-const MainLayout: React.FC<MainLayoutProps> = ({ children, sidebar, title }) => {
+const MainLayout: React.FC<MainLayoutProps> = ({ children, sidebar, title, header }) => {
   const themeMode = useAppSelector((state) => state.theme.mode);
 
   // 根据系统和用户设置应用主题
@@ -35,7 +36,11 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children, sidebar, title }) => 
 
   return (
     <div className="h-screen flex flex-col">
-      <Header title={title} />
+      {header ? (
+        header
+      ) : (
+        <Header title={title} />
+      )}
       <div className="flex flex-1 overflow-hidden">
         {sidebar && (
           <ResizableSidebar defaultWidth={240} minWidth={180} maxWidth={400}>

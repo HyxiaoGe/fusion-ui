@@ -217,205 +217,119 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ onNewChat }) => {
         </Button>
       </div>
 
-      {/* 主要导航分组 */}
-      <div className="px-3 mb-4">
-        <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-2 px-2">主要导航</p>
-        <Link href="/">
-          <div className="flex items-center gap-2 px-3 py-2 rounded-md hover:bg-accent/50 cursor-pointer transition-colors">
-            <HomeIcon size={16} className="text-muted-foreground" />
-            <span className="text-sm">首页</span>
-          </div>
-        </Link>
-      </div>
-
-      {/* AI功能分组 */}
-      <div className="px-3 mb-4">
-        <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-2 px-2">AI 功能</p>
-        {/* 当前激活的功能：AI聊天 */}
-        <div className="flex items-center gap-2 px-3 py-2 rounded-md bg-accent/80 border-l-2 border-primary cursor-pointer transition-colors">
-          <MessageSquareIcon size={16} className="text-primary" />
-          <span className="text-sm font-medium text-primary">AI 聊天</span>
-        </div>
-        
-        {/* 即将推出的功能 */}
-        <div className="flex items-center justify-between px-3 py-2 rounded-md hover:bg-accent/50 cursor-pointer text-muted-foreground mt-1 transition-colors">
-          <div className="flex items-center gap-2">
-            <MessageSquareIcon size={16} />
-            <span className="text-sm">AI 图像</span>
-          </div>
-          <span className="text-xs bg-muted px-1.5 py-0.5 rounded-full text-muted-foreground">即将推出</span>
-        </div>
-
-        {/* 更多即将推出的功能 */}
-        <div className="flex items-center justify-between px-3 py-2 rounded-md hover:bg-accent/50 cursor-pointer text-muted-foreground mt-1 transition-colors">
-          <div className="flex items-center gap-2">
-            <FileText size={16} />
-            <span className="text-sm">文档分析</span>
-          </div>
-          <span className="text-xs bg-muted px-1.5 py-0.5 rounded-full text-muted-foreground">即将推出</span>
-        </div>
-
-        <div className="flex items-center justify-between px-3 py-2 rounded-md hover:bg-accent/50 cursor-pointer text-muted-foreground mt-1 transition-colors">
-          <div className="flex items-center gap-2">
-            <div className="w-4 h-4 flex items-center justify-center">
-              <span className="text-muted-foreground">⌨️</span>
-            </div>
-            <span className="text-sm">代码助手</span>
-          </div>
-          <span className="text-xs bg-muted px-1.5 py-0.5 rounded-full text-muted-foreground">即将推出</span>
-        </div>
-      </div>
-
-      {/* 我的内容分组 */}
-      <div className="px-3 mb-4">
-        <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-2 px-2">我的内容</p>
-      </div>
-
-      {/* 聊天记录列表 */}
-      <div className="flex-1 overflow-y-auto px-2">
+      {/* 最近对话列表 */}
+      <div className="px-3 flex-1 overflow-y-auto">
+        <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-2 px-2">最近对话</p>
         {chats.length === 0 ? (
-          <div className="text-center text-sm text-muted-foreground py-4 px-3">
-            暂无聊天记录
+          <div className="text-sm text-muted-foreground mt-4 text-center">
+            暂无对话记录
           </div>
         ) : (
-          <ul className="space-y-1">
-            {chats.map((chat) => {
-              const model = models.find((m) => m.id === chat.modelId);
-              const isEditing = editingChatId === chat.id;
-
-              return (
-                <li key={chat.id}>
-                  <div
-                    className={`flex items-center justify-between py-2 px-3 rounded-md cursor-pointer transition-all ${
-                      activeChatId === chat.id 
-                        ? "bg-accent border-l-2 border-primary" 
-                        : "hover:bg-accent/50 border-l-2 border-transparent"
-                    }`}
-                    onClick={() => handleSelectChat(chat.id)}
-                  >
-                    <div className="flex items-center gap-3 flex-1 min-w-0">
-                      <MessageSquareIcon className={`h-5 w-5 shrink-0 ${
-                        activeChatId === chat.id ? "text-primary" : "text-muted-foreground"
-                      }`} />
-                      <div className="min-w-0 flex-1">
-                        {isEditing ? (
-                          <input
-                            ref={editInputRef}
-                            value={editingTitle}
-                            onChange={(e) => setEditingTitle(e.target.value)}
-                            onBlur={() => handleSaveEdit(chat.id)}
-                            onKeyDown={(e) => handleKeyDown(e, chat.id)}
-                            className="w-full bg-background border rounded px-2 py-1 text-sm"
-                            autoFocus
-                          />
-                        ) : (
-                          <div
-                            className={`truncate text-sm ${
-                              activeChatId === chat.id ? "font-medium" : ""
-                            }`}
-                            onDoubleClick={(e) =>
-                              handleStartEditing(e, chat.id, chat.title)
-                            }
-                          >
-                            {chat.title}
-                          </div>
-                        )}
-                        <div className="text-xs text-muted-foreground flex items-center gap-1">
-                          <span>{model?.name || "未知模型"}</span>
-                          <span>•</span>
-                          <span>{formatDate(chat.updatedAt)}</span>
+          <div className="space-y-1.5">
+            {chats.map((chat) => (
+              <div
+                key={chat.id}
+                className={`flex items-center group rounded-md p-2 text-sm cursor-pointer ${
+                  chat.id === activeChatId
+                    ? "bg-muted/80"
+                    : "hover:bg-muted/50"
+                }`}
+                onClick={() => handleSelectChat(chat.id)}
+              >
+                <div className="flex-1 min-w-0 relative">
+                  {editingChatId === chat.id ? (
+                    <Input
+                      ref={editInputRef}
+                      value={editingTitle}
+                      onChange={(e) => setEditingTitle(e.target.value)}
+                      onBlur={() => handleSaveEdit(chat.id)}
+                      onKeyDown={(e) => handleKeyDown(e, chat.id)}
+                      onClick={(e) => e.stopPropagation()}
+                      className="h-6 py-1 text-xs"
+                    />
+                  ) : (
+                    <div className="flex items-start gap-2">
+                      <MessageSquareIcon size={14} className="text-muted-foreground shrink-0 mt-0.5" />
+                      <div className="truncate flex-1">
+                        <div className="font-medium truncate" title={chat.title}>
+                          {chat.title || "新对话"}
+                        </div>
+                        <div className="text-xs text-muted-foreground truncate">
+                          {/* 显示最近更新时间 */}
+                          {formatDate(chat.updatedAt || chat.createdAt)}
+                          
+                          {/* 显示使用的模型 */}
+                          {chat.modelId && models.find(m => m.id === chat.modelId) && (
+                            <span className="ml-1">
+                              · {models.find(m => m.id === chat.modelId)?.name}
+                            </span>
+                          )}
                         </div>
                       </div>
                     </div>
-
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-8 w-8 opacity-50 hover:opacity-100"
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          <MoreVerticalIcon className="h-4 w-4" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuItem
-                          onClick={(e) =>
-                            handleStartEditing(e, chat.id, chat.title)
-                          }
-                        >
-                          <PencilIcon className="h-4 w-4 mr-2" />
-                          重命名
-                        </DropdownMenuItem>
-                        <DropdownMenuItem
-                          onClick={(e) => handleGenerateTitle(e, chat.id)}
-                        >
-                          <RefreshCwIcon className="h-4 w-4 mr-2" />
-                          生成标题
-                        </DropdownMenuItem>
-                        <DropdownMenuItem
-                          className="text-destructive"
-                          onClick={(e) => handleDeleteChat(e, chat.id)}
-                        >
-                          <TrashIcon className="h-4 w-4 mr-2" />
-                          删除对话
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </div>
-                </li>
-              );
-            })}
-          </ul>
+                  )}
+                </div>
+                <div
+                  className={`ml-2 flex space-x-1 opacity-0 ${
+                    chat.id === activeChatId ? "opacity-100" : "group-hover:opacity-100"
+                  }`}
+                >
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-6 w-6"
+                    onClick={(e) => handleStartEditing(e, chat.id, chat.title)}
+                    title="重命名"
+                  >
+                    <PencilIcon size={14} />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-6 w-6"
+                    onClick={(e) => handleDeleteChat(e, chat.id)}
+                    title="删除对话"
+                  >
+                    <TrashIcon size={14} />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-6 w-6"
+                    onClick={(e) => handleGenerateTitle(e, chat.id)}
+                    title="生成标题"
+                  >
+                    <RefreshCwIcon size={14} />
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </div>
         )}
       </div>
 
-      {/* 应用分组 */}
-      <div className="px-3 mt-2 mb-4">
-        <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-2 px-2">应用</p>
-        <Link href="/settings">
-          <div className="flex items-center gap-2 px-3 py-2 rounded-md hover:bg-accent/50 cursor-pointer transition-colors">
-            <SettingsIcon size={16} className="text-muted-foreground" />
-            <span className="text-sm">设置</span>
-          </div>
-        </Link>
-      </div>
-
-      {/* 删除对话确认对话框 */}
+      {/* 确认删除对话框 */}
       <Dialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
-        <DialogContent>
+        <DialogContent className="sm:max-w-[425px]">
           <DialogHeader>
-            <DialogTitle>确认删除</DialogTitle>
+            <DialogTitle>确认删除对话</DialogTitle>
           </DialogHeader>
-          <p>确定要删除这个对话吗？此操作无法撤销。</p>
+          <p className="py-4">
+            您确定要删除此对话吗？此操作无法撤销。
+          </p>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setIsDeleteDialogOpen(false)}>
+            <Button
+              variant="ghost"
+              onClick={() => setIsDeleteDialogOpen(false)}
+            >
               取消
             </Button>
-            <Button variant="destructive" onClick={confirmDelete}>
+            <Button
+              variant="destructive"
+              onClick={confirmDelete}
+            >
               删除
             </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* 重命名对话框 */}
-      <Dialog open={isRenameDialogOpen} onOpenChange={setIsRenameDialogOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>重命名对话</DialogTitle>
-          </DialogHeader>
-          <Input
-            placeholder="输入新标题..."
-            value={newTitle}
-            onChange={(e) => setNewTitle(e.target.value)}
-          />
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setIsRenameDialogOpen(false)}>
-              取消
-            </Button>
-            <Button onClick={handleRename}>保存</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
