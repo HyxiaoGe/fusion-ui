@@ -31,11 +31,21 @@ module.exports = {
       },
       animation: {
         'slide-in-from-top': 'slideInFromTop 0.3s ease-out',
+        'blink': 'blink 1s infinite',
+        'shine': 'shine 2s linear infinite',
       },
       keyframes: {
         slideInFromTop: {
           '0%': { transform: 'translateY(-100%)', opacity: 0 },
           '100%': { transform: 'translateY(0)', opacity: 1 },
+        },
+        blink: {
+          '0%, 100%': { opacity: 1 },
+          '50%': { opacity: 0 },
+        },
+        shine: {
+          '0%': { backgroundPosition: '200% center' },
+          '100%': { backgroundPosition: '-200% center' },
         },
       },
       borderRadius: {
@@ -45,6 +55,12 @@ module.exports = {
       },
       outlineColor: {
         ring: 'var(--ring)',
+      },
+      backgroundSize: {
+        'auto': 'auto',
+        'cover': 'cover',
+        'contain': 'contain',
+        '200%': '200%',
       },
     },
   },

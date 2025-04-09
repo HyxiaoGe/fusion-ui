@@ -30,7 +30,8 @@ import {
   updateChatTitle,
   updateMessageReasoning,
   updateStreamingContent,
-  updateStreamingReasoningContent
+  updateStreamingReasoningContent,
+  setAnimatingTitleChatId
 } from '@/redux/slices/chatSlice';
 import { fetchEnhancedContext } from '@/redux/slices/searchSlice';
 import { store } from '@/redux/store';
@@ -42,6 +43,60 @@ import Link from 'next/link';
 import { ThemeToggle } from '@/components/ui/theme-toggle';
 import { cn } from '@/lib/utils';
 
+// 添加标题动画组件
+const TypingTitle = ({ title, className, onAnimationComplete }: { title: string; className?: string; onAnimationComplete?: () => void }) => {
+  const [displayedText, setDisplayedText] = useState('');
+  const [isTyping, setIsTyping] = useState(false);
+  
+  useEffect(() => {
+    if (!title) return;
+    
+    // 重置动画状态
+    setDisplayedText('');
+    setIsTyping(true);
+    
+    let index = 0;
+    
+    // 开始字符动画
+    const intervalId = setInterval(() => {
+      if (index < title.length) {
+        setDisplayedText(title.substring(0, index + 1));
+        index++;
+      } else {
+        clearInterval(intervalId);
+        // 保持光标显示一段时间后完成动画
+        setTimeout(() => {
+          setIsTyping(false);
+          // 通知动画完成
+          if (onAnimationComplete) {
+            onAnimationComplete();
+          }
+        }, 1000);
+      }
+    }, 200); // 固定速度，确保足够慢以便观察
+    
+    return () => clearInterval(intervalId);
+  }, [title, onAnimationComplete]);
+  
+  return (
+    <div 
+      className={cn(
+        "inline-block relative px-3 py-1 rounded-md",
+        isTyping && "bg-primary/5 ring-1 ring-primary/20",
+        className
+      )}
+    >
+      {displayedText}
+      {isTyping && (
+        <>
+          <span className="inline-block ml-0.5 w-[2px] h-[1.2em] bg-primary animate-blink" />
+          <span className="absolute inset-0 bg-gradient-to-r from-primary/0 via-primary/15 to-primary/0 animate-shine bg-[length:200%_100%]" />
+        </>
+      )}
+    </div>
+  );
+};
+
 export default function Home() {
   const dispatch = useAppDispatch();
   const pathname = usePathname();
@@ -50,7 +105,13 @@ export default function Home() {
   const [inputKey, setInputKey] = useState(Date.now());
   const [showHomePage, setShowHomePage] = useState(false);
 
-  const { chats, activeChatId, loading, isStreaming } = useAppSelector((state) => state.chat);
+  const { chats, activeChatId, loading, isStreaming, animatingTitleChatId } = useAppSelector((state) => state.chat);
+
+  // 添加用于标题动画的状态
+  const [isTypingTitle, setIsTypingTitle] = useState(false);
+  const [typingTitle, setTypingTitle] = useState("");
+  const [fullTitle, setFullTitle] = useState("");
+  const [typingSpeed] = useState({ min: 150, max: 300 }); // 大幅降低打字速度
 
   // 判断是否显示欢迎页面
   const shouldShowWelcome = !activeChatId || chats.length === 0;
@@ -153,10 +214,21 @@ export default function Home() {
   useEffect(() => {
     if (activeChat && activeChat.messages && activeChat.messages.length > 0) {
       setHasMessages(true);
+      // 设置标题，避免动画重复
+      setFullTitle(activeChat.title);
+      setTypingTitle(activeChat.title);
     } else {
       setHasMessages(false);
     }
   }, [activeChat]);
+
+  // 添加状态跟踪标题动画
+  const [titleToAnimate, setTitleToAnimate] = useState<string | null>(null);
+
+  // 在activeChatId变更时重置标题动画
+  useEffect(() => {
+    setTitleToAnimate(null);
+  }, [activeChatId]);
 
   // 创建新对话
   const handleNewChat = () => {
@@ -343,10 +415,21 @@ export default function Home() {
                   { max_length: 20 }
                 );
 
+                console.log('标题生成成功，开始动画：', generatedTitle);
+                
+                // 设置要动画的标题Chat ID
+                dispatch(setAnimatingTitleChatId(activeChatId || conversationId || ''));
+                
+                // 更新Redux中的标题
                 dispatch(updateChatTitle({
                   chatId: activeChatId || conversationId || '',
                   title: generatedTitle
                 }));
+                
+                // 设置自动清除动画效果的定时器
+                setTimeout(() => {
+                  dispatch(setAnimatingTitleChatId(null));
+                }, generatedTitle.length * 200 + 1000); // 字符数*200ms + 额外1000ms
               } catch (error) {
                 console.error('生成标题失败:', error);
               }
@@ -640,9 +723,37 @@ export default function Home() {
     }
   };
 
+  // 打字机效果的实现
+  useEffect(() => {
+    if (isTypingTitle && fullTitle) {
+      if (typingTitle.length < fullTitle.length) {
+        // 添加随机延迟，使打字效果更自然
+        const randomDelay = Math.floor(
+          Math.random() * (typingSpeed.max - typingSpeed.min) + typingSpeed.min
+        );
+        
+        const timer = setTimeout(() => {
+          setTypingTitle(fullTitle.slice(0, typingTitle.length + 1));
+          console.log('打字动画更新:', typingTitle.length + 1, '/', fullTitle.length);
+        }, randomDelay);
+        
+        return () => clearTimeout(timer);
+      } else {
+        // 打字完成，稍微延迟后结束动画状态
+        const finishTimer = setTimeout(() => {
+          setIsTypingTitle(false);
+          console.log('打字动画结束');
+        }, 1500); // 延长光标闪烁时间
+        
+        return () => clearTimeout(finishTimer);
+      }
+    }
+  }, [isTypingTitle, typingTitle, fullTitle, typingSpeed]);
+
   // 获取当前对话的标题
   const getChatTitle = () => {
     if (!activeChatId) return "";
+    
     const chat = chats.find(chat => chat.id === activeChatId);
     return chat?.title || "AI 聊天";
   };
@@ -663,9 +774,17 @@ export default function Home() {
 
           {/* 中间部分：显示当前对话标题和模型选择器 */}
           <div className="absolute left-1/2 transform -translate-x-1/2 flex items-center gap-4">
-            <div className="font-medium text-base">
-              {getChatTitle()}
-            </div>
+            {animatingTitleChatId === activeChatId ? (
+              <TypingTitle 
+                title={getChatTitle()} 
+                className="font-medium text-base"
+                onAnimationComplete={() => {}}
+              />
+            ) : (
+              <div className="font-medium text-base px-3 py-1">
+                {getChatTitle()}
+              </div>
+            )}
             <ModelSelector />
           </div>
 

@@ -7,7 +7,8 @@ import {
   deleteChat,
   setActiveChat,
   updateChatTitle,
-  Chat
+  Chat,
+  setAnimatingTitleChatId
 } from "@/redux/slices/chatSlice";
 import {
   MessageSquareIcon,
@@ -202,6 +203,11 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ onNewChat }) => {
         { max_length: 20 } // 可选参数，限制标题长度
       );
 
+      console.log('标题生成成功，开始动画：', chatId, generatedTitle);
+      
+      // 使用Redux设置动画状态
+      dispatch(setAnimatingTitleChatId(chatId));
+
       // 更新对话标题
       dispatch(
         updateChatTitle({
@@ -209,10 +215,16 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ onNewChat }) => {
           title: generatedTitle,
         })
       );
+      
       toast({
         message: "标题已更新",
         type: "success",
       });
+      
+      // 设置自动清除动画效果的定时器（根据标题长度，每个字符约200ms）
+      setTimeout(() => {
+        dispatch(setAnimatingTitleChatId(null));
+      }, generatedTitle.length * 200 + 1000); // 字符数*200ms + 额外1000ms
     } catch (error) {
       console.error("生成标题失败:", error);
       // 恢复原标题

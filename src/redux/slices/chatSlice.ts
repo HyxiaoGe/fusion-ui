@@ -31,7 +31,7 @@ export interface Chat {
   updatedAt: number;
 }
 
-interface ChatState {
+export interface ChatState {
   chats: Chat[];
   activeChatId: string | null;
   loading: boolean;
@@ -46,6 +46,7 @@ interface ChatState {
   streamingReasoning: string | null;
   isStreamingReasoning: boolean;
   isThinkingPhaseComplete: boolean;
+  animatingTitleChatId: string | null;
 }
 
 const initialState: ChatState = {
@@ -63,6 +64,7 @@ const initialState: ChatState = {
   streamingReasoning: null,
   isStreamingReasoning: false,
   isThinkingPhaseComplete: false,
+  animatingTitleChatId: null,
 };
 
 const chatSlice = createSlice({
@@ -313,6 +315,9 @@ const chatSlice = createSlice({
     setAllChats: (state, action: PayloadAction<Chat[]>) => {
       state.chats = action.payload;
     },
+    setAnimatingTitleChatId: (state, action: PayloadAction<string | null>) => {
+      state.animatingTitleChatId = action.payload;
+    },
   },
 });
 
@@ -341,7 +346,8 @@ export const {
   updateMessageReasoning,
   updateStreamingReasoningContent,
   clearDbSyncFlag,
-  completeThinkingPhase
+  completeThinkingPhase,
+  setAnimatingTitleChatId,
 } = chatSlice.actions;
 
 export default chatSlice.reducer;

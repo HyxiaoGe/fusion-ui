@@ -30,14 +30,6 @@ const ReasoningContent: React.FC<ReasoningContentProps> = ({
   startTime,
   endTime
 }) => {
-  console.log('ReasoningContent渲染:', {
-    hasReasoning: !!reasoning,
-    reasoningLength: reasoning ? reasoning.length : 0,
-    isVisible,
-    isStreaming,
-    forceShow
-  });
-
   // 允许在流式生成过程中显示空内容
   // 只有在非流式状态下且内容为空时才不显示
   if (!isStreaming && !forceShow && (!reasoning || reasoning.trim() === '')) {
