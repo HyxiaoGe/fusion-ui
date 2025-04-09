@@ -193,6 +193,8 @@ const chatSlice = createSlice({
           state.streamingReasoningEndTime = Date.now();
         }
         state.isThinkingPhaseComplete = true;
+        // 立即标记推理流式状态结束，不影响主内容的流式输出
+        state.isStreamingReasoning = false;
       } else {
         state.streamingReasoningContent = action.payload;
       }

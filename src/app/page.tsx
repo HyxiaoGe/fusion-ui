@@ -314,7 +314,11 @@ export default function Home() {
                     isVisible: true
                   }));
                 }
-                dispatch(endStreamingReasoning());
+                // 此时不再调用endStreamingReasoning，因为推理阶段已在接收到[REASONING_COMPLETE]标记时结束
+                // 如果推理还没结束（可能没有收到完整标记），则在这里结束
+                if (!store.getState().chat.isThinkingPhaseComplete) {
+                  dispatch(endStreamingReasoning());
+                }
               }
               dispatch(endStreaming());
             }, 1000);
@@ -480,7 +484,11 @@ export default function Home() {
                         isVisible: true
                       }));
                     }
-                    dispatch(endStreamingReasoning());
+                    // 此时不再调用endStreamingReasoning，因为推理阶段已在接收到[REASONING_COMPLETE]标记时结束
+                    // 如果推理还没结束（可能没有收到完整标记），则在这里结束
+                    if (!store.getState().chat.isThinkingPhaseComplete) {
+                      dispatch(endStreamingReasoning());
+                    }
                   }
                   dispatch(endStreaming());
                 }, 1000);
@@ -598,7 +606,11 @@ export default function Home() {
                     isVisible: true
                   }));
                 }
-                dispatch(endStreamingReasoning());
+                // 此时不再调用endStreamingReasoning，因为推理阶段已在接收到[REASONING_COMPLETE]标记时结束
+                // 如果推理还没结束（可能没有收到完整标记），则在这里结束
+                if (!store.getState().chat.isThinkingPhaseComplete) {
+                  dispatch(endStreamingReasoning());
+                }
               }
               dispatch(endStreaming());
             }, 1000);
