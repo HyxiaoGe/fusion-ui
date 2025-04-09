@@ -221,29 +221,45 @@ const BulletScreen: React.FC<BulletScreenProps> = ({ hotTopics, onChatSelected }
   const handleTopicClick = (topic: HotTopic) => {
     if (!selectedModelId) return;
 
-    // 创建对话
-    dispatch(
-      createChat({
-        modelId: selectedModelId,
-        title: topic.title.length > 20 ? topic.title.substring(0, 20) + "..." : topic.title,
-      })
-    );
-
-    // 获取最新创建的对话ID并发送消息
+    // 获取当前状态
     const state = store.getState();
-    const newChat = state.chat.chats[state.chat.chats.length - 1];
-    if (!newChat) {
-      dispatch(setError('创建对话失败'));
-      return;
+    
+    // 检查是否存在空白会话（新创建的没有消息的会话）
+    const existingEmptyChat = state.chat.chats.find(chat => 
+      chat.messages.length === 0 && chat.title === '新对话'
+    );
+    
+    let chatId;
+    
+    // 如果存在空白会话，使用它；否则创建新会话
+    if (existingEmptyChat) {
+      chatId = existingEmptyChat.id;
+    } else {
+      // 创建对话
+      dispatch(
+        createChat({
+          modelId: selectedModelId,
+          title: topic.title.length > 20 ? topic.title.substring(0, 20) + "..." : topic.title,
+        })
+      );
+
+      // 获取最新创建的对话ID
+      const updatedState = store.getState();
+      const newChat = updatedState.chat.chats[updatedState.chat.chats.length - 1];
+      if (!newChat) {
+        dispatch(setError('创建对话失败'));
+        return;
+      }
+      chatId = newChat.id;
     }
 
     // 添加用户消息
     dispatch(
       addMessage({
-        chatId: newChat.id,
+        chatId: chatId,
         message: {
           role: "user",
-          content: topic.title,
+          content: `请帮我分析以下热点话题：\n\n${topic.title}`,
           status: "pending",
         }
       })
@@ -255,7 +271,7 @@ const BulletScreen: React.FC<BulletScreenProps> = ({ hotTopics, onChatSelected }
     }
 
     // 开始流式输出
-    dispatch(startStreaming(newChat.id));
+    dispatch(startStreaming(chatId));
 
     // 获取选中的模型信息
     const selectedModel = models.find(m => m.id === selectedModelId);
@@ -278,7 +294,7 @@ const BulletScreen: React.FC<BulletScreenProps> = ({ hotTopics, onChatSelected }
       provider: selectedModel.provider,
       model: selectedModel.id,
       message: topic.title,
-      conversation_id: newChat.id,
+      conversation_id: chatId,
       topic_id: topic.id || null,
       stream: true,
       options: {
@@ -289,7 +305,7 @@ const BulletScreen: React.FC<BulletScreenProps> = ({ hotTopics, onChatSelected }
     (content, done, conversationId, reasoning) => {
       if (!done) {
         dispatch(updateStreamingContent({
-          chatId: newChat.id,
+          chatId: chatId,
           content
         }));
 
@@ -298,7 +314,7 @@ const BulletScreen: React.FC<BulletScreenProps> = ({ hotTopics, onChatSelected }
         }
       } else {
         dispatch(updateStreamingContent({
-          chatId: newChat.id,
+          chatId: chatId,
           content
         }));
 
@@ -307,7 +323,7 @@ const BulletScreen: React.FC<BulletScreenProps> = ({ hotTopics, onChatSelected }
             const streamingMessageId = store.getState().chat.streamingMessageId;
             if (streamingMessageId) {
               dispatch(updateMessageReasoning({
-                chatId: newChat.id,
+                chatId: chatId,
                 messageId: streamingMessageId,
                 reasoning: reasoning,
                 isVisible: true
@@ -321,13 +337,13 @@ const BulletScreen: React.FC<BulletScreenProps> = ({ hotTopics, onChatSelected }
           setTimeout(async () => {
             try {
               const generatedTitle = await generateChatTitle(
-                newChat.id || conversationId || '',
+                chatId || conversationId || '',
                 undefined,
                 { max_length: 20 }
               );
 
               dispatch(updateChatTitle({
-                chatId: newChat.id || conversationId || '',
+                chatId: chatId || conversationId || '',
                 title: generatedTitle
               }));
             } catch (error) {
@@ -738,35 +754,54 @@ const DialogueExamplesCard = () => {
   const handleExampleClick = (example: string) => {
     if (!selectedModelId) return;
 
-    dispatch(
-      createChat({
-        modelId: selectedModelId,
-        title: example.length > 20 ? example.substring(0, 20) + "..." : example,
-      })
-    );
-
+    // 获取当前状态
     const state = store.getState();
-    const newChat = state.chat.chats[state.chat.chats.length - 1];
-    if (!newChat) {
-      dispatch(setError('创建对话失败'));
-      return;
+    
+    // 检查是否存在空白会话（新创建的没有消息的会话）
+    const existingEmptyChat = state.chat.chats.find(chat => 
+      chat.messages.length === 0 && chat.title === '新对话'
+    );
+    
+    let chatId;
+    
+    // 如果存在空白会话，使用它；否则创建新会话
+    if (existingEmptyChat) {
+      chatId = existingEmptyChat.id;
+    } else {
+      // 创建对话
+      dispatch(
+        createChat({
+          modelId: selectedModelId,
+          title: example.length > 20 ? example.substring(0, 20) + "..." : example,
+        })
+      );
+
+      // 获取最新创建的对话ID
+      const updatedState = store.getState();
+      const newChat = updatedState.chat.chats[updatedState.chat.chats.length - 1];
+      if (!newChat) {
+        dispatch(setError('创建对话失败'));
+        return;
+      }
+      chatId = newChat.id;
     }
 
-    const chatId = newChat.id;
-
+    // 添加用户消息
     dispatch(
       addMessage({
-        chatId,
+        chatId: chatId,
         message: {
           role: "user",
-          content: example,
+          content: `请帮我解答以下问题：\n\n${example}`,
           status: "pending",
         }
       })
     );
 
+    // 开始流式输出
     dispatch(startStreaming(chatId));
 
+    // 获取选中的模型信息
     const selectedModel = models.find(m => m.id === selectedModelId);
     if (!selectedModel) {
       dispatch(setError('找不到选中的模型信息'));
@@ -795,7 +830,7 @@ const DialogueExamplesCard = () => {
     (content, done, conversationId, reasoning) => {
       if (!done) {
         dispatch(updateStreamingContent({
-          chatId,
+          chatId: chatId,
           content
         }));
 
@@ -804,7 +839,7 @@ const DialogueExamplesCard = () => {
         }
       } else {
         dispatch(updateStreamingContent({
-          chatId,
+          chatId: chatId,
           content
         }));
 
@@ -813,7 +848,7 @@ const DialogueExamplesCard = () => {
             const streamingMessageId = store.getState().chat.streamingMessageId;
             if (streamingMessageId) {
               dispatch(updateMessageReasoning({
-                chatId,
+                chatId: chatId,
                 messageId: streamingMessageId,
                 reasoning: reasoning,
                 isVisible: true
@@ -1049,29 +1084,45 @@ const HomePage: React.FC<HomePageProps> = ({ onNewChat, onChatSelected }) => {
   const handleTopicClick = (topic: HotTopic) => {
     if (!selectedModelId) return;
 
-    // 创建对话
-    dispatch(
-      createChat({
-        modelId: selectedModelId,
-        title: topic.title.length > 20 ? topic.title.substring(0, 20) + "..." : topic.title,
-      })
-    );
-
-    // 获取最新创建的对话ID并发送消息
+    // 获取当前状态
     const state = store.getState();
-    const newChat = state.chat.chats[state.chat.chats.length - 1];
-    if (!newChat) {
-      dispatch(setError('创建对话失败'));
-      return;
+    
+    // 检查是否存在空白会话（新创建的没有消息的会话）
+    const existingEmptyChat = state.chat.chats.find(chat => 
+      chat.messages.length === 0 && chat.title === '新对话'
+    );
+    
+    let chatId;
+    
+    // 如果存在空白会话，使用它；否则创建新会话
+    if (existingEmptyChat) {
+      chatId = existingEmptyChat.id;
+    } else {
+      // 创建对话
+      dispatch(
+        createChat({
+          modelId: selectedModelId,
+          title: topic.title.length > 20 ? topic.title.substring(0, 20) + "..." : topic.title,
+        })
+      );
+
+      // 获取最新创建的对话ID
+      const updatedState = store.getState();
+      const newChat = updatedState.chat.chats[updatedState.chat.chats.length - 1];
+      if (!newChat) {
+        dispatch(setError('创建对话失败'));
+        return;
+      }
+      chatId = newChat.id;
     }
 
     // 添加用户消息
     dispatch(
       addMessage({
-        chatId: newChat.id,
+        chatId: chatId,
         message: {
           role: "user",
-          content: topic.title,
+          content: `请帮我分析以下热点话题：\n\n${topic.title}`,
           status: "pending",
         }
       })
@@ -1083,7 +1134,7 @@ const HomePage: React.FC<HomePageProps> = ({ onNewChat, onChatSelected }) => {
     }
 
     // 开始流式输出
-    dispatch(startStreaming(newChat.id));
+    dispatch(startStreaming(chatId));
 
     // 获取选中的模型信息
     const selectedModel = models.find(m => m.id === selectedModelId);
@@ -1106,7 +1157,7 @@ const HomePage: React.FC<HomePageProps> = ({ onNewChat, onChatSelected }) => {
       provider: selectedModel.provider,
       model: selectedModel.id,
       message: topic.title,
-      conversation_id: newChat.id,
+      conversation_id: chatId,
       topic_id: topic.id || null,
       stream: true,
       options: {
@@ -1117,7 +1168,7 @@ const HomePage: React.FC<HomePageProps> = ({ onNewChat, onChatSelected }) => {
     (content, done, conversationId, reasoning) => {
       if (!done) {
         dispatch(updateStreamingContent({
-          chatId: newChat.id,
+          chatId: chatId,
           content
         }));
 
@@ -1126,7 +1177,7 @@ const HomePage: React.FC<HomePageProps> = ({ onNewChat, onChatSelected }) => {
         }
       } else {
         dispatch(updateStreamingContent({
-          chatId: newChat.id,
+          chatId: chatId,
           content
         }));
 
@@ -1135,7 +1186,7 @@ const HomePage: React.FC<HomePageProps> = ({ onNewChat, onChatSelected }) => {
             const streamingMessageId = store.getState().chat.streamingMessageId;
             if (streamingMessageId) {
               dispatch(updateMessageReasoning({
-                chatId: newChat.id,
+                chatId: chatId,
                 messageId: streamingMessageId,
                 reasoning: reasoning,
                 isVisible: true
@@ -1149,13 +1200,13 @@ const HomePage: React.FC<HomePageProps> = ({ onNewChat, onChatSelected }) => {
           setTimeout(async () => {
             try {
               const generatedTitle = await generateChatTitle(
-                newChat.id || conversationId || '',
+                chatId || conversationId || '',
                 undefined,
                 { max_length: 20 }
               );
 
               dispatch(updateChatTitle({
-                chatId: newChat.id || conversationId || '',
+                chatId: chatId || conversationId || '',
                 title: generatedTitle
               }));
             } catch (error) {
@@ -1176,41 +1227,52 @@ const HomePage: React.FC<HomePageProps> = ({ onNewChat, onChatSelected }) => {
   const handleExampleClick = (example: string) => {
     if (!selectedModelId) return;
 
-    // 创建对话
-    dispatch(
-      createChat({
-        modelId: selectedModelId,
-        title: example.length > 20 ? example.substring(0, 20) + "..." : example,
-      })
-    );
-
-    // 获取最新创建的对话ID并发送消息
+    // 获取当前状态
     const state = store.getState();
-    const newChat = state.chat.chats[state.chat.chats.length - 1];
-    if (!newChat) {
-      dispatch(setError('创建对话失败'));
-      return;
+    
+    // 检查是否存在空白会话（新创建的没有消息的会话）
+    const existingEmptyChat = state.chat.chats.find(chat => 
+      chat.messages.length === 0 && chat.title === '新对话'
+    );
+    
+    let chatId;
+    
+    // 如果存在空白会话，使用它；否则创建新会话
+    if (existingEmptyChat) {
+      chatId = existingEmptyChat.id;
+    } else {
+      // 创建对话
+      dispatch(
+        createChat({
+          modelId: selectedModelId,
+          title: example.length > 20 ? example.substring(0, 20) + "..." : example,
+        })
+      );
+
+      // 获取最新创建的对话ID
+      const updatedState = store.getState();
+      const newChat = updatedState.chat.chats[updatedState.chat.chats.length - 1];
+      if (!newChat) {
+        dispatch(setError('创建对话失败'));
+        return;
+      }
+      chatId = newChat.id;
     }
 
     // 添加用户消息
     dispatch(
       addMessage({
-        chatId: newChat.id,
+        chatId: chatId,
         message: {
           role: "user",
-          content: example,
+          content: `请帮我解答以下问题：\n\n${example}`,
           status: "pending",
         }
       })
     );
 
-    // 如果有回调函数，通知外部组件已选择聊天
-    if (onChatSelected) {
-      onChatSelected();
-    }
-
     // 开始流式输出
-    dispatch(startStreaming(newChat.id));
+    dispatch(startStreaming(chatId));
 
     // 获取选中的模型信息
     const selectedModel = models.find(m => m.id === selectedModelId);
@@ -1231,7 +1293,7 @@ const HomePage: React.FC<HomePageProps> = ({ onNewChat, onChatSelected }) => {
       provider: selectedModel.provider,
       model: selectedModel.id,
       message: example.trim(),
-      conversation_id: newChat.id,
+      conversation_id: chatId,
       stream: true,
       options: {
         use_reasoning: useReasoning,
@@ -1241,7 +1303,7 @@ const HomePage: React.FC<HomePageProps> = ({ onNewChat, onChatSelected }) => {
     (content, done, conversationId, reasoning) => {
       if (!done) {
         dispatch(updateStreamingContent({
-          chatId: newChat.id,
+          chatId: chatId,
           content
         }));
 
@@ -1250,7 +1312,7 @@ const HomePage: React.FC<HomePageProps> = ({ onNewChat, onChatSelected }) => {
         }
       } else {
         dispatch(updateStreamingContent({
-          chatId: newChat.id,
+          chatId: chatId,
           content
         }));
 
@@ -1259,7 +1321,7 @@ const HomePage: React.FC<HomePageProps> = ({ onNewChat, onChatSelected }) => {
             const streamingMessageId = store.getState().chat.streamingMessageId;
             if (streamingMessageId) {
               dispatch(updateMessageReasoning({
-                chatId: newChat.id,
+                chatId: chatId,
                 messageId: streamingMessageId,
                 reasoning: reasoning,
                 isVisible: true
@@ -1272,13 +1334,13 @@ const HomePage: React.FC<HomePageProps> = ({ onNewChat, onChatSelected }) => {
           setTimeout(async () => {
             try {
               const generatedTitle = await generateChatTitle(
-                newChat.id || conversationId || '',
+                chatId || conversationId || '',
                 undefined,
                 { max_length: 20 }
               );
 
               dispatch(updateChatTitle({
-                chatId: newChat.id || conversationId || '',
+                chatId: chatId || conversationId || '',
                 title: generatedTitle
               }));
             } catch (error) {

@@ -106,8 +106,8 @@ export const models: ModelInfo[] = [
 
   // OpenAI 模型
   {
-    id: "gpt-4-turbo",
-    name: "GPT-4 Turbo",
+    id: "gpt-4o-2024-08-06",
+    name: "GPT-4o",
     provider: "openai",
     maxTokens: 16384,
     temperature: 0.7,
@@ -116,24 +116,9 @@ export const models: ModelInfo[] = [
       vision: true,
       fileSupport: true,
     },
-    enabled: false,
+    enabled: true,
     experimental: false,
-    description: "OpenAI的高级模型，在保持GPT-4核心能力的同时提供了更快的响应速度和更新的知识库。",
-  },
-  {
-    id: "gpt-4o",
-    name: "GPT-4o",
-    provider: "openai",
-    maxTokens: 32768,
-    temperature: 0.7,
-    contextWindow: "128K",
-    capabilities: {
-      vision: false,
-      fileSupport: true,
-    },
-    enabled: false,
-    experimental: false,
-    description: "OpenAI最新优化版GPT-4，提供更高效的性能和更准确的回答，支持文件处理。",
+    description: "多功能、高智能的 GPT 旗舰模型。它接受文本和图像输入，并生成文本输出（包括结构化输出）。目前是大多数任务的最佳模型",
   },
   {
     id: "gpt-3.5-turbo",
@@ -145,9 +130,38 @@ export const models: ModelInfo[] = [
     capabilities: {
       fileSupport: true,
     },
-    enabled: false,
+    enabled: true,
     experimental: false,
     description: "OpenAI高效且经济的模型，适合日常对话和一般性任务，反应速度快。",
+  },
+  {
+    id: "gpt-4.5-preview-2025-02-27",
+    name: "GPT-4.5 Preview",
+    provider: "openai",
+    maxTokens: 16384,
+    temperature: 0.7,
+    contextWindow: "128K",
+    capabilities: {
+      fileSupport: true,
+    },
+    enabled: false,
+    experimental: false,
+    description: "迄今为止规模最大、功能最强大的 GPT 模型。它对世界的深入了解和对用户意图的更好理解使其擅长于创造性任务和代理规划。GPT-4.5 擅长于从创造性、开放式思维和对话中受益的任务，例如写作、学习或探索新想法。",
+  },
+  {
+    id: "o3-mini-2025-01-31",
+    name: "GPT-o3-mini",
+    provider: "openai",
+    maxTokens: 16384,
+    temperature: 0.7,
+    contextWindow: "200K",
+    capabilities: {
+      vision: true,
+      fileSupport: true,
+    },
+    enabled: false,
+    experimental: false,
+    description: "GPT 最新的小型推理模型，以与 o1-mini 相同的成本和延迟目标提供高智能。o3-mini 支持关键开发人员功能，例如结构化输出、函数调用和批处理 API。",
   },
 
   // Anthropic 模型
