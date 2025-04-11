@@ -29,9 +29,11 @@ export interface ProviderInfo {
 export const providers: ProviderInfo[] = [
   { id: "qwen", name: "通义千问", order: 1 },
   { id: "deepseek", name: "DeepSeek", order: 2 },
-  { id: "openai", name: "OpenAI", order: 3 },
-  { id: "anthropic", name: "Anthropic", order: 4 },
-  { id: "gemini", name: "Gemini", order: 5 },
+  { id: "wenxin", name: "文心一言", order: 3 },
+  { id: "volcengine", name: "火山引擎", order: 4 },
+  { id: "openai", name: "OpenAI", order: 5 },
+  { id: "anthropic", name: "Anthropic", order: 6 },
+  { id: "gemini", name: "Gemini", order: 7 },
 ];
 
 // 模型信息
@@ -102,6 +104,74 @@ export const models: ModelInfo[] = [
     enabled: true,
     experimental: false,
     description: "DeepSeek-R1 在后训练阶段大规模使用了强化学习技术，在仅有极少标注数据的情况下，极大提升了模型推理能力。在数学、代码、自然语言推理等任务上，性能比肩 OpenAI o1 正式版。",
+  },
+
+  // 千帆 模型
+  {
+    name: "ERNIE 4.0",
+    id: "ERNIE-4.0-8K-Latest",
+    provider: "wenxin",
+    maxTokens: 32768,
+    temperature: 0.7,
+    contextWindow: "200K",
+    capabilities: {
+      vision: true,
+      deepThinking: true,
+      fileSupport: true,
+    },
+    enabled: true,
+    experimental: false,
+    description: "文心大模型4.5是百度自主研发的新一代原生多模态基础大模型，通过多个模态联合建模实现协同优化，多模态理解能力优秀；具备更精进的语言能力，理解、生成、逻辑、记忆能力全面提升，去幻觉、逻辑推理、代码能力显著提升。",
+  },
+  {
+    name: "ERNIE X1",
+    id: "ERNIE-X1-32K-Preview",
+    provider: "wenxin",
+    maxTokens: 32768,
+    temperature: 0.7,
+    contextWindow: "200K",
+    capabilities: {
+      vision: true,
+      deepThinking: false,
+      fileSupport: true,
+    },
+    enabled: false,
+    experimental: false,
+    description: "文心大模型X1具备更强的理解、规划、反思、进化能力。作为能力更全面的深度思考模型，文心X1兼备准确、创意和文采，在中文知识问答、文学创作、文稿写作、日常对话、逻辑推理、复杂计算及工具调用等方面表现尤为出色。",
+  },
+
+   // 千帆 模型
+   {
+    name: "ERNIE 4.0",
+    id: "ERNIE-4.0-8K-Latest",
+    provider: "volcengine",
+    maxTokens: 32768,
+    temperature: 0.7,
+    contextWindow: "200K",
+    capabilities: {
+      vision: true,
+      deepThinking: true,
+      fileSupport: true,
+    },
+    enabled: true,
+    experimental: false,
+    description: "文心大模型4.5是百度自主研发的新一代原生多模态基础大模型，通过多个模态联合建模实现协同优化，多模态理解能力优秀；具备更精进的语言能力，理解、生成、逻辑、记忆能力全面提升，去幻觉、逻辑推理、代码能力显著提升。",
+  },
+  {
+    name: "ERNIE X1",
+    id: "ERNIE-X1-32K-Preview",
+    provider: "volcengine",
+    maxTokens: 32768,
+    temperature: 0.7,
+    contextWindow: "200K",
+    capabilities: {
+      vision: true,
+      deepThinking: false,
+      fileSupport: true,
+    },
+    enabled: false,
+    experimental: false,
+    description: "文心大模型X1具备更强的理解、规划、反思、进化能力。作为能力更全面的深度思考模型，文心X1兼备准确、创意和文采，在中文知识问答、文学创作、文稿写作、日常对话、逻辑推理、复杂计算及工具调用等方面表现尤为出色。",
   },
 
   // OpenAI 模型
