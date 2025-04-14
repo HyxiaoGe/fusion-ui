@@ -1,0 +1,22 @@
+FROM node:20-alpine
+
+WORKDIR /app
+
+# 安装nodemon用于监听文件变化
+RUN npm install -g nodemon
+
+# 复制package.json和package-lock.json
+COPY package*.json ./
+
+# 安装依赖
+RUN npm install
+
+# 暴露端口
+EXPOSE 3000
+
+# 设置热重载相关环境变量
+ENV WATCHPACK_POLLING=true
+ENV CHOKIDAR_USEPOLLING=true
+
+# 使用nodemon启动开发服务器，监控文件变化
+CMD ["npm", "run", "dev:next"] 

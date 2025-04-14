@@ -5,10 +5,11 @@
   "author": "Your Name",
   "scripts": {
     "dev:next": "next dev",
+    "dev:hot": "next dev -p 3000 --hostname 0.0.0.0",
     "dev": "cross-env NODE_ENV=development concurrently \"next dev\" \"wait-on http://localhost:3000 && electron src/electron/main.js --inspect=5858\"",
     "build": "next build",
     "build:electron": "next build && electron-builder",
-    "start": "electron ."
+    "start": "next start -p 3000 --hostname 0.0.0.0"
   },
   "dependencies": {
     "@hookform/resolvers": "^4.1.2",

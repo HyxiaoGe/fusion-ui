@@ -1,0 +1,11 @@
+version: '3'
+
+services:
+  fusion-ui:
+    build: .
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./src:/app/src
+    environment:
+      - NODE_ENV=production 
