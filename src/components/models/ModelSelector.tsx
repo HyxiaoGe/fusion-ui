@@ -473,9 +473,6 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({ onChange, modelId, disabl
                                   {!model.enabled && (
                                     <span className="text-[10px] text-gray-500 font-medium">即将开放</span>
                                   )}
-                                  {model.experimental && (
-                                    <span className="text-[10px] text-amber-500 font-medium">实验性</span>
-                                  )}
                                 </div>
                               </div>
                               

@@ -5,7 +5,9 @@ services:
     build: .
     ports:
       - "3000:3000"
-    volumes:
-      - ./src:/app/src
+    restart: always
     environment:
-      - NODE_ENV=production 
+      - NODE_ENV=production
+    # 生产环境不需要挂载源代码
+    # volumes:
+    #  - ./src:/app/src 

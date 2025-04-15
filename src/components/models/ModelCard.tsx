@@ -26,11 +26,6 @@ const ModelCard: React.FC<ModelCardProps> = ({ model }) => {
                 即将开放
               </Badge>
             )}
-            {model.experimental && (
-              <Badge variant="outline" className="text-amber-500 border-amber-500">
-                实验性
-              </Badge>
-            )}
           </div>
         </div>
         <CardDescription>
