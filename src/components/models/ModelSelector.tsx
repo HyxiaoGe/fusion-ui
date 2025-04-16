@@ -295,7 +295,7 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({ onChange, modelId, disabl
         /* 专门处理128K等元素居右 */
         .context-window-badge {
           position: absolute !important;
-          right: 8px !important;
+          right: 65px !important; /* 修改为在图标左侧 */
           top: 50% !important;
           transform: translateY(-50%) !important;
         }
@@ -303,7 +303,7 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({ onChange, modelId, disabl
         /* 处理能力图标靠右排列 */
         .capability-icons {
           position: absolute !important;
-          right: 60px !important; /* 确保在上下文窗口标签左侧 */
+          right: 8px !important; /* 修改为最右边 */
           top: 50% !important;
           transform: translateY(-50%) !important;
           display: flex !important;
@@ -477,7 +477,7 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({ onChange, modelId, disabl
                               </div>
                               
                               {/* 能力图标组放在右侧 */}
-                              <div className="capability-icons">
+                              <div className="capability-icons text-center">
                                 {model.capabilities?.vision && (
                                   <CapabilityIcon type="vision" className="ultra-icon h-4 w-4" />
                                 )}
@@ -491,11 +491,6 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({ onChange, modelId, disabl
                                   <CapabilityIcon type="fileSupport" className="ultra-icon h-4 w-4" />
                                 )}
                               </div>
-                              
-                              {/* 上下文窗口大小放在最右侧 */}
-                              <span className="context-window-badge text-xs font-medium px-2 py-1 rounded-full bg-blue-100/50 dark:bg-blue-900/30 text-center">
-                                {model.contextWindow} 
-                              </span>
                             </div>
                           </SelectItem>
                         ))}
@@ -563,8 +558,7 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({ onChange, modelId, disabl
               </div>
             </div>
             <div className="model-tooltip-footer">
-              <span>最大Tokens: {model.maxTokens.toLocaleString()}</span>
-              <span>上下文窗口: {model.contextWindow}</span>
+            {model.knowledgeCutoff && <span>知识库截止: {model.knowledgeCutoff}</span>}
             </div>
           </div>
         );

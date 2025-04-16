@@ -41,9 +41,22 @@ const modelsSlice = createSlice({
     },
     setIsLoading: (state, action: PayloadAction<boolean>) => {
       state.isLoading = action.payload;
+    },
+    updateModels: (state, action: PayloadAction<Model[]>) => {
+      state.models = action.payload;
+      // 如果没有选择模型或者选择的模型在新数据中不存在，则自动选择第一个模型
+      if (!state.selectedModelId || !action.payload.find(m => m.id === state.selectedModelId)) {
+        state.selectedModelId = action.payload.length > 0 ? action.payload[0].id : null;
+      }
     }
   }
 });
 
-export const { setSelectedModel, updateModelConfig, setModelEnabled, setIsLoading } = modelsSlice.actions;
+export const { 
+  setSelectedModel, 
+  updateModelConfig, 
+  setModelEnabled, 
+  setIsLoading,
+  updateModels
+} = modelsSlice.actions;
 export default modelsSlice.reducer;
