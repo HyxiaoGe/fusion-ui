@@ -87,7 +87,7 @@ const DataManagement: React.FC = () => {
   };
 
   return (
-    <Card>
+    <Card className="w-full h-full">
       <CardHeader>
         <CardTitle>数据管理</CardTitle>
         <CardDescription>
@@ -112,7 +112,7 @@ const DataManagement: React.FC = () => {
           </div>
         )}
 
-        <div className="flex flex-col sm:flex-row gap-4">
+        <div className="flex flex-col sm:flex-row gap-4 w-full">
           <div className="flex-1 border rounded-md p-4">
             <h3 className="font-medium mb-2">导出数据</h3>
             <p className="text-sm text-muted-foreground mb-4">

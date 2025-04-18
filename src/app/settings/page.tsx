@@ -12,6 +12,8 @@ import AvatarSelector from "./AvatarSelector";
 import DataManagement from "./DataManagement";
 import SearchSettings from "./SearchSettings";
 import Link from "next/link";
+import { useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
 
 // 定义动画变体
 const variants = {
@@ -21,15 +23,32 @@ const variants = {
 
 export default function SettingsPage() {
   const { selectedModelId } = useAppSelector((state) => state.models);
+  const [activeTab, setActiveTab] = useState("general");
+  const [isAddModelOpen, setIsAddModelOpen] = useState(false);
+  const searchParams = useSearchParams();
+  
+  useEffect(() => {
+    // 检查URL参数
+    const tab = searchParams?.get("tab");
+    const action = searchParams?.get("action");
+    
+    if (tab) {
+      setActiveTab(tab);
+    }
+    
+    if (tab === "models" && action === "add") {
+      setIsAddModelOpen(true);
+    }
+  }, [searchParams]);
 
   return (
     <MainLayout>
-      <div className="container py-6 max-w-5xl">
+      <div className="w-full h-full px-6 py-6 flex flex-col">
         <motion.div
           initial="hidden"
           animate="visible"
           variants={variants}
-          className="flex items-center justify-between mb-6"
+          className="flex items-center justify-between mb-6 flex-shrink-0"
         >
           <h1 className="text-3xl font-bold">设置</h1>
           <p className="text-sm text-muted-foreground">
@@ -37,43 +56,34 @@ export default function SettingsPage() {
           </p>
         </motion.div>
 
-        <Tabs defaultValue="general" className="space-y-6">
-          <div className="bg-card/50 backdrop-blur-sm border rounded-lg shadow-sm p-1 sticky top-16 z-10">
-            <TabsList className="w-full grid grid-cols-2 md:grid-cols-5 gap-1">
-              <TabsTrigger value="general" className="flex gap-2 items-center">
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6 w-full flex-grow flex flex-col">
+          <div className="bg-card/50 backdrop-blur-sm border rounded-lg shadow-sm p-1 sticky top-16 z-10 flex-shrink-0">
+            <TabsList className="w-full grid grid-cols-3 gap-1">
+              <TabsTrigger value="general" className="flex gap-2 items-center justify-center">
                 <Settings className="h-4 w-4" />
                 <span className="hidden md:inline">常规设置</span>
                 <span className="md:hidden">常规</span>
               </TabsTrigger>
-              <TabsTrigger value="models" className="flex gap-2 items-center">
+              <TabsTrigger value="models" className="flex gap-2 items-center justify-center">
                 <Server className="h-4 w-4" />
                 <span className="hidden md:inline">模型管理</span>
                 <span className="md:hidden">模型</span>
               </TabsTrigger>
-              <TabsTrigger value="search" className="flex gap-2 items-center">
-                <LayoutGrid className="h-4 w-4" />
-                <span className="hidden md:inline">搜索设置</span>
-                <span className="md:hidden">搜索</span>
-              </TabsTrigger>
-              <TabsTrigger value="data" className="flex gap-2 items-center">
+              <TabsTrigger value="data" className="flex gap-2 items-center justify-center">
                 <Database className="h-4 w-4" />
                 <span className="hidden md:inline">数据管理</span>
                 <span className="md:hidden">数据</span>
-              </TabsTrigger>
-              <TabsTrigger value="security" className="flex gap-2 items-center">
-                <Shield className="h-4 w-4" />
-                <span className="hidden md:inline">安全设置</span>
-                <span className="md:hidden">安全</span>
               </TabsTrigger>
             </TabsList>
           </div>
 
           {/* 常规设置标签页 */}
-          <TabsContent value="general" className="space-y-6">
+          <TabsContent value="general" className="space-y-6 w-full flex-grow overflow-auto">
             <motion.div
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.3 }}
+              className="w-full"
             >
               <Card className="overflow-hidden border-muted shadow-md transition-all hover:shadow-lg">
                 <CardHeader className="bg-muted/10 border-b pb-3">
@@ -113,50 +123,13 @@ export default function SettingsPage() {
           </TabsContent>
 
           {/* 模型管理标签页 */}
-          <TabsContent value="models" className="space-y-6">
-            <ModelSettings modelId={selectedModelId || ''} />
-          </TabsContent>
-
-          {/* 搜索设置标签页 */}
-          <TabsContent value="search" className="space-y-6">
-            <SearchSettings />
+          <TabsContent value="models" className="space-y-6 w-full flex-grow overflow-auto">
+            <ModelSettings modelId={selectedModelId || ''} initialAddModelOpen={isAddModelOpen} />
           </TabsContent>
 
           {/* 数据管理标签页 */}
-          <TabsContent value="data" className="space-y-6">
+          <TabsContent value="data" className="space-y-6 w-full flex-grow overflow-auto">
             <DataManagement />
-          </TabsContent>
-
-          {/* 安全设置标签页 */}
-          <TabsContent value="security" className="space-y-6">
-            <motion.div
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.3 }}
-            >
-              <Card className="overflow-hidden border-muted shadow-md transition-all hover:shadow-lg">
-                <CardHeader className="bg-muted/10 border-b pb-3">
-                  <CardTitle className="flex items-center gap-2">
-                    <Shield className="h-5 w-5 text-primary" />
-                    API 密钥管理
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="pt-6">
-                  <div className="space-y-4">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <h3 className="font-medium">OpenAI API 密钥</h3>
-                        <p className="text-sm text-muted-foreground">用于访问 OpenAI 的 API 服务</p>
-                      </div>
-                      <Button variant="outline" size="sm" className="flex items-center gap-1">
-                        <ExternalLink className="h-4 w-4" />
-                        <span>配置</span>
-                      </Button>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            </motion.div>
           </TabsContent>
         </Tabs>
       </div>

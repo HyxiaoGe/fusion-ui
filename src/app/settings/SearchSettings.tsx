@@ -39,8 +39,8 @@ const SearchSettings: React.FC = () => {
   };
   
   return (
-    <div className="space-y-6">
-      <Card>
+    <div className="space-y-6 w-full">
+      <Card className="w-full">
         <CardHeader>
           <CardTitle>搜索设置</CardTitle>
           <CardDescription>

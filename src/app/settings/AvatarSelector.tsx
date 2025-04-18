@@ -36,7 +36,7 @@ const AvatarSelector: React.FC = () => {
   const { userAvatar, assistantAvatar } = useAppSelector(state => state.settings);
 
   return (
-    <Card>
+    <Card className="w-full h-full">
       <CardHeader>
         <CardTitle>头像设置</CardTitle>
       </CardHeader>

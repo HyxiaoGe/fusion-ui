@@ -21,9 +21,11 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { Button } from "@/components/ui/button";
+import { PlusCircle } from "lucide-react";
 
 interface ModelSelectorProps {
-  onChange?: (modelId: string) => void;
+  onChange: (modelId: string) => void;
   modelId?: string;
   disabled?: boolean;
   className?: string;
