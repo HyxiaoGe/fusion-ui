@@ -11,6 +11,7 @@ import { Database, ExternalLink, Globe, LayoutGrid, Server, Settings, Shield } f
 import AvatarSelector from "./AvatarSelector";
 import DataManagement from "./DataManagement";
 import SearchSettings from "./SearchSettings";
+import Link from "next/link";
 
 // 定义动画变体
 const variants = {
@@ -113,7 +114,7 @@ export default function SettingsPage() {
 
           {/* 模型管理标签页 */}
           <TabsContent value="models" className="space-y-6">
-            <ModelSettings modelId={selectedModelId} />
+            <ModelSettings modelId={selectedModelId || ''} />
           </TabsContent>
 
           {/* 搜索设置标签页 */}
