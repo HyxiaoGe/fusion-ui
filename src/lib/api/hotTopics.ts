@@ -19,22 +19,39 @@ let topicsCache: HotTopic[] = [];
 let lastFetchTime: number = 0;
 const CACHE_EXPIRY_TIME = 10 * 60 * 1000; // 缓存过期时间，10分钟
 let pollingInitialized = false; // 标记是否已初始化轮询
+let ongoingRequest: Promise<HotTopic[]> | null = null; // 跟踪进行中的请求
 
 // 获取缓存的热点话题，不直接请求API
 export const getCachedHotTopics = async (limit: number = 50): Promise<HotTopic[]> => {
-  // 如果缓存为空或已过期，则先初始化轮询确保有数据
-  if (topicsCache.length === 0) {
-    // 确保初始化了轮询
-    initHotTopicsPolling();
-    
-    // 等待一小段时间让数据加载
-    if (topicsCache.length === 0) {
-      await new Promise(resolve => setTimeout(resolve, 100));
+  // 如果缓存不为空，直接返回缓存数据
+  if (topicsCache.length > 0) {
+    return topicsCache.slice(0, limit);
+  }
+  
+  // 确保初始化了轮询
+  initHotTopicsPolling();
+  
+  // 如果已经有请求在进行中，等待该请求完成
+  if (ongoingRequest) {
+    console.log('已有请求进行中，等待结果...');
+    try {
+      const data = await ongoingRequest;
+      return data.slice(0, limit);
+    } catch (error) {
+      console.error('等待已有请求失败:', error);
+      // 如果进行中的请求失败，继续执行后续逻辑
     }
   }
   
-  // 返回缓存数据
-  return topicsCache.slice(0, limit);
+  // 如果缓存为空且没有进行中的请求，发起新请求
+  try {
+    console.log('缓存为空，请求热点话题数据');
+    // 调用fetchHotTopics获取数据
+    return await fetchHotTopics(limit, true);
+  } catch (error) {
+    console.error('获取热点话题失败:', error);
+    return []; // 出错时返回空数组
+  }
 };
 
 export const fetchHotTopics = async (limit: number = 30, forceRefresh: boolean = false): Promise<HotTopic[]> => {
@@ -44,25 +61,47 @@ export const fetchHotTopics = async (limit: number = 30, forceRefresh: boolean =
     return topicsCache;
   }
 
+  // 如果已经有请求在进行中，等待该请求完成
+  if (ongoingRequest) {
+    console.log('已有fetchHotTopics请求进行中，等待结果...');
+    try {
+      return await ongoingRequest;
+    } catch (error) {
+      console.error('等待已有请求失败:', error);
+      // 如果进行中的请求失败，继续创建新请求
+    }
+  }
+  
+  // 创建新的请求
   try {
     console.log(`请求热点话题API: limit=${limit}, forceRefresh=${forceRefresh}`);
-    const response = await fetch(`${API_BASE_URL}/api/topics/hot?limit=${limit}`);
-    if (!response.ok) {
-      throw new Error('获取热点话题失败');
-    }
-    const data = await response.json();
+    ongoingRequest = (async () => {
+      try {
+        const response = await fetch(`${API_BASE_URL}/api/topics/hot?limit=${limit}`);
+        if (!response.ok) {
+          throw new Error('获取热点话题失败');
+        }
+        const data = await response.json();
+        
+        // 更新缓存
+        topicsCache = data;
+        lastFetchTime = now;
+        
+        return data;
+      } finally {
+        // 确保无论成功还是失败，都清空进行中的请求引用
+        ongoingRequest = null;
+      }
+    })();
     
-    // 更新缓存
-    topicsCache = data;
-    lastFetchTime = now;
-    
-    return data;
+    return await ongoingRequest;
   } catch (error) {
     console.error('获取热点话题失败:', error);
     // 如果请求失败但缓存中有数据，则返回缓存数据
     if (topicsCache.length > 0) {
       return topicsCache;
     }
+    ongoingRequest = null; // 确保清除引用
     return [];
   }
 };

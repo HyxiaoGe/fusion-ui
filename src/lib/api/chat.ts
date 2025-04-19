@@ -234,7 +234,10 @@ export async function getConversation(conversationId: string) {
   }
 }
 
-// 添加用于获取推荐问题的函数
+// 添加请求缓存
+const suggestedQuestionsCache: Record<string, { questions: string[], timestamp: number }> = {};
+// 添加进行中请求跟踪
+const ongoingQuestionsRequests: Record<string, Promise<{ questions: string[] }>> = {};
 
 /**
  * 获取对话的推荐后续问题
@@ -246,34 +249,69 @@ export const fetchSuggestedQuestions = async (
   conversationId: string,
   options: Record<string, any> = {}
 ): Promise<{ questions: string[] }> => {
+  // 检查缓存，5分钟内有效
+  const CACHE_VALIDITY = 5 * 60 * 1000; // 5分钟
+  const now = Date.now();
+  const cachedData = suggestedQuestionsCache[conversationId];
+  
+  if (cachedData && (now - cachedData.timestamp) < CACHE_VALIDITY) {
+    console.log(`使用缓存的推荐问题，对话ID: ${conversationId}`);
+    return { questions: cachedData.questions };
+  }
+  
+  // 检查是否有正在进行的请求
+  if (conversationId in ongoingQuestionsRequests) {
+    console.log(`等待进行中的推荐问题请求，对话ID: ${conversationId}`);
+    return ongoingQuestionsRequests[conversationId];
+  }
+  
+  // 创建新的请求
   try {
+    console.log(`开始获取推荐问题，对话ID: ${conversationId}`);
     
-    const response = await fetch(`${API_BASE_URL}/api/chat/suggest-questions`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        conversation_id: conversationId,
-        options: options
-      })
-    });
+    // 包装请求为Promise并记录
+    ongoingQuestionsRequests[conversationId] = (async () => {
+      try {
+        const response = await fetch(`${API_BASE_URL}/api/chat/suggest-questions`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            conversation_id: conversationId,
+            options: options
+          })
+        });
+        
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => null);
+          throw new Error(
+            `获取推荐问题失败: ${response.status} ${
+              errorData?.message || response.statusText
+            }`
+          );
+        }
+        
+        const data = await response.json();
+        const result = { questions: data.questions || [] };
+        
+        // 更新缓存
+        suggestedQuestionsCache[conversationId] = {
+          questions: result.questions,
+          timestamp: Date.now()
+        };
+        
+        return result;
+      } finally {
+        // 请求完成后清除记录
+        delete ongoingQuestionsRequests[conversationId];
+      }
+    })();
     
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => null);
-      throw new Error(
-        `获取推荐问题失败: ${response.status} ${
-          errorData?.message || response.statusText
-        }`
-      );
-    }
-    
-    const data = await response.json();
-    return {
-      questions: data.questions || []
-    };
+    return await ongoingQuestionsRequests[conversationId];
   } catch (error) {
     console.error('获取推荐问题出错:', error);
+    delete ongoingQuestionsRequests[conversationId];
     return { questions: [] };
   }
 };

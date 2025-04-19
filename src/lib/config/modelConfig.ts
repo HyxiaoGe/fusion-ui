@@ -74,31 +74,65 @@ export const convertApiModelToModelInfo = (apiModel: ApiModelData): ModelInfo =>
   };
 };
 
-// 获取模型配置的函数
-export const fetchModels = async (): Promise<ModelInfo[]> => {
-  try {
-    const response = await fetch(`${API_BASE_URL}/api/models/`);
-    if (!response.ok) {
-      throw new Error(`获取模型配置失败: ${response.status}`);
-    }
-    
-    const data: ApiModelResponse = await response.json();
-    
-    // 将API返回的模型数据转换为ModelInfo格式
-    return data.models.map(convertApiModelToModelInfo);
-  } catch (error) {
-    console.error('获取模型配置时出错:', error);
-
-    return []
-  }
-};
-
 // 模型信息 - 从服务器获取或使用默认值
 // 此变量将在应用启动时初始化
 export let models: ModelInfo[] = [];
 
+// 添加标志和Promise缓存
+let isModelsFetching = false;
+let modelsFetchPromise: Promise<ModelInfo[]> | null = null;
+
+// 获取模型配置的函数
+export const fetchModels = async (): Promise<ModelInfo[]> => {
+  // 如果已经有数据且不是在获取中，直接返回现有数据
+  if (models.length > 0 && !isModelsFetching) {
+    return models;
+  }
+  
+  // 如果已经在获取中，返回正在进行的Promise
+  if (isModelsFetching && modelsFetchPromise) {
+    console.log('模型数据正在获取中，等待已有请求完成...');
+    return modelsFetchPromise;
+  }
+  
+  // 设置标志并创建Promise
+  isModelsFetching = true;
+  
+  try {
+    modelsFetchPromise = (async () => {
+      try {
+        console.log('发起模型数据API请求...');
+        const response = await fetch(`${API_BASE_URL}/api/models/`);
+        if (!response.ok) {
+          throw new Error(`获取模型配置失败: ${response.status}`);
+        }
+        
+        const data: ApiModelResponse = await response.json();
+        
+        // 将API返回的模型数据转换为ModelInfo格式并更新缓存
+        const modelInfoList = data.models.map(convertApiModelToModelInfo);
+        models = modelInfoList;
+        return modelInfoList;
+      } finally {
+        // 请求完成后重置标志
+        isModelsFetching = false;
+      }
+    })();
+    
+    return await modelsFetchPromise;
+  } catch (error) {
+    console.error('获取模型配置时出错:', error);
+    isModelsFetching = false;
+    modelsFetchPromise = null;
+    return models.length > 0 ? models : [];
+  }
+};
+
 // 初始化模型配置
 export const initializeModels = async () => {
-  models = await fetchModels();
+  if (models.length === 0) {
+    console.log('初始化模型配置...');
+    return await fetchModels();
+  }
   return models;
 };

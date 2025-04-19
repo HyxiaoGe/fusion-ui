@@ -135,6 +135,8 @@ export default function Home() {
   const [isLoadingQuestions, setIsLoadingQuestions] = useState(false);
   // 添加缓存状态
   const [questionCache, setQuestionCache] = useState<Record<string, string[]>>({});
+  // 添加问题请求队列引用
+  const pendingQuestionRequestRef = useRef<NodeJS.Timeout | null>(null);
 
   const chatInputRef = useRef<HTMLDivElement>(null);
 
@@ -218,9 +220,18 @@ export default function Home() {
           // 使用缓存的推荐问题
           setSuggestedQuestions(questionCache[activeChatId]);
         } else {
-          // 如果没有缓存，清空当前显示的推荐问题并获取新的
+          // 如果没有缓存，清空当前显示的推荐问题
           setSuggestedQuestions([]);
-          getSuggestedQuestions(activeChatId);
+          
+          // 延迟200ms获取推荐问题，避免在快速切换会话时触发不必要的请求
+          const delay = setTimeout(() => {
+            // 确认仍然是同一个活动会话
+            if (activeChatId === store.getState().chat.activeChatId) {
+              getSuggestedQuestions(activeChatId);
+            }
+          }, 200);
+          
+          return () => clearTimeout(delay);
         }
       } else {
         // 没有AI回复时清空推荐问题
@@ -503,19 +514,28 @@ export default function Home() {
               status: null
             }));
             // 流式输出结束后，获取推荐问题
-            setTimeout(() => {
-              // 使用当前活动的对话ID获取推荐问题
-              if (activeChatId) {
-                // 检查当前会话是否已经有AI回复(包括刚刚生成的这条)
-                const chat = chats.find(c => c.id === activeChatId);
+            
+            // 如果已有正在等待执行的请求，取消它
+            if (pendingQuestionRequestRef.current) {
+              clearTimeout(pendingQuestionRequestRef.current);
+            }
+            
+            // 延迟获取推荐问题
+            pendingQuestionRequestRef.current = setTimeout(() => {
+              pendingQuestionRequestRef.current = null;
+              
+              // 确保当前会话有AI消息才获取推荐问题
+              const currentActiveChatId = store.getState().chat.activeChatId;
+              if (currentActiveChatId) {
+                const currentChats = store.getState().chat.chats;
+                const chat = currentChats.find(c => c.id === currentActiveChatId);
                 const hasAIMessage = chat?.messages.some(msg => msg.role === 'assistant');
                 
-                // 只有有AI回复且缓存为空时才获取推荐问题
-                if (hasAIMessage && (!questionCache[activeChatId] || questionCache[activeChatId].length === 0)) {
-                  getSuggestedQuestions(activeChatId);
+                if (hasAIMessage && (!questionCache[currentActiveChatId] || questionCache[currentActiveChatId].length === 0)) {
+                  getSuggestedQuestions(currentActiveChatId);
                 }
               }
-            }, 1000); // 延迟1秒，确保服务器已处理完成
+            }, 1500);
           }
 
           // 在消息流结束(done=true)且是第一条消息时生成标题
@@ -692,14 +712,24 @@ export default function Home() {
                 }, 1000);
                 
                 // 流式输出结束后获取推荐问题
-                setTimeout(() => {
+                // 如果已有正在等待执行的请求，取消它
+                if (pendingQuestionRequestRef.current) {
+                  clearTimeout(pendingQuestionRequestRef.current);
+                }
+                
+                // 延迟获取推荐问题
+                pendingQuestionRequestRef.current = setTimeout(() => {
+                  pendingQuestionRequestRef.current = null;
+                  
                   // 确保当前会话有AI消息才获取推荐问题
-                  if (activeChatId) {
-                    const chat = chats.find(c => c.id === activeChatId);
+                  const currentActiveChatId = store.getState().chat.activeChatId;
+                  if (currentActiveChatId) {
+                    const currentChats = store.getState().chat.chats;
+                    const chat = currentChats.find(c => c.id === currentActiveChatId);
                     const hasAIMessage = chat?.messages.some(msg => msg.role === 'assistant');
                     
-                    if (hasAIMessage && (!questionCache[activeChatId] || questionCache[activeChatId].length === 0)) {
-                      getSuggestedQuestions(activeChatId);
+                    if (hasAIMessage && (!questionCache[currentActiveChatId] || questionCache[currentActiveChatId].length === 0)) {
+                      getSuggestedQuestions(currentActiveChatId);
                     }
                   }
                 }, 1500);
@@ -827,14 +857,24 @@ export default function Home() {
             }, 1000);
             
             // 流式输出结束后获取推荐问题
-            setTimeout(() => {
+            // 如果已有正在等待执行的请求，取消它
+            if (pendingQuestionRequestRef.current) {
+              clearTimeout(pendingQuestionRequestRef.current);
+            }
+            
+            // 延迟获取推荐问题
+            pendingQuestionRequestRef.current = setTimeout(() => {
+              pendingQuestionRequestRef.current = null;
+              
               // 确保当前会话有AI消息才获取推荐问题
-              if (activeChatId) {
-                const chat = chats.find(c => c.id === activeChatId);
+              const currentActiveChatId = store.getState().chat.activeChatId;
+              if (currentActiveChatId) {
+                const currentChats = store.getState().chat.chats;
+                const chat = currentChats.find(c => c.id === currentActiveChatId);
                 const hasAIMessage = chat?.messages.some(msg => msg.role === 'assistant');
                 
-                if (hasAIMessage && (!questionCache[activeChatId] || questionCache[activeChatId].length === 0)) {
-                  getSuggestedQuestions(activeChatId);
+                if (hasAIMessage && (!questionCache[currentActiveChatId] || questionCache[currentActiveChatId].length === 0)) {
+                  getSuggestedQuestions(currentActiveChatId);
                 }
               }
             }, 1500);

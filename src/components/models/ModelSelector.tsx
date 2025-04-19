@@ -30,13 +30,14 @@ interface ModelSelectorProps {
 
 const ModelSelector: React.FC<ModelSelectorProps> = ({ onChange, modelId, disabled, className }) => {
   const dispatch = useAppDispatch();
-  const { models, providers, selectedModelId } = useAppSelector(
+  const { models, providers, selectedModelId, isLoading } = useAppSelector(
     (state) => state.models
   );
   const { activeChatId, chats } = useAppSelector((state) => state.chat);
   const { mode } = useAppSelector(state => state.theme);
   const [hoveredModel, setHoveredModel] = useState<string | null>(null);
   const [tooltipPosition, setTooltipPosition] = useState({ x: 0, y: 0 });
+  const [localLoading, setLocalLoading] = useState(true); // 添加本地加载状态
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   // 检查当前聊天是否有消息
@@ -53,6 +54,22 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({ onChange, modelId, disabl
   const disabledReason = hasMessages
     ? "会话开始后无法更改模型" 
     : disabled ? "模型选择器已禁用" : "";
+
+  // 在组件挂载后设置一个短暂的延迟，以确保模型数据加载
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setLocalLoading(false);
+    }, 1000); // 1秒后假设加载完成
+    
+    return () => clearTimeout(timer);
+  }, []);
+
+  // 当模型数据变化时更新加载状态
+  useEffect(() => {
+    if (models.length > 0) {
+      setLocalLoading(false);
+    }
+  }, [models]);
 
   // 确保当下拉框关闭时，重置悬停状态
   useEffect(() => {
@@ -99,9 +116,19 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({ onChange, modelId, disabl
     }
   };
 
-  const selectedModel = models.find(
-    (model) => model.id === (modelId || activeChatModelId || selectedModelId)
-  );
+  // 计算当前选中的模型
+  const currentModelId = modelId || activeChatModelId || selectedModelId;
+  const selectedModel = models.find(model => model.id === currentModelId);
+  
+  // 显示加载中状态
+  if ((isLoading || localLoading) && models.length === 0) {
+    return (
+      <div className={`flex items-center justify-center px-3 py-1 text-sm text-muted-foreground rounded-md border animate-pulse ${className}`}>
+        <span className="mr-2 text-xs">加载模型...</span>
+        <div className="h-4 w-4 rounded-full border-2 border-r-0 border-b-0 animate-spin"></div>
+      </div>
+    );
+  }
 
   // 确定当前模式，用于应用正确的样式
   const isDarkMode = mode === 'dark';

@@ -33,12 +33,19 @@ const HomePage: React.FC<HomePageProps> = ({ onNewChat, onChatSelected }) => {
   // 加载热点话题数据
   const loadHotTopics = async () => {
     try {
-      // 只使用缓存数据，不直接请求API
+      // 开始加载
+      console.log('开始加载热点话题');
+      
+      // 直接请求API数据
       const topics = await getCachedHotTopics(30);  // 获取30条数据
+      console.log(`获取到${topics.length}条热点话题`);
+      
+      // 更新状态
       setAllHotTopics(topics);
       
       // 首次加载时，随机选择6条显示
       if (topics.length > 0 && displayTopics.length === 0) {
+        console.log('首次加载，选择6条热点话题显示');
         const initialTopics = [...topics].sort(() => 0.5 - Math.random()).slice(0, 6);
         setDisplayTopics(initialTopics);
       }
@@ -49,15 +56,33 @@ const HomePage: React.FC<HomePageProps> = ({ onNewChat, onChatSelected }) => {
   
   // 初始加载热点话题
   useEffect(() => {
+    // 立即执行一次加载
     loadHotTopics();
     
-    // 设置定期检查缓存是否更新
+    // 只在确实没有数据时才重试
+    const retryTimer = setTimeout(() => {
+      if (displayTopics.length === 0) {
+        console.log('3秒后话题列表仍为空，检查状态');
+        
+        // 如果有数据但未显示，则选择数据显示
+        if (allHotTopics.length > 0) {
+          console.log('有数据但未显示，选择话题显示');
+          const initialTopics = [...allHotTopics].sort(() => 0.5 - Math.random()).slice(0, 6);
+          setDisplayTopics(initialTopics);
+        } 
+      }
+    }, 3000);
+    
+    // 设置定期检查缓存是否更新（降低频率）
     const interval = setInterval(() => {
       loadHotTopics();
-    }, 30 * 1000); // 每30秒检查一次缓存
+    }, 60 * 1000); // 改为60秒检查一次
     
-    return () => clearInterval(interval);
-  }, []);
+    return () => {
+      clearTimeout(retryTimer);
+      clearInterval(interval);
+    };
+  }, []);  // 移除依赖项，避免重复执行
 
   // 从缓存中随机选择6条数据显示
   const refreshDisplayTopics = () => {
@@ -387,13 +412,13 @@ const HomePage: React.FC<HomePageProps> = ({ onNewChat, onChatSelected }) => {
             displayTopics.map((topic) => (
               <Card 
                 key={topic.id}
-                className="cursor-pointer hover:bg-muted/50 transition-colors" 
+                className="cursor-pointer hover:bg-muted/50 transition-colors relative h-[120px]" 
                 onClick={() => handleTopicClick(topic)}
               >
                 <CardHeader className="pb-3">
-                  <CardTitle className="text-base">{topic.title}</CardTitle>
+                  <CardTitle className="text-base mb-6 line-clamp-2">{topic.title}</CardTitle>
                 </CardHeader>
-                <CardFooter className="pt-1 text-xs text-muted-foreground">
+                <CardFooter className="pt-1 text-xs text-muted-foreground absolute bottom-0 left-0 pb-3 pl-5">
                   {topic.source} {topic.source && '•'} {topic.category || '热门话题'}
                 </CardFooter>
               </Card>
@@ -401,11 +426,11 @@ const HomePage: React.FC<HomePageProps> = ({ onNewChat, onChatSelected }) => {
           ) : (
             // 如果没有数据，显示加载状态或占位卡片
             Array(6).fill(0).map((_, index) => (
-              <Card key={index} className="cursor-pointer hover:bg-muted/50 transition-colors opacity-50">
+              <Card key={index} className="cursor-pointer hover:bg-muted/50 transition-colors opacity-50 relative h-[120px]">
                 <CardHeader className="pb-3">
-                  <CardTitle className="text-base h-5 bg-muted/50 rounded animate-pulse"></CardTitle>
+                  <CardTitle className="text-base h-5 bg-muted/50 rounded animate-pulse mb-6 line-clamp-2"></CardTitle>
                 </CardHeader>
-                <CardFooter className="pt-1 text-xs text-muted-foreground">
+                <CardFooter className="pt-1 text-xs text-muted-foreground absolute bottom-0 left-0 pb-3 pl-5">
                   <div className="h-4 w-24 bg-muted/50 rounded animate-pulse"></div>
                 </CardFooter>
               </Card>
