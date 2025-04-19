@@ -207,14 +207,24 @@ export default function Home() {
   
     // 处理会话切换时的推荐问题
     if (activeChatId) {
-      // 检查是否有缓存的推荐问题
-      if (questionCache[activeChatId] && questionCache[activeChatId].length > 0) {
-        // 使用缓存的推荐问题
-        setSuggestedQuestions(questionCache[activeChatId]);
+      // 检查当前会话是否有AI回复
+      const chat = chats.find(c => c.id === activeChatId);
+      const hasAIMessage = chat?.messages.some(msg => msg.role === 'assistant');
+      
+      // 只有在有AI回复的情况下才处理推荐问题
+      if (hasAIMessage) {
+        // 检查是否有缓存的推荐问题
+        if (questionCache[activeChatId] && questionCache[activeChatId].length > 0) {
+          // 使用缓存的推荐问题
+          setSuggestedQuestions(questionCache[activeChatId]);
+        } else {
+          // 如果没有缓存，清空当前显示的推荐问题并获取新的
+          setSuggestedQuestions([]);
+          getSuggestedQuestions(activeChatId);
+        }
       } else {
-        // 如果没有缓存，清空当前显示的推荐问题并获取新的
+        // 没有AI回复时清空推荐问题
         setSuggestedQuestions([]);
-        getSuggestedQuestions(activeChatId);
       }
     } else {
       // 无活动会话时清空推荐问题
@@ -224,7 +234,7 @@ export default function Home() {
     // 短暂延时确保DOM已更新
     const timer = setTimeout(resetFocus, 200);
     return () => clearTimeout(timer);
-  }, [activeChatId, lastDatabaseSync, questionCache]);
+  }, [activeChatId, lastDatabaseSync, questionCache, chats]);
 
   // 获取当前活动的对话
   const activeChat = activeChatId ? chats.find(chat => chat.id === activeChatId) : null;
@@ -300,6 +310,15 @@ export default function Home() {
   // 获取推荐问题函数
   const getSuggestedQuestions = async (chatId: string) => {
     if (!chatId) return;
+    
+    // 检查是否有AI消息存在
+    const chat = chats.find(c => c.id === chatId);
+    const hasAIMessage = chat?.messages.some(msg => msg.role === 'assistant');
+    
+    // 如果没有AI消息，不获取推荐问题
+    if (!hasAIMessage) {
+      return;
+    }
     
     setIsLoadingQuestions(true);
     try {
@@ -487,8 +506,12 @@ export default function Home() {
             setTimeout(() => {
               // 使用当前活动的对话ID获取推荐问题
               if (activeChatId) {
-                // 检查缓存是否为空，如果空则获取新问题
-                if (!questionCache[activeChatId] || questionCache[activeChatId].length === 0) {
+                // 检查当前会话是否已经有AI回复(包括刚刚生成的这条)
+                const chat = chats.find(c => c.id === activeChatId);
+                const hasAIMessage = chat?.messages.some(msg => msg.role === 'assistant');
+                
+                // 只有有AI回复且缓存为空时才获取推荐问题
+                if (hasAIMessage && (!questionCache[activeChatId] || questionCache[activeChatId].length === 0)) {
                   getSuggestedQuestions(activeChatId);
                 }
               }
@@ -667,6 +690,19 @@ export default function Home() {
                   }
                   dispatch(endStreaming());
                 }, 1000);
+                
+                // 流式输出结束后获取推荐问题
+                setTimeout(() => {
+                  // 确保当前会话有AI消息才获取推荐问题
+                  if (activeChatId) {
+                    const chat = chats.find(c => c.id === activeChatId);
+                    const hasAIMessage = chat?.messages.some(msg => msg.role === 'assistant');
+                    
+                    if (hasAIMessage && (!questionCache[activeChatId] || questionCache[activeChatId].length === 0)) {
+                      getSuggestedQuestions(activeChatId);
+                    }
+                  }
+                }, 1500);
               }
             });
         } catch (error) {
@@ -789,6 +825,19 @@ export default function Home() {
               }
               dispatch(endStreaming());
             }, 1000);
+            
+            // 流式输出结束后获取推荐问题
+            setTimeout(() => {
+              // 确保当前会话有AI消息才获取推荐问题
+              if (activeChatId) {
+                const chat = chats.find(c => c.id === activeChatId);
+                const hasAIMessage = chat?.messages.some(msg => msg.role === 'assistant');
+                
+                if (hasAIMessage && (!questionCache[activeChatId] || questionCache[activeChatId].length === 0)) {
+                  getSuggestedQuestions(activeChatId);
+                }
+              }
+            }, 1500);
           }
         });
     } catch (error) {

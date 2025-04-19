@@ -711,13 +711,6 @@ const ModelSettings: React.FC<ModelSettingsProps> = ({ modelId, initialAddModelO
       
       console.log('添加模型数据:', addModelData);
       
-      // TODO: 在实际项目中调用API保存模型
-      // const response = await fetch('/api/models', {
-      //   method: 'POST',
-      //   headers: { 'Content-Type': 'application/json' },
-      //   body: JSON.stringify(addModelData)
-      // });
-      
       // 模拟API调用成功
       await new Promise(resolve => setTimeout(resolve, 500));
       
