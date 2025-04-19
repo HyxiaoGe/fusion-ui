@@ -1,28 +1,21 @@
-// src/components/models/ModelSettings.tsx
 "use client";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Slider } from "@/components/ui/slider";
 import { Switch } from "@/components/ui/switch";
 import { useAppDispatch, useAppSelector } from "@/redux/hooks";
-import { updateModelConfig, updateModels, Model } from "@/redux/slices/modelsSlice";
+import { updateModelConfig } from "@/redux/slices/modelsSlice";
 import React, { useState, useEffect } from "react";
-import CapabilityIcon from "./CapabilityIcon";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
-import { EyeIcon, EyeOffIcon, Server, Shield, Search, PlusCircle, Settings, Loader2, RefreshCw, ChevronRight, AlertCircle, Copy, Check, DollarSign } from "lucide-react";
+import { EyeIcon, EyeOffIcon, Server, Shield, Search, PlusCircle, Settings, Loader2, RefreshCw, ChevronRight, Copy, Check, DollarSign } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/toast";
-import { AppDispatch, RootState } from "@/redux/store";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { DateInput } from "@/components/ui/date-input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { CalendarIcon } from "lucide-react";
-import { format } from "date-fns";
-import { zhCN } from "date-fns/locale";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 interface ModelSettingsProps {
   modelId?: string;
@@ -63,7 +56,6 @@ interface ModelDetail {
   provider: string;
   knowledgeCutoff?: string;
   capabilities: {
-    vision?: boolean;
     deepThinking?: boolean;
     fileSupport?: boolean;
     imageGen?: boolean;
@@ -93,7 +85,6 @@ interface BasicModelInfo {
   provider: string;
   enabled: boolean;
   capabilities: {
-    vision?: boolean;
     deepThinking?: boolean;
     fileSupport?: boolean;
     imageGen?: boolean;
@@ -356,7 +347,7 @@ const ModelSettings: React.FC<ModelSettingsProps> = ({ modelId, initialAddModelO
     modelId: string;
     knowledgeCutoff: string;
     description: string;
-    vision: boolean;
+    imageGen: boolean;
     deepThinking: boolean;
     fileSupport: boolean;
     priority: number;
@@ -368,7 +359,7 @@ const ModelSettings: React.FC<ModelSettingsProps> = ({ modelId, initialAddModelO
     modelId: '',
     knowledgeCutoff: '',
     description: '',
-    vision: false,
+    imageGen: false,
     deepThinking: false,
     fileSupport: false,
     priority: 10,
@@ -694,7 +685,7 @@ const ModelSettings: React.FC<ModelSettingsProps> = ({ modelId, initialAddModelO
         provider: currentProvider.id,
         knowledgeCutoff: newModel.knowledgeCutoff || new Date().getFullYear() + '-' + (new Date().getMonth() + 1).toString().padStart(2, '0'),
         capabilities: {
-          vision: newModel.vision,
+          imageGen: newModel.imageGen,
           deepThinking: newModel.deepThinking,
           fileSupport: newModel.fileSupport,
         },
@@ -731,7 +722,7 @@ const ModelSettings: React.FC<ModelSettingsProps> = ({ modelId, initialAddModelO
         modelId: '',
         knowledgeCutoff: '',
         description: '',
-        vision: false,
+        imageGen: false,
         deepThinking: false,
         fileSupport: false,
         priority: 10,
@@ -853,7 +844,6 @@ const ModelSettings: React.FC<ModelSettingsProps> = ({ modelId, initialAddModelO
                     </Badge>
                   </div>
                   <div className="mt-1 flex flex-wrap gap-1">
-                    {model.capabilities.vision && <Badge variant="outline" className="text-xs">视觉</Badge>}
                     {model.capabilities.deepThinking && <Badge variant="outline" className="text-xs">深度思考</Badge>}
                     {model.capabilities.fileSupport && <Badge variant="outline" className="text-xs">文件支持</Badge>}
                     {model.capabilities.imageGen && <Badge variant="outline" className="text-xs">图像生成</Badge>}
@@ -1286,11 +1276,11 @@ const ModelSettings: React.FC<ModelSettingsProps> = ({ modelId, initialAddModelO
               <div className="col-span-3 space-y-2">
                 <div className="flex items-center gap-2">
                   <Switch
-                    id="vision"
-                    checked={newModel.vision}
-                    onCheckedChange={(checked) => setNewModel({ ...newModel, vision: checked })}
+                    id="imageGen"
+                    checked={newModel.imageGen}
+                    onCheckedChange={(checked) => setNewModel({ ...newModel, imageGen: checked })}
                   />
-                  <Label htmlFor="vision" className="cursor-pointer">视觉能力</Label>
+                  <Label htmlFor="imageGen" className="cursor-pointer">图像生成</Label>
                 </div>
                 
                 <div className="flex items-center gap-2">

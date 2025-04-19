@@ -28,29 +28,10 @@ const ModelCard: React.FC<ModelCardProps> = ({ model }) => {
             )}
           </div>
         </div>
-        <CardDescription>
-          上下文窗口: {model.contextWindow || `${model.maxTokens / 1000}K`}
-          {!model.enabled && (
-            <div className="text-gray-500 mt-1">
-              此模型当前未接入或暂时不可用
-            </div>
-          )}
-        </CardDescription>
       </CardHeader>
       <CardContent>
         <div className="flex flex-col gap-3">
-          <div className="grid grid-cols-2 gap-2 text-sm">
-            <div>最大Token数: {model.maxTokens.toLocaleString()}</div>
-            <div>默认温度: {model.temperature}</div>
-          </div>
-
           <div className="flex flex-wrap gap-2 mt-2">
-            {model.capabilities.vision && (
-              <Badge variant="secondary" className="gap-1">
-                <CapabilityIcon type="vision" showTooltip={false} />
-                视觉识别
-              </Badge>
-            )}
             {model.capabilities.imageGen && (
               <Badge variant="secondary" className="gap-1">
                 <CapabilityIcon type="imageGen" showTooltip={false} />

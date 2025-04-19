@@ -4,8 +4,7 @@ import {
   Select,
   SelectContent,
   SelectItem,
-  SelectTrigger,
-  SelectValue,
+  SelectTrigger
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 import { useAppDispatch, useAppSelector } from "@/redux/hooks";
@@ -21,8 +20,6 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { Button } from "@/components/ui/button";
-import { PlusCircle } from "lucide-react";
 
 interface ModelSelectorProps {
   onChange: (modelId: string) => void;
@@ -406,10 +403,10 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({ onChange, modelId, disabl
                               />
                             </span>
                           )}
-                          {selectedModel.capabilities?.vision && (
-                            <span title="支持图像理解">
+                          {selectedModel.capabilities?.imageGen && (
+                            <span title="支持图像生成">
                               <CapabilityIcon 
-                                type="vision" 
+                                type="imageGen" 
                                 className="text-blue-500" 
                               />
                             </span>
@@ -480,9 +477,6 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({ onChange, modelId, disabl
                               
                               {/* 能力图标组放在右侧 */}
                               <div className="capability-icons text-center">
-                                {model.capabilities?.vision && (
-                                  <CapabilityIcon type="vision" className="ultra-icon h-4 w-4" />
-                                )}
                                 {model.capabilities?.imageGen && (
                                   <CapabilityIcon type="imageGen" className="ultra-icon h-4 w-4" />
                                 )}
@@ -533,12 +527,6 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({ onChange, modelId, disabl
               {model.description || '暂无详细描述'}
               
               <div className="flex flex-wrap gap-2 mt-2">
-                {model.capabilities.vision && (
-                  <div className="flex items-center text-xs bg-blue-50 dark:bg-blue-900/30 px-2 py-1 rounded-full">
-                    <CapabilityIcon type="vision" className="h-3 w-3 mr-1" />
-                    视觉能力
-                  </div>
-                )}
                 {model.capabilities.imageGen && (
                   <div className="flex items-center text-xs bg-green-50 dark:bg-green-900/30 px-2 py-1 rounded-full">
                     <CapabilityIcon type="imageGen" className="h-3 w-3 mr-1" />

@@ -3,7 +3,6 @@ import { API_CONFIG } from '../config';
 const API_BASE_URL = API_CONFIG.BASE_URL
 
 export interface ModelCapability {
-  vision?: boolean; // 视觉能力
   imageGen?: boolean; // 图像生成
   deepThinking?: boolean; // 深度思考
   fileSupport?: boolean; // 文件处理
