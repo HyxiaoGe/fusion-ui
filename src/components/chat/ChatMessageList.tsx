@@ -11,6 +11,10 @@ interface ChatMessageListProps {
   isStreaming?: boolean;
   onRetry?: (messageId: string) => void;
   onEdit?: (messageId: string, content: string) => void;
+  suggestedQuestions?: string[];
+  isLoadingQuestions?: boolean;
+  onSelectQuestion?: (question: string) => void;
+  onRefreshQuestions?: () => void;
 }
 
 // 定义角色排序优先级
@@ -23,7 +27,7 @@ const getRolePriority = (role: string): number => {
   }
 };
 
-const ChatMessageList: React.FC<ChatMessageListProps> = ({ messages, loading = false, isStreaming = false, onRetry, onEdit }) => {
+const ChatMessageList: React.FC<ChatMessageListProps> = ({ messages, loading = false, isStreaming = false, onRetry, onEdit, suggestedQuestions = [], isLoadingQuestions = false, onSelectQuestion, onRefreshQuestions }) => {
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   // 按时间戳排序消息 - 确保使用完整毫秒精度
@@ -77,6 +81,10 @@ const ChatMessageList: React.FC<ChatMessageListProps> = ({ messages, loading = f
           isStreaming={isStreaming && index === sortedMessages.length - 1 && message.role === 'assistant'}
           onRetry={onRetry}
           onEdit={onEdit}
+          suggestedQuestions={index === sortedMessages.length - 1 ? suggestedQuestions : []}
+          isLoadingQuestions={isLoadingQuestions}
+          onSelectQuestion={onSelectQuestion}
+          onRefreshQuestions={onRefreshQuestions}
         />
       ))}
       

@@ -18,6 +18,7 @@ import ReasoningContent from './ReasoningContent';
 import ProviderIcon from '../models/ProviderIcon';
 import { ImageIcon } from 'lucide-react';
 import { chatStore } from '@/lib/db/chatStore';
+import SuggestedQuestions from './SuggestedQuestions';
 
 interface ChatMessageProps {
   message: Message;
@@ -26,9 +27,13 @@ interface ChatMessageProps {
   isStreaming?: boolean;
   onRetry?: (messageId: string) => void;
   onEdit?: (messageId: string, content: string) => void;
+  suggestedQuestions?: string[];
+  isLoadingQuestions?: boolean;
+  onSelectQuestion?: (question: string) => void;
+  onRefreshQuestions?: () => void;
 }
 
-const ChatMessage: React.FC<ChatMessageProps> = ({ message, files, isLastMessage = false, isStreaming = false, onRetry, onEdit }) => {
+const ChatMessage: React.FC<ChatMessageProps> = ({ message, files, isLastMessage = false, isStreaming = false, onRetry, onEdit, suggestedQuestions = [], isLoadingQuestions = false, onSelectQuestion, onRefreshQuestions }) => {
   const dispatch = useAppDispatch();
   const isUser = message.role === 'user';
   const [isEditing, setIsEditing] = useState(false);
@@ -377,6 +382,15 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, files, isLastMessage
               编辑
             </Button>
           </div>
+        )}
+
+        {!isUser && isLastMessage && !isStreaming && onSelectQuestion && (
+          <SuggestedQuestions 
+            questions={suggestedQuestions || []}
+            isLoading={isLoadingQuestions}
+            onSelectQuestion={onSelectQuestion}
+            onRefresh={onRefreshQuestions}
+          />
         )}
       </div>
 

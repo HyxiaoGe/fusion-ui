@@ -234,6 +234,50 @@ export async function getConversation(conversationId: string) {
   }
 }
 
+// 添加用于获取推荐问题的函数
+
+/**
+ * 获取对话的推荐后续问题
+ * @param conversationId 对话ID
+ * @param options 可选参数
+ * @returns 包含推荐问题的响应
+ */
+export const fetchSuggestedQuestions = async (
+  conversationId: string,
+  options: Record<string, any> = {}
+): Promise<{ questions: string[] }> => {
+  try {
+    
+    const response = await fetch(`${API_BASE_URL}/api/chat/suggest-questions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        conversation_id: conversationId,
+        options: options
+      })
+    });
+    
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => null);
+      throw new Error(
+        `获取推荐问题失败: ${response.status} ${
+          errorData?.message || response.statusText
+        }`
+      );
+    }
+    
+    const data = await response.json();
+    return {
+      questions: data.questions || []
+    };
+  } catch (error) {
+    console.error('获取推荐问题出错:', error);
+    return { questions: [] };
+  }
+};
+
 // 删除对话
 export async function deleteConversation(conversationId: string) {
   try {

@@ -8,7 +8,7 @@ import MainLayout from '@/components/layouts/MainLayout';
 import ModelSelector from '@/components/models/ModelSelector';
 import RelatedDiscussions from '@/components/search/RelatedDiscussions';
 import { Button } from '@/components/ui/button';
-import { sendMessageStream } from '@/lib/api/chat';
+import { sendMessageStream, fetchSuggestedQuestions  } from '@/lib/api/chat';
 import { generateChatTitle } from '@/lib/api/title';
 import { chatStore } from '@/lib/db/chatStore';
 import { FileWithPreview } from '@/lib/utils/fileHelpers';
@@ -130,6 +130,12 @@ export default function Home() {
   const [isSyncing, setIsSyncing] = useState(false);
   const lastDatabaseSync = useAppSelector((state) => state.app.lastDatabaseSync);
 
+  // 添加用于建议问题的状态
+  const [suggestedQuestions, setSuggestedQuestions] = useState<string[]>([]);
+  const [isLoadingQuestions, setIsLoadingQuestions] = useState(false);
+  // 添加缓存状态
+  const [questionCache, setQuestionCache] = useState<Record<string, string[]>>({});
+
   const chatInputRef = useRef<HTMLDivElement>(null);
 
   // 监听数据库同步事件，强制重新挂载输入组件
@@ -198,11 +204,27 @@ export default function Home() {
         chatInputRef.current.click();
       }
     };
+  
+    // 处理会话切换时的推荐问题
+    if (activeChatId) {
+      // 检查是否有缓存的推荐问题
+      if (questionCache[activeChatId] && questionCache[activeChatId].length > 0) {
+        // 使用缓存的推荐问题
+        setSuggestedQuestions(questionCache[activeChatId]);
+      } else {
+        // 如果没有缓存，清空当前显示的推荐问题并获取新的
+        setSuggestedQuestions([]);
+        getSuggestedQuestions(activeChatId);
+      }
+    } else {
+      // 无活动会话时清空推荐问题
+      setSuggestedQuestions([]);
+    }
 
     // 短暂延时确保DOM已更新
     const timer = setTimeout(resetFocus, 200);
     return () => clearTimeout(timer);
-  }, [activeChatId, lastDatabaseSync]);
+  }, [activeChatId, lastDatabaseSync, questionCache]);
 
   // 获取当前活动的对话
   const activeChat = activeChatId ? chats.find(chat => chat.id === activeChatId) : null;
@@ -272,6 +294,66 @@ export default function Home() {
   const handleChatSelected = () => {
     if (showHomePage) {
       setShowHomePage(false);
+    }
+  };
+
+  // 获取推荐问题函数
+  const getSuggestedQuestions = async (chatId: string) => {
+    if (!chatId) return;
+    
+    setIsLoadingQuestions(true);
+    try {
+      const { questions } = await fetchSuggestedQuestions(chatId);
+      // 更新当前显示的推荐问题
+      setSuggestedQuestions(questions);
+      // 同时更新缓存
+      setQuestionCache(prev => ({
+        ...prev,
+        [chatId]: questions
+      }));
+    } catch (error) {
+      console.error('获取推荐问题错误:', error);
+      setSuggestedQuestions([]);
+    } finally {
+      setIsLoadingQuestions(false);
+    }
+  };
+
+  // 处理选择推荐问题
+  const handleSelectQuestion = (question: string) => {
+    // 直接发送所选问题
+    handleSendMessage(question);
+    // 清空当前会话的缓存和显示的推荐问题，避免重复点击
+    if (activeChatId) {
+      setQuestionCache(prev => ({
+        ...prev,
+        [activeChatId]: []
+      }));
+      setSuggestedQuestions([]);
+    }
+  };
+
+  const handleRefreshQuestions = async () => {
+    if (!activeChatId) return;
+    
+    // 重置当前的推荐问题，以便显示加载状态
+    setSuggestedQuestions([]);
+    setIsLoadingQuestions(true);
+    
+    try {
+      // 调用API获取新的推荐问题
+      const { questions } = await fetchSuggestedQuestions(activeChatId);
+      // 更新显示和缓存
+      setSuggestedQuestions(questions);
+      setQuestionCache(prev => ({
+        ...prev,
+        [activeChatId]: questions
+      }));
+    } catch (error) {
+      console.error('刷新推荐问题失败:', error);
+      dispatch(setError('刷新推荐问题失败，请重试'));
+    } finally {
+      setIsLoadingQuestions(false);
     }
   };
 
@@ -401,6 +483,16 @@ export default function Home() {
               messageId,
               status: null
             }));
+            // 流式输出结束后，获取推荐问题
+            setTimeout(() => {
+              // 使用当前活动的对话ID获取推荐问题
+              if (activeChatId) {
+                // 检查缓存是否为空，如果空则获取新问题
+                if (!questionCache[activeChatId] || questionCache[activeChatId].length === 0) {
+                  getSuggestedQuestions(activeChatId);
+                }
+              }
+            }, 1000); // 延迟1秒，确保服务器已处理完成
           }
 
           // 在消息流结束(done=true)且是第一条消息时生成标题
@@ -785,7 +877,16 @@ export default function Home() {
                 {getChatTitle()}
               </div>
             )}
-            <ModelSelector />
+            <ModelSelector onChange={() => {
+              // 当模型变更时，清空当前会话的问题缓存
+              if (activeChatId) {
+                setQuestionCache(prev => ({
+                  ...prev,
+                  [activeChatId]: []
+                }));
+                setSuggestedQuestions([]);
+              }
+            }} />
           </div>
 
           <div className="flex items-center gap-3">
@@ -832,6 +933,10 @@ export default function Home() {
               isStreaming={isStreaming}
               onRetry={handleRetryMessage}
               onEdit={handleEditMessage}
+              suggestedQuestions={suggestedQuestions}
+              isLoadingQuestions={isLoadingQuestions}
+              onSelectQuestion={handleSelectQuestion}
+              onRefreshQuestions={handleRefreshQuestions}
             />
           </div>
         )}
