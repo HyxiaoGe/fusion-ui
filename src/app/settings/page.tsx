@@ -43,22 +43,10 @@ export default function SettingsPage() {
 
   return (
     <MainLayout>
-      <div className="w-full h-full px-6 py-6 flex flex-col">
-        <motion.div
-          initial="hidden"
-          animate="visible"
-          variants={variants}
-          className="flex items-center justify-between mb-6 flex-shrink-0"
-        >
-          <h1 className="text-3xl font-bold">设置</h1>
-          <p className="text-sm text-muted-foreground">
-            配置您的 AI 助手以获得更个性化的体验
-          </p>
-        </motion.div>
-
-        <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6 w-full flex-grow flex flex-col">
-          <div className="bg-card/50 backdrop-blur-sm border rounded-lg shadow-sm p-1 sticky top-16 z-10 flex-shrink-0">
-            <TabsList className="w-full grid grid-cols-3 gap-1">
+      <div className="w-full h-full px-6 pt-0 flex flex-col">
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4 w-full flex-grow flex flex-col">
+          <div className="bg-card/50 backdrop-blur-sm border rounded-lg shadow-sm p-1 sticky top-0 z-10 flex-shrink-0 dark:bg-slate-800/70 dark:border-slate-700 mt-0">
+            <TabsList className="w-full grid grid-cols-3 gap-1 bg-transparent dark:bg-transparent">
               <TabsTrigger value="general" className="flex gap-2 items-center justify-center">
                 <Settings className="h-4 w-4" />
                 <span className="hidden md:inline">常规设置</span>

@@ -20,7 +20,7 @@ interface HeaderProps {
 }
 
 const Header: React.FC<HeaderProps> = ({ title }) => {
-  const pathname = usePathname();
+  const pathname = usePathname() || '/';
   const dispatch = useAppDispatch();
   const { mode } = useAppSelector((state) => state.theme);
   const [mounted, setMounted] = useState(false);
@@ -109,10 +109,12 @@ const Header: React.FC<HeaderProps> = ({ title }) => {
         </div>
       </div>
 
-      {/* 中间部分：页面标题 */}
-      <div className="absolute left-1/2 transform -translate-x-1/2 font-medium text-base">
-        {getCurrentPageTitle()}
-      </div>
+      {/* 中间部分：页面标题，在设置页面不显示 */}
+      {!pathname.startsWith('/settings') && (
+        <div className="absolute left-1/2 transform -translate-x-1/2 font-medium text-base">
+          {getCurrentPageTitle()}
+        </div>
+      )}
 
       <div className="flex items-center gap-3">
         <Link href="/" passHref>
