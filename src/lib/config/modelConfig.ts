@@ -6,6 +6,8 @@ export interface ModelCapability {
   imageGen?: boolean; // 图像生成
   deepThinking?: boolean; // 深度思考
   fileSupport?: boolean; // 文件处理
+  functionCalling?: boolean; // 工具调用
+  webSearch?: boolean; // 网络搜索
 }
 
 // API返回的模型数据接口

@@ -513,6 +513,12 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({ onChange, modelId, disabl
                                 {model.capabilities?.fileSupport && (
                                   <CapabilityIcon type="fileSupport" className="ultra-icon h-4 w-4" />
                                 )}
+                                {model.capabilities?.functionCalling && (
+                                  <CapabilityIcon type="functionCalling" className="ultra-icon h-4 w-4" />
+                                )}
+                                {model.capabilities?.webSearch && (
+                                  <CapabilityIcon type="webSearch" className="ultra-icon h-4 w-4" />
+                                )}
                               </div>
                             </div>
                           </SelectItem>
@@ -570,6 +576,18 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({ onChange, modelId, disabl
                   <div className="flex items-center text-xs bg-purple-50 dark:bg-purple-900/30 px-2 py-1 rounded-full">
                     <CapabilityIcon type="fileSupport" className="h-3 w-3 mr-1" />
                     文件支持
+                  </div>
+                )}
+                {model.capabilities.functionCalling && (
+                  <div className="flex items-center text-xs bg-blue-50 dark:bg-blue-900/30 px-2 py-1 rounded-full">
+                    <CapabilityIcon type="functionCalling" className="h-3 w-3 mr-1" />
+                    工具调用
+                  </div>
+                )}
+                {model.capabilities.webSearch && (
+                  <div className="flex items-center text-xs bg-indigo-50 dark:bg-indigo-900/30 px-2 py-1 rounded-full">
+                    <CapabilityIcon type="webSearch" className="h-3 w-3 mr-1" />
+                    网络搜索
                   </div>
                 )}
               </div>

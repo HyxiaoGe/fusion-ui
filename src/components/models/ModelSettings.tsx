@@ -59,6 +59,8 @@ interface ModelDetail {
     deepThinking?: boolean;
     fileSupport?: boolean;
     imageGen?: boolean;
+    functionCalling?: boolean;
+    webSearch?: boolean;
     [key: string]: boolean | undefined;
   };
   priority: number;
@@ -88,6 +90,8 @@ interface BasicModelInfo {
     deepThinking?: boolean;
     fileSupport?: boolean;
     imageGen?: boolean;
+    functionCalling?: boolean;
+    webSearch?: boolean;
     [key: string]: boolean | undefined;
   };
 }

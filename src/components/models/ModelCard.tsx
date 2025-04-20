@@ -50,6 +50,18 @@ const ModelCard: React.FC<ModelCardProps> = ({ model }) => {
                 文件处理
               </Badge>
             )}
+            {model.capabilities.functionCalling && (
+              <Badge variant="secondary" className="gap-1">
+                <CapabilityIcon type="functionCalling" showTooltip={false} />
+                工具调用
+              </Badge>
+            )}
+            {model.capabilities.webSearch && (
+              <Badge variant="secondary" className="gap-1">
+                <CapabilityIcon type="webSearch" showTooltip={false} />
+                网络搜索
+              </Badge>
+            )}
           </div>
         </div>
       </CardContent>

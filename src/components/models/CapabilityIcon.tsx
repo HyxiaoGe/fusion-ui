@@ -3,11 +3,11 @@ import {
     TooltipContent,
     TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { Lightbulb, FileText, ImageIcon } from "lucide-react";
+import { Lightbulb, FileText, ImageIcon, Search, Hammer } from "lucide-react";
 import React from "react";
 
 interface CapabilityIconProps {
-  type: "fileSupport" | "deepThinking" | "imageGen";
+  type: "fileSupport" | "deepThinking" | "imageGen" | "functionCalling" | "webSearch";
   className?: string;
   showTooltip?: boolean;
 }
@@ -29,6 +29,14 @@ const CapabilityIcon: React.FC<CapabilityIconProps> = ({
     imageGen: {
       icon: <ImageIcon className={`${className} text-purple-500`} />,
       tooltip: "支持图像生成",
+    },
+    functionCalling: {
+      icon: <Hammer className={`${className} text-blue-500`} />,
+      tooltip: "支持工具调用",
+    },
+    webSearch: {
+      icon: <Search className={`${className} text-indigo-500`} />,
+      tooltip: "支持网络搜索",
     },
   };
 
