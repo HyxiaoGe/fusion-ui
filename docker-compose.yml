@@ -2,12 +2,15 @@ version: '3'
 
 services:
   fusion-ui:
-    build: .
+    build:
+      context: .
+      args:
+        - NEXT_PUBLIC_API_BASE_URL=${NEXT_PUBLIC_API_BASE_URL}
     ports:
       - "3000:3000"
     restart: always
     environment:
       - NODE_ENV=production
-    # 生产环境不需要挂载源代码
+    # 生产环境不需要挂载源代码，因为已在Dockerfile中复制了src目录
     # volumes:
     #  - ./src:/app/src 

@@ -1,6 +1,7 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
+  // 恢复原始配置，不需要distDir
   images: {
     domains: ['localhost'],
   },
