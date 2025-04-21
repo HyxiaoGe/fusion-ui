@@ -243,18 +243,20 @@ const ongoingQuestionsRequests: Record<string, Promise<{ questions: string[] }>>
  * 获取对话的推荐后续问题
  * @param conversationId 对话ID
  * @param options 可选参数
+ * @param forceRefresh 是否强制刷新
  * @returns 包含推荐问题的响应
  */
 export const fetchSuggestedQuestions = async (
   conversationId: string,
-  options: Record<string, any> = {}
+  options: Record<string, any> = {},
+  forceRefresh: boolean = false
 ): Promise<{ questions: string[] }> => {
-  // 检查缓存，5分钟内有效
-  const CACHE_VALIDITY = 5 * 60 * 1000; // 5分钟
+  // 检查缓存，1分钟内有效
+  const CACHE_VALIDITY = 1 * 60 * 1000; // 1分钟
   const now = Date.now();
   const cachedData = suggestedQuestionsCache[conversationId];
   
-  if (cachedData && (now - cachedData.timestamp) < CACHE_VALIDITY) {
+  if (!forceRefresh && cachedData && (now - cachedData.timestamp) < CACHE_VALIDITY) {
     console.log(`使用缓存的推荐问题，对话ID: ${conversationId}`);
     return { questions: cachedData.questions };
   }
@@ -331,5 +333,22 @@ export async function deleteConversation(conversationId: string) {
   } catch (error) {
     console.error('删除对话失败:', error);
     throw error;
+  }
+}
+
+/**
+ * 清除指定对话的推荐问题缓存
+ * @param conversationId 对话ID，如不指定则清除所有缓存
+ */
+export function clearSuggestedQuestionsCache(conversationId?: string): void {
+  if (conversationId) {
+    delete suggestedQuestionsCache[conversationId];
+    console.log(`已清除对话${conversationId}的推荐问题缓存`);
+  } else {
+    // 清除所有缓存
+    Object.keys(suggestedQuestionsCache).forEach(key => {
+      delete suggestedQuestionsCache[key];
+    });
+    console.log('已清除所有推荐问题缓存');
   }
 }

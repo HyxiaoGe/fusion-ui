@@ -319,7 +319,7 @@ export default function Home() {
   };
 
   // 获取推荐问题函数
-  const getSuggestedQuestions = async (chatId: string) => {
+  const getSuggestedQuestions = async (chatId: string, forceRefresh: boolean = false) => {
     if (!chatId) return;
     
     // 检查是否有AI消息存在
@@ -333,7 +333,7 @@ export default function Home() {
     
     setIsLoadingQuestions(true);
     try {
-      const { questions } = await fetchSuggestedQuestions(chatId);
+      const { questions } = await fetchSuggestedQuestions(chatId, {}, forceRefresh);
       // 更新当前显示的推荐问题
       setSuggestedQuestions(questions);
       // 同时更新缓存
@@ -368,23 +368,9 @@ export default function Home() {
     
     // 重置当前的推荐问题，以便显示加载状态
     setSuggestedQuestions([]);
-    setIsLoadingQuestions(true);
     
-    try {
-      // 调用API获取新的推荐问题
-      const { questions } = await fetchSuggestedQuestions(activeChatId);
-      // 更新显示和缓存
-      setSuggestedQuestions(questions);
-      setQuestionCache(prev => ({
-        ...prev,
-        [activeChatId]: questions
-      }));
-    } catch (error) {
-      console.error('刷新推荐问题失败:', error);
-      dispatch(setError('刷新推荐问题失败，请重试'));
-    } finally {
-      setIsLoadingQuestions(false);
-    }
+    // 强制刷新获取新的推荐问题
+    await getSuggestedQuestions(activeChatId, true);
   };
 
   // 发送消息
@@ -527,13 +513,8 @@ export default function Home() {
               // 确保当前会话有AI消息才获取推荐问题
               const currentActiveChatId = store.getState().chat.activeChatId;
               if (currentActiveChatId) {
-                const currentChats = store.getState().chat.chats;
-                const chat = currentChats.find(c => c.id === currentActiveChatId);
-                const hasAIMessage = chat?.messages.some(msg => msg.role === 'assistant');
-                
-                if (hasAIMessage && (!questionCache[currentActiveChatId] || questionCache[currentActiveChatId].length === 0)) {
-                  getSuggestedQuestions(currentActiveChatId);
-                }
+                // 每次对话后强制刷新推荐问题，确保为最新对话内容生成问题
+                getSuggestedQuestions(currentActiveChatId, true);
               }
             }, 1500);
           }
@@ -724,13 +705,9 @@ export default function Home() {
                   // 确保当前会话有AI消息才获取推荐问题
                   const currentActiveChatId = store.getState().chat.activeChatId;
                   if (currentActiveChatId) {
-                    const currentChats = store.getState().chat.chats;
-                    const chat = currentChats.find(c => c.id === currentActiveChatId);
-                    const hasAIMessage = chat?.messages.some(msg => msg.role === 'assistant');
-                    
-                    if (hasAIMessage && (!questionCache[currentActiveChatId] || questionCache[currentActiveChatId].length === 0)) {
-                      getSuggestedQuestions(currentActiveChatId);
-                    }
+                    // 每次对话后强制刷新推荐问题，确保为最新对话内容生成问题
+                    // 清除缓存并获取新的推荐问题
+                    getSuggestedQuestions(currentActiveChatId, true);
                   }
                 }, 1500);
               }
@@ -869,13 +846,9 @@ export default function Home() {
               // 确保当前会话有AI消息才获取推荐问题
               const currentActiveChatId = store.getState().chat.activeChatId;
               if (currentActiveChatId) {
-                const currentChats = store.getState().chat.chats;
-                const chat = currentChats.find(c => c.id === currentActiveChatId);
-                const hasAIMessage = chat?.messages.some(msg => msg.role === 'assistant');
-                
-                if (hasAIMessage && (!questionCache[currentActiveChatId] || questionCache[currentActiveChatId].length === 0)) {
-                  getSuggestedQuestions(currentActiveChatId);
-                }
+                // 每次对话后强制刷新推荐问题，确保为最新对话内容生成问题
+                // 清除缓存并获取新的推荐问题
+                getSuggestedQuestions(currentActiveChatId, true);
               }
             }, 1500);
           }
