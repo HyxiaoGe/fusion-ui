@@ -438,6 +438,30 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({ onChange, modelId, disabl
                               />
                             </span>
                           )}
+                          {selectedModel.capabilities?.fileSupport && (
+                            <span title="支持文件处理">
+                              <CapabilityIcon 
+                                type="fileSupport" 
+                                className="text-green-500" 
+                              />
+                            </span>
+                          )}
+                          {selectedModel.capabilities?.functionCalling && (
+                            <span title="支持工具调用">
+                              <CapabilityIcon 
+                                type="functionCalling" 
+                                className="text-blue-500" 
+                              />
+                            </span>
+                          )}
+                          {selectedModel.capabilities?.webSearch && (
+                            <span title="支持网络搜索">
+                              <CapabilityIcon 
+                                type="webSearch" 
+                                className="text-indigo-500" 
+                              />
+                            </span>
+                          )}
                         </div>
                       </div>
                     ) : (
