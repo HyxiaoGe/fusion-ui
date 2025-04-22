@@ -47,6 +47,7 @@ export interface ChatState {
   isStreamingReasoning: boolean;
   isThinkingPhaseComplete: boolean;
   animatingTitleChatId: string | null;
+  webSearchEnabled: boolean;
 }
 
 const initialState: ChatState = {
@@ -65,6 +66,7 @@ const initialState: ChatState = {
   isStreamingReasoning: false,
   isThinkingPhaseComplete: false,
   animatingTitleChatId: null,
+  webSearchEnabled: true,
 };
 
 const chatSlice = createSlice({

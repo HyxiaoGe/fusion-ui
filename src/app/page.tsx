@@ -429,6 +429,11 @@ export default function Home() {
     const supportsReasoning = selectedModel.capabilities?.deepThinking || false;
     const useReasoning = reasoningEnabled && supportsReasoning;
 
+    // 添加网络搜索功能检查
+    const { webSearchEnabled } = store.getState().chat;
+    const supportsWebSearch = selectedModel.capabilities?.webSearch || false;
+    const useWebSearch = webSearchEnabled && supportsWebSearch;
+
     setTimeout(() => {
       dispatch(startStreaming(activeChatId));
       
@@ -447,7 +452,8 @@ export default function Home() {
         stream: true,
         options: {
           use_reasoning: useReasoning,
-          use_enhancement: searchEnabled && contextEnhancementEnabled
+          use_enhancement: searchEnabled && contextEnhancementEnabled,
+          use_web_search: useWebSearch
         },
         file_ids: fileIds || []
       },
@@ -638,6 +644,11 @@ export default function Home() {
         const supportsReasoning = selectedModel.capabilities?.deepThinking || false;
         const useReasoning = reasoningEnabled && supportsReasoning;
 
+        // 添加网络搜索功能检查
+        const { webSearchEnabled } = store.getState().chat;
+        const supportsWebSearch = selectedModel.capabilities?.webSearch || false;
+        const useWebSearch = webSearchEnabled && supportsWebSearch;
+
         // 使用用户消息内容重新生成
         dispatch(startStreaming(activeChatId));
         if (useReasoning) {
@@ -653,7 +664,8 @@ export default function Home() {
             stream: true,
             options: {
               use_reasoning: useReasoning,
-              use_enhancement: store.getState().search.contextEnhancementEnabled
+              use_enhancement: store.getState().search.contextEnhancementEnabled,
+              use_web_search: useWebSearch
             }
           },
             (content, done, conversationId, reasoning) => {
@@ -769,6 +781,11 @@ export default function Home() {
     const supportsReasoning = selectedModel.capabilities?.deepThinking || false;
     const useReasoning = reasoningEnabled && supportsReasoning;
 
+    // 添加网络搜索功能检查
+    const { webSearchEnabled } = store.getState().chat;
+    const supportsWebSearch = selectedModel.capabilities?.webSearch || false;
+    const useWebSearch = webSearchEnabled && supportsWebSearch;
+
     // 开始流式输出
     dispatch(startStreaming(activeChatId));
     if (useReasoning) {
@@ -786,7 +803,8 @@ export default function Home() {
         stream: true,
         options: {
           use_reasoning: useReasoning,
-          use_enhancement: store.getState().search.contextEnhancementEnabled
+          use_enhancement: store.getState().search.contextEnhancementEnabled,
+          use_web_search: useWebSearch
         }
       },
         (content, done, conversationId, reasoning) => {
