@@ -434,6 +434,10 @@ export default function Home() {
     const supportsWebSearch = selectedModel.capabilities?.webSearch || false;
     const useWebSearch = webSearchEnabled && supportsWebSearch;
 
+    const { functionCallEnabled } = store.getState().chat;
+    const supportsFunctionCall = selectedModel.capabilities?.functionCalling || false;
+    const useFunctionCall = functionCallEnabled && supportsFunctionCall;
+
     setTimeout(() => {
       dispatch(startStreaming(activeChatId));
       
@@ -453,7 +457,8 @@ export default function Home() {
         options: {
           use_reasoning: useReasoning,
           use_enhancement: searchEnabled && contextEnhancementEnabled,
-          use_web_search: useWebSearch
+          use_web_search: useWebSearch,
+          use_function_call: useFunctionCall
         },
         file_ids: fileIds || []
       },
@@ -649,6 +654,10 @@ export default function Home() {
         const supportsWebSearch = selectedModel.capabilities?.webSearch || false;
         const useWebSearch = webSearchEnabled && supportsWebSearch;
 
+        const { functionCallEnabled } = store.getState().chat;
+        const supportsFunctionCall = selectedModel.capabilities?.functionCalling || false;
+        const useFunctionCall = functionCallEnabled && supportsFunctionCall;
+
         // 使用用户消息内容重新生成
         dispatch(startStreaming(activeChatId));
         if (useReasoning) {
@@ -665,7 +674,8 @@ export default function Home() {
             options: {
               use_reasoning: useReasoning,
               use_enhancement: store.getState().search.contextEnhancementEnabled,
-              use_web_search: useWebSearch
+              use_web_search: useWebSearch,
+              use_function_call: useFunctionCall
             }
           },
             (content, done, conversationId, reasoning) => {
@@ -786,6 +796,10 @@ export default function Home() {
     const supportsWebSearch = selectedModel.capabilities?.webSearch || false;
     const useWebSearch = webSearchEnabled && supportsWebSearch;
 
+    const { functionCallEnabled } = store.getState().chat;
+    const supportsFunctionCall = selectedModel.capabilities?.functionCalling || false;
+    const useFunctionCall = functionCallEnabled && supportsFunctionCall;
+
     // 开始流式输出
     dispatch(startStreaming(activeChatId));
     if (useReasoning) {
@@ -804,7 +818,8 @@ export default function Home() {
         options: {
           use_reasoning: useReasoning,
           use_enhancement: store.getState().search.contextEnhancementEnabled,
-          use_web_search: useWebSearch
+          use_web_search: useWebSearch,
+          use_function_call: useFunctionCall
         }
       },
         (content, done, conversationId, reasoning) => {

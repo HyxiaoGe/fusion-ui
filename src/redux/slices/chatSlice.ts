@@ -48,6 +48,7 @@ export interface ChatState {
   isThinkingPhaseComplete: boolean;
   animatingTitleChatId: string | null;
   webSearchEnabled: boolean;
+  functionCallEnabled: boolean;
 }
 
 const initialState: ChatState = {
@@ -67,6 +68,7 @@ const initialState: ChatState = {
   isThinkingPhaseComplete: false,
   animatingTitleChatId: null,
   webSearchEnabled: true,
+  functionCallEnabled: false,
 };
 
 const chatSlice = createSlice({
