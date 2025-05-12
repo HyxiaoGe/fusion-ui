@@ -4,10 +4,17 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { FileWithPreview, createFileWithPreview } from "@/lib/utils/fileHelpers";
 import { useAppDispatch, useAppSelector } from "@/redux/hooks";
-import { toggleReasoning } from "@/redux/slices/chatSlice";
-import { clearFiles, addFileId, updateFileStatus } from "@/redux/slices/fileUploadSlice";
-import { EraserIcon, Lightbulb, PaperclipIcon, SendIcon, X } from "lucide-react";
-import React, { useEffect, useRef, useState } from "react";
+import { toggleReasoning, toggleWebSearch } from "@/redux/slices/chatSlice";
+import { 
+  clearFiles, 
+  addFileId, 
+  updateFileStatus, 
+  makeSelectChatFiles, 
+  makeSelectChatFileIds, 
+  selectFileUploadStatuses 
+} from "@/redux/slices/fileUploadSlice";
+import { EraserIcon, Lightbulb, PaperclipIcon, SendIcon, X, Globe } from "lucide-react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useToast } from "../ui/toast";
 import FileUpload from "./FileUpload";
 import { v4 as uuidv4 } from 'uuid';
@@ -61,6 +68,26 @@ const ChatInput: React.FC<ChatInputProps> = ({
   const { models, selectedModelId } = useAppSelector((state) => state.models);
   const { activeChatId: currentActiveChatId } = useAppSelector((state) => state.chat);
   const chatId = activeChatId || currentActiveChatId || "default-chat";
+
+  // Ensure chatId has a fallback if needed, but should primarily come from props if available
+  const effectiveChatId = chatId || useAppSelector((state) => state.chat.activeChatId) || "default-chat";
+
+  // --- Use memoized selectors --- 
+  // Create stable selector instances using useMemo
+  const selectChatFiles = useMemo(makeSelectChatFiles, []);
+  const selectChatFileIds = useMemo(makeSelectChatFileIds, []);
+
+  // Use the memoized selectors
+  const reduxFiles = useAppSelector(state => selectChatFiles(state, effectiveChatId));
+  const fileIds = useAppSelector(state => selectChatFileIds(state, effectiveChatId));
+  const fileUploads = useAppSelector(selectFileUploadStatuses); // No chatId needed
+  // --- End of memoized selectors usage ---
+
+  const isUploading = useAppSelector((state) => state.fileUpload.isUploading);
+  const uploadProgress = useAppSelector(
+    (state) => state.fileUpload.uploadProgress
+  );
+  const fileUploadRef = useRef<any>(null);
 
   const handleFileSelect = () => {
     if (fileInputRef.current) {
@@ -360,26 +387,6 @@ const ChatInput: React.FC<ChatInputProps> = ({
     }
   };
 
-  // 从Redux获取文件状态
-  const reduxFiles = useAppSelector(
-    (state) => state.fileUpload.files[chatId] || []
-  );
-  const fileIds = useAppSelector(
-    (state) => state.fileUpload.fileIds[chatId] || []
-  );
-  const isUploading = useAppSelector((state) => state.fileUpload.isUploading);
-  const uploadProgress = useAppSelector(
-    (state) => state.fileUpload.uploadProgress
-  );
-  const fileUploadRef = useRef<any>(null);
-
-  // 初始化或同步Redux中的文件
-  useEffect(() => {
-    if (reduxFiles.length > 0 && files.length === 0) {
-      setFiles(reduxFiles);
-    }
-  }, [reduxFiles, files.length]);
-
   // 组件挂载或activeChatId变化时重置状态
   useEffect(() => {
 
@@ -456,12 +463,16 @@ const ChatInput: React.FC<ChatInputProps> = ({
   );
 
   const reasoningEnabled = useAppSelector((state) => state.chat.reasoningEnabled);
+  const webSearchEnabled = useAppSelector((state) => state.chat.webSearchEnabled);
 
   // 检查当前模型是否支持推理
   const supportsReasoning = selectedModel?.capabilities?.deepThinking || false;
 
   // 检查当前模型是否支持文件上传
   const supportsFileUpload = selectedModel?.capabilities?.fileSupport || false;
+
+  // 检查当前模型是否支持网络搜索
+  const supportsWebSearch = selectedModel?.capabilities?.webSearch || false;
 
   // 如果尝试显示文件上传区域但模型不支持，则自动关闭
   useEffect(() => {
@@ -612,13 +623,6 @@ const ChatInput: React.FC<ChatInputProps> = ({
     return null;
   };
 
-  // 获取上传文件的状态
-  const fileUploads = useAppSelector((state) => {
-    // 从Redux中获取文件上传状态
-    const chatFileUploads = state.fileUpload.processingFiles || {};
-    return Object.values(chatFileUploads);
-  });
-
   return (
     <div className="flex flex-col space-y-2 p-4 border-t">
       {useNewFileUpload && localFiles.length > 0 && (
@@ -714,10 +718,26 @@ const ChatInput: React.FC<ChatInputProps> = ({
             dispatch(toggleReasoning(!reasoningEnabled));
           }}
           disabled={!supportsReasoning || disabled}
-          title={supportsReasoning ? '开启/关闭AI思考过程' : '当前模型不支持思考过程'}
+          title={supportsReasoning ? (reasoningEnabled ? 'AI思考过程已开启' : 'AI思考过程已关闭') : '当前模型不支持思考过程'}
         >
           <Lightbulb
             className={`h-5 w-5 ${reasoningEnabled && supportsReasoning ? 'text-amber-400' : ''}`}
+          />
+        </Button>
+
+        <Button
+          variant="ghost"
+          size="icon"
+          className={`h-10 w-10 flex items-center justify-center ${!supportsWebSearch ? "opacity-50 cursor-not-allowed" : ""}`}
+          onClick={() => {
+            if (!supportsWebSearch || disabled) return;
+            dispatch(toggleWebSearch(!webSearchEnabled));
+          }}
+          disabled={!supportsWebSearch || disabled}
+          title={supportsWebSearch ? (webSearchEnabled ? '网络搜索已开启' : '网络搜索已关闭') : '当前模型不支持网络搜索'}
+        >
+          <Globe
+            className={`h-5 w-5 ${webSearchEnabled && supportsWebSearch ? 'text-blue-500' : ''}`}
           />
         </Button>
 

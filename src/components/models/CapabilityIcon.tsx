@@ -3,7 +3,7 @@ import {
     TooltipContent,
     TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { Lightbulb, FileText, ImageIcon, Search, Hammer } from "lucide-react";
+import { Lightbulb, FileText, ImageIcon, Globe, Hammer } from "lucide-react";
 import React from "react";
 
 interface CapabilityIconProps {
@@ -35,7 +35,7 @@ const CapabilityIcon: React.FC<CapabilityIconProps> = ({
       tooltip: "支持工具调用",
     },
     webSearch: {
-      icon: <Search className={`${className} text-indigo-500`} />,
+      icon: <Globe className={`${className} text-indigo-500`} />,
       tooltip: "支持网络搜索",
     },
   };

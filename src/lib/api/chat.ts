@@ -6,6 +6,7 @@ import {
   setFunctionCallError,
   clearFunctionCallData,
   clearChatFunctionCallOutput,
+  setFunctionCallStepContent,
 } from '../../redux/slices/chatSlice'; // 导入 actions
 
 const API_BASE_URL = API_CONFIG.BASE_URL
@@ -67,16 +68,6 @@ export async function sendMessage(data: ChatRequest): Promise<ChatResponse> {
 
 export async function sendMessageStream(data: ChatRequest, onChunk: (chunk: string, done: boolean, conversationId?: string, reasoning?: string) => void): Promise<void> {
   try {
-    // 添加调试日志：记录请求开始时的状态
-    console.log('sendMessageStream开始:', {
-      conversation_id: data.conversation_id,
-      'store状态': {
-        activeChatId: store.getState().chat.activeChatId,
-        functionCallOutput: store.getState().chat.chats.find(c => c.id === data.conversation_id)?.functionCallOutput,
-        isFunctionCallInProgress: store.getState().chat.isFunctionCallInProgress,
-      },
-      date: new Date().toISOString()
-    });
 
     // 确保设置了options对象
     if (!data.options) {
@@ -175,24 +166,12 @@ export async function sendMessageStream(data: ChatRequest, onChunk: (chunk: stri
               case "answering_complete":
                 break;
 
-              // --- 新增 Function Call 事件处理 ---
-              case "function_stream_start": // 后端事件
-                // 可以在这里进行一些初始化，如果需要的话
-                console.log("Function call stream started");
-                
-                // 只重置全局状态，但不清除具体聊天的functionCallOutput
-                // 我们会在实际确认是web_search类型的函数调用时再清除
+              case "function_stream_start":
                 store.dispatch(clearFunctionCallData()); 
-                
-                // 注释掉这部分，不在这里清除当前聊天的functionCallOutput
-                // if (conversationId) {
-                //   store.dispatch(clearChatFunctionCallOutput({ chatId: conversationId }));
-                // }
                 break;
 
-              case "function_call_detected": // 后端事件
+              case "function_call_detected":
                 if (parsedData.content && parsedData.content.function_type) {
-                  // 在这里，我们已经知道具体的函数类型了
                   const functionType = parsedData.content.function_type;
                   
                   // 根据函数类型进行不同处理
@@ -200,14 +179,12 @@ export async function sendMessageStream(data: ChatRequest, onChunk: (chunk: stri
                     case 'web_search':
                       // 如果是web_search类型，才清除之前的搜索结果
                       if (conversationId) {
-                        console.log(`检测到web_search调用，清除之前的搜索结果`);
                         store.dispatch(clearChatFunctionCallOutput({ chatId: conversationId }));
                       }
                       break;
                     case 'hot_topics':
                       // 如果是hot_topics类型，也清除之前的结果
                       if (conversationId) {
-                        console.log(`检测到hot_topics调用，清除之前的结果`);
                         store.dispatch(clearChatFunctionCallOutput({ chatId: conversationId }));
                       }
                       break;
@@ -224,21 +201,23 @@ export async function sendMessageStream(data: ChatRequest, onChunk: (chunk: stri
                 }
                 break;
 
-              case "executing_function": // 后端事件
-                // UI上可以显示 "正在执行函数..." parsedData.content 就是这个字符串
-                // 这个状态由 isFunctionCallInProgress 和 functionCallType 组合决定，不需要额外dispatch
-                break;
-              
-              case "generating_query": // 后端事件 (特定于 web_search)
-              case "query_generated":  // 后端事件 (特定于 web_search)
-                // 这些是函数内部的步骤，UI上可以通过 isFunctionCallInProgress 和 functionCallType 感知
-                // 可以在 functionCallData 中设计一个字段来表示这些子步骤的状态，如果需要精细控制
+              case "executing_function":              
+              case "generating_query":
+              case "query_generated":
+                // 提取 content 并更新状态
+                if (parsedData.content && typeof parsedData.content === 'string') {
+                  store.dispatch(setFunctionCallStepContent({ 
+                    chatId: conversationId || '', 
+                    content: parsedData.content 
+                  }));
+                }
                 break;
 
-              case "function_executed": // 后端事件
+              case "function_result":
                 if (parsedData.content && parsedData.content.function_type && parsedData.content.result) {
                   try {
-                    const functionResult = JSON.parse(parsedData.content.result);
+                    // 直接使用已解析的对象，而不是再次解析
+                    const functionResult = parsedData.content.result; 
                     const currentFunctionType = parsedData.content.function_type;
                     let query = null;
                     // 如果是 web_search，我们期望 functionResult 中有 query 字段

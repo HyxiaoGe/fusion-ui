@@ -10,6 +10,7 @@ interface HotTopic {
   timestamp?: number;
   popularity?: number; // 热度指数
   category?: string;
+  url: string; // 确保接口中有 url 字段
 }
 
 interface HotTopicsDisplayProps {
@@ -31,10 +32,12 @@ const HotTopicsDisplay: React.FC<HotTopicsDisplayProps> = ({ topics, date }) => 
 
   return (
     <div className="p-4 space-y-3">
-      <h3 className="text-sm font-semibold text-gray-700 mb-2 flex items-center">
+      <div className="flex items-center mb-3">
         <Flame className="w-4 h-4 mr-2 text-orange-500" />
-        {date ? `截至${date}热门话题` : '当前热门话题'}
-      </h3>
+        <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300">
+          {date ? `截至${date}热门话题` : '当前热门话题'}
+        </h3>
+      </div>
       
       <ul className="space-y-2">
         {topics.map((topic, index) => (
@@ -46,10 +49,15 @@ const HotTopicsDisplay: React.FC<HotTopicsDisplayProps> = ({ topics, date }) => 
             )}
           >
             <div className="flex items-center justify-between">
-              <h4 className="text-sm font-medium text-orange-600">
-                <span className={topic.link ? "underline text-blue-600 cursor-pointer" : ""}>
+              <h4 className="text-sm font-medium text-orange-600 dark:text-orange-400 hover:underline mb-1">
+                <a 
+                  href={topic.url} 
+                  target="_blank" 
+                  rel="noopener noreferrer"
+                  className="break-words"
+                >
                   {topic.title}
-                </span>
+                </a>
               </h4>
               
               {topic.popularity && (
@@ -63,12 +71,12 @@ const HotTopicsDisplay: React.FC<HotTopicsDisplayProps> = ({ topics, date }) => 
               <p className="text-xs text-gray-600 mt-1">{topic.description}</p>
             )}
             
+            <div className="flex items-center justify-between text-xs text-gray-400 dark:text-gray-500 mt-1.5">
+              <span>{topic.category}</span>
+              <span>{topic.source}</span>
+            </div>
+            
             <div className="flex justify-between items-center mt-2 text-xs text-gray-400">
-              <div className="flex space-x-2">
-                {topic.category && <span>{topic.category}</span>}
-                {topic.source && <span>来源: {topic.source}</span>}
-              </div>
-              
               <div className="flex items-center">
                 {topic.timestamp && (
                   <span className="mr-2">{new Date(topic.timestamp).toLocaleString()}</span>

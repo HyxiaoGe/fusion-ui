@@ -1039,7 +1039,7 @@ export default function Home() {
       rightPanel={ (
         // 总是显示面板，让FunctionCallDisplay自己决定是否显示内容
         // 这样避免在消息发送期间卸载组件
-        <FunctionCallDisplay />
+        activeChatId ? <FunctionCallDisplay chatId={activeChatId} /> : null 
       )}
     >
       <div className="h-full flex flex-col relative">

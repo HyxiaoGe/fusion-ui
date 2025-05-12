@@ -1,15 +1,16 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useAppSelector } from '@/redux/hooks';
 import { AlertTriangle, Loader2, Search } from 'lucide-react';
 import HotTopicsDisplay from './HotTopicsDisplay';
+import { cn } from '@/lib/utils';
 
-// 用于显示 Web 搜索结果的子组件 (稍后填充具体实现)
+// 用于显示 Web 搜索结果的子组件
 interface WebSearchResultItem {
   title: string;
-  link?: string; // 根据截图，link 可能没有，但我们先定义上
-  snippet?: string; // 根据截图，snippet 可能没有
-  timestamp?: string; // 根据截图，有 timestamp
-  // 根据实际从 functionCallData.results 获取到的字段来调整
+  link?: string; 
+  snippet?: string; 
+  timestamp?: string;
+  source?: string; // 新增 source 字段
 }
 
 interface WebSearchResultsProps {
@@ -31,21 +32,36 @@ const WebSearchResultsDisplay: React.FC<WebSearchResultsProps> = ({ query, resul
 
   return (
     <div className="p-4 space-y-3">
-      {query && <h3 className="text-sm font-semibold text-gray-700 mb-2">Search results for: "{query}"</h3>}
-      <ul className="space-y-2">
+      {query && (
+        <div className="flex items-center mb-3">
+          <Search className="w-4 h-4 mr-2 text-blue-500" />
+          <h3 className="text-xs font-medium text-gray-500 dark:text-gray-400">"{query}"</h3>
+        </div>
+      )}
+      <ul className="space-y-3">
         {results.map((item, index) => (
-          <li key={index} className="p-3 bg-gray-50 rounded-md hover:bg-gray-100 transition-colors">
-            <h4 className="text-sm font-medium text-blue-600 hover:underline">
+          <li 
+            key={index} 
+            className={cn(
+              "p-3 rounded-md transition-colors relative border shadow-sm",
+              "bg-gradient-to-br from-blue-50 via-gray-50 to-blue-50 dark:from-gray-800/30 dark:via-gray-800/10 dark:to-gray-800/30", 
+              "hover:from-blue-100 hover:via-gray-100 hover:to-blue-100 dark:hover:from-gray-700/50 dark:hover:via-gray-700/30 dark:hover:to-gray-700/50",
+              "border-blue-100 dark:border-gray-700"
+            )}
+          >
+            <h4 className="text-sm font-medium text-blue-600 dark:text-blue-400 hover:underline mb-1">
               {item.link ? (
-                <a href={item.link} target="_blank" rel="noopener noreferrer">
+                <a href={item.link} target="_blank" rel="noopener noreferrer" className="break-words">
                   {item.title}
                 </a>
               ) : (
-                item.title
+                <span className="break-words">{item.title}</span>
               )}
             </h4>
-            {item.snippet && <p className="text-xs text-gray-600 mt-1 truncate">{item.snippet}</p>}
-            {item.timestamp && <p className="text-xs text-gray-400 mt-1">{new Date(item.timestamp).toLocaleString()}</p>}
+            {item.snippet && <p className="text-xs text-gray-700 dark:text-gray-300 mt-1 mb-1 break-words">{item.snippet}</p>}
+            <div className="flex items-center justify-end text-xs text-gray-400 dark:text-gray-500 mt-1.5">
+              <span>{item.source || 'Unknown source'}</span>
+            </div>
           </li>
         ))}
       </ul>
@@ -53,55 +69,34 @@ const WebSearchResultsDisplay: React.FC<WebSearchResultsProps> = ({ query, resul
   );
 };
 
-const FunctionCallDisplay: React.FC = () => {
-  const {
-    activeChatId,
-    chats,
-    // 全局的函数调用进行中状态，用于显示当前操作的loading
-    isFunctionCallInProgress: globalIsFunctionCallInProgress,
-    functionCallType: globalFunctionCallType,
-  } = useAppSelector((state) => state.chat);
-
-  const activeChat = chats.find(chat => chat.id === activeChatId);
-  const functionCallOutput = activeChat?.functionCallOutput;
-
-  // 添加调试日志，记录组件每次渲染时的状态
-  console.log('FunctionCallDisplay 渲染：', {
-    activeChatId,
-    'activeChat?.id': activeChat?.id,
-    'functionCallOutput': functionCallOutput,
-    globalIsFunctionCallInProgress,
-    functionCallType: globalFunctionCallType,
-    date: new Date().toISOString(),
-  });
+const FunctionCallDisplay: React.FC<{ chatId: string }> = ({ chatId }) => {
+  const functionCallOutput = useAppSelector(state => 
+    state.chat.chats.find(c => c.id === chatId)?.functionCallOutput
+  );
+  const globalFunctionCallType = useAppSelector(state => state.chat.functionCallType);
+  const globalIsFunctionCallInProgress = useAppSelector(state => state.chat.isFunctionCallInProgress);
+  const functionCallStepContent = useAppSelector(state => state.chat.functionCallStepContent); // 获取步骤内容
 
   // 使用useEffect监控状态变化
   useEffect(() => {
-    console.log('FunctionCallOutput 改变：', {
-      functionCallOutput,
-      date: new Date().toISOString()
-    });
   }, [functionCallOutput]);
 
   // 优先显示全局正在进行的函数调用loading状态
   if (globalIsFunctionCallInProgress && !functionCallOutput) {
-    console.log('显示加载状态', {date: new Date().toISOString()});
     return (
       <div className="p-4 flex flex-col items-center justify-center text-sm text-gray-500 h-full">
         <Loader2 className="w-6 h-6 animate-spin mb-2" />
-        <span>Executing function: {globalFunctionCallType || 'loading'}...</span>
+        <span>{functionCallStepContent || `正在执行 ${globalFunctionCallType || '函数'}...`}</span>
       </div>
     );
   }
 
   // 如果没有活动的函数调用输出，则不显示任何内容
   if (!functionCallOutput) {
-    console.log('没有函数调用输出，不显示面板', {date: new Date().toISOString()});
     return null;
   }
 
   const { type, data, error, query, timestamp } = functionCallOutput;
-  console.log('有函数调用输出，准备显示：', {type, query, error, date: new Date().toISOString()});
 
   // 如果有错误信息，显示错误
   if (error) {

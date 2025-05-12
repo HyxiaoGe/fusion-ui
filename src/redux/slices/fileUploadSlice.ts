@@ -1,5 +1,6 @@
 import { FileWithPreview, revokeFilePreview } from '@/lib/utils/fileHelpers';
-import { createSlice, PayloadAction } from '@reduxjs/toolkit';
+import { createSlice, PayloadAction, createSelector } from '@reduxjs/toolkit';
+import { RootState } from '../store';
 
 // 文件处理状态
 export type FileProcessingStatus = 'pending' | 'uploading' | 'parsing' | 'processed' | 'error';
@@ -210,5 +211,33 @@ export const {
   setUploadProgress,
   updateFileStatus,
 } = fileUploadSlice.actions;
+
+// --- Memoized Selectors --- 
+
+const EMPTY_ARRAY: any[] = []; // Stable empty array reference
+const EMPTY_OBJECT = {}; // Stable empty object reference
+
+// Base selectors
+const selectFilesByChatState = (state: RootState) => state.fileUpload.files;
+const selectFileIdsByChatState = (state: RootState) => state.fileUpload.fileIds;
+const selectProcessingFilesState = (state: RootState) => state.fileUpload.processingFiles;
+
+// Factory function to create selectors specific to a chatId
+export const makeSelectChatFiles = () => createSelector(
+  [selectFilesByChatState, (_state: RootState, chatId: string) => chatId],
+  (filesByChat, chatId) => filesByChat[chatId] || EMPTY_ARRAY // Return stable empty array
+);
+
+export const makeSelectChatFileIds = () => createSelector(
+  [selectFileIdsByChatState, (_state: RootState, chatId: string) => chatId],
+  (fileIdsByChat, chatId) => fileIdsByChat[chatId] || EMPTY_ARRAY // Return stable empty array
+);
+
+// Selector for fileUploads (processing statuses array)
+export const selectFileUploadStatuses = createSelector(
+  [selectProcessingFilesState],
+  // Ensure processingFiles is treated as an object, default to stable empty object
+  (processingFiles) => Object.values(processingFiles || EMPTY_OBJECT) 
+);
 
 export default fileUploadSlice.reducer;
