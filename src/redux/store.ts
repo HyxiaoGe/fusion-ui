@@ -45,7 +45,7 @@ export const store = configureStore({
     },
     middleware: (getDefaultMiddleware) => 
         getDefaultMiddleware({
-            serializableCheck: false,
+            serializableCheck: false, // 在这里我们允许非序列化值，因为文件对象等可能不会被序列化
         }).concat(persistMiddleware, toastMiddleware, dbSyncMiddleware),
 });
 

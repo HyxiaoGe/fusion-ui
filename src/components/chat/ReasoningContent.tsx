@@ -33,7 +33,6 @@ const ReasoningContent: React.FC<ReasoningContentProps> = ({
   // 允许在流式生成过程中显示空内容
   // 只有在非流式状态下且内容为空时才不显示
   if (!isStreaming && !forceShow && (!reasoning || reasoning.trim() === '')) {
-    console.log('ReasoningContent不显示: 非流式状态且内容为空');
     return null;
   }
   
@@ -52,7 +51,6 @@ const ReasoningContent: React.FC<ReasoningContentProps> = ({
   // 在流式思考状态下，确保组件立即加载并显示内容
   useEffect(() => {
     if (isStreaming && !reasoning && startTime) {
-      console.log('流式思考启动，但内容尚未生成');
     }
   }, [isStreaming, reasoning, startTime]);
   

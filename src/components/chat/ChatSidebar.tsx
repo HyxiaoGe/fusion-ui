@@ -203,7 +203,6 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ onNewChat }) => {
         { max_length: 20 } // 可选参数，限制标题长度
       );
 
-      console.log('标题生成成功，开始动画：', chatId, generatedTitle);
       
       // 使用Redux设置动画状态
       dispatch(setAnimatingTitleChatId(chatId));

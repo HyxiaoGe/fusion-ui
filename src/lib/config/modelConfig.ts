@@ -93,7 +93,6 @@ export const fetchModels = async (): Promise<ModelInfo[]> => {
   
   // 如果已经在获取中，返回正在进行的Promise
   if (isModelsFetching && modelsFetchPromise) {
-    console.log('模型数据正在获取中，等待已有请求完成...');
     return modelsFetchPromise;
   }
   
@@ -103,7 +102,6 @@ export const fetchModels = async (): Promise<ModelInfo[]> => {
   try {
     modelsFetchPromise = (async () => {
       try {
-        console.log('发起模型数据API请求...');
         const response = await fetch(`${API_BASE_URL}/api/models/`);
         if (!response.ok) {
           throw new Error(`获取模型配置失败: ${response.status}`);
@@ -133,7 +131,6 @@ export const fetchModels = async (): Promise<ModelInfo[]> => {
 // 初始化模型配置
 export const initializeModels = async () => {
   if (models.length === 0) {
-    console.log('初始化模型配置...');
     return await fetchModels();
   }
   return models;

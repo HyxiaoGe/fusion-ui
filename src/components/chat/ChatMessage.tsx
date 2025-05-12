@@ -144,7 +144,6 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, files, isLastMessage
       const syncToDb = async () => {
         try {
           await chatStore.updateMessage(message.id, updates);
-          console.log('思考时间已同步到数据库');
         } catch (error) {
           console.error('同步到数据库失败:', error);
         }

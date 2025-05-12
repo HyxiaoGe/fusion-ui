@@ -1,4 +1,12 @@
 import { API_CONFIG } from '../config';
+import { store } from '../../redux/store'; // 导入 store
+import {
+  startFunctionCall,
+  setFunctionCallData,
+  setFunctionCallError,
+  clearFunctionCallData,
+  clearChatFunctionCallOutput,
+} from '../../redux/slices/chatSlice'; // 导入 actions
 
 const API_BASE_URL = API_CONFIG.BASE_URL
 
@@ -59,6 +67,16 @@ export async function sendMessage(data: ChatRequest): Promise<ChatResponse> {
 
 export async function sendMessageStream(data: ChatRequest, onChunk: (chunk: string, done: boolean, conversationId?: string, reasoning?: string) => void): Promise<void> {
   try {
+    // 添加调试日志：记录请求开始时的状态
+    console.log('sendMessageStream开始:', {
+      conversation_id: data.conversation_id,
+      'store状态': {
+        activeChatId: store.getState().chat.activeChatId,
+        functionCallOutput: store.getState().chat.chats.find(c => c.id === data.conversation_id)?.functionCallOutput,
+        isFunctionCallInProgress: store.getState().chat.isFunctionCallInProgress,
+      },
+      date: new Date().toISOString()
+    });
 
     // 确保设置了options对象
     if (!data.options) {
@@ -109,7 +127,9 @@ export async function sendMessageStream(data: ChatRequest, onChunk: (chunk: stri
           
           try {
             const parsedData = JSON.parse(data);
-            console.log("收到数据", parsedData);
+
+            // 在这里添加日志，用于观察所有类型的事件数据
+            console.log("SSE Event Data:", parsedData);
 
             // 保存conversationId
             if (parsedData.conversation_id) {
@@ -119,8 +139,6 @@ export async function sendMessageStream(data: ChatRequest, onChunk: (chunk: stri
             // 处理事件类型
             switch(parsedData.type) {
               case "reasoning_start":
-                console.log("【流式处理】推理开始");
-                // 不在这里通知回调，等待第一个实际内容
                 break;
                 
               case "reasoning_content":
@@ -130,7 +148,6 @@ export async function sendMessageStream(data: ChatRequest, onChunk: (chunk: stri
                     onChunk(streamContent, false, conversationId || undefined, '');
                   }
                   streamReasoning += parsedData.content;
-                  console.log("【流式处理】推理内容更新", streamReasoning.length);
                   onChunk(streamContent, false, conversationId || undefined, streamReasoning);
                 }
                 break;
@@ -141,42 +158,136 @@ export async function sendMessageStream(data: ChatRequest, onChunk: (chunk: stri
                 if (parsedData.reasoning) {
                   streamReasoning = parsedData.reasoning;
                 }
-                console.log("推理结束，完整内容：", streamReasoning);
                 // 添加完成标记
                 onChunk(streamContent, false, conversationId || undefined, streamReasoning + "[REASONING_COMPLETE]");
                 break;
                 
               case "answering_start":
-                console.log("回答开始");
                 break;
                 
               case "answering_content":
                 if (parsedData.content) {
                   streamContent += parsedData.content;
-                  console.log("回答内容更新", streamContent);
                   onChunk(streamContent, false, conversationId || undefined, streamReasoning);
                 }
                 break;
                 
               case "answering_complete":
-                console.log("回答结束");
                 break;
+
+              // --- 新增 Function Call 事件处理 ---
+              case "function_stream_start": // 后端事件
+                // 可以在这里进行一些初始化，如果需要的话
+                console.log("Function call stream started");
+                
+                // 只重置全局状态，但不清除具体聊天的functionCallOutput
+                // 我们会在实际确认是web_search类型的函数调用时再清除
+                store.dispatch(clearFunctionCallData()); 
+                
+                // 注释掉这部分，不在这里清除当前聊天的functionCallOutput
+                // if (conversationId) {
+                //   store.dispatch(clearChatFunctionCallOutput({ chatId: conversationId }));
+                // }
+                break;
+
+              case "function_call_detected": // 后端事件
+                if (parsedData.content && parsedData.content.function_type) {
+                  // 在这里，我们已经知道具体的函数类型了
+                  const functionType = parsedData.content.function_type;
+                  
+                  // 根据函数类型进行不同处理
+                  switch (functionType) {
+                    case 'web_search':
+                      // 如果是web_search类型，才清除之前的搜索结果
+                      if (conversationId) {
+                        console.log(`检测到web_search调用，清除之前的搜索结果`);
+                        store.dispatch(clearChatFunctionCallOutput({ chatId: conversationId }));
+                      }
+                      break;
+                    case 'hot_topics':
+                      // 如果是hot_topics类型，也清除之前的结果
+                      if (conversationId) {
+                        console.log(`检测到hot_topics调用，清除之前的结果`);
+                        store.dispatch(clearChatFunctionCallOutput({ chatId: conversationId }));
+                      }
+                      break;
+                    default:
+                      // 对于其他类型的函数，可以添加特定处理逻辑
+                      console.log(`检测到${functionType}调用`);
+                      break;
+                  }
+                  
+                  // 设置全局函数调用类型
+                  if (!store.getState().chat.functionCallType) {
+                    store.dispatch(startFunctionCall({ type: functionType }));
+                  }
+                }
+                break;
+
+              case "executing_function": // 后端事件
+                // UI上可以显示 "正在执行函数..." parsedData.content 就是这个字符串
+                // 这个状态由 isFunctionCallInProgress 和 functionCallType 组合决定，不需要额外dispatch
+                break;
+              
+              case "generating_query": // 后端事件 (特定于 web_search)
+              case "query_generated":  // 后端事件 (特定于 web_search)
+                // 这些是函数内部的步骤，UI上可以通过 isFunctionCallInProgress 和 functionCallType 感知
+                // 可以在 functionCallData 中设计一个字段来表示这些子步骤的状态，如果需要精细控制
+                break;
+
+              case "function_executed": // 后端事件
+                if (parsedData.content && parsedData.content.function_type && parsedData.content.result) {
+                  try {
+                    const functionResult = JSON.parse(parsedData.content.result);
+                    const currentFunctionType = parsedData.content.function_type;
+                    let query = null;
+                    // 如果是 web_search，我们期望 functionResult 中有 query 字段
+                    if (currentFunctionType === 'web_search' && functionResult.query) {
+                      query = functionResult.query;
+                    }
+
+                    store.dispatch(setFunctionCallData({ 
+                      chatId: conversationId || '', // 确保 chatId 被传递
+                      type: currentFunctionType,
+                      query: query, // 传递 query
+                      data: functionResult 
+                    }));
+                  } catch (e) {
+                    console.error('Failed to parse function_executed result:', e, parsedData.content.result);
+                    store.dispatch(setFunctionCallError({ 
+                      chatId: conversationId || '', // 确保 chatId 被传递
+                      type: parsedData.content.function_type, 
+                      error: 'Failed to parse function result' 
+                    }));
+                  }
+                } else {
+                   store.dispatch(setFunctionCallError({ 
+                      chatId: conversationId || '', // 确保 chatId 被传递
+                      type: parsedData.content?.function_type || 'unknown', 
+                      error: 'Missing data in function_executed event' 
+                    }));
+                }
+                break;
+              
+              case "content_direct": // 后端特定于 web_search 的事件, 表示直接有内容输出
+                // 这个事件主要由后端 _handle_web_search_function 处理并随后发送 content
+                // 前端主要依赖 function_executed 来获取结构化数据，和随后的 content 事件来获取文本
+                break;
+
+              // --- 结束 Function Call 事件处理 ---
                 
               case "done":
                 // 流结束
-                console.log("流结束，最终内容:", streamContent, "推理:", streamReasoning);
                 onChunk(streamContent, true, conversationId || undefined, streamReasoning);
                 return;
                 
               default:
                 // 兼容旧格式或者其他格式
                 if (parsedData.content === "[DONE]") {
-                  console.log("流结束标志");
                   onChunk(streamContent, true, conversationId || undefined, streamReasoning);
                   return;
                 } else if (parsedData.content) {
                   streamContent += parsedData.content;
-                  console.log("收到内容", streamContent);
                   onChunk(streamContent, false, conversationId || undefined, streamReasoning);
                 }
                 
@@ -257,19 +368,16 @@ export const fetchSuggestedQuestions = async (
   const cachedData = suggestedQuestionsCache[conversationId];
   
   if (!forceRefresh && cachedData && (now - cachedData.timestamp) < CACHE_VALIDITY) {
-    console.log(`使用缓存的推荐问题，对话ID: ${conversationId}`);
     return { questions: cachedData.questions };
   }
   
   // 检查是否有正在进行的请求
   if (conversationId in ongoingQuestionsRequests) {
-    console.log(`等待进行中的推荐问题请求，对话ID: ${conversationId}`);
     return ongoingQuestionsRequests[conversationId];
   }
   
   // 创建新的请求
   try {
-    console.log(`开始获取推荐问题，对话ID: ${conversationId}`);
     
     // 包装请求为Promise并记录
     ongoingQuestionsRequests[conversationId] = (async () => {
@@ -343,12 +451,10 @@ export async function deleteConversation(conversationId: string) {
 export function clearSuggestedQuestionsCache(conversationId?: string): void {
   if (conversationId) {
     delete suggestedQuestionsCache[conversationId];
-    console.log(`已清除对话${conversationId}的推荐问题缓存`);
   } else {
     // 清除所有缓存
     Object.keys(suggestedQuestionsCache).forEach(key => {
       delete suggestedQuestionsCache[key];
     });
-    console.log('已清除所有推荐问题缓存');
   }
 }

@@ -2,11 +2,14 @@ import db, { chatStore, settingsStore } from '@/lib/db/chatStore';
 import {
   addMessage,
   Chat,
+  clearChatFunctionCallOutput,
   clearMessages,
   createChat,
   deleteChat,
   endStreaming,
   Message,
+  setFunctionCallData,
+  setFunctionCallError,
   updateChatModel,
   updateChatTitle,
   updateStreamingContent
@@ -77,8 +80,6 @@ export const persistMiddleware: Middleware = store => next => action => {
             if (chat) {
               await chatStore.saveChat(chat);
             }
-          } else {
-            console.log('跳过重复消息:', message.content.substring(0, 30) + '...');
           }
         } catch (error) {
           console.error('检查或保存消息时出错:', error);
@@ -174,7 +175,31 @@ export const persistMiddleware: Middleware = store => next => action => {
       else if (clearMessages.match(action)) {
         await chatStore.clearMessages(payload);
       }
-      
+      // 处理函数调用相关action
+      else if (setFunctionCallData.match(action)) {
+        const { chatId } = payload;
+        const state = store.getState();
+        const chat = state.chat.chats.find((c: Chat) => c.id === chatId);
+        if (chat) {
+          await chatStore.saveChat(chat);
+        }
+      }
+      else if (setFunctionCallError.match(action)) {
+        const { chatId } = payload;
+        const state = store.getState();
+        const chat = state.chat.chats.find((c: Chat) => c.id === chatId);
+        if (chat) {
+          await chatStore.saveChat(chat);
+        }
+      }
+      else if (clearChatFunctionCallOutput.match(action)) {
+        const { chatId } = payload;
+        const state = store.getState();
+        const chat = state.chat.chats.find((c: Chat) => c.id === chatId);
+        if (chat) {
+          await chatStore.saveChat(chat);
+        }
+      }
       // 处理设置相关action
       else if (setThemeMode.match(action)) {
         await settingsStore.saveSetting('themeMode', payload);

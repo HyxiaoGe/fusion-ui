@@ -130,7 +130,6 @@ const ProviderIcon: React.FC<{ providerId: string }> = ({ providerId }) => {
 const fetchModels = async () => {
   try {
     const url = `${process.env.NEXT_PUBLIC_API_BASE_URL || ''}/api/models`;
-    console.log('获取模型列表:', url);
     
     const response = await fetch(url, {
       method: 'GET',
@@ -145,7 +144,6 @@ const fetchModels = async () => {
     }
     
     const data = await response.json();
-    console.log('获取到的模型列表:', data);
     return data.models || [];
   } catch (error) {
     console.error("获取模型列表失败:", error);
@@ -157,7 +155,6 @@ const fetchModels = async () => {
 const fetchModelDetail = async (modelId: string) => {
   try {
     const url = `${process.env.NEXT_PUBLIC_API_BASE_URL || ''}/api/models/${modelId}`;
-    console.log('获取模型详情:', url);
     
     const response = await fetch(url, {
       method: 'GET',
@@ -172,7 +169,6 @@ const fetchModelDetail = async (modelId: string) => {
     }
     
     const data = await response.json();
-    console.log('获取到的模型详情:', data);
     return data;
   } catch (error) {
     console.error(`获取模型[${modelId}]详情失败:`, error);
@@ -184,7 +180,6 @@ const fetchModelDetail = async (modelId: string) => {
 const fetchModelCredentials = async (modelId: string) => {
   try {
     const url = `${process.env.NEXT_PUBLIC_API_BASE_URL || ''}/api/credentials?model_id=${modelId}`;
-    console.log('获取模型凭证:', url);
     
     const response = await fetch(url, {
       method: 'GET',
@@ -199,7 +194,6 @@ const fetchModelCredentials = async (modelId: string) => {
     }
     
     const data = await response.json();
-    console.log('获取到的模型凭证:', data);
     return data.credentials || [];
   } catch (error) {
     console.error(`获取模型[${modelId}]凭证失败:`, error);
@@ -211,7 +205,6 @@ const fetchModelCredentials = async (modelId: string) => {
 const testModelCredential = async (modelId: string, credentials: any) => {
   try {
     const url = `${process.env.NEXT_PUBLIC_API_BASE_URL || ''}/api/credentials/test`;
-    console.log('测试模型凭证:', url);
     
     const response = await fetch(url, {
       method: 'POST',
@@ -247,9 +240,7 @@ const saveModelCredential = async (modelId: string, name: string, isDefault: boo
       url = `${url}/${credentialId}`;
       method = 'PUT';
     }
-    
-    console.log(`${credentialId ? '更新' : '创建'}模型凭证:`, url);
-    
+        
     const response = await fetch(url, {
       method: method,
       headers: {
@@ -703,9 +694,7 @@ const ModelSettings: React.FC<ModelSettingsProps> = ({ modelId, initialAddModelO
         }
         // auth_config和model_configuration将从提供商继承
       };
-      
-      console.log('添加模型数据:', addModelData);
-      
+            
       // 模拟API调用成功
       await new Promise(resolve => setTimeout(resolve, 500));
       

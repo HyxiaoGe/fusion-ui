@@ -27,6 +27,11 @@ class ChatDatabase extends Dexie {
     this.version(3).stores({
       messages: 'id, chatId, role, timestamp, [chatId+timestamp], [chatId+role+content]'
     });
+
+    // 升级数据库版本，支持 functionCallOutput 字段
+    this.version(4).stores({
+      chats: 'id, modelId, createdAt, updatedAt'
+    });
   }
 }
 
@@ -49,7 +54,6 @@ export const chatStore = {
   },
   // 保存整个聊天
   async saveChat(chat: Chat): Promise<void> {
-    console.log(`尝试保存聊天 ${chat.id} 包含 ${chat.messages.length} 条消息`);
     try {
       // 获取现有的聊天记录
       const existingChat = await db.chats.get(chat.id);
@@ -59,7 +63,8 @@ export const chatStore = {
         await db.chats.update(chat.id, {
           title: chat.title,
           modelId: chat.modelId,
-          updatedAt: chat.updatedAt
+          updatedAt: chat.updatedAt,
+          functionCallOutput: chat.functionCallOutput
         });
       } else {
         await db.chats.add(chat);
@@ -93,7 +98,6 @@ export const chatStore = {
           
           // 批量保存不重复的消息
           await db.messages.bulkAdd(messagesWithChatId);
-          console.log(`添加了 ${messagesWithChatId.length} 条新消息`);
         }
       }
     } catch (error) {
@@ -248,7 +252,6 @@ export const chatStore = {
           });
         }
         
-        console.log(`已更新消息 ${messageId}`);
       } else {
         console.warn(`未找到要更新的消息: ${messageId}`);
       }

@@ -15,7 +15,6 @@ import {
  */
 export async function initializeStoreFromDB(dispatch: AppDispatch): Promise<void> {
   try {
-    console.log('开始从数据库加载数据...');
 
     // 检查数据库是否已经打开
     if (!db.isOpen()) {
@@ -29,7 +28,6 @@ export async function initializeStoreFromDB(dispatch: AppDispatch): Promise<void
       // 数据库为空，确保Redux状态也是空的
       dispatch(setAllChats([]));
       dispatch(setActiveChat(null));
-      console.log('数据库为空，已重置Redux状态');
       return;
     }
 
@@ -111,7 +109,6 @@ export async function initializeStoreFromDB(dispatch: AppDispatch): Promise<void
       dispatch(setContextMaxItems(contextMaxItems));
     }
 
-    console.log('数据库数据加载完成');
   } catch (error) {
     console.error('从数据库加载数据失败:', error);
   }

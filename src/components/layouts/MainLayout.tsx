@@ -11,9 +11,10 @@ interface MainLayoutProps {
   sidebar?: React.ReactNode;
   title?: string;
   header?: React.ReactNode;
+  rightPanel?: React.ReactNode;
 }
 
-const MainLayout: React.FC<MainLayoutProps> = ({ children, sidebar, title, header }) => {
+const MainLayout: React.FC<MainLayoutProps> = ({ children, sidebar, title, header, rightPanel }) => {
   const themeMode = useAppSelector((state) => state.theme.mode);
 
   // 根据系统和用户设置应用主题
@@ -47,7 +48,14 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children, sidebar, title, heade
             {sidebar}
           </ResizableSidebar>
         )}
-        <main className="flex-1 overflow-y-auto">{children}</main>
+        <div className="flex flex-1 overflow-hidden">
+          <main className="flex-1 overflow-y-auto">{children}</main>
+          {rightPanel && (
+            <aside className="w-[400px] border-l overflow-y-auto bg-background shadow-sm flex-shrink-0">
+              {rightPanel}
+            </aside>
+          )}
+        </div>
       </div>
       <ErrorToastContainer />
     </div>

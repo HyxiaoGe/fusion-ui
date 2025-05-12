@@ -31,7 +31,9 @@ import {
   updateMessageReasoning,
   updateStreamingContent,
   updateStreamingReasoningContent,
-  setAnimatingTitleChatId
+  setAnimatingTitleChatId,
+  clearFunctionCallData,
+  resetFunctionCallProgress,
 } from '@/redux/slices/chatSlice';
 import { fetchEnhancedContext } from '@/redux/slices/searchSlice';
 import { store } from '@/redux/store';
@@ -42,6 +44,7 @@ import { v4 as uuidv4 } from 'uuid';
 import Link from 'next/link';
 import { ThemeToggle } from '@/components/ui/theme-toggle';
 import { cn } from '@/lib/utils';
+import FunctionCallDisplay from '@/components/chat/FunctionCallDisplay';
 
 // 添加标题动画组件
 const TypingTitle = ({ title, className, onAnimationComplete }: { title: string; className?: string; onAnimationComplete?: () => void }) => {
@@ -105,7 +108,20 @@ export default function Home() {
   const [inputKey, setInputKey] = useState(Date.now());
   const [showHomePage, setShowHomePage] = useState(false);
 
-  const { chats, activeChatId, loading, isStreaming, animatingTitleChatId } = useAppSelector((state) => state.chat);
+  const { 
+    chats, 
+    activeChatId, 
+    loading, 
+    isStreaming, 
+    animatingTitleChatId,
+    isFunctionCallInProgress: globalIsFunctionCallInProgress,
+    functionCallType: globalFunctionCallType 
+  } = useAppSelector((state) => state.chat);
+
+  // 统一声明 activeChat，供整个组件使用
+  const activeChat = useAppSelector((state) => 
+    state.chat.activeChatId ? state.chat.chats.find(chat => chat.id === state.chat.activeChatId) : null
+  );
 
   // 添加用于标题动画的状态
   const [isTypingTitle, setIsTypingTitle] = useState(false);
@@ -143,7 +159,12 @@ export default function Home() {
   // 监听数据库同步事件，强制重新挂载输入组件
   useEffect(() => {
     setInputKey(Date.now());
-  }, [lastDatabaseSync]);
+    // 切换活动聊天时，清除全局的函数调用指示状态
+    // 持久化的数据 (activeChat.functionCallOutput) 会在 FunctionCallDisplay 中被正确选取
+    if (activeChatId) {
+      dispatch(clearFunctionCallData());
+    }
+  }, [activeChatId, dispatch]);
 
   // 监听activeChatId变化，强制重新挂载输入组件
   useEffect(() => {
@@ -164,7 +185,6 @@ export default function Home() {
           !chats.every(chat => dbChats.some(dbChat => dbChat.id === chat.id));
 
         if (needsSync) {
-          console.log('检测到Redux状态与数据库不同步，正在重新加载数据...');
 
           // 更新Redux状态
           dispatch(setAllChats(dbChats));
@@ -247,9 +267,6 @@ export default function Home() {
     return () => clearTimeout(timer);
   }, [activeChatId, lastDatabaseSync, questionCache, chats]);
 
-  // 获取当前活动的对话
-  const activeChat = activeChatId ? chats.find(chat => chat.id === activeChatId) : null;
-
   // 添加新的状态变量来跟踪聊天中是否有消息
   const [hasMessages, setHasMessages] = useState(false);
 
@@ -257,7 +274,6 @@ export default function Home() {
   useEffect(() => {
     if (activeChat && activeChat.messages && activeChat.messages.length > 0) {
       setHasMessages(true);
-      // 设置标题，避免动画重复
       setFullTitle(activeChat.title);
       setTypingTitle(activeChat.title);
     } else {
@@ -275,7 +291,6 @@ export default function Home() {
 
   // 创建新对话
   const handleNewChat = () => {
-    console.log('点击新建对话按钮', { selectedModelId });
 
     // 确保有选中的模型ID
     const modelToUse = selectedModelId || (models.length > 0 ? models[0].id : null);
@@ -299,7 +314,6 @@ export default function Home() {
         }
       }, 100);
       
-      console.log('对话创建成功，使用模型：', modelToUse);
     } catch (error) {
       console.error('创建对话失败:', error);
       dispatch(setError('创建对话失败，请重试'));
@@ -377,12 +391,34 @@ export default function Home() {
   const handleSendMessage = async (content: string, files?: FileWithPreview[], fileIds?: string[]) => {
     if ((!content.trim() && (!files || files.length === 0)) || !activeChatId || !selectedModelId) return;
 
+    // 添加日志：记录发送消息前的状态
+    console.log('发送消息前状态:', {
+      activeChatId, 
+      'activeChat?.functionCallOutput': activeChat?.functionCallOutput,
+      date: new Date().toISOString()
+    });
+
+    // 注意：不再清除functionCallOutput，我们只在服务端发送function_stream_start事件时清除
+    // 这里只重置全局状态的loading指示器
+    dispatch(resetFunctionCallProgress());
+
+    // 添加日志：记录重置进度后的状态
+    setTimeout(() => {
+      console.log('重置进度后状态:', {
+        activeChatId,
+        'store.getState().chat.activeChatId': store.getState().chat.activeChatId,
+        'activeChat?.functionCallOutput': store.getState().chat.chats.find(
+          c => c.id === activeChatId
+        )?.functionCallOutput,
+        date: new Date().toISOString()
+      });
+    }, 0);
+
     // 如果当前在首页，切换到聊天界面
     if (showHomePage) {
       setShowHomePage(false);
     }
 
-    console.log('发送消息', { content, files, fileIds });
     setCurrentUserQuery(content); // 保存当前查询用于相关推荐
 
     const selectedModel = models.find(m => m.id === selectedModelId);
@@ -434,9 +470,8 @@ export default function Home() {
     const supportsWebSearch = selectedModel.capabilities?.webSearch || false;
     const useWebSearch = webSearchEnabled && supportsWebSearch;
 
-    const { functionCallEnabled } = store.getState().chat;
-    const supportsFunctionCall = selectedModel.capabilities?.functionCalling || false;
-    const useFunctionCall = functionCallEnabled && supportsFunctionCall;
+    const useFunctionCall = selectedModel.capabilities?.functionCalling || false;
+
 
     setTimeout(() => {
       dispatch(startStreaming(activeChatId));
@@ -487,7 +522,6 @@ export default function Home() {
                 // 确保将推理内容保存到消息中
                 const streamingMessageId = store.getState().chat.streamingMessageId;
                 if (streamingMessageId) {
-                  console.log('更新消息推理内容:', streamingMessageId, reasoning);
                   dispatch(updateMessageReasoning({
                     chatId: activeChatId,
                     messageId: streamingMessageId,
@@ -532,7 +566,6 @@ export default function Home() {
 
           // 在消息流结束(done=true)且是第一条消息时生成标题
           if (done && isFirstMessage) {
-            console.log('流处理完成，开始生成标题');
             // 延迟一小段时间确保服务器已处理完毕
             setTimeout(async () => {
               try {
@@ -541,8 +574,6 @@ export default function Home() {
                   undefined, // 不传具体消息，让后端从对话ID获取完整消息链
                   { max_length: 20 }
                 );
-
-                console.log('标题生成成功，开始动画：', generatedTitle);
                 
                 // 设置要动画的标题Chat ID
                 dispatch(setAnimatingTitleChatId(activeChatId || conversationId || ''));
@@ -654,9 +685,7 @@ export default function Home() {
         const supportsWebSearch = selectedModel.capabilities?.webSearch || false;
         const useWebSearch = webSearchEnabled && supportsWebSearch;
 
-        const { functionCallEnabled } = store.getState().chat;
-        const supportsFunctionCall = selectedModel.capabilities?.functionCalling || false;
-        const useFunctionCall = functionCallEnabled && supportsFunctionCall;
+        const useFunctionCall = selectedModel.capabilities?.functionCalling || false;
 
         // 使用用户消息内容重新生成
         dispatch(startStreaming(activeChatId));
@@ -796,9 +825,7 @@ export default function Home() {
     const supportsWebSearch = selectedModel.capabilities?.webSearch || false;
     const useWebSearch = webSearchEnabled && supportsWebSearch;
 
-    const { functionCallEnabled } = store.getState().chat;
-    const supportsFunctionCall = selectedModel.capabilities?.functionCalling || false;
-    const useFunctionCall = functionCallEnabled && supportsFunctionCall;
+    const useFunctionCall = selectedModel.capabilities?.functionCalling || false;
 
     // 开始流式输出
     dispatch(startStreaming(activeChatId));
@@ -921,7 +948,6 @@ export default function Home() {
         
         const timer = setTimeout(() => {
           setTypingTitle(fullTitle.slice(0, typingTitle.length + 1));
-          console.log('打字动画更新:', typingTitle.length + 1, '/', fullTitle.length);
         }, randomDelay);
         
         return () => clearTimeout(timer);
@@ -929,8 +955,7 @@ export default function Home() {
         // 打字完成，稍微延迟后结束动画状态
         const finishTimer = setTimeout(() => {
           setIsTypingTitle(false);
-          console.log('打字动画结束');
-        }, 1500); // 延长光标闪烁时间
+        }, 1500);
         
         return () => clearTimeout(finishTimer);
       }
@@ -939,10 +964,7 @@ export default function Home() {
 
   // 获取当前对话的标题
   const getChatTitle = () => {
-    if (!activeChatId) return "";
-    
-    const chat = chats.find(chat => chat.id === activeChatId);
-    return chat?.title || "AI 聊天";
+    return activeChat?.title || "AI 聊天";
   };
 
   // 渲染界面
@@ -1014,6 +1036,11 @@ export default function Home() {
           </div>
         </header>
       }
+      rightPanel={ (
+        // 总是显示面板，让FunctionCallDisplay自己决定是否显示内容
+        // 这样避免在消息发送期间卸载组件
+        <FunctionCallDisplay />
+      )}
     >
       <div className="h-full flex flex-col relative">
         {showHomePage || !hasMessages ? (

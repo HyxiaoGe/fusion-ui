@@ -29,6 +29,13 @@ export interface Chat {
   modelId: string;
   createdAt: number;
   updatedAt: number;
+  functionCallOutput?: {
+    type: string;
+    query?: string;
+    data: any;
+    error?: string | null;
+    timestamp: number;
+  } | null;
 }
 
 export interface ChatState {
@@ -49,6 +56,12 @@ export interface ChatState {
   animatingTitleChatId: string | null;
   webSearchEnabled: boolean;
   functionCallEnabled: boolean;
+
+  // 新增 Function Call 相关状态
+  functionCallType: string | null;
+  functionCallData: any | null; // 用于存储解析后的函数调用结果
+  isFunctionCallInProgress: boolean;
+  functionCallError: string | null;
 }
 
 const initialState: ChatState = {
@@ -69,6 +82,12 @@ const initialState: ChatState = {
   animatingTitleChatId: null,
   webSearchEnabled: true,
   functionCallEnabled: false,
+
+  // 初始化 Function Call 相关状态
+  functionCallType: null,
+  functionCallData: null,
+  isFunctionCallInProgress: false,
+  functionCallError: null,
 };
 
 const chatSlice = createSlice({
@@ -77,6 +96,9 @@ const chatSlice = createSlice({
   reducers: {
     setActiveChat: (state, action: PayloadAction<string | null>) => {
       state.activeChatId = action.payload;
+      state.isFunctionCallInProgress = false;
+      state.functionCallType = null;
+      state.functionCallError = null;
     },
     createChat: (state, action: PayloadAction<{title?: string, modelId: string}>) => {
       const { title = '新对话', modelId } = action.payload;
@@ -87,6 +109,7 @@ const chatSlice = createSlice({
         modelId,
         createdAt: Date.now(),
         updatedAt: Date.now(),
+        functionCallOutput: null,
       };
       state.chats.push(newChat);
       state.activeChatId = newChat.id;
@@ -235,7 +258,6 @@ const chatSlice = createSlice({
     },
     toggleReasoningVisibility: (state, action: PayloadAction<{chatId: string, messageId: string, visible: boolean}>) => {
       const { chatId, messageId, visible } = action.payload;
-      console.log('切换推理可见性 action:', chatId, messageId, visible);
 
       const chat = state.chats.find(c => c.id === chatId);
       if (chat) {
@@ -244,12 +266,7 @@ const chatSlice = createSlice({
           message.isReasoningVisible = visible;
           // 添加同步到数据库的标记
           message.shouldSyncToDb = true;
-          console.log('已更新消息状态:', message.id, message.isReasoningVisible);
-        } else {
-          console.log('未找到消息:', messageId);
         }
-      } else {
-        console.log('未找到聊天:', chatId);
       }
     },
     startStreaming: (state, action: PayloadAction<string>) => {
@@ -258,6 +275,13 @@ const chatSlice = createSlice({
       state.streamingReasoningContent = '';
       const messageId = uuidv4();
       state.streamingMessageId = messageId;
+      
+      // 添加日志，检查开始流式输出是否影响了functionCallOutput
+      console.log('startStreaming开始:', {
+        chatId: action.payload,
+        'functionCallOutput 前': state.chats.find(c => c.id === action.payload)?.functionCallOutput,
+        date: new Date().toISOString()
+      });
       
       // 添加一个空的助手消息作为占位符
       const chatId = action.payload;
@@ -269,6 +293,13 @@ const chatSlice = createSlice({
           content: '',
           timestamp: Date.now(),
           chatId: chatId,
+        });
+        
+        // 添加日志，检查是否在添加消息后改变了functionCallOutput
+        console.log('startStreaming结束:', {
+          chatId,
+          'functionCallOutput 后': chat.functionCallOutput,
+          date: new Date().toISOString()
         });
       }
     },
@@ -322,6 +353,63 @@ const chatSlice = createSlice({
     setAnimatingTitleChatId: (state, action: PayloadAction<string | null>) => {
       state.animatingTitleChatId = action.payload;
     },
+    // Function Call Actions
+    startFunctionCall: (state, action: PayloadAction<{ type: string }>) => {
+      state.isFunctionCallInProgress = true;
+      state.functionCallType = action.payload.type;
+      state.functionCallError = null;
+    },
+    setFunctionCallData: (state, action: PayloadAction<{ chatId: string, type: string, query?: string, data: any }>) => {
+      const { chatId, type, query, data } = action.payload;
+      const chat = state.chats.find(c => c.id === chatId);
+      if (chat) {
+        chat.functionCallOutput = {
+          type,
+          query,
+          data,
+          error: null,
+          timestamp: Date.now(),
+        };
+      }
+      if (state.functionCallType === type) {
+        state.isFunctionCallInProgress = false;
+      }
+    },
+    setFunctionCallError: (state, action: PayloadAction<{ chatId: string, type: string, error: string }>) => {
+      const { chatId, type, error } = action.payload;
+      const chat = state.chats.find(c => c.id === chatId);
+      if (chat) {
+        chat.functionCallOutput = {
+          type,
+          query: chat.functionCallOutput?.query,
+          data: null,
+          error: error,
+          timestamp: Date.now(),
+        };
+      }
+      if (state.functionCallType === type) {
+        state.isFunctionCallInProgress = false;
+        state.functionCallError = error;
+      }
+    },
+    clearFunctionCallData: (state) => {
+      state.functionCallType = null;
+      state.isFunctionCallInProgress = false;
+      state.functionCallError = null;
+    },
+    clearChatFunctionCallOutput: (state, action: PayloadAction<{ chatId: string }>) => {
+      const { chatId } = action.payload;
+      const chat = state.chats.find(c => c.id === chatId);
+      if (chat) {
+        chat.functionCallOutput = null;
+      }
+    },
+    resetFunctionCallProgress: (state) => {
+      state.isFunctionCallInProgress = false;
+    },
+  },
+  extraReducers: (builder) => {
+    // ... existing code ...
   },
 });
 
@@ -352,6 +440,12 @@ export const {
   clearDbSyncFlag,
   completeThinkingPhase,
   setAnimatingTitleChatId,
+  startFunctionCall,
+  setFunctionCallData,
+  setFunctionCallError,
+  clearFunctionCallData,
+  clearChatFunctionCallOutput,
+  resetFunctionCallProgress,
 } = chatSlice.actions;
 
 export default chatSlice.reducer;

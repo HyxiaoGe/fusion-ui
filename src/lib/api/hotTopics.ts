@@ -33,7 +33,6 @@ export const getCachedHotTopics = async (limit: number = 50): Promise<HotTopic[]
   
   // 如果已经有请求在进行中，等待该请求完成
   if (ongoingRequest) {
-    console.log('已有请求进行中，等待结果...');
     try {
       const data = await ongoingRequest;
       return data.slice(0, limit);
@@ -45,7 +44,6 @@ export const getCachedHotTopics = async (limit: number = 50): Promise<HotTopic[]
   
   // 如果缓存为空且没有进行中的请求，发起新请求
   try {
-    console.log('缓存为空，请求热点话题数据');
     // 调用fetchHotTopics获取数据
     return await fetchHotTopics(limit, true);
   } catch (error) {
@@ -63,7 +61,6 @@ export const fetchHotTopics = async (limit: number = 30, forceRefresh: boolean =
 
   // 如果已经有请求在进行中，等待该请求完成
   if (ongoingRequest) {
-    console.log('已有fetchHotTopics请求进行中，等待结果...');
     try {
       return await ongoingRequest;
     } catch (error) {
@@ -74,7 +71,6 @@ export const fetchHotTopics = async (limit: number = 30, forceRefresh: boolean =
   
   // 创建新的请求
   try {
-    console.log(`请求热点话题API: limit=${limit}, forceRefresh=${forceRefresh}`);
     ongoingRequest = (async () => {
       try {
         const response = await fetch(`${API_BASE_URL}/api/topics/hot?limit=${limit}`);
@@ -113,16 +109,13 @@ export const initHotTopicsPolling = (intervalMinutes: number = 10) => {
   
   // 标记为已初始化
   pollingInitialized = true;
-  
-  console.log('初始化热点话题轮询...');
-  
+    
   // 应用启动时立即获取一次数据
   fetchHotTopics();
   
   // 设置定时获取
   const intervalMs = intervalMinutes * 60 * 1000;
   setInterval(() => {
-    console.log('定时刷新热点话题...');
     fetchHotTopics();
   }, intervalMs);
 }; 

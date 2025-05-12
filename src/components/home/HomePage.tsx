@@ -32,20 +32,15 @@ const HomePage: React.FC<HomePageProps> = ({ onNewChat, onChatSelected }) => {
   
   // 加载热点话题数据
   const loadHotTopics = async () => {
-    try {
-      // 开始加载
-      console.log('开始加载热点话题');
-      
+    try {      
       // 直接请求API数据
       const topics = await getCachedHotTopics(30);  // 获取30条数据
-      console.log(`获取到${topics.length}条热点话题`);
       
       // 更新状态
       setAllHotTopics(topics);
       
       // 首次加载时，随机选择6条显示
       if (topics.length > 0 && displayTopics.length === 0) {
-        console.log('首次加载，选择6条热点话题显示');
         const initialTopics = [...topics].sort(() => 0.5 - Math.random()).slice(0, 6);
         setDisplayTopics(initialTopics);
       }
@@ -62,11 +57,9 @@ const HomePage: React.FC<HomePageProps> = ({ onNewChat, onChatSelected }) => {
     // 只在确实没有数据时才重试
     const retryTimer = setTimeout(() => {
       if (displayTopics.length === 0) {
-        console.log('3秒后话题列表仍为空，检查状态');
         
         // 如果有数据但未显示，则选择数据显示
         if (allHotTopics.length > 0) {
-          console.log('有数据但未显示，选择话题显示');
           const initialTopics = [...allHotTopics].sort(() => 0.5 - Math.random()).slice(0, 6);
           setDisplayTopics(initialTopics);
         } 

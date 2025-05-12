@@ -29,7 +29,6 @@ function ModelConfigInitializer() {
     
     // 尝试加载模型配置
     initializeModels().then((modelData) => {
-      console.log('模型配置初始化完成', modelData.length > 0 ? `加载了${modelData.length}个模型` : '无可用模型');
       // 使用Redux更新模型数据
       dispatch(updateModels(modelData));
       
