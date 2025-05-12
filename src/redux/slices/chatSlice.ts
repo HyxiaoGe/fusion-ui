@@ -76,12 +76,12 @@ const initialState: ChatState = {
   streamingReasoningStartTime: null,
   streamingReasoningEndTime: undefined,
   streamingMessageId: null,
-  reasoningEnabled: true,
+  reasoningEnabled: false,
   streamingReasoning: null,
   isStreamingReasoning: false,
   isThinkingPhaseComplete: false,
   animatingTitleChatId: null,
-  webSearchEnabled: true,
+  webSearchEnabled: false,
   functionCallEnabled: false,
 
   // 初始化 Function Call 相关状态

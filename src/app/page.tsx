@@ -967,6 +967,9 @@ export default function Home() {
     return activeChat?.title || "AI 聊天";
   };
 
+  // Determine if the right panel should be shown
+  const shouldShowRightPanel = activeChatId && (globalIsFunctionCallInProgress || activeChat?.functionCallOutput);
+
   // 渲染界面
   return (
     <MainLayout
@@ -1037,9 +1040,10 @@ export default function Home() {
         </header>
       }
       rightPanel={ (
-        // 总是显示面板，让FunctionCallDisplay自己决定是否显示内容
-        // 这样避免在消息发送期间卸载组件
-        activeChatId ? <FunctionCallDisplay chatId={activeChatId} /> : null 
+        // Only render FunctionCallDisplay if conditions are met
+        shouldShowRightPanel && activeChatId
+          ? <FunctionCallDisplay chatId={activeChatId} /> 
+          : null 
       )}
     >
       <div className="h-full flex flex-col relative">
