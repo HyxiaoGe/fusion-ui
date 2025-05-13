@@ -207,7 +207,6 @@ export async function sendMessageStream(data: ChatRequest, onChunk: (chunk: stri
                 // 提取 content 并更新状态
                 if (parsedData.content && typeof parsedData.content === 'string') {
                   store.dispatch(setFunctionCallStepContent({ 
-                    chatId: conversationId || '', 
                     content: parsedData.content 
                   }));
                 }
