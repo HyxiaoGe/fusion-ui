@@ -247,12 +247,8 @@ export async function sendMessageStream(data: ChatRequest, onChunk: (chunk: stri
                 }
                 break;
               
-              case "content_direct": // 后端特定于 web_search 的事件, 表示直接有内容输出
-                // 这个事件主要由后端 _handle_web_search_function 处理并随后发送 content
-                // 前端主要依赖 function_executed 来获取结构化数据，和随后的 content 事件来获取文本
+              case "content_direct":
                 break;
-
-              // --- 结束 Function Call 事件处理 ---
                 
               case "done":
                 // 流结束

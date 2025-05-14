@@ -45,6 +45,7 @@ import Link from 'next/link';
 import { ThemeToggle } from '@/components/ui/theme-toggle';
 import { cn } from '@/lib/utils';
 import FunctionCallDisplay from '@/components/chat/FunctionCallDisplay';
+import ConfirmDialog from '@/components/ui/confirm-dialog';
 
 // 添加标题动画组件
 const TypingTitle = ({ title, className, onAnimationComplete }: { title: string; className?: string; onAnimationComplete?: () => void }) => {
@@ -128,6 +129,9 @@ export default function Home() {
   const [typingTitle, setTypingTitle] = useState("");
   const [fullTitle, setFullTitle] = useState("");
   const [typingSpeed] = useState({ min: 150, max: 300 }); // 大幅降低打字速度
+
+  // 添加用于确认对话框的状态
+  const [confirmDialogOpen, setConfirmDialogOpen] = useState(false);
 
   // 判断是否显示欢迎页面
   const shouldShowWelcome = !activeChatId || chats.length === 0;
@@ -932,9 +936,14 @@ export default function Home() {
   const handleClearChat = () => {
     if (!activeChatId) return;
 
-    if (window.confirm('确定要清空当前聊天内容吗？此操作不可恢复。')) {
-      dispatch(clearMessages(activeChatId));
-    }
+    // 显示确认对话框
+    setConfirmDialogOpen(true);
+  };
+
+  // 执行清空聊天的操作
+  const confirmClearChat = () => {
+    if (!activeChatId) return;
+    dispatch(clearMessages(activeChatId));
   };
 
   // 打字机效果的实现
@@ -1043,7 +1052,9 @@ export default function Home() {
         // Only render FunctionCallDisplay if conditions are met
         shouldShowRightPanel && activeChatId
           ? <FunctionCallDisplay chatId={activeChatId} /> 
-          : null 
+          : (activeChatId && currentUserQuery && currentUserQuery.length > 0 && !showHomePage
+            ? <RelatedDiscussions currentQuery={currentUserQuery} chatId={activeChatId} />
+            : null)
       )}
     >
       <div className="h-full flex flex-col relative">
@@ -1074,9 +1085,22 @@ export default function Home() {
           <ChatInput
             key={inputKey}
             onSendMessage={handleSendMessage}
+            onClearMessage={handleClearChat}
           />
         </div>
       </div>
+
+      {/* 确认对话框 */}
+      <ConfirmDialog
+        isOpen={confirmDialogOpen}
+        onClose={() => setConfirmDialogOpen(false)}
+        onConfirm={confirmClearChat}
+        title="确认清空聊天"
+        description="您确定要清空当前聊天内容吗？此操作不可恢复。"
+        confirmLabel="删除"
+        cancelLabel="取消"
+        variant="destructive"
+      />
     </MainLayout>
   );
 }
