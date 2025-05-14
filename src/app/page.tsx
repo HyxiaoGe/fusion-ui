@@ -34,6 +34,7 @@ import {
   setAnimatingTitleChatId,
   clearFunctionCallData,
   resetFunctionCallProgress,
+  clearChatFunctionCallOutput,
 } from '@/redux/slices/chatSlice';
 import { fetchEnhancedContext } from '@/redux/slices/searchSlice';
 import { store } from '@/redux/store';
@@ -943,7 +944,10 @@ export default function Home() {
   // 执行清空聊天的操作
   const confirmClearChat = () => {
     if (!activeChatId) return;
+    // 清空聊天消息
     dispatch(clearMessages(activeChatId));
+    // 清除该聊天的函数调用输出
+    dispatch(clearChatFunctionCallOutput({ chatId: activeChatId }));
   };
 
   // 打字机效果的实现
