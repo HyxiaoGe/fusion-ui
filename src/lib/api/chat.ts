@@ -21,7 +21,6 @@ export interface ChatRequest {
   stream?: boolean;
   options?: {
     use_reasoning?: boolean;
-    use_enhancement?: boolean;
     max_context_items?: number;
     temperature?: number;
     max_tokens?: number;
@@ -120,7 +119,6 @@ export async function sendMessageStream(data: ChatRequest, onChunk: (chunk: stri
             const parsedData = JSON.parse(data);
 
             // 在这里添加日志，用于观察所有类型的事件数据
-            console.log("SSE Event Data:", parsedData);
 
             // 保存conversationId
             if (parsedData.conversation_id) {

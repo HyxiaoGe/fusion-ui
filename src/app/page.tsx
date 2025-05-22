@@ -496,7 +496,6 @@ export default function Home() {
         stream: true,
         options: {
           use_reasoning: useReasoning,
-          use_enhancement: searchEnabled && contextEnhancementEnabled,
           use_web_search: useWebSearch,
           use_function_call: useFunctionCall
         },
@@ -707,7 +706,6 @@ export default function Home() {
             stream: true,
             options: {
               use_reasoning: useReasoning,
-              use_enhancement: store.getState().search.contextEnhancementEnabled,
               use_web_search: useWebSearch,
               use_function_call: useFunctionCall
             }
@@ -849,7 +847,6 @@ export default function Home() {
         stream: true,
         options: {
           use_reasoning: useReasoning,
-          use_enhancement: store.getState().search.contextEnhancementEnabled,
           use_web_search: useWebSearch,
           use_function_call: useFunctionCall
         }

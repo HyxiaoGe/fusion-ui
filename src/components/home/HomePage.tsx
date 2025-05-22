@@ -159,6 +159,15 @@ const HomePage: React.FC<HomePageProps> = ({ onNewChat, onChatSelected }) => {
     const supportsReasoning = selectedModel.capabilities?.deepThinking || false;
     const useReasoning = reasoningEnabled && supportsReasoning;
 
+    // 添加网络搜索功能检查
+    const { webSearchEnabled } = store.getState().chat;
+    const supportsWebSearch = selectedModel.capabilities?.webSearch || false;
+    const useWebSearch = webSearchEnabled && supportsWebSearch;
+
+    // 添加函数调用功能检查
+    const supportsFunctionCall = selectedModel.capabilities?.functionCalling || false;
+    const useFunctionCall = supportsFunctionCall; // 默认启用，如果模型支持
+
     if (useReasoning) {
       dispatch(startStreamingReasoning());
     }
@@ -173,7 +182,8 @@ const HomePage: React.FC<HomePageProps> = ({ onNewChat, onChatSelected }) => {
       stream: true,
       options: {
         use_reasoning: useReasoning,
-        use_enhancement: store.getState().search.contextEnhancementEnabled
+        use_web_search: useWebSearch,
+        use_function_call: useFunctionCall
       }
     },
     (content, done, conversationId, reasoning) => {
@@ -300,6 +310,15 @@ const HomePage: React.FC<HomePageProps> = ({ onNewChat, onChatSelected }) => {
     const supportsReasoning = selectedModel.capabilities?.deepThinking || false;
     const useReasoning = reasoningEnabled && supportsReasoning;
 
+    // 添加网络搜索功能检查
+    const { webSearchEnabled } = store.getState().chat;
+    const supportsWebSearch = selectedModel.capabilities?.webSearch || false;
+    const useWebSearch = webSearchEnabled && supportsWebSearch;
+
+    // 添加函数调用功能检查
+    const supportsFunctionCall = selectedModel.capabilities?.functionCalling || false;
+    const useFunctionCall = supportsFunctionCall; // 默认启用，如果模型支持
+
     if (useReasoning) {
       dispatch(startStreamingReasoning());
     }
@@ -312,7 +331,8 @@ const HomePage: React.FC<HomePageProps> = ({ onNewChat, onChatSelected }) => {
       stream: true,
       options: {
         use_reasoning: useReasoning,
-        use_enhancement: store.getState().search.contextEnhancementEnabled
+        use_web_search: useWebSearch,
+        use_function_call: useFunctionCall
       }
     },
     (content, done, conversationId, reasoning) => {
