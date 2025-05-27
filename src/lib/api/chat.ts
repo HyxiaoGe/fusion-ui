@@ -199,9 +199,12 @@ export async function sendMessageStream(data: ChatRequest, onChunk: (chunk: stri
                 }
                 break;
 
-              case "executing_function":              
+              case "executing_function":
+              case "user_search_start":           
               case "generating_query":
+              case "performing_search":
               case "query_generated":
+              case "synthesizing_answer":
                 // 提取 content 并更新状态
                 if (parsedData.content && typeof parsedData.content === 'string') {
                   store.dispatch(setFunctionCallStepContent({ 
