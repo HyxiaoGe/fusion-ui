@@ -42,7 +42,6 @@ export class FileStatusPoller {
     if (this.isPolling) return;
     
     this.isPolling = true;
-    console.log(`开始轮询文件 ${this.fileId} 状态`);
     
     // 立即执行一次查询，不等待初始间隔
     this.pollStatus();
@@ -66,7 +65,6 @@ export class FileStatusPoller {
     if (!this.isPolling || this.attempts >= MAX_RETRIES) {
       // 如果已达到最大重试次数，标记为错误
       if (this.attempts >= MAX_RETRIES) {
-        console.log(`文件 ${this.fileId} 轮询达到最大次数(${MAX_RETRIES})，标记为错误`);
         this.dispatch(updateFileStatus({
           fileId: this.fileId,
           chatId: this.chatId,
@@ -82,9 +80,7 @@ export class FileStatusPoller {
     }
 
     try {
-      console.log(`轮询文件 ${this.fileId} 状态，尝试次数: ${this.attempts}, 间隔: ${this.currentInterval}ms`);
       const statusResponse = await getFileStatus(this.fileId);
-      console.log(`文件 ${this.fileId} 状态更新: ${statusResponse.status}`);
       
       // 更新Redux状态
       this.dispatch(updateFileStatus({

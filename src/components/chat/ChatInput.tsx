@@ -168,7 +168,6 @@ const ChatInput: React.FC<ChatInputProps> = ({
 
     setLocalFiles(prev => {
       const combined = [...prev, ...newFiles];
-      console.log('更新后的文件列表:', combined);
       return combined;
     });
   };
@@ -183,7 +182,6 @@ const ChatInput: React.FC<ChatInputProps> = ({
       return;
     }
     
-    console.log(`开始处理文件上传: ${filesToUpload.map(f => f.name).join(', ')}`);
     
     // 预先更新本地文件列表状态，标记为上传中
     setLocalFiles(prev => {
@@ -206,7 +204,6 @@ const ChatInput: React.FC<ChatInputProps> = ({
       }));
       
       // 执行上传
-      console.log(`调用uploadFiles API上传文件...`);
       const fileIds = await uploadFiles(
         selectedModel.provider,
         selectedModel.id,
@@ -214,7 +211,6 @@ const ChatInput: React.FC<ChatInputProps> = ({
         filesToUpload
       );
       
-      console.log('文件上传成功，获取到文件ID:', fileIds);
       
       // 更新本地文件状态，关联fileId
       setLocalFiles(prev => {
@@ -236,7 +232,6 @@ const ChatInput: React.FC<ChatInputProps> = ({
       
       // 对每个文件ID开始状态轮询
       fileIds.forEach((fileId, index) => {
-        console.log(`处理上传成功的文件 ${index + 1}/${fileIds.length}, 文件ID: ${fileId}`);
         
         // 更新Redux中的文件ID
         dispatch(addFileId({
@@ -253,14 +248,12 @@ const ChatInput: React.FC<ChatInputProps> = ({
         }));
         
         // 开始轮询文件状态
-        console.log(`开始轮询文件 ${fileId} 的处理状态...`);
         startPollingFileStatus(
           fileId,
           chatId,
           dispatch,
           (success) => {
             if (success) {
-              console.log(`文件 ${fileId} 处理成功，状态已变为processed`);
               // 更新本地文件状态
               setLocalFiles(prev => {
                 return prev.map(f => {
@@ -278,7 +271,6 @@ const ChatInput: React.FC<ChatInputProps> = ({
                 duration: 3000
               });
             } else {
-              console.log(`文件 ${fileId} 处理失败，状态已变为error`);
               // 更新本地文件状态
               setLocalFiles(prev => {
                 return prev.map(f => {
@@ -359,12 +351,6 @@ const ChatInput: React.FC<ChatInputProps> = ({
         .map(file => file.fileId)
         .filter(id => id !== undefined) as string[];
 
-      console.log("发送带文件的消息", { 
-        messageText: message, 
-        filesCount: filesToSend.length,
-        fileIds: actualFileIds 
-      });
-
       // 发送包含文件的消息
       onSendMessage(message, filesToSend, actualFileIds);
       
@@ -436,7 +422,6 @@ const ChatInput: React.FC<ChatInputProps> = ({
 
   // 处理文件上传完成
   const handleUploadComplete = (fileIds: string[]) => {
-    console.log("文件上传完成，获取到文件ID:", fileIds);
   };
 
   // 切换文件上传区域显示
@@ -483,7 +468,6 @@ const ChatInput: React.FC<ChatInputProps> = ({
 
   // 处理文件上传按钮点击
   const handleFileUploadClick = () => {
-    console.log("handleFileUploadClick", { supportsFileUpload });
     if (!supportsFileUpload) {
       toast({
         message: "当前选择的模型不支持文件上传功能",

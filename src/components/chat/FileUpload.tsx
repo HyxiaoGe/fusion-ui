@@ -109,7 +109,6 @@ const FileUpload = forwardRef<any, FileUploadProps>(({
       dispatch(setUploading(false));
       dispatch(setUploadProgress(0));
 
-      console.log('已完全重置文件状态');
     }
   }));
 
@@ -131,7 +130,6 @@ const FileUpload = forwardRef<any, FileUploadProps>(({
 
   // 当外部files变化时更新本地状态
   useEffect(() => {
-    console.log('外部files变化:', files);
 
     // 如果外部files为空，完全清除FilePond
     if (files.length === 0) {
@@ -222,7 +220,6 @@ const FileUpload = forwardRef<any, FileUploadProps>(({
 
       // 如果文件已经上传过，直接标记为完成
       if (processedFileIds.has(fileId)) {
-        console.log('文件已处理，不再重复上传:', file.name);
         // 直接调用load完成上传过程，但不实际发送请求
         setTimeout(() => load(fileId), 100);
         return;
@@ -263,7 +260,6 @@ const FileUpload = forwardRef<any, FileUploadProps>(({
 
       // 定义明确的中止处理函数
       const abortUpload = () => {
-        console.log('用户取消了上传:', file.name);
         isAborted = true;
 
         // 清理进度定时器
@@ -328,7 +324,6 @@ const FileUpload = forwardRef<any, FileUploadProps>(({
               }));
 
               // 上传完成后，开始轮询文件状态
-              console.log('文件上传成功，立即开始轮询状态检查:', uploadedFileId);
               startPollingFileStatus(
                 uploadedFileId,
                 conversationId,
@@ -336,10 +331,8 @@ const FileUpload = forwardRef<any, FileUploadProps>(({
                 (success) => {
                   // 轮询完成回调
                   if (success) {
-                    console.log('文件处理成功，状态已变为processed:', uploadedFileId);
                     // 可以在这里触发其他操作
                   } else {
-                    console.log('文件处理失败，状态已变为error:', uploadedFileId);
                     // 显示错误状态
                     setLocalError('文件处理失败，请重试');
                   }
@@ -396,7 +389,6 @@ const FileUpload = forwardRef<any, FileUploadProps>(({
 
   // 处理文件上传完成后的移除
   const handleRemoveFile = (error: any, file: FilePondFile, index: number) => {
-    console.log('移除文件:', file.filename);
 
     // 获取文件ID
     const fileId = (file.file as any)?.fileId;
@@ -416,7 +408,6 @@ const FileUpload = forwardRef<any, FileUploadProps>(({
 
   // 添加对上传取消的处理
   const handleAbortItemLoad = (file: FilePondFile) => {
-    console.log('处理文件取消事件:', file.filename);
 
     // 确保中止正在进行的上传
     if (abortControllerRef.current) {
@@ -456,7 +447,6 @@ const FileUpload = forwardRef<any, FileUploadProps>(({
         ref={pondRef}
         files={localFiles}
         onupdatefiles={(files) => {
-          console.log('FilePond onupdatefiles:', files);
           setLocalFiles(files);
 
           // 如果FilePond中没有文件，通知父组件
@@ -472,14 +462,12 @@ const FileUpload = forwardRef<any, FileUploadProps>(({
         beforeAddFile={(file) => {
           // 如果文件已经有fileId，说明已上传
           if (file.file && (file.file as any).fileId) {
-            console.log('检测到已上传的文件:', (file.file as any).fileId);
             // 返回true允许添加，但后续会跳过上传处理
             return true;
           }
           return true; // 允许添加新文件
         }}
         onaddfile={(error, file) => {
-          console.log('onaddfile:', file?.filename);
           setProcessedFileIds(prev => new Set(prev));
         }}
         labelIdle='拖放文件 <span class="filepond--label-action">或点击浏览</span>'

@@ -281,13 +281,6 @@ const chatSlice = createSlice({
       const messageId = uuidv4();
       state.streamingMessageId = messageId;
       
-      // 添加日志，检查开始流式输出是否影响了functionCallOutput
-      console.log('startStreaming开始:', {
-        chatId: action.payload,
-        'functionCallOutput 前': state.chats.find(c => c.id === action.payload)?.functionCallOutput,
-        date: new Date().toISOString()
-      });
-      
       // 添加一个空的助手消息作为占位符
       const chatId = action.payload;
       const chat = state.chats.find(c => c.id === chatId);
@@ -300,12 +293,7 @@ const chatSlice = createSlice({
           chatId: chatId,
         });
         
-        // 添加日志，检查是否在添加消息后改变了functionCallOutput
-        console.log('startStreaming结束:', {
-          chatId,
-          'functionCallOutput 后': chat.functionCallOutput,
-          date: new Date().toISOString()
-        });
+
       }
     },
     updateStreamingContent: (state, action: PayloadAction<{chatId: string, content: string}>) => {

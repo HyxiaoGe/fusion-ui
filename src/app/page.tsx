@@ -396,28 +396,8 @@ export default function Home() {
   const handleSendMessage = async (content: string, files?: FileWithPreview[], fileIds?: string[]) => {
     if ((!content.trim() && (!files || files.length === 0)) || !activeChatId || !selectedModelId) return;
 
-    // 添加日志：记录发送消息前的状态
-    console.log('发送消息前状态:', {
-      activeChatId, 
-      'activeChat?.functionCallOutput': activeChat?.functionCallOutput,
-      date: new Date().toISOString()
-    });
 
-    // 注意：不再清除functionCallOutput，我们只在服务端发送function_stream_start事件时清除
-    // 这里只重置全局状态的loading指示器
     dispatch(resetFunctionCallProgress());
-
-    // 添加日志：记录重置进度后的状态
-    setTimeout(() => {
-      console.log('重置进度后状态:', {
-        activeChatId,
-        'store.getState().chat.activeChatId': store.getState().chat.activeChatId,
-        'activeChat?.functionCallOutput': store.getState().chat.chats.find(
-          c => c.id === activeChatId
-        )?.functionCallOutput,
-        date: new Date().toISOString()
-      });
-    }, 0);
 
     // 如果当前在首页，切换到聊天界面
     if (showHomePage) {

@@ -30,7 +30,6 @@ export async function uploadFiles(
   retryCount = 0
 ): Promise<string[]> {
   try {
-    console.log(`开始上传文件 ${files.map(f => f.name).join(', ')} 到对话 ${conversationId}`);
 
     const formData = new FormData();
     formData.append('provider', provider);
@@ -77,11 +76,9 @@ export async function uploadFiles(
     }
     
     const data = await response.json();
-    console.log('上传成功，获取文件ID:', data.file_ids);
     return data.file_ids;
   } catch (error) {
     if ((error as any).name === 'AbortError') {
-      console.log('上传已被用户取消');
       throw error;
     }
     
@@ -89,7 +86,6 @@ export async function uploadFiles(
     
     // 如果是超时或网络错误，尝试重试
     if (retryCount > 0) {
-      console.log(`上传失败，重试(${retryCount})...`);
       return uploadFiles(provider, model, conversationId, files, abortController, retryCount - 1);
     }
     
@@ -134,7 +130,6 @@ export async function deleteFile(fileId: string): Promise<void> {
 
 export async function getFileStatus(fileId: string): Promise<FileStatusResponse> {
   try {
-    console.log(`正在查询文件状态: ${fileId}`);
     const response = await fetch(`${API_BASE_URL}/api/files/${fileId}/status`);
     
     if (!response.ok) {
@@ -144,7 +139,6 @@ export async function getFileStatus(fileId: string): Promise<FileStatusResponse>
     }
     
     const data = await response.json();
-    console.log(`文件 ${fileId} 状态查询成功:`, data.status);
     return {
       id: data.id,
       status: data.status as FileProcessingStatus,
