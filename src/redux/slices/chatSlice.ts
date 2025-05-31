@@ -63,6 +63,23 @@ export interface ChatState {
   isFunctionCallInProgress: boolean;
   functionCallError: string | null;
   functionCallStepContent: string | null; // 新增：存储函数调用步骤内容
+
+  // 服务端数据相关状态
+  serverChatList: any[]; // 服务端会话列表
+  serverCurrentChat: any | null; // 当前服务端会话详情
+  serverActiveChatId: string | null; // 服务端活动会话ID
+  isLoadingServerList: boolean;
+  isLoadingServerChat: boolean;
+  isLoadingMoreServer: boolean;
+  serverPagination: {
+    current_page: number;
+    page_size: number;
+    total_pages: number;
+    total_count: number;
+    has_next: boolean;
+    has_prev: boolean;
+  } | null;
+  serverError: string | null;
 }
 
 const initialState: ChatState = {
@@ -90,6 +107,16 @@ const initialState: ChatState = {
   isFunctionCallInProgress: false,
   functionCallError: null,
   functionCallStepContent: null, // 初始化新状态
+
+  // 服务端数据相关状态
+  serverChatList: [],
+  serverCurrentChat: null,
+  serverActiveChatId: null,
+  isLoadingServerList: false,
+  isLoadingServerChat: false,
+  isLoadingMoreServer: false,
+  serverPagination: null,
+  serverError: null,
 };
 
 const chatSlice = createSlice({
@@ -411,6 +438,44 @@ const chatSlice = createSlice({
     resetFunctionCallProgress: (state) => {
       state.isFunctionCallInProgress = false;
     },
+    // 服务端数据管理actions
+    setServerChatList: (state, action: PayloadAction<{ chats: any[]; pagination: any }>) => {
+      state.serverChatList = action.payload.chats;
+      state.serverPagination = action.payload.pagination;
+    },
+    
+    appendServerChatList: (state, action: PayloadAction<{ chats: any[]; pagination: any }>) => {
+      state.serverChatList = [...state.serverChatList, ...action.payload.chats];
+      state.serverPagination = action.payload.pagination;
+    },
+    
+    setServerCurrentChat: (state, action: PayloadAction<any | null>) => {
+      state.serverCurrentChat = action.payload;
+    },
+    
+    setServerActiveChatId: (state, action: PayloadAction<string | null>) => {
+      state.serverActiveChatId = action.payload;
+    },
+    
+    setLoadingServerList: (state, action: PayloadAction<boolean>) => {
+      state.isLoadingServerList = action.payload;
+    },
+    
+    setLoadingServerChat: (state, action: PayloadAction<boolean>) => {
+      state.isLoadingServerChat = action.payload;
+    },
+    
+    setLoadingMoreServer: (state, action: PayloadAction<boolean>) => {
+      state.isLoadingMoreServer = action.payload;
+    },
+    
+    setServerError: (state, action: PayloadAction<string | null>) => {
+      state.serverError = action.payload;
+    },
+    
+    clearServerError: (state) => {
+      state.serverError = null;
+    },
   },
   extraReducers: (builder) => {
     // ... existing code ...
@@ -452,6 +517,15 @@ export const {
   clearChatFunctionCallOutput,
   resetFunctionCallProgress,
   toggleWebSearch,
+  setServerChatList,
+  appendServerChatList,
+  setServerCurrentChat,
+  setServerActiveChatId,
+  setLoadingServerList,
+  setLoadingServerChat,
+  setLoadingMoreServer,
+  setServerError,
+  clearServerError,
 } = chatSlice.actions;
 
 export default chatSlice.reducer;

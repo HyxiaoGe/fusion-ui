@@ -1,14 +1,21 @@
 "use client";
 
-import React, { useRef, useState } from "react";
+import React, { useRef, useState, useEffect, useCallback } from "react";
 import { generateChatTitle } from "@/lib/api/title";
+import { getConversations } from "@/lib/api/chat";
 import { useAppDispatch, useAppSelector } from "@/redux/hooks";
 import {
   deleteChat,
   setActiveChat,
   updateChatTitle,
   Chat,
-  setAnimatingTitleChatId
+  setAnimatingTitleChatId,
+  setServerChatList,
+  setLoadingServerList,
+  setServerError,
+  clearServerError,
+  appendServerChatList,
+  setLoadingMoreServer
 } from "@/redux/slices/chatSlice";
 import {
   MessageSquareIcon,
@@ -20,6 +27,7 @@ import {
   HomeIcon,
   SettingsIcon,
   FileText,
+  ChevronRightIcon,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -47,8 +55,189 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ onNewChat }) => {
   const dispatch = useAppDispatch();
   const { toast } = useToast();
 
-  const { chats, activeChatId } = useAppSelector((state) => state.chat);
+  // 获取Redux状态
+  const {
+    chats: localChats,
+    serverChatList,
+    serverPagination,
+    isLoadingServerList,
+    isLoadingMoreServer,
+    serverError,
+    activeChatId
+  } = useAppSelector((state) => state.chat);
+
+  // 优先使用服务端数据，如果为空则使用本地数据
+  const useServerData = serverChatList.length > 0;
+  const chats: Chat[] = useServerData 
+    ? serverChatList.map((chat: any) => ({
+        ...chat,
+        messages: [], // 列表中不包含messages
+        modelId: chat.model_id,
+        createdAt: new Date(chat.created_at).getTime(),
+        updatedAt: new Date(chat.updated_at).getTime(),
+      }))
+    : localChats;
+
   const { models } = useAppSelector((state) => state.models);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  // 添加状态来检测是否有滚动条
+  const [hasScrollbar, setHasScrollbar] = useState(false);
+  const [showLoadMoreButton, setShowLoadMoreButton] = useState(false);
+
+  // 检测滚动条的函数
+  const checkScrollbar = useCallback(() => {
+    if (containerRef.current) {
+      const element = containerRef.current;
+      const hasScroll = element.scrollHeight > element.clientHeight;
+      setHasScrollbar(hasScroll);
+      
+      // 调试日志
+      console.log('滚动条检测:', {
+        hasScroll,
+        scrollHeight: element.scrollHeight,
+        clientHeight: element.clientHeight,
+        useServerData,
+        serverPagination,
+        isLoadingMoreServer,
+        chatsLength: chats.length
+      });
+      
+      // 判断是否可以加载更多
+      let canLoadMore = false;
+      if (useServerData) {
+        // 使用服务端数据时，检查服务端分页信息
+        canLoadMore = Boolean(serverPagination?.has_next) && !isLoadingMoreServer;
+      } else {
+        // 使用本地数据时，模拟有更多数据（用于测试按钮显示）
+        canLoadMore = chats.length >= 5; // 如果有5条以上数据，假设还有更多
+      }
+      
+      const shouldShow = !hasScroll && canLoadMore;
+      
+      console.log('按钮显示逻辑:', {
+        hasScroll,
+        canLoadMore,
+        shouldShow,
+        useServerData,
+        'serverPagination?.has_next': serverPagination?.has_next,
+        localChatsLength: localChats.length
+      });
+      
+      setShowLoadMoreButton(shouldShow);
+    }
+  }, [serverPagination?.has_next, isLoadingMoreServer, chats.length, useServerData, localChats.length]);
+
+  // 监听容器尺寸变化和数据变化
+  useEffect(() => {
+    checkScrollbar();
+    
+    // 使用ResizeObserver监听容器尺寸变化
+    const resizeObserver = new ResizeObserver(() => {
+      checkScrollbar();
+    });
+    
+    if (containerRef.current) {
+      resizeObserver.observe(containerRef.current);
+    }
+    
+    return () => {
+      resizeObserver.disconnect();
+    };
+  }, [checkScrollbar, chats.length, serverPagination]);
+
+  // 获取会话列表
+  const fetchChatList = async (page: number = 1, pageSize: number = 10) => {
+    try {
+      dispatch(setLoadingServerList(true));
+      dispatch(clearServerError());
+      
+      const response = await getConversations(page, pageSize);
+      console.log('服务端返回的会话列表:', response);
+      
+      const items = response.items || [];
+      const chatList = items.map((item: any) => ({
+        id: item.id,
+        title: item.title || '新对话',
+        model_id: item.model || item.provider || 'unknown',
+        created_at: item.created_at,
+        updated_at: item.updated_at,
+      }));
+
+      const pagination = {
+        current_page: response.page || page,
+        page_size: response.page_size || pageSize,
+        total_pages: response.total_pages || Math.ceil((response.total || 0) / pageSize),
+        total_count: response.total || 0,
+        has_next: response.has_next || false,
+        has_prev: response.has_prev || false,
+      };
+      
+      dispatch(setServerChatList({ chats: chatList, pagination }));
+    } catch (error) {
+      console.error('获取会话列表失败:', error);
+      dispatch(setServerError(error instanceof Error ? error.message : '获取会话列表失败'));
+    } finally {
+      dispatch(setLoadingServerList(false));
+    }
+  };
+
+  // 加载更多会话
+  const loadMoreChats = async () => {
+    if (useServerData) {
+      // 服务端数据的加载更多
+      if (!serverPagination?.has_next || isLoadingMoreServer) {
+        return;
+      }
+
+      try {
+        dispatch(setLoadingMoreServer(true));
+        
+        const nextPage = serverPagination.current_page + 1;
+        const pageSize = serverPagination.page_size;
+        
+        const response = await getConversations(nextPage, pageSize);
+        console.log('加载更多数据:', response);
+        
+        const items = response.items || [];
+        const chatList = items.map((item: any) => ({
+          id: item.id,
+          title: item.title || '新对话',
+          model_id: item.model || item.provider || 'unknown',
+          created_at: item.created_at,
+          updated_at: item.updated_at,
+        }));
+
+        const pagination = {
+          current_page: response.page || nextPage,
+          page_size: response.page_size || pageSize,
+          total_pages: response.total_pages || Math.ceil((response.total || 0) / pageSize),
+          total_count: response.total || 0,
+          has_next: response.has_next || false,
+          has_prev: response.has_prev || true,
+        };
+        
+        dispatch(appendServerChatList({ chats: chatList, pagination }));
+      } catch (error) {
+        console.error('加载更多会话失败:', error);
+        dispatch(setServerError(error instanceof Error ? error.message : '加载更多会话失败'));
+      } finally {
+        dispatch(setLoadingMoreServer(false));
+      }
+    } else {
+      // 本地数据的模拟加载更多（用于测试）
+      console.log('模拟加载更多本地数据');
+      toast({
+        message: "这是本地数据，模拟加载更多功能",
+        type: "info",
+      });
+    }
+  };
+
+  // 初始化时尝试获取服务端数据
+  useEffect(() => {
+    fetchChatList(1, 10);
+  }, []);
 
   // 添加对话框状态
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
@@ -259,17 +448,58 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ onNewChat }) => {
     }
   };
 
+  // 滚动监听，实现无限滚动
+  const handleScroll = () => {
+    if (!containerRef.current || isLoadingMoreServer) return;
+    
+    const { scrollTop, scrollHeight, clientHeight } = containerRef.current;
+    
+    // 滚动到底部时加载更多
+    if (scrollTop + clientHeight >= scrollHeight - 5) {
+      loadMoreChats();
+    }
+  };
+
   return (
-    <div className="flex flex-col h-full py-2">
+    <div className="flex flex-col h-full py-2 relative">
       <div className="px-4 mb-5">
-        <Button className="w-full flex items-center gap-2" onClick={onNewChat}>
-          <PlusIcon size={16} />
-          <span>新对话</span>
-        </Button>
+        <div className="relative">
+          {/* 背景光晕效果 */}
+          <div className="absolute inset-0 rounded-lg bg-gradient-to-r from-primary/20 to-blue-500/20 opacity-30 animate-pulse blur-sm"></div>
+          
+          <Button 
+            className="
+              relative w-full flex items-center justify-center gap-2 
+              bg-gradient-to-r from-primary to-primary/80
+              hover:from-primary/90 hover:to-primary/70
+              dark:from-green-500 dark:to-blue-600 
+              dark:hover:from-green-600 dark:hover:to-blue-700
+              text-primary-foreground font-medium
+              shadow-lg hover:shadow-xl 
+              border-0 backdrop-blur-sm 
+              transition-all duration-300 ease-out
+              hover:scale-105 active:scale-95
+              before:absolute before:inset-0 before:rounded-lg 
+              before:bg-gradient-to-r before:from-white/20 before:to-transparent 
+              before:opacity-0 hover:before:opacity-100 
+              before:transition-opacity before:duration-300
+              overflow-hidden
+              animate-bounce-subtle
+            " 
+            onClick={onNewChat}
+          >
+            {/* 闪光效果 */}
+            <div className="absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-white/30 to-transparent animate-shimmer"></div>
+            
+            <span className="relative z-10">
+              新对话
+            </span>
+          </Button>
+        </div>
       </div>
 
       {/* 最近对话列表 */}
-      <div className="px-4 flex-1 overflow-y-auto">
+      <div className="px-4 flex-1 overflow-y-auto" ref={containerRef} onScroll={handleScroll}>
         <p className="text-sm font-medium text-muted-foreground tracking-wider mb-3 px-2">最近对话</p>
         {chats.length === 0 ? (
           <div className="text-sm text-muted-foreground mt-4 text-center">
@@ -375,7 +605,71 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ onNewChat }) => {
             ))}
           </div>
         )}
+        
+        {/* 加载更多指示器 */}
+        {isLoadingMoreServer && (
+          <div className="p-4 text-center text-muted-foreground text-sm">
+            加载更多...
+          </div>
+        )}
+        
+        {isLoadingServerList && chats.length === 0 && (
+          <div className="p-4 text-center text-muted-foreground text-sm">
+            加载中...
+          </div>
+        )}
       </div>
+
+      {/* 浮动的"显示更多"按钮 - 只在没有滚动条且有更多数据时显示 */}
+      {showLoadMoreButton && (
+        <div className="absolute bottom-4 left-4 right-4 flex justify-center">
+          <div className="relative">
+            {/* 背景光晕效果 */}
+            <div className="absolute inset-0 rounded-full bg-gradient-to-r from-primary/20 to-purple-500/20 opacity-30 animate-pulse blur-sm"></div>
+            
+            <Button 
+              onClick={loadMoreChats}
+              disabled={isLoadingMoreServer}
+              className="
+                relative px-6 py-2 rounded-full 
+                bg-gradient-to-r from-primary to-primary/80
+                hover:from-primary/90 hover:to-primary/70
+                dark:from-blue-500 dark:to-purple-600 
+                dark:hover:from-blue-600 dark:hover:to-purple-700
+                text-primary-foreground font-medium text-sm
+                shadow-lg hover:shadow-xl 
+                border-0 backdrop-blur-sm 
+                transition-all duration-300 ease-out
+                hover:scale-105 active:scale-95
+                disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100
+                animate-bounce-subtle
+                before:absolute before:inset-0 before:rounded-full 
+                before:bg-gradient-to-r before:from-white/20 before:to-transparent 
+                before:opacity-0 hover:before:opacity-100 
+                before:transition-opacity before:duration-300
+                overflow-hidden
+              "
+              size="sm"
+            >
+              {/* 闪光效果 */}
+              <div className="absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-white/30 to-transparent animate-shimmer"></div>
+              
+              <span className="relative z-10">
+                {isLoadingMoreServer ? (
+                  <>
+                    <RefreshCwIcon size={16} className="mr-2 animate-spin" />
+                    加载中...
+                  </>
+                ) : (
+                  <>
+                    显示更多
+                  </>
+                )}
+              </span>
+            </Button>
+          </div>
+        </div>
+      )}
 
       {/* 确认删除对话框 */}
       <Dialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>

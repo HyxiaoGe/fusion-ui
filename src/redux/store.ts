@@ -41,7 +41,7 @@ export const store = configureStore({
         promptTemplates: promptTemplatesReducer,
         settings: settingsReducer,
         app: appReducer,
-        search: searchReducer
+        search: searchReducer,
     },
     middleware: (getDefaultMiddleware) => 
         getDefaultMiddleware({

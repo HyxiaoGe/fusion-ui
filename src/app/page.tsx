@@ -35,6 +35,8 @@ import {
   clearFunctionCallData,
   resetFunctionCallProgress,
   clearChatFunctionCallOutput,
+  Message,
+  Chat,
 } from '@/redux/slices/chatSlice';
 import { fetchEnhancedContext } from '@/redux/slices/searchSlice';
 import { store } from '@/redux/store';
@@ -111,19 +113,18 @@ export default function Home() {
   const [showHomePage, setShowHomePage] = useState(false);
 
   const { 
-    chats, 
-    activeChatId, 
     loading, 
     isStreaming, 
     animatingTitleChatId,
     isFunctionCallInProgress: globalIsFunctionCallInProgress,
-    functionCallType: globalFunctionCallType 
+    functionCallType: globalFunctionCallType,
+    chats: localChats,
+    activeChatId
   } = useAppSelector((state) => state.chat);
 
-  // 统一声明 activeChat，供整个组件使用
-  const activeChat = useAppSelector((state) => 
-    state.chat.activeChatId ? state.chat.chats.find(chat => chat.id === state.chat.activeChatId) : null
-  );
+  // 使用本地Redux状态数据（暂时保持原有逻辑，之后再逐步切换到服务端）
+  const chats = localChats;
+  const activeChat: Chat | null = activeChatId ? chats.find(c => c.id === activeChatId) || null : null;
 
   // 添加用于标题动画的状态
   const [isTypingTitle, setIsTypingTitle] = useState(false);
@@ -176,47 +177,26 @@ export default function Home() {
     setInputKey(Date.now());
   }, [activeChatId]);
 
-  // 在组件挂载时进行数据同步检查
+  // 数据库同步逻辑
   useEffect(() => {
-    const syncWithDatabase = async () => {
-      try {
-        setIsSyncing(true);
-
-        // 获取数据库中的聊天记录
-        const dbChats = await chatStore.getAllChats();
-
-        // 检查Redux中的聊天记录是否与数据库同步
-        const needsSync = chats.length !== dbChats.length ||
-          !chats.every(chat => dbChats.some(dbChat => dbChat.id === chat.id));
-
-        if (needsSync) {
-
-          // 更新Redux状态
+    const syncData = async () => {
+      if (lastDatabaseSync) {
+        try {
+          setIsSyncing(true);
+          const dbChats = await chatStore.getAllChats();
           dispatch(setAllChats(dbChats));
-
-          // 如果有活动聊天但在数据库中不存在，或者没有活动聊天但数据库有聊天记录
-          if ((activeChatId && !dbChats.some(chat => chat.id === activeChatId)) ||
-            (!activeChatId && dbChats.length > 0)) {
-
-            // 设置最新的聊天为活动聊天，或设为null
-            const latestChat = dbChats.length > 0
-              ? dbChats.reduce((latest, chat) => chat.updatedAt > latest.updatedAt ? chat : latest, dbChats[0])
-              : null;
-
-            dispatch(setActiveChat(latestChat?.id || null));
-          }
+        } catch (error) {
+          console.error('同步数据库失败:', error);
+        } finally {
+          setIsSyncing(false);
         }
-      } catch (error) {
-        console.error('同步数据库数据失败:', error);
-      } finally {
-        setIsSyncing(false);
       }
     };
 
-    syncWithDatabase();
-  }, [dispatch, lastDatabaseSync, pathname, searchParams]);
+    syncData();
+  }, [lastDatabaseSync, dispatch]);
 
-  // 监听活动聊天变化和数据库同步
+  // 监听活动聊天变化
   useEffect(() => {
     // 当活动聊天ID发生变化时，重置UI焦点
     const resetFocus = () => {
@@ -235,8 +215,7 @@ export default function Home() {
     // 处理会话切换时的推荐问题
     if (activeChatId) {
       // 检查当前会话是否有AI回复
-      const chat = chats.find(c => c.id === activeChatId);
-      const hasAIMessage = chat?.messages.some(msg => msg.role === 'assistant');
+      const hasAIMessage = activeChat?.messages.some(msg => msg.role === 'assistant');
       
       // 只有在有AI回复的情况下才处理推荐问题
       if (hasAIMessage) {
@@ -270,7 +249,7 @@ export default function Home() {
     // 短暂延时确保DOM已更新
     const timer = setTimeout(resetFocus, 200);
     return () => clearTimeout(timer);
-  }, [activeChatId, lastDatabaseSync, questionCache, chats]);
+  }, [activeChatId, questionCache, activeChat]);
 
   // 添加新的状态变量来跟踪聊天中是否有消息
   const [hasMessages, setHasMessages] = useState(false);
@@ -296,6 +275,8 @@ export default function Home() {
 
   // 创建新对话
   const handleNewChat = () => {
+    // TODO: 需要改为调用服务端API创建新对话
+    // 目前暂时使用本地创建，后续需要实现服务端创建API
 
     // 确保有选中的模型ID
     const modelToUse = selectedModelId || (models.length > 0 ? models[0].id : null);

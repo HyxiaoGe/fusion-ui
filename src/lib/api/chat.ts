@@ -288,10 +288,10 @@ export async function sendMessageStream(data: ChatRequest, onChunk: (chunk: stri
   }
 }
 
-// 获取所有对话
-export async function getConversations() {
+// 获取所有对话（支持分页）
+export async function getConversations(page: number = 1, pageSize: number = 10) {
   try {
-    const response = await fetch(`${API_BASE_URL}/api/chat/conversations`);
+    const response = await fetch(`${API_BASE_URL}/api/chat/conversations?page=${page}&page_size=${pageSize}`);
     
     if (!response.ok) {
       throw new Error('获取对话列表失败');
