@@ -20,6 +20,9 @@ export interface Message {
   reasoningStartTime?: number;
   reasoningEndTime?: number;
   shouldSyncToDb?: boolean;
+  turnId?: string;
+  messageType?: string;
+  duration?: number;
 }
 
 export interface Chat {

@@ -373,21 +373,122 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ onNewChat }) => {
         console.log('获取对话详情:', response);
         
         // 处理服务端返回的对话详情
+        const rawMessages = response.messages || [];
+        
+        // 按turn_id分组消息
+        const messagesByTurn: Record<string, any[]> = {};
+        rawMessages.forEach((msg: any) => {
+          const turnId = msg.turn_id;
+          if (!messagesByTurn[turnId]) {
+            messagesByTurn[turnId] = [];
+          }
+          messagesByTurn[turnId].push(msg);
+        });
+        
+        // 处理每个回合的消息，合并reasoning_content到assistant_content
+        const processedMessages: any[] = [];
+        let functionCallOutput: any = null;
+        
+        Object.values(messagesByTurn).forEach((turnMessages) => {
+          // 找到不同类型的消息
+          const assistantMsgs = turnMessages.filter(msg => msg.type === 'assistant_content');
+          const reasoningMsg = turnMessages.find(msg => msg.type === 'reasoning_content');
+          const userMsg = turnMessages.find(msg => msg.type === 'user_query');
+          const functionCallMsg = turnMessages.find(msg => msg.type === 'function_call');
+          
+          // 处理function_call消息，存储到functionCallOutput
+          if (functionCallMsg) {
+            try {
+              const functionData = JSON.parse(functionCallMsg.content);
+              // 根据function_call的内容判断具体类型
+              let callType = 'unknown';
+              if (functionData.query && functionData.results) {
+                callType = 'web_search'; // 网络搜索
+              } else if (functionData.type) {
+                callType = functionData.type; // 如果有明确的type字段
+              }
+              
+              functionCallOutput = {
+                type: callType,
+                query: functionData.query,
+                data: functionData,
+                error: null,
+                timestamp: new Date(functionCallMsg.created_at).getTime(),
+              };
+            } catch (error) {
+              console.error('解析function_call内容失败:', error);
+              // 如果解析失败，至少保存原始内容
+              functionCallOutput = {
+                type: 'unknown',
+                query: '',
+                data: { raw_content: functionCallMsg.content },
+                error: 'Failed to parse function call content',
+                timestamp: new Date(functionCallMsg.created_at).getTime(),
+              };
+            }
+          }
+          
+          // 添加用户消息
+          if (userMsg) {
+            processedMessages.push({
+              id: userMsg.id,
+              role: userMsg.role,
+              content: userMsg.content,
+              timestamp: new Date(userMsg.created_at).getTime(),
+              status: null,
+              reasoning: '',
+              isReasoningVisible: false,
+              turnId: userMsg.turn_id,
+              messageType: userMsg.type,
+              duration: userMsg.duration || 0
+            });
+          }
+          
+          // 添加助手消息，合并推理内容
+          assistantMsgs.forEach((assistantMsg) => {
+            processedMessages.push({
+              id: assistantMsg.id,
+              role: assistantMsg.role,
+              content: assistantMsg.content,
+              timestamp: new Date(assistantMsg.created_at).getTime(),
+              status: null,
+              reasoning: reasoningMsg ? reasoningMsg.content : '',
+              isReasoningVisible: reasoningMsg ? true : false,
+              turnId: assistantMsg.turn_id,
+              messageType: assistantMsg.type,
+              duration: assistantMsg.duration || 0
+            });
+          });
+          
+          // 处理其他类型的消息（function_result, web_search, hot_topics等，但排除function_call）
+          turnMessages.forEach((msg: any) => {
+            if (!['user_query', 'assistant_content', 'reasoning_content', 'function_call'].includes(msg.type)) {
+              processedMessages.push({
+                id: msg.id,
+                role: msg.role,
+                content: msg.content,
+                timestamp: new Date(msg.created_at).getTime(),
+                status: null,
+                reasoning: '',
+                isReasoningVisible: false,
+                turnId: msg.turn_id,
+                messageType: msg.type,
+                duration: msg.duration || 0
+              });
+            }
+          });
+        });
+        
+        // 按时间戳排序消息
+        processedMessages.sort((a, b) => a.timestamp - b.timestamp);
+        
         const chatWithMessages = {
           id: response.id || chatId,
           title: response.title || '新对话',
-          model_id: response.model || response.provider || 'unknown',
+          model_id: response.provider || response.model || 'unknown',
           created_at: response.created_at || new Date().toISOString(),
           updated_at: response.updated_at || new Date().toISOString(),
-          messages: (response.messages || []).map((msg: any) => ({
-            id: msg.id || Date.now().toString(),
-            role: msg.role,
-            content: msg.content,
-            timestamp: new Date(msg.created_at || msg.timestamp).getTime(),
-            status: null,
-            reasoning: msg.reasoning || '',
-            isReasoningVisible: false
-          })),
+          messages: processedMessages,
         };
         
         // 将服务端对话详情转换为本地格式并存储到本地Redux状态
@@ -398,7 +499,7 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ onNewChat }) => {
           createdAt: new Date(chatWithMessages.created_at).getTime(),
           updatedAt: new Date(chatWithMessages.updated_at).getTime(),
           messages: chatWithMessages.messages,
-          functionCallOutput: null,
+          functionCallOutput: functionCallOutput,
         };
         
         // 更新本地Redux状态中的对话数据

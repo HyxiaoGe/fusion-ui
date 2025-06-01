@@ -113,12 +113,14 @@ export default function Home() {
 
   const { 
     loading, 
-    isStreaming, 
+    isStreaming,
+    error,
     animatingTitleChatId,
     isFunctionCallInProgress: globalIsFunctionCallInProgress,
     functionCallType: globalFunctionCallType,
     chats: localChats,
-    activeChatId
+    activeChatId,
+    isLoadingServerChat
   } = useAppSelector((state) => state.chat);
 
   // 使用本地Redux状态数据（暂时保持原有逻辑，之后再逐步切换到服务端）
@@ -226,6 +228,16 @@ export default function Home() {
   useEffect(() => {
     setTitleToAnimate(null);
   }, [activeChatId]);
+
+  // 当有activeChatId但还没有messages时的处理，或者正在加载服务端聊天时
+  const shouldShowLoadingChat = activeChatId && (!hasMessages || isLoadingServerChat) && !showHomePage && !error;
+  
+  // 当选择对话时，立即关闭首页显示
+  useEffect(() => {
+    if (activeChatId && showHomePage) {
+      setShowHomePage(false);
+    }
+  }, [activeChatId, showHomePage]);
 
   // 创建新对话
   const handleNewChat = () => {
@@ -974,9 +986,28 @@ export default function Home() {
       )}
     >
       <div className="h-full flex flex-col relative">
-        {showHomePage || !hasMessages ? (
+        {showHomePage ? (
           <div className="flex-1 overflow-y-auto">
             <HomePage onNewChat={handleNewChat} onChatSelected={handleChatSelected} />
+          </div>
+        ) : shouldShowLoadingChat ? (
+          <div className="flex-1 overflow-y-auto px-4 pt-4 flex items-center justify-center">
+            <div className="text-center space-y-4">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto"></div>
+              <p className="text-muted-foreground">
+                {isLoadingServerChat ? '正在加载对话内容...' : '正在加载对话...'}
+              </p>
+            </div>
+          </div>
+        ) : error && activeChatId && !hasMessages ? (
+          <div className="flex-1 overflow-y-auto px-4 pt-4 flex items-center justify-center">
+            <div className="text-center space-y-4">
+              <div className="text-red-500 text-2xl">⚠️</div>
+              <p className="text-muted-foreground">
+                加载对话失败，请重试
+              </p>
+              <p className="text-sm text-red-500">{error}</p>
+            </div>
           </div>
         ) : (
           <div className="flex-1 overflow-y-auto px-4 pt-4">
