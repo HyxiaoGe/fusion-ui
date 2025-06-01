@@ -1,7 +1,6 @@
 'use client';
 
 import LoadingIndicator from '@/components/ui/loading-indicator';
-import initializeStoreFromDB from '@/lib/db/initializeStore';
 import { useEffect, useState } from 'react';
 import { Provider } from 'react-redux';
 import { useAppDispatch } from './hooks';
@@ -16,14 +15,15 @@ const StoreInitializer = ({ children }: { children: React.ReactNode }) => {
   useEffect(() => {
     const loadData = async () => {
       try {
-        await initializeStoreFromDB(dispatch);
+        // 移除本地数据库初始化，现在使用服务端数据
+        // await initializeStoreFromDB(dispatch);
         
         // 初始化热点话题数据拉取，设置10分钟刷新一次
         initHotTopicsPolling(10);
         
         setIsLoaded(true);
       } catch (error) {
-        console.error('初始化存储失败:', error);
+        console.error('初始化失败:', error);
         // 即使失败也设置为已加载，以便继续渲染应用
         setIsLoaded(true);
       }
@@ -37,7 +37,7 @@ const StoreInitializer = ({ children }: { children: React.ReactNode }) => {
     return (
       <div className="flex items-center justify-center h-screen bg-background">
         <div className="text-center">
-          <LoadingIndicator size="lg" text="加载数据中..." />
+          <LoadingIndicator size="lg" text="初始化中..." />
         </div>
       </div>
     );

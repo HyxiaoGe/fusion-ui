@@ -1,6 +1,5 @@
 import { configureStore } from '@reduxjs/toolkit';
 import { setupListeners } from '@reduxjs/toolkit/query';
-import persistMiddleware from './middleware/persistMiddleware';
 import toastMiddleware from './middleware/toastMiddleware';
 import appReducer from './slices/appSlice';
 import chatReducer from './slices/chatSlice';
@@ -11,7 +10,7 @@ import searchReducer from './slices/searchSlice';
 import settingsReducer from './slices/settingsSlice';
 import themeReducer from './slices/themeSlice';
 
-// 用于清理已同步标记的中间件
+// 用于清理已同步标记的中间件（现在主要用于服务端同步）
 const dbSyncMiddleware = (store: any) => (next: any) => (action: any) => {
   const result = next(action);
   
@@ -46,7 +45,7 @@ export const store = configureStore({
     middleware: (getDefaultMiddleware) => 
         getDefaultMiddleware({
             serializableCheck: false, // 在这里我们允许非序列化值，因为文件对象等可能不会被序列化
-        }).concat(persistMiddleware, toastMiddleware, dbSyncMiddleware),
+        }).concat(toastMiddleware, dbSyncMiddleware),
 });
 
 setupListeners(store.dispatch);

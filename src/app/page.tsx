@@ -10,7 +10,6 @@ import RelatedDiscussions from '@/components/search/RelatedDiscussions';
 import { Button } from '@/components/ui/button';
 import { sendMessageStream, fetchSuggestedQuestions  } from '@/lib/api/chat';
 import { generateChatTitle } from '@/lib/api/title';
-import { chatStore } from '@/lib/db/chatStore';
 import { FileWithPreview } from '@/lib/utils/fileHelpers';
 import { useAppDispatch, useAppSelector } from '@/redux/hooks';
 import {
@@ -149,8 +148,6 @@ export default function Home() {
 
   const { models, selectedModelId } = useAppSelector((state) => state.models);
   const [currentUserQuery, setCurrentUserQuery] = useState('');
-  const [isSyncing, setIsSyncing] = useState(false);
-  const lastDatabaseSync = useAppSelector((state) => state.app.lastDatabaseSync);
 
   // 添加用于建议问题的状态
   const [suggestedQuestions, setSuggestedQuestions] = useState<string[]>([]);
@@ -162,56 +159,17 @@ export default function Home() {
 
   const chatInputRef = useRef<HTMLDivElement>(null);
 
-  // 监听数据库同步事件，强制重新挂载输入组件
+  // 监听activeChatId变化，强制重新挂载输入组件
   useEffect(() => {
     setInputKey(Date.now());
     // 切换活动聊天时，清除全局的函数调用指示状态
-    // 持久化的数据 (activeChat.functionCallOutput) 会在 FunctionCallDisplay 中被正确选取
     if (activeChatId) {
       dispatch(clearFunctionCallData());
     }
   }, [activeChatId, dispatch]);
 
-  // 监听activeChatId变化，强制重新挂载输入组件
-  useEffect(() => {
-    setInputKey(Date.now());
-  }, [activeChatId]);
-
-  // 数据库同步逻辑
-  useEffect(() => {
-    const syncData = async () => {
-      if (lastDatabaseSync) {
-        try {
-          setIsSyncing(true);
-          const dbChats = await chatStore.getAllChats();
-          dispatch(setAllChats(dbChats));
-        } catch (error) {
-          console.error('同步数据库失败:', error);
-        } finally {
-          setIsSyncing(false);
-        }
-      }
-    };
-
-    syncData();
-  }, [lastDatabaseSync, dispatch]);
-
   // 监听活动聊天变化
   useEffect(() => {
-    // 当活动聊天ID发生变化时，重置UI焦点
-    const resetFocus = () => {
-      // 创建一个临时按钮获取焦点然后移除它，强制打破焦点陷阱
-      const tempButton = document.createElement('button');
-      document.body.appendChild(tempButton);
-      tempButton.focus();
-      document.body.removeChild(tempButton);
-
-      // 然后将焦点移到聊天区域
-      if (chatInputRef.current) {
-        chatInputRef.current.click();
-      }
-    };
-  
     // 处理会话切换时的推荐问题
     if (activeChatId) {
       // 检查当前会话是否有AI回复
@@ -245,10 +203,6 @@ export default function Home() {
       // 无活动会话时清空推荐问题
       setSuggestedQuestions([]);
     }
-
-    // 短暂延时确保DOM已更新
-    const timer = setTimeout(resetFocus, 200);
-    return () => clearTimeout(timer);
   }, [activeChatId, questionCache, activeChat]);
 
   // 添加新的状态变量来跟踪聊天中是否有消息

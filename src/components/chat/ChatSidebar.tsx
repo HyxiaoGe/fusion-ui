@@ -2,20 +2,23 @@
 
 import React, { useRef, useState, useEffect, useCallback } from "react";
 import { generateChatTitle } from "@/lib/api/title";
-import { getConversations } from "@/lib/api/chat";
+import { getConversations, getConversation } from "@/lib/api/chat";
 import { useAppDispatch, useAppSelector } from "@/redux/hooks";
+import { store } from "@/redux/store";
 import {
+  Chat,
   deleteChat,
   setActiveChat,
   updateChatTitle,
-  Chat,
   setAnimatingTitleChatId,
   setServerChatList,
-  setLoadingServerList,
   setServerError,
   clearServerError,
   appendServerChatList,
-  setLoadingMoreServer
+  setLoadingMoreServer,
+  setLoadingServerList,
+  setLoadingServerChat,
+  setAllChats
 } from "@/redux/slices/chatSlice";
 import {
   MessageSquareIcon,
@@ -46,6 +49,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { useToast } from "../ui/toast";
 import Link from "next/link";
+import { cn } from "@/lib/utils";
 
 interface ChatSidebarProps {
   onNewChat: () => void;
@@ -80,6 +84,9 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ onNewChat }) => {
 
   const { models } = useAppSelector((state) => state.models);
   const containerRef = useRef<HTMLDivElement>(null);
+  
+  // 添加初始化标记，防止严格模式下重复调用
+  const isInitializedRef = useRef(false);
 
   // 添加状态来检测是否有滚动条
   const [hasScrollbar, setHasScrollbar] = useState(false);
@@ -236,6 +243,12 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ onNewChat }) => {
 
   // 初始化时尝试获取服务端数据
   useEffect(() => {
+    // 防止严格模式下重复调用
+    if (isInitializedRef.current) {
+      return;
+    }
+    
+    isInitializedRef.current = true;
     fetchChatList(1, 10);
   }, []);
 
@@ -341,8 +354,83 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ onNewChat }) => {
   }, [chats]);
 
   // 选择对话
-  const handleSelectChat = (chatId: string) => {
-    dispatch(setActiveChat(chatId));
+  const handleSelectChat = async (chatId: string) => {
+    // 如果点击的是当前活动对话，直接返回
+    if (chatId === activeChatId) {
+      return;
+    }
+
+    try {
+      // 设置活动对话ID
+      dispatch(setActiveChat(chatId));
+      
+      // 如果使用服务端数据，需要获取对话详情
+      if (useServerData) {
+        dispatch(setLoadingServerChat(true));
+        dispatch(clearServerError());
+        
+        const response = await getConversation(chatId);
+        console.log('获取对话详情:', response);
+        
+        // 处理服务端返回的对话详情
+        const chatWithMessages = {
+          id: response.id || chatId,
+          title: response.title || '新对话',
+          model_id: response.model || response.provider || 'unknown',
+          created_at: response.created_at || new Date().toISOString(),
+          updated_at: response.updated_at || new Date().toISOString(),
+          messages: (response.messages || []).map((msg: any) => ({
+            id: msg.id || Date.now().toString(),
+            role: msg.role,
+            content: msg.content,
+            timestamp: new Date(msg.created_at || msg.timestamp).getTime(),
+            status: null,
+            reasoning: msg.reasoning || '',
+            isReasoningVisible: false
+          })),
+        };
+        
+        // 将服务端对话详情转换为本地格式并存储到本地Redux状态
+        const localChat: Chat = {
+          id: chatWithMessages.id,
+          title: chatWithMessages.title,
+          modelId: chatWithMessages.model_id,
+          createdAt: new Date(chatWithMessages.created_at).getTime(),
+          updatedAt: new Date(chatWithMessages.updated_at).getTime(),
+          messages: chatWithMessages.messages,
+          functionCallOutput: null,
+        };
+        
+        // 更新本地Redux状态中的对话数据
+        const currentChats = store.getState().chat.chats;
+        const existingChatIndex = currentChats.findIndex((c: Chat) => c.id === chatId);
+        
+        if (existingChatIndex >= 0) {
+          // 更新现有对话
+          dispatch(updateChatTitle({ chatId, title: localChat.title }));
+          // 这里需要一个新的action来更新整个对话的消息
+          // 暂时使用setAllChats来更新
+          const updatedChats = [...currentChats];
+          updatedChats[existingChatIndex] = localChat;
+          dispatch(setAllChats(updatedChats));
+        } else {
+          // 添加新对话到本地状态
+          dispatch(setAllChats([...currentChats, localChat]));
+        }
+        
+        dispatch(setLoadingServerChat(false));
+      }
+    } catch (error) {
+      console.error('获取对话详情失败:', error);
+      if (useServerData) {
+        dispatch(setServerError(error instanceof Error ? error.message : '获取对话详情失败'));
+        dispatch(setLoadingServerChat(false));
+      }
+      toast({
+        message: "加载对话失败，请重试",
+        type: "error",
+      });
+    }
   };
 
   // 删除对话
