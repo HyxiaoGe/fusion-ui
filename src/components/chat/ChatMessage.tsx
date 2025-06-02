@@ -6,7 +6,7 @@ import { FileWithPreview, formatFileSize } from '@/lib/utils/fileHelpers';
 import { useAppDispatch, useAppSelector } from '@/redux/hooks';
 import { Message, toggleReasoningVisibility, completeThinkingPhase } from '@/redux/slices/chatSlice';
 import { avatarOptions } from '@/redux/slices/settingsSlice';
-import { Edit2, FileIcon, RefreshCw, Lightbulb, FileText, Image, Film, PenLine, RotateCcw, FileArchive } from 'lucide-react';
+import { Edit2, FileIcon, RefreshCw, Lightbulb, FileText, Image, Film, PenLine, RotateCcw, FileArchive, X, Check } from 'lucide-react';
 import React, { useState, useEffect, useRef } from 'react';
 import ReactMarkdown from 'react-markdown';
 import TextareaAutosize from 'react-textarea-autosize';
@@ -103,6 +103,18 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, files, isLastMessage
     setIsEditing(false);
   };
 
+  // 处理键盘快捷键
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Escape') {
+      handleCancelEdit();
+    } else if (e.key === 'Enter' && e.ctrlKey) {
+      e.preventDefault();
+      if (editContent.trim() && editContent !== message.content) {
+        handleSaveEdit();
+      }
+    }
+  };
+
   // 切换推理内容可见性
   const handleToggleReasoning = () => {
 
@@ -166,7 +178,8 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, files, isLastMessage
       className={cn(
         'flex w-full gap-3 py-4 px-4 group',
         isLastMessage && 'mb-4',
-        isUser ? 'justify-end' : 'justify-start'
+        isUser ? 'justify-end' : 'justify-start',
+        isEditing && 'px-2'
       )}
     >
       {!isUser && (
@@ -180,7 +193,8 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, files, isLastMessage
       )}
 
       <div className={cn(
-        'flex flex-col space-y-1 max-w-[80%]',
+        'flex flex-col space-y-1',
+        isEditing ? 'w-full max-w-none min-w-[1000px]' : 'max-w-[85%]',
         isUser ? 'items-end' : 'items-start'
       )}>
         <div className="flex items-center gap-2">
@@ -197,40 +211,65 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, files, isLastMessage
             'rounded-2xl px-4 py-2.5 shadow-sm',
             isUser
               ? 'bg-primary text-primary-foreground rounded-tr-sm'
-              : 'bg-muted rounded-tl-sm'
+              : 'bg-muted rounded-tl-sm',
+            isEditing && 'min-w-[1200px] w-full'
           )}>
             {isUser ? (
               isEditing ? (
-                // 编辑模式
-                <div className="w-full animate-in fade-in-50 duration-200">
-                  <div className="relative mb-2 rounded-2xl overflow-hidden">
+                // 编辑模式 - 优化版
+                <div className="w-full space-y-3 animate-in fade-in-50 duration-200">
+                  {/* 编辑提示标签 */}
+                  <div className="flex items-center gap-2 text-xs text-primary-foreground/70">
+                    <Edit2 className="h-3 w-3" />
+                    <span>编辑消息</span>
+                  </div>
+                  
+                  {/* 文本编辑区域 */}
+                  <div className="relative w-full rounded-xl overflow-hidden border border-primary-foreground/20 bg-primary-foreground/5 backdrop-blur-sm">
                     <TextareaAutosize
                       value={editContent}
                       onChange={(e) => setEditContent(e.target.value)}
-                      minRows={2}
-                      maxRows={8}
-                      className="w-full px-4 py-3 bg-primary text-primary-foreground text-sm resize-none focus:outline-none border-none"
+                      minRows={6}
+                      maxRows={15}
+                      className="w-full min-w-full px-4 py-3 bg-transparent text-primary-foreground text-sm resize-none focus:outline-none border-none placeholder:text-primary-foreground/50"
                       autoFocus
                       placeholder="编辑您的消息..."
+                      onKeyDown={handleKeyDown}
+                      style={{ width: '100%', minWidth: '100%' }}
                     />
+                    
+                    {/* 字符计数 */}
+                    <div className="absolute bottom-2 right-3 text-xs text-primary-foreground/50">
+                      {editContent.length} 字符
+                    </div>
                   </div>
-                  <div className="flex justify-end gap-2">
-                    <Button
-                      size="sm"
-                      variant="secondary"
-                      onClick={handleCancelEdit}
-                      className="h-8 px-3"
-                    >
-                      取消
-                    </Button>
-                    <Button
-                      size="sm"
-                      onClick={handleSaveEdit}
-                      disabled={!editContent.trim() || editContent === message.content}
-                      className="h-8 px-3"
-                    >
-                      保存
-                    </Button>
+                  
+                  {/* 操作按钮区域 */}
+                  <div className="flex justify-between items-center w-full">
+                    <div className="text-xs text-primary-foreground/60">
+                      按 Esc 取消，Ctrl+Enter 保存
+                    </div>
+                    
+                    <div className="flex gap-2">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={handleCancelEdit}
+                        className="h-9 px-4 bg-primary-foreground/10 border-primary-foreground/20 text-primary-foreground hover:bg-primary-foreground/20 hover:border-primary-foreground/30"
+                      >
+                        <X className="h-3 w-3 mr-1" />
+                        取消
+                      </Button>
+                      <Button
+                        size="sm"
+                        onClick={handleSaveEdit}
+                        disabled={!editContent.trim() || editContent === message.content}
+                        className="h-9 px-4 bg-primary-foreground text-primary hover:bg-primary-foreground/90 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
+                      >
+                        <Check className="h-3 w-3 mr-1" />
+                        保存
+                      </Button>
+                    </div>
                   </div>
                 </div>
               ) : (
