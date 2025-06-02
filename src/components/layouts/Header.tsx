@@ -7,7 +7,7 @@ import { setThemeMode } from '@/redux/slices/themeSlice';
 import { HomeIcon, MoonIcon, SettingsIcon, SunIcon, LaptopIcon, ChevronRightIcon } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback, memo } from 'react';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -19,7 +19,7 @@ interface HeaderProps {
   title?: string;
 }
 
-const Header: React.FC<HeaderProps> = ({ title }) => {
+const Header: React.FC<HeaderProps> = memo(({ title }) => {
   const pathname = usePathname() || '/';
   const dispatch = useAppDispatch();
   const { mode } = useAppSelector((state) => state.theme);
@@ -32,16 +32,16 @@ const Header: React.FC<HeaderProps> = ({ title }) => {
     setMounted(true);
   }, []);
   
-  // 切换主题
-  const handleThemeChange = (value: 'light' | 'dark' | 'system') => {
+  // 切换主题 - 使用useCallback优化
+  const handleThemeChange = useCallback((value: 'light' | 'dark' | 'system') => {
     dispatch(setThemeMode(value));
-  };
+  }, [dispatch]);
   
   // 获取当前主题对应的图标
   const ThemeIcon = mounted ? (mode === 'dark' ? MoonIcon : mode === 'light' ? SunIcon : LaptopIcon) : null;
   
   // 获取图标颜色样式
-  const getIconColorClass = () => {
+  const getIconColorClass = useCallback(() => {
     switch (mode) {
       case 'light':
         return 'text-amber-500';
@@ -50,17 +50,17 @@ const Header: React.FC<HeaderProps> = ({ title }) => {
       default:
         return 'text-blue-500';
     }
-  };
+  }, [mode]);
   
   // 获取当前选中的模型名称
-  const getSelectedModelName = () => {
+  const getSelectedModelName = useCallback(() => {
     if (!selectedModelId) return '';
     const model = models.find(m => m.id === selectedModelId);
     return model ? model.name : '';
-  };
+  }, [selectedModelId, models]);
 
   // 获取当前页面显示的标题
-  const getCurrentPageTitle = () => {
+  const getCurrentPageTitle = useCallback(() => {
     if (pathname === '/') return '首页';
     if (pathname.startsWith('/settings')) return '设置';
     
@@ -77,7 +77,7 @@ const Header: React.FC<HeaderProps> = ({ title }) => {
     }
     
     return '';
-  };
+  }, [pathname, title, activeChatId, chats, getSelectedModelName]);
   
   return (
     <header className="h-14 border-b flex items-center justify-between px-5 sticky top-0 z-10 shadow-sm bg-background">
@@ -203,6 +203,6 @@ const Header: React.FC<HeaderProps> = ({ title }) => {
       </div>
     </header>
   );
-};
+});
 
 export default Header;

@@ -69,8 +69,6 @@ export interface ChatState {
 
   // 服务端数据相关状态
   serverChatList: any[]; // 服务端会话列表
-  serverCurrentChat: any | null; // 当前服务端会话详情
-  serverActiveChatId: string | null; // 服务端活动会话ID
   isLoadingServerList: boolean;
   isLoadingServerChat: boolean;
   isLoadingMoreServer: boolean;
@@ -113,8 +111,6 @@ const initialState: ChatState = {
 
   // 服务端数据相关状态
   serverChatList: [],
-  serverCurrentChat: null,
-  serverActiveChatId: null,
   isLoadingServerList: false,
   isLoadingServerChat: false,
   isLoadingMoreServer: false,
@@ -452,14 +448,6 @@ const chatSlice = createSlice({
       state.serverPagination = action.payload.pagination;
     },
     
-    setServerCurrentChat: (state, action: PayloadAction<any | null>) => {
-      state.serverCurrentChat = action.payload;
-    },
-    
-    setServerActiveChatId: (state, action: PayloadAction<string | null>) => {
-      state.serverActiveChatId = action.payload;
-    },
-    
     setLoadingServerList: (state, action: PayloadAction<boolean>) => {
       state.isLoadingServerList = action.payload;
     },
@@ -522,8 +510,6 @@ export const {
   toggleWebSearch,
   setServerChatList,
   appendServerChatList,
-  setServerCurrentChat,
-  setServerActiveChatId,
   setLoadingServerList,
   setLoadingServerChat,
   setLoadingMoreServer,

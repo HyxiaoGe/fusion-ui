@@ -12,7 +12,7 @@ import { useAppDispatch, useAppSelector } from "@/redux/hooks";
 import { addMessage, createChat, endStreaming, endStreamingReasoning, setError, startStreaming, startStreamingReasoning, updateChatTitle, updateMessageReasoning, updateStreamingContent, updateStreamingReasoningContent } from "@/redux/slices/chatSlice";
 import { store } from "@/redux/store";
 import { FileText, Image, Lightbulb, MessageSquare, Plus, RefreshCw } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback, memo } from "react";
 import { cn } from "@/lib/utils";
 import { HotTopic, getCachedHotTopics } from "@/lib/api/hotTopics";
 
@@ -75,10 +75,10 @@ const HomePage: React.FC<HomePageProps> = ({ onNewChat, onChatSelected }) => {
       clearTimeout(retryTimer);
       clearInterval(interval);
     };
-  }, []);  // 移除依赖项，避免重复执行
+  }, []); // 移除依赖，避免无限重新渲染
 
   // 从缓存中随机选择6条数据显示
-  const refreshDisplayTopics = () => {
+  const refreshDisplayTopics = useCallback(() => {
     if (allHotTopics.length === 0) return;
     
     setIsRefreshing(true);
@@ -89,10 +89,10 @@ const HomePage: React.FC<HomePageProps> = ({ onNewChat, onChatSelected }) => {
     setDisplayTopics(selected);
     
     setTimeout(() => setIsRefreshing(false), 300);  // 添加一点延迟让动画效果更明显
-  };
+  }, [allHotTopics]);
 
   // 添加处理话题点击的函数
-  const handleTopicClick = (topic: HotTopic) => {
+  const handleTopicClick = useCallback((topic: HotTopic) => {
     if (!selectedModelId) return;
 
     // 获取当前状态
@@ -246,10 +246,10 @@ const HomePage: React.FC<HomePageProps> = ({ onNewChat, onChatSelected }) => {
       dispatch(endStreamingReasoning());
       dispatch(endStreaming());
     });
-  };
+  }, [selectedModelId, dispatch, models, onChatSelected]);
 
   // 添加处理示例点击的函数
-  const handleExampleClick = (example: string) => {
+  const handleExampleClick = useCallback((example: string) => {
     if (!selectedModelId) return;
 
     // 获取当前状态
@@ -290,7 +290,7 @@ const HomePage: React.FC<HomePageProps> = ({ onNewChat, onChatSelected }) => {
         chatId: chatId,
         message: {
           role: "user",
-          content: `请帮我解答以下问题：\n\n${example}`,
+          content: example,
           status: "pending",
         }
       })
@@ -394,7 +394,7 @@ const HomePage: React.FC<HomePageProps> = ({ onNewChat, onChatSelected }) => {
       dispatch(endStreamingReasoning());
       dispatch(endStreaming());
     });
-  };
+  }, [selectedModelId, dispatch, models]);
 
   return (
     <div className="flex flex-col space-y-8 pb-8 px-4 max-w-5xl mx-auto w-full h-full overflow-y-auto">
@@ -629,4 +629,4 @@ const HomePage: React.FC<HomePageProps> = ({ onNewChat, onChatSelected }) => {
   );
 };
 
-export default HomePage;
+export default memo(HomePage);

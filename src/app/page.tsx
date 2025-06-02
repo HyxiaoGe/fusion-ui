@@ -41,7 +41,7 @@ import { fetchEnhancedContext } from '@/redux/slices/searchSlice';
 import { store } from '@/redux/store';
 import { HomeIcon, ChevronRightIcon, SettingsIcon } from 'lucide-react';
 import { usePathname, useSearchParams } from 'next/navigation';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useMemo, useCallback } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import Link from 'next/link';
 import { ThemeToggle } from '@/components/ui/theme-toggle';
@@ -111,7 +111,9 @@ export default function Home() {
   const [inputKey, setInputKey] = useState(Date.now());
   const [showHomePage, setShowHomePage] = useState(false);
 
-  const { 
+  // 优化：合并状态选择器，减少重渲染
+  const {
+    // Chat 状态
     loading, 
     isStreaming,
     error,
@@ -120,12 +122,33 @@ export default function Home() {
     functionCallType: globalFunctionCallType,
     chats: localChats,
     activeChatId,
-    isLoadingServerChat
-  } = useAppSelector((state) => state.chat);
+    isLoadingServerChat,
+    // Models 状态
+    models,
+    selectedModelId
+  } = useAppSelector((state) => ({
+    // Chat 状态
+    loading: state.chat.loading,
+    isStreaming: state.chat.isStreaming,
+    error: state.chat.error,
+    animatingTitleChatId: state.chat.animatingTitleChatId,
+    isFunctionCallInProgress: state.chat.isFunctionCallInProgress,
+    functionCallType: state.chat.functionCallType,
+    chats: state.chat.chats,
+    activeChatId: state.chat.activeChatId,
+    isLoadingServerChat: state.chat.isLoadingServerChat,
+    // Models 状态
+    models: state.models.models,
+    selectedModelId: state.models.selectedModelId
+  }));
 
-  // 使用本地Redux状态数据（暂时保持原有逻辑，之后再逐步切换到服务端）
+  // 使用useMemo优化activeChat计算
+  const activeChat: Chat | null = useMemo(() => {
+    return activeChatId ? localChats.find(c => c.id === activeChatId) || null : null;
+  }, [activeChatId, localChats]);
+
+  // 使用本地Redux状态数据
   const chats = localChats;
-  const activeChat: Chat | null = activeChatId ? chats.find(c => c.id === activeChatId) || null : null;
 
   // 添加用于标题动画的状态
   const [isTypingTitle, setIsTypingTitle] = useState(false);
@@ -144,11 +167,18 @@ export default function Home() {
     if (shouldShowWelcome) {
       setShowHomePage(true);
     } else if (activeChatId) {
-      setShowHomePage(false);
+      // 检查当前活动对话是否是新建的空对话
+      const isNewEmptyChat = activeChat && activeChat.messages.length === 0;
+      if (isNewEmptyChat) {
+        // 新建的空对话应该显示示例页面
+        setShowHomePage(true);
+      } else {
+        // 有内容的对话不显示示例页面
+        setShowHomePage(false);
+      }
     }
-  }, [shouldShowWelcome, activeChatId]);
+  }, [shouldShowWelcome, activeChatId, activeChat]);
 
-  const { models, selectedModelId } = useAppSelector((state) => state.models);
   const [currentUserQuery, setCurrentUserQuery] = useState('');
 
   // 添加用于建议问题的状态
@@ -232,15 +262,19 @@ export default function Home() {
   // 当有activeChatId但还没有messages时的处理，或者正在加载服务端聊天时
   const shouldShowLoadingChat = activeChatId && (!hasMessages || isLoadingServerChat) && !showHomePage && !error;
   
-  // 当选择对话时，立即关闭首页显示
+  // 当选择对话时，立即关闭首页显示（仅对有内容的对话）
   useEffect(() => {
     if (activeChatId && showHomePage) {
-      setShowHomePage(false);
+      // 检查是否是有内容的对话
+      const hasContent = activeChat && activeChat.messages.length > 0;
+      if (hasContent) {
+        setShowHomePage(false);
+      }
     }
-  }, [activeChatId, showHomePage]);
+  }, [activeChatId, showHomePage, activeChat]);
 
   // 创建新对话
-  const handleNewChat = () => {
+  const handleNewChat = useCallback(() => {
     // TODO: 需要改为调用服务端API创建新对话
     // 目前暂时使用本地创建，后续需要实现服务端创建API
 
@@ -256,7 +290,8 @@ export default function Home() {
     try {
       // 创建对话时传入当前选择的模型ID
       dispatch(createChat({ modelId: modelToUse }));
-      setShowHomePage(false); // 创建新对话后显示聊天界面
+      // 创建新对话时显示示例页面，让用户选择话题或输入问题
+      setShowHomePage(true);
       
       // 使用setTimeout确保状态已更新
       setTimeout(() => {
@@ -270,22 +305,22 @@ export default function Home() {
       console.error('创建对话失败:', error);
       dispatch(setError('创建对话失败，请重试'));
     }
-  };
+  }, [selectedModelId, models, dispatch]);
 
   // 跳转到首页
-  const handleGoToHome = () => {
+  const handleGoToHome = useCallback(() => {
     setShowHomePage(true);
-  };
+  }, []);
 
   // 当显示聊天界面时，关闭首页
-  const handleChatSelected = () => {
+  const handleChatSelected = useCallback(() => {
     if (showHomePage) {
       setShowHomePage(false);
     }
-  };
+  }, [showHomePage]);
 
   // 获取推荐问题函数
-  const getSuggestedQuestions = async (chatId: string, forceRefresh: boolean = false) => {
+  const getSuggestedQuestions = useCallback(async (chatId: string, forceRefresh: boolean = false) => {
     if (!chatId) return;
     
     // 检查是否有AI消息存在
@@ -313,31 +348,26 @@ export default function Home() {
     } finally {
       setIsLoadingQuestions(false);
     }
-  };
+  }, [chats]);
 
-  // 处理选择推荐问题
-  const handleSelectQuestion = (question: string) => {
-    // 直接发送所选问题
-    handleSendMessage(question);
-    // 清空当前会话的缓存和显示的推荐问题，避免重复点击
-    if (activeChatId) {
-      setQuestionCache(prev => ({
-        ...prev,
-        [activeChatId]: []
-      }));
-      setSuggestedQuestions([]);
-    }
-  };
-
-  const handleRefreshQuestions = async () => {
+  const handleSelectQuestion = useCallback((question: string) => {
     if (!activeChatId) return;
     
-    // 重置当前的推荐问题，以便显示加载状态
+    // 清空推荐问题
     setSuggestedQuestions([]);
     
-    // 强制刷新获取新的推荐问题
+    // 发送问题
+    handleSendMessage(question);
+  }, [activeChatId]);
+
+  const handleRefreshQuestions = useCallback(async () => {
+    if (!activeChatId) return;
+    
+    setSuggestedQuestions([]);
+    setIsLoadingQuestions(true);
+    
     await getSuggestedQuestions(activeChatId, true);
-  };
+  }, [activeChatId, getSuggestedQuestions]);
 
   // 发送消息
   const handleSendMessage = async (content: string, files?: FileWithPreview[], fileIds?: string[]) => {

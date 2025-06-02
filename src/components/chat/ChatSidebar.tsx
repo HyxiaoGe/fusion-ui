@@ -2,7 +2,7 @@
 
 import React, { useRef, useState, useEffect, useCallback } from "react";
 import { generateChatTitle } from "@/lib/api/title";
-import { getConversations, getConversation } from "@/lib/api/chat";
+import { getConversations, getConversation, deleteConversation } from "@/lib/api/chat";
 import { useAppDispatch, useAppSelector } from "@/redux/hooks";
 import { store } from "@/redux/store";
 import {
@@ -24,13 +24,8 @@ import {
   MessageSquareIcon,
   MoreVerticalIcon,
   PencilIcon,
-  PlusIcon,
   RefreshCwIcon,
   TrashIcon,
-  HomeIcon,
-  SettingsIcon,
-  FileText,
-  ChevronRightIcon,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -48,7 +43,6 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { useToast } from "../ui/toast";
-import Link from "next/link";
 import { cn } from "@/lib/utils";
 
 interface ChatSidebarProps {
@@ -99,17 +93,6 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ onNewChat }) => {
       const hasScroll = element.scrollHeight > element.clientHeight;
       setHasScrollbar(hasScroll);
       
-      // 调试日志
-      console.log('滚动条检测:', {
-        hasScroll,
-        scrollHeight: element.scrollHeight,
-        clientHeight: element.clientHeight,
-        useServerData,
-        serverPagination,
-        isLoadingMoreServer,
-        chatsLength: chats.length
-      });
-      
       // 判断是否可以加载更多
       let canLoadMore = false;
       if (useServerData) {
@@ -121,15 +104,6 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ onNewChat }) => {
       }
       
       const shouldShow = !hasScroll && canLoadMore;
-      
-      console.log('按钮显示逻辑:', {
-        hasScroll,
-        canLoadMore,
-        shouldShow,
-        useServerData,
-        'serverPagination?.has_next': serverPagination?.has_next,
-        localChatsLength: localChats.length
-      });
       
       setShowLoadMoreButton(shouldShow);
     }
@@ -160,7 +134,6 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ onNewChat }) => {
       dispatch(clearServerError());
       
       const response = await getConversations(page, pageSize);
-      console.log('服务端返回的会话列表:', response);
       
       const items = response.items || [];
       const chatList = items.map((item: any) => ({
@@ -542,14 +515,41 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ onNewChat }) => {
   };
 
   // 确认删除
-  const confirmDelete = () => {
-    if (chatToDelete) {
+  const confirmDelete = async () => {
+    if (!chatToDelete) return;
+
+    try {
+      // 如果使用服务端数据，先调用服务端删除接口
+      if (useServerData) {
+        await deleteConversation(chatToDelete);
+        
+        // 删除成功后，从服务端会话列表中移除该项
+        const updatedServerChatList = serverChatList.filter(chat => chat.id !== chatToDelete);
+        dispatch(setServerChatList({ 
+          chats: updatedServerChatList, 
+          pagination: serverPagination 
+        }));
+      }
+
+      // 删除成功后，更新本地Redux状态
       dispatch(deleteChat(chatToDelete));
+      
       setIsDeleteDialogOpen(false);
       setChatToDelete(null);
+      
       toast({
         message: "对话已删除",
         type: "success",
+      });
+    } catch (error) {
+      console.error('删除对话失败:', error);
+      
+      setIsDeleteDialogOpen(false);
+      setChatToDelete(null);
+      
+      toast({
+        message: "删除对话失败，请重试",
+        type: "error",
       });
     }
   };
