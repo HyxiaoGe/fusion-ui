@@ -4,10 +4,10 @@ import { Button } from '@/components/ui/button';
 import { Lightbulb, ChevronDown, ChevronUp, Clock, Copy, Check } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import ReactMarkdown from 'react-markdown';
-import rehypeHighlight from 'rehype-highlight';
 import rehypeRaw from 'rehype-raw';
 import remarkGfm from 'remark-gfm';
 import React, { useRef, useEffect, useState } from 'react';
+import CodeBlock from './CodeBlock';
 
 interface ReasoningContentProps {
   reasoning: string;
@@ -299,19 +299,32 @@ const ReasoningContent: React.FC<ReasoningContentProps> = ({
                   <>
                     <ReactMarkdown
                       remarkPlugins={[remarkGfm]}
-                      rehypePlugins={[rehypeRaw, rehypeHighlight]}
+                      rehypePlugins={[rehypeRaw]}
                       components={{
-                        pre: ({ node, ...props }) => (
-                          <pre className="bg-slate-100 dark:bg-slate-800 rounded-md overflow-auto p-2 my-2" {...props} />
-                        ),
+                        pre: ({ node, children, ...props }) => {
+                          // 不渲染pre标签，让code组件自己处理
+                          return <>{children}</>;
+                        },
                         code: ({ node, className, children, ...props }) => {
                           const match = /language-(\w+)/.exec(className || '');
-                          return match ? (
-                            <code className={className} {...props}>
-                              {children}
-                            </code>
-                          ) : (
-                            <code className="bg-slate-100 dark:bg-slate-800 px-1 py-0.5 rounded text-xs" {...props}>
+                          const codeContent = String(children).replace(/\n$/, '');
+                          
+                          // 如果有语言标识且内容包含换行符，则认为是代码块
+                          if (match && codeContent.includes('\n')) {
+                            return (
+                              <CodeBlock 
+                                language={match[1]} 
+                                value={codeContent}
+                                showLineNumbers={false}
+                                className="my-2"
+                                maxLines={10}
+                              />
+                            );
+                          }
+                          
+                          // 否则是内联代码
+                          return (
+                            <code className="bg-slate-100 dark:bg-slate-800 px-1 py-0.5 rounded text-xs font-mono" {...props}>
                               {children}
                             </code>
                           );
@@ -376,19 +389,32 @@ const ReasoningContent: React.FC<ReasoningContentProps> = ({
               reasoning && reasoning.trim() && (
                 <ReactMarkdown
                   remarkPlugins={[remarkGfm]}
-                  rehypePlugins={[rehypeRaw, rehypeHighlight]}
+                  rehypePlugins={[rehypeRaw]}
                   components={{
-                    pre: ({ node, ...props }) => (
-                      <pre className="bg-slate-100 dark:bg-slate-800 rounded-md overflow-auto p-2 my-2" {...props} />
-                    ),
+                    pre: ({ node, children, ...props }) => {
+                      // 不渲染pre标签，让code组件自己处理
+                      return <>{children}</>;
+                    },
                     code: ({ node, className, children, ...props }) => {
                       const match = /language-(\w+)/.exec(className || '');
-                      return match ? (
-                        <code className={className} {...props}>
-                          {children}
-                        </code>
-                      ) : (
-                        <code className="bg-slate-100 dark:bg-slate-800 px-1 py-0.5 rounded text-xs" {...props}>
+                      const codeContent = String(children).replace(/\n$/, '');
+                      
+                      // 如果有语言标识且内容包含换行符，则认为是代码块
+                      if (match && codeContent.includes('\n')) {
+                        return (
+                          <CodeBlock 
+                            language={match[1]} 
+                            value={codeContent}
+                            showLineNumbers={false}
+                            className="my-2"
+                            maxLines={10}
+                          />
+                        );
+                      }
+                      
+                      // 否则是内联代码
+                      return (
+                        <code className="bg-slate-100 dark:bg-slate-800 px-1 py-0.5 rounded text-xs font-mono" {...props}>
                           {children}
                         </code>
                       );

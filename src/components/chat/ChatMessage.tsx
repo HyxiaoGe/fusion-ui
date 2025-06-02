@@ -10,7 +10,6 @@ import { Edit2, FileIcon, RefreshCw, Lightbulb, FileText, Image, Film, PenLine, 
 import React, { useState, useEffect, useRef } from 'react';
 import ReactMarkdown from 'react-markdown';
 import TextareaAutosize from 'react-textarea-autosize';
-import rehypeHighlight from 'rehype-highlight';
 import rehypeRaw from 'rehype-raw';
 import remarkGfm from 'remark-gfm';
 import FileCard from './FileCard';
@@ -19,6 +18,7 @@ import ProviderIcon from '../models/ProviderIcon';
 import { ImageIcon } from 'lucide-react';
 import { chatStore } from '@/lib/db/chatStore';
 import SuggestedQuestions from './SuggestedQuestions';
+import CodeBlock from './CodeBlock';
 
 interface ChatMessageProps {
   message: Message;
@@ -261,19 +261,31 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, files, isLastMessage
                 {/* 消息内容显示 */}
                 <ReactMarkdown
                   remarkPlugins={[remarkGfm]}
-                  rehypePlugins={[rehypeRaw, rehypeHighlight]}
+                  rehypePlugins={[rehypeRaw]}
                   components={{
-                    pre: ({ node, ...props }) => (
-                      <pre className="bg-slate-100 dark:bg-slate-800 rounded-md overflow-auto p-4 my-2" {...props} />
-                    ),
+                    pre: ({ node, children, ...props }) => {
+                      // 不渲染pre标签，让code组件自己处理
+                      return <>{children}</>;
+                    },
                     code: ({ node, className, children, ...props }) => {
                       const match = /language-(\w+)/.exec(className || '');
-                      return match ? (
-                        <code className={className} {...props}>
-                          {children}
-                        </code>
-                      ) : (
-                        <code className="bg-slate-100 dark:bg-slate-800 px-1 py-0.5 rounded text-sm" {...props}>
+                      const codeContent = String(children).replace(/\n$/, '');
+                      
+                      // 如果有语言标识且内容包含换行符，则认为是代码块
+                      if (match && codeContent.includes('\n')) {
+                        return (
+                          <CodeBlock 
+                            language={match[1]} 
+                            value={codeContent}
+                            showLineNumbers={true}
+                            maxLines={15}
+                          />
+                        );
+                      }
+                      
+                      // 否则是内联代码
+                      return (
+                        <code className="bg-slate-100 dark:bg-slate-800 px-1 py-0.5 rounded text-sm font-mono" {...props}>
                           {children}
                         </code>
                       );
