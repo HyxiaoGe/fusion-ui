@@ -209,24 +209,40 @@ export default function Home() {
       
       // 只有在有AI回复的情况下才处理推荐问题
       if (hasAIMessage) {
-        // 检查是否有缓存的推荐问题
-        if (questionCache[activeChatId] && questionCache[activeChatId].length > 0) {
-          // 使用缓存的推荐问题
-          setSuggestedQuestions(questionCache[activeChatId]);
-        } else {
-          // 如果没有缓存，清空当前显示的推荐问题
-          setSuggestedQuestions([]);
-          
-          // 延迟200ms获取推荐问题，避免在快速切换会话时触发不必要的请求
-          const delay = setTimeout(() => {
-            // 确认仍然是同一个活动会话
-            if (activeChatId === store.getState().chat.activeChatId) {
-              getSuggestedQuestions(activeChatId);
+        // 优先尝试从缓存获取推荐问题
+        fetchSuggestedQuestions(activeChatId, {}, false)
+          .then(({ questions }) => {
+            if (questions.length > 0) {
+              setSuggestedQuestions(questions);
+              // 同时更新本地状态缓存
+              setQuestionCache(prev => ({
+                ...prev,
+                [activeChatId]: questions
+              }));
+            } else {
+              // 如果API缓存中没有，检查本地状态缓存
+              if (questionCache[activeChatId] && questionCache[activeChatId].length > 0) {
+                setSuggestedQuestions(questionCache[activeChatId]);
+              } else {
+                setSuggestedQuestions([]);
+                // 延迟获取新的推荐问题
+                const delay = setTimeout(() => {
+                  if (activeChatId === store.getState().chat.activeChatId) {
+                    getSuggestedQuestions(activeChatId);
+                  }
+                }, 200);
+                return () => clearTimeout(delay);
+              }
             }
-          }, 200);
-          
-          return () => clearTimeout(delay);
-        }
+          })
+          .catch(() => {
+            // 出错时使用本地状态缓存
+            if (questionCache[activeChatId]) {
+              setSuggestedQuestions(questionCache[activeChatId]);
+            } else {
+              setSuggestedQuestions([]);
+            }
+          });
       } else {
         // 没有AI回复时清空推荐问题
         setSuggestedQuestions([]);
@@ -235,7 +251,7 @@ export default function Home() {
       // 无活动会话时清空推荐问题
       setSuggestedQuestions([]);
     }
-  }, [activeChatId, questionCache, activeChat]);
+  }, [activeChatId, activeChat]);
 
   // 添加新的状态变量来跟踪聊天中是否有消息
   const [hasMessages, setHasMessages] = useState(false);

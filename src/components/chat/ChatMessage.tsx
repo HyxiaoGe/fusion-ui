@@ -6,7 +6,7 @@ import { FileWithPreview, formatFileSize } from '@/lib/utils/fileHelpers';
 import { useAppDispatch, useAppSelector } from '@/redux/hooks';
 import { Message, toggleReasoningVisibility, completeThinkingPhase } from '@/redux/slices/chatSlice';
 import { avatarOptions } from '@/redux/slices/settingsSlice';
-import { Edit2, FileIcon, RefreshCw, Lightbulb, FileText, Image, Film, PenLine, RotateCcw, FileArchive, X, Check } from 'lucide-react';
+import { Edit2, FileIcon, RefreshCw, Lightbulb, FileText, Image, Film, PenLine, RotateCcw, FileArchive, X, Check, Copy } from 'lucide-react';
 import React, { useState, useEffect, useRef } from 'react';
 import ReactMarkdown from 'react-markdown';
 import TextareaAutosize from 'react-textarea-autosize';
@@ -342,7 +342,26 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, files, isLastMessage
 
             {/* 重新生成按钮 */}
             {!isUser && !isStreaming && (
-              <div className="opacity-0 group-hover:opacity-100 transition-opacity duration-150">
+              <div className="opacity-0 group-hover:opacity-100 transition-opacity duration-150 flex gap-2 mt-2">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-6 text-xs text-muted-foreground hover:text-foreground hover:bg-transparent"
+                  onClick={() => {
+                    navigator.clipboard.writeText(message.content);
+                    const button = document.activeElement as HTMLButtonElement;
+                    const originalText = button.textContent;
+                    button.textContent = '已复制!';
+                    setTimeout(() => {
+                      if (button.textContent === '已复制!') {
+                        button.textContent = originalText;
+                      }
+                    }, 2000);
+                  }}
+                >
+                  <Copy className="h-3 w-3 mr-1" />
+                  复制消息
+                </Button>
                 <Button
                   variant="ghost"
                   size="sm"

@@ -325,6 +325,44 @@ const suggestedQuestionsCache: Record<string, { questions: string[], timestamp: 
 // 添加进行中请求跟踪
 const ongoingQuestionsRequests: Record<string, Promise<{ questions: string[] }>> = {};
 
+// 缓存配置
+const CACHE_DURATION = 24 * 60 * 60 * 1000; // 24小时
+const STORAGE_KEY = 'fusion_suggested_questions';
+
+// 从localStorage加载缓存
+const loadCache = () => {
+  try {
+    const stored = localStorage.getItem(STORAGE_KEY);
+    if (stored) {
+      const data = JSON.parse(stored);
+      const now = Date.now();
+      
+      // 只加载未过期的缓存
+      Object.keys(data).forEach(key => {
+        if (data[key].timestamp && (now - data[key].timestamp) < CACHE_DURATION) {
+          suggestedQuestionsCache[key] = data[key];
+        }
+      });
+    }
+  } catch (error) {
+    console.warn('加载推荐问题缓存失败:', error);
+  }
+};
+
+// 保存缓存到localStorage
+const saveCache = () => {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(suggestedQuestionsCache));
+  } catch (error) {
+    console.warn('保存推荐问题缓存失败:', error);
+  }
+};
+
+// 初始化时加载缓存
+if (typeof window !== 'undefined') {
+  loadCache();
+}
+
 /**
  * 获取对话的推荐后续问题
  * @param conversationId 对话ID
@@ -337,12 +375,12 @@ export const fetchSuggestedQuestions = async (
   options: Record<string, any> = {},
   forceRefresh: boolean = false
 ): Promise<{ questions: string[] }> => {
-  // 检查缓存，1分钟内有效
-  const CACHE_VALIDITY = 1 * 60 * 1000; // 1分钟
+  // 检查缓存
   const now = Date.now();
   const cachedData = suggestedQuestionsCache[conversationId];
   
-  if (!forceRefresh && cachedData && (now - cachedData.timestamp) < CACHE_VALIDITY) {
+  if (!forceRefresh && cachedData && (now - cachedData.timestamp) < CACHE_DURATION) {
+    console.log(`使用缓存的推荐问题 (${conversationId})`);
     return { questions: cachedData.questions };
   }
   
@@ -353,6 +391,7 @@ export const fetchSuggestedQuestions = async (
   
   // 创建新的请求
   try {
+    console.log(`获取新的推荐问题 (${conversationId})`);
     
     // 包装请求为Promise并记录
     ongoingQuestionsRequests[conversationId] = (async () => {
@@ -385,6 +424,9 @@ export const fetchSuggestedQuestions = async (
           questions: result.questions,
           timestamp: Date.now()
         };
+        
+        // 保存到localStorage
+        saveCache();
         
         return result;
       } finally {
@@ -426,10 +468,15 @@ export async function deleteConversation(conversationId: string) {
 export function clearSuggestedQuestionsCache(conversationId?: string): void {
   if (conversationId) {
     delete suggestedQuestionsCache[conversationId];
+    console.log(`清除推荐问题缓存 (${conversationId})`);
   } else {
     // 清除所有缓存
     Object.keys(suggestedQuestionsCache).forEach(key => {
       delete suggestedQuestionsCache[key];
     });
+    console.log('清除所有推荐问题缓存');
   }
+  
+  // 同步更新localStorage
+  saveCache();
 }
