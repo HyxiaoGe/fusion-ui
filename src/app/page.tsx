@@ -1,12 +1,16 @@
 'use client';
 
 import ChatInput from '@/components/chat/ChatInput';
-import ChatMessageList from '@/components/chat/ChatMessageList';
-import ChatSidebar from '@/components/chat/ChatSidebar';
-import HomePage from '@/components/home/HomePage';
+// 使用懒加载组件替换直接导入
+import { 
+  ChatMessageListLazy, 
+  ChatSidebarLazy, 
+  ModelSelectorLazy, 
+  RelatedDiscussionsLazy, 
+  HomePageLazy,
+  FunctionCallDisplayLazy
+} from '@/components/lazy/LazyComponents';
 import MainLayout from '@/components/layouts/MainLayout';
-import ModelSelector from '@/components/models/ModelSelector';
-import RelatedDiscussions from '@/components/search/RelatedDiscussions';
 import { Button } from '@/components/ui/button';
 import { sendMessageStream, fetchSuggestedQuestions  } from '@/lib/api/chat';
 import { generateChatTitle } from '@/lib/api/title';
@@ -957,7 +961,7 @@ export default function Home() {
   return (
     <MainLayout
       sidebar={
-        <ChatSidebar onNewChat={handleNewChat} />
+        <ChatSidebarLazy onNewChat={handleNewChat} />
       }
       header={
         <header className="h-14 border-b flex items-center justify-between px-5 sticky top-0 z-10 shadow-sm bg-background">
@@ -980,7 +984,7 @@ export default function Home() {
                 {getChatTitle()}
               </div>
             )}
-            <ModelSelector onChange={() => {
+            <ModelSelectorLazy onChange={() => {
               // 当模型变更时，清空当前会话的问题缓存
               if (activeChatId) {
                 setQuestionCache(prev => ({
@@ -1025,16 +1029,16 @@ export default function Home() {
       rightPanel={ (
         // Only render FunctionCallDisplay if conditions are met
         shouldShowRightPanel && activeChatId
-          ? <FunctionCallDisplay chatId={activeChatId} /> 
+          ? <FunctionCallDisplayLazy chatId={activeChatId} /> 
           : (activeChatId && currentUserQuery && currentUserQuery.length > 0 && !showHomePage
-            ? <RelatedDiscussions currentQuery={currentUserQuery} chatId={activeChatId} />
+            ? <RelatedDiscussionsLazy currentQuery={currentUserQuery} chatId={activeChatId} />
             : null)
       )}
     >
       <div className="h-full flex flex-col relative">
         {showHomePage ? (
           <div className="flex-1 overflow-y-auto">
-            <HomePage onNewChat={handleNewChat} onChatSelected={handleChatSelected} />
+            <HomePageLazy onNewChat={handleNewChat} onChatSelected={handleChatSelected} />
           </div>
         ) : shouldShowLoadingChat ? (
           <div className="flex-1 overflow-y-auto px-4 pt-4 flex items-center justify-center">
@@ -1057,7 +1061,7 @@ export default function Home() {
           </div>
         ) : (
           <div className="flex-1 overflow-y-auto px-4 pt-4">
-            <ChatMessageList
+            <ChatMessageListLazy
               messages={activeChat?.messages || []}
               loading={loading}
               isStreaming={isStreaming}

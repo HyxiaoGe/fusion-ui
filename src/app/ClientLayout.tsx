@@ -5,6 +5,16 @@ import { useEffect } from "react";
 import { initializeModels } from "@/lib/config/modelConfig";
 import { useDispatch } from "react-redux";
 import { updateModels } from "@/redux/slices/modelsSlice";
+import dynamic from 'next/dynamic';
+
+// 懒加载性能监控组件，只在开发环境启用
+const PerformanceMonitor = dynamic(
+  () => import('@/components/debug/PerformanceMonitor'),
+  { 
+    ssr: false,
+    loading: () => null 
+  }
+);
 
 function ToastInitializer() {
   const toastContext = useToast();
@@ -18,40 +28,21 @@ function ToastInitializer() {
 
 function ModelConfigInitializer() {
   const dispatch = useDispatch();
-  const { toast } = useToast();
   
   useEffect(() => {
-    // 先设置加载状态为true
-    dispatch({
-      type: 'models/setIsLoading',
-      payload: true
-    });
+    const loadModels = async () => {
+      try {
+        console.log('开始初始化模型配置...');
+        const models = await initializeModels();
+        console.log('模型配置加载完成:', models);
+        dispatch(updateModels(models));
+      } catch (error) {
+        console.error('模型配置加载失败:', error);
+      }
+    };
     
-    // 尝试加载模型配置
-    initializeModels().then((modelData) => {
-      // 使用Redux更新模型数据
-      dispatch(updateModels(modelData));
-      
-      // 加载完成，设置加载状态为false
-      dispatch({
-        type: 'models/setIsLoading',
-        payload: false
-      });
-    }).catch(error => {
-      console.error('模型配置初始化失败:', error);
-      
-      // 错误情况下也要设置加载状态为false
-      dispatch({
-        type: 'models/setIsLoading',
-        payload: false
-      });
-      
-      toast({
-        message: "模型配置加载失败，请检查网络连接或刷新页面重试",
-        type: "error",
-      });
-    });
-  }, [dispatch, toast]);
+    loadModels();
+  }, [dispatch]);
   
   return null;
 }
@@ -66,6 +57,11 @@ export default function ClientLayout({
       <ToastInitializer />
       <ModelConfigInitializer />
       {children}
+      
+      {/* 只在开发环境显示性能监控 */}
+      {process.env.NODE_ENV === 'development' && (
+        <PerformanceMonitor />
+      )}
     </ToastProvider>
   );
 }
