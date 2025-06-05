@@ -141,6 +141,19 @@ const chatSlice = createSlice({
       };
       state.chats.push(newChat);
       state.activeChatId = newChat.id;
+      
+      // 同时添加到服务端列表（如果服务端列表存在）
+      if (state.serverChatList.length > 0) {
+        const serverChat = {
+          id: newChat.id,
+          title: newChat.title,
+          model_id: newChat.modelId,
+          created_at: new Date(newChat.createdAt).toISOString(),
+          updated_at: new Date(newChat.updatedAt).toISOString(),
+        };
+        // 将新对话添加到列表开头（最新的在前面）
+        state.serverChatList.unshift(serverChat);
+      }
     },
     deleteChat: (state, action: PayloadAction<string>) => {
       const chatIndex = state.chats.findIndex(chat => chat.id === action.payload);
@@ -156,7 +169,7 @@ const chatSlice = createSlice({
     updateChatTitle: (state, action: PayloadAction<{chatId: string, title: string}>) => {
       const { chatId, title } = action.payload;
       const chat = state.chats.find(c => c.id === chatId);
-      if (chat) {
+      if (chat && chat.title !== title) {
         chat.title = title;
         chat.updatedAt = Date.now();
       }
@@ -443,6 +456,16 @@ const chatSlice = createSlice({
       state.serverPagination = action.payload.pagination;
     },
     
+    // 新增：更新服务端聊天列表中特定对话的标题
+    updateServerChatTitle: (state, action: PayloadAction<{ chatId: string; title: string }>) => {
+      const { chatId, title } = action.payload;
+      const serverChat = state.serverChatList.find(chat => chat.id === chatId);
+      if (serverChat && serverChat.title !== title) {
+        serverChat.title = title;
+        serverChat.updated_at = new Date().toISOString();
+      }
+    },
+    
     appendServerChatList: (state, action: PayloadAction<{ chats: any[]; pagination: any }>) => {
       state.serverChatList = [...state.serverChatList, ...action.payload.chats];
       state.serverPagination = action.payload.pagination;
@@ -509,6 +532,7 @@ export const {
   resetFunctionCallProgress,
   toggleWebSearch,
   setServerChatList,
+  updateServerChatTitle,
   appendServerChatList,
   setLoadingServerList,
   setLoadingServerChat,

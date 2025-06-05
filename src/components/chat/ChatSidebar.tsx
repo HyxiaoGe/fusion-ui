@@ -12,6 +12,7 @@ import {
   updateChatTitle,
   setAnimatingTitleChatId,
   setServerChatList,
+  updateServerChatTitle,
   setServerError,
   clearServerError,
   appendServerChatList,
@@ -300,6 +301,15 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ onNewChat }) => {
           title: editingTitle.trim(),
         })
       );
+      
+      // 同时更新服务端列表中的标题
+      dispatch(
+        updateServerChatTitle({
+          chatId: chatId,
+          title: editingTitle.trim(),
+        })
+      );
+      
       toast({
         message: "标题已更新",
         type: "success",
@@ -517,6 +527,8 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ onNewChat }) => {
         if (existingChatIndex >= 0) {
           // 更新现有对话
           dispatch(updateChatTitle({ chatId, title: localChat.title }));
+          // 同时更新服务端列表中的标题
+          dispatch(updateServerChatTitle({ chatId, title: localChat.title }));
           // 这里需要一个新的action来更新整个对话的消息
           // 暂时使用setAllChats来更新
           const updatedChats = [...currentChats];
@@ -525,6 +537,8 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ onNewChat }) => {
         } else {
           // 添加新对话到本地状态
           dispatch(setAllChats([...currentChats, localChat]));
+          // 同时更新服务端列表中的标题（如果存在）
+          dispatch(updateServerChatTitle({ chatId, title: localChat.title }));
         }
         
         dispatch(setLoadingServerChat(false));
@@ -608,6 +622,14 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ onNewChat }) => {
           title: "正在生成标题...",
         })
       );
+      
+      // 同时更新服务端列表中的标题
+      dispatch(
+        updateServerChatTitle({
+          chatId: chatId,
+          title: "正在生成标题...",
+        })
+      );
 
       // 调用API生成标题
       const generatedTitle = await generateChatTitle(
@@ -623,6 +645,14 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ onNewChat }) => {
       // 更新对话标题
       dispatch(
         updateChatTitle({
+          chatId: chatId,
+          title: generatedTitle,
+        })
+      );
+      
+      // 同时更新服务端列表中的标题
+      dispatch(
+        updateServerChatTitle({
           chatId: chatId,
           title: generatedTitle,
         })
@@ -646,6 +676,14 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ onNewChat }) => {
           title: chat.title,
         })
       );
+      
+      // 同时恢复服务端列表中的标题
+      dispatch(
+        updateServerChatTitle({
+          chatId: chatId,
+          title: chat.title,
+        })
+      );
       toast({
         message: "生成标题失败，请重试",
         type: "error",
@@ -662,6 +700,15 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ onNewChat }) => {
           title: newTitle.trim(),
         })
       );
+      
+      // 同时更新服务端列表中的标题
+      dispatch(
+        updateServerChatTitle({
+          chatId: chatToRename,
+          title: newTitle.trim(),
+        })
+      );
+      
       setIsRenameDialogOpen(false);
       setChatToRename(null);
       setNewTitle("");

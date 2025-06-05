@@ -31,6 +31,7 @@ import {
   startStreaming,
   startStreamingReasoning,
   updateChatTitle,
+  updateServerChatTitle,
   updateMessageReasoning,
   updateStreamingContent,
   updateStreamingReasoningContent,
@@ -418,8 +419,11 @@ export default function Home() {
     }
 
     const currentChatBeforeAdd = chats.find(chat => chat.id === activeChatId);
+    // 检查这是否是第一条用户消息且需要生成标题
+    // 只有当对话没有用户消息、没有AI回复，且标题仍是默认的"新对话"时才生成标题
     const isFirstMessage = currentChatBeforeAdd &&
       currentChatBeforeAdd.messages.filter(msg => msg.role === 'user').length === 0 &&
+      currentChatBeforeAdd.messages.filter(msg => msg.role === 'assistant').length === 0 &&
       currentChatBeforeAdd.title === '新对话';
 
     const messageId = uuidv4();
@@ -532,6 +536,12 @@ export default function Home() {
                 
                 // 更新Redux中的标题
                 dispatch(updateChatTitle({
+                  chatId: activeChatId || conversationId || '',
+                  title: generatedTitle
+                }));
+                
+                // 同时更新服务端列表中的标题
+                dispatch(updateServerChatTitle({
                   chatId: activeChatId || conversationId || '',
                   title: generatedTitle
                 }));

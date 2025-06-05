@@ -9,7 +9,7 @@ import {
 import { sendMessageStream } from "@/lib/api/chat";
 import { generateChatTitle } from "@/lib/api/title";
 import { useAppDispatch, useAppSelector } from "@/redux/hooks";
-import { addMessage, createChat, endStreaming, endStreamingReasoning, setError, startStreaming, startStreamingReasoning, updateChatTitle, updateMessageReasoning, updateStreamingContent, updateStreamingReasoningContent, setActiveChat } from "@/redux/slices/chatSlice";
+import { addMessage, createChat, endStreaming, endStreamingReasoning, setError, startStreaming, startStreamingReasoning, updateChatTitle, updateServerChatTitle, updateMessageReasoning, updateStreamingContent, updateStreamingReasoningContent, setActiveChat } from "@/redux/slices/chatSlice";
 import { store } from "@/redux/store";
 import { FileText, Image, Lightbulb, MessageSquare, Plus, RefreshCw } from "lucide-react";
 import { useEffect, useState, useCallback, memo } from "react";
@@ -110,6 +110,19 @@ const HomePage: React.FC<HomePageProps> = ({ onNewChat, onChatSelected }) => {
     // 如果存在空白会话，使用它；否则创建新会话
     if (existingEmptyChat) {
       chatId = existingEmptyChat.id;
+      
+      // 更新空白会话的标题为话题标题
+      const initialTitle = topic.title.length > 20 ? topic.title.substring(0, 20) + "..." : topic.title;
+      dispatch(updateChatTitle({
+        chatId: chatId,
+        title: initialTitle
+      }));
+      
+      // 同时更新服务端列表中的标题
+      dispatch(updateServerChatTitle({
+        chatId: chatId,
+        title: initialTitle
+      }));
     } else {
       // 创建对话
       dispatch(
@@ -248,6 +261,12 @@ const HomePage: React.FC<HomePageProps> = ({ onNewChat, onChatSelected }) => {
                 title: generatedTitle
               }));
               
+              // 同时更新服务端列表中的标题
+              dispatch(updateServerChatTitle({
+                chatId: chatId || conversationId || '',
+                title: generatedTitle
+              }));
+              
               // 标题生成后刷新对话列表
               refreshChatList();
             } catch (error) {
@@ -281,6 +300,19 @@ const HomePage: React.FC<HomePageProps> = ({ onNewChat, onChatSelected }) => {
     // 如果存在空白会话，使用它；否则创建新会话
     if (existingEmptyChat) {
       chatId = existingEmptyChat.id;
+      
+      // 更新空白会话的标题为示例标题
+      const initialTitle = example.length > 20 ? example.substring(0, 20) + "..." : example;
+      dispatch(updateChatTitle({
+        chatId: chatId,
+        title: initialTitle
+      }));
+      
+      // 同时更新服务端列表中的标题
+      dispatch(updateServerChatTitle({
+        chatId: chatId,
+        title: initialTitle
+      }));
     } else {
       // 创建对话
       dispatch(
@@ -395,6 +427,12 @@ const HomePage: React.FC<HomePageProps> = ({ onNewChat, onChatSelected }) => {
               );
 
               dispatch(updateChatTitle({
+                chatId: chatId || conversationId || '',
+                title: generatedTitle
+              }));
+              
+              // 同时更新服务端列表中的标题
+              dispatch(updateServerChatTitle({
                 chatId: chatId || conversationId || '',
                 title: generatedTitle
               }));
