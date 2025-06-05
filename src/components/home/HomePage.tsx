@@ -9,12 +9,13 @@ import {
 import { sendMessageStream } from "@/lib/api/chat";
 import { generateChatTitle } from "@/lib/api/title";
 import { useAppDispatch, useAppSelector } from "@/redux/hooks";
-import { addMessage, createChat, endStreaming, endStreamingReasoning, setError, startStreaming, startStreamingReasoning, updateChatTitle, updateMessageReasoning, updateStreamingContent, updateStreamingReasoningContent } from "@/redux/slices/chatSlice";
+import { addMessage, createChat, endStreaming, endStreamingReasoning, setError, startStreaming, startStreamingReasoning, updateChatTitle, updateMessageReasoning, updateStreamingContent, updateStreamingReasoningContent, setActiveChat } from "@/redux/slices/chatSlice";
 import { store } from "@/redux/store";
 import { FileText, Image, Lightbulb, MessageSquare, Plus, RefreshCw } from "lucide-react";
 import { useEffect, useState, useCallback, memo } from "react";
 import { cn } from "@/lib/utils";
 import { HotTopic, getCachedHotTopics } from "@/lib/api/hotTopics";
+import { useChatListRefresh } from "@/hooks/useChatListRefresh";
 
 // 添加接口定义
 interface HomePageProps {
@@ -26,6 +27,7 @@ interface HomePageProps {
 const HomePage: React.FC<HomePageProps> = ({ onNewChat, onChatSelected }) => {
   const { selectedModelId, models } = useAppSelector((state) => state.models);
   const dispatch = useAppDispatch();
+  const { triggerRefresh: refreshChatList } = useChatListRefresh();
   const [allHotTopics, setAllHotTopics] = useState<HotTopic[]>([]);  // 存储所有缓存的热点话题
   const [displayTopics, setDisplayTopics] = useState<HotTopic[]>([]); // 当前显示的热点话题
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -125,6 +127,11 @@ const HomePage: React.FC<HomePageProps> = ({ onNewChat, onChatSelected }) => {
         return;
       }
       chatId = newChat.id;
+      
+      // 刷新对话列表，确保新对话显示在左侧面板
+      setTimeout(() => {
+        refreshChatList();
+      }, 100);
     }
 
     // 添加用户消息
@@ -221,7 +228,13 @@ const HomePage: React.FC<HomePageProps> = ({ onNewChat, onChatSelected }) => {
           }
           dispatch(endStreaming());
           
-          // 在消息流结束后自动生成对话标题
+          // 如果返回了新的conversationId，更新Redux状态
+          if (conversationId && conversationId !== chatId) {
+            console.log(`话题对话收到新ID: ${conversationId}，当前ID: ${chatId}`);
+            dispatch(setActiveChat(conversationId));
+          }
+          
+          // 在消息流结束后自动生成对话标题并刷新对话列表
           setTimeout(async () => {
             try {
               const generatedTitle = await generateChatTitle(
@@ -234,6 +247,9 @@ const HomePage: React.FC<HomePageProps> = ({ onNewChat, onChatSelected }) => {
                 chatId: chatId || conversationId || '',
                 title: generatedTitle
               }));
+              
+              // 标题生成后刷新对话列表
+              refreshChatList();
             } catch (error) {
               console.error('生成标题失败:', error);
             }
@@ -246,7 +262,7 @@ const HomePage: React.FC<HomePageProps> = ({ onNewChat, onChatSelected }) => {
       dispatch(endStreamingReasoning());
       dispatch(endStreaming());
     });
-  }, [selectedModelId, dispatch, models, onChatSelected]);
+  }, [selectedModelId, dispatch, models, onChatSelected, refreshChatList]);
 
   // 添加处理示例点击的函数
   const handleExampleClick = useCallback((example: string) => {
@@ -394,7 +410,7 @@ const HomePage: React.FC<HomePageProps> = ({ onNewChat, onChatSelected }) => {
       dispatch(endStreamingReasoning());
       dispatch(endStreaming());
     });
-  }, [selectedModelId, dispatch, models]);
+  }, [selectedModelId, dispatch, models, refreshChatList]);
 
   return (
     <div className="flex flex-col space-y-8 pb-8 px-4 max-w-5xl mx-auto w-full h-full overflow-y-auto">

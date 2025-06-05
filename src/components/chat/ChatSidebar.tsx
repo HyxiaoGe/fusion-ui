@@ -44,6 +44,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { useToast } from "../ui/toast";
 import { cn } from "@/lib/utils";
+import { useChatListRefresh } from "@/hooks/useChatListRefresh";
 
 interface ChatSidebarProps {
   onNewChat: () => void;
@@ -52,6 +53,7 @@ interface ChatSidebarProps {
 const ChatSidebar: React.FC<ChatSidebarProps> = ({ onNewChat }) => {
   const dispatch = useAppDispatch();
   const { toast } = useToast();
+  const { registerRefreshFunction } = useChatListRefresh();
 
   // 获取Redux状态
   const {
@@ -81,6 +83,9 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ onNewChat }) => {
   
   // 添加初始化标记，防止严格模式下重复调用
   const isInitializedRef = useRef(false);
+  
+  // 添加上次活动对话ID的引用，用于检测变化
+  const lastActiveChatIdRef = useRef<string | null>(null);
 
   // 添加状态来检测是否有滚动条
   const [hasScrollbar, setHasScrollbar] = useState(false);
@@ -162,6 +167,17 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ onNewChat }) => {
     }
   };
 
+  // 添加一个公共方法来刷新对话列表
+  const refreshChatList = useCallback(() => {
+    console.log('刷新对话列表');
+    fetchChatList(1, 10);
+  }, []);
+
+  // 注册刷新方法到hook中
+  useEffect(() => {
+    registerRefreshFunction(refreshChatList);
+  }, [registerRefreshFunction, refreshChatList]);
+
   // 加载更多会话
   const loadMoreChats = async () => {
     if (useServerData) {
@@ -224,6 +240,25 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ onNewChat }) => {
     isInitializedRef.current = true;
     fetchChatList(1, 10);
   }, []);
+
+  // 监听activeChatId变化，如果是新的对话ID且不在当前列表中，则刷新列表
+  useEffect(() => {
+    if (activeChatId && activeChatId !== lastActiveChatIdRef.current) {
+      lastActiveChatIdRef.current = activeChatId;
+      
+      // 检查当前活动的对话是否在服务端对话列表中
+      if (useServerData) {
+        const chatExists = serverChatList.some(chat => chat.id === activeChatId);
+        if (!chatExists) {
+          console.log(`对话 ${activeChatId} 不在列表中，刷新对话列表`);
+          // 延迟一下再刷新，确保服务端已经创建了对话
+          setTimeout(() => {
+            refreshChatList();
+          }, 500);
+        }
+      }
+    }
+  }, [activeChatId, useServerData, serverChatList, refreshChatList]);
 
   // 添加对话框状态
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
