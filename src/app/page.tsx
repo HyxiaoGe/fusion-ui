@@ -209,61 +209,16 @@ export default function Home() {
     }
   }, [activeChatId, dispatch]);
 
-  // 监听活动聊天变化
+  // 监听活动聊天变化，从缓存加载推荐问题
   useEffect(() => {
-    // 处理会话切换时的推荐问题
-    if (activeChatId) {
-      // 检查当前会话是否有AI回复
-      const hasAIMessage = activeChat?.messages.some(msg => msg.role === 'assistant');
-      
-      // 只有在有AI回复的情况下才处理推荐问题
-      if (hasAIMessage) {
-        // 获取消息数量用于生成缓存键
-        const messageCount = activeChat?.messages.length || 0;
-        
-        // 优先尝试从缓存获取推荐问题
-        fetchSuggestedQuestions(activeChatId, {}, false, messageCount)
-          .then(({ questions }) => {
-            if (questions.length > 0) {
-              setSuggestedQuestions(questions);
-              // 同时更新本地状态缓存
-              setQuestionCache(prev => ({
-                ...prev,
-                [activeChatId]: questions
-              }));
-            } else {
-              // 如果API缓存中没有，检查本地状态缓存
-              if (questionCache[activeChatId] && questionCache[activeChatId].length > 0) {
-                setSuggestedQuestions(questionCache[activeChatId]);
-              } else {
-                setSuggestedQuestions([]);
-                // 延迟获取新的推荐问题
-                const delay = setTimeout(() => {
-                  if (activeChatId === store.getState().chat.activeChatId) {
-                    getSuggestedQuestions(activeChatId);
-                  }
-                }, 200);
-                return () => clearTimeout(delay);
-              }
-            }
-          })
-          .catch(() => {
-            // 出错时使用本地状态缓存
-            if (questionCache[activeChatId]) {
-              setSuggestedQuestions(questionCache[activeChatId]);
-            } else {
-              setSuggestedQuestions([]);
-            }
-          });
-      } else {
-        // 没有AI回复时清空推荐问题
-        setSuggestedQuestions([]);
-      }
+    // 切换会话时，尝试从本地缓存加载推荐问题
+    if (activeChatId && questionCache[activeChatId]) {
+      setSuggestedQuestions(questionCache[activeChatId]);
     } else {
-      // 无活动会话时清空推荐问题
+      // 如果没有缓存，则清空
       setSuggestedQuestions([]);
     }
-  }, [activeChatId, activeChat]);
+  }, [activeChatId, questionCache]);
 
   // 添加新的状态变量来跟踪聊天中是否有消息
   const [hasMessages, setHasMessages] = useState(false);
@@ -354,17 +309,35 @@ export default function Home() {
 
   // 获取推荐问题函数
   const getSuggestedQuestions = useCallback(async (chatId: string, forceRefresh: boolean = false) => {
-    if (!chatId) return;
-    
-    // 检查是否有AI消息存在
-    const chat = chats.find(c => c.id === chatId);
-    const hasAIMessage = chat?.messages.some(msg => msg.role === 'assistant');
-    
-    // 如果没有AI消息，不获取推荐问题
-    if (!hasAIMessage) {
+    console.log(`[getSuggestedQuestions] Fired for chatId: ${chatId}. Force refresh: ${forceRefresh}`);
+    if (!chatId) {
+      console.error('[getSuggestedQuestions] Aborting: No chatId provided.');
       return;
     }
     
+    // 直接从Redux store获取最新的chats状态，以避免闭包问题
+    const currentChats = store.getState().chat.chats;
+    const chat = currentChats.find(c => c.id === chatId);
+    
+    if (!chat) {
+      console.error(`[getSuggestedQuestions] Aborting: Chat with id ${chatId} not found in store.`);
+      console.log(`[getSuggestedQuestions] Available chat IDs: ${currentChats.map(c => c.id).join(', ')}`);
+      return;
+    }
+
+    // 确保AI消息不仅存在，而且有实际内容
+    const hasAIMessage = chat.messages.some(msg => msg.role === 'assistant' && msg.content && msg.content.trim() !== '');
+    
+    console.log(`[getSuggestedQuestions] Checking for AI message with content in chat ${chatId}. Result: ${hasAIMessage}`);
+    
+    // 如果没有AI消息，不获取推荐问题
+    if (!hasAIMessage) {
+      console.warn(`[getSuggestedQuestions] Aborting: No assistant message with content found for chat ${chatId}. Dumping messages:`);
+      console.log(JSON.stringify(chat.messages, null, 2));
+      return;
+    }
+    
+    console.log(`[getSuggestedQuestions] Proceeding to fetch questions for chat ${chatId}.`);
     setIsLoadingQuestions(true);
     try {
       // 传递消息数量以生成更精确的缓存键
@@ -383,7 +356,7 @@ export default function Home() {
     } finally {
       setIsLoadingQuestions(false);
     }
-  }, [chats]);
+  }, []); // 依赖项中移除了 'chats'
 
   const handleSelectQuestion = useCallback((question: string) => {
     if (!activeChatId) return;
@@ -516,7 +489,7 @@ export default function Home() {
 
             dispatch(endStreaming());
 
-            // 如果返回了新的conversationId，更新Redux状态
+            // 如果返回了新的对话ID，更新Redux状态
             if (conversationId && conversationId !== currentActiveChatId) {
               console.log(`收到新的对话ID: ${conversationId}，当前ID: ${currentActiveChatId}`);
               dispatch(setActiveChat(conversationId));
@@ -531,6 +504,24 @@ export default function Home() {
                 refreshChatList();
               }, 1000);
             }
+            
+            // 流式输出结束后获取推荐问题
+            // 如果已有正在等待执行的请求，取消它
+            if (pendingQuestionRequestRef.current) {
+              clearTimeout(pendingQuestionRequestRef.current);
+            }
+            
+            // 延迟获取推荐问题
+            pendingQuestionRequestRef.current = setTimeout(() => {
+              pendingQuestionRequestRef.current = null;
+              
+              const finalChatId = conversationId || currentActiveChatId;
+              console.log(`[handleSendMessage] Complete. Scheduling getSuggestedQuestions for chatId: ${finalChatId}`);
+              if (finalChatId) {
+                // 每次对话后强制刷新推荐问题，确保为最新对话内容生成问题
+                getSuggestedQuestions(finalChatId, true);
+              }
+            }, 1500);
           }
 
           // 在消息流结束(done=true)且是第一条消息时生成标题
@@ -1013,7 +1004,7 @@ export default function Home() {
       <div className="h-full flex flex-col relative">
         {showHomePage ? (
           <div className="flex-1 overflow-y-auto">
-            <HomePageLazy onNewChat={handleNewChat} onChatSelected={handleChatSelected} />
+            <HomePageLazy onSendMessage={handleSendMessage} onNewChat={handleNewChat} onChatSelected={handleChatSelected} />
           </div>
         ) : shouldShowLoadingChat ? (
           <div className="flex-1 overflow-y-auto px-4 pt-4 flex items-center justify-center">
