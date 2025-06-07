@@ -21,7 +21,14 @@ const SuggestedQuestions: React.FC<SuggestedQuestionsProps> = ({
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
 
+  // 如果没有问题且没有在加载中，则不显示组件
   if (questions.length === 0 && !isLoading) return null;
+  
+  // 调试信息：显示问题的哈希值以便验证是否为新问题
+  if (questions.length > 0) {
+    const questionsHash = questions.join('').slice(0, 8);
+    console.log(`推荐问题已更新，哈希: ${questionsHash}`, questions);
+  }
   
   // 处理刷新按钮点击
   const handleRefresh = () => {
@@ -62,6 +69,7 @@ const SuggestedQuestions: React.FC<SuggestedQuestionsProps> = ({
       </div>
       
       <div className="flex flex-col space-y-2">
+        {/* 显示推荐问题列表 */}
         {questions.map((question, index) => (
           <Button
             key={index}
@@ -92,8 +100,9 @@ const SuggestedQuestions: React.FC<SuggestedQuestionsProps> = ({
           </Button>
         ))}
         
+        {/* 加载状态显示 */}
         {isLoading && (
-          <div className="text-xs text-muted-foreground flex items-center mt-2 py-1">
+          <div className="text-xs text-muted-foreground flex items-center py-3">
             <div className="flex space-x-1 mr-2">
               <div className="h-1.5 w-1.5 bg-primary/40 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></div>
               <div className="h-1.5 w-1.5 bg-primary/40 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></div>

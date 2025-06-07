@@ -218,8 +218,11 @@ export default function Home() {
       
       // 只有在有AI回复的情况下才处理推荐问题
       if (hasAIMessage) {
+        // 获取消息数量用于生成缓存键
+        const messageCount = activeChat?.messages.length || 0;
+        
         // 优先尝试从缓存获取推荐问题
-        fetchSuggestedQuestions(activeChatId, {}, false)
+        fetchSuggestedQuestions(activeChatId, {}, false, messageCount)
           .then(({ questions }) => {
             if (questions.length > 0) {
               setSuggestedQuestions(questions);
@@ -364,7 +367,9 @@ export default function Home() {
     
     setIsLoadingQuestions(true);
     try {
-      const { questions } = await fetchSuggestedQuestions(chatId, {}, forceRefresh);
+      // 传递消息数量以生成更精确的缓存键
+      const messageCount = chat?.messages.length || 0;
+      const { questions } = await fetchSuggestedQuestions(chatId, {}, forceRefresh, messageCount);
       // 更新当前显示的推荐问题
       setSuggestedQuestions(questions);
       // 同时更新缓存
@@ -401,30 +406,62 @@ export default function Home() {
 
   // 发送消息
   const handleSendMessage = async (content: string, files?: FileWithPreview[], fileIds?: string[]) => {
-    if ((!content.trim() && (!files || files.length === 0)) || !activeChatId || !selectedModelId) return;
+    if ((!content.trim() && (!files || files.length === 0)) || !selectedModelId) return;
 
-    dispatch(resetFunctionCallProgress());
-
-    // 如果当前在首页，切换到聊天界面
     if (showHomePage) {
       setShowHomePage(false);
     }
+    
+    let currentActiveChatId = activeChatId;
 
-    setCurrentUserQuery(content); // 保存当前查询用于相关推荐
+    if (!currentActiveChatId) {
+      const newChatId = uuidv4();
+      dispatch(
+        createChat({
+          modelId: selectedModelId,
+          title: content.substring(0, 30),
+        })
+      );
+      dispatch(setActiveChat(newChatId));
+      currentActiveChatId = newChatId;
+    }
+    
+    if (!currentActiveChatId) {
+      dispatch(setError("无法创建或找到对话。"));
+      return;
+    }
 
+    const userMessage: Message = {
+      role: 'user',
+      content: content.trim(),
+      status: 'pending',
+      timestamp: Date.now(),
+      id: uuidv4(),
+    };
+    
+    dispatch(addMessage({
+      chatId: currentActiveChatId,
+      message: userMessage
+    }));
+    
     const selectedModel = models.find(m => m.id === selectedModelId);
     if (!selectedModel) {
       dispatch(setError('找不到选中的模型信息'));
       return;
     }
 
-    const currentChatBeforeAdd = chats.find(chat => chat.id === activeChatId);
-    // 检查这是否是第一条用户消息且需要生成标题
-    // 只有当对话没有用户消息、没有AI回复，且标题仍是默认的"新对话"时才生成标题
-    const isFirstMessage = currentChatBeforeAdd &&
-      currentChatBeforeAdd.messages.filter(msg => msg.role === 'user').length === 0 &&
-      currentChatBeforeAdd.messages.filter(msg => msg.role === 'assistant').length === 0 &&
-      currentChatBeforeAdd.title === '新对话';
+    // 开始流式输出
+    dispatch(startStreaming(currentActiveChatId));
+    
+    const { reasoningEnabled, webSearchEnabled } = store.getState().chat;
+
+    // 检查是否启用向量搜索和上下文增强
+    const { searchEnabled, contextEnhancementEnabled } = store.getState().search;
+
+    // 如果启用了向量搜索和上下文增强，获取相关上下文
+    if (searchEnabled && contextEnhancementEnabled) {
+      dispatch(fetchEnhancedContext({ query: content, conversationId: currentActiveChatId }));
+    }
 
     const messageId = uuidv4();
 
@@ -436,31 +473,10 @@ export default function Home() {
       fileId: (files[0] as any).fileId
     }] : undefined;
 
-    // 添加用户消息
-    dispatch(addMessage({
-      chatId: activeChatId,
-      message: {
-        role: 'user',
-        content: content.trim(),
-        status: 'pending',
-        fileInfo: fileInfo
-      }
-    }));
-
-    // 检查是否启用向量搜索和上下文增强
-    const { searchEnabled, contextEnhancementEnabled } = store.getState().search;
-
-    // 如果启用了向量搜索和上下文增强，获取相关上下文
-    if (searchEnabled && contextEnhancementEnabled) {
-      dispatch(fetchEnhancedContext({ query: content, conversationId: activeChatId }));
-    }
-
-    const { reasoningEnabled } = store.getState().chat;
     const supportsReasoning = selectedModel.capabilities?.deepThinking || false;
     const useReasoning = reasoningEnabled && supportsReasoning;
 
     // 检查是否启用网络搜索
-    const { webSearchEnabled } = store.getState().chat;
     const supportsWebSearch = selectedModel.capabilities?.webSearch || false;
     const useWebSearch = webSearchEnabled && supportsWebSearch;
 
@@ -470,14 +486,11 @@ export default function Home() {
     const useFunctionCall = functionCallEnabled && supportsFunctionCall;
 
     try {
-      // 添加助手消息占位符
-      dispatch(startStreaming(activeChatId));
-
       await sendMessageStream({
         provider: selectedModel.provider,
         model: selectedModel.id,
         message: content.trim(),
-        conversation_id: activeChatId,
+        conversation_id: currentActiveChatId,
         stream: true,
         options: {
           use_reasoning: useReasoning,
@@ -488,7 +501,7 @@ export default function Home() {
         (content, done, conversationId, reasoning) => {
           if (!done) {
             dispatch(updateStreamingContent({
-              chatId: activeChatId,
+              chatId: currentActiveChatId,
               content
             }));
 
@@ -497,22 +510,22 @@ export default function Home() {
             }
           } else {
             dispatch(updateStreamingContent({
-              chatId: activeChatId,
+              chatId: currentActiveChatId,
               content: content
             }));
 
             dispatch(endStreaming());
 
             // 如果返回了新的conversationId，更新Redux状态
-            if (conversationId && conversationId !== activeChatId) {
-              console.log(`收到新的对话ID: ${conversationId}，当前ID: ${activeChatId}`);
+            if (conversationId && conversationId !== currentActiveChatId) {
+              console.log(`收到新的对话ID: ${conversationId}，当前ID: ${currentActiveChatId}`);
               dispatch(setActiveChat(conversationId));
               
               // 刷新对话列表以显示新创建的对话
               setTimeout(() => {
                 refreshChatList();
               }, 1000);
-            } else if (isFirstMessage) {
+            } else {
               // 如果是第一条消息且没有返回新的conversationId，也尝试刷新列表
               setTimeout(() => {
                 refreshChatList();
@@ -521,28 +534,28 @@ export default function Home() {
           }
 
           // 在消息流结束(done=true)且是第一条消息时生成标题
-          if (done && isFirstMessage) {
+          if (done && store.getState().chat.chats.find(c => c.id === activeChatId)?.messages.length === 2) {
             // 延迟一小段时间确保服务器已处理完毕
             setTimeout(async () => {
               try {
                 const generatedTitle = await generateChatTitle(
-                  activeChatId || conversationId || '', // 使用可能从服务器返回的新conversationId
+                  currentActiveChatId || conversationId || '', // 使用可能从服务器返回的新conversationId
                   undefined, // 不传具体消息，让后端从对话ID获取完整消息链
                   { max_length: 20 }
                 );
                 
                 // 设置要动画的标题Chat ID
-                dispatch(setAnimatingTitleChatId(activeChatId || conversationId || ''));
+                dispatch(setAnimatingTitleChatId(currentActiveChatId || conversationId || ''));
                 
                 // 更新Redux中的标题
                 dispatch(updateChatTitle({
-                  chatId: activeChatId || conversationId || '',
+                  chatId: currentActiveChatId || conversationId || '',
                   title: generatedTitle
                 }));
                 
                 // 同时更新服务端列表中的标题
                 dispatch(updateServerChatTitle({
-                  chatId: activeChatId || conversationId || '',
+                  chatId: currentActiveChatId || conversationId || '',
                   title: generatedTitle
                 }));
                 
@@ -565,12 +578,12 @@ export default function Home() {
       dispatch(endStreaming());
       
       // 更新用户消息状态为失败
-      const chat = chats.find(c => c.id === activeChatId);
+      const chat = chats.find(c => c.id === currentActiveChatId);
       if (chat && chat.messages.length > 0) {
         const lastMessage = chat.messages[chat.messages.length - 1];
         if (lastMessage.role === 'user') {
           dispatch(setMessageStatus({
-            chatId: activeChatId,
+            chatId: currentActiveChatId,
             messageId: lastMessage.id,
             status: 'failed'
           }));
