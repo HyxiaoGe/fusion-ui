@@ -7,13 +7,14 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useAppSelector } from "@/redux/hooks";
 import { motion } from "framer-motion";
-import { Database, ExternalLink, Globe, LayoutGrid, Server, Settings, Shield } from "lucide-react";
+import { Database, ExternalLink, Globe, LayoutGrid, Server, Settings, Shield, Rss } from "lucide-react";
 import AvatarSelector from "./AvatarSelector";
 import DataManagement from "./DataManagement";
 import SearchSettings from "./SearchSettings";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
+import RssSettings from "./RssSettings";
 
 // 定义动画变体
 const variants = {
@@ -46,7 +47,7 @@ export default function SettingsPage() {
       <div className="w-full h-full px-6 pt-0 flex flex-col">
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4 w-full flex-grow flex flex-col">
           <div className="bg-card/50 backdrop-blur-sm border rounded-lg shadow-sm p-1 sticky top-0 z-10 flex-shrink-0 dark:bg-slate-800/70 dark:border-slate-700 mt-0">
-            <TabsList className="w-full grid grid-cols-3 gap-1 bg-transparent dark:bg-transparent">
+            <TabsList className="w-full grid grid-cols-4 gap-1 bg-transparent dark:bg-transparent">
               <TabsTrigger value="general" className="flex gap-2 items-center justify-center">
                 <Settings className="h-4 w-4" />
                 <span className="hidden md:inline">常规设置</span>
@@ -61,6 +62,11 @@ export default function SettingsPage() {
                 <Database className="h-4 w-4" />
                 <span className="hidden md:inline">数据管理</span>
                 <span className="md:hidden">数据</span>
+              </TabsTrigger>
+              <TabsTrigger value="rss" className="flex gap-2 items-center justify-center">
+                <Rss className="h-4 w-4" />
+                <span className="hidden md:inline">RSS订阅</span>
+                <span className="md:hidden">RSS</span>
               </TabsTrigger>
             </TabsList>
           </div>
@@ -118,6 +124,11 @@ export default function SettingsPage() {
           {/* 数据管理标签页 */}
           <TabsContent value="data" className="space-y-6 w-full flex-grow overflow-auto">
             <DataManagement />
+          </TabsContent>
+
+          {/* RSS订阅标签页 */}
+          <TabsContent value="rss" className="space-y-6 w-full flex-grow overflow-auto">
+            <RssSettings />
           </TabsContent>
         </Tabs>
       </div>

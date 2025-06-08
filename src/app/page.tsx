@@ -1,7 +1,6 @@
 'use client';
 
 import ChatInput from '@/components/chat/ChatInput';
-// 使用懒加载组件替换直接导入
 import { 
   ChatMessageListLazy, 
   ChatSidebarLazy, 
@@ -25,7 +24,6 @@ import {
   endStreaming,
   endStreamingReasoning,
   setActiveChat,
-  setAllChats,
   setError,
   setMessageStatus,
   startStreaming,
@@ -37,23 +35,19 @@ import {
   updateStreamingReasoningContent,
   setAnimatingTitleChatId,
   clearFunctionCallData,
-  resetFunctionCallProgress,
   clearChatFunctionCallOutput,
   Message,
   Chat,
 } from '@/redux/slices/chatSlice';
 import { fetchEnhancedContext } from '@/redux/slices/searchSlice';
 import { store } from '@/redux/store';
-import { HomeIcon, ChevronRightIcon, SettingsIcon } from 'lucide-react';
-import { usePathname, useSearchParams } from 'next/navigation';
+import { HomeIcon, SettingsIcon } from 'lucide-react';
 import { useEffect, useRef, useState, useMemo, useCallback } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import Link from 'next/link';
 import { ThemeToggle } from '@/components/ui/theme-toggle';
 import { cn } from '@/lib/utils';
-import FunctionCallDisplay from '@/components/chat/FunctionCallDisplay';
 import ConfirmDialog from '@/components/ui/confirm-dialog';
-import { useToast } from '@/components/ui/toast';
 import { useChatListRefresh } from '@/hooks/useChatListRefresh';
 
 // 添加标题动画组件
@@ -112,9 +106,6 @@ const TypingTitle = ({ title, className, onAnimationComplete }: { title: string;
 
 export default function Home() {
   const dispatch = useAppDispatch();
-  const pathname = usePathname();
-  const searchParams = useSearchParams();
-  const { toast } = useToast();
   const { triggerRefresh: refreshChatList } = useChatListRefresh();
 
   const [inputKey, setInputKey] = useState(Date.now());
@@ -127,8 +118,6 @@ export default function Home() {
     isStreaming,
     error,
     animatingTitleChatId,
-    isFunctionCallInProgress: globalIsFunctionCallInProgress,
-    functionCallType: globalFunctionCallType,
     chats: localChats,
     activeChatId,
     isLoadingServerChat,
@@ -258,8 +247,6 @@ export default function Home() {
 
   // 创建新对话
   const handleNewChat = useCallback(() => {
-    // TODO: 需要改为调用服务端API创建新对话
-    // 目前暂时使用本地创建，后续需要实现服务端创建API
 
     // 确保有选中的模型ID
     const modelToUse = selectedModelId || (models.length > 0 ? models[0].id : null);
