@@ -35,6 +35,7 @@ import {
   updateStreamingReasoningContent,
   setAnimatingTitleChatId,
   clearFunctionCallData,
+  resetFunctionCallProgress,
   clearChatFunctionCallOutput,
   Message,
   Chat,
@@ -47,8 +48,11 @@ import { v4 as uuidv4 } from 'uuid';
 import Link from 'next/link';
 import { ThemeToggle } from '@/components/ui/theme-toggle';
 import { cn } from '@/lib/utils';
+import FunctionCallDisplay from '@/components/chat/FunctionCallDisplay';
 import ConfirmDialog from '@/components/ui/confirm-dialog';
 import { useChatListRefresh } from '@/hooks/useChatListRefresh';
+import { useToast } from '@/components/ui/toast';
+import { usePathname, useSearchParams } from 'next/navigation';
 
 // 添加标题动画组件
 const TypingTitle = ({ title, className, onAnimationComplete }: { title: string; className?: string; onAnimationComplete?: () => void }) => {
@@ -106,6 +110,9 @@ const TypingTitle = ({ title, className, onAnimationComplete }: { title: string;
 
 export default function Home() {
   const dispatch = useAppDispatch();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const { toast } = useToast();
   const { triggerRefresh: refreshChatList } = useChatListRefresh();
 
   const [inputKey, setInputKey] = useState(Date.now());
@@ -118,6 +125,8 @@ export default function Home() {
     isStreaming,
     error,
     animatingTitleChatId,
+    isFunctionCallInProgress: globalIsFunctionCallInProgress,
+    functionCallType: globalFunctionCallType,
     chats: localChats,
     activeChatId,
     isLoadingServerChat,
