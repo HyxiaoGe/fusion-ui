@@ -371,184 +371,61 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ onNewChat }) => {
     return groups;
   }, [chats]);
 
-  // 选择对话
+  // 切换选中的对话
   const handleSelectChat = async (chatId: string) => {
-    // 如果点击的是当前活动对话，直接返回
     if (chatId === activeChatId) {
+      // 如果点击的是当前已激活的对话，则不执行任何操作
       return;
     }
 
+    // 立即在UI上切换，提供即时反馈
+    dispatch(setActiveChat(chatId));
+
+    // 从本地Redux store获取当前对话列表
+    const currentChats = store.getState().chat.chats;
+    const selectedChat = currentChats.find(c => c.id === chatId);
+
+    // 如果是新创建的、没有消息的对话，则不需要从服务器获取
+    if (selectedChat && selectedChat.messages.length === 0) {
+      console.log(`对话 ${chatId} 是一个空的本地对话，跳过从服务器获取详情。`);
+      return;
+    }
+
+    // 对于已有内容的对话，从服务器获取最新信息
     try {
-      // 设置活动对话ID
-      dispatch(setActiveChat(chatId));
-      
-      // 如果使用服务端数据，需要获取对话详情
-      if (useServerData) {
-        dispatch(setLoadingServerChat(true));
-        dispatch(clearServerError());
-        
-        const response = await getConversation(chatId);
-        console.log('获取对话详情:', response);
-        
-        // 处理服务端返回的对话详情
-        const rawMessages = response.messages || [];
-        
-        // 按turn_id分组消息
-        const messagesByTurn: Record<string, any[]> = {};
-        rawMessages.forEach((msg: any) => {
-          const turnId = msg.turn_id;
-          if (!messagesByTurn[turnId]) {
-            messagesByTurn[turnId] = [];
-          }
-          messagesByTurn[turnId].push(msg);
-        });
-        
-        // 处理每个回合的消息，合并reasoning_content到assistant_content
-        const processedMessages: any[] = [];
-        let functionCallOutput: any = null;
-        
-        Object.values(messagesByTurn).forEach((turnMessages) => {
-          // 找到不同类型的消息
-          const assistantMsgs = turnMessages.filter(msg => msg.type === 'assistant_content');
-          const reasoningMsg = turnMessages.find(msg => msg.type === 'reasoning_content');
-          const userMsg = turnMessages.find(msg => msg.type === 'user_query');
-          const functionCallMsg = turnMessages.find(msg => msg.type === 'function_call');
-          
-          // 处理function_call消息，存储到functionCallOutput
-          if (functionCallMsg) {
-            try {
-              const functionData = JSON.parse(functionCallMsg.content);
-              // 根据function_call的内容判断具体类型
-              let callType = 'unknown';
-              if (functionData.query && functionData.results) {
-                callType = 'web_search'; // 网络搜索
-              } else if (functionData.type) {
-                callType = functionData.type; // 如果有明确的type字段
-              }
-              
-              functionCallOutput = {
-                type: callType,
-                query: functionData.query,
-                data: functionData,
-                error: null,
-                timestamp: new Date(functionCallMsg.created_at).getTime(),
-              };
-            } catch (error) {
-              console.error('解析function_call内容失败:', error);
-              // 如果解析失败，至少保存原始内容
-              functionCallOutput = {
-                type: 'unknown',
-                query: '',
-                data: { raw_content: functionCallMsg.content },
-                error: 'Failed to parse function call content',
-                timestamp: new Date(functionCallMsg.created_at).getTime(),
-              };
-            }
-          }
-          
-          // 添加用户消息
-          if (userMsg) {
-            processedMessages.push({
-              id: userMsg.id,
-              role: userMsg.role,
-              content: userMsg.content,
-              timestamp: new Date(userMsg.created_at).getTime(),
-              status: null,
-              reasoning: '',
-              isReasoningVisible: false,
-              turnId: userMsg.turn_id,
-              messageType: userMsg.type,
-              duration: userMsg.duration || 0
-            });
-          }
-          
-          // 添加助手消息，合并推理内容
-          assistantMsgs.forEach((assistantMsg) => {
-            processedMessages.push({
-              id: assistantMsg.id,
-              role: assistantMsg.role,
-              content: assistantMsg.content,
-              timestamp: new Date(assistantMsg.created_at).getTime(),
-              status: null,
-              reasoning: reasoningMsg ? reasoningMsg.content : '',
-              isReasoningVisible: reasoningMsg ? true : false,
-              turnId: assistantMsg.turn_id,
-              messageType: assistantMsg.type,
-              duration: assistantMsg.duration || 0
-            });
-          });
-          
-          // 处理其他类型的消息（function_result, web_search, hot_topics等，但排除function_call）
-          turnMessages.forEach((msg: any) => {
-            if (!['user_query', 'assistant_content', 'reasoning_content', 'function_call'].includes(msg.type)) {
-              processedMessages.push({
-                id: msg.id,
-                role: msg.role,
-                content: msg.content,
-                timestamp: new Date(msg.created_at).getTime(),
-                status: null,
-                reasoning: '',
-                isReasoningVisible: false,
-                turnId: msg.turn_id,
-                messageType: msg.type,
-                duration: msg.duration || 0
-              });
-            }
-          });
-        });
-        
-        // 按时间戳排序消息
-        processedMessages.sort((a, b) => a.timestamp - b.timestamp);
-        
-        const chatWithMessages = {
-          id: response.id || chatId,
-          title: response.title || '新对话',
-          model_id: response.provider || response.model || 'unknown',
-          created_at: response.created_at || new Date().toISOString(),
-          updated_at: response.updated_at || new Date().toISOString(),
-          messages: processedMessages,
-        };
-        
-        // 将服务端对话详情转换为本地格式并存储到本地Redux状态
-        const localChat: Chat = {
-          id: chatWithMessages.id,
-          title: chatWithMessages.title,
-          modelId: chatWithMessages.model_id,
-          createdAt: new Date(chatWithMessages.created_at).getTime(),
-          updatedAt: new Date(chatWithMessages.updated_at).getTime(),
-          messages: chatWithMessages.messages,
-          functionCallOutput: functionCallOutput,
-        };
-        
-        // 更新本地Redux状态中的对话数据
-        const currentChats = store.getState().chat.chats;
-        const existingChatIndex = currentChats.findIndex((c: Chat) => c.id === chatId);
-        
-        if (existingChatIndex >= 0) {
-          // 更新现有对话
-          dispatch(updateChatTitle({ chatId, title: localChat.title }));
-          // 同时更新服务端列表中的标题
-          dispatch(updateServerChatTitle({ chatId, title: localChat.title }));
-          // 这里需要一个新的action来更新整个对话的消息
-          // 暂时使用setAllChats来更新
-          const updatedChats = [...currentChats];
-          updatedChats[existingChatIndex] = localChat;
-          dispatch(setAllChats(updatedChats));
-        } else {
-          // 添加新对话到本地状态
-          dispatch(setAllChats([...currentChats, localChat]));
-          // 同时更新服务端列表中的标题（如果存在）
-          dispatch(updateServerChatTitle({ chatId, title: localChat.title }));
-        }
-        
-        dispatch(setLoadingServerChat(false));
+      dispatch(setLoadingServerChat(true));
+      const serverChatData = await getConversation(chatId);
+
+      // 将从服务器获取的数据更新到本地Redux store
+      const localChat = {
+        id: serverChatData.id,
+        title: serverChatData.title,
+        messages: serverChatData.messages.map((msg: any) => ({
+          id: msg.id,
+          role: msg.role,
+          content: msg.content,
+          timestamp: new Date(msg.created_at).getTime(),
+        })),
+        modelId: serverChatData.model_id,
+        createdAt: new Date(serverChatData.created_at).getTime(),
+        updatedAt: new Date(serverChatData.updated_at).getTime(),
+        functionCallOutput: null, // 初始化
+      };
+
+      const existingChatIndex = currentChats.findIndex(c => c.id === chatId);
+      if (existingChatIndex >= 0) {
+        const updatedChats = [...currentChats];
+        updatedChats[existingChatIndex] = localChat;
+        dispatch(setAllChats(updatedChats));
+      } else {
+        dispatch(setAllChats([...currentChats, localChat]));
       }
+
+      dispatch(setLoadingServerChat(false));
     } catch (error) {
       console.error('获取对话详情失败:', error);
-      if (useServerData) {
-        dispatch(setServerError(error instanceof Error ? error.message : '获取对话详情失败'));
-        dispatch(setLoadingServerChat(false));
-      }
+      dispatch(setServerError('获取对话详情失败'));
+      dispatch(setLoadingServerChat(false));
       toast({
         message: "加载对话失败，请重试",
         type: "error",
