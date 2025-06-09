@@ -2,16 +2,11 @@ import './globals.css';
 import { Providers } from '@/redux/providers';
 import ClientLayout from './ClientLayout';
 import { cn } from '@/lib/utils';
-import { Metadata } from 'next';
+import { Metadata, Viewport } from 'next';
 
 export const metadata: Metadata = {
   title: 'Fusion UI - 智能聊天界面',
   description: '基于Next.js构建的现代化聊天应用',
-  viewport: 'width=device-width, initial-scale=1',
-  themeColor: [
-    { media: '(prefers-color-scheme: light)', color: 'white' },
-    { media: '(prefers-color-scheme: dark)', color: 'black' },
-  ],
   // 性能优化的meta标签
   robots: 'index,follow',
   icons: {
@@ -23,6 +18,15 @@ export const metadata: Metadata = {
     'preconnect': 'https://fonts.gstatic.com',
   }
 };
+
+export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  themeColor: [
+    { media: '(prefers-color-scheme: light)', color: 'white' },
+    { media: '(prefers-color-scheme: dark)', color: 'black' },
+  ],
+}
 
 export default function RootLayout({
   children,
