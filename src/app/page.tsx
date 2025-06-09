@@ -387,11 +387,11 @@ export default function Home() {
       const newChatId = uuidv4();
       dispatch(
         createChat({
+          id: newChatId,
           modelId: selectedModelId,
           title: content.substring(0, 30),
         })
       );
-      dispatch(setActiveChat(newChatId));
       currentActiveChatId = newChatId;
     }
     
@@ -521,28 +521,30 @@ export default function Home() {
           }
 
           // 在消息流结束(done=true)且是第一条消息时生成标题
-          if (done && store.getState().chat.chats.find(c => c.id === activeChatId)?.messages.length === 2) {
+          const finalChatId = conversationId || currentActiveChatId;
+          const chat = store.getState().chat.chats.find(c => c.id === finalChatId);
+          if (done && chat && chat.messages.length === 2) {
             // 延迟一小段时间确保服务器已处理完毕
             setTimeout(async () => {
               try {
                 const generatedTitle = await generateChatTitle(
-                  currentActiveChatId || conversationId || '', // 使用可能从服务器返回的新conversationId
+                  finalChatId,
                   undefined, // 不传具体消息，让后端从对话ID获取完整消息链
                   { max_length: 20 }
                 );
                 
                 // 设置要动画的标题Chat ID
-                dispatch(setAnimatingTitleChatId(currentActiveChatId || conversationId || ''));
+                dispatch(setAnimatingTitleChatId(finalChatId));
                 
                 // 更新Redux中的标题
                 dispatch(updateChatTitle({
-                  chatId: currentActiveChatId || conversationId || '',
+                  chatId: finalChatId,
                   title: generatedTitle
                 }));
                 
                 // 同时更新服务端列表中的标题
                 dispatch(updateServerChatTitle({
-                  chatId: currentActiveChatId || conversationId || '',
+                  chatId: finalChatId,
                   title: generatedTitle
                 }));
                 

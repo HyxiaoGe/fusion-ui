@@ -128,10 +128,10 @@ const chatSlice = createSlice({
       state.functionCallType = null;
       state.functionCallError = null;
     },
-    createChat: (state, action: PayloadAction<{title?: string, modelId: string}>) => {
-      const { title = '新对话', modelId } = action.payload;
+    createChat: (state, action: PayloadAction<{id?: string, title?: string, modelId: string}>) => {
+      const { id, title = '新对话', modelId } = action.payload;
       const newChat: Chat = {
-        id: uuidv4(),
+        id: id || uuidv4(),
         title,
         messages: [],
         modelId,
