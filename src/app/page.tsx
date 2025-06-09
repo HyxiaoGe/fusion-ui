@@ -191,8 +191,6 @@ export default function Home() {
   // 添加用于建议问题的状态
   const [suggestedQuestions, setSuggestedQuestions] = useState<string[]>([]);
   const [isLoadingQuestions, setIsLoadingQuestions] = useState(false);
-  // 添加缓存状态
-  const [questionCache, setQuestionCache] = useState<Record<string, string[]>>({});
   // 添加问题请求队列引用
   const pendingQuestionRequestRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -207,16 +205,11 @@ export default function Home() {
     }
   }, [activeChatId, dispatch]);
 
-  // 监听活动聊天变化，从缓存加载推荐问题
+  // 监听活动聊天变化
   useEffect(() => {
-    // 切换会话时，尝试从本地缓存加载推荐问题
-    if (activeChatId && questionCache[activeChatId]) {
-      setSuggestedQuestions(questionCache[activeChatId]);
-    } else {
-      // 如果没有缓存，则清空
-      setSuggestedQuestions([]);
-    }
-  }, [activeChatId, questionCache]);
+    // 切换会话时，清空推荐问题
+    setSuggestedQuestions([]);
+  }, [activeChatId]);
 
   // 添加新的状态变量来跟踪聊天中是否有消息
   const [hasMessages, setHasMessages] = useState(false);
@@ -341,11 +334,6 @@ export default function Home() {
       const { questions } = await fetchSuggestedQuestions(chatId, {}, forceRefresh, messageCount);
       // 更新当前显示的推荐问题
       setSuggestedQuestions(questions);
-      // 同时更新缓存
-      setQuestionCache(prev => ({
-        ...prev,
-        [chatId]: questions
-      }));
     } catch (error) {
       console.error('获取推荐问题错误:', error);
       setSuggestedQuestions([]);
@@ -951,10 +939,6 @@ export default function Home() {
             <ModelSelectorLazy onChange={() => {
               // 当模型变更时，清空当前会话的问题缓存
               if (activeChatId) {
-                setQuestionCache(prev => ({
-                  ...prev,
-                  [activeChatId]: []
-                }));
                 setSuggestedQuestions([]);
               }
             }} />

@@ -320,171 +320,6 @@ export async function getConversation(conversationId: string) {
   }
 }
 
-// 添加请求缓存
-const suggestedQuestionsCache: Record<string, { questions: string[], timestamp: number, messageCount: number }> = {};
-// 添加进行中请求跟踪
-const ongoingQuestionsRequests: Record<string, Promise<{ questions: string[] }>> = {};
-
-// 缓存配置 - 缩短缓存时间，确保多轮对话能获取新的推荐问题
-const CACHE_DURATION = 10 * 60 * 1000; // 改为10分钟，减少缓存时间
-const STORAGE_KEY = 'fusion_suggested_questions';
-
-// 从localStorage加载缓存
-const loadCache = () => {
-  try {
-    const stored = localStorage.getItem(STORAGE_KEY);
-    if (stored) {
-      const data = JSON.parse(stored);
-      const now = Date.now();
-      
-      // 只加载未过期的缓存
-      Object.keys(data).forEach(key => {
-        if (data[key].timestamp && (now - data[key].timestamp) < CACHE_DURATION) {
-          suggestedQuestionsCache[key] = data[key];
-        }
-      });
-    }
-  } catch (error) {
-    console.warn('加载推荐问题缓存失败:', error);
-  }
-};
-
-// 保存缓存到localStorage
-const saveCache = () => {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(suggestedQuestionsCache));
-  } catch (error) {
-    console.warn('保存推荐问题缓存失败:', error);
-  }
-};
-
-// 清理过期缓存
-const cleanupExpiredCache = () => {
-  const now = Date.now();
-  let hasExpired = false;
-  
-  Object.keys(suggestedQuestionsCache).forEach(key => {
-    if ((now - suggestedQuestionsCache[key].timestamp) >= CACHE_DURATION) {
-      delete suggestedQuestionsCache[key];
-      hasExpired = true;
-    }
-  });
-  
-  if (hasExpired) {
-    saveCache();
-    console.log('清理了过期的推荐问题缓存');
-  }
-};
-
-// 初始化时加载缓存并清理过期项
-if (typeof window !== 'undefined') {
-  loadCache();
-  cleanupExpiredCache();
-  
-  // 定期清理过期缓存（每5分钟）
-  setInterval(cleanupExpiredCache, 5 * 60 * 1000);
-}
-
-/**
- * 生成缓存键，基于对话ID和消息数量
- * @param conversationId 对话ID
- * @param messageCount 消息数量
- * @returns 缓存键
- */
-const generateCacheKey = (conversationId: string, messageCount: number): string => {
-  // 每2轮对话生成一个新的缓存键，确保推荐问题会更新
-  const roundedMessageCount = Math.floor(messageCount / 2) * 2;
-  return `${conversationId}_${roundedMessageCount}`;
-};
-
-/**
- * 获取对话的推荐后续问题
- * @param conversationId 对话ID
- * @param options 可选参数
- * @param forceRefresh 是否强制刷新
- * @param messageCount 当前对话消息数量，用于生成更精确的缓存键
- * @returns 包含推荐问题的响应
- */
-export const fetchSuggestedQuestions = async (
-  conversationId: string,
-  options: Record<string, any> = {},
-  forceRefresh: boolean = false,
-  messageCount?: number
-): Promise<{ questions: string[] }> => {
-  // 生成缓存键
-  const cacheKey = messageCount !== undefined 
-    ? generateCacheKey(conversationId, messageCount)
-    : conversationId;
-  
-  // 检查缓存
-  const now = Date.now();
-  const cachedData = suggestedQuestionsCache[cacheKey];
-  
-  if (!forceRefresh && cachedData && (now - cachedData.timestamp) < CACHE_DURATION) {
-    console.log(`使用缓存的推荐问题 (${cacheKey})`);
-    return { questions: cachedData.questions };
-  }
-  
-  // 检查是否有正在进行的请求
-  if (cacheKey in ongoingQuestionsRequests) {
-    return ongoingQuestionsRequests[cacheKey];
-  }
-  
-  // 创建新的请求
-  try {
-    console.log(`获取新的推荐问题 (${cacheKey})`);
-    
-    // 包装请求为Promise并记录
-    ongoingQuestionsRequests[cacheKey] = (async () => {
-      try {
-        const response = await fetch(`${API_BASE_URL}/api/chat/suggest-questions`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({
-            conversation_id: conversationId,
-            options: options
-          })
-        });
-        
-        if (!response.ok) {
-          const errorData = await response.json().catch(() => null);
-          throw new Error(
-            `获取推荐问题失败: ${response.status} ${
-              errorData?.message || response.statusText
-            }`
-          );
-        }
-        
-        const data = await response.json();
-        const result = { questions: data.questions || [] };
-        
-        // 更新缓存
-        suggestedQuestionsCache[cacheKey] = {
-          questions: result.questions,
-          timestamp: Date.now(),
-          messageCount: messageCount || 0
-        };
-        
-        // 保存到localStorage
-        saveCache();
-        
-        return result;
-      } finally {
-        // 请求完成后清除记录
-        delete ongoingQuestionsRequests[cacheKey];
-      }
-    })();
-    
-    return await ongoingQuestionsRequests[cacheKey];
-  } catch (error) {
-    console.error('获取推荐问题出错:', error);
-    delete ongoingQuestionsRequests[cacheKey];
-    return { questions: [] };
-  }
-};
-
 // 删除对话
 export async function deleteConversation(conversationId: string) {
   try {
@@ -504,26 +339,57 @@ export async function deleteConversation(conversationId: string) {
 }
 
 /**
- * 清除指定对话的推荐问题缓存
- * @param conversationId 对话ID，如不指定则清除所有缓存
+ * 获取对话的推荐后续问题
+ * @param conversationId 对话ID
+ * @param options 可选参数
+ * @param forceRefresh 是否强制刷新
+ * @param messageCount 当前对话消息数量，用于生成更精确的缓存键
+ * @returns 包含推荐问题的响应
  */
-export function clearSuggestedQuestionsCache(conversationId?: string): void {
-  if (conversationId) {
-    // 清除所有以该对话ID开头的缓存键
-    Object.keys(suggestedQuestionsCache).forEach(key => {
-      if (key.startsWith(conversationId)) {
-        delete suggestedQuestionsCache[key];
-      }
+export const fetchSuggestedQuestions = async (
+  conversationId: string,
+  options: Record<string, any> = {},
+  forceRefresh: boolean = false,
+  messageCount?: number
+): Promise<{ questions: string[] }> => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/chat/suggest-questions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ conversation_id: conversationId, options }),
     });
-    console.log(`清除推荐问题缓存 (${conversationId})`);
-  } else {
-    // 清除所有缓存
-    Object.keys(suggestedQuestionsCache).forEach(key => {
-      delete suggestedQuestionsCache[key];
-    });
-    console.log('清除所有推荐问题缓存');
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.detail || '获取推荐问题失败');
+    }
+
+    const data = await response.json();
+    return { questions: data.questions || [] };
+  } catch (error) {
+    console.error('获取推荐问题失败:', error);
+    throw error;
   }
-  
-  // 同步更新localStorage
-  saveCache();
+};
+
+// 更新对话标题
+export async function updateConversationTitle(conversationId: string, title: string) {
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/chat/conversations/${conversationId}/title`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ title }),
+    });
+
+    if (!response.ok) {
+      throw new Error('更新对话标题失败');
+    }
+    
+    return await response.json();
+  } catch (error) {
+    console.error('更新对话标题失败:', error);
+    throw error;
+  }
 }
