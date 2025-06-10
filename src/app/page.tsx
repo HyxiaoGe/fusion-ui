@@ -54,7 +54,8 @@ import { useChatListRefresh } from '@/hooks/useChatListRefresh';
 import { useToast } from '@/components/ui/toast';
 import { usePathname, useSearchParams } from 'next/navigation';
 import TypingTitle from '@/components/ui/TypingTitle';
-import { getAndSetSuggestedQuestions } from '@/lib/chat/suggestedQuestions';
+import { useChatActions } from '@/hooks/useChatActions';
+import { useSuggestedQuestions } from '@/hooks/useSuggestedQuestions';
 
 export default function Home() {
   const dispatch = useAppDispatch();
@@ -136,13 +137,45 @@ export default function Home() {
 
   const [currentUserQuery, setCurrentUserQuery] = useState('');
 
-  // 添加用于建议问题的状态
-  const [suggestedQuestions, setSuggestedQuestions] = useState<string[]>([]);
-  const [isLoadingQuestions, setIsLoadingQuestions] = useState(false);
-  // 添加问题请求队列引用
-  const pendingQuestionRequestRef = useRef<NodeJS.Timeout | null>(null);
+  const { 
+    suggestedQuestions, 
+    isLoadingQuestions, 
+    fetchQuestions, 
+    clearQuestions 
+  } = useSuggestedQuestions(activeChatId);
 
   const chatInputRef = useRef<HTMLDivElement>(null);
+
+  // 使用新的 useChatActions Hook
+  const { 
+    newChat, 
+    clearCurrentChat,
+    sendMessage,
+    retryMessage,
+    editMessage
+  } = useChatActions({
+    onNewChatCreated: () => {
+      // 创建新对话时显示示例页面，让用户选择话题或输入问题
+      setShowHomePage(true);
+      
+      // 使用setTimeout确保状态已更新
+      setTimeout(() => {
+        // 确保聊天界面已加载，再重置焦点
+        if (chatInputRef.current) {
+          chatInputRef.current.click();
+        }
+      }, 100);
+    },
+    onSendMessageStart: () => {
+      if (showHomePage) {
+        setShowHomePage(false);
+      }
+    },
+    onStreamEnd: () => {
+      // 强制刷新以获取新问题
+      fetchQuestions(true);
+    }
+  });
 
   // 监听activeChatId变化，强制重新挂载输入组件
   useEffect(() => {
@@ -156,7 +189,7 @@ export default function Home() {
   // 监听活动聊天变化
   useEffect(() => {
     // 切换会话时，清空推荐问题
-    setSuggestedQuestions([]);
+    clearQuestions();
   }, [activeChatId]);
 
   // 添加新的状态变量来跟踪聊天中是否有消息
@@ -195,42 +228,10 @@ export default function Home() {
     }
   }, [activeChatId, showHomePage, activeChat]);
 
-  // 创建新对话
-  const handleNewChat = useCallback(() => {
-
-    // 确保有选中的模型ID
-    const modelToUse = selectedModelId || (models.length > 0 ? models[0].id : null);
-
-    if (!modelToUse) {
-      console.error('没有可用的模型，无法创建对话');
-      dispatch(setError('没有可用的模型，无法创建对话'));
-      return;
-    }
-
-    try {
-      // 创建对话时传入当前选择的模型ID
-      dispatch(createChat({ modelId: modelToUse }));
-      // 创建新对话时显示示例页面，让用户选择话题或输入问题
-      setShowHomePage(true);
-      
-      // 刷新对话列表，确保新对话显示在左侧面板
-      setTimeout(() => {
-        refreshChatList();
-      }, 100);
-      
-      // 使用setTimeout确保状态已更新
-      setTimeout(() => {
-        // 确保聊天界面已加载，再重置焦点
-        if (chatInputRef.current) {
-          chatInputRef.current.click();
-        }
-      }, 100);
-      
-    } catch (error) {
-      console.error('创建对话失败:', error);
-      dispatch(setError('创建对话失败，请重试'));
-    }
-  }, [selectedModelId, models, dispatch, refreshChatList]);
+  const handleSendMessage = sendMessage;
+  const handleRetryMessage = retryMessage;
+  const handleEditMessage = editMessage;
+  const handleNewChat = newChat;
 
   // 跳转到首页
   const handleGoToHome = useCallback(() => {
@@ -249,519 +250,17 @@ export default function Home() {
     if (!activeChatId) return;
     
     // 清空推荐问题
-    setSuggestedQuestions([]);
+    clearQuestions();
     
     // 发送问题
     handleSendMessage(question);
-  }, [activeChatId]);
+  }, [activeChatId, clearQuestions, handleSendMessage]);
 
   const handleRefreshQuestions = useCallback(async () => {
     if (!activeChatId) return;
-    
-    setSuggestedQuestions([]);
-    setIsLoadingQuestions(true);
-    
-    await getAndSetSuggestedQuestions(activeChatId, true, setIsLoadingQuestions, setSuggestedQuestions);
-  }, [activeChatId]);
-
-  // 发送消息
-  const handleSendMessage = async (content: string, files?: FileWithPreview[], fileIds?: string[]) => {
-    if ((!content.trim() && (!files || files.length === 0)) || !selectedModelId) return;
-
-    if (showHomePage) {
-      setShowHomePage(false);
-    }
-    
-    let currentActiveChatId = activeChatId;
-
-    if (!currentActiveChatId) {
-      const newChatId = uuidv4();
-      dispatch(
-        createChat({
-          id: newChatId,
-          modelId: selectedModelId,
-          title: content.substring(0, 30),
-        })
-      );
-      currentActiveChatId = newChatId;
-    }
-    
-    if (!currentActiveChatId) {
-      dispatch(setError("无法创建或找到对话。"));
-      return;
-    }
-
-    const userMessage: Message = {
-      role: 'user',
-      content: content.trim(),
-      status: 'pending',
-      timestamp: Date.now(),
-      id: uuidv4(),
-    };
-    
-    dispatch(addMessage({
-      chatId: currentActiveChatId,
-      message: userMessage
-    }));
-    
-    const selectedModel = models.find(m => m.id === selectedModelId);
-    if (!selectedModel) {
-      dispatch(setError('找不到选中的模型信息'));
-      return;
-    }
-
-    // 开始流式输出
-    dispatch(startStreaming(currentActiveChatId));
-    
-    const { reasoningEnabled, webSearchEnabled } = store.getState().chat;
-
-    // 检查是否启用向量搜索和上下文增强
-    const { searchEnabled, contextEnhancementEnabled } = store.getState().search;
-
-    // 如果启用了向量搜索和上下文增强，获取相关上下文
-    if (searchEnabled && contextEnhancementEnabled) {
-      dispatch(fetchEnhancedContext({ query: content, conversationId: currentActiveChatId }));
-    }
-
-    const messageId = uuidv4();
-
-    const fileInfo = files && files.length > 0 ? [{
-      name: files[0].name,
-      size: files[0].size,
-      type: files[0].type,
-      previewUrl: files[0].preview,
-      fileId: (files[0] as any).fileId
-    }] : undefined;
-
-    const supportsReasoning = selectedModel.capabilities?.deepThinking || false;
-    const useReasoning = reasoningEnabled && supportsReasoning;
-
-    // 检查是否启用网络搜索
-    const supportsWebSearch = selectedModel.capabilities?.webSearch || false;
-    const useWebSearch = webSearchEnabled && supportsWebSearch;
-
-    // 检查是否启用函数调用
-    const { functionCallEnabled } = store.getState().chat;
-    const supportsFunctionCall = selectedModel.capabilities?.functionCalling || false;
-    const useFunctionCall = functionCallEnabled && supportsFunctionCall;
-
-    try {
-      await sendMessageStream({
-        provider: selectedModel.provider,
-        model: selectedModel.id,
-        message: content.trim(),
-        conversation_id: currentActiveChatId,
-        stream: true,
-        options: {
-          use_reasoning: useReasoning,
-          use_web_search: useWebSearch,
-          use_function_call: useFunctionCall
-        }
-      },
-        (content, done, conversationId, reasoning) => {
-          if (!done) {
-            dispatch(updateStreamingContent({
-              chatId: currentActiveChatId,
-              content
-            }));
-
-            if (reasoning) {
-              dispatch(updateStreamingReasoningContent(reasoning));
-            }
-          } else {
-            dispatch(updateStreamingContent({
-              chatId: currentActiveChatId,
-              content: content
-            }));
-
-            dispatch(endStreaming());
-
-            // 如果返回了新的对话ID，更新Redux状态
-            if (conversationId && conversationId !== currentActiveChatId) {
-              console.log(`收到新的对话ID: ${conversationId}，当前ID: ${currentActiveChatId}`);
-              dispatch(setActiveChat(conversationId));
-              
-              // 刷新对话列表以显示新创建的对话
-              setTimeout(() => {
-                refreshChatList();
-              }, 1000);
-            } else {
-              // 如果是第一条消息且没有返回新的conversationId，也尝试刷新列表
-              setTimeout(() => {
-                refreshChatList();
-              }, 1000);
-            }
-            
-            // 流式输出结束后获取推荐问题
-            // 如果已有正在等待执行的请求，取消它
-            if (pendingQuestionRequestRef.current) {
-              clearTimeout(pendingQuestionRequestRef.current);
-            }
-            
-            // 延迟获取推荐问题
-            pendingQuestionRequestRef.current = setTimeout(() => {
-              pendingQuestionRequestRef.current = null;
-              
-              const finalChatId = conversationId || currentActiveChatId;
-              console.log(`[handleSendMessage] Complete. Scheduling getSuggestedQuestions for chatId: ${finalChatId}`);
-              if (finalChatId) {
-                // 每次对话后强制刷新推荐问题，确保为最新对话内容生成问题
-                getAndSetSuggestedQuestions(finalChatId, true, setIsLoadingQuestions, setSuggestedQuestions);
-              }
-            }, 1500);
-          }
-
-          // 在消息流结束(done=true)且是第一条消息时生成标题
-          const finalChatId = conversationId || currentActiveChatId;
-          const chat = store.getState().chat.chats.find(c => c.id === finalChatId);
-          if (done && chat && chat.messages.length === 2) {
-            // 延迟一小段时间确保服务器已处理完毕
-            setTimeout(async () => {
-              try {
-                const generatedTitle = await generateChatTitle(
-                  finalChatId,
-                  undefined, // 不传具体消息，让后端从对话ID获取完整消息链
-                  { max_length: 20 }
-                );
-                
-                // 设置要动画的标题Chat ID
-                dispatch(setAnimatingTitleChatId(finalChatId));
-                
-                // 更新Redux中的标题
-                dispatch(updateChatTitle({
-                  chatId: finalChatId,
-                  title: generatedTitle
-                }));
-                
-                // 同时更新服务端列表中的标题
-                dispatch(updateServerChatTitle({
-                  chatId: finalChatId,
-                  title: generatedTitle
-                }));
-                
-                // 标题生成后也刷新对话列表，确保显示新标题
-                refreshChatList();
-                
-                // 设置自动清除动画效果的定时器
-                setTimeout(() => {
-                  dispatch(setAnimatingTitleChatId(null));
-                }, generatedTitle.length * 200 + 1000); // 字符数*200ms + 额外1000ms
-              } catch (error) {
-                console.error('生成标题失败:', error);
-              }
-            }, 1000); // 延迟1秒确保服务器已处理
-          }
-        });
-    } catch (error) {
-      console.error('发送消息失败:', error);
-      dispatch(setError(error instanceof Error ? error.message : '发送消息失败'));
-      dispatch(endStreaming());
-      
-      // 更新用户消息状态为失败
-      const chat = chats.find(c => c.id === currentActiveChatId);
-      if (chat && chat.messages.length > 0) {
-        const lastMessage = chat.messages[chat.messages.length - 1];
-        if (lastMessage.role === 'user') {
-          dispatch(setMessageStatus({
-            chatId: currentActiveChatId,
-            messageId: lastMessage.id,
-            status: 'failed'
-          }));
-        }
-      }
-    }
-  };
-
-  // 重试发送消息
-  const handleRetryMessage = async (messageId: string) => {
-    if (!activeChatId || !selectedModelId) return;
-
-    // 查找需要重试的消息
-    const chat = chats.find(c => c.id === activeChatId);
-    if (!chat) return;
-
-    const message = chat.messages.find(m => m.id === messageId);
-    if (!message) return;
-
-    // 对于AI消息的重新生成，我们需要找到前一条用户消息
-    if (message.role === 'assistant') {
-      // 找到前面的用户消息
-      const messageIndex = chat.messages.findIndex(m => m.id === messageId);
-      if (messageIndex <= 0) return; // 如果是第一条消息或找不到索引，直接返回
-
-      // 假设用户消息在AI消息之前
-      let userMessageIndex = messageIndex - 1;
-      // 寻找最近的用户消息
-      while (userMessageIndex >= 0 && chat.messages[userMessageIndex].role !== 'user') {
-        userMessageIndex--;
-      }
-
-      if (userMessageIndex >= 0) {
-        const userMessage = chat.messages[userMessageIndex];
-
-        // 删除当前的AI回复
-        dispatch(deleteMessage({
-          chatId: activeChatId,
-          messageId: message.id
-        }));
-
-        const selectedModel = models.find(m => m.id === selectedModelId);
-        if (!selectedModel) {
-          dispatch(setError('找不到选中的模型信息'));
-          return;
-        }
-
-        // 检查推理功能
-        const { reasoningEnabled } = store.getState().chat;
-        const supportsReasoning = selectedModel.capabilities?.deepThinking || false;
-        const useReasoning = reasoningEnabled && supportsReasoning;
-
-        // 添加网络搜索功能检查
-        const { webSearchEnabled } = store.getState().chat;
-        const supportsWebSearch = selectedModel.capabilities?.webSearch || false;
-        const useWebSearch = webSearchEnabled && supportsWebSearch;
-
-        const useFunctionCall = selectedModel.capabilities?.functionCalling || false;
-
-        // 使用用户消息内容重新生成
-        dispatch(startStreaming(activeChatId));
-        if (useReasoning) {
-          dispatch(startStreamingReasoning())
-        }
-
-        try {
-          await sendMessageStream({
-            provider: selectedModel.provider,
-            model: selectedModel.id,
-            message: userMessage.content.trim(),
-            conversation_id: activeChatId,
-            stream: true,
-            options: {
-              use_reasoning: useReasoning,
-              use_web_search: useWebSearch,
-              use_function_call: useFunctionCall
-            }
-          },
-            (content, done, conversationId, reasoning) => {
-              if (!done) {
-                dispatch(updateStreamingContent({
-                  chatId: activeChatId,
-                  content
-                }));
-
-                if (reasoning) {
-                  dispatch(updateStreamingReasoningContent(reasoning))
-                }
-              } else {
-                dispatch(updateStreamingContent({
-                  chatId: activeChatId,
-                  content: content
-                }));
-
-                setTimeout(() => {
-                  if (reasoning && reasoning.trim()) {
-                    const streamingMessageId = store.getState().chat.streamingMessageId;
-                    if (streamingMessageId) {
-                      dispatch(updateMessageReasoning({
-                        chatId: activeChatId,
-                        messageId: streamingMessageId,
-                        reasoning: reasoning,
-                        isVisible: true
-                      }));
-                    }
-                    // 此时不再调用endStreamingReasoning，因为推理阶段已在接收到[REASONING_COMPLETE]标记时结束
-                    // 如果推理还没结束（可能没有收到完整标记），则在这里结束
-                    if (!store.getState().chat.isThinkingPhaseComplete) {
-                      dispatch(endStreamingReasoning());
-                    }
-                  }
-                  dispatch(endStreaming());
-                }, 1000);
-                
-                // 流式输出结束后获取推荐问题
-                // 如果已有正在等待执行的请求，取消它
-                if (pendingQuestionRequestRef.current) {
-                  clearTimeout(pendingQuestionRequestRef.current);
-                }
-                
-                // 延迟获取推荐问题
-                pendingQuestionRequestRef.current = setTimeout(() => {
-                  pendingQuestionRequestRef.current = null;
-                  
-                  // 确保当前会话有AI消息才获取推荐问题
-                  const currentActiveChatId = store.getState().chat.activeChatId;
-                  if (currentActiveChatId) {
-                    // 每次对话后强制刷新推荐问题，确保为最新对话内容生成问题
-                    // 清除缓存并获取新的推荐问题
-                    getAndSetSuggestedQuestions(currentActiveChatId, true, setIsLoadingQuestions, setSuggestedQuestions);
-                  }
-                }, 1500);
-              }
-            });
-        } catch (error) {
-          console.error('重新生成回复失败:', error);
-          dispatch(setError('重新生成失败，请检查网络连接'));
-          dispatch(endStreamingReasoning())
-          dispatch(endStreaming());
-        }
-      }
-      return;
-    }
-  };
-
-  // 编辑消息
-  const handleEditMessage = async (messageId: string, newContent: string) => {
-    if (!activeChatId || !selectedModelId) return;
-
-    // 更新消息内容
-    dispatch(editMessage({
-      chatId: activeChatId,
-      messageId,
-      content: newContent
-    }));
-
-    // 找到消息在数组中的位置
-    const chat = chats.find(c => c.id === activeChatId);
-    if (!chat) return;
-
-    const messageIndex = chat.messages.findIndex(m => m.id === messageId);
-    if (messageIndex < 0) return;
-
-    // 如果后面有AI回复，需要删除
-    if (messageIndex < chat.messages.length - 1 &&
-      chat.messages[messageIndex + 1].role === 'assistant') {
-      const nextMessage = chat.messages[messageIndex + 1];
-      dispatch(deleteMessage({
-        chatId: activeChatId,
-        messageId: nextMessage.id
-      }));
-    }
-
-    const selectedModel = models.find(m => m.id === selectedModelId);
-    if (!selectedModel) {
-      dispatch(setError('找不到选中的模型信息'));
-      return;
-    }
-
-    // 设置消息状态为发送中
-    dispatch(setMessageStatus({
-      chatId: activeChatId,
-      messageId,
-      status: 'pending'
-    }));
-
-    // 检查推理功能
-    const { reasoningEnabled } = store.getState().chat;
-    const supportsReasoning = selectedModel.capabilities?.deepThinking || false;
-    const useReasoning = reasoningEnabled && supportsReasoning;
-
-    // 添加网络搜索功能检查
-    const { webSearchEnabled } = store.getState().chat;
-    const supportsWebSearch = selectedModel.capabilities?.webSearch || false;
-    const useWebSearch = webSearchEnabled && supportsWebSearch;
-
-    const useFunctionCall = selectedModel.capabilities?.functionCalling || false;
-
-    // 开始流式输出
-    dispatch(startStreaming(activeChatId));
-    if (useReasoning) {
-      dispatch(startStreamingReasoning());
-    }
-
-    // 重新发送编辑后的消息
-    try {
-
-      await sendMessageStream({
-        provider: selectedModel.provider,
-        model: selectedModel.id,
-        message: newContent.trim(),
-        conversation_id: activeChatId,
-        stream: true,
-        options: {
-          use_reasoning: useReasoning,
-          use_web_search: useWebSearch,
-          use_function_call: useFunctionCall
-        }
-      },
-        (content, done, conversationId, reasoning) => {
-          // 处理流式回复...
-          if (!done) {
-            dispatch(updateStreamingContent({
-              chatId: activeChatId,
-              content
-            }));
-
-            if (reasoning) {
-              dispatch(updateStreamingReasoningContent(reasoning));
-            }
-          } else {
-            dispatch(updateStreamingContent({
-              chatId: activeChatId,
-              content: content
-            }));
-
-            // 编辑发送成功，清除消息状态
-            dispatch(setMessageStatus({
-              chatId: activeChatId,
-              messageId,
-              status: null
-            }));
-
-            setTimeout(() => {
-              if (reasoning && reasoning.trim()) {
-                const streamingMessageId = store.getState().chat.streamingMessageId;
-                if (streamingMessageId) {
-                  dispatch(updateMessageReasoning({
-                    chatId: activeChatId,
-                    messageId: streamingMessageId,
-                    reasoning: reasoning,
-                    isVisible: true
-                  }));
-                }
-                // 此时不再调用endStreamingReasoning，因为推理阶段已在接收到[REASONING_COMPLETE]标记时结束
-                // 如果推理还没结束（可能没有收到完整标记），则在这里结束
-                if (!store.getState().chat.isThinkingPhaseComplete) {
-                  dispatch(endStreamingReasoning());
-                }
-              }
-              dispatch(endStreaming());
-            }, 1000);
-            
-            // 流式输出结束后获取推荐问题
-            // 如果已有正在等待执行的请求，取消它
-            if (pendingQuestionRequestRef.current) {
-              clearTimeout(pendingQuestionRequestRef.current);
-            }
-            
-            // 延迟获取推荐问题
-            pendingQuestionRequestRef.current = setTimeout(() => {
-              pendingQuestionRequestRef.current = null;
-              
-              // 确保当前会话有AI消息才获取推荐问题
-              const currentActiveChatId = store.getState().chat.activeChatId;
-              if (currentActiveChatId) {
-                // 每次对话后强制刷新推荐问题，确保为最新对话内容生成问题
-                // 清除缓存并获取新的推荐问题
-                getAndSetSuggestedQuestions(currentActiveChatId, true, setIsLoadingQuestions, setSuggestedQuestions);
-              }
-            }, 1500);
-          }
-        });
-    } catch (error) {
-      console.error('发送编辑后的消息失败:', error);
-
-      // 标记消息发送失败
-      dispatch(setMessageStatus({
-        chatId: activeChatId,
-        messageId,
-        status: 'failed'
-      }));
-
-      dispatch(setError('发送编辑后的消息失败，请重试'));
-      dispatch(endStreamingReasoning())
-      dispatch(endStreaming());
-    }
-  };
+    // 强制刷新
+    fetchQuestions(true);
+  }, [activeChatId, fetchQuestions]);
 
   const handleClearChat = () => {
     if (!activeChatId) return;
@@ -771,13 +270,7 @@ export default function Home() {
   };
 
   // 执行清空聊天的操作
-  const confirmClearChat = () => {
-    if (!activeChatId) return;
-    // 清空聊天消息
-    dispatch(clearMessages(activeChatId));
-    // 清除该聊天的函数调用输出
-    dispatch(clearChatFunctionCallOutput({ chatId: activeChatId }));
-  };
+  const confirmClearChat = clearCurrentChat;
 
   // 打字机效果的实现
   useEffect(() => {
@@ -842,7 +335,7 @@ export default function Home() {
             <ModelSelectorLazy onChange={() => {
               // 当模型变更时，清空当前会话的问题缓存
               if (activeChatId) {
-                setSuggestedQuestions([]);
+                clearQuestions();
               }
             }} />
           </div>
