@@ -32,9 +32,7 @@ function ModelConfigInitializer() {
   useEffect(() => {
     const loadModels = async () => {
       try {
-        console.log('开始初始化模型配置...');
         const models = await initializeModels();
-        console.log('模型配置加载完成:', models);
         dispatch(updateModels(models));
       } catch (error) {
         console.error('模型配置加载失败:', error);

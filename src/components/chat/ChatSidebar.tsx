@@ -170,7 +170,6 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ onNewChat }) => {
 
   // 添加一个公共方法来刷新对话列表
   const refreshChatList = useCallback(() => {
-    console.log('刷新对话列表');
     fetchChatList(1, 10);
   }, []);
 
@@ -194,7 +193,6 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ onNewChat }) => {
         const pageSize = serverPagination.page_size;
         
         const response = await getConversations(nextPage, pageSize);
-        console.log('加载更多数据:', response);
         
         const items = response.items || [];
         const chatList = items.map((item: any) => ({
@@ -222,8 +220,6 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ onNewChat }) => {
         dispatch(setLoadingMoreServer(false));
       }
     } else {
-      // 本地数据的模拟加载更多（用于测试）
-      console.log('模拟加载更多本地数据');
       toast({
         message: "这是本地数据，模拟加载更多功能",
         type: "info",
@@ -251,8 +247,6 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ onNewChat }) => {
       if (useServerData) {
         const chatExists = serverChatList.some(chat => chat.id === activeChatId);
         if (!chatExists) {
-          console.log(`对话 ${activeChatId} 不在列表中，刷新对话列表`);
-          // 延迟一下再刷新，确保服务端已经创建了对话
           setTimeout(() => {
             refreshChatList();
           }, 500);
@@ -387,7 +381,6 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ onNewChat }) => {
 
     // 如果是新创建的、没有消息的对话，则不需要从服务器获取
     if (selectedChat && selectedChat.messages.length === 0) {
-      console.log(`对话 ${chatId} 是一个空的本地对话，跳过从服务器获取详情。`);
       return;
     }
 

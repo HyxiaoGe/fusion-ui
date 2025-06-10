@@ -24,12 +24,6 @@ const SuggestedQuestions: React.FC<SuggestedQuestionsProps> = ({
   // 如果没有问题且没有在加载中，则不显示组件
   if (questions.length === 0 && !isLoading) return null;
   
-  // 调试信息：显示问题的哈希值以便验证是否为新问题
-  if (questions.length > 0) {
-    const questionsHash = questions.join('').slice(0, 8);
-    console.log(`推荐问题已更新，哈希: ${questionsHash}`, questions);
-  }
-  
   // 处理刷新按钮点击
   const handleRefresh = () => {
     if (onRefresh && !isLoading) {
