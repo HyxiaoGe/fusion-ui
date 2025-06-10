@@ -54,6 +54,7 @@ import { useChatListRefresh } from '@/hooks/useChatListRefresh';
 import { useToast } from '@/components/ui/toast';
 import { usePathname, useSearchParams } from 'next/navigation';
 import TypingTitle from '@/components/ui/TypingTitle';
+import { getAndSetSuggestedQuestions } from '@/lib/chat/suggestedQuestions';
 
 export default function Home() {
   const dispatch = useAppDispatch();
@@ -244,51 +245,6 @@ export default function Home() {
   }, [showHomePage]);
 
   // 获取推荐问题函数
-  const getSuggestedQuestions = useCallback(async (chatId: string, forceRefresh: boolean = false) => {
-    console.log(`[getSuggestedQuestions] Fired for chatId: ${chatId}. Force refresh: ${forceRefresh}`);
-    if (!chatId) {
-      console.error('[getSuggestedQuestions] Aborting: No chatId provided.');
-      return;
-    }
-    
-    // 直接从Redux store获取最新的chats状态，以避免闭包问题
-    const currentChats = store.getState().chat.chats;
-    const chat = currentChats.find(c => c.id === chatId);
-    
-    if (!chat) {
-      console.error(`[getSuggestedQuestions] Aborting: Chat with id ${chatId} not found in store.`);
-      console.log(`[getSuggestedQuestions] Available chat IDs: ${currentChats.map(c => c.id).join(', ')}`);
-      return;
-    }
-
-    // 确保AI消息不仅存在，而且有实际内容
-    const hasAIMessage = chat.messages.some(msg => msg.role === 'assistant' && msg.content && msg.content.trim() !== '');
-    
-    console.log(`[getSuggestedQuestions] Checking for AI message with content in chat ${chatId}. Result: ${hasAIMessage}`);
-    
-    // 如果没有AI消息，不获取推荐问题
-    if (!hasAIMessage) {
-      console.warn(`[getSuggestedQuestions] Aborting: No assistant message with content found for chat ${chatId}. Dumping messages:`);
-      console.log(JSON.stringify(chat.messages, null, 2));
-      return;
-    }
-    
-    console.log(`[getSuggestedQuestions] Proceeding to fetch questions for chat ${chatId}.`);
-    setIsLoadingQuestions(true);
-    try {
-      // 传递消息数量以生成更精确的缓存键
-      const messageCount = chat?.messages.length || 0;
-      const { questions } = await fetchSuggestedQuestions(chatId, {}, forceRefresh, messageCount);
-      // 更新当前显示的推荐问题
-      setSuggestedQuestions(questions);
-    } catch (error) {
-      console.error('获取推荐问题错误:', error);
-      setSuggestedQuestions([]);
-    } finally {
-      setIsLoadingQuestions(false);
-    }
-  }, []); // 依赖项中移除了 'chats'
-
   const handleSelectQuestion = useCallback((question: string) => {
     if (!activeChatId) return;
     
@@ -305,8 +261,8 @@ export default function Home() {
     setSuggestedQuestions([]);
     setIsLoadingQuestions(true);
     
-    await getSuggestedQuestions(activeChatId, true);
-  }, [activeChatId, getSuggestedQuestions]);
+    await getAndSetSuggestedQuestions(activeChatId, true, setIsLoadingQuestions, setSuggestedQuestions);
+  }, [activeChatId]);
 
   // 发送消息
   const handleSendMessage = async (content: string, files?: FileWithPreview[], fileIds?: string[]) => {
@@ -450,7 +406,7 @@ export default function Home() {
               console.log(`[handleSendMessage] Complete. Scheduling getSuggestedQuestions for chatId: ${finalChatId}`);
               if (finalChatId) {
                 // 每次对话后强制刷新推荐问题，确保为最新对话内容生成问题
-                getSuggestedQuestions(finalChatId, true);
+                getAndSetSuggestedQuestions(finalChatId, true, setIsLoadingQuestions, setSuggestedQuestions);
               }
             }, 1500);
           }
@@ -637,7 +593,7 @@ export default function Home() {
                   if (currentActiveChatId) {
                     // 每次对话后强制刷新推荐问题，确保为最新对话内容生成问题
                     // 清除缓存并获取新的推荐问题
-                    getSuggestedQuestions(currentActiveChatId, true);
+                    getAndSetSuggestedQuestions(currentActiveChatId, true, setIsLoadingQuestions, setSuggestedQuestions);
                   }
                 }, 1500);
               }
@@ -786,7 +742,7 @@ export default function Home() {
               if (currentActiveChatId) {
                 // 每次对话后强制刷新推荐问题，确保为最新对话内容生成问题
                 // 清除缓存并获取新的推荐问题
-                getSuggestedQuestions(currentActiveChatId, true);
+                getAndSetSuggestedQuestions(currentActiveChatId, true, setIsLoadingQuestions, setSuggestedQuestions);
               }
             }, 1500);
           }
