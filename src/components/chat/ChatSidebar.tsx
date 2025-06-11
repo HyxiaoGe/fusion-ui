@@ -46,6 +46,10 @@ import { Input } from "@/components/ui/input";
 import { useToast } from "../ui/toast";
 import { cn } from "@/lib/utils";
 import { useChatListRefresh } from "@/hooks/useChatListRefresh";
+import DeleteChatDialog from "./sidebar/DeleteChatDialog";
+import RenameChatDialog from "./sidebar/RenameChatDialog";
+import ChatSidebarHeader from "./sidebar/ChatSidebarHeader";
+import ChatList from "./sidebar/ChatList";
 
 interface ChatSidebarProps {
   onNewChat: () => void;
@@ -475,16 +479,45 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ onNewChat }) => {
 
   const handleGenerateTitle = async (e: React.MouseEvent, chatId: string) => {
     e.stopPropagation();
-    const chat = chats.find((chat) => chat.id === chatId);
-    if (!chat || chat.messages.length === 0) {
-      toast({
-        message: "对话内容为空，无法生成标题",
-        type: "warning",
-      });
-      return;
-    }
 
     try {
+      // 侧边栏的对话列表可能不包含消息，因此我们需要获取完整的对话数据
+      // 首先尝试从已经加载到 Redux 的完整列表中查找
+      let chatToProcess = localChats.find((c) => c.id === chatId);
+
+      // 如果在完整列表中找不到，或者找到了但没有消息，则从服务器获取
+      if (!chatToProcess || chatToProcess.messages.length === 0) {
+        const serverData = await getConversation(chatId);
+        // 将服务端数据结构转换为本地的 Chat 类型
+        chatToProcess = {
+            id: serverData.id,
+            title: serverData.title,
+            messages: serverData.messages.map((msg: any) => ({
+              id: msg.id,
+              role: msg.role,
+              content: msg.content,
+              timestamp: new Date(msg.created_at).getTime(),
+            })),
+            modelId: serverData.model_id,
+            createdAt: new Date(serverData.created_at).getTime(),
+            updatedAt: new Date(serverData.updated_at).getTime(),
+            functionCallOutput: null,
+        };
+      }
+
+      // 再次检查，确保对话真的有内容
+      if (!chatToProcess || !chatToProcess.messages || chatToProcess.messages.length === 0) {
+        toast({
+          message: "对话内容为空，无法生成标题",
+          type: "warning",
+        });
+        return;
+      }
+      
+      // 获取当前列表中的对话状态，用于出错时恢复标题
+      const originalChatState = chats.find((c) => c.id === chatId);
+      const originalTitle = originalChatState ? originalChatState.title : '新对话';
+
       // 显示加载状态
       dispatch(
         updateChatTitle({
@@ -492,8 +525,6 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ onNewChat }) => {
           title: "正在生成标题...",
         })
       );
-      
-      // 同时更新服务端列表中的标题
       dispatch(
         updateServerChatTitle({
           chatId: chatId,
@@ -503,13 +534,11 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ onNewChat }) => {
 
       // 调用API生成标题
       const generatedTitle = await generateChatTitle(
-        chatId, // 对话ID
+        chatId,
         undefined,
-        { max_length: 20 } // 可选参数，限制标题长度
+        { max_length: 20 }
       );
-
       
-      // 使用Redux设置动画状态
       dispatch(setAnimatingTitleChatId(chatId));
 
       // 更新对话标题
@@ -519,8 +548,6 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ onNewChat }) => {
           title: generatedTitle,
         })
       );
-      
-      // 同时更新服务端列表中的标题
       dispatch(
         updateServerChatTitle({
           chatId: chatId,
@@ -533,25 +560,25 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ onNewChat }) => {
         type: "success",
       });
       
-      // 设置自动清除动画效果的定时器（根据标题长度，每个字符约200ms）
       setTimeout(() => {
         dispatch(setAnimatingTitleChatId(null));
-      }, generatedTitle.length * 200 + 1000); // 字符数*200ms + 额外1000ms
+      }, generatedTitle.length * 200 + 1000);
+
     } catch (error) {
       console.error("生成标题失败:", error);
+
       // 恢复原标题
+      const originalChatState = chats.find((chat) => chat.id === chatId);
       dispatch(
         updateChatTitle({
           chatId: chatId,
-          title: chat.title,
+          title: originalChatState ? originalChatState.title : "新对话",
         })
       );
-      
-      // 同时恢复服务端列表中的标题
       dispatch(
         updateServerChatTitle({
           chatId: chatId,
-          title: chat.title,
+          title: originalChatState ? originalChatState.title : "新对话",
         })
       );
       toast({
@@ -603,163 +630,24 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ onNewChat }) => {
 
   return (
     <div className="flex flex-col h-full py-2 relative">
-      <div className="px-4 mb-5">
-        <div className="relative">
-          {/* 背景光晕效果 */}
-          <div className="absolute inset-0 rounded-lg bg-gradient-to-r from-primary/20 to-blue-500/20 opacity-30 animate-pulse blur-sm"></div>
-          
-          <Button 
-            className="
-              relative w-full flex items-center justify-center gap-2 
-              bg-gradient-to-r from-primary to-primary/80
-              hover:from-primary/90 hover:to-primary/70
-              dark:from-green-500 dark:to-blue-600 
-              dark:hover:from-green-600 dark:hover:to-blue-700
-              text-primary-foreground font-medium
-              shadow-lg hover:shadow-xl 
-              border-0 backdrop-blur-sm 
-              transition-all duration-300 ease-out
-              hover:scale-105 active:scale-95
-              before:absolute before:inset-0 before:rounded-lg 
-              before:bg-gradient-to-r before:from-white/20 before:to-transparent 
-              before:opacity-0 hover:before:opacity-100 
-              before:transition-opacity before:duration-300
-              overflow-hidden
-              animate-bounce-subtle
-            " 
-            onClick={onNewChat}
-          >
-            {/* 闪光效果 */}
-            <div className="absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-white/30 to-transparent animate-shimmer"></div>
-            
-            <span className="relative z-10">
-              新对话
-            </span>
-          </Button>
-        </div>
-      </div>
+      <ChatSidebarHeader onNewChat={onNewChat} />
 
       {/* 最近对话列表 */}
-      <div className="px-4 flex-1 overflow-y-auto" ref={containerRef} onScroll={handleScroll}>
-        <p className="text-sm font-medium text-muted-foreground tracking-wider mb-3 px-2">最近对话</p>
-        {chats.length === 0 ? (
-          <div className="text-sm text-muted-foreground mt-4 text-center">
-            暂无对话记录
-          </div>
-        ) : (
-          <div>
-            {Object.entries(sortedAndGroupedChats).map(([groupLabel, groupChats]) => (
-              <div key={groupLabel} className="mb-4">
-                <h3 className="text-xs font-medium text-muted-foreground px-2 mb-2">{groupLabel}</h3>
-                <div className="space-y-2">
-                  {groupChats.map((chat) => (
-                    <div
-                      key={chat.id}
-                      className={`flex items-center group rounded-lg p-3 text-sm cursor-pointer transition-all duration-200 ${
-                        chat.id === activeChatId
-                          ? "bg-primary/15 dark:bg-primary/20 shadow-lg border border-primary/20 dark:border-primary/30 pl-4 relative z-10"
-                          : "hover:bg-muted/50 hover:shadow-sm"
-                      }`}
-                      onClick={() => handleSelectChat(chat.id)}
-                    >
-                      <div className="flex-1 min-w-0 relative">
-                        {editingChatId === chat.id ? (
-                          <Input
-                            ref={editInputRef}
-                            value={editingTitle}
-                            onChange={(e) => setEditingTitle(e.target.value)}
-                            onBlur={() => handleSaveEdit(chat.id)}
-                            onKeyDown={(e) => handleKeyDown(e, chat.id)}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setIgnoreNextBlur(false);
-                            }}
-                            className="h-6 py-1 text-xs"
-                          />
-                        ) : (
-                          <div className="flex items-start gap-2">
-                            <MessageSquareIcon size={16} className={`shrink-0 mt-0.5 ${chat.id === activeChatId ? "text-primary" : "text-muted-foreground"}`} />
-                            <div className="truncate flex-1 pr-1">
-                              <div className={`font-medium truncate ${chat.id === activeChatId ? "text-primary font-semibold" : ""}`} title={chat.title}>
-                                {chat.title || "新对话"}
-                              </div>
-                              <div className="text-xs text-muted-foreground truncate mt-0.5">
-                                {/* 显示时间和模型 */}
-                                {formatDate(chat.updatedAt || chat.createdAt)}
-                                
-                                {/* 显示使用的模型 */}
-                                {chat.modelId && models.find(m => m.id === chat.modelId) && (
-                                  <span className="ml-1">
-                                    · {models.find(m => m.id === chat.modelId)?.name}
-                                  </span>
-                                )}
-                              </div>
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                      <div
-                        className={`ml-2 ${
-                          chat.id === activeChatId ? "opacity-100" : "opacity-0 group-hover:opacity-100"
-                        } transition-opacity duration-200`}
-                      >
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-6 w-6"
-                              title="更多操作"
-                            >
-                              <MoreVerticalIcon size={14} />
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end" className="w-36">
-                            <DropdownMenuItem onClick={(e) => {
-                              e.stopPropagation();
-                              handleStartEditing(e, chat.id, chat.title);
-                            }}>
-                              <PencilIcon size={14} className="mr-2" />
-                              重命名
-                            </DropdownMenuItem>
-                            <DropdownMenuItem onClick={(e) => {
-                              e.stopPropagation();
-                              handleDeleteChat(e, chat.id);
-                            }}>
-                              <TrashIcon size={14} className="mr-2" />
-                              删除对话
-                            </DropdownMenuItem>
-                            <DropdownMenuItem onClick={(e) => {
-                              e.stopPropagation();
-                              handleGenerateTitle(e, chat.id);
-                            }}>
-                              <RefreshCwIcon size={14} className="mr-2" />
-                              生成标题
-                            </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-        
-        {/* 加载更多指示器 */}
-        {isLoadingMoreServer && (
-          <div className="p-4 text-center text-muted-foreground text-sm">
-            加载更多...
-          </div>
-        )}
-        
-        {isLoadingServerList && chats.length === 0 && (
-          <div className="p-4 text-center text-muted-foreground text-sm">
-            加载中...
-          </div>
-        )}
-      </div>
+      <ChatList
+        chats={chats}
+        sortedAndGroupedChats={sortedAndGroupedChats}
+        activeChatId={activeChatId}
+        models={models}
+        isLoadingServerList={isLoadingServerList}
+        isLoadingMoreServer={isLoadingMoreServer}
+        containerRef={containerRef}
+        handleScroll={handleScroll}
+        handleSelectChat={handleSelectChat}
+        handleStartEditing={handleStartEditing}
+        handleDeleteChat={handleDeleteChat}
+        handleGenerateTitle={handleGenerateTitle}
+        formatDate={formatDate}
+      />
 
       {/* 浮动的"显示更多"按钮 - 只在没有滚动条且有更多数据时显示 */}
       {showLoadMoreButton && (
@@ -813,62 +701,20 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ onNewChat }) => {
       )}
 
       {/* 确认删除对话框 */}
-      <Dialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
-        <DialogContent className="sm:max-w-[425px]">
-          <DialogHeader>
-            <DialogTitle>确认删除对话</DialogTitle>
-          </DialogHeader>
-          <p className="py-4">
-            您确定要删除此对话吗？此操作无法撤销。
-          </p>
-          <DialogFooter>
-            <Button
-              variant="ghost"
-              onClick={() => setIsDeleteDialogOpen(false)}
-            >
-              取消
-            </Button>
-            <Button
-              variant="destructive"
-              onClick={confirmDelete}
-            >
-              删除
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <DeleteChatDialog
+        open={isDeleteDialogOpen}
+        onOpenChange={setIsDeleteDialogOpen}
+        onConfirm={confirmDelete}
+      />
 
       {/* 重命名对话框 */}
-      <Dialog open={isRenameDialogOpen} onOpenChange={setIsRenameDialogOpen}>
-        <DialogContent className="sm:max-w-[425px]">
-          <DialogHeader>
-            <DialogTitle>重命名对话</DialogTitle>
-          </DialogHeader>
-          <div className="py-4">
-            <Input
-              value={newTitle}
-              onChange={(e) => setNewTitle(e.target.value)}
-              placeholder="输入新标题"
-              className="w-full"
-              autoFocus
-            />
-          </div>
-          <DialogFooter>
-            <Button
-              variant="ghost"
-              onClick={() => setIsRenameDialogOpen(false)}
-            >
-              取消
-            </Button>
-            <Button
-              variant="default"
-              onClick={handleRename}
-            >
-              保存
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <RenameChatDialog
+        open={isRenameDialogOpen}
+        onOpenChange={setIsRenameDialogOpen}
+        onConfirm={handleRename}
+        title={newTitle}
+        onTitleChange={setNewTitle}
+      />
     </div>
   );
 };
