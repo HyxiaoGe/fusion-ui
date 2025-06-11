@@ -20,16 +20,15 @@ import {
   endStreamingReasoning,
   editMessage as editMessageAction,
   setMessageStatus,
-  Message
+  Message,
 } from '@/redux/slices/chatSlice';
 import { useChatListRefresh } from './useChatListRefresh';
 import { FileWithPreview } from '@/lib/utils/fileHelpers';
 import { sendMessageStream } from '@/lib/api/chat';
+import { generateChatTitle } from '@/lib/api/title';
 import { v4 as uuidv4 } from 'uuid';
 import { store } from '@/redux/store';
 import { fetchEnhancedContext } from '@/redux/slices/searchSlice';
-import { generateChatTitle } from '@/lib/api/title';
-import { getAndSetSuggestedQuestions } from '@/lib/chat/suggestedQuestions';
 
 type ChatActionsOptions = {
   onNewChatCreated?: () => void;
@@ -44,12 +43,12 @@ export const useChatActions = (options: ChatActionsOptions) => {
     models, 
     selectedModelId, 
     activeChatId,
+    chats,
     reasoningEnabled,
     webSearchEnabled,
     functionCallEnabled,
     searchEnabled,
     contextEnhancementEnabled,
-    chats
   } = useAppSelector((state) => ({
     models: state.models.models,
     selectedModelId: state.models.selectedModelId,
@@ -78,12 +77,10 @@ export const useChatActions = (options: ChatActionsOptions) => {
     try {
       dispatch(createChat({ modelId: modelToUse }));
       
-      // Refresh chat list to show the new chat
       setTimeout(() => {
         refreshChatList();
       }, 100);
       
-      // Call the success callback for UI-specific actions
       options.onNewChatCreated?.();
 
     } catch (error) {
@@ -391,7 +388,6 @@ export const useChatActions = (options: ChatActionsOptions) => {
       dispatch(endStreaming());
     }
   }, [activeChatId, selectedModelId, chats, models, dispatch, reasoningEnabled, webSearchEnabled, functionCallEnabled, options]);
-
 
   return { newChat, clearCurrentChat, sendMessage, retryMessage, editMessage };
 }; 
