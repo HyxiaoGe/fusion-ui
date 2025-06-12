@@ -35,6 +35,19 @@ export const useSidebarChatActions = ({
   const { toast } = useToast();
   const { activeChatId } = useAppSelector((state) => state.chat);
 
+  const parseTimestamp = (ts: any): number => {
+    if (typeof ts === 'number') return ts;
+    if (typeof ts !== 'string' || !ts) return 0;
+    
+    if (ts.endsWith('Z') || /[\+\-]\d{2}:\d{2}$/.test(ts)) {
+        const date = new Date(ts);
+        return isNaN(date.getTime()) ? 0 : date.getTime();
+    }
+
+    const date = new Date(ts.replace(' ', 'T') + 'Z');
+    return isNaN(date.getTime()) ? 0 : date.getTime();
+  };
+
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [chatToDelete, setChatToDelete] = useState<string | null>(null);
 
@@ -74,11 +87,11 @@ export const useSidebarChatActions = ({
           id: msg.id,
           role: msg.role,
           content: msg.content,
-          timestamp: new Date(msg.created_at).getTime(),
+          timestamp: parseTimestamp(msg.created_at),
         })),
         modelId: serverChatData.model_id,
-        createdAt: new Date(String(serverChatData.created_at).replace(' ', 'T') + 'Z').getTime(),
-        updatedAt: new Date(String(serverChatData.updated_at).replace(' ', 'T') + 'Z').getTime(),
+        createdAt: parseTimestamp(serverChatData.created_at),
+        updatedAt: parseTimestamp(serverChatData.updated_at),
         functionCallOutput: null,
       };
 
@@ -161,11 +174,11 @@ export const useSidebarChatActions = ({
               id: msg.id,
               role: msg.role,
               content: msg.content,
-              timestamp: new Date(msg.created_at).getTime(),
+              timestamp: parseTimestamp(msg.created_at),
             })),
             modelId: serverChatData.model_id,
-            createdAt: new Date(String(serverChatData.created_at).replace(' ', 'T') + 'Z').getTime(),
-            updatedAt: new Date(String(serverChatData.updated_at).replace(' ', 'T') + 'Z').getTime(),
+            createdAt: parseTimestamp(serverChatData.created_at),
+            updatedAt: parseTimestamp(serverChatData.updated_at),
             functionCallOutput: null,
         };
       }
