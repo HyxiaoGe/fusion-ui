@@ -97,46 +97,48 @@ const ReasoningContent: React.FC<ReasoningContentProps> = ({
 
   // 当推理内容更新时自动滚动到底部
   useEffect(() => {
-    if (actuallyVisible && scrollContainerRef.current) {
+    // 仅在流式传输时，当内容更新或可见性变化时，自动滚动到底部
+    if (isStreaming && actuallyVisible && scrollContainerRef.current) {
       // 设置滚动位置到底部
       const scrollContainer = scrollContainerRef.current;
       scrollContainer.scrollTop = scrollContainer.scrollHeight;
     }
-  }, [reasoning, actuallyVisible]);
+  }, [reasoning, actuallyVisible, isStreaming]);
 
   // 计算思考时间
-  const [thinkingDuration, setThinkingDuration] = useState<string>('');
-  const [liveTime, setLiveTime] = useState<number>(0);
+  const [thinkingDuration, setThinkingDuration] = useState<string>('0.00秒');
   const timerRef = useRef<HTMLSpanElement>(null);
-  const lastTimeRef = useRef<string>('');
-  
-  // 在组件挂载时或startTime/endTime变化时计算思考时间
+
   useEffect(() => {
     if (!startTime) {
-      setLiveTime(0);
+      setThinkingDuration('0.00秒');
       return;
     }
 
-    // 立即设置初始时间
-    const initialElapsed = endTime ? (endTime - startTime) : (Date.now() - startTime);
-    setLiveTime(initialElapsed);
+    // 如果有结束时间，则直接计算最终耗时并停止
+    if (endTime) {
+      const duration = endTime - startTime;
+      const seconds = Math.floor(duration / 1000);
+      const ms = duration % 1000;
 
-    // 如果还在思考中（没有结束时间），则启动计时器
-    if (!endTime) {
-      const timerInterval = setInterval(() => {
-        const elapsed = Date.now() - startTime;
-        setLiveTime(elapsed);
-      }, 100);
-      
-      return () => clearInterval(timerInterval);
+      let finalTime = '';
+      if (seconds < 60) {
+        finalTime = `${seconds}.${ms.toString().padStart(3, '0').substring(0, 2)}秒`;
+      } else {
+        const minutes = Math.floor(seconds / 60);
+        const remainingSeconds = seconds % 60;
+        finalTime = `${minutes}分${remainingSeconds}.${ms.toString().padStart(3, '0').substring(0, 2)}秒`;
+      }
+      setThinkingDuration(finalTime);
+      return;
     }
-  }, [startTime, endTime]);
-  
-  // 格式化思考时间
-  useEffect(() => {
-    if (liveTime > 0) {
-      const seconds = Math.floor(liveTime / 1000);
-      const ms = liveTime % 1000;
+    
+    // 如果没有结束时间，则启动实时计时器
+    let lastTime = '';
+    const timerInterval = setInterval(() => {
+      const elapsed = Date.now() - startTime;
+      const seconds = Math.floor(elapsed / 1000);
+      const ms = elapsed % 1000;
       
       let newTime = '';
       if (seconds < 60) {
@@ -147,23 +149,23 @@ const ReasoningContent: React.FC<ReasoningContentProps> = ({
         newTime = `${minutes}分${remainingSeconds}.${ms.toString().padStart(3, '0').substring(0, 2)}秒`;
       }
       
-      // 检测时间是否变化
-      if (newTime !== lastTimeRef.current && timerRef.current && !endTime) {
-        // 添加动画效果
+      // 直接更新UI，并处理动画效果
+      if (newTime !== lastTime && timerRef.current) {
         timerRef.current.classList.add('updated');
         setTimeout(() => {
           if (timerRef.current) {
             timerRef.current.classList.remove('updated');
           }
         }, 200);
+        setThinkingDuration(newTime);
+        lastTime = newTime;
       }
-      
-      lastTimeRef.current = newTime;
-      setThinkingDuration(newTime);
-    } else {
-      setThinkingDuration('0.00秒');
-    }
-  }, [liveTime, endTime]);
+    }, 100);
+
+    // 清理函数
+    return () => clearInterval(timerInterval);
+
+  }, [startTime, endTime]);
 
   // 复制成功状态
   const [isCopied, setIsCopied] = useState(false);
@@ -354,10 +356,6 @@ const ReasoningContent: React.FC<ReasoningContentProps> = ({
                     >
                       {reasoning.trim()}
                     </ReactMarkdown>
-                    
-                    <div className="h-4 mt-2">
-                      <span className="inline-block h-3 w-3 bg-amber-400 rounded-full animate-pulse"></span>
-                    </div>
                   </>
                 ) : (
                   <div className="py-2">

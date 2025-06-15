@@ -80,15 +80,70 @@ export const useSidebarChatActions = ({
       dispatch(setLoadingServerChat(true));
       const serverChatData = await getConversation(chatId);
 
+      // 处理服务端消息：合并同一个turn_id的reasoning_content和assistant_content
+      const processedMessages = [];
+      const messageMap = new Map();
+      
+      // 第一步：按turn_id分组消息
+      for (const msg of serverChatData.messages) {
+        const turnId = msg.turn_id || msg.id;
+        if (!messageMap.has(turnId)) {
+          messageMap.set(turnId, []);
+        }
+        messageMap.get(turnId).push(msg);
+      }
+      
+      // 第二步：合并每个turn中的消息
+      for (const [turnId, turnMessages] of messageMap) {
+        if (turnMessages.length === 1) {
+          // 单条消息直接添加
+          const msg = turnMessages[0];
+          processedMessages.push({
+            id: msg.id,
+            role: msg.role,
+            content: msg.content,
+            timestamp: parseTimestamp(msg.created_at),
+            turnId: turnId,
+          });
+        } else {
+          // 多条消息需要合并
+          const userMsg = turnMessages.find(m => m.role === 'user');
+          const reasoningMsg = turnMessages.find(m => m.type === 'reasoning_content');
+          const assistantMsg = turnMessages.find(m => m.type === 'assistant_content');
+          
+          // 添加用户消息
+          if (userMsg) {
+            processedMessages.push({
+              id: userMsg.id,
+              role: userMsg.role,
+              content: userMsg.content,
+              timestamp: parseTimestamp(userMsg.created_at),
+              turnId: turnId,
+            });
+          }
+          
+          // 添加合并后的助手消息
+          if (assistantMsg) {
+            processedMessages.push({
+              id: assistantMsg.id,
+              role: 'assistant',
+              content: assistantMsg.content,
+              reasoning: reasoningMsg ? reasoningMsg.content : undefined,
+              isReasoningVisible: false, // 默认隐藏思考过程
+              timestamp: parseTimestamp(assistantMsg.created_at),
+              turnId: turnId,
+            });
+          }
+        }
+      }
+      
+      // 按时间戳排序
+      processedMessages.sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
+
       const localChat: Chat = {
         id: serverChatData.id,
         title: serverChatData.title,
-        messages: serverChatData.messages.map((msg: any) => ({
-          id: msg.id,
-          role: msg.role,
-          content: msg.content,
-          timestamp: parseTimestamp(msg.created_at),
-        })),
+        messages: processedMessages,
         modelId: serverChatData.model_id,
         createdAt: parseTimestamp(serverChatData.created_at),
         updatedAt: parseTimestamp(serverChatData.updated_at),

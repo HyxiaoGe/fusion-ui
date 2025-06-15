@@ -56,7 +56,7 @@ const ChatMessageList: React.FC<ChatMessageListProps> = ({ messages, loading = f
 
   useEffect(() => {
     scrollToBottom();
-  }, [messages]);
+  }, [messages.length, isStreaming]);
 
   if (messages.length === 0) {
     return (

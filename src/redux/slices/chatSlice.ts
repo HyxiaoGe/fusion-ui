@@ -53,7 +53,6 @@ export interface ChatState {
   streamingReasoningEndTime: number | undefined;
   streamingMessageId: string | null;
   reasoningEnabled: boolean;
-  streamingReasoning: string | null;
   isStreamingReasoning: boolean;
   isThinkingPhaseComplete: boolean;
   animatingTitleChatId: string | null;
@@ -95,7 +94,6 @@ const initialState: ChatState = {
   streamingReasoningEndTime: undefined,
   streamingMessageId: null,
   reasoningEnabled: false,
-  streamingReasoning: null,
   isStreamingReasoning: false,
   isThinkingPhaseComplete: false,
   animatingTitleChatId: null,
@@ -249,25 +247,9 @@ const chatSlice = createSlice({
       }
     },
     updateStreamingReasoningContent: (state, action: PayloadAction<string>) => {
-      // 第一次收到内容时设置开始时间
-      if (!state.streamingReasoningStartTime && action.payload.trim()) {
-        state.streamingReasoningStartTime = Date.now();
-      }
-      
-      // 检查是否包含推理完成标记
-      if (action.payload.endsWith("[REASONING_COMPLETE]")) {
-        // 移除标记并更新内容
-        state.streamingReasoningContent = action.payload.replace("[REASONING_COMPLETE]", "");
-        // 设置结束时间并标记完成
-        if (!state.streamingReasoningEndTime) {
-          state.streamingReasoningEndTime = Date.now();
-        }
-        state.isThinkingPhaseComplete = true;
-        // 立即标记推理流式状态结束，不影响主内容的流式输出
-        state.isStreamingReasoning = false;
-      } else {
-        state.streamingReasoningContent = action.payload;
-      }
+      // 移除特殊标记
+      const cleanedPayload = action.payload.replace("[REASONING_COMPLETE]", "");
+      state.streamingReasoningContent = cleanedPayload;
     },
     toggleReasoning: (state, action: PayloadAction<boolean>) => {
       state.reasoningEnabled = action.payload;
@@ -277,10 +259,8 @@ const chatSlice = createSlice({
     },
     startStreamingReasoning: (state) => {
       state.isStreamingReasoning = true;
-      state.streamingReasoning = '';
-      state.streamingReasoningStartTime = null;
-      state.isThinkingPhaseComplete = false;
-      state.streamingReasoningEndTime = undefined;
+      state.streamingReasoningStartTime = Date.now();
+      state.streamingReasoningEndTime = undefined; // 重置结束时间
     },
     completeThinkingPhase: (state) => {
       if (!state.streamingReasoningEndTime) {
@@ -289,16 +269,12 @@ const chatSlice = createSlice({
       state.isThinkingPhaseComplete = true;
       state.isStreamingReasoning = false;  // 停止流式状态
     },
-    updateStreamingReasoning: (state, action: PayloadAction<string>) => {
-      state.streamingReasoning = action.payload;
-    },
     endStreamingReasoning: (state) => {
       if (!state.isThinkingPhaseComplete) {
         state.streamingReasoningEndTime = Date.now();
         state.isThinkingPhaseComplete = true;
       }
       state.isStreamingReasoning = false;
-      state.streamingReasoning = null;
     },
     toggleReasoningVisibility: (state, action: PayloadAction<{chatId: string, messageId: string, visible: boolean}>) => {
       const { chatId, messageId, visible } = action.payload;
@@ -314,37 +290,40 @@ const chatSlice = createSlice({
       }
     },
     startStreaming: (state, action: PayloadAction<string>) => {
+      const chatId = action.payload;
       state.isStreaming = true;
       state.streamingContent = '';
       state.streamingReasoningContent = '';
-      const messageId = uuidv4();
-      state.streamingMessageId = messageId;
-      
-      // 添加一个空的助手消息作为占位符
-      const chatId = action.payload;
+      state.streamingReasoningEndTime = undefined;
+      state.error = null;
+      state.isThinkingPhaseComplete = false;
+      state.functionCallType = null;
+      state.functionCallData = null;
+      state.isFunctionCallInProgress = false;
+      state.functionCallError = null;
+
       const chat = state.chats.find(c => c.id === chatId);
       if (chat) {
-        chat.messages.push({
-          id: messageId,
+        // 创建一个助手机色的消息用于接收流式内容
+        const assistantMessage: Message = {
+          id: uuidv4(),
           role: 'assistant',
           content: '',
           timestamp: Date.now(),
           chatId: chatId,
-        });
-        
-
+        };
+        chat.messages.push(assistantMessage);
+        state.streamingMessageId = assistantMessage.id;
       }
     },
-    updateStreamingContent: (state, action: PayloadAction<{chatId: string, content: string}>) => {
-      const { chatId, content } = action.payload;
-      state.streamingContent = content;
+    updateStreamingContent: (state, action: PayloadAction<{ chatId: string; content: string }>) => {
+      state.streamingContent = action.payload.content;
       
-      // 更新最后一条助手消息的内容
-      const chat = state.chats.find(c => c.id === chatId);
+      const chat = state.chats.find(c => c.id === action.payload.chatId);
       if (chat && chat.messages.length > 0 && state.streamingMessageId) {
         const streamingMessage  = chat.messages.find(m => m.id === state.streamingMessageId);
         if (streamingMessage) {
-          streamingMessage.content = content;
+          streamingMessage.content = action.payload.content;
         }
       }
     },
@@ -515,7 +494,6 @@ export const {
   setMessageStatus,
   toggleReasoning,
   startStreamingReasoning,
-  updateStreamingReasoning,
   endStreamingReasoning,
   toggleReasoningVisibility,
   updateMessageReasoning,

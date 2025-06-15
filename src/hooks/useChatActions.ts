@@ -175,7 +175,23 @@ export const useChatActions = (options: ChatActionsOptions) => {
             }
           } else {
             dispatch(updateStreamingContent({ chatId: currentActiveChatId, content }));
-            dispatch(endStreaming());
+
+            // 保存思考内容到消息的reasoning字段
+            setTimeout(() => {
+              if (reasoning && reasoning.trim()) {
+                const streamingMessageId = store.getState().chat.streamingMessageId;
+                if (streamingMessageId) {
+                  dispatch(updateMessageReasoning({ 
+                    chatId: currentActiveChatId, 
+                    messageId: streamingMessageId, 
+                    reasoning: reasoning, 
+                    isVisible: false // 默认隐藏，用户可以手动显示
+                  }));
+                }
+                if (!store.getState().chat.isThinkingPhaseComplete) dispatch(endStreamingReasoning());
+              }
+              dispatch(endStreaming());
+            }, 1000);
 
             if (conversationId && conversationId !== currentActiveChatId) {
               dispatch(setActiveChat(conversationId));

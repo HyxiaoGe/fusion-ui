@@ -1,6 +1,8 @@
 import { API_CONFIG } from '../config';
 import { store } from '../../redux/store'; // 导入 store
 import {
+  startStreamingReasoning,
+  endStreamingReasoning,
   startFunctionCall,
   setFunctionCallData,
   setFunctionCallError,
@@ -128,13 +130,14 @@ export async function sendMessageStream(data: ChatRequest, onChunk: (chunk: stri
             // 处理事件类型
             switch(parsedData.type) {
               case "reasoning_start":
+                // 不在这里开始，等待第一个content
                 break;
                 
               case "reasoning_content":
                 if (parsedData.content) {
-                  // 第一次收到内容时才通知开始
+                  // 第一次收到内容时才开始计时
                   if (streamReasoning === '') {
-                    onChunk(streamContent, false, conversationId || undefined, '');
+                    store.dispatch(startStreamingReasoning());
                   }
                   streamReasoning += parsedData.content;
                   onChunk(streamContent, false, conversationId || undefined, streamReasoning);
@@ -143,6 +146,7 @@ export async function sendMessageStream(data: ChatRequest, onChunk: (chunk: stri
                 
               case "reasoning_end":
               case "reasoning_complete":
+                store.dispatch(endStreamingReasoning());
                 // 推理完成，可能会收到完整的reasoning
                 if (parsedData.reasoning) {
                   streamReasoning = parsedData.reasoning;

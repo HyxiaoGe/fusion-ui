@@ -17,7 +17,9 @@ export const useSuggestedQuestions = (chatId: string | null) => {
     }
 
     // Directly get the latest state from the store to avoid stale closures
-    const chat = store.getState().chat.chats.find(c => c.id === chatId);
+    const state = store.getState().chat;
+    const chat = state.chats.find(c => c.id === chatId);
+    const isStreaming = state.isStreaming;
 
     if (!chat) {
       console.error(`[useSuggestedQuestions] Aborting: Chat with id ${chatId} not found.`);
@@ -25,8 +27,10 @@ export const useSuggestedQuestions = (chatId: string | null) => {
     }
 
     const hasAIMessage = chat.messages.some(msg => msg.role === 'assistant' && msg.content?.trim());
-    if (!hasAIMessage) {
-      console.warn(`[useSuggestedQuestions] Aborting: No assistant message found for chat ${chatId}.`);
+    
+    // If there's no solid assistant message, but we were just streaming, we should still fetch.
+    if (!hasAIMessage && !isStreaming) {
+      console.warn(`[useSuggestedQuestions] Aborting: No assistant message and not streaming for chat ${chatId}.`);
       return;
     }
 

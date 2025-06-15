@@ -45,6 +45,7 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, files, isLastMessage
   // 获取流式状态的时间戳
   const streamingStartTime = useAppSelector(state => state.chat.streamingReasoningStartTime);
   const streamingEndTime = useAppSelector(state => state.chat.streamingReasoningEndTime);
+  const isStreamingReasoning = useAppSelector(state => state.chat.isStreamingReasoning);
 
   const { userAvatar, assistantAvatar } = useAppSelector(state => state.settings);
 
@@ -288,13 +289,21 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, files, isLastMessage
                 {displayReasoning && (
                   <ReasoningContent
                     reasoning={displayReasoning}
-                    isVisible={message.isReasoningVisible || localReasoningVisible || isStreaming}
+                    isVisible={message.isReasoningVisible || localReasoningVisible}
                     onToggleVisibility={handleToggleReasoning}
-                    className="mb-2"
-                    isStreaming={isStreaming && isLastMessage}
-                    startTime={isStreaming && isLastMessage ? streamingStartTime || undefined : message.reasoningStartTime}
-                    endTime={isStreaming && isLastMessage ? streamingEndTime : message.reasoningEndTime}
+                    isStreaming={isStreamingReasoning && isLastMessage}
+                    forceShow={isStreamingReasoning && isLastMessage}
+                    startTime={isLastMessage ? streamingStartTime : message.reasoningStartTime}
+                    endTime={isLastMessage ? streamingEndTime : message.reasoningEndTime}
+                    className="mt-2"
                   />
+                )}
+
+                {message.status === 'failed' && (
+                  <div className="mt-2 flex items-center gap-2 text-xs text-red-500">
+                    <X className="h-3 w-3" />
+                    <span>生成失败，请重试</span>
+                  </div>
                 )}
 
                 {/* 消息内容显示 */}
