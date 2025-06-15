@@ -129,6 +129,7 @@ export const useSidebarChatActions = ({
               role: 'assistant',
               content: assistantMsg.content,
               reasoning: reasoningMsg ? reasoningMsg.content : undefined,
+              duration: reasoningMsg ? reasoningMsg.duration : undefined,
               isReasoningVisible: false, // 默认隐藏思考过程
               timestamp: parseTimestamp(assistantMsg.created_at),
               turnId: turnId,

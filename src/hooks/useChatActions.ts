@@ -24,7 +24,7 @@ import {
 } from '@/redux/slices/chatSlice';
 import { useChatListRefresh } from './useChatListRefresh';
 import { FileWithPreview } from '@/lib/utils/fileHelpers';
-import { sendMessageStream } from '@/lib/api/chat';
+import { sendMessageStream, updateMessageDuration } from '@/lib/api/chat';
 import { generateChatTitle } from '@/lib/api/title';
 import { v4 as uuidv4 } from 'uuid';
 import { store } from '@/redux/store';
@@ -178,18 +178,35 @@ export const useChatActions = (options: ChatActionsOptions) => {
 
             // 保存思考内容到消息的reasoning字段
             setTimeout(() => {
+              const stateBeforeEnd = store.getState().chat;
+              const messageIdToUpdate = stateBeforeEnd.streamingMessageId;
+
               if (reasoning && reasoning.trim()) {
-                const streamingMessageId = store.getState().chat.streamingMessageId;
-                if (streamingMessageId) {
+                if (messageIdToUpdate) {
                   dispatch(updateMessageReasoning({ 
                     chatId: currentActiveChatId, 
-                    messageId: streamingMessageId, 
+                    messageId: messageIdToUpdate, 
                     reasoning: reasoning, 
-                    isVisible: false // 默认隐藏，用户可以手动显示
+                    isVisible: true // 默认显示，用户可以手动隐藏
                   }));
                 }
-                if (!store.getState().chat.isThinkingPhaseComplete) dispatch(endStreamingReasoning());
+                if (!stateBeforeEnd.isThinkingPhaseComplete) {
+                  dispatch(endStreamingReasoning());
+                }
               }
+              
+              const finalState = store.getState().chat;
+              const { streamingReasoningMessageId, streamingReasoningStartTime, streamingReasoningEndTime } = finalState;
+
+              if (streamingReasoningMessageId && streamingReasoningStartTime && streamingReasoningEndTime) {
+                const duration = streamingReasoningEndTime - streamingReasoningStartTime;
+                if (duration > 0) {
+                  updateMessageDuration(currentActiveChatId, streamingReasoningMessageId, duration)
+                    .catch(err => console.error("Failed to update duration:", err));
+                }
+              }
+
+              // 所有收尾工作完成后，最后再结束流式状态
               dispatch(endStreaming());
             }, 1000);
 

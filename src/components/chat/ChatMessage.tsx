@@ -295,6 +295,7 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, files, isLastMessage
                     forceShow={isStreamingReasoning && isLastMessage}
                     startTime={isLastMessage ? streamingStartTime : message.reasoningStartTime}
                     endTime={isLastMessage ? streamingEndTime : message.reasoningEndTime}
+                    duration={message.duration}
                     className="mt-2"
                   />
                 )}

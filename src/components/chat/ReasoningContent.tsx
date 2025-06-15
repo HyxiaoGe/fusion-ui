@@ -18,6 +18,7 @@ interface ReasoningContentProps {
   forceShow?: boolean;
   startTime?: number;
   endTime?: number;
+  duration?: number;
 }
 
 const ReasoningContent: React.FC<ReasoningContentProps> = ({
@@ -28,7 +29,8 @@ const ReasoningContent: React.FC<ReasoningContentProps> = ({
   className,
   forceShow = false,
   startTime,
-  endTime
+  endTime,
+  duration
 }) => {
   // 允许在流式生成过程中显示空内容
   // 只有在非流式状态下且内容为空时才不显示
@@ -36,6 +38,9 @@ const ReasoningContent: React.FC<ReasoningContentProps> = ({
     return null;
   }
   
+  // 思考是否已经完成
+  const isThinkingComplete = !!(endTime || (duration && duration > 0));
+
   // 在流式状态下或forceShow时强制设置为可见
   const actuallyVisible = isStreaming || forceShow ? true : isVisible;
   
@@ -108,8 +113,25 @@ const ReasoningContent: React.FC<ReasoningContentProps> = ({
   // 计算思考时间
   const [thinkingDuration, setThinkingDuration] = useState<string>('0.00秒');
   const timerRef = useRef<HTMLSpanElement>(null);
-
+  
   useEffect(() => {
+    // 如果有持久化的duration，则优先显示
+    if (duration && duration > 0) {
+      const seconds = Math.floor(duration / 1000);
+      const ms = duration % 1000;
+
+      let finalTime = '';
+      if (seconds < 60) {
+        finalTime = `${seconds}.${ms.toString().padStart(3, '0').substring(0, 2)}秒`;
+      } else {
+        const minutes = Math.floor(seconds / 60);
+        const remainingSeconds = seconds % 60;
+        finalTime = `${minutes}分${remainingSeconds}.${ms.toString().padStart(3, '0').substring(0, 2)}秒`;
+      }
+      setThinkingDuration(finalTime);
+      return;
+    }
+
     if (!startTime) {
       setThinkingDuration('0.00秒');
       return;
@@ -135,8 +157,8 @@ const ReasoningContent: React.FC<ReasoningContentProps> = ({
     
     // 如果没有结束时间，则启动实时计时器
     let lastTime = '';
-    const timerInterval = setInterval(() => {
-      const elapsed = Date.now() - startTime;
+      const timerInterval = setInterval(() => {
+        const elapsed = Date.now() - startTime;
       const seconds = Math.floor(elapsed / 1000);
       const ms = elapsed % 1000;
       
@@ -157,15 +179,15 @@ const ReasoningContent: React.FC<ReasoningContentProps> = ({
             timerRef.current.classList.remove('updated');
           }
         }, 200);
-        setThinkingDuration(newTime);
+      setThinkingDuration(newTime);
         lastTime = newTime;
-      }
+    }
     }, 100);
 
     // 清理函数
     return () => clearInterval(timerInterval);
 
-  }, [startTime, endTime]);
+  }, [startTime, endTime, duration]);
 
   // 复制成功状态
   const [isCopied, setIsCopied] = useState(false);
@@ -199,9 +221,9 @@ const ReasoningContent: React.FC<ReasoningContentProps> = ({
       >
         <div className="flex items-center gap-2">
           <div className="flex items-center text-xs text-muted-foreground">
-            <Lightbulb className={cn("h-4 w-4 mr-1", !endTime ? "text-amber-400 animate-pulse" : "text-amber-400")}/>
+            <Lightbulb className={cn("h-4 w-4 mr-1", !isThinkingComplete ? "text-amber-400 animate-pulse" : "text-amber-400")}/>
             <span className="font-medium">思考过程</span>
-            {!endTime && (!reasoning || !reasoning.trim()) && (
+            {!isThinkingComplete && isStreaming && (!reasoning || !reasoning.trim()) && (
               <span className="ml-1 text-amber-400 animate-pulse">实时思考中...</span>
             )}
           </div>
@@ -209,20 +231,20 @@ const ReasoningContent: React.FC<ReasoningContentProps> = ({
           {/* 思考时间显示 */}
           <div className={cn(
             "text-xs px-2 py-0.5 rounded-full transition-all duration-150",
-            !endTime 
+            !isThinkingComplete 
               ? "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300" 
               : "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300"
           )}>
             <span className={cn(
               "flex items-center gap-1",
-              !endTime && "animate-pulse-slow"
+              !isThinkingComplete && "animate-pulse-slow"
             )}>
-              <Clock className={cn("h-3 w-3", !endTime && "animate-spin-slow")} />
+              <Clock className={cn("h-3 w-3", !isThinkingComplete && isStreaming && "animate-spin-slow")} />
               <span className="font-mono">
                 思考用时: 
                 <span className={cn(
                   "inline-block min-w-[4em] text-right ml-1",
-                  !endTime && "timer-digits"
+                  !isThinkingComplete && "timer-digits"
                 )}
                 ref={timerRef}>
                   {thinkingDuration}

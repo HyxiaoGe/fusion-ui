@@ -52,6 +52,7 @@ export interface ChatState {
   streamingReasoningStartTime: number | null;
   streamingReasoningEndTime: number | undefined;
   streamingMessageId: string | null;
+  streamingReasoningMessageId: string | null;
   reasoningEnabled: boolean;
   isStreamingReasoning: boolean;
   isThinkingPhaseComplete: boolean;
@@ -93,6 +94,7 @@ const initialState: ChatState = {
   streamingReasoningStartTime: null,
   streamingReasoningEndTime: undefined,
   streamingMessageId: null,
+  streamingReasoningMessageId: null,
   reasoningEnabled: false,
   isStreamingReasoning: false,
   isThinkingPhaseComplete: false,
@@ -295,6 +297,7 @@ const chatSlice = createSlice({
       state.streamingContent = '';
       state.streamingReasoningContent = '';
       state.streamingReasoningEndTime = undefined;
+      state.streamingReasoningMessageId = null;
       state.error = null;
       state.isThinkingPhaseComplete = false;
       state.functionCallType = null;
@@ -469,6 +472,9 @@ const chatSlice = createSlice({
     clearServerError: (state) => {
       state.serverError = null;
     },
+    setStreamingReasoningMessageId: (state, action: PayloadAction<string>) => {
+      state.streamingReasoningMessageId = action.payload;
+    },
   },
   extraReducers: (builder) => {
     // ... existing code ...
@@ -517,6 +523,7 @@ export const {
   setLoadingMoreServer,
   setServerError,
   clearServerError,
+  setStreamingReasoningMessageId,
 } = chatSlice.actions;
 
 export default chatSlice.reducer;

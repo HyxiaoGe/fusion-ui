@@ -9,6 +9,7 @@ import {
   clearFunctionCallData,
   clearChatFunctionCallOutput,
   setFunctionCallStepContent,
+  setStreamingReasoningMessageId,
 } from '../../redux/slices/chatSlice'; // 导入 actions
 
 const API_BASE_URL = API_CONFIG.BASE_URL
@@ -131,6 +132,9 @@ export async function sendMessageStream(data: ChatRequest, onChunk: (chunk: stri
             switch(parsedData.type) {
               case "reasoning_start":
                 // 不在这里开始，等待第一个content
+                if (parsedData.message_id && !store.getState().chat.streamingReasoningMessageId) {
+                  store.dispatch(setStreamingReasoningMessageId(parsedData.message_id));
+                }
                 break;
                 
               case "reasoning_content":
@@ -146,6 +150,9 @@ export async function sendMessageStream(data: ChatRequest, onChunk: (chunk: stri
                 
               case "reasoning_end":
               case "reasoning_complete":
+                if (parsedData.message_id && !store.getState().chat.streamingReasoningMessageId) {
+                  store.dispatch(setStreamingReasoningMessageId(parsedData.message_id));
+                }
                 store.dispatch(endStreamingReasoning());
                 // 推理完成，可能会收到完整的reasoning
                 if (parsedData.reasoning) {
@@ -378,22 +385,39 @@ export const fetchSuggestedQuestions = async (
 
 // 更新对话标题
 export async function updateConversationTitle(conversationId: string, title: string) {
-  try {
-    const response = await fetch(`${API_BASE_URL}/api/chat/conversations/${conversationId}/title`, {
-      method: 'PUT',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ title }),
-    });
+  const response = await fetch(`${API_BASE_URL}/api/chat/conversations/${conversationId}/title`, {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ title }),
+  });
 
-    if (!response.ok) {
-      throw new Error('更新对话标题失败');
-    }
-    
-    return await response.json();
-  } catch (error) {
-    console.error('更新对话标题失败:', error);
-    throw error;
+  if (!response.ok) {
+    const errorData = await response.json();
+    throw new Error(errorData.detail || '更新标题失败');
   }
+
+  return await response.json();
+}
+
+export async function updateMessageDuration(conversationId: string, messageId: string, duration: number) {
+  const response = await fetch(`${API_BASE_URL}/api/chat/conversations/${conversationId}/messages/${messageId}`, {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ 
+      duration: duration,
+      type: "reasoning_content"
+    }),
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json();
+    console.error('Failed to update message duration:', errorData);
+    throw new Error(errorData.detail || '更新消息时长失败');
+  }
+
+  return await response.json();
 }
