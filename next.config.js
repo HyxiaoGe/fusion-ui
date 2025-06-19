@@ -135,6 +135,16 @@ const nextConfig = {
   compress: true,
   // 生成源映射（开发环境）
   productionBrowserSourceMaps: false,
+
+  // 在开发环境中将API请求代理到后端
+  async rewrites() {
+    return [
+      {
+        source: '/api/:path*',
+        destination: 'http://localhost:8000/api/:path*', // 警告：这里的后端地址是暂定的
+      },
+    ]
+  },
 }
 
 module.exports = withBundleAnalyzer(nextConfig)

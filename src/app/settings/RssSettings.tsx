@@ -2,19 +2,20 @@
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogTrigger } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogTrigger, DialogClose } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/components/ui/toast";
-import { Edit, PlusCircle, Trash2, Loader2, ExternalLink, Clock } from "lucide-react";
+import { Edit, PlusCircle, Trash2, Loader2, ExternalLink, Clock, Rss, RefreshCw, X } from "lucide-react";
 import { useEffect, useState, useMemo } from "react";
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 import ConfirmDialog from "@/components/ui/confirm-dialog";
 import { Badge } from "@/components/ui/badge";
 import Image from "next/image";
+import fetchWithAuth from "@/lib/api/fetchWithAuth";
 
 // 根据API文档定义RSS源类型
 type RssSource = {
@@ -64,7 +65,7 @@ export default function RssSettings() {
     }
 
     try {
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL || ''}/api/rss?skip=${currentSkip}&limit=${LIMIT}`);
+      const response = await fetchWithAuth(`${process.env.NEXT_PUBLIC_API_BASE_URL || ''}/api/rss?skip=${currentSkip}&limit=${LIMIT}`);
       if (!response.ok) throw new Error("获取订阅源失败");
       const newSources = await response.json();
       
@@ -114,7 +115,7 @@ export default function RssSettings() {
   const handleConfirmDelete = async () => {
     if (!deletingSourceId) return;
     try {
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL || ''}/api/rss/${deletingSourceId}`, {
+      const response = await fetchWithAuth(`${process.env.NEXT_PUBLIC_API_BASE_URL || ''}/api/rss/${deletingSourceId}`, {
         method: "DELETE",
       });
       if (!response.ok) {
@@ -140,7 +141,7 @@ export default function RssSettings() {
   
   const handleToggleEnabled = async (source: RssSource, is_enabled: boolean) => {
     try {
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL || ''}/api/rss/${source.id}`, {
+      const response = await fetchWithAuth(`${process.env.NEXT_PUBLIC_API_BASE_URL || ''}/api/rss/${source.id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ is_enabled }),
@@ -168,7 +169,7 @@ export default function RssSettings() {
     const method = isEditing ? "PUT" : "POST";
 
     try {
-      const response = await fetch(url, {
+      const response = await fetchWithAuth(url, {
         method,
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(sourceData),

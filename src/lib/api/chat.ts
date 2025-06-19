@@ -1,4 +1,5 @@
 import { API_CONFIG } from '../config';
+import fetchWithAuth from './fetchWithAuth';
 import { store } from '../../redux/store'; // 导入 store
 import {
   startStreamingReasoning,
@@ -48,7 +49,7 @@ export interface ChatResponse {
 // 发送消息到AI
 export async function sendMessage(data: ChatRequest): Promise<ChatResponse> {
   try {
-    const response = await fetch(`${API_BASE_URL}/api/chat/send`, {
+    const response = await fetchWithAuth(`${API_BASE_URL}/api/chat/send`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -76,7 +77,7 @@ export async function sendMessageStream(data: ChatRequest, onChunk: (chunk: stri
       data.options = {};
     }
 
-    const response = await fetch(`${API_BASE_URL}/api/chat/send`, {
+    const response = await fetchWithAuth(`${API_BASE_URL}/api/chat/send`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -302,7 +303,7 @@ export async function sendMessageStream(data: ChatRequest, onChunk: (chunk: stri
 // 获取所有对话（支持分页）
 export async function getConversations(page: number = 1, pageSize: number = 10) {
   try {
-    const response = await fetch(`${API_BASE_URL}/api/chat/conversations?page=${page}&page_size=${pageSize}`);
+    const response = await fetchWithAuth(`${API_BASE_URL}/api/chat/conversations?page=${page}&page_size=${pageSize}`);
     
     if (!response.ok) {
       throw new Error('获取对话列表失败');
@@ -318,7 +319,7 @@ export async function getConversations(page: number = 1, pageSize: number = 10) 
 // 获取特定对话详情
 export async function getConversation(conversationId: string) {
   try {
-    const response = await fetch(`${API_BASE_URL}/api/chat/conversations/${conversationId}`);
+    const response = await fetchWithAuth(`${API_BASE_URL}/api/chat/conversations/${conversationId}`);
     
     if (!response.ok) {
       throw new Error('获取对话详情失败');
@@ -334,7 +335,7 @@ export async function getConversation(conversationId: string) {
 // 删除对话
 export async function deleteConversation(conversationId: string) {
   try {
-    const response = await fetch(`${API_BASE_URL}/api/chat/conversations/${conversationId}`, {
+    const response = await fetchWithAuth(`${API_BASE_URL}/api/chat/conversations/${conversationId}`, {
       method: 'DELETE',
     });
     
@@ -364,7 +365,7 @@ export const fetchSuggestedQuestions = async (
   messageCount?: number
 ): Promise<{ questions: string[] }> => {
   try {
-    const response = await fetch(`${API_BASE_URL}/api/chat/suggest-questions`, {
+    const response = await fetchWithAuth(`${API_BASE_URL}/api/chat/suggest-questions`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ conversation_id: conversationId, options }),
@@ -385,7 +386,7 @@ export const fetchSuggestedQuestions = async (
 
 // 更新对话标题
 export async function updateConversationTitle(conversationId: string, title: string) {
-  const response = await fetch(`${API_BASE_URL}/api/chat/conversations/${conversationId}/title`, {
+  const response = await fetchWithAuth(`${API_BASE_URL}/api/chat/conversations/${conversationId}/title`, {
     method: 'PUT',
     headers: {
       'Content-Type': 'application/json',
@@ -402,7 +403,7 @@ export async function updateConversationTitle(conversationId: string, title: str
 }
 
 export async function updateMessageDuration(conversationId: string, messageId: string, duration: number) {
-  const response = await fetch(`${API_BASE_URL}/api/chat/conversations/${conversationId}/messages/${messageId}`, {
+  const response = await fetchWithAuth(`${API_BASE_URL}/api/chat/conversations/${conversationId}/messages/${messageId}`, {
     method: 'PUT',
     headers: {
       'Content-Type': 'application/json',
