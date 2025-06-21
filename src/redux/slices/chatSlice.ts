@@ -29,7 +29,8 @@ export interface Chat {
   id: string;
   title: string;
   messages: Message[];
-  modelId: string;
+  model: string;
+  provider?: string;
   createdAt: number;
   updatedAt: number;
   functionCallOutput?: {
@@ -128,13 +129,13 @@ const chatSlice = createSlice({
       state.functionCallType = null;
       state.functionCallError = null;
     },
-    createChat: (state, action: PayloadAction<{id?: string, title?: string, modelId: string}>) => {
-      const { id, title = '新对话', modelId } = action.payload;
+    createChat: (state, action: PayloadAction<{id?: string, title?: string, model: string}>) => {
+      const { id, title = '新对话', model } = action.payload;
       const newChat: Chat = {
         id: id || uuidv4(),
         title,
         messages: [],
-        modelId,
+        model,
         createdAt: Date.now(),
         updatedAt: Date.now(),
         functionCallOutput: null,
@@ -147,7 +148,8 @@ const chatSlice = createSlice({
         const serverChat = {
           id: newChat.id,
           title: newChat.title,
-          model_id: newChat.modelId,
+          model: newChat.model,
+          provider: newChat.provider,
           created_at: new Date(newChat.createdAt).toISOString(),
           updated_at: new Date(newChat.updatedAt).toISOString(),
         };
@@ -174,11 +176,11 @@ const chatSlice = createSlice({
         chat.updatedAt = Date.now();
       }
     },
-    updateChatModel: (state, action: PayloadAction<{chatId: string, modelId: string}>) => {
-      const { chatId, modelId } = action.payload;
+    updateChatModel: (state, action: PayloadAction<{chatId: string, model: string}>) => {
+      const { chatId, model } = action.payload;
       const chat = state.chats.find(c => c.id === chatId);
       if (chat) {
-        chat.modelId = modelId;
+        chat.model = model;
         chat.updatedAt = Date.now();
       }
     },

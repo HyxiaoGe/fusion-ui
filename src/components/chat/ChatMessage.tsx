@@ -54,9 +54,13 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, files, isLastMessage
   const models = useAppSelector(state => state.models.models);
 
   // 查找消息所属的聊天及其使用的模型
+  console.log("chats", chats)
   const chat = chats.find(c => c.id === message.chatId || c.id === activeChatId);
-  const model = chat ? models.find(m => m.id === chat.modelId) : null;
-  const providerId = model?.provider;
+  console.log("chat", chat)
+  const model = chat ? models.find(m => m.id === chat.model) : null;
+  console.log("model", model)
+  const providerId = chat?.provider || model?.provider;
+  console.log('providerId', providerId)
 
   // 获取头像表情
   const getUserEmoji = () => {
@@ -293,7 +297,7 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, files, isLastMessage
                     onToggleVisibility={handleToggleReasoning}
                     isStreaming={isStreamingReasoning && isLastMessage}
                     forceShow={isStreamingReasoning && isLastMessage}
-                    startTime={isLastMessage ? streamingStartTime : message.reasoningStartTime}
+                    startTime={(isLastMessage ? streamingStartTime : message.reasoningStartTime) ?? undefined}
                     endTime={isLastMessage ? streamingEndTime : message.reasoningEndTime}
                     duration={message.duration}
                     className="mt-2"

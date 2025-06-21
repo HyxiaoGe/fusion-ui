@@ -47,7 +47,7 @@ export const useChatListManager = () => {
     ? serverChatList.map((chat: any) => ({
         ...chat,
         messages: [],
-        modelId: chat.model_id,
+        model: chat.model,
         createdAt: parseTimestamp(chat.created_at),
         updatedAt: parseTimestamp(chat.updated_at),
       }))
@@ -67,7 +67,8 @@ export const useChatListManager = () => {
       const chatList = items.map((item: any) => ({
         id: item.id,
         title: item.title || '新对话',
-        model_id: item.model || item.provider || 'unknown',
+        model: item.model || 'unknown',
+        provider: item.provider,
         created_at: item.created_at,
         updated_at: item.updated_at,
       }));
@@ -116,7 +117,8 @@ export const useChatListManager = () => {
         const chatList = items.map((item: any) => ({
           id: item.id,
           title: item.title || '新对话',
-          model_id: item.model || item.provider || 'unknown',
+          model: item.model || 'unknown',
+          provider: item.provider,
           created_at: item.created_at,
           updated_at: item.updated_at,
         }));

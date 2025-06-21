@@ -62,7 +62,7 @@ export const chatStore = {
       if (existingChat) {
         await db.chats.update(chat.id, {
           title: chat.title,
-          modelId: chat.modelId,
+          model: chat.model,
           updatedAt: chat.updatedAt,
           functionCallOutput: chat.functionCallOutput
         });

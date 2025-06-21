@@ -45,7 +45,7 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({ onChange, modelId, disabl
   const hasMessages = activeChat?.messages?.some(msg => msg.role === 'user') || false;
   
   // 优先使用当前聊天的模型ID，如果存在活动聊天
-  const activeChatModelId = activeChat?.modelId;
+  const activeChatModelId = activeChat?.model;
 
   // 只有当当前聊天存在且有消息时，才禁用模型选择器
   const isDisabled = disabled || (!!activeChatId && hasMessages);

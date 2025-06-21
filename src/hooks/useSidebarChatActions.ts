@@ -14,7 +14,8 @@ import {
   setServerError,
   setLoadingServerChat,
   setAllChats,
-  Pagination
+  Pagination,
+  Message
 } from '@/redux/slices/chatSlice';
 import { store } from '@/redux/store';
 
@@ -107,9 +108,9 @@ export const useSidebarChatActions = ({
           });
         } else {
           // 多条消息需要合并
-          const userMsg = turnMessages.find(m => m.role === 'user');
-          const reasoningMsg = turnMessages.find(m => m.type === 'reasoning_content');
-          const assistantMsg = turnMessages.find(m => m.type === 'assistant_content');
+          const userMsg = turnMessages.find((m: any) => m.role === 'user');
+          const reasoningMsg = turnMessages.find((m: any) => m.type === 'reasoning_content');
+          const assistantMsg = turnMessages.find((m: any) => m.type === 'assistant_content');
           
           // 添加用户消息
           if (userMsg) {
@@ -144,8 +145,9 @@ export const useSidebarChatActions = ({
       const localChat: Chat = {
         id: serverChatData.id,
         title: serverChatData.title,
-        messages: processedMessages,
-        modelId: serverChatData.model_id,
+        messages: processedMessages as Message[],
+        model: serverChatData.model,
+        provider: serverChatData.provider,
         createdAt: parseTimestamp(serverChatData.created_at),
         updatedAt: parseTimestamp(serverChatData.updated_at),
         functionCallOutput: null,
@@ -232,7 +234,8 @@ export const useSidebarChatActions = ({
               content: msg.content,
               timestamp: parseTimestamp(msg.created_at),
             })),
-            modelId: serverChatData.model_id,
+            model: serverChatData.model,
+            provider: serverChatData.provider,
             createdAt: parseTimestamp(serverChatData.created_at),
             updatedAt: parseTimestamp(serverChatData.updated_at),
             functionCallOutput: null,
