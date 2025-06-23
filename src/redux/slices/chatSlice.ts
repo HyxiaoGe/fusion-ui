@@ -129,13 +129,15 @@ const chatSlice = createSlice({
       state.functionCallType = null;
       state.functionCallError = null;
     },
-    createChat: (state, action: PayloadAction<{id?: string, title?: string, model: string}>) => {
-      const { id, title = '新对话', model } = action.payload;
+    createChat: (state, action: PayloadAction<{id?: string, title?: string, model: string, provider?: string}>) => {
+      const { id, title, model, provider } = action.payload;
+      const chatTitle = title !== undefined ? title : '新对话';
       const newChat: Chat = {
         id: id || uuidv4(),
-        title,
+        title: chatTitle,
         messages: [],
         model,
+        provider,
         createdAt: Date.now(),
         updatedAt: Date.now(),
         functionCallOutput: null,

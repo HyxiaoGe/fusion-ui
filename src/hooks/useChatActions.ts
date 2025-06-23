@@ -74,8 +74,12 @@ export const useChatActions = (options: ChatActionsOptions) => {
       return;
     }
 
+    const selectedModel = models.find(m => m.id === modelToUse);
+    const providerToUse = selectedModel?.provider;
+
     try {
-      dispatch(createChat({ modelId: modelToUse }));
+      // 创建新对话时暂时不设置标题，等用户输入消息后再设置
+      dispatch(createChat({ model: modelToUse, provider: providerToUse, title: '' }));
       
       setTimeout(() => {
         refreshChatList();
@@ -107,10 +111,14 @@ export const useChatActions = (options: ChatActionsOptions) => {
 
     if (!currentActiveChatId) {
       const newChatId = uuidv4();
+      const selectedModel = models.find(m => m.id === selectedModelId);
+      const providerToUse = selectedModel?.provider;
+      
       dispatch(
         createChat({
           id: newChatId,
-          modelId: selectedModelId,
+          model: selectedModelId,
+          provider: providerToUse,
           title: content.substring(0, 30),
         })
       );
@@ -129,6 +137,13 @@ export const useChatActions = (options: ChatActionsOptions) => {
       timestamp: Date.now(),
       id: uuidv4(),
     };
+    
+    // 如果当前聊天标题为空，使用用户消息的前30个字符作为临时标题
+    const currentChat = chats.find(c => c.id === currentActiveChatId);
+    if (currentChat && !currentChat.title) {
+      const tempTitle = content.substring(0, 30);
+      dispatch(updateChatTitle({ chatId: currentActiveChatId, title: tempTitle }));
+    }
     
     dispatch(addMessage({
       chatId: currentActiveChatId,

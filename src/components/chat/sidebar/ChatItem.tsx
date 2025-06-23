@@ -52,7 +52,7 @@ const ChatItem: React.FC<ChatItemProps> = ({
         <div className="flex items-start gap-2">
           <MessageSquareIcon size={16} className={`shrink-0 mt-0.5 ${isActive ? "text-primary" : "text-muted-foreground"}`} />
           <div className="truncate flex-1 pr-1">
-            <div className={`font-medium truncate ${isActive ? "text-primary font-semibold" : ""}`} title={chat.title}>
+            <div className={`font-medium truncate ${isActive ? "text-primary font-semibold" : ""}`} title={chat.title || "新对话"}>
               {chat.title || "新对话"}
             </div>
             <div className="text-xs text-muted-foreground truncate mt-0.5">
