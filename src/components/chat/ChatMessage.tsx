@@ -87,7 +87,7 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, files, isLastMessage
         return '';
       }
 
-      return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+      return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
     } catch (error) {
       console.error('格式化时间出错:', error);
       return '';

@@ -5,7 +5,7 @@ import { Model } from "@/redux/slices/modelSlice";
 
 interface ChatListProps {
   chats: Chat[];
-  sortedAndGroupedChats: Record<string, Chat[]>;
+  sortedAndGroupedChats: { groupLabel: string; groupChats: Chat[] }[];
   activeChatId: string | null;
   models: Model[];
   isLoadingServerList: boolean;
@@ -43,7 +43,7 @@ const ChatList: React.FC<ChatListProps> = ({
         </div>
       ) : (
         <div>
-          {Object.entries(sortedAndGroupedChats).map(([groupLabel, groupChats]) => (
+          {sortedAndGroupedChats.map(({ groupLabel, groupChats }) => (
             <div key={groupLabel} className="mb-4">
               <h3 className="text-xs font-medium text-muted-foreground px-2 mb-2">{groupLabel}</h3>
               <div className="space-y-2">

@@ -37,8 +37,8 @@ export const useChatListManager = () => {
         return isNaN(date.getTime()) ? 0 : date.getTime();
     }
 
-    // Otherwise, assume UTC
-    const date = new Date(ts.replace(' ', 'T') + 'Z');
+    // Otherwise, assume it's local time
+    const date = new Date(ts.replace('T', ' '));
     return isNaN(date.getTime()) ? 0 : date.getTime();
   };
 

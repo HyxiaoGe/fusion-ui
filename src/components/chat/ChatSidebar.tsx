@@ -12,6 +12,7 @@ import ChatList from "./sidebar/ChatList";
 import { useChatListManager } from "@/hooks/useChatListManager";
 import { useSidebarChatActions } from "@/hooks/useSidebarChatActions";
 import { Chat } from "@/redux/slices/chatSlice";
+import { formatInTimeZone } from 'date-fns-tz';
 
 interface ChatSidebarProps {
   onNewChat: () => void;
@@ -87,8 +88,9 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ onNewChat }) => {
   }, [checkScrollbar, chats.length, serverPagination]);
 
   const formatDate = (timestamp: number) => {
+    const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
     const date = new Date(timestamp);
-    return date.toLocaleDateString();
+    return formatInTimeZone(date, timeZone, 'MM/dd/yyyy');
   };
 
   const getDateGroupLabel = (timestamp: number) => {
@@ -100,7 +102,7 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ onNewChat }) => {
     
     const diffDays = Math.floor((nowDate.getTime() - chatDate.getTime()) / (1000 * 60 * 60 * 24));
     
-    if (diffDays === 0) return "今天";
+    if (diffDays <= 0) return "今天";
     if (diffDays === 1) return "昨天";
     if (diffDays <= 3) return "三天内";
     if (diffDays <= 7) return "一周内";
@@ -121,7 +123,14 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ onNewChat }) => {
       groups[groupLabel].push(chat);
     });
     
-    return groups;
+    const groupOrder = ["今天", "昨天", "三天内", "一周内", "一个月内", "更早"];
+    
+    return groupOrder
+      .map(groupLabel => ({
+        groupLabel,
+        groupChats: groups[groupLabel] || [],
+      }))
+      .filter(group => group.groupChats.length > 0);
   }, [chats]);
 
   const handleScroll = () => {
