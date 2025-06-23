@@ -28,9 +28,8 @@ export const useSuggestedQuestions = (chatId: string | null) => {
 
     const hasAIMessage = chat.messages.some(msg => msg.role === 'assistant' && msg.content?.trim());
     
-    // If there's no solid assistant message, but we were just streaming, we should still fetch.
-    if (!hasAIMessage && !isStreaming) {
-      console.warn(`[useSuggestedQuestions] Aborting: No assistant message and not streaming for chat ${chatId}.`);
+    // Do not fetch questions if a stream is in progress.
+    if (isStreaming) {
       return;
     }
 
