@@ -3,25 +3,28 @@
 import { useEffect } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { Loader2 } from "lucide-react";
+import { useAppDispatch } from "@/redux/hooks";
+import { setToken } from "@/redux/slices/authSlice";
 
 export default function AuthCallbackPage() {
   const searchParams = useSearchParams();
   const router = useRouter();
+  const dispatch = useAppDispatch();
 
   useEffect(() => {
     const token = searchParams.get("token");
 
     if (token) {
-      // 将 token 存储到 localStorage
-      localStorage.setItem("auth_token", token);
+      // 分发 action 来更新全局状态并存储 token
+      dispatch(setToken(token));
       
-      // 重定向到设置页面，可以附加参数让设置页打开特定标签
+      // 重定向到设置页面
       router.replace("/settings?tab=general&from=auth_callback");
     } else {
-      // 如果没有 token，可能是个错误，重定向到首页或登录页
+      // 如果没有 token，重定向到首页
       router.replace("/");
     }
-  }, [searchParams, router]);
+  }, [searchParams, router, dispatch]);
 
   return (
     <div className="flex items-center justify-center h-screen w-full">

@@ -17,6 +17,7 @@ export const useChatListManager = () => {
   const dispatch = useAppDispatch();
   const { toast } = useToast();
   const { registerRefreshFunction } = useChatListRefresh();
+  const { isAuthenticated } = useAppSelector((state) => state.auth);
 
   const {
     chats: localChats,
@@ -57,6 +58,8 @@ export const useChatListManager = () => {
   const lastActiveChatIdRef = useRef<string | null>(null);
 
   const fetchChatList = useCallback(async (page: number = 1, pageSize: number = 10) => {
+    if (!isAuthenticated) return;
+    
     try {
       dispatch(setLoadingServerList(true));
       dispatch(clearServerError());
@@ -89,7 +92,7 @@ export const useChatListManager = () => {
     } finally {
       dispatch(setLoadingServerList(false));
     }
-  }, [dispatch]);
+  }, [dispatch, isAuthenticated]);
 
   const refreshChatList = useCallback(() => {
     fetchChatList(1, 10);
@@ -101,7 +104,7 @@ export const useChatListManager = () => {
 
   const loadMoreChats = useCallback(async () => {
     if (useServerData) {
-      if (!serverPagination?.has_next || isLoadingMoreServer) {
+      if (!serverPagination?.has_next || isLoadingMoreServer || !isAuthenticated) {
         return;
       }
 
@@ -145,15 +148,15 @@ export const useChatListManager = () => {
         type: "info",
       });
     }
-  }, [useServerData, serverPagination, isLoadingMoreServer, dispatch, toast]);
+  }, [useServerData, serverPagination, isLoadingMoreServer, dispatch, toast, isAuthenticated]);
 
   useEffect(() => {
-    if (isInitializedRef.current) {
+    if (isInitializedRef.current || !isAuthenticated) {
       return;
     }
     isInitializedRef.current = true;
     fetchChatList(1, 10);
-  }, [fetchChatList]);
+  }, [fetchChatList, isAuthenticated]);
 
   useEffect(() => {
     if (activeChatId && activeChatId !== lastActiveChatIdRef.current) {

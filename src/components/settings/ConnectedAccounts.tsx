@@ -4,9 +4,9 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Github, Mail, Link as LinkIcon } from "lucide-react";
-import { useEffect, useState } from "react";
 import Link from "next/link";
-import { jwtDecode } from "jwt-decode";
+import { useAppDispatch, useAppSelector } from "@/redux/hooks";
+import { logout } from "@/redux/slices/authSlice";
 
 interface GitHubUser {
   login: string;
@@ -32,25 +32,11 @@ const services = [
 ];
 
 const ConnectedAccounts = () => {
-  const [connectedUser, setConnectedUser] = useState<GitHubUser | null>(null);
-
-  useEffect(() => {
-    const token = localStorage.getItem("auth_token");
-    if (token) {
-      try {
-        const decoded: { user: GitHubUser } = jwtDecode(token);
-        setConnectedUser(decoded.user);
-      } catch (error) {
-        console.error("Failed to decode token:", error);
-        localStorage.removeItem("auth_token");
-      }
-    }
-  }, []);
+  const dispatch = useAppDispatch();
+  const { isAuthenticated, user } = useAppSelector((state) => state.auth);
 
   const handleDisconnect = () => {
-    localStorage.removeItem("auth_token");
-    setConnectedUser(null);
-    // 可选：刷新页面或通知其他组件
+    dispatch(logout());
   };
 
   return (
@@ -64,7 +50,7 @@ const ConnectedAccounts = () => {
       <CardContent className="pt-4 px-0">
         <div className="flex flex-col">
           {services.map((service, index) => {
-            const isConnected = service.id === 'github' && !!connectedUser;
+            const isConnected = service.id === 'github' && isAuthenticated;
             const isLast = index === services.length - 1;
 
             return (
@@ -84,16 +70,16 @@ const ConnectedAccounts = () => {
                   </div>
                 </div>
 
-                {isConnected && connectedUser ? (
+                {isConnected && user ? (
                   // 已连接状态 (仅GitHub)
                   <div className="flex items-center gap-3">
                     <Avatar className="h-8 w-8">
-                      <AvatarImage src={connectedUser.avatar_url} alt={connectedUser.login} />
+                      <AvatarImage src={user.avatar_url} alt={user.login} />
                       <AvatarFallback>
-                        {connectedUser.login.slice(0, 2).toUpperCase()}
+                        {user.login.slice(0, 2).toUpperCase()}
                       </AvatarFallback>
                     </Avatar>
-                    <span className="text-sm font-medium">{connectedUser.login}</span>
+                    <span className="text-sm font-medium">{user.login}</span>
                     <Button variant="outline" size="sm" onClick={handleDisconnect}>
                       断开连接
                     </Button>
