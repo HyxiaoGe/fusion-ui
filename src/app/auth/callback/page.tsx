@@ -12,14 +12,14 @@ export default function AuthCallbackPage() {
   const dispatch = useAppDispatch();
 
   useEffect(() => {
-    const token = searchParams.get("token");
+    const token = searchParams?.get("token");
 
     if (token) {
       // 分发 action 来更新全局状态并存储 token
       dispatch(setToken(token));
       
       // 重定向到设置页面
-      router.replace("/settings?tab=general&from=auth_callback");
+      router.replace("/");
     } else {
       // 如果没有 token，重定向到首页
       router.replace("/");
