@@ -1,28 +1,41 @@
-import { createSlice, PayloadAction } from "@reduxjs/toolkit";
+import { createSlice, PayloadAction, createAsyncThunk } from "@reduxjs/toolkit";
 import { jwtDecode } from "jwt-decode";
-
-interface User {
-  id: string;
-  login: string;
-  avatar_url: string;
-}
+import { fetchUserProfileAPI, UserProfile } from '../../lib/api/user';
 
 interface AuthState {
   isAuthenticated: boolean;
-  user: User | null;
+  user: UserProfile | null;
   token: string | null;
+  status: 'idle' | 'loading' | 'succeeded' | 'failed';
+  error: string | null;
 }
 
 const initialState: AuthState = {
   isAuthenticated: false,
   user: null,
   token: null,
+  status: 'idle',
+  error: null,
 };
 
 interface DecodedToken {
-  user: User;
+  id: string;
+  login: string;
+  avatar_url: string;
   exp: number;
 }
+
+export const fetchUserProfile = createAsyncThunk(
+  'auth/fetchUserProfile',
+  async (_, { rejectWithValue }) => {
+    try {
+      const userProfile = await fetchUserProfileAPI();
+      return userProfile;
+    } catch (error: any) {
+      return rejectWithValue(error.message);
+    }
+  }
+);
 
 const authSlice = createSlice({
   name: "auth",
@@ -32,16 +45,21 @@ const authSlice = createSlice({
       if (action.payload) {
         try {
           const decoded: DecodedToken = jwtDecode(action.payload);
-          // 检查 token 是否过期
           if (decoded.exp * 1000 > Date.now()) {
             state.isAuthenticated = true;
-            state.user = decoded.user;
             state.token = action.payload;
+            state.user = { // Partially populate user from token
+              id: decoded.id,
+              username: decoded.login,
+              avatar: decoded.avatar_url,
+              email: null,
+              nickname: null,
+              mobile: null,
+            };
             if (typeof window !== "undefined") {
               localStorage.setItem("auth_token", action.payload);
             }
           } else {
-            // Token 过期，重置状态
             Object.assign(state, initialState);
             if (typeof window !== "undefined") {
               localStorage.removeItem("auth_token");
@@ -67,6 +85,20 @@ const authSlice = createSlice({
         localStorage.removeItem("auth_token");
       }
     },
+  },
+  extraReducers: (builder) => {
+    builder
+      .addCase(fetchUserProfile.pending, (state) => {
+        state.status = 'loading';
+      })
+      .addCase(fetchUserProfile.fulfilled, (state, action: PayloadAction<UserProfile>) => {
+        state.status = 'succeeded';
+        state.user = action.payload;
+      })
+      .addCase(fetchUserProfile.rejected, (state, action) => {
+        state.status = 'failed';
+        state.error = action.payload as string;
+      });
   },
 });
 

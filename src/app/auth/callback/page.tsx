@@ -4,7 +4,7 @@ import { useEffect } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { Loader2 } from "lucide-react";
 import { useAppDispatch } from "@/redux/hooks";
-import { setToken } from "@/redux/slices/authSlice";
+import { setToken, fetchUserProfile } from "@/redux/slices/authSlice";
 
 export default function AuthCallbackPage() {
   const searchParams = useSearchParams();
@@ -17,8 +17,10 @@ export default function AuthCallbackPage() {
     if (token) {
       // 分发 action 来更新全局状态并存储 token
       dispatch(setToken(token));
+      // 获取用户个人信息
+      dispatch(fetchUserProfile());
       
-      // 重定向到设置页面
+      // 重定向到首页
       router.replace("/");
     } else {
       // 如果没有 token，重定向到首页

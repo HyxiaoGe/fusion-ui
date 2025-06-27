@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Github, Mail, Loader2 } from "lucide-react";
 import { useState } from "react";
 import { useToast } from "@/components/ui/toast";
+import { API_CONFIG } from "@/lib/config";
 
 export function LoginDialog({
   open,
@@ -26,7 +27,7 @@ export function LoginDialog({
   const { toast } = useToast();
 
   const handleGitHubLogin = () => {
-    window.location.href = "http://localhost:8000/api/auth/login/github";
+    window.location.href = `${API_CONFIG.BASE_URL}/api/auth/login/github`;
   };
 
   return (
