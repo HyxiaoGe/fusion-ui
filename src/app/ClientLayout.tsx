@@ -9,7 +9,7 @@ import dynamic from 'next/dynamic';
 import { useAppDispatch, useAppSelector } from "@/redux/hooks";
 import { setSystemPrompt } from "@/redux/slices/chatSlice";
 import { Toaster } from "react-hot-toast";
-import { setToken } from "@/redux/slices/authSlice";
+import { setToken, checkUserState, fetchUserProfile } from "@/redux/slices/authSlice";
 import { LoginDialog } from "@/components/auth/LoginDialog";
 import { SettingsDialog } from "@/components/settings/SettingsDialog";
 
@@ -66,17 +66,19 @@ function ModelConfigInitializer() {
 
 const ClientLayout = ({ children }: { children: React.ReactNode }) => {
   const dispatch = useAppDispatch();
-  const { isAuthenticated } = useAppSelector((state) => state.auth);
+  const { isAuthenticated, status } = useAppSelector((state) => state.auth);
   const [isLoginDialogOpen, setIsLoginDialogOpen] = useState(false);
   const [hasShownInitialLogin, setHasShownInitialLogin] = useState(false);
 
   useEffect(() => {
-    // 应用加载时，从 localStorage 初始化 token
-    const token = localStorage.getItem("auth_token");
-    if (token) {
-      dispatch(setToken(token));
+    // 检查用户状态并判断是否需要刷新数据
+    dispatch(checkUserState());
+    
+    // 如果状态被重置为idle，说明数据可能过期，需要刷新
+    if (isAuthenticated && status === 'idle') {
+      dispatch(fetchUserProfile());
     }
-  }, [dispatch]);
+  }, [dispatch, isAuthenticated, status]);
   
   useEffect(() => {
     // 如果用户已登录，关闭登录弹窗

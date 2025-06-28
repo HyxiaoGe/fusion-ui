@@ -13,6 +13,9 @@ import { Button } from "@/components/ui/button";
 import { openSettingsDialog } from "@/redux/slices/settingsSlice";
 import { avatarOptions } from "@/redux/slices/settingsSlice";
 import { logout } from "@/redux/slices/authSlice";
+import { resetChatState } from "@/redux/slices/chatSlice";
+import { resetFileUploadState } from "@/redux/slices/fileUploadSlice";
+import { resetSearchState } from "@/redux/slices/searchSlice";
 import { Settings, LogOut, LogIn } from "lucide-react";
 import { useState } from "react";
 import { LoginDialog } from "@/components/auth/LoginDialog";
@@ -56,7 +59,11 @@ export function UserAvatarMenu() {
   };
 
   const handleLogout = () => {
+    // 同时清理所有用户相关数据
     dispatch(logout());
+    dispatch(resetChatState());
+    dispatch(resetFileUploadState());
+    dispatch(resetSearchState());
   };
 
   const handleOpenLogin = () => {

@@ -96,7 +96,7 @@ const initialState: ChatState = {
   streamingReasoningEndTime: undefined,
   streamingMessageId: null,
   streamingReasoningMessageId: null,
-  reasoningEnabled: false,
+  reasoningEnabled: true,
   isStreamingReasoning: false,
   isThinkingPhaseComplete: false,
   animatingTitleChatId: null,
@@ -479,6 +479,42 @@ const chatSlice = createSlice({
     setStreamingReasoningMessageId: (state, action: PayloadAction<string>) => {
       state.streamingReasoningMessageId = action.payload;
     },
+    // 重置所有聊天数据（用于退出登录）
+    resetChatState: (state) => {
+      // 重置为初始状态，但保持设置相关的状态
+      const resetState = {
+        chats: [],
+        activeChatId: null,
+        loading: false,
+        error: null,
+        streamingContent: null,
+        isStreaming: false,
+        streamingReasoningContent: '',
+        streamingReasoningStartTime: null,
+        streamingReasoningEndTime: undefined,
+        streamingMessageId: null,
+        streamingReasoningMessageId: null,
+        reasoningEnabled: state.reasoningEnabled, // 保持用户设置
+        isStreamingReasoning: false,
+        isThinkingPhaseComplete: false,
+        animatingTitleChatId: null,
+        webSearchEnabled: state.webSearchEnabled, // 保持用户设置
+        functionCallEnabled: state.functionCallEnabled, // 保持用户设置
+        functionCallType: null,
+        functionCallData: null,
+        isFunctionCallInProgress: false,
+        functionCallError: null,
+        functionCallStepContent: null,
+        serverChatList: [],
+        isLoadingServerList: false,
+        isLoadingServerChat: false,
+        isLoadingMoreServer: false,
+        serverPagination: null,
+        serverError: null,
+      };
+      
+      Object.assign(state, resetState);
+    },
   },
   extraReducers: (builder) => {
     // ... existing code ...
@@ -528,6 +564,7 @@ export const {
   setServerError,
   clearServerError,
   setStreamingReasoningMessageId,
+  resetChatState,
 } = chatSlice.actions;
 
 export default chatSlice.reducer;

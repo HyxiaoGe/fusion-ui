@@ -195,6 +195,23 @@ const fileUploadSlice = createSlice({
     setError: (state, action: PayloadAction<string | null>) => {
       state.error = action.payload;
     },
+    // 重置所有文件上传状态（用于退出登录）
+    resetFileUploadState: (state) => {
+      // 释放所有预览URL
+      Object.keys(state.files).forEach(chatId => {
+        state.files[chatId].forEach(file => {
+          revokeFilePreview(file);
+        });
+      });
+      
+      // 重置为初始状态
+      state.files = {};
+      state.fileIds = {};
+      state.isUploading = false;
+      state.uploadProgress = 0;
+      state.error = null;
+      state.processingFiles = {};
+    },
   },
 });
 
@@ -210,6 +227,7 @@ export const {
   removeFileId,
   setUploadProgress,
   updateFileStatus,
+  resetFileUploadState,
 } = fileUploadSlice.actions;
 
 // --- Memoized Selectors --- 

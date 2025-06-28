@@ -150,20 +150,6 @@ const DataManagement: React.FC = () => {
             />
           </div>
         </div>
-
-        <div className="text-sm text-muted-foreground mt-2">
-          <p>
-            提示：使用数据导出功能定期备份您的聊天历史和设置，以防数据丢失。
-            如需进行更高级的数据管理操作，请访问
-            <a 
-              href="/debug/database" 
-              className="text-primary hover:underline mx-1"
-            >
-              数据库管理页面
-            </a>
-            。
-          </p>
-        </div>
       </CardContent>
     </Card>
   );

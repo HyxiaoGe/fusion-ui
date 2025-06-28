@@ -194,6 +194,22 @@ const searchSlice = createSlice({
     clearError(state) {
       state.error = null;
     },
+    // 重置搜索状态（用于退出登录）
+    resetSearchState(state) {
+      // 清理搜索结果和临时数据，但保持用户设置
+      state.query = '';
+      state.conversationResults = [];
+      state.messageResults = [];
+      state.relatedDiscussions = [];
+      state.enhancedContext = [];
+      state.contextSummary = '';
+      state.isSearching = false;
+      state.isLoadingRelated = false;
+      state.isLoadingContext = false;
+      state.error = null;
+      // 保持用户的搜索设置
+      // state.searchEnabled, state.contextEnhancementEnabled, state.contextMaxItems 保持不变
+    },
   },
   extraReducers: (builder) => {
     // 搜索对话
@@ -282,6 +298,7 @@ export const {
   setContextMaxItems,
   clearEnhancedContext,
   clearError,
+  resetSearchState,
 } = searchSlice.actions;
 
 // 导出使用增强上下文的钩子
