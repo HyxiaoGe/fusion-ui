@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { useAppDispatch, useAppSelector } from '@/redux/hooks';
 import { setThemeMode } from '@/redux/slices/themeSlice';
+import { openSettingsDialog } from '@/redux/slices/settingsSlice';
 import { HomeIcon, MoonIcon, SettingsIcon, SunIcon, LaptopIcon, ChevronRightIcon } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
@@ -36,6 +37,11 @@ const Header: React.FC<HeaderProps> = memo(({ title }) => {
   const handleThemeChange = useCallback((value: 'light' | 'dark' | 'system') => {
     dispatch(setThemeMode(value));
   }, [dispatch]);
+
+  // 打开设置弹窗 - 使用useCallback优化
+  const handleOpenSettings = useCallback(() => {
+    dispatch(openSettingsDialog({}));
+  }, [dispatch]);
   
   // 获取当前主题对应的图标
   const ThemeIcon = mounted ? (mode === 'dark' ? MoonIcon : mode === 'light' ? SunIcon : LaptopIcon) : null;
@@ -62,7 +68,6 @@ const Header: React.FC<HeaderProps> = memo(({ title }) => {
   // 获取当前页面显示的标题
   const getCurrentPageTitle = useCallback(() => {
     if (pathname === '/') return '首页';
-    if (pathname.startsWith('/settings')) return '设置';
     
     // 优先使用传入的标题，如果存在
     if (title) return title;
@@ -89,32 +94,21 @@ const Header: React.FC<HeaderProps> = memo(({ title }) => {
         {/* 面包屑导航 */}
         <div className="hidden sm:flex items-center text-sm">
           <Link href="/" className="text-muted-foreground hover:text-foreground transition-colors">首页</Link>
-          {(activeChatId || pathname.startsWith('/settings')) && (
+          {activeChatId && (
             <>
               <ChevronRightIcon className="h-4 w-4 mx-1.5 text-muted-foreground" />
-              <span className={cn(
-                "transition-colors",
-                pathname.startsWith('/settings') 
-                  ? 'text-muted-foreground hover:text-foreground' 
-                  : 'text-primary font-medium'
-              )}>
-                {pathname.startsWith('/settings') ? (
-                  <Link href="/settings">设置</Link>
-                ) : (
-                  'AI 聊天'
-                )}
+              <span className="text-primary font-medium transition-colors">
+                AI 聊天
               </span>
             </>
           )}
         </div>
       </div>
 
-      {/* 中间部分：页面标题，在设置页面不显示 */}
-      {!pathname.startsWith('/settings') && (
-        <div className="absolute left-1/2 transform -translate-x-1/2 font-medium text-base">
-          {getCurrentPageTitle()}
-        </div>
-      )}
+      {/* 中间部分：页面标题 */}
+      <div className="absolute left-1/2 transform -translate-x-1/2 font-medium text-base">
+        {getCurrentPageTitle()}
+      </div>
 
       <div className="flex items-center gap-3">
         <Link href="/" passHref>
@@ -132,20 +126,19 @@ const Header: React.FC<HeaderProps> = memo(({ title }) => {
           </Button>
         </Link>
         
-        <Link href="/settings" passHref>
-          <Button 
-            variant={pathname.startsWith('/settings') ? 'default' : 'ghost'} 
-            size="icon" 
-            className={cn(
-              "h-9 w-9 rounded-full shadow-sm transition-all duration-300",
-              "hover:scale-110 hover:shadow-md",
-              pathname.startsWith('/settings') ? "bg-primary text-primary-foreground" : "text-foreground"
-            )}
-            aria-label="设置"
-          >
-            <SettingsIcon className="h-4 w-4 transition-transform" />
-          </Button>
-        </Link>
+        <Button 
+          variant="ghost"
+          size="icon" 
+          onClick={handleOpenSettings}
+          className={cn(
+            "h-9 w-9 rounded-full shadow-sm transition-all duration-300",
+            "hover:scale-110 hover:shadow-md",
+            "text-foreground"
+          )}
+          aria-label="设置"
+        >
+          <SettingsIcon className="h-4 w-4 transition-transform" />
+        </Button>
         
         {/* 主题切换按钮 */}
         <DropdownMenu>

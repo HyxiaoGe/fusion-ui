@@ -11,7 +11,7 @@ import {
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { logout } from "@/redux/slices/authSlice";
-import Link from "next/link";
+import { openSettingsDialog } from "@/redux/slices/settingsSlice";
 import { LogIn, LogOut, Settings } from "lucide-react";
 import { LoginDialog } from "../auth/LoginDialog";
 
@@ -21,6 +21,10 @@ export function UserMenu() {
 
   const handleLogout = () => {
     dispatch(logout());
+  };
+
+  const handleOpenSettings = () => {
+    dispatch(openSettingsDialog({}));
   };
 
   if (!isAuthenticated || !user) {
@@ -47,11 +51,9 @@ export function UserMenu() {
           </div>
         </DropdownMenuItem>
         <DropdownMenuSeparator />
-        <DropdownMenuItem asChild>
-          <Link href="/settings" className="flex items-center">
-            <Settings className="mr-2 h-4 w-4" />
-            <span>设置</span>
-          </Link>
+        <DropdownMenuItem onClick={handleOpenSettings} className="flex items-center cursor-pointer">
+          <Settings className="mr-2 h-4 w-4" />
+          <span>设置</span>
         </DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem onClick={handleLogout}>

@@ -24,12 +24,20 @@ export const avatarOptions = {
 export interface SettingsState {
   userAvatar: string;
   assistantAvatar: string;
+  // 弹窗相关状态
+  isSettingsDialogOpen: boolean;
+  activeSettingsTab: string;
+  shouldOpenAddModel: boolean;
   // 其他设置项...
 }
 
 const initialState: SettingsState = {
   userAvatar: 'default-user',
   assistantAvatar: 'default-assistant',
+  // 弹窗相关状态
+  isSettingsDialogOpen: false,
+  activeSettingsTab: 'general',
+  shouldOpenAddModel: false,
   // 其他设置的初始值...
 };
 
@@ -43,9 +51,42 @@ const settingsSlice = createSlice({
     setAssistantAvatar: (state, action: PayloadAction<string>) => {
       state.assistantAvatar = action.payload;
     },
+    // 弹窗相关的reducer
+    setSettingsDialogOpen: (state, action: PayloadAction<boolean>) => {
+      state.isSettingsDialogOpen = action.payload;
+    },
+    setActiveSettingsTab: (state, action: PayloadAction<string>) => {
+      state.activeSettingsTab = action.payload;
+    },
+    openSettingsDialog: (state, action: PayloadAction<{ tab?: string; addModel?: boolean }>) => {
+      state.isSettingsDialogOpen = true;
+      if (action.payload.tab) {
+        state.activeSettingsTab = action.payload.tab;
+      }
+      // 如果是添加模型操作，确保切换到模型标签页
+      if (action.payload.addModel) {
+        state.activeSettingsTab = 'models';
+        state.shouldOpenAddModel = true;
+      }
+    },
+    closeSettingsDialog: (state) => {
+      state.isSettingsDialogOpen = false;
+      state.shouldOpenAddModel = false;
+    },
+    resetAddModelFlag: (state) => {
+      state.shouldOpenAddModel = false;
+    },
     // 其他设置的reducer...
   },
 });
 
-export const { setUserAvatar, setAssistantAvatar } = settingsSlice.actions;
+export const { 
+  setUserAvatar, 
+  setAssistantAvatar,
+  setSettingsDialogOpen,
+  setActiveSettingsTab,
+  openSettingsDialog,
+  closeSettingsDialog,
+  resetAddModelFlag
+} = settingsSlice.actions;
 export default settingsSlice.reducer;

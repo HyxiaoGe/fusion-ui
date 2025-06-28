@@ -15,6 +15,7 @@ import { sendMessageStream, fetchSuggestedQuestions  } from '@/lib/api/chat';
 import { generateChatTitle } from '@/lib/api/title';
 import { FileWithPreview } from '@/lib/utils/fileHelpers';
 import { useAppDispatch, useAppSelector } from '@/redux/hooks';
+import { openSettingsDialog } from '@/redux/slices/settingsSlice';
 import {
   addMessage,
   clearMessages,
@@ -238,6 +239,11 @@ export default function Home() {
     setShowHomePage(true);
   }, []);
 
+  // 打开设置弹窗
+  const handleOpenSettings = useCallback(() => {
+    dispatch(openSettingsDialog({}));
+  }, [dispatch]);
+
   // 当显示聊天界面时，关闭首页
   const handleChatSelected = useCallback(() => {
     if (showHomePage) {
@@ -354,16 +360,15 @@ export default function Home() {
               <HomeIcon className="h-4 w-4 transition-transform" />
             </Button>
             
-            <Link href="/settings" passHref>
-              <Button 
-                variant="ghost" 
-                size="icon" 
-                className="h-9 w-9 rounded-full shadow-sm transition-all duration-300 hover:scale-110 hover:shadow-md"
-                aria-label="设置"
-              >
-                <SettingsIcon className="h-4 w-4 transition-transform" />
-              </Button>
-            </Link>
+            <Button 
+              variant="ghost" 
+              size="icon" 
+              onClick={handleOpenSettings}
+              className="h-9 w-9 rounded-full shadow-sm transition-all duration-300 hover:scale-110 hover:shadow-md"
+              aria-label="设置"
+            >
+              <SettingsIcon className="h-4 w-4 transition-transform" />
+            </Button>
             
             {/* 主题切换按钮 */}
             <ThemeToggle />

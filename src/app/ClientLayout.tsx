@@ -12,6 +12,7 @@ import { Toaster } from "react-hot-toast";
 import { setToken } from "@/redux/slices/authSlice";
 import { LoginDialog } from "@/components/auth/LoginDialog";
 import { FloatingLoginButton } from "@/components/auth/FloatingLoginButton";
+import { SettingsDialog } from "@/components/settings/SettingsDialog";
 
 // 懒加载性能监控组件，只在开发环境启用
 const PerformanceMonitor = dynamic(
@@ -117,6 +118,7 @@ const ClientLayout = ({ children }: { children: React.ReactNode }) => {
       <Toaster position="bottom-center" />
       <LoginDialog open={isLoginDialogOpen} onOpenChange={handleDialogVisibilityChange} />
       {showFloatingButton && <FloatingLoginButton onClick={handleFloatingButtonClick} />}
+      <SettingsDialog />
       
       {/* 只在开发环境显示性能监控 */}
       {process.env.NODE_ENV === 'development' && (
