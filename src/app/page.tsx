@@ -15,7 +15,6 @@ import { sendMessageStream, fetchSuggestedQuestions  } from '@/lib/api/chat';
 import { generateChatTitle } from '@/lib/api/title';
 import { FileWithPreview } from '@/lib/utils/fileHelpers';
 import { useAppDispatch, useAppSelector } from '@/redux/hooks';
-import { openSettingsDialog } from '@/redux/slices/settingsSlice';
 import {
   addMessage,
   clearMessages,
@@ -49,13 +48,14 @@ import { v4 as uuidv4 } from 'uuid';
 import Link from 'next/link';
 import { cn } from '@/lib/utils';
 import FunctionCallDisplay from '@/components/chat/FunctionCallDisplay';
-import ConfirmDialog from '@/components/ui/confirm-dialog';
 import { useChatListRefresh } from '@/hooks/useChatListRefresh';
 import { useToast } from '@/components/ui/toast';
 import { usePathname, useSearchParams } from 'next/navigation';
 import TypingTitle from '@/components/ui/TypingTitle';
 import { useChatActions } from '@/hooks/useChatActions';
 import { useSuggestedQuestions } from '@/hooks/useSuggestedQuestions';
+import { UserAvatarMenu } from '@/components/layouts/UserAvatarMenu';
+import ConfirmDialog from '@/components/ui/confirm-dialog';
 
 export default function Home() {
   const dispatch = useAppDispatch();
@@ -233,11 +233,6 @@ export default function Home() {
   const handleEditMessage = editMessage;
   const handleNewChat = newChat;
 
-  // 打开设置弹窗
-  const handleOpenSettings = useCallback(() => {
-    dispatch(openSettingsDialog({}));
-  }, [dispatch]);
-
   // 当显示聊天界面时，关闭首页
   const handleChatSelected = useCallback(() => {
     if (showHomePage) {
@@ -341,15 +336,7 @@ export default function Home() {
           </div>
 
           <div className="flex items-center gap-3">
-            <Button 
-              variant="ghost" 
-              size="icon" 
-              onClick={handleOpenSettings}
-              className="h-9 w-9 rounded-full shadow-sm transition-all duration-300 hover:scale-110 hover:shadow-md"
-              aria-label="设置"
-            >
-              <SettingsIcon className="h-4 w-4 transition-transform" />
-            </Button>
+            <UserAvatarMenu />
           </div>
         </header>
       }

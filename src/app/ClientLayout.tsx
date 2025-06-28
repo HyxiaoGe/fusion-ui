@@ -11,7 +11,6 @@ import { setSystemPrompt } from "@/redux/slices/chatSlice";
 import { Toaster } from "react-hot-toast";
 import { setToken } from "@/redux/slices/authSlice";
 import { LoginDialog } from "@/components/auth/LoginDialog";
-import { FloatingLoginButton } from "@/components/auth/FloatingLoginButton";
 import { SettingsDialog } from "@/components/settings/SettingsDialog";
 
 // 懒加载性能监控组件，只在开发环境启用
@@ -35,20 +34,33 @@ function ToastInitializer() {
 
 function ModelConfigInitializer() {
   const dispatch = useDispatch();
-  
+
   useEffect(() => {
-    const loadModels = async () => {
+    const fetchSystemPrompt = async () => {
+      try {
+        const response = await fetch('/api/prompts/system');
+        if (response.ok) {
+          const data = await response.json();
+          dispatch(setSystemPrompt(data.content || ''));
+        }
+      } catch (error) {
+        console.error('Failed to fetch system prompt:', error);
+      }
+    };
+
+    const initializeAppModels = async () => {
       try {
         const models = await initializeModels();
         dispatch(updateModels(models));
       } catch (error) {
-        console.error('模型配置加载失败:', error);
+        console.error('Failed to initialize models:', error);
       }
     };
-    
-    loadModels();
+
+    initializeAppModels();
+    fetchSystemPrompt();
   }, [dispatch]);
-  
+
   return null;
 }
 
@@ -56,7 +68,7 @@ const ClientLayout = ({ children }: { children: React.ReactNode }) => {
   const dispatch = useAppDispatch();
   const { isAuthenticated } = useAppSelector((state) => state.auth);
   const [isLoginDialogOpen, setIsLoginDialogOpen] = useState(false);
-  const [showFloatingButton, setShowFloatingButton] = useState(false);
+  const [hasShownInitialLogin, setHasShownInitialLogin] = useState(false);
 
   useEffect(() => {
     // 应用加载时，从 localStorage 初始化 token
@@ -67,46 +79,26 @@ const ClientLayout = ({ children }: { children: React.ReactNode }) => {
   }, [dispatch]);
   
   useEffect(() => {
-    // 如果用户已登录，确保所有登录UI都是隐藏的
+    // 如果用户已登录，关闭登录弹窗
     if (isAuthenticated) {
       setIsLoginDialogOpen(false);
-      setShowFloatingButton(false);
       return;
     }
 
-    // 如果弹窗已打开，或悬浮按钮已显示，则不执行任何操作
-    if (isLoginDialogOpen || showFloatingButton) {
-      return;
+    // 只在首次访问且未登录时弹出登录窗口
+    if (!hasShownInitialLogin) {
+      const timer = setTimeout(() => {
+        setIsLoginDialogOpen(true);
+        setHasShownInitialLogin(true); // 标记已显示过
+      }, 1000);
+
+      return () => clearTimeout(timer);
     }
-
-    // 仅在初次加载且没有任何登录UI时，自动弹出登录窗口
-    const timer = setTimeout(() => {
-      setIsLoginDialogOpen(true);
-    }, 1000);
-
-    return () => clearTimeout(timer);
-  }, [isAuthenticated, isLoginDialogOpen, showFloatingButton]);
+  }, [isAuthenticated, hasShownInitialLogin]);
 
   const handleDialogVisibilityChange = (open: boolean) => {
     setIsLoginDialogOpen(open);
-    // 当对话框被用户关闭且用户未登录时，显示悬浮按钮
-    if (!open && !isAuthenticated) {
-      setShowFloatingButton(true);
-    }
   };
-  
-  const handleFloatingButtonClick = () => {
-    setIsLoginDialogOpen(true);
-    setShowFloatingButton(false);
-  };
-
-  useEffect(() => {
-    const fetchSystemPrompt = async () => {
-      // ... existing code ...
-    };
-
-    fetchSystemPrompt();
-  }, [dispatch]);
 
   return (
     <ToastProvider>
@@ -117,7 +109,6 @@ const ClientLayout = ({ children }: { children: React.ReactNode }) => {
       </div>
       <Toaster position="bottom-center" />
       <LoginDialog open={isLoginDialogOpen} onOpenChange={handleDialogVisibilityChange} />
-      {showFloatingButton && <FloatingLoginButton onClick={handleFloatingButtonClick} />}
       <SettingsDialog />
       
       {/* 只在开发环境显示性能监控 */}
@@ -126,6 +117,6 @@ const ClientLayout = ({ children }: { children: React.ReactNode }) => {
       )}
     </ToastProvider>
   );
-}
+};
 
 export default ClientLayout;

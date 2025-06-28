@@ -19,6 +19,7 @@ import { ImageIcon } from 'lucide-react';
 import { chatStore } from '@/lib/db/chatStore';
 import SuggestedQuestions from './SuggestedQuestions';
 import CodeBlock from './CodeBlock';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 
 interface ChatMessageProps {
   message: Message;
@@ -48,6 +49,7 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, files, isLastMessage
   const isStreamingReasoning = useAppSelector(state => state.chat.isStreamingReasoning);
 
   const { userAvatar, assistantAvatar } = useAppSelector(state => state.settings);
+  const { isAuthenticated, user } = useAppSelector(state => state.auth);
 
   // 获取当前聊天使用的模型信息
   const chats = useAppSelector(state => state.chat.chats);
@@ -478,8 +480,26 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, files, isLastMessage
       </div>
 
       {isUser && (
-        <div className="h-8 w-8 mt-1 flex-shrink-0 rounded-full bg-primary/10 flex items-center justify-center border shadow-sm">
-          <span className="text-sm">{getUserEmoji()}</span>
+        <div className="h-8 w-8 mt-1 flex-shrink-0">
+          {isAuthenticated && user?.avatar ? (
+            <Avatar 
+              key={`chat-avatar-${isAuthenticated}-${user?.avatar}`}
+              className="h-8 w-8"
+            >
+              <AvatarImage src={user.avatar} alt="用户头像" />
+              <AvatarFallback className="text-sm">
+                <div className="w-full h-full flex items-center justify-center">
+                  <span className="block text-center leading-none">{getUserEmoji()}</span>
+                </div>
+              </AvatarFallback>
+            </Avatar>
+          ) : (
+            <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center border shadow-sm">
+              <div className="w-full h-full flex items-center justify-center">
+                <span className="text-sm block text-center leading-none">{getUserEmoji()}</span>
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>

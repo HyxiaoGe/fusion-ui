@@ -1,13 +1,12 @@
 'use client';
 
 import { useAppDispatch, useAppSelector } from "@/redux/hooks";
-import { openSettingsDialog } from "@/redux/slices/settingsSlice";
-import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { usePathname } from "next/navigation";
 import Link from "next/link";
-import { ChevronRightIcon, SettingsIcon } from "lucide-react";
+import { ChevronRightIcon } from "lucide-react";
 import { useCallback } from "react";
+import { UserAvatarMenu } from "./UserAvatarMenu";
 
 interface HeaderProps {
   title?: string;
@@ -30,11 +29,6 @@ const Header: React.FC<HeaderProps> = ({ title }) => {
     const selectedModel = models.find(model => model.id === selectedModelId);
     return selectedModel ? selectedModel.name : 'AI';
   }, [selectedModelId, models]);
-
-  // 打开设置弹窗
-  const handleOpenSettings = useCallback(() => {
-    dispatch(openSettingsDialog({}));
-  }, [dispatch]);
 
   // 获取当前页面显示的标题
   const getCurrentPageTitle = useCallback(() => {
@@ -81,21 +75,9 @@ const Header: React.FC<HeaderProps> = ({ title }) => {
         {getCurrentPageTitle()}
       </div>
 
-      {/* 右侧操作按钮 */}
-      <div className="flex items-center gap-3">
-        <Button 
-          variant="ghost"
-          size="icon" 
-          onClick={handleOpenSettings}
-          className={cn(
-            "h-9 w-9 rounded-full shadow-sm transition-all duration-300",
-            "hover:scale-110 hover:shadow-md",
-            "text-foreground"
-          )}
-          aria-label="设置"
-        >
-          <SettingsIcon className="h-4 w-4 transition-transform" />
-        </Button>
+      {/* 右侧用户头像菜单 */}
+      <div className="flex items-center">
+        <UserAvatarMenu />
       </div>
     </header>
   );
