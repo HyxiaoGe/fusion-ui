@@ -15,7 +15,6 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import RssSettings from "./RssSettings";
-import ConnectedAccounts from "@/components/settings/ConnectedAccounts";
 
 // 定义动画变体
 const variants = {
@@ -121,7 +120,6 @@ export default function SettingsPage() {
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.3, delay: 0.2 }}
             >
-              <ConnectedAccounts />
             </motion.div>
           </TabsContent>
 
