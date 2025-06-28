@@ -43,11 +43,10 @@ import {
 } from '@/redux/slices/chatSlice';
 import { fetchEnhancedContext } from '@/redux/slices/searchSlice';
 import { store } from '@/redux/store';
-import { HomeIcon, SettingsIcon } from 'lucide-react';
+import { SettingsIcon } from 'lucide-react';
 import { useEffect, useRef, useState, useMemo, useCallback } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import Link from 'next/link';
-import { ThemeToggle } from '@/components/ui/theme-toggle';
 import { cn } from '@/lib/utils';
 import FunctionCallDisplay from '@/components/chat/FunctionCallDisplay';
 import ConfirmDialog from '@/components/ui/confirm-dialog';
@@ -234,11 +233,6 @@ export default function Home() {
   const handleEditMessage = editMessage;
   const handleNewChat = newChat;
 
-  // 跳转到首页
-  const handleGoToHome = useCallback(() => {
-    setShowHomePage(true);
-  }, []);
-
   // 打开设置弹窗
   const handleOpenSettings = useCallback(() => {
     dispatch(openSettingsDialog({}));
@@ -348,19 +342,6 @@ export default function Home() {
 
           <div className="flex items-center gap-3">
             <Button 
-              variant={!showHomePage ? "default" : "ghost"} 
-              size="icon" 
-              className={cn(
-                "h-9 w-9 rounded-full shadow-sm transition-all duration-300 hover:scale-110 hover:shadow-md",
-                !showHomePage ? "bg-primary text-primary-foreground" : "text-foreground"
-              )}
-              aria-label="首页"
-              onClick={handleGoToHome}
-            >
-              <HomeIcon className="h-4 w-4 transition-transform" />
-            </Button>
-            
-            <Button 
               variant="ghost" 
               size="icon" 
               onClick={handleOpenSettings}
@@ -369,9 +350,6 @@ export default function Home() {
             >
               <SettingsIcon className="h-4 w-4 transition-transform" />
             </Button>
-            
-            {/* 主题切换按钮 */}
-            <ThemeToggle />
           </div>
         </header>
       }

@@ -6,8 +6,9 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useAppDispatch, useAppSelector } from "@/redux/hooks";
 import { closeSettingsDialog, setActiveSettingsTab, resetAddModelFlag } from "@/redux/slices/settingsSlice";
+import { setThemeMode } from "@/redux/slices/themeSlice";
 import { motion } from "framer-motion";
-import { Database, Globe, Rss, Server, Settings } from "lucide-react";
+import { Database, Globe, Rss, Server, Settings, Sun, Moon, Laptop } from "lucide-react";
 import { useEffect } from "react";
 import ModelSettings from "@/components/models/ModelSettings";
 import AvatarSelector from "@/app/settings/AvatarSelector";
@@ -18,6 +19,7 @@ export const SettingsDialog = () => {
   const dispatch = useAppDispatch();
   const { isSettingsDialogOpen, activeSettingsTab, shouldOpenAddModel } = useAppSelector((state) => state.settings);
   const { selectedModelId } = useAppSelector((state) => state.models);
+  const { mode } = useAppSelector((state) => state.theme);
 
   const handleClose = () => {
     dispatch(closeSettingsDialog());
@@ -25,6 +27,10 @@ export const SettingsDialog = () => {
 
   const handleTabChange = (tab: string) => {
     dispatch(setActiveSettingsTab(tab));
+  };
+
+  const handleThemeChange = (themeMode: 'light' | 'dark' | 'system') => {
+    dispatch(setThemeMode(themeMode));
   };
 
   // 当显示模型标签页且shouldOpenAddModel为true时，重置标志
@@ -113,6 +119,72 @@ export const SettingsDialog = () => {
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.3, delay: 0.1 }}
+              >
+                <Card className="overflow-hidden border-muted shadow-md transition-all hover:shadow-lg">
+                  <CardHeader className="bg-muted/10 border-b pb-3">
+                    <CardTitle className="flex items-center gap-2">
+                      <Sun className="h-5 w-5 text-primary" />
+                      主题设置
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="pt-6">
+                    <div className="space-y-4">
+                      <h3 className="font-medium">选择主题模式</h3>
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                        <button
+                          onClick={() => handleThemeChange('light')}
+                          className={`p-4 rounded-lg border transition-all hover:shadow-md ${
+                            mode === 'light' 
+                              ? 'border-primary bg-primary/5 shadow-md' 
+                              : 'border-muted hover:border-primary/50'
+                          }`}
+                        >
+                          <div className="flex flex-col items-center gap-2">
+                            <Sun className={`h-6 w-6 ${mode === 'light' ? 'text-amber-500' : 'text-muted-foreground'}`} />
+                            <span className="font-medium">浅色模式</span>
+                            <span className="text-xs text-muted-foreground">明亮清晰的界面</span>
+                          </div>
+                        </button>
+                        
+                        <button
+                          onClick={() => handleThemeChange('dark')}
+                          className={`p-4 rounded-lg border transition-all hover:shadow-md ${
+                            mode === 'dark' 
+                              ? 'border-primary bg-primary/5 shadow-md' 
+                              : 'border-muted hover:border-primary/50'
+                          }`}
+                        >
+                          <div className="flex flex-col items-center gap-2">
+                            <Moon className={`h-6 w-6 ${mode === 'dark' ? 'text-indigo-400' : 'text-muted-foreground'}`} />
+                            <span className="font-medium">深色模式</span>
+                            <span className="text-xs text-muted-foreground">护眼的深色界面</span>
+                          </div>
+                        </button>
+                        
+                        <button
+                          onClick={() => handleThemeChange('system')}
+                          className={`p-4 rounded-lg border transition-all hover:shadow-md ${
+                            mode === 'system' 
+                              ? 'border-primary bg-primary/5 shadow-md' 
+                              : 'border-muted hover:border-primary/50'
+                          }`}
+                        >
+                          <div className="flex flex-col items-center gap-2">
+                            <Laptop className={`h-6 w-6 ${mode === 'system' ? 'text-blue-500' : 'text-muted-foreground'}`} />
+                            <span className="font-medium">跟随系统</span>
+                            <span className="text-xs text-muted-foreground">自动跟随系统设置</span>
+                          </div>
+                        </button>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              </motion.div>
+
+              <motion.div
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.3, delay: 0.2 }}
               >
                 <AvatarSelector />
               </motion.div>
