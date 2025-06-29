@@ -24,10 +24,17 @@ export function LoginDialog({
   trigger?: React.ReactNode;
 }) {
   const [isGitHubLoading, setIsGitHubLoading] = useState(false);
+  const [isGoogleLoading, setIsGoogleLoading] = useState(false);
   const { toast } = useToast();
 
   const handleGitHubLogin = () => {
+    setIsGitHubLoading(true);
     window.location.href = `${API_CONFIG.BASE_URL}/api/auth/login/github`;
+  };
+
+  const handleGoogleLogin = () => {
+    setIsGoogleLoading(true);
+    window.location.href = `${API_CONFIG.BASE_URL}/api/auth/login/google`;
   };
 
   return (
@@ -41,7 +48,7 @@ export function LoginDialog({
           </DialogDescription>
         </DialogHeader>
         <div className="flex flex-col space-y-4 py-4">
-          <Button onClick={handleGitHubLogin} disabled={isGitHubLoading}>
+          <Button onClick={handleGitHubLogin} disabled={isGitHubLoading || isGoogleLoading}>
             {isGitHubLoading ? (
               <Loader2 className="mr-2 h-4 w-4 animate-spin" />
             ) : (
@@ -49,9 +56,13 @@ export function LoginDialog({
             )}
             使用 GitHub 登录
           </Button>
-          <Button variant="outline" disabled>
-            <Mail className="mr-2 h-4 w-4" />
-            使用 Gmail 登录 (即将推出)
+          <Button onClick={handleGoogleLogin} disabled={isGoogleLoading || isGitHubLoading}>
+            {isGoogleLoading ? (
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            ) : (
+              <Mail className="mr-2 h-4 w-4" />
+            )}
+            使用 Google 登录
           </Button>
         </div>
       </DialogContent>

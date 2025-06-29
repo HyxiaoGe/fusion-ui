@@ -36,17 +36,6 @@ function ModelConfigInitializer() {
   const dispatch = useDispatch();
 
   useEffect(() => {
-    const fetchSystemPrompt = async () => {
-      try {
-        const response = await fetch('/api/prompts/system');
-        if (response.ok) {
-          const data = await response.json();
-          dispatch(setSystemPrompt(data.content || ''));
-        }
-      } catch (error) {
-        console.error('Failed to fetch system prompt:', error);
-      }
-    };
 
     const initializeAppModels = async () => {
       try {
@@ -58,7 +47,6 @@ function ModelConfigInitializer() {
     };
 
     initializeAppModels();
-    fetchSystemPrompt();
   }, [dispatch]);
 
   return null;

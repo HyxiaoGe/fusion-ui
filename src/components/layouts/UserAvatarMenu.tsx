@@ -43,7 +43,9 @@ export function UserAvatarMenu() {
   // 获取用户状态描述
   const getUserStatusText = () => {
     if (isAuthenticated && user) {
-      return '已通过 GitHub 登录';
+      const provider = user.loginProvider || 'github'; // 默认为github以兼容现有数据
+      const providerName = provider === 'google' ? 'Google' : 'GitHub';
+      return `已通过 ${providerName} 登录`;
     }
     return '本地用户';
   };

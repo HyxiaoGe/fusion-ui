@@ -8,6 +8,7 @@ export interface UserProfile {
   nickname: string | null;
   avatar: string | null;
   mobile: string | null;
+  loginProvider?: 'github' | 'google' | null;
 }
 
 export const fetchUserProfileAPI = async (): Promise<UserProfile> => {
