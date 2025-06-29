@@ -2,6 +2,8 @@ import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { HelpCircle, MessageSquare, RefreshCw } from 'lucide-react';
 import React, { useState } from 'react';
+import { useAppSelector } from '@/redux/hooks';
+import { useToast } from '@/components/ui/toast';
 
 interface SuggestedQuestionsProps {
   questions: string[];
@@ -20,9 +22,29 @@ const SuggestedQuestions: React.FC<SuggestedQuestionsProps> = ({
 }) => {
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const { isAuthenticated } = useAppSelector((state) => state.auth);
+  const { toast } = useToast();
 
   // 如果没有问题且没有在加载中，则不显示组件
   if (questions.length === 0 && !isLoading) return null;
+
+  // 处理问题选择的函数，添加登录检查
+  const handleQuestionSelect = (question: string) => {
+    // 检查登录状态
+    if (!isAuthenticated) {
+      toast({
+        message: "请先登录后再使用聊天功能",
+        type: "warning",
+        duration: 3000
+      });
+      if ((globalThis as any).triggerLoginDialog) {
+        (globalThis as any).triggerLoginDialog();
+      }
+      return;
+    }
+    
+    onSelectQuestion(question);
+  };
   
   // 处理刷新按钮点击
   const handleRefresh = () => {
@@ -82,7 +104,7 @@ const SuggestedQuestions: React.FC<SuggestedQuestionsProps> = ({
                 "scale-[1.01]"
               ] : ""
             )}
-            onClick={() => onSelectQuestion(question)}
+            onClick={() => handleQuestionSelect(question)}
             onMouseEnter={() => setHoveredIndex(index)}
             onMouseLeave={() => setHoveredIndex(null)}
           >

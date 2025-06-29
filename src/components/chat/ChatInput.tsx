@@ -87,9 +87,23 @@ const ChatInput: React.FC<ChatInputProps> = ({
   const uploadProgress = useAppSelector(
     (state) => state.fileUpload.uploadProgress
   );
+  const { isAuthenticated } = useAppSelector((state) => state.auth);
   const fileUploadRef = useRef<any>(null);
 
   const handleFileSelect = () => {
+    // 检查登录状态
+    if (!isAuthenticated) {
+      toast({
+        message: "请先登录后再使用文件上传功能",
+        type: "warning",
+        duration: 3000
+      });
+      if ((globalThis as any).triggerLoginDialog) {
+        (globalThis as any).triggerLoginDialog();
+      }
+      return;
+    }
+
     if (fileInputRef.current) {
       fileInputRef.current.click();
     }
@@ -99,6 +113,23 @@ const ChatInput: React.FC<ChatInputProps> = ({
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const files = event.target.files;
     if (!files || files.length === 0) return;
+
+    // 检查登录状态
+    if (!isAuthenticated) {
+      toast({
+        message: "请先登录后再上传文件",
+        type: "warning",
+        duration: 3000
+      });
+      if ((globalThis as any).triggerLoginDialog) {
+        (globalThis as any).triggerLoginDialog();
+      }
+      // 重置input
+      if (event.target) {
+        event.target.value = '';
+      }
+      return;
+    }
 
     // 先添加文件到本地状态
     addFiles(Array.from(files));
@@ -134,6 +165,20 @@ const ChatInput: React.FC<ChatInputProps> = ({
     }
 
     if (files.length > 0) {
+      // 检查登录状态
+      if (!isAuthenticated) {
+        toast({
+          message: "请先登录后再上传文件",
+          type: "warning",
+          duration: 3000
+        });
+        if ((globalThis as any).triggerLoginDialog) {
+          (globalThis as any).triggerLoginDialog();
+        }
+        event.preventDefault();
+        return;
+      }
+
       // 先添加文件到本地状态
       addFiles(files);
       
@@ -174,6 +219,19 @@ const ChatInput: React.FC<ChatInputProps> = ({
 
   // 处理文件上传
   const handleUploadFiles = async (filesToUpload: File[]) => {
+    // 检查登录状态
+    if (!isAuthenticated) {
+      toast({
+        message: "请先登录后再上传文件",
+        type: "warning",
+        duration: 3000
+      });
+      if ((globalThis as any).triggerLoginDialog) {
+        (globalThis as any).triggerLoginDialog();
+      }
+      return;
+    }
+
     if (!selectedModel || !chatId) {
       toast({
         message: "无法上传文件，请先选择模型",
@@ -330,6 +388,19 @@ const ChatInput: React.FC<ChatInputProps> = ({
   const handleSendMessage = () => {
     if ((!message.trim() && localFiles.length === 0) || disabled) return;
 
+    // 检查登录状态，如果未登录则弹出登录弹窗
+    if (!isAuthenticated) {
+      toast({
+        message: "请先登录后再发送消息",
+        type: "warning",
+        duration: 3000
+      });
+      if ((globalThis as any).triggerLoginDialog) {
+        (globalThis as any).triggerLoginDialog();
+      }
+      return;
+    }
+
     // 检查是否有文件需要发送
     if (localFiles.length > 0) {
       // 将localFiles转换为FileWithPreview格式
@@ -468,6 +539,19 @@ const ChatInput: React.FC<ChatInputProps> = ({
 
   // 处理文件上传按钮点击
   const handleFileUploadClick = () => {
+    // 检查登录状态
+    if (!isAuthenticated) {
+      toast({
+        message: "请先登录后再使用文件上传功能",
+        type: "warning",
+        duration: 3000
+      });
+      if ((globalThis as any).triggerLoginDialog) {
+        (globalThis as any).triggerLoginDialog();
+      }
+      return;
+    }
+
     if (!supportsFileUpload) {
       toast({
         message: "当前选择的模型不支持文件上传功能",

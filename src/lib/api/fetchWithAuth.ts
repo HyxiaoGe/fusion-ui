@@ -12,12 +12,12 @@ async function fetchWithAuth(url: string, options: RequestInit = {}): Promise<Re
   });
 
   if (response.status === 401) {
-    // Token 无效或过期
+    // Token 无效或过期，清理本地存储的token
     localStorage.removeItem('auth_token');
-    // 可以触发一个事件或重定向到登录页面
-    // window.location.href = '/login'; // 强制重定向
-    console.error('认证失败，请重新登录');
-    // 抛出错误，让调用方可以捕获
+    localStorage.removeItem('user_profile');
+    localStorage.removeItem('user_profile_timestamp');
+    
+    // 抛出特定的错误，让调用方处理UI反馈
     throw new Error('Unauthorized');
   }
 

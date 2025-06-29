@@ -14,7 +14,6 @@ import {
   setServerError,
   setLoadingServerChat,
   setAllChats,
-  Pagination,
   Message
 } from '@/redux/slices/chatSlice';
 import { store } from '@/redux/store';
@@ -23,7 +22,7 @@ interface UseSidebarChatActionsProps {
   localChats: Chat[];
   chats: Chat[];
   useServerData: boolean;
-  serverPagination: Pagination | null;
+  serverPagination: any | null;
 }
 
 export const useSidebarChatActions = ({
@@ -35,6 +34,7 @@ export const useSidebarChatActions = ({
   const dispatch = useAppDispatch();
   const { toast } = useToast();
   const { activeChatId } = useAppSelector((state) => state.chat);
+  const { isAuthenticated } = useAppSelector((state) => state.auth);
 
   const parseTimestamp = (ts: any): number => {
     if (typeof ts === 'number') return ts;
@@ -219,6 +219,19 @@ export const useSidebarChatActions = ({
 
   const handleGenerateTitle = async (e: React.MouseEvent, chatId: string) => {
     e.stopPropagation();
+
+    // 检查登录状态
+    if (!isAuthenticated) {
+      toast({
+        message: "请先登录后再使用此功能",
+        type: "warning",
+        duration: 3000
+      });
+      if ((globalThis as any).triggerLoginDialog) {
+        (globalThis as any).triggerLoginDialog();
+      }
+      return;
+    }
 
     try {
       let chatToProcess = localChats.find((c) => c.id === chatId);

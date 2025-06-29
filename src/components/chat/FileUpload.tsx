@@ -6,7 +6,7 @@ import {
   FileWithPreview,
   createFileWithPreview,
 } from "@/lib/utils/fileHelpers";
-import { useAppDispatch } from "@/redux/hooks";
+import { useAppDispatch, useAppSelector } from "@/redux/hooks";
 import {
   addFileId,
   setError,
@@ -14,6 +14,7 @@ import {
   setUploading,
   FileProcessingStatus
 } from "@/redux/slices/fileUploadSlice";
+import { useToast } from "@/components/ui/toast";
 import { AlertCircle } from "lucide-react";
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
 
@@ -66,6 +67,8 @@ const FileUpload = forwardRef<any, FileUploadProps>(({
   onUploadComplete,
 }, ref) => {
   const dispatch = useAppDispatch();
+  const { isAuthenticated } = useAppSelector((state) => state.auth);
+  const { toast } = useToast();
   const [uploadedFiles, setUploadedFiles] = useState<Set<string>>(new Set());
   const [localFiles, setLocalFiles] = useState<any[]>([]);
   const [error, setLocalError] = useState<string | null>(null);
@@ -215,6 +218,20 @@ const FileUpload = forwardRef<any, FileUploadProps>(({
   // 自定义server配置来控制上传行为
   const serverConfig = {
     process: (fieldName: string, file: File, metadata: any, load: Function, error: Function, progress: Function, abort: Function) => {
+      // 检查登录状态
+      if (!isAuthenticated) {
+        toast({
+          message: "请先登录后再上传文件",
+          type: "warning",
+          duration: 3000
+        });
+        if ((globalThis as any).triggerLoginDialog) {
+          (globalThis as any).triggerLoginDialog();
+        }
+        error('需要登录');
+        return;
+      }
+
       // 为文件创建唯一ID（可以使用名称+大小的组合）
       const fileId = `${file.name}-${file.size}`;
 

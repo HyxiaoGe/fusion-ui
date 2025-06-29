@@ -7,7 +7,7 @@ import { useDispatch } from "react-redux";
 import { updateModels } from "@/redux/slices/modelsSlice";
 import dynamic from 'next/dynamic';
 import { useAppDispatch, useAppSelector } from "@/redux/hooks";
-import { setSystemPrompt } from "@/redux/slices/chatSlice";
+
 import { Toaster } from "react-hot-toast";
 import { setToken, checkUserState, fetchUserProfile } from "@/redux/slices/authSlice";
 import { LoginDialog } from "@/components/auth/LoginDialog";
@@ -57,6 +57,11 @@ const ClientLayout = ({ children }: { children: React.ReactNode }) => {
   const { isAuthenticated, status } = useAppSelector((state) => state.auth);
   const [isLoginDialogOpen, setIsLoginDialogOpen] = useState(false);
   const [hasShownInitialLogin, setHasShownInitialLogin] = useState(false);
+  
+  // 导出函数供其他组件使用
+  (globalThis as any).triggerLoginDialog = () => {
+    setIsLoginDialogOpen(true);
+  };
 
   useEffect(() => {
     // 检查用户状态并判断是否需要刷新数据

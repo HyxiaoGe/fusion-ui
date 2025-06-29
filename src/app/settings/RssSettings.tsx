@@ -9,13 +9,15 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/components/ui/toast";
-import { Edit, PlusCircle, Trash2, Loader2, ExternalLink, Clock, Rss, RefreshCw, X } from "lucide-react";
+import { Edit, PlusCircle, Trash2, Loader2, ExternalLink, Clock, Rss, RefreshCw, X, LogIn } from "lucide-react";
 import { useEffect, useState, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import ConfirmDialog from "@/components/ui/confirm-dialog";
 import { Badge } from "@/components/ui/badge";
 import Image from "next/image";
 import fetchWithAuth from "@/lib/api/fetchWithAuth";
+import { useAppSelector } from "@/redux/hooks";
+import { LoginDialog } from "@/components/auth/LoginDialog";
 
 // 根据API文档定义RSS源类型
 type RssSource = {
@@ -45,6 +47,7 @@ const hardcodedCategoryOptions = [
 
 // 主组件
 export default function RssSettings() {
+  const { isAuthenticated } = useAppSelector((state) => state.auth);
   const [sources, setSources] = useState<RssSource[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
@@ -53,6 +56,7 @@ export default function RssSettings() {
   const [editingSource, setEditingSource] = useState<RssSource | null>(null);
   const [isConfirmOpen, setIsConfirmOpen] = useState(false);
   const [deletingSourceId, setDeletingSourceId] = useState<string | null>(null);
+  const [isLoginDialogOpen, setIsLoginDialogOpen] = useState(false);
   const { toast } = useToast();
 
   const fetchSources = async (isInitialLoad = true) => {
@@ -79,10 +83,19 @@ export default function RssSettings() {
         setHasMore(false);
       }
     } catch (error) {
-      toast({
-        message: error instanceof Error ? error.message : "获取订阅源失败",
-        type: "error",
-      });
+      // 特别处理未认证错误
+      if (error instanceof Error && error.message === 'Unauthorized') {
+        // 对于401错误，显示更友好的提示
+        toast({
+          message: "请先登录以使用RSS订阅功能",
+          type: "warning",
+        });
+      } else {
+        toast({
+          message: error instanceof Error ? error.message : "获取订阅源失败",
+          type: "error",
+        });
+      }
     } finally {
       setIsLoading(false);
       setIsLoadingMore(false);
@@ -90,8 +103,14 @@ export default function RssSettings() {
   };
 
   useEffect(() => {
-    fetchSources(true);
-  }, []);
+    // 只有在用户已登录时才获取RSS源
+    if (isAuthenticated) {
+      fetchSources(true);
+    } else {
+      // 如果用户未登录，停止加载状态
+      setIsLoading(false);
+    }
+  }, [isAuthenticated]);
   
   const handleLoadMore = () => {
     fetchSources(false);
@@ -201,6 +220,52 @@ export default function RssSettings() {
     }
   };
 
+  // 如果用户未登录，显示登录提示界面
+  if (!isAuthenticated) {
+    return (
+      <motion.div
+        initial={{ opacity: 0, y: 10 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.3 }}
+      >
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Rss className="h-5 w-5 text-primary" />
+              RSS 订阅源管理
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="py-12">
+            <div className="text-center space-y-6">
+              <div className="mx-auto w-24 h-24 bg-muted rounded-full flex items-center justify-center">
+                <LogIn className="h-12 w-12 text-muted-foreground" />
+              </div>
+              <div className="space-y-2">
+                <h3 className="text-lg font-semibold">需要登录访问</h3>
+                <p className="text-muted-foreground max-w-md mx-auto">
+                  RSS订阅功能需要登录后才能使用。登录后您可以添加、管理和自定义RSS订阅源。
+                </p>
+              </div>
+              <Button 
+                onClick={() => setIsLoginDialogOpen(true)}
+                className="mt-4"
+              >
+                <LogIn className="mr-2 h-4 w-4" />
+                立即登录
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+        
+        {/* 登录弹窗 */}
+        <LoginDialog 
+          open={isLoginDialogOpen} 
+          onOpenChange={setIsLoginDialogOpen} 
+        />
+      </motion.div>
+    );
+  }
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 10 }}
@@ -209,7 +274,10 @@ export default function RssSettings() {
     >
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">
-          <CardTitle>RSS 订阅源管理</CardTitle>
+          <CardTitle className="flex items-center gap-2">
+            <Rss className="h-5 w-5 text-primary" />
+            RSS 订阅源管理
+          </CardTitle>
           <Button onClick={handleAddClick}>
             <PlusCircle className="mr-2 h-4 w-4" />
             添加订阅源

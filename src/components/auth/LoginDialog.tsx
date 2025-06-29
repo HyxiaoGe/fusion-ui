@@ -42,7 +42,7 @@ export function LoginDialog({
       {trigger && <DialogTrigger asChild>{trigger}</DialogTrigger>}
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>登录 / 注册</DialogTitle>
+          <DialogTitle>登录</DialogTitle>
           <DialogDescription>
             选择一种方式登录，以解锁全部功能。
           </DialogDescription>

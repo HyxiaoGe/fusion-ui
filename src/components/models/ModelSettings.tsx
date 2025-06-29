@@ -9,13 +9,14 @@ import { updateModelConfig } from "@/redux/slices/modelsSlice";
 import React, { useState, useEffect } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
-import { EyeIcon, EyeOffIcon, Server, Shield, Search, PlusCircle, Settings, Loader2, RefreshCw, ChevronRight, Copy, Check, DollarSign } from "lucide-react";
+import { EyeIcon, EyeOffIcon, Server, Shield, Search, PlusCircle, Settings, Loader2, RefreshCw, ChevronRight, Copy, Check, DollarSign, LogIn } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/toast";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { DateInput } from "@/components/ui/date-input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { CalendarIcon } from "lucide-react";
+import { LoginDialog } from "@/components/auth/LoginDialog";
 
 interface ModelSettingsProps {
   modelId?: string;
@@ -190,6 +191,9 @@ const fetchModelCredentials = async (modelId: string) => {
     });
     
     if (!response.ok) {
+      if (response.status === 401) {
+        throw new Error('Unauthorized');
+      }
       throw new Error(`获取模型凭证失败: ${response.status}`);
     }
     
@@ -218,6 +222,9 @@ const testModelCredential = async (modelId: string, credentials: any) => {
     });
     
     if (!response.ok) {
+      if (response.status === 401) {
+        throw new Error('Unauthorized');
+      }
       throw new Error(`测试模型凭证失败: ${response.status}`);
     }
     
@@ -255,6 +262,9 @@ const saveModelCredential = async (modelId: string, name: string, isDefault: boo
     });
     
     if (!response.ok) {
+      if (response.status === 401) {
+        throw new Error('Unauthorized');
+      }
       throw new Error(`${credentialId ? '更新' : '创建'}模型凭证失败: ${response.status}`);
     }
     
@@ -315,9 +325,11 @@ const CopyButton: React.FC<{ text: string }> = ({ text }) => {
 const ModelSettings: React.FC<ModelSettingsProps> = ({ modelId, initialAddModelOpen = false }) => {
   const dispatch = useAppDispatch();
   const { providers } = useAppSelector((state) => state.models);
+  const { isAuthenticated } = useAppSelector((state) => state.auth);
   const [searchTerm, setSearchTerm] = useState("");
   const [showApiKey, setShowApiKey] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+  const [isLoginDialogOpen, setIsLoginDialogOpen] = useState(false);
   const { toast } = useToast();
   
   // 新增状态
@@ -334,7 +346,7 @@ const ModelSettings: React.FC<ModelSettingsProps> = ({ modelId, initialAddModelO
   const [isDefault, setIsDefault] = useState<boolean>(true);
   
   // 新增添加模型对话框状态
-  const [isAddModelOpen, setIsAddModelOpen] = useState(initialAddModelOpen);
+  const [isAddModelOpen, setIsAddModelOpen] = useState(initialAddModelOpen && isAuthenticated);
   
   // 新增添加模型相关状态
   const [newModel, setNewModel] = useState<{
@@ -363,6 +375,25 @@ const ModelSettings: React.FC<ModelSettingsProps> = ({ modelId, initialAddModelO
     priceUnit: 'USD'
   });
   
+  // 处理initialAddModelOpen参数
+  useEffect(() => {
+    if (initialAddModelOpen) {
+      if (isAuthenticated) {
+        setIsAddModelOpen(true);
+      } else {
+        // 如果未登录但尝试打开添加模型对话框，显示提示并弹出登录窗口
+        toast({
+          message: "请先登录后再添加自定义模型",
+          type: "warning",
+          duration: 3000
+        });
+        if ((globalThis as any).triggerLoginDialog) {
+          (globalThis as any).triggerLoginDialog();
+        }
+      }
+    }
+  }, [initialAddModelOpen, isAuthenticated, toast]);
+
   // 获取模型列表
   useEffect(() => {
     const loadModels = async () => {
@@ -409,24 +440,46 @@ const ModelSettings: React.FC<ModelSettingsProps> = ({ modelId, initialAddModelO
       
       setIsLoading(true);
       try {
-        // 并行获取模型详情和凭证
-        const [detailData, credentialsData] = await Promise.all([
-          fetchModelDetail(selectedModelId),
-          fetchModelCredentials(selectedModelId)
-        ]);
-        
+        // 获取模型详情（公共信息）
+        const detailData = await fetchModelDetail(selectedModelId);
         setModelDetail(detailData);
-        setModelCredentials(credentialsData);
         
-        // 如果有凭证，则选择默认凭证
-        if (credentialsData.length > 0) {
-          const defaultCred = credentialsData.find((c: ModelCredential) => c.is_default) || credentialsData[0];
-          setSelectedCredential(defaultCred);
-          setFormCredentials(defaultCred.credentials);
-          setCredentialName(defaultCred.name);
-          setIsDefault(defaultCred.is_default);
+        // 获取凭证（需要认证）
+        if (isAuthenticated) {
+          try {
+            const credentialsData = await fetchModelCredentials(selectedModelId);
+            setModelCredentials(credentialsData);
+            
+            // 如果有凭证，则选择默认凭证
+            if (credentialsData.length > 0) {
+              const defaultCred = credentialsData.find((c: ModelCredential) => c.is_default) || credentialsData[0];
+              setSelectedCredential(defaultCred);
+              setFormCredentials(defaultCred.credentials);
+              setCredentialName(defaultCred.name);
+              setIsDefault(defaultCred.is_default);
+            } else {
+              // 没有凭证，初始化表单
+              setSelectedCredential(null);
+              setFormCredentials({});
+              setCredentialName('默认');
+              setIsDefault(true);
+            }
+          } catch (credentialError) {
+            // 对于凭证相关错误，不显示错误提示，让UI处理
+            if (credentialError instanceof Error && credentialError.message === 'Unauthorized') {
+              // 静默处理401错误
+              setModelCredentials([]);
+              setSelectedCredential(null);
+              setFormCredentials({});
+              setCredentialName('默认');
+              setIsDefault(true);
+            } else {
+              console.error(`Error loading credentials:`, credentialError);
+            }
+          }
         } else {
-          // 没有凭证，初始化表单
+          // 未登录时重置凭证相关状态
+          setModelCredentials([]);
           setSelectedCredential(null);
           setFormCredentials({});
           setCredentialName('默认');
@@ -444,7 +497,7 @@ const ModelSettings: React.FC<ModelSettingsProps> = ({ modelId, initialAddModelO
     };
     
     loadModelDetail();
-  }, [selectedModelId, toast]);
+  }, [selectedModelId, isAuthenticated, toast]);
   
   // 刷新数据
   const handleRefresh = async () => {
@@ -523,6 +576,15 @@ const ModelSettings: React.FC<ModelSettingsProps> = ({ modelId, initialAddModelO
       return;
     }
     
+    if (!isAuthenticated) {
+      toast({
+        message: "请先登录以保存凭证配置",
+        type: "warning",
+      });
+      setIsLoginDialogOpen(true);
+      return;
+    }
+    
     // 检查必填字段
     const missingFields = modelDetail.auth_config.fields
       .filter(field => field.required)
@@ -567,10 +629,18 @@ const ModelSettings: React.FC<ModelSettingsProps> = ({ modelId, initialAddModelO
       });
     } catch (error) {
       console.error("Error saving credential:", error);
-      toast({
-        message: "保存凭证失败，请稍后再试",
-        type: "error",
-      });
+      if (error instanceof Error && error.message === 'Unauthorized') {
+        toast({
+          message: "请先登录以保存凭证配置",
+          type: "warning",
+        });
+        setIsLoginDialogOpen(true);
+      } else {
+        toast({
+          message: "保存凭证失败，请稍后再试",
+          type: "error",
+        });
+      }
     } finally {
       setIsLoading(false);
     }
@@ -583,6 +653,15 @@ const ModelSettings: React.FC<ModelSettingsProps> = ({ modelId, initialAddModelO
         message: "未选择模型，无法测试连接",
         type: "error",
       });
+      return;
+    }
+    
+    if (!isAuthenticated) {
+      toast({
+        message: "请先登录以测试连接",
+        type: "warning",
+      });
+      setIsLoginDialogOpen(true);
       return;
     }
     
@@ -616,10 +695,18 @@ const ModelSettings: React.FC<ModelSettingsProps> = ({ modelId, initialAddModelO
       }
     } catch (error) {
       console.error("Error testing connection:", error);
-      toast({
-        message: "测试连接失败，请稍后再试",
-        type: "error",
-      });
+      if (error instanceof Error && error.message === 'Unauthorized') {
+        toast({
+          message: "请先登录以测试连接",
+          type: "warning",
+        });
+        setIsLoginDialogOpen(true);
+      } else {
+        toast({
+          message: "测试连接失败，请稍后再试",
+          type: "error",
+        });
+      }
     } finally {
       setIsLoading(false);
     }
@@ -651,8 +738,39 @@ const ModelSettings: React.FC<ModelSettingsProps> = ({ modelId, initialAddModelO
   // 当前选中的提供商
   const currentProvider = selectedProviderIndex !== null ? modelsByProvider[selectedProviderIndex] : null;
   
+  // 处理点击添加模型按钮
+  const handleAddModelClick = () => {
+    // 检查登录状态
+    if (!isAuthenticated) {
+      toast({
+        message: "请先登录后再添加自定义模型",
+        type: "warning",
+        duration: 3000
+      });
+      if ((globalThis as any).triggerLoginDialog) {
+        (globalThis as any).triggerLoginDialog();
+      }
+      return;
+    }
+
+    setIsAddModelOpen(true);
+  };
+
   // 处理添加模型
   const handleAddModel = async () => {
+    // 检查登录状态
+    if (!isAuthenticated) {
+      toast({
+        message: "请先登录后再添加自定义模型",
+        type: "warning",
+        duration: 3000
+      });
+      if ((globalThis as any).triggerLoginDialog) {
+        (globalThis as any).triggerLoginDialog();
+      }
+      return;
+    }
+
     if (!currentProvider) {
       toast({
         message: "请先选择一个提供商",
@@ -849,7 +967,7 @@ const ModelSettings: React.FC<ModelSettingsProps> = ({ modelId, initialAddModelO
                 {/* 在模型列表中添加"添加自定义模型"按钮 */}
                 <div 
                   className="p-3 rounded-md cursor-pointer border border-dashed border-muted hover:border-primary transition-colors flex items-center justify-center"
-                  onClick={() => setIsAddModelOpen(true)}
+                  onClick={handleAddModelClick}
                 >
                   <PlusCircle className="h-4 w-4 mr-2 text-muted-foreground" />
                   <span className="text-muted-foreground">添加自定义模型</span>
@@ -863,7 +981,7 @@ const ModelSettings: React.FC<ModelSettingsProps> = ({ modelId, initialAddModelO
                     <Button 
                       variant="outline" 
                       size="sm"
-                      onClick={() => setIsAddModelOpen(true)}
+                      onClick={handleAddModelClick}
                     >
                       <PlusCircle className="h-4 w-4 mr-2" />
                       添加自定义模型
@@ -972,6 +1090,29 @@ const ModelSettings: React.FC<ModelSettingsProps> = ({ modelId, initialAddModelO
                         配置访问 {modelDetail.name} 所需的凭证信息。
                       </p>
                     </div>
+                    
+                    {/* 检查用户登录状态 */}
+                    {!isAuthenticated ? (
+                      <div className="text-center py-12">
+                        <div className="mx-auto w-16 h-16 bg-muted rounded-full flex items-center justify-center mb-4">
+                          <LogIn className="h-8 w-8 text-muted-foreground" />
+                        </div>
+                        <div className="space-y-2">
+                          <h3 className="text-lg font-semibold">需要登录以配置凭证</h3>
+                          <p className="text-muted-foreground max-w-md mx-auto">
+                            登录后您可以保存、管理和测试 {modelDetail.name} 的API凭证配置。
+                          </p>
+                        </div>
+                        <Button 
+                          onClick={() => setIsLoginDialogOpen(true)}
+                          className="mt-4"
+                        >
+                          <LogIn className="mr-2 h-4 w-4" />
+                          立即登录
+                        </Button>
+                      </div>
+                    ) : (
+                      <>
                     
                     {/* 凭证选择器 */}
                     {modelCredentials.length > 0 && (
@@ -1107,6 +1248,8 @@ const ModelSettings: React.FC<ModelSettingsProps> = ({ modelId, initialAddModelO
                         保存凭证
                       </Button>
                     </div>
+                      </>
+                    )}
                   </TabsContent>
                 </Tabs>
               </CardContent>
@@ -1433,6 +1576,12 @@ const ModelSettings: React.FC<ModelSettingsProps> = ({ modelId, initialAddModelO
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      
+      {/* 登录弹窗 */}
+      <LoginDialog 
+        open={isLoginDialogOpen} 
+        onOpenChange={setIsLoginDialogOpen} 
+      />
     </div>
   );
 };
