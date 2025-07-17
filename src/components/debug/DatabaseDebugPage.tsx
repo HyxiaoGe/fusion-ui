@@ -309,39 +309,6 @@ export default function DatabaseDebugPage() {
               )}
             </CardContent>
           </Card>
-
-          {/* <Collapsible
-            open={showAdvancedData}
-            onOpenChange={setShowAdvancedData}
-            className="w-full"
-          >
-            <CollapsibleTrigger className="flex items-center justify-between w-full p-3 border rounded-md hover:bg-accent/10">
-              <div className="flex items-center gap-2">
-                {showAdvancedData ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-                <span className="font-medium">高级设置数据</span>
-              </div>
-              <span className="text-xs text-muted-foreground">
-                {showAdvancedData ? "点击隐藏" : "仅限开发者使用"}
-              </span>
-            </CollapsibleTrigger>
-            <CollapsibleContent className="mt-2">
-              <Card>
-                <CardHeader>
-                  <CardTitle>设置数据</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  {Object.entries(settings).map(([key, value]) => (
-                    <div key={key} className="border p-3 rounded">
-                      <h3 className="font-medium">{key}</h3>
-                      <pre className="mt-2 p-2 bg-slate-100 dark:bg-slate-800 rounded text-xs overflow-auto">
-                        {JSON.stringify(value, null, 2)}
-                      </pre>
-                    </div>
-                  ))}
-                </CardContent>
-              </Card>
-            </CollapsibleContent>
-          </Collapsible> */}
         </div>
       </div>
     </MainLayout>

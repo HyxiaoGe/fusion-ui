@@ -141,7 +141,7 @@ const nextConfig = {
     return [
       {
         source: '/api/:path*',
-        destination: 'http://localhost:8000/api/:path*', // 警告：这里的后端地址是暂定的
+        destination: `${process.env.NEXT_PUBLIC_API_BASE_URL || 'http://192.168.31.98:8000'}/api/:path*`,
       },
     ]
   },

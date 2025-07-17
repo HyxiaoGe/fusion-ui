@@ -25,6 +25,7 @@ import {
 import { useChatListRefresh } from './useChatListRefresh';
 import { FileWithPreview } from '@/lib/utils/fileHelpers';
 import { sendMessageStream, updateMessageDuration } from '@/lib/api/chat';
+import { delayedExecution } from '@/lib/utils/retryHelper';
 import { generateChatTitle } from '@/lib/api/title';
 import { v4 as uuidv4 } from 'uuid';
 import { store } from '@/redux/store';
@@ -213,16 +214,20 @@ export const useChatActions = (options: ChatActionsOptions) => {
               const finalState = store.getState().chat;
               const { streamingReasoningMessageId, streamingReasoningStartTime, streamingReasoningEndTime } = finalState;
 
+              // 所有收尾工作完成后，最后再结束流式状态
+              dispatch(endStreaming());
+
+              // 异步更新消息时长，避免阻塞UI
               if (streamingReasoningMessageId && streamingReasoningStartTime && streamingReasoningEndTime) {
                 const duration = streamingReasoningEndTime - streamingReasoningStartTime;
                 if (duration > 0) {
-                  updateMessageDuration(currentActiveChatId, streamingReasoningMessageId, duration)
-                    .catch(err => console.error("Failed to update duration:", err));
+                  // 使用延迟执行工具，确保服务端已保存消息
+                  delayedExecution(
+                    () => updateMessageDuration(currentActiveChatId, streamingReasoningMessageId, duration),
+                    3000 // 3秒延迟，给服务端充足的保存时间
+                  );
                 }
               }
-
-              // 所有收尾工作完成后，最后再结束流式状态
-              dispatch(endStreaming());
             }, 1000);
 
             if (conversationId && conversationId !== currentActiveChatId) {

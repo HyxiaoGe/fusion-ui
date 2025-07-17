@@ -18,6 +18,7 @@ import Image from "next/image";
 import fetchWithAuth from "@/lib/api/fetchWithAuth";
 import { useAppSelector } from "@/redux/hooks";
 import { LoginDialog } from "@/components/auth/LoginDialog";
+import { API_CONFIG } from '@/lib/config';
 
 // 根据API文档定义RSS源类型
 type RssSource = {
@@ -69,7 +70,7 @@ export default function RssSettings() {
     }
 
     try {
-      const response = await fetchWithAuth(`${process.env.NEXT_PUBLIC_API_BASE_URL || ''}/api/rss?skip=${currentSkip}&limit=${LIMIT}`);
+              const response = await fetchWithAuth(`${API_CONFIG.BASE_URL}/api/rss?skip=${currentSkip}&limit=${LIMIT}`);
       if (!response.ok) throw new Error("获取订阅源失败");
       const newSources = await response.json();
       
@@ -91,10 +92,10 @@ export default function RssSettings() {
           type: "warning",
         });
       } else {
-        toast({
-          message: error instanceof Error ? error.message : "获取订阅源失败",
-          type: "error",
-        });
+      toast({
+        message: error instanceof Error ? error.message : "获取订阅源失败",
+        type: "error",
+      });
       }
     } finally {
       setIsLoading(false);
@@ -105,7 +106,7 @@ export default function RssSettings() {
   useEffect(() => {
     // 只有在用户已登录时才获取RSS源
     if (isAuthenticated) {
-      fetchSources(true);
+    fetchSources(true);
     } else {
       // 如果用户未登录，停止加载状态
       setIsLoading(false);
@@ -134,7 +135,7 @@ export default function RssSettings() {
   const handleConfirmDelete = async () => {
     if (!deletingSourceId) return;
     try {
-      const response = await fetchWithAuth(`${process.env.NEXT_PUBLIC_API_BASE_URL || ''}/api/rss/${deletingSourceId}`, {
+              const response = await fetchWithAuth(`${API_CONFIG.BASE_URL}/api/rss/${deletingSourceId}`, {
         method: "DELETE",
       });
       if (!response.ok) {
@@ -160,7 +161,7 @@ export default function RssSettings() {
   
   const handleToggleEnabled = async (source: RssSource, is_enabled: boolean) => {
     try {
-      const response = await fetchWithAuth(`${process.env.NEXT_PUBLIC_API_BASE_URL || ''}/api/rss/${source.id}`, {
+              const response = await fetchWithAuth(`${API_CONFIG.BASE_URL}/api/rss/${source.id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ is_enabled }),
@@ -183,8 +184,8 @@ export default function RssSettings() {
   const handleSave = async (sourceData: Partial<RssSource>) => {
     const isEditing = !!editingSource;
     const url = isEditing 
-      ? `${process.env.NEXT_PUBLIC_API_BASE_URL || ''}/api/rss/${editingSource.id}` 
-      : `${process.env.NEXT_PUBLIC_API_BASE_URL || ''}/api/rss`;
+              ? `${API_CONFIG.BASE_URL}/api/rss/${editingSource.id}`
+        : `${API_CONFIG.BASE_URL}/api/rss`;
     const method = isEditing ? "PUT" : "POST";
 
     try {

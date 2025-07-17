@@ -34,7 +34,7 @@ function ToastInitializer() {
 
 function ModelConfigInitializer() {
   const dispatch = useDispatch();
-
+  
   useEffect(() => {
 
     const initializeAppModels = async () => {
@@ -45,10 +45,10 @@ function ModelConfigInitializer() {
         console.error('Failed to initialize models:', error);
       }
     };
-
+    
     initializeAppModels();
   }, [dispatch]);
-
+  
   return null;
 }
 
@@ -82,12 +82,12 @@ const ClientLayout = ({ children }: { children: React.ReactNode }) => {
 
     // 只在首次访问且未登录时弹出登录窗口
     if (!hasShownInitialLogin) {
-      const timer = setTimeout(() => {
-        setIsLoginDialogOpen(true);
+    const timer = setTimeout(() => {
+      setIsLoginDialogOpen(true);
         setHasShownInitialLogin(true); // 标记已显示过
-      }, 1000);
+    }, 1000);
 
-      return () => clearTimeout(timer);
+    return () => clearTimeout(timer);
     }
   }, [isAuthenticated, hasShownInitialLogin]);
 

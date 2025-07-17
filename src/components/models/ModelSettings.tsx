@@ -17,6 +17,7 @@ import { DateInput } from "@/components/ui/date-input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { CalendarIcon } from "lucide-react";
 import { LoginDialog } from "@/components/auth/LoginDialog";
+import { API_CONFIG } from '@/lib/config';
 
 interface ModelSettingsProps {
   modelId?: string;
@@ -130,7 +131,7 @@ const ProviderIcon: React.FC<{ providerId: string }> = ({ providerId }) => {
 // 获取模型列表
 const fetchModels = async () => {
   try {
-    const url = `${process.env.NEXT_PUBLIC_API_BASE_URL || ''}/api/models`;
+    const url = `${API_CONFIG.BASE_URL}/api/models`;
     
     const response = await fetch(url, {
       method: 'GET',
@@ -155,7 +156,7 @@ const fetchModels = async () => {
 // 获取模型详情
 const fetchModelDetail = async (modelId: string) => {
   try {
-    const url = `${process.env.NEXT_PUBLIC_API_BASE_URL || ''}/api/models/${modelId}`;
+    const url = `${API_CONFIG.BASE_URL}/api/models/${modelId}`;
     
     const response = await fetch(url, {
       method: 'GET',
@@ -180,7 +181,7 @@ const fetchModelDetail = async (modelId: string) => {
 // 获取模型凭证
 const fetchModelCredentials = async (modelId: string) => {
   try {
-    const url = `${process.env.NEXT_PUBLIC_API_BASE_URL || ''}/api/credentials?model_id=${modelId}`;
+    const url = `${API_CONFIG.BASE_URL}/api/credentials?model_id=${modelId}`;
     
     const response = await fetch(url, {
       method: 'GET',
@@ -208,7 +209,7 @@ const fetchModelCredentials = async (modelId: string) => {
 // 测试模型凭证
 const testModelCredential = async (modelId: string, credentials: any) => {
   try {
-    const url = `${process.env.NEXT_PUBLIC_API_BASE_URL || ''}/api/credentials/test`;
+    const url = `${API_CONFIG.BASE_URL}/api/credentials/test`;
     
     const response = await fetch(url, {
       method: 'POST',
@@ -239,7 +240,7 @@ const testModelCredential = async (modelId: string, credentials: any) => {
 // 保存模型凭证
 const saveModelCredential = async (modelId: string, name: string, isDefault: boolean, credentials: any, credentialId?: number) => {
   try {
-    let url = `${process.env.NEXT_PUBLIC_API_BASE_URL || ''}/api/credentials`;
+    let url = `${API_CONFIG.BASE_URL}/api/credentials`;
     let method = 'POST';
     
     // 如果有凭证ID，则是更新操作
@@ -393,7 +394,7 @@ const ModelSettings: React.FC<ModelSettingsProps> = ({ modelId, initialAddModelO
       }
     }
   }, [initialAddModelOpen, isAuthenticated, toast]);
-
+  
   // 获取模型列表
   useEffect(() => {
     const loadModels = async () => {
@@ -448,17 +449,17 @@ const ModelSettings: React.FC<ModelSettingsProps> = ({ modelId, initialAddModelO
         if (isAuthenticated) {
           try {
             const credentialsData = await fetchModelCredentials(selectedModelId);
-            setModelCredentials(credentialsData);
-            
-            // 如果有凭证，则选择默认凭证
-            if (credentialsData.length > 0) {
-              const defaultCred = credentialsData.find((c: ModelCredential) => c.is_default) || credentialsData[0];
-              setSelectedCredential(defaultCred);
-              setFormCredentials(defaultCred.credentials);
-              setCredentialName(defaultCred.name);
-              setIsDefault(defaultCred.is_default);
-            } else {
-              // 没有凭证，初始化表单
+        setModelCredentials(credentialsData);
+        
+        // 如果有凭证，则选择默认凭证
+        if (credentialsData.length > 0) {
+          const defaultCred = credentialsData.find((c: ModelCredential) => c.is_default) || credentialsData[0];
+          setSelectedCredential(defaultCred);
+          setFormCredentials(defaultCred.credentials);
+          setCredentialName(defaultCred.name);
+          setIsDefault(defaultCred.is_default);
+        } else {
+          // 没有凭证，初始化表单
               setSelectedCredential(null);
               setFormCredentials({});
               setCredentialName('默认');
@@ -636,10 +637,10 @@ const ModelSettings: React.FC<ModelSettingsProps> = ({ modelId, initialAddModelO
         });
         setIsLoginDialogOpen(true);
       } else {
-        toast({
-          message: "保存凭证失败，请稍后再试",
-          type: "error",
-        });
+      toast({
+        message: "保存凭证失败，请稍后再试",
+        type: "error",
+      });
       }
     } finally {
       setIsLoading(false);
@@ -702,10 +703,10 @@ const ModelSettings: React.FC<ModelSettingsProps> = ({ modelId, initialAddModelO
         });
         setIsLoginDialogOpen(true);
       } else {
-        toast({
-          message: "测试连接失败，请稍后再试",
-          type: "error",
-        });
+      toast({
+        message: "测试连接失败，请稍后再试",
+        type: "error",
+      });
       }
     } finally {
       setIsLoading(false);
@@ -755,7 +756,7 @@ const ModelSettings: React.FC<ModelSettingsProps> = ({ modelId, initialAddModelO
 
     setIsAddModelOpen(true);
   };
-
+  
   // 处理添加模型
   const handleAddModel = async () => {
     // 检查登录状态
@@ -878,14 +879,14 @@ const ModelSettings: React.FC<ModelSettingsProps> = ({ modelId, initialAddModelO
           {/* 搜索和刷新 */}
           <div className="flex items-center gap-3">
             <div className="relative">
-              <Search className="absolute left-2 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <Input
-                placeholder="搜索模型..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
+            <Search className="absolute left-2 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Input
+              placeholder="搜索模型..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
                 className="pl-8 w-48"
-              />
-            </div>
+            />
+          </div>
             <Button 
               variant="outline" 
               size="sm"
@@ -901,7 +902,7 @@ const ModelSettings: React.FC<ModelSettingsProps> = ({ modelId, initialAddModelO
         {/* 提供商标签页 */}
         <div className="w-full">
           <div className="flex flex-wrap gap-1 p-1 bg-muted rounded-lg overflow-x-auto">
-            {modelsByProvider.map((provider, index) => (
+          {modelsByProvider.map((provider, index) => (
               <button
                 key={provider.id}
                 onClick={() => setSelectedProviderIndex(index)}
@@ -912,185 +913,185 @@ const ModelSettings: React.FC<ModelSettingsProps> = ({ modelId, initialAddModelO
                   }
                 `}
               >
-                <ProviderIcon providerId={provider.id} />
+                    <ProviderIcon providerId={provider.id} />
                 <span className="truncate">{provider.name}</span>
-                <Badge 
+                  <Badge 
                   variant={provider.isConfigured ? "default" : "secondary"}
                   className="text-xs flex-shrink-0"
-                >
+                  >
                   {provider.models.length}
-                </Badge>
+                  </Badge>
               </button>
             ))}
-          </div>
-        </div>
-      </div>
+                </div>
+                </div>
+              </div>
 
       {/* 两栏布局：模型列表 + 详情 */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 flex-1">
         {/* 左侧模型列表 */}
         <Card className="lg:col-span-4 flex flex-col">
-          <CardHeader className="pb-3 flex-shrink-0">
-            <CardTitle className="flex items-center gap-2">
-              {currentProvider ? currentProvider.name : '模型'} 列表
-              {isLoading && <Loader2 className="h-4 w-4 ml-2 animate-spin" />}
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="flex-grow overflow-y-auto pt-0">
-            {currentProvider && currentProvider.models.length > 0 ? (
-              <div className="space-y-2">
-                {currentProvider.models.map((model) => (
-                  <div 
-                    key={model.modelId}
-                    className={`p-3 rounded-md cursor-pointer border transition-all hover:border-primary
-                      ${selectedModelId === model.modelId ? 'border-primary bg-muted/20' : 'border-muted'}
-                    `}
-                    onClick={() => setSelectedModelId(model.modelId)}
-                  >
-                    <div className="flex justify-between items-center">
-                      <span className="font-medium flex items-center">
-                        <ProviderIcon providerId={model.provider} />
-                        {model.name}
-                      </span>
-                      <Badge variant={model.enabled ? "default" : "outline"}>
-                        {model.enabled ? "已启用" : "未启用"}
-                      </Badge>
-                    </div>
-                    <div className="mt-1 flex flex-wrap gap-1">
-                      {model.capabilities.deepThinking && <Badge variant="outline" className="text-xs">深度思考</Badge>}
-                      {model.capabilities.fileSupport && <Badge variant="outline" className="text-xs">文件支持</Badge>}
-                      {model.capabilities.imageGen && <Badge variant="outline" className="text-xs">图像生成</Badge>}
-                    </div>
-                  </div>
-                ))}
-                
-                {/* 在模型列表中添加"添加自定义模型"按钮 */}
+        <CardHeader className="pb-3 flex-shrink-0">
+          <CardTitle className="flex items-center gap-2">
+            {currentProvider ? currentProvider.name : '模型'} 列表
+            {isLoading && <Loader2 className="h-4 w-4 ml-2 animate-spin" />}
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="flex-grow overflow-y-auto pt-0">
+          {currentProvider && currentProvider.models.length > 0 ? (
+            <div className="space-y-2">
+              {currentProvider.models.map((model) => (
                 <div 
-                  className="p-3 rounded-md cursor-pointer border border-dashed border-muted hover:border-primary transition-colors flex items-center justify-center"
-                  onClick={handleAddModelClick}
+                  key={model.modelId}
+                  className={`p-3 rounded-md cursor-pointer border transition-all hover:border-primary
+                    ${selectedModelId === model.modelId ? 'border-primary bg-muted/20' : 'border-muted'}
+                  `}
+                  onClick={() => setSelectedModelId(model.modelId)}
                 >
-                  <PlusCircle className="h-4 w-4 mr-2 text-muted-foreground" />
-                  <span className="text-muted-foreground">添加自定义模型</span>
-                </div>
-              </div>
-            ) : (
-              <div className="text-center py-12 text-muted-foreground">
-                {currentProvider ? (
-                  <div className="space-y-3">
-                    <p>没有找到模型</p>
-                    <Button 
-                      variant="outline" 
-                      size="sm"
-                      onClick={handleAddModelClick}
-                    >
-                      <PlusCircle className="h-4 w-4 mr-2" />
-                      添加自定义模型
-                    </Button>
+                  <div className="flex justify-between items-center">
+                    <span className="font-medium flex items-center">
+                      <ProviderIcon providerId={model.provider} />
+                      {model.name}
+                    </span>
+                    <Badge variant={model.enabled ? "default" : "outline"}>
+                      {model.enabled ? "已启用" : "未启用"}
+                    </Badge>
                   </div>
-                ) : '请选择一个提供商'}
-              </div>
-            )}
-          </CardContent>
-        </Card>
-        
-        {/* 右侧配置区域 */}
-        <Card className="lg:col-span-8 flex flex-col">
-          {modelDetail ? (
-            <>
-              <CardHeader className="border-b flex-shrink-0">
-                <div className="flex justify-between items-center">
-                  <CardTitle>{modelDetail.name}</CardTitle>
-                  <Switch 
-                    checked={modelDetail.enabled}
-                    onCheckedChange={(checked) => 
-                      dispatch(updateModelConfig({
-                        modelId: selectedModelId!,
-                        config: { enabled: checked }
-                      }))
-                    }
-                  />
+                  <div className="mt-1 flex flex-wrap gap-1">
+                    {model.capabilities.deepThinking && <Badge variant="outline" className="text-xs">深度思考</Badge>}
+                    {model.capabilities.fileSupport && <Badge variant="outline" className="text-xs">文件支持</Badge>}
+                    {model.capabilities.imageGen && <Badge variant="outline" className="text-xs">图像生成</Badge>}
+                  </div>
                 </div>
-                
-                {/* 添加Model ID在名称下方 */}
-                <div className="flex items-center mt-2 mb-1">
-                  <span className="text-xs text-muted-foreground mr-2">Model ID:</span>
-                  <code className="bg-muted px-1.5 py-0.5 rounded text-xs font-mono">
-                    {modelDetail.modelId}
-                  </code>
-                  <CopyButton text={modelDetail.modelId} />
-                </div>
-                
-                <div className="text-sm text-muted-foreground mt-1">
-                  <p>知识截止日期: {modelDetail.knowledgeCutoff || '未知'}</p>
-                  <p className="mt-1">{modelDetail.description}</p>
-                  
-                  {/* 添加定价信息 */}
-                  {modelDetail.pricing && (
-                    <div className="mt-2 p-2 bg-muted/30 rounded-md border border-border flex items-center text-sm">
-                      <DollarSign className="h-4 w-4 mr-1.5 text-green-500 flex-shrink-0" />
-                      <div>
-                        <span className="font-medium">模型定价:</span> 
-                        <div className="flex flex-wrap gap-x-3 mt-0.5">
-                          <span>输入: <strong>{modelDetail.pricing.input}</strong></span>
-                          <span>输出: <strong>{modelDetail.pricing.output}</strong></span>
-                          <span className="text-muted-foreground">{modelDetail.pricing.unit}/1K tokens</span>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-                  
-                  {/* 添加模型参数 */}
-                  {modelDetail.model_configuration.params.length > 0 && (
-                    <div className="mt-2 p-2 bg-muted/30 rounded-md border border-border text-sm">
-                      <div className="flex items-center mb-1">
-                        <Settings className="h-4 w-4 mr-1.5 text-blue-500 flex-shrink-0" />
-                        <span className="font-medium">模型参数:</span>
-                      </div>
-                      <div className="space-y-2 mt-2">
-                        {modelDetail.model_configuration.params.map((param) => (
-                          <div key={param.name} className="flex flex-wrap items-center gap-x-3">
-                            <span className="font-medium">{param.display_name}:</span>
-                            <code className="bg-background px-1.5 py-0.5 rounded text-xs font-mono">
-                              {param.default}
-                            </code>
-                            {param.type === 'number' && param.min !== undefined && param.max !== undefined && (
-                              <span className="text-xs text-muted-foreground">
-                                范围: {param.min} - {param.max}
-                              </span>
-                            )}
-                            {param.description && (
-                              <span className="text-xs text-muted-foreground">
-                                ({param.description})
-                              </span>
-                            )}
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </CardHeader>
+              ))}
               
-              <CardContent className="pt-6 flex-grow overflow-y-auto">
-                <Tabs defaultValue="credentials">
-                  <TabsList className="mb-4 w-full">
-                    <TabsTrigger value="credentials" className="flex-1">
-                      <Shield className="h-4 w-4 mr-2" />
-                      凭证设置
-                    </TabsTrigger>
-                  </TabsList>
-                  
-                  <TabsContent value="credentials" className="space-y-4">
-                    <div className="bg-muted/40 p-4 rounded-md mb-4">
-                      <div className="flex items-center gap-2 mb-2">
-                        <Shield className="h-5 w-5 text-primary" />
-                        <h3 className="font-medium">{modelDetail.name} 凭证设置</h3>
+              {/* 在模型列表中添加"添加自定义模型"按钮 */}
+              <div 
+                className="p-3 rounded-md cursor-pointer border border-dashed border-muted hover:border-primary transition-colors flex items-center justify-center"
+                  onClick={handleAddModelClick}
+              >
+                <PlusCircle className="h-4 w-4 mr-2 text-muted-foreground" />
+                <span className="text-muted-foreground">添加自定义模型</span>
+              </div>
+            </div>
+          ) : (
+            <div className="text-center py-12 text-muted-foreground">
+              {currentProvider ? (
+                <div className="space-y-3">
+                  <p>没有找到模型</p>
+                  <Button 
+                    variant="outline" 
+                    size="sm"
+                      onClick={handleAddModelClick}
+                  >
+                    <PlusCircle className="h-4 w-4 mr-2" />
+                    添加自定义模型
+                  </Button>
+                </div>
+              ) : '请选择一个提供商'}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+      
+      {/* 右侧配置区域 */}
+        <Card className="lg:col-span-8 flex flex-col">
+        {modelDetail ? (
+          <>
+            <CardHeader className="border-b flex-shrink-0">
+              <div className="flex justify-between items-center">
+                <CardTitle>{modelDetail.name}</CardTitle>
+                <Switch 
+                  checked={modelDetail.enabled}
+                  onCheckedChange={(checked) => 
+                    dispatch(updateModelConfig({
+                      modelId: selectedModelId!,
+                      config: { enabled: checked }
+                    }))
+                  }
+                />
+              </div>
+              
+              {/* 添加Model ID在名称下方 */}
+              <div className="flex items-center mt-2 mb-1">
+                <span className="text-xs text-muted-foreground mr-2">Model ID:</span>
+                <code className="bg-muted px-1.5 py-0.5 rounded text-xs font-mono">
+                  {modelDetail.modelId}
+                </code>
+                <CopyButton text={modelDetail.modelId} />
+              </div>
+              
+              <div className="text-sm text-muted-foreground mt-1">
+                <p>知识截止日期: {modelDetail.knowledgeCutoff || '未知'}</p>
+                <p className="mt-1">{modelDetail.description}</p>
+                
+                {/* 添加定价信息 */}
+                {modelDetail.pricing && (
+                  <div className="mt-2 p-2 bg-muted/30 rounded-md border border-border flex items-center text-sm">
+                    <DollarSign className="h-4 w-4 mr-1.5 text-green-500 flex-shrink-0" />
+                    <div>
+                      <span className="font-medium">模型定价:</span> 
+                      <div className="flex flex-wrap gap-x-3 mt-0.5">
+                        <span>输入: <strong>{modelDetail.pricing.input}</strong></span>
+                        <span>输出: <strong>{modelDetail.pricing.output}</strong></span>
+                        <span className="text-muted-foreground">{modelDetail.pricing.unit}/1K tokens</span>
                       </div>
-                      <p className="text-sm text-muted-foreground">
-                        配置访问 {modelDetail.name} 所需的凭证信息。
-                      </p>
                     </div>
-                    
+                  </div>
+                )}
+                
+                {/* 添加模型参数 */}
+                {modelDetail.model_configuration.params.length > 0 && (
+                  <div className="mt-2 p-2 bg-muted/30 rounded-md border border-border text-sm">
+                    <div className="flex items-center mb-1">
+                      <Settings className="h-4 w-4 mr-1.5 text-blue-500 flex-shrink-0" />
+                      <span className="font-medium">模型参数:</span>
+                    </div>
+                    <div className="space-y-2 mt-2">
+                        {modelDetail.model_configuration.params.map((param) => (
+                        <div key={param.name} className="flex flex-wrap items-center gap-x-3">
+                          <span className="font-medium">{param.display_name}:</span>
+                          <code className="bg-background px-1.5 py-0.5 rounded text-xs font-mono">
+                            {param.default}
+                          </code>
+                          {param.type === 'number' && param.min !== undefined && param.max !== undefined && (
+                            <span className="text-xs text-muted-foreground">
+                              范围: {param.min} - {param.max}
+                            </span>
+                          )}
+                          {param.description && (
+                            <span className="text-xs text-muted-foreground">
+                              ({param.description})
+                            </span>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </CardHeader>
+            
+            <CardContent className="pt-6 flex-grow overflow-y-auto">
+              <Tabs defaultValue="credentials">
+                <TabsList className="mb-4 w-full">
+                  <TabsTrigger value="credentials" className="flex-1">
+                    <Shield className="h-4 w-4 mr-2" />
+                    凭证设置
+                  </TabsTrigger>
+                </TabsList>
+                
+                <TabsContent value="credentials" className="space-y-4">
+                  <div className="bg-muted/40 p-4 rounded-md mb-4">
+                    <div className="flex items-center gap-2 mb-2">
+                      <Shield className="h-5 w-5 text-primary" />
+                      <h3 className="font-medium">{modelDetail.name} 凭证设置</h3>
+                    </div>
+                    <p className="text-sm text-muted-foreground">
+                      配置访问 {modelDetail.name} 所需的凭证信息。
+                    </p>
+                  </div>
+                  
                     {/* 检查用户登录状态 */}
                     {!isAuthenticated ? (
                       <div className="text-center py-12">
@@ -1114,154 +1115,154 @@ const ModelSettings: React.FC<ModelSettingsProps> = ({ modelId, initialAddModelO
                     ) : (
                       <>
                     
-                    {/* 凭证选择器 */}
-                    {modelCredentials.length > 0 && (
-                      <div className="space-y-2 mb-4 pb-4 border-b">
-                        <Label className="text-sm font-medium">选择凭证配置</Label>
-                        <div className="grid grid-cols-2 gap-2">
-                          {modelCredentials.map((cred: ModelCredential) => (
-                            <div 
-                              key={cred.id}
-                              className={`p-2 border rounded-md cursor-pointer transition-colors ${
-                                selectedCredential?.id === cred.id ? 'border-primary bg-muted/20' : 'border-muted'
-                              }`}
-                              onClick={() => {
-                                setSelectedCredential(cred);
-                                setFormCredentials(cred.credentials);
-                                setCredentialName(cred.name);
-                                setIsDefault(cred.is_default);
-                              }}
-                            >
-                              <div className="flex justify-between items-center">
-                                <span className="font-medium">{cred.name}</span>
-                                {cred.is_default && (
-                                  <Badge variant="default" className="text-xs">默认</Badge>
-                                )}
-                              </div>
-                              <p className="text-xs text-muted-foreground mt-1">
-                                更新于 {new Date(cred.updated_at).toLocaleString()}
-                              </p>
-                            </div>
-                          ))}
-                          
+                  {/* 凭证选择器 */}
+                  {modelCredentials.length > 0 && (
+                    <div className="space-y-2 mb-4 pb-4 border-b">
+                      <Label className="text-sm font-medium">选择凭证配置</Label>
+                      <div className="grid grid-cols-2 gap-2">
+                        {modelCredentials.map((cred: ModelCredential) => (
                           <div 
-                            className="p-2 border border-dashed border-muted rounded-md cursor-pointer flex items-center justify-center hover:border-primary transition-colors"
+                            key={cred.id}
+                            className={`p-2 border rounded-md cursor-pointer transition-colors ${
+                              selectedCredential?.id === cred.id ? 'border-primary bg-muted/20' : 'border-muted'
+                            }`}
                             onClick={() => {
-                              setSelectedCredential(null);
-                              setFormCredentials({});
-                              setCredentialName('新配置');
-                              setIsDefault(false);
+                              setSelectedCredential(cred);
+                              setFormCredentials(cred.credentials);
+                              setCredentialName(cred.name);
+                              setIsDefault(cred.is_default);
                             }}
                           >
-                            <PlusCircle className="h-4 w-4 mr-2" />
-                            <span>新建配置</span>
+                            <div className="flex justify-between items-center">
+                              <span className="font-medium">{cred.name}</span>
+                              {cred.is_default && (
+                                <Badge variant="default" className="text-xs">默认</Badge>
+                              )}
+                            </div>
+                            <p className="text-xs text-muted-foreground mt-1">
+                              更新于 {new Date(cred.updated_at).toLocaleString()}
+                            </p>
                           </div>
+                        ))}
+                        
+                        <div 
+                          className="p-2 border border-dashed border-muted rounded-md cursor-pointer flex items-center justify-center hover:border-primary transition-colors"
+                          onClick={() => {
+                            setSelectedCredential(null);
+                            setFormCredentials({});
+                            setCredentialName('新配置');
+                            setIsDefault(false);
+                          }}
+                        >
+                          <PlusCircle className="h-4 w-4 mr-2" />
+                          <span>新建配置</span>
                         </div>
                       </div>
-                    )}
-                    
-                    {/* 凭证名称 */}
-                    <div className="space-y-2">
-                      <Label className="text-sm font-medium">
-                        配置名称
-                      </Label>
-                      <Input 
-                        placeholder="请输入配置名称"
-                        value={credentialName}
-                        onChange={(e) => setCredentialName(e.target.value)}
-                      />
                     </div>
-                    
-                    {/* 默认设置 */}
-                    <div className="flex items-center space-x-2">
-                      <Switch
-                        id="default-credential"
-                        checked={isDefault}
-                        onCheckedChange={setIsDefault}
-                      />
-                      <Label htmlFor="default-credential">设为默认凭证</Label>
-                    </div>
-                    
-                    {/* 动态生成凭证字段 */}
-                    {modelDetail.auth_config.fields.map(field => (
-                      <div key={field.name} className="space-y-2">
-                        <div className="flex justify-between">
-                          <Label className="text-sm font-medium">
-                            {field.display_name}
-                            {field.required && <span className="text-destructive">*</span>}
-                          </Label>
-                        </div>
-                        <div className="relative">
-                          {field.type === 'password' ? (
-                            <>
-                              <Input 
-                                type={showApiKey ? "text" : "password"}
-                                placeholder={`请输入${field.display_name}`}
-                                value={formCredentials[field.name] || ''}
-                                onChange={(e) => handleCredentialChange(field.name, e.target.value)}
-                              />
-                              <button 
-                                type="button"
-                                className="absolute right-2 top-1/2 transform -translate-y-1/2"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setShowApiKey(!showApiKey);
-                                }}
-                              >
-                                {showApiKey ? <EyeOffIcon className="h-4 w-4" /> : <EyeIcon className="h-4 w-4" />}
-                              </button>
-                            </>
-                          ) : (
+                  )}
+                  
+                  {/* 凭证名称 */}
+                  <div className="space-y-2">
+                    <Label className="text-sm font-medium">
+                      配置名称
+                    </Label>
+                    <Input 
+                      placeholder="请输入配置名称"
+                      value={credentialName}
+                      onChange={(e) => setCredentialName(e.target.value)}
+                    />
+                  </div>
+                  
+                  {/* 默认设置 */}
+                  <div className="flex items-center space-x-2">
+                    <Switch
+                      id="default-credential"
+                      checked={isDefault}
+                      onCheckedChange={setIsDefault}
+                    />
+                    <Label htmlFor="default-credential">设为默认凭证</Label>
+                  </div>
+                  
+                  {/* 动态生成凭证字段 */}
+                  {modelDetail.auth_config.fields.map(field => (
+                    <div key={field.name} className="space-y-2">
+                      <div className="flex justify-between">
+                        <Label className="text-sm font-medium">
+                          {field.display_name}
+                          {field.required && <span className="text-destructive">*</span>}
+                        </Label>
+                      </div>
+                      <div className="relative">
+                        {field.type === 'password' ? (
+                          <>
                             <Input 
-                              type={field.type === 'number' ? 'number' : 'text'}
+                              type={showApiKey ? "text" : "password"}
                               placeholder={`请输入${field.display_name}`}
                               value={formCredentials[field.name] || ''}
-                              onChange={(e) => {
-                                const value = e.target.value;
-                                if (value === '') {
-                                  handleCredentialChange(field.name, '0.0');
-                                } else {
-                                  const numValue = parseFloat(value);
-                                  if (!isNaN(numValue)) {
-                                    handleCredentialChange(field.name, numValue.toFixed(1));
-                                  }
-                                }
-                              }}
+                              onChange={(e) => handleCredentialChange(field.name, e.target.value)}
                             />
-                          )}
-                        </div>
-                        {field.description && (
-                          <p className="text-xs text-muted-foreground">
-                            {field.description}
-                          </p>
+                            <button 
+                              type="button"
+                              className="absolute right-2 top-1/2 transform -translate-y-1/2"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setShowApiKey(!showApiKey);
+                              }}
+                            >
+                              {showApiKey ? <EyeOffIcon className="h-4 w-4" /> : <EyeIcon className="h-4 w-4" />}
+                            </button>
+                          </>
+                        ) : (
+                          <Input 
+                            type={field.type === 'number' ? 'number' : 'text'}
+                            placeholder={`请输入${field.display_name}`}
+                            value={formCredentials[field.name] || ''}
+                            onChange={(e) => {
+                              const value = e.target.value;
+                              if (value === '') {
+                                handleCredentialChange(field.name, '0.0');
+                              } else {
+                                const numValue = parseFloat(value);
+                                if (!isNaN(numValue)) {
+                                  handleCredentialChange(field.name, numValue.toFixed(1));
+                                }
+                              }
+                            }}
+                          />
                         )}
                       </div>
-                    ))}
-                    
-                    <div className="flex justify-end gap-2 mt-6">
-                      <Button onClick={handleTestConnection} variant="outline" disabled={isLoading}>
-                        {isLoading ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
-                        测试连接
-                      </Button>
-                      <Button onClick={handleSaveApiKey} disabled={isLoading}>
-                        {isLoading ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
-                        保存凭证
-                      </Button>
+                      {field.description && (
+                        <p className="text-xs text-muted-foreground">
+                          {field.description}
+                        </p>
+                      )}
                     </div>
+                  ))}
+                  
+                  <div className="flex justify-end gap-2 mt-6">
+                    <Button onClick={handleTestConnection} variant="outline" disabled={isLoading}>
+                      {isLoading ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
+                      测试连接
+                    </Button>
+                    <Button onClick={handleSaveApiKey} disabled={isLoading}>
+                      {isLoading ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
+                      保存凭证
+                    </Button>
+                  </div>
                       </>
                     )}
-                  </TabsContent>
-                </Tabs>
-              </CardContent>
-            </>
-          ) : (
-            <div className="flex justify-center items-center h-64">
-              <div className="text-center">
-                <p className="text-muted-foreground">请选择一个模型查看详情</p>
-              </div>
+                </TabsContent>
+              </Tabs>
+            </CardContent>
+          </>
+        ) : (
+          <div className="flex justify-center items-center h-64">
+            <div className="text-center">
+              <p className="text-muted-foreground">请选择一个模型查看详情</p>
             </div>
-          )}
-        </Card>
+          </div>
+        )}
+      </Card>
       </div>
 
       {/* 添加模型对话框 */}

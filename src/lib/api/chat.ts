@@ -402,23 +402,45 @@ export async function updateConversationTitle(conversationId: string, title: str
   return await response.json();
 }
 
-export async function updateMessageDuration(conversationId: string, messageId: string, duration: number) {
-  const response = await fetchWithAuth(`${API_BASE_URL}/api/chat/conversations/${conversationId}/messages/${messageId}`, {
-    method: 'PUT',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({ 
-      duration: duration,
-      type: "reasoning_content"
-    }),
-  });
+export async function updateMessageDuration(conversationId: string, messageId: string, duration: number, retryCount = 3) {
+  const attemptUpdate = async (attempt: number): Promise<any> => {
+    try {
+      const response = await fetchWithAuth(`${API_BASE_URL}/api/chat/conversations/${conversationId}/messages/${messageId}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ 
+          duration: duration,
+          type: "reasoning_content"
+        }),
+      });
 
-  if (!response.ok) {
-    const errorData = await response.json();
-    console.error('Failed to update message duration:', errorData);
-    throw new Error(errorData.detail || '更新消息时长失败');
-  }
+      if (!response.ok) {
+        // 如果是404错误且还有重试次数，则继续重试
+        if (response.status === 404 && attempt < retryCount) {
+          console.warn(`消息 ${messageId} 暂时未找到，第 ${attempt} 次重试中...`);
+          // 递增延迟：1秒、2秒、3秒
+          await new Promise(resolve => setTimeout(resolve, attempt * 1000));
+          return attemptUpdate(attempt + 1);
+        }
+        
+        const errorData = await response.json();
+        console.error('Failed to update message duration:', errorData);
+        throw new Error(errorData.detail || '更新消息时长失败');
+      }
 
-  return await response.json();
+      return await response.json();
+    } catch (error) {
+      // 网络错误等其他错误也进行重试
+      if (attempt < retryCount) {
+        console.warn(`更新消息时长失败，第 ${attempt} 次重试中...`, error);
+        await new Promise(resolve => setTimeout(resolve, attempt * 1000));
+        return attemptUpdate(attempt + 1);
+      }
+      throw error;
+    }
+  };
+
+  return attemptUpdate(1);
 }
