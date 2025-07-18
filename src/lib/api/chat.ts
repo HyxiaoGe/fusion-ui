@@ -102,6 +102,8 @@ export async function sendMessageStream(data: ChatRequest, onChunk: (chunk: stri
     let streamContent = '';
     let streamReasoning = '';
     let conversationId = data.conversation_id;
+    let buffer = ''; // 用于累积数据
+    let currentEventData = ''; // 用于累积当前SSE事件的data部分
 
     while (true) {
       const { done, value } = await reader.read();
@@ -111,18 +113,21 @@ export async function sendMessageStream(data: ChatRequest, onChunk: (chunk: stri
 
       // 解码响应块
       const chunk = decoder.decode(value, { stream: true });
+      buffer += chunk;
       
       // 处理SSE格式的响应
-      const lines = chunk.split('\n').filter(line => line.trim() !== '');
+      const lines = buffer.split('\n');
+      // 保留最后一行，因为它可能是不完整的
+      buffer = lines.pop() || '';
       
       for (const line of lines) {
         if (line.startsWith('data: ')) {
           const data = line.substring(6); // 移除 "data: " 前缀
-          
+          currentEventData += data;
+        } else if (line.trim() === '' && currentEventData.trim() !== '') {
+          // 空行表示SSE事件结束，现在尝试解析累积的数据
           try {
-            const parsedData = JSON.parse(data);
-
-            // 在这里添加日志，用于观察所有类型的事件数据
+            const parsedData = JSON.parse(currentEventData);
 
             // 保存conversationId
             if (parsedData.conversation_id) {
@@ -285,10 +290,29 @@ export async function sendMessageStream(data: ChatRequest, onChunk: (chunk: stri
                 }
             }
             
+            // 重置当前事件数据，准备处理下一个事件
+            currentEventData = '';
+            
           } catch (e) {
-            console.error('解析响应数据失败:', e, data);
+            console.error('解析SSE事件数据失败:', e, '数据:', currentEventData);
+            // 重置缓冲区，避免影响后续数据
+            currentEventData = '';
           }
         }
+      }
+    }
+    
+    // 处理流结束时缓冲区中可能剩余的数据
+    if (currentEventData.trim() !== '') {
+      try {
+        console.log("处理流结束时的剩余数据:", currentEventData);
+        const parsedData = JSON.parse(currentEventData);
+        if (parsedData.type === "done" || parsedData.content === "[DONE]") {
+          onChunk(streamContent, true, conversationId || undefined, streamReasoning);
+          return;
+        }
+      } catch (e) {
+        console.warn('处理剩余数据时解析失败:', e, currentEventData);
       }
     }
     

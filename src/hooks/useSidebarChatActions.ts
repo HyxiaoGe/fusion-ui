@@ -94,7 +94,9 @@ export const useSidebarChatActions = ({
         messageMap.get(turnId).push(msg);
       }
       
-      // 第二步：合并每个turn中的消息
+      // 第二步：合并每个turn中的消息，并处理function_result
+      let functionCallOutput = null;
+      
       for (const [turnId, turnMessages] of messageMap) {
         if (turnMessages.length === 1) {
           // 单条消息直接添加
@@ -111,6 +113,8 @@ export const useSidebarChatActions = ({
           const userMsg = turnMessages.find((m: any) => m.role === 'user');
           const reasoningMsg = turnMessages.find((m: any) => m.type === 'reasoning_content');
           const assistantMsg = turnMessages.find((m: any) => m.type === 'assistant_content');
+          const functionCallMsg = turnMessages.find((m: any) => m.type === 'function_call');
+          const functionResultMsg = turnMessages.find((m: any) => m.type === 'function_result');
           
           // 添加用户消息
           if (userMsg) {
@@ -123,16 +127,70 @@ export const useSidebarChatActions = ({
             });
           }
           
-          // 添加合并后的助手消息
-          if (assistantMsg) {
+          // 处理function_result消息并转换为functionCallOutput
+          if (functionResultMsg && functionResultMsg.content) {
+            try {
+              const functionResult = typeof functionResultMsg.content === 'string' 
+                ? JSON.parse(functionResultMsg.content) 
+                : functionResultMsg.content;
+              
+              // 根据结果数据结构判断function type
+              let functionType = 'unknown';
+              let query = null;
+              
+              if (functionResult.results && Array.isArray(functionResult.results)) {
+                functionType = 'web_search';
+                query = functionResult.query;
+              } else if (functionResult.topics && Array.isArray(functionResult.topics)) {
+                functionType = 'hot_topics';
+              }
+              
+              // 保存最新的functionCallOutput（一般是最后一个turn的）
+              functionCallOutput = {
+                type: functionType,
+                query: query,
+                data: functionResult,
+                error: null,
+                timestamp: parseTimestamp(functionResultMsg.created_at),
+              };
+            } catch (e) {
+              console.error('解析function_result失败:', e, functionResultMsg.content);
+            }
+          }
+          
+          // 合并function_call和assistant_content为一个完整的助手消息
+          if (functionCallMsg || assistantMsg) {
+            let combinedContent = '';
+            let messageId = '';
+            let messageTimestamp = 0;
+            
+            // 如果有function_call，先添加其内容
+            if (functionCallMsg) {
+              combinedContent += functionCallMsg.content;
+              messageId = functionCallMsg.id;
+              messageTimestamp = parseTimestamp(functionCallMsg.created_at);
+            }
+            
+            // 如果有assistant_content，添加其内容
+            if (assistantMsg) {
+              // 如果已经有function_call内容，在中间添加分隔符
+              if (combinedContent) {
+                combinedContent += '\n\n';
+              }
+              combinedContent += assistantMsg.content;
+              // 使用assistant_content的ID和时间戳作为主要标识
+              messageId = assistantMsg.id;
+              messageTimestamp = parseTimestamp(assistantMsg.created_at);
+            }
+            
             processedMessages.push({
-              id: assistantMsg.id,
+              id: messageId,
               role: 'assistant',
-              content: assistantMsg.content,
+              content: combinedContent,
               reasoning: reasoningMsg ? reasoningMsg.content : undefined,
               duration: reasoningMsg ? reasoningMsg.duration : undefined,
               isReasoningVisible: false, // 默认隐藏思考过程
-              timestamp: parseTimestamp(assistantMsg.created_at),
+              timestamp: messageTimestamp,
               turnId: turnId,
             });
           }
@@ -150,7 +208,7 @@ export const useSidebarChatActions = ({
         provider: serverChatData.provider,
         createdAt: parseTimestamp(serverChatData.created_at),
         updatedAt: parseTimestamp(serverChatData.updated_at),
-        functionCallOutput: null,
+        functionCallOutput: functionCallOutput,
       };
 
       const existingChatIndex = currentChats.findIndex((c) => c.id === chatId);

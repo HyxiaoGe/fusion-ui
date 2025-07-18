@@ -47,7 +47,7 @@ export const useChatActions = (options: ChatActionsOptions) => {
     chats,
     reasoningEnabled,
     webSearchEnabled,
-    functionCallEnabled,
+
     searchEnabled,
     contextEnhancementEnabled,
   } = useAppSelector((state) => ({
@@ -57,7 +57,7 @@ export const useChatActions = (options: ChatActionsOptions) => {
     chats: state.chat.chats,
     reasoningEnabled: state.chat.reasoningEnabled,
     webSearchEnabled: state.chat.webSearchEnabled,
-    functionCallEnabled: state.chat.functionCallEnabled,
+
     searchEnabled: state.search.searchEnabled,
     contextEnhancementEnabled: state.search.contextEnhancementEnabled,
   }));
@@ -167,8 +167,7 @@ export const useChatActions = (options: ChatActionsOptions) => {
     const useReasoning = reasoningEnabled && supportsReasoning;
     const supportsWebSearch = selectedModel.capabilities?.webSearch || false;
     const useWebSearch = webSearchEnabled && supportsWebSearch;
-    const supportsFunctionCall = selectedModel.capabilities?.functionCalling || false;
-    const useFunctionCall = functionCallEnabled && supportsFunctionCall;
+    const useFunctionCall = selectedModel.capabilities?.functionCalling || false;
 
     try {
       await sendMessageStream({
@@ -180,7 +179,7 @@ export const useChatActions = (options: ChatActionsOptions) => {
         options: {
           use_reasoning: useReasoning,
           use_web_search: useWebSearch,
-          use_function_call: useFunctionCall
+          use_function_calls: useFunctionCall
         }
       },
         (content, done, conversationId, reasoning) => {
@@ -277,7 +276,7 @@ export const useChatActions = (options: ChatActionsOptions) => {
         }
       }
     }
-  }, [activeChatId, selectedModelId, models, dispatch, searchEnabled, contextEnhancementEnabled, reasoningEnabled, webSearchEnabled, functionCallEnabled, options, refreshChatList]);
+  }, [activeChatId, selectedModelId, models, dispatch, searchEnabled, contextEnhancementEnabled, reasoningEnabled, webSearchEnabled, options, refreshChatList]);
 
 
   const retryMessage = useCallback(async (messageId: string) => {
@@ -322,7 +321,7 @@ export const useChatActions = (options: ChatActionsOptions) => {
           message: userMessage.content.trim(),
           conversation_id: activeChatId,
           stream: true,
-          options: { use_reasoning: useReasoning, use_web_search: useWebSearch, use_function_call: useFunctionCall }
+          options: { use_reasoning: useReasoning, use_web_search: useWebSearch, use_function_calls: useFunctionCall }
         },
           (content, done, conversationId, reasoning) => {
             if (!done) {
@@ -402,7 +401,7 @@ export const useChatActions = (options: ChatActionsOptions) => {
         message: newContent.trim(),
         conversation_id: activeChatId,
         stream: true,
-        options: { use_reasoning: useReasoning, use_web_search: useWebSearch, use_function_call: useFunctionCall }
+        options: { use_reasoning: useReasoning, use_web_search: useWebSearch, use_function_calls: useFunctionCall }
       },
         (content, done, conversationId, reasoning) => {
           if (!done) {
@@ -440,7 +439,7 @@ export const useChatActions = (options: ChatActionsOptions) => {
       dispatch(endStreamingReasoning());
       dispatch(endStreaming());
     }
-  }, [activeChatId, selectedModelId, chats, models, dispatch, reasoningEnabled, webSearchEnabled, functionCallEnabled, options]);
+  }, [activeChatId, selectedModelId, chats, models, dispatch, reasoningEnabled, webSearchEnabled, options]);
 
   return { newChat, clearCurrentChat, sendMessage, retryMessage, editMessage };
 }; 

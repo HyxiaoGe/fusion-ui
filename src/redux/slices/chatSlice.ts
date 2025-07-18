@@ -263,6 +263,9 @@ const chatSlice = createSlice({
     toggleWebSearch: (state, action: PayloadAction<boolean>) => {
       state.webSearchEnabled = action.payload;
     },
+    toggleFunctionCall: (state, action: PayloadAction<boolean>) => {
+      state.functionCallEnabled = action.payload;
+    },
     startStreamingReasoning: (state) => {
       state.isStreamingReasoning = true;
       state.streamingReasoningStartTime = Date.now();
@@ -555,6 +558,7 @@ export const {
   clearChatFunctionCallOutput,
   resetFunctionCallProgress,
   toggleWebSearch,
+  toggleFunctionCall,
   setServerChatList,
   updateServerChatTitle,
   appendServerChatList,
