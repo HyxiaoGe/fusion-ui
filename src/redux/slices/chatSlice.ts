@@ -371,6 +371,19 @@ const chatSlice = createSlice({
     setAllChats: (state, action: PayloadAction<Chat[]>) => {
       state.chats = action.payload;
     },
+    // 从服务端更新单个对话数据，不影响其他对话
+    updateChatFromServer: (state, action: PayloadAction<Chat>) => {
+      const serverChat = action.payload;
+      const existingChatIndex = state.chats.findIndex(c => c.id === serverChat.id);
+      
+      if (existingChatIndex >= 0) {
+        // 更新现有对话
+        state.chats[existingChatIndex] = serverChat;
+      } else {
+        // 添加新对话（保持其他对话不变）
+        state.chats.push(serverChat);
+      }
+    },
     setAnimatingTitleChatId: (state, action: PayloadAction<string | null>) => {
       state.animatingTitleChatId = action.payload;
     },
@@ -537,6 +550,7 @@ export const {
   setError,
   clearMessages,
   setAllChats,
+  updateChatFromServer,
   startStreaming,
   updateStreamingContent,
   endStreaming,

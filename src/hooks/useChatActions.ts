@@ -65,7 +65,7 @@ export const useChatActions = (options: ChatActionsOptions) => {
   const pendingQuestionRequestRef = useRef<NodeJS.Timeout | null>(null);
 
   /**
-   * Creates a new chat session.
+   * Creates a new chat session or reuses existing empty chat.
    */
   const newChat = useCallback(() => {
     const modelToUse = selectedModelId || (models.length > 0 ? models[0].id : null);
@@ -75,16 +75,25 @@ export const useChatActions = (options: ChatActionsOptions) => {
       return;
     }
 
+    // 首先检查是否已经存在空对话（没有消息的对话）
+    const existingEmptyChat = chats.find(chat => chat.messages.length === 0);
+    
+    if (existingEmptyChat) {
+      // 如果已经有空对话，直接激活它，不创建新的
+      if (existingEmptyChat.id !== activeChatId) {
+        dispatch(setActiveChat(existingEmptyChat.id));
+      }
+      // 调用回调，让页面处理UI状态
+      options.onNewChatCreated?.();
+      return;
+    }
+
     const selectedModel = models.find(m => m.id === modelToUse);
     const providerToUse = selectedModel?.provider;
 
     try {
-      // 创建新对话时暂时不设置标题，等用户输入消息后再设置
+      // 只有当没有空对话时，才创建新对话
       dispatch(createChat({ model: modelToUse, provider: providerToUse, title: '' }));
-      
-      setTimeout(() => {
-        refreshChatList();
-      }, 100);
       
       options.onNewChatCreated?.();
 
@@ -92,7 +101,7 @@ export const useChatActions = (options: ChatActionsOptions) => {
       console.error('创建对话失败:', error);
       dispatch(setError('创建对话失败，请重试'));
     }
-  }, [selectedModelId, models, dispatch, refreshChatList, options]);
+  }, [selectedModelId, models, dispatch, options, chats, activeChatId]);
 
   /**
    * Clears all messages from the currently active chat.
@@ -231,10 +240,10 @@ export const useChatActions = (options: ChatActionsOptions) => {
 
             if (conversationId && conversationId !== currentActiveChatId) {
               dispatch(setActiveChat(conversationId));
-              setTimeout(refreshChatList, 1000);
-            } else {
+              // 只有在对话ID发生变化时才刷新列表（说明服务端创建了新对话）
               setTimeout(refreshChatList, 1000);
             }
+            // 不再在每次消息发送后都刷新列表，避免过度同步
             
             if (pendingQuestionRequestRef.current) clearTimeout(pendingQuestionRequestRef.current);
             pendingQuestionRequestRef.current = setTimeout(() => {

@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { useAppDispatch, useAppSelector } from '@/redux/hooks';
 import { useToast } from '@/components/ui/toast';
 import { getConversation, deleteConversation } from '@/lib/api/chat';
@@ -14,6 +15,7 @@ import {
   setServerError,
   setLoadingServerChat,
   setAllChats,
+  updateChatFromServer,
   Message
 } from '@/redux/slices/chatSlice';
 import { store } from '@/redux/store';
@@ -32,6 +34,7 @@ export const useSidebarChatActions = ({
   serverPagination,
 }: UseSidebarChatActionsProps) => {
   const dispatch = useAppDispatch();
+  const router = useRouter();
   const { toast } = useToast();
   const { activeChatId } = useAppSelector((state) => state.chat);
   const { isAuthenticated } = useAppSelector((state) => state.auth);
@@ -70,12 +73,20 @@ export const useSidebarChatActions = ({
   const handleSelectChat = async (chatId: string) => {
     if (chatId === activeChatId) return;
 
-    dispatch(setActiveChat(chatId));
-
     const currentChats = store.getState().chat.chats;
     const selectedChat = currentChats.find((c) => c.id === chatId);
 
-    if (selectedChat && selectedChat.messages.length === 0) return;
+    // 如果是空对话，直接跳转到新对话准备状态，避免"上蹿下跳"
+    if (selectedChat && selectedChat.messages.length === 0) {
+      dispatch(setActiveChat(chatId));
+      router.push(`/?new=true&model=${selectedChat.model}`);
+      return;
+    }
+
+    // 跳转到聊天页面（类似ChatGPT的行为）
+    router.push(`/chat/${chatId}`);
+
+    dispatch(setActiveChat(chatId));
 
     try {
       dispatch(setLoadingServerChat(true));
@@ -211,14 +222,8 @@ export const useSidebarChatActions = ({
         functionCallOutput: functionCallOutput,
       };
 
-      const existingChatIndex = currentChats.findIndex((c) => c.id === chatId);
-      if (existingChatIndex >= 0) {
-        const updatedChats = [...currentChats];
-        updatedChats[existingChatIndex] = localChat;
-        dispatch(setAllChats(updatedChats));
-      } else {
-        dispatch(setAllChats([...currentChats, localChat]));
-      }
+      // 使用新的updateChatFromServer action，只更新特定对话，不影响其他本地对话
+      dispatch(updateChatFromServer(localChat));
 
       dispatch(setLoadingServerChat(false));
     } catch (error) {

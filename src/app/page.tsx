@@ -48,9 +48,9 @@ import { v4 as uuidv4 } from 'uuid';
 import Link from 'next/link';
 import { cn } from '@/lib/utils';
 import FunctionCallDisplay from '@/components/chat/FunctionCallDisplay';
-import { useChatListRefresh } from '@/hooks/useChatListRefresh';
+
 import { useToast } from '@/components/ui/toast';
-import { usePathname, useSearchParams } from 'next/navigation';
+import { usePathname, useSearchParams, useRouter } from 'next/navigation';
 import TypingTitle from '@/components/ui/TypingTitle';
 import { useChatActions } from '@/hooks/useChatActions';
 import { useSuggestedQuestions } from '@/hooks/useSuggestedQuestions';
@@ -61,8 +61,12 @@ export default function Home() {
   const dispatch = useAppDispatch();
   const pathname = usePathname();
   const searchParams = useSearchParams();
+  const router = useRouter();
   const { toast } = useToast();
-  const { triggerRefresh: refreshChatList } = useChatListRefresh();
+
+  // 检查是否是新对话准备状态
+  const isNewChatMode = searchParams?.get('new') === 'true';
+  const urlModelParam = searchParams?.get('model');
 
   const [inputKey, setInputKey] = useState(Date.now());
   const [showHomePage, setShowHomePage] = useState(false);
@@ -118,22 +122,85 @@ export default function Home() {
   // 判断是否显示欢迎页面
   const shouldShowWelcome = !activeChatId || chats.length === 0;
   
-  // 根据当前状态决定是否显示主页
+  // 使用ref跟踪是否已经为当前URL创建过对话
+  const hasCreatedChatForCurrentUrl = useRef(false);
+  const currentUrlRef = useRef('');
+  
+  // 处理新对话准备状态
   useEffect(() => {
-    if (shouldShowWelcome) {
-      setShowHomePage(true);
-    } else if (activeChatId) {
-      // 检查当前活动对话是否是新建的空对话
-      const isNewEmptyChat = activeChat && activeChat.messages.length === 0;
-      if (isNewEmptyChat) {
-        // 新建的空对话应该显示示例页面
-        setShowHomePage(true);
-      } else {
-        // 有内容的对话不显示示例页面
-        setShowHomePage(false);
+    if (isNewChatMode) {
+      // 构建当前URL标识符
+      const currentUrl = `new=${isNewChatMode}&model=${urlModelParam}`;
+      
+      // 如果URL发生变化，重置创建标记
+      if (currentUrlRef.current !== currentUrl) {
+        currentUrlRef.current = currentUrl;
+        hasCreatedChatForCurrentUrl.current = false;
+      }
+      
+      // 如果已经为当前URL创建过对话，不再重复创建
+      if (hasCreatedChatForCurrentUrl.current) {
+        return;
+      }
+      
+      // 检查当前是否已经有合适的活跃对话
+      if (activeChatId) {
+        const activeChat = localChats.find(c => c.id === activeChatId);
+        // 如果已经有空的活跃对话，就不需要再创建了
+        if (activeChat && activeChat.messages.length === 0) {
+          hasCreatedChatForCurrentUrl.current = true; // 标记已处理
+          return; // 已经有合适的空对话，不需要创建
+        }
+      }
+
+      // 检查是否有其他空对话可以使用
+      const emptyChat = localChats.find(chat => chat.messages.length === 0);
+      if (emptyChat) {
+        // 如果有空对话，直接激活它
+        if (emptyChat.id !== activeChatId) {
+          dispatch(setActiveChat(emptyChat.id));
+        }
+        hasCreatedChatForCurrentUrl.current = true; // 标记已处理
+        return;
+      }
+
+      // 如果没有合适的对话，才创建新对话
+      const modelToUse = urlModelParam || selectedModelId || (models.length > 0 ? models[0].id : null);
+      if (modelToUse) {
+        const selectedModel = models.find(m => m.id === modelToUse);
+        const providerToUse = selectedModel?.provider;
+        dispatch(createChat({ model: modelToUse, provider: providerToUse, title: '' }));
+        hasCreatedChatForCurrentUrl.current = true; // 标记已创建
       }
     }
-  }, [shouldShowWelcome, activeChatId, activeChat]);
+  }, [isNewChatMode, activeChatId, urlModelParam, selectedModelId, models, dispatch, localChats]);
+
+  // 根据当前状态决定是否显示主页
+  useEffect(() => {
+    if (isNewChatMode) {
+      // 新对话准备状态，显示输入界面
+      setShowHomePage(true);
+    } else {
+      // 离开新对话准备状态时，重置创建标记
+      if (hasCreatedChatForCurrentUrl.current) {
+        hasCreatedChatForCurrentUrl.current = false;
+      }
+      
+      if (shouldShowWelcome) {
+        setShowHomePage(true);
+      } else if (activeChatId) {
+        // 检查当前活动对话是否是新建的空对话
+        const isNewEmptyChat = activeChat && activeChat.messages.length === 0;
+        if (isNewEmptyChat) {
+          // 新建的空对话应该显示示例页面
+          setShowHomePage(true);
+        } else {
+          // 有内容的对话不显示示例页面
+          setShowHomePage(false);
+        }
+      }
+    }
+  }, [isNewChatMode, shouldShowWelcome, activeChatId, activeChat]);
 
   const [currentUserQuery, setCurrentUserQuery] = useState('');
 
@@ -155,19 +222,18 @@ export default function Home() {
     editMessage
   } = useChatActions({
     onNewChatCreated: () => {
-      // 创建新对话时显示示例页面，让用户选择话题或输入问题
-      setShowHomePage(true);
-      
-      // 使用setTimeout确保状态已更新
-      setTimeout(() => {
-        // 确保聊天界面已加载，再重置焦点
-        if (chatInputRef.current) {
-          chatInputRef.current.click();
-        }
-      }, 100);
+      // 创建新对话时跳转到准备状态（类似ChatGPT）
+      const modelToUse = selectedModelId || (models.length > 0 ? models[0].id : null);
+      router.push(`/?new=true&model=${modelToUse}`);
     },
     onSendMessageStart: () => {
-      if (showHomePage) {
+      // 如果是新对话准备状态，发送消息后跳转到对话页面
+      if (isNewChatMode && activeChatId) {
+        // 清理URL参数，避免页面刷新时重复创建
+        router.replace(`/chat/${activeChatId}`);
+        // 重置创建标记，因为用户已经开始使用这个对话了
+        hasCreatedChatForCurrentUrl.current = false;
+      } else if (showHomePage) {
         setShowHomePage(false);
       }
     },

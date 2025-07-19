@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useAppDispatch, useAppSelector } from '@/redux/hooks';
 import {
   setServerChatList,
@@ -44,15 +44,32 @@ export const useChatListManager = () => {
   };
 
   const useServerData = serverChatList.length > 0;
-  const chats: Chat[] = useServerData
-    ? serverChatList.map((chat: any) => ({
+  
+  // 智能合并本地和服务端聊天数据，解决竞态条件问题
+  const chats: Chat[] = useMemo(() => {
+    if (useServerData) {
+      // 映射服务端数据
+      const serverChats = serverChatList.map((chat: any) => ({
         ...chat,
         messages: [],
         model: chat.model,
         createdAt: parseTimestamp(chat.created_at),
         updatedAt: parseTimestamp(chat.updated_at),
-      }))
-    : localChats;
+      }));
+      
+      // 找出本地独有的对话（新建但未同步到服务端的）
+      const localOnlyChats = localChats.filter(localChat => 
+        !serverChats.find(serverChat => serverChat.id === localChat.id)
+        // 移除过度过滤，让本地对话由用户主动管理，而不是系统自动过滤
+      );
+      
+      // 合并：本地新对话在前，服务端对话在后
+      return [...localOnlyChats, ...serverChats];
+    } else {
+      // 没有服务端数据时，使用本地数据
+      return localChats;
+    }
+  }, [useServerData, serverChatList, localChats, parseTimestamp, activeChatId]);
 
   const isInitializedRef = useRef(false);
   const lastActiveChatIdRef = useRef<string | null>(null);
@@ -158,20 +175,29 @@ export const useChatListManager = () => {
     fetchChatList(1, 10);
   }, [fetchChatList, isAuthenticated]);
 
-  useEffect(() => {
-    if (activeChatId && activeChatId !== lastActiveChatIdRef.current) {
-      lastActiveChatIdRef.current = activeChatId;
-      
-      if (useServerData) {
-        const chatExists = serverChatList.some(chat => chat.id === activeChatId);
-        if (!chatExists) {
-          setTimeout(() => {
-            refreshChatList();
-          }, 500);
-        }
-      }
-    }
-  }, [activeChatId, useServerData, serverChatList, refreshChatList]);
+  // 移除自动刷新逻辑，避免过度同步
+  // 切换对话时不应该频繁调用服务端接口
+  // useEffect(() => {
+  //   if (activeChatId && activeChatId !== lastActiveChatIdRef.current) {
+  //     lastActiveChatIdRef.current = activeChatId;
+  //     
+  //     if (useServerData) {
+  //       const chatExists = serverChatList.some(chat => chat.id === activeChatId);
+  //       if (!chatExists) {
+  //         // 检查是否是新创建的本地对话（没有消息的对话）
+  //         const localChat = localChats.find(chat => chat.id === activeChatId);
+  //         const isNewEmptyChat = localChat && localChat.messages.length === 0;
+  //         
+  //         // 只有当对话有内容时才刷新服务端列表，避免新对话被覆盖
+  //         if (!isNewEmptyChat) {
+  //           setTimeout(() => {
+  //             refreshChatList();
+  //           }, 500);
+  //         }
+  //       }
+  //     }
+  //   }
+  // }, [activeChatId, useServerData, serverChatList, refreshChatList, localChats]);
 
   return {
     chats,
