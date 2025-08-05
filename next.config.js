@@ -132,8 +132,8 @@ const nextConfig = {
       }
     ]
   },
-  // 输出配置
-  output: 'standalone',
+  // 输出配置 - Railway 暂时不使用 standalone 模式
+  // output: 'standalone',
   // 压缩配置
   compress: true,
   // 生成源映射（开发环境）
