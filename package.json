@@ -9,7 +9,7 @@
     "dev": "cross-env NODE_ENV=development concurrently \"next dev\" \"wait-on http://localhost:3000 && electron src/electron/main.js --inspect=5858\"",
     "build": "next build",
     "build:electron": "next build && electron-builder",
-    "start": "node server.js",
+    "start": "next start",
     "analyze": "node src/scripts/analyze-bundle.js",
     "analyze:build": "ANALYZE=true npm run build",
     "analyze:visual": "cross-env ANALYZE=true npm run build",
