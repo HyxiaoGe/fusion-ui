@@ -30,8 +30,9 @@
    - 在 Railway 项目设置中，点击 "Variables"
    - 添加以下环境变量：
      ```
-     NEXT_PUBLIC_API_BASE_URL=你的后端API地址
+     NEXT_PUBLIC_API_BASE_URL=https://your-backend-name.up.railway.app
      ```
+   - **注意**: 如果你的后端也部署在 Railway 上，URL 格式为 `https://项目名.up.railway.app`，不需要端口号
 
 4. **部署**
    - Railway 会自动检测到 Next.js 项目
@@ -62,13 +63,35 @@
 
 4. **设置环境变量**
    ```bash
-   railway variables set NEXT_PUBLIC_API_BASE_URL=你的后端API地址
+   railway variables set NEXT_PUBLIC_API_BASE_URL=https://your-backend-name.up.railway.app
    ```
 
 5. **部署**
    ```bash
    railway up
    ```
+
+## Railway 服务间通信
+
+如果你的前端和后端都部署在 Railway 上，有两种连接方式：
+
+### 方式一：公网 URL（推荐）
+使用后端的公网 Railway URL：
+```
+NEXT_PUBLIC_API_BASE_URL=https://your-backend-name.up.railway.app
+```
+
+### 方式二：内网通信（高级）
+如果前后端在同一个 Railway 项目组中，可以使用内网域名：
+```
+NEXT_PUBLIC_API_BASE_URL=http://backend:8000
+```
+其中 `backend` 是你后端服务的名称。
+
+**推荐使用方式一**，因为：
+- 更简单直接
+- 减少配置复杂度
+- Railway 的网络性能很好，延迟可忽略
 
 ## 部署后配置
 
@@ -94,6 +117,7 @@
 ### 3. API 连接失败
 - 确保后端 API 支持 CORS
 - 检查 API 地址是否正确且可以从外网访问
+- 如果后端也在 Railway 上，确保后端项目正常运行且 URL 正确
 
 ### 4. 端口问题
 - Railway 会自动设置 PORT 环境变量
