@@ -120,19 +120,32 @@ export const useChatActions = (options: ChatActionsOptions) => {
     let currentActiveChatId = activeChatId;
 
     if (!currentActiveChatId) {
-      const newChatId = uuidv4();
-      const selectedModel = models.find(m => m.id === selectedModelId);
-      const providerToUse = selectedModel?.provider;
+      // 先检查是否有空对话可以复用
+      const existingEmptyChat = chats.find(chat => chat.messages.length === 0);
       
-      dispatch(
-        createChat({
-          id: newChatId,
-          model: selectedModelId,
-          provider: providerToUse,
-          title: content.substring(0, 30),
-        })
-      );
-      currentActiveChatId = newChatId;
+      if (existingEmptyChat) {
+        // 复用已存在的空对话
+        currentActiveChatId = existingEmptyChat.id;
+        // 如果空对话不是当前激活的，激活它
+        if (existingEmptyChat.id !== activeChatId) {
+          dispatch(setActiveChat(existingEmptyChat.id));
+        }
+      } else {
+        // 没有空对话，创建新的
+        const newChatId = uuidv4();
+        const selectedModel = models.find(m => m.id === selectedModelId);
+        const providerToUse = selectedModel?.provider;
+        
+        dispatch(
+          createChat({
+            id: newChatId,
+            model: selectedModelId,
+            provider: providerToUse,
+            title: content.substring(0, 30),
+          })
+        );
+        currentActiveChatId = newChatId;
+      }
     }
     
     if (!currentActiveChatId) {
