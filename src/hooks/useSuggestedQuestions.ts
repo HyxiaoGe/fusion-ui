@@ -32,6 +32,12 @@ export const useSuggestedQuestions = (chatId: string | null) => {
     const hasAIMessage = chat.messages.some(msg => msg.role === 'assistant' && msg.content?.trim());
     console.log('[useSuggestedQuestions] hasAIMessage:', hasAIMessage, 'message count:', chat.messages.length);
     
+    // 只有当聊天中有 AI 回复时才获取建议问题
+    if (!hasAIMessage) {
+      console.log('[useSuggestedQuestions] No AI message yet, aborting');
+      return;
+    }
+    
     // Do not fetch questions if a stream is in progress.
     if (isStreaming) {
       console.log('[useSuggestedQuestions] Stream is in progress, aborting');

@@ -239,7 +239,7 @@ export default function Home() {
     },
     onStreamEnd: (chatId: string) => {
       // 强制刷新以获取新问题
-      console.log('[page.tsx] onStreamEnd called for chatId:', chatId);
+      console.log('[page.tsx] onStreamEnd called for chatId:', chatId, 'current activeChatId:', activeChatId);
       fetchQuestions(true);
     }
   });

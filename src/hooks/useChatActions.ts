@@ -136,6 +136,8 @@ export const useChatActions = (options: ChatActionsOptions) => {
         if (existingEmptyChat.id !== activeChatId) {
           dispatch(setActiveChat(existingEmptyChat.id));
         }
+        // 使用短暂延迟，让状态更新生效
+        await new Promise(resolve => setTimeout(resolve, 50));
       } else {
         // 没有空对话，创建新的
         const newChatId = uuidv4();
@@ -152,6 +154,8 @@ export const useChatActions = (options: ChatActionsOptions) => {
           })
         );
         currentActiveChatId = newChatId;
+        // 使用短暂延迟，让状态更新生效
+        await new Promise(resolve => setTimeout(resolve, 50));
       }
     }
     
@@ -263,6 +267,7 @@ export const useChatActions = (options: ChatActionsOptions) => {
               pendingQuestionRequestRef.current = setTimeout(() => {
                 pendingQuestionRequestRef.current = null;
                 const finalChatId = conversationId || currentActiveChatId;
+                console.log('[useChatActions] onStreamEnd - conversationId:', conversationId, 'currentActiveChatId:', currentActiveChatId, 'finalChatId:', finalChatId);
                 if (finalChatId) {
                   console.log('[useChatActions] Calling onStreamEnd with chatId:', finalChatId);
                   options.onStreamEnd?.(finalChatId);
