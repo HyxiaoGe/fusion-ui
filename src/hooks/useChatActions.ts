@@ -211,6 +211,7 @@ export const useChatActions = (options: ChatActionsOptions) => {
               dispatch(updateStreamingReasoningContent(reasoning));
             }
           } else {
+            console.log('[useChatActions] Stream done=true received');
             dispatch(updateStreamingContent({ chatId: currentActiveChatId, content }));
 
             // 保存思考内容到消息的reasoning字段
@@ -263,6 +264,7 @@ export const useChatActions = (options: ChatActionsOptions) => {
               pendingQuestionRequestRef.current = null;
               const finalChatId = conversationId || currentActiveChatId;
               if (finalChatId) {
+                console.log('[useChatActions] Calling onStreamEnd with chatId:', finalChatId);
                 options.onStreamEnd?.(finalChatId);
               }
             }, 1500);

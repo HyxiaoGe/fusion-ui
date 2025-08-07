@@ -237,8 +237,9 @@ export default function Home() {
         setShowHomePage(false);
       }
     },
-    onStreamEnd: () => {
+    onStreamEnd: (chatId: string) => {
       // 强制刷新以获取新问题
+      console.log('[page.tsx] onStreamEnd called for chatId:', chatId);
       fetchQuestions(true);
     }
   });

@@ -270,6 +270,7 @@ export async function sendMessageStream(data: ChatRequest, onChunk: (chunk: stri
                 
               case "done":
                 // 流结束
+                console.log('[sendMessageStream] Received "done" event, calling onChunk with done=true');
                 onChunk(streamContent, true, conversationId || undefined, streamReasoning);
                 return;
                 
@@ -317,6 +318,7 @@ export async function sendMessageStream(data: ChatRequest, onChunk: (chunk: stri
     }
     
     // 如果没有收到[DONE]但流结束了，也标记为完成
+    console.log('[sendMessageStream] Stream ended without explicit done event, calling onChunk with done=true');
     onChunk(streamContent, true, conversationId || undefined, streamReasoning);
   } catch (error) {
     console.error('流式消息请求失败:', error);

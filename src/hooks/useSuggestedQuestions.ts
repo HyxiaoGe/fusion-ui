@@ -12,7 +12,10 @@ export const useSuggestedQuestions = (chatId: string | null) => {
   }, [chatId]);
 
   const fetchQuestions = useCallback(async (forceRefresh: boolean = false) => {
+    console.log('[useSuggestedQuestions] fetchQuestions called, chatId:', chatId, 'forceRefresh:', forceRefresh);
+    
     if (!chatId) {
+      console.log('[useSuggestedQuestions] No chatId, aborting');
       return;
     }
 
@@ -27,16 +30,20 @@ export const useSuggestedQuestions = (chatId: string | null) => {
     }
 
     const hasAIMessage = chat.messages.some(msg => msg.role === 'assistant' && msg.content?.trim());
+    console.log('[useSuggestedQuestions] hasAIMessage:', hasAIMessage, 'message count:', chat.messages.length);
     
     // Do not fetch questions if a stream is in progress.
     if (isStreaming) {
+      console.log('[useSuggestedQuestions] Stream is in progress, aborting');
       return;
     }
 
+    console.log('[useSuggestedQuestions] Fetching suggested questions from API...');
     setIsLoadingQuestions(true);
     try {
       const messageCount = chat.messages.length || 0;
       const { questions } = await fetchApi(chatId, {}, forceRefresh, messageCount);
+      console.log('[useSuggestedQuestions] Received questions:', questions);
       setSuggestedQuestions(questions);
     } catch (error) {
       console.error('Error fetching suggested questions:', error);
