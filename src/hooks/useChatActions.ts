@@ -75,10 +75,12 @@ export const useChatActions = (options: ChatActionsOptions) => {
       return;
     }
 
+    console.log('[useChatActions.newChat] Called, current chats:', chats.length);
     // 首先检查是否已经存在空对话（没有消息的对话）
     const existingEmptyChat = chats.find(chat => chat.messages.length === 0);
     
     if (existingEmptyChat) {
+      console.log('[useChatActions.newChat] Found existing empty chat:', existingEmptyChat.id);
       // 如果已经有空对话，直接激活它，不创建新的
       if (existingEmptyChat.id !== activeChatId) {
         dispatch(setActiveChat(existingEmptyChat.id));
@@ -92,6 +94,7 @@ export const useChatActions = (options: ChatActionsOptions) => {
     const providerToUse = selectedModel?.provider;
 
     try {
+      console.log('[useChatActions.newChat] Creating new chat');
       // 只有当没有空对话时，才创建新对话
       dispatch(createChat({ model: modelToUse, provider: providerToUse, title: '' }));
       
@@ -115,6 +118,7 @@ export const useChatActions = (options: ChatActionsOptions) => {
   const sendMessage = useCallback(async (content: string, files?: FileWithPreview[]) => {
     if ((!content.trim() && (!files || files.length === 0)) || !selectedModelId) return;
 
+    console.log('[useChatActions.sendMessage] Starting, activeChatId:', activeChatId);
     options.onSendMessageStart?.();
     
     let currentActiveChatId = activeChatId;
@@ -122,10 +126,12 @@ export const useChatActions = (options: ChatActionsOptions) => {
     if (!currentActiveChatId) {
       // 先检查是否有空对话可以复用
       const existingEmptyChat = chats.find(chat => chat.messages.length === 0);
+      console.log('[useChatActions.sendMessage] No active chat, found empty chat:', existingEmptyChat?.id);
       
       if (existingEmptyChat) {
         // 复用已存在的空对话
         currentActiveChatId = existingEmptyChat.id;
+        console.log('[useChatActions.sendMessage] Reusing empty chat:', currentActiveChatId);
         // 如果空对话不是当前激活的，激活它
         if (existingEmptyChat.id !== activeChatId) {
           dispatch(setActiveChat(existingEmptyChat.id));
@@ -136,6 +142,7 @@ export const useChatActions = (options: ChatActionsOptions) => {
         const selectedModel = models.find(m => m.id === selectedModelId);
         const providerToUse = selectedModel?.provider;
         
+        console.log('[useChatActions.sendMessage] Creating new chat:', newChatId);
         dispatch(
           createChat({
             id: newChatId,
@@ -250,6 +257,17 @@ export const useChatActions = (options: ChatActionsOptions) => {
                   );
                 }
               }
+              
+              // 在 endStreaming 之后立即调用 onStreamEnd，确保 isStreaming 已经是 false
+              if (pendingQuestionRequestRef.current) clearTimeout(pendingQuestionRequestRef.current);
+              pendingQuestionRequestRef.current = setTimeout(() => {
+                pendingQuestionRequestRef.current = null;
+                const finalChatId = conversationId || currentActiveChatId;
+                if (finalChatId) {
+                  console.log('[useChatActions] Calling onStreamEnd with chatId:', finalChatId);
+                  options.onStreamEnd?.(finalChatId);
+                }
+              }, 500); // 减少延迟到 500ms
             }, 1000);
 
             if (conversationId && conversationId !== currentActiveChatId) {
@@ -258,16 +276,6 @@ export const useChatActions = (options: ChatActionsOptions) => {
               setTimeout(refreshChatList, 1000);
             }
             // 不再在每次消息发送后都刷新列表，避免过度同步
-            
-            if (pendingQuestionRequestRef.current) clearTimeout(pendingQuestionRequestRef.current);
-            pendingQuestionRequestRef.current = setTimeout(() => {
-              pendingQuestionRequestRef.current = null;
-              const finalChatId = conversationId || currentActiveChatId;
-              if (finalChatId) {
-                console.log('[useChatActions] Calling onStreamEnd with chatId:', finalChatId);
-                options.onStreamEnd?.(finalChatId);
-              }
-            }, 1500);
           }
 
           const finalChatId = conversationId || currentActiveChatId;
