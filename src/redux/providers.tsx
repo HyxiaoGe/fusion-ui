@@ -1,26 +1,20 @@
 'use client';
 
 import LoadingIndicator from '@/components/ui/loading-indicator';
+import initializeStoreFromDB from '@/lib/db/initializeStore';
 import { useEffect, useState } from 'react';
 import { Provider } from 'react-redux';
-import { useAppDispatch } from './hooks';
 import { store } from './store';
-import { initHotTopicsPolling } from '@/lib/api/hotTopics';
 
 // 数据加载组件
 const StoreInitializer = ({ children }: { children: React.ReactNode }) => {
-  const dispatch = useAppDispatch();
   const [isLoaded, setIsLoaded] = useState(false);
 
   useEffect(() => {
     const loadData = async () => {
       try {
-        // 移除本地数据库初始化，现在使用服务端数据
-        // await initializeStoreFromDB(dispatch);
-        
-        // 初始化热点话题数据拉取，设置10分钟刷新一次
-        initHotTopicsPolling(10);
-        
+        // 只恢复本地设置，不在启动时把聊天记录回灌为真源
+        await initializeStoreFromDB(store.dispatch, { includeChats: false });
         setIsLoaded(true);
       } catch (error) {
         console.error('初始化失败:', error);
@@ -30,7 +24,7 @@ const StoreInitializer = ({ children }: { children: React.ReactNode }) => {
     };
 
     loadData();
-  }, [dispatch]);
+  }, []);
 
   // 显示加载状态或返回子组件
   if (!isLoaded) {

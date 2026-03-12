@@ -36,20 +36,9 @@ export default function RootLayout({
   return (
     <html lang="zh-CN" suppressHydrationWarning>
       <head>
-        {/* 预加载关键字体 */}
-        <link
-          rel="preload"
-          href="/fonts/inter-var.woff2"
-          as="font"
-          type="font/woff2"
-          crossOrigin="anonymous"
-        />
         {/* DNS预解析和预连接 */}
         <link rel="dns-prefetch" href="//fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
-        
-        {/* 关键资源提示 */}
-        <link rel="preload" href="/api/models" as="fetch" crossOrigin="anonymous" />
       </head>
       <body className={cn(
         "min-h-screen bg-background font-sans antialiased",

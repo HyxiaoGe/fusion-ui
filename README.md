@@ -1,16 +1,14 @@
 # Fusion UI
 
-一个基于Next.js和Electron的AI对话应用程序，提供桌面客户端体验。
+一个基于 Next.js 和 Electron 的聊天产品前端，提供桌面客户端体验。
 
 ## 功能特点
 
 - 💬 多模型AI对话支持
-- 🔄 上下文增强和相关讨论推荐
 - 📝 Markdown渲染与代码高亮
 - 📂 文件上传与处理功能
-- 💾 本地数据库存储聊天记录
+- 🗂️ 历史会话与服务端同步
 - 🌐 桌面应用体验（Electron）
-- 🔍 向量搜索功能
 - 🌙 支持多语言（i18n）
 
 ## 技术栈
@@ -20,7 +18,7 @@
 - **UI组件**: Radix UI, Shadcn/UI
 - **样式**: Tailwind CSS
 - **状态管理**: Redux Toolkit
-- **本地数据库**: Dexie.js (IndexedDB)
+- **本地缓存**: Dexie.js (IndexedDB, cache only)
 - **编辑器**: TipTap
 - **表单处理**: React Hook Form, Zod
 - **文件处理**: FilePond, React Dropzone
@@ -62,9 +60,11 @@ src/
   └── redux/         # Redux状态管理
 ```
 
-## 功能扩展
+## 当前范围
 
-本项目支持通过添加新的模型和功能进行扩展。查看代码中的相关组件以了解如何添加新功能。
+- 当前产品范围聚焦在 `chat / auth / files / models`
+- 搜索增强、热点话题、RSS、摘要等非核心能力已从主产品面移除
+- IndexedDB 仅作为本地缓存，不是产品真源
 
 ## 许可证
 

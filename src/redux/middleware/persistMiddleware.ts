@@ -2,21 +2,15 @@ import db, { chatStore, settingsStore } from '@/lib/db/chatStore';
 import {
   addMessage,
   Chat,
-  clearChatFunctionCallOutput,
   clearMessages,
   createChat,
   deleteChat,
   endStreaming,
   Message,
-  setFunctionCallData,
-  setFunctionCallError,
   updateChatModel,
   updateChatTitle,
   updateStreamingContent
 } from '@/redux/slices/chatSlice';
-import {
-  updateModelConfig
-} from '@/redux/slices/modelsSlice';
 import {
   setAssistantAvatar,
   setUserAvatar
@@ -26,7 +20,6 @@ import {
 } from '@/redux/slices/themeSlice';
 import { Middleware } from '@reduxjs/toolkit';
 import { v4 as uuidv4 } from 'uuid';
-import { setContextMaxItems, toggleContextEnhancement } from '../slices/searchSlice';
 
 // 创建持久化中间件
 export const persistMiddleware: Middleware = store => next => action => {
@@ -175,31 +168,6 @@ export const persistMiddleware: Middleware = store => next => action => {
       else if (clearMessages.match(action)) {
         await chatStore.clearMessages(payload);
       }
-      // 处理函数调用相关action
-      else if (setFunctionCallData.match(action)) {
-        const { chatId } = payload;
-        const state = store.getState();
-        const chat = state.chat.chats.find((c: Chat) => c.id === chatId);
-        if (chat) {
-          await chatStore.saveChat(chat);
-        }
-      }
-      else if (setFunctionCallError.match(action)) {
-        const { chatId } = payload;
-        const state = store.getState();
-        const chat = state.chat.chats.find((c: Chat) => c.id === chatId);
-        if (chat) {
-          await chatStore.saveChat(chat);
-        }
-      }
-      else if (clearChatFunctionCallOutput.match(action)) {
-        const { chatId } = payload;
-        const state = store.getState();
-        const chat = state.chat.chats.find((c: Chat) => c.id === chatId);
-        if (chat) {
-          await chatStore.saveChat(chat);
-        }
-      }
       // 处理设置相关action
       else if (setThemeMode.match(action)) {
         await settingsStore.saveSetting('themeMode', payload);
@@ -209,17 +177,6 @@ export const persistMiddleware: Middleware = store => next => action => {
       }
       else if (setAssistantAvatar.match(action)) {
         await settingsStore.saveSetting('assistantAvatar', payload);
-      }
-      else if (toggleContextEnhancement.match(action)) {
-        await settingsStore.saveSetting('contextEnhancementEnabled', action.payload);
-      }
-      else if (setContextMaxItems.match(action)) {
-        await settingsStore.saveSetting('contextMaxItems', action.payload);
-      }
-      // 处理模型相关action
-      else if (updateModelConfig.match(action)) {
-        const { modelId, config } = payload;
-        await settingsStore.saveSetting(`modelConfig_${modelId}`, config);
       }
     } catch (error) {
       console.error('持久化数据时出错:', error);

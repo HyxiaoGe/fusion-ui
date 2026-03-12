@@ -1,7 +1,18 @@
 import { FileProcessingStatus } from '@/redux/slices/fileUploadSlice';
 import { API_CONFIG } from '../config';
+import fetchWithAuth from './fetchWithAuth';
 
 const API_BASE_URL = API_CONFIG.BASE_URL;
+
+async function readErrorDetail(response: Response, fallbackMessage: string): Promise<string> {
+  try {
+    const errorData = await response.json();
+    return errorData.detail || fallbackMessage;
+  } catch (error) {
+    console.error('无法解析错误响应:', error);
+    return fallbackMessage;
+  }
+}
 
 // 文件对象接口
 export interface FileInfo {
@@ -52,7 +63,7 @@ export async function uploadFiles(
     // 设置超时
     const timeoutId = setTimeout(() => controller.abort(), 15000); // 15秒超时
     
-    const response = await fetch(`${API_BASE_URL}/api/files/upload`, {
+    const response = await fetchWithAuth(`${API_BASE_URL}/api/files/upload`, {
       method: 'POST',
       body: formData,
       signal
@@ -61,18 +72,7 @@ export async function uploadFiles(
     clearTimeout(timeoutId);
     
     if (!response.ok) {
-      // 尝试获取详细错误信息
-      let errorDetail = '文件上传失败';
-      try {
-        const errorData = await response.json();
-        errorDetail = errorData.detail || errorDetail;
-        // 记录详细错误信息
-        console.error('服务器返回错误:', errorData);
-      } catch (e) {
-        console.error('无法解析错误响应:', e);
-      }
-      
-      throw new Error(errorDetail);
+      throw new Error(await readErrorDetail(response, '文件上传失败'));
     }
     
     const data = await response.json();
@@ -96,11 +96,10 @@ export async function uploadFiles(
 // 获取对话的文件列表
 export async function getConversationFiles(conversationId: string): Promise<FileInfo[]> {
   try {
-    const response = await fetch(`${API_BASE_URL}/api/files/conversation/${conversationId}`);
+    const response = await fetchWithAuth(`${API_BASE_URL}/api/files/conversation/${conversationId}`);
     
     if (!response.ok) {
-      const errorData = await response.json();
-      throw new Error(errorData.detail || '获取文件列表失败');
+      throw new Error(await readErrorDetail(response, '获取文件列表失败'));
     }
     
     const data = await response.json();
@@ -114,13 +113,12 @@ export async function getConversationFiles(conversationId: string): Promise<File
 // 删除文件
 export async function deleteFile(fileId: string): Promise<void> {
   try {
-    const response = await fetch(`${API_BASE_URL}/api/files/${fileId}`, {
+    const response = await fetchWithAuth(`${API_BASE_URL}/api/files/${fileId}`, {
       method: 'DELETE',
     });
     
     if (!response.ok) {
-      const errorData = await response.json();
-      throw new Error(errorData.detail || '删除文件失败');
+      throw new Error(await readErrorDetail(response, '删除文件失败'));
     }
   } catch (error) {
     console.error("删除文件失败:", error);
@@ -130,12 +128,12 @@ export async function deleteFile(fileId: string): Promise<void> {
 
 export async function getFileStatus(fileId: string): Promise<FileStatusResponse> {
   try {
-    const response = await fetch(`${API_BASE_URL}/api/files/${fileId}/status`);
+    const response = await fetchWithAuth(`${API_BASE_URL}/api/files/${fileId}/status`);
     
     if (!response.ok) {
-      const errorData = await response.json();
-      console.error(`文件 ${fileId} 状态查询失败:`, errorData);
-      throw new Error(errorData.detail || '获取文件状态失败');
+      const errorDetail = await readErrorDetail(response, '获取文件状态失败');
+      console.error(`文件 ${fileId} 状态查询失败:`, errorDetail);
+      throw new Error(errorDetail);
     }
     
     const data = await response.json();

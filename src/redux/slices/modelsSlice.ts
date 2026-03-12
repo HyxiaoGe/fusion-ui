@@ -1,4 +1,4 @@
-import { ModelInfo, models, ProviderInfo, providers } from "@/lib/config/modelConfig";
+import { ModelInfo, ProviderInfo, providers } from "@/lib/config/modelConfig";
 import { createSlice, PayloadAction } from "@reduxjs/toolkit";
 
 // 从localStorage获取之前选择的模型ID
@@ -25,9 +25,9 @@ interface ModelsState {
 }
 
 const initialState: ModelsState = {
-  models: models,
+  models: [],
   providers: providers,
-  selectedModelId: getSavedModelId() || (models.length > 0 ? models[0].id : null),
+  selectedModelId: getSavedModelId(),
   isLoading: false,
 };
 
@@ -44,13 +44,6 @@ const modelsSlice = createSlice({
         } catch (error) {
           console.error('Error saving selectedModelId to localStorage:', error);
         }
-      }
-    },
-    updateModelConfig: (state, action: PayloadAction<{modelId: string, config: Partial<Model>}>) => {
-      const { modelId, config } = action.payload;
-      const modelIndex = state.models.findIndex(m => m.id === modelId);
-      if (modelIndex !== -1) {
-        state.models[modelIndex] = { ...state.models[modelIndex], ...config };
       }
     },
     setModelEnabled: (state, action: PayloadAction<{modelId: string, enabled: boolean}>) => {
@@ -92,7 +85,6 @@ const modelsSlice = createSlice({
 
 export const { 
   setSelectedModel, 
-  updateModelConfig, 
   setModelEnabled, 
   setIsLoading,
   updateModels

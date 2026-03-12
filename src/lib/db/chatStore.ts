@@ -28,7 +28,7 @@ class ChatDatabase extends Dexie {
       messages: 'id, chatId, role, timestamp, [chatId+timestamp], [chatId+role+content]'
     });
 
-    // 升级数据库版本，支持 functionCallOutput 字段
+    // 升级数据库版本，更新 chats 表结构
     this.version(4).stores({
       chats: 'id, modelId, createdAt, updatedAt'
     });
@@ -64,7 +64,6 @@ export const chatStore = {
           title: chat.title,
           model: chat.model,
           updatedAt: chat.updatedAt,
-          functionCallOutput: chat.functionCallOutput
         });
       } else {
         await db.chats.add(chat);
@@ -257,6 +256,32 @@ export const chatStore = {
       }
     } catch (error) {
       console.error(`更新消息 ${messageId} 失败:`, error);
+      throw error;
+    }
+  },
+
+  // 用完整快照幂等同步消息，避免流式阶段先更新后落库时产生告警
+  async upsertMessage(message: Message): Promise<void> {
+    try {
+      const normalizedMessage = {
+        ...message,
+        id: message.id || uuidv4(),
+        timestamp: Number(message.timestamp || Date.now()),
+        reasoning: message.reasoning || '',
+        isReasoningVisible: message.isReasoningVisible || false,
+        reasoningStartTime: message.reasoningStartTime || undefined,
+        reasoningEndTime: message.reasoningEndTime || undefined,
+      };
+
+      await db.messages.put(normalizedMessage);
+
+      if (normalizedMessage.chatId) {
+        await db.chats.update(normalizedMessage.chatId, {
+          updatedAt: Date.now()
+        });
+      }
+    } catch (error) {
+      console.error(`同步消息 ${message.id} 快照失败:`, error);
       throw error;
     }
   },

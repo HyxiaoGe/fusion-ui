@@ -3,7 +3,6 @@ import { useAppDispatch, useAppSelector } from '@/redux/hooks';
 import { 
   createChat, 
   clearMessages, 
-  clearChatFunctionCallOutput, 
   setError,
   addMessage,
   startStreaming,
@@ -29,7 +28,6 @@ import { delayedExecution } from '@/lib/utils/retryHelper';
 import { generateChatTitle } from '@/lib/api/title';
 import { v4 as uuidv4 } from 'uuid';
 import { store } from '@/redux/store';
-import { fetchEnhancedContext } from '@/redux/slices/searchSlice';
 
 type ChatActionsOptions = {
   onNewChatCreated?: () => void;
@@ -46,20 +44,12 @@ export const useChatActions = (options: ChatActionsOptions) => {
     activeChatId,
     chats,
     reasoningEnabled,
-    webSearchEnabled,
-
-    searchEnabled,
-    contextEnhancementEnabled,
   } = useAppSelector((state) => ({
     models: state.models.models,
     selectedModelId: state.models.selectedModelId,
     activeChatId: state.chat.activeChatId,
     chats: state.chat.chats,
     reasoningEnabled: state.chat.reasoningEnabled,
-    webSearchEnabled: state.chat.webSearchEnabled,
-
-    searchEnabled: state.search.searchEnabled,
-    contextEnhancementEnabled: state.search.contextEnhancementEnabled,
   }));
 
   const pendingQuestionRequestRef = useRef<NodeJS.Timeout | null>(null);
@@ -112,7 +102,6 @@ export const useChatActions = (options: ChatActionsOptions) => {
   const clearCurrentChat = useCallback(() => {
     if (!activeChatId) return;
     dispatch(clearMessages(activeChatId));
-    dispatch(clearChatFunctionCallOutput({ chatId: activeChatId }));
   }, [dispatch, activeChatId]);
 
   const sendMessage = useCallback(async (content: string, files?: FileWithPreview[]) => {
@@ -191,16 +180,9 @@ export const useChatActions = (options: ChatActionsOptions) => {
     }
 
     dispatch(startStreaming(currentActiveChatId));
-    
-    if (searchEnabled && contextEnhancementEnabled) {
-      dispatch(fetchEnhancedContext({ query: content, conversationId: currentActiveChatId }));
-    }
 
     const supportsReasoning = selectedModel.capabilities?.deepThinking || false;
     const useReasoning = reasoningEnabled && supportsReasoning;
-    const supportsWebSearch = selectedModel.capabilities?.webSearch || false;
-    const useWebSearch = webSearchEnabled && supportsWebSearch;
-    const useFunctionCall = selectedModel.capabilities?.functionCalling || false;
 
     try {
       await sendMessageStream({
@@ -211,8 +193,6 @@ export const useChatActions = (options: ChatActionsOptions) => {
         stream: true,
         options: {
           use_reasoning: useReasoning,
-          use_web_search: useWebSearch,
-          use_function_calls: useFunctionCall
         }
       },
         (content, done, conversationId, reasoning) => {
@@ -313,7 +293,7 @@ export const useChatActions = (options: ChatActionsOptions) => {
         }
       }
     }
-  }, [activeChatId, selectedModelId, models, dispatch, searchEnabled, contextEnhancementEnabled, reasoningEnabled, webSearchEnabled, options, refreshChatList]);
+  }, [activeChatId, selectedModelId, models, dispatch, reasoningEnabled, options, refreshChatList]);
 
 
   const retryMessage = useCallback(async (messageId: string) => {
@@ -344,10 +324,6 @@ export const useChatActions = (options: ChatActionsOptions) => {
 
       const supportsReasoning = selectedModel.capabilities?.deepThinking || false;
       const useReasoning = reasoningEnabled && supportsReasoning;
-      const supportsWebSearch = selectedModel.capabilities?.webSearch || false;
-      const useWebSearch = webSearchEnabled && supportsWebSearch;
-      const useFunctionCall = selectedModel.capabilities?.functionCalling || false;
-
       dispatch(startStreaming(activeChatId));
       if (useReasoning) dispatch(startStreamingReasoning());
 
@@ -358,7 +334,7 @@ export const useChatActions = (options: ChatActionsOptions) => {
           message: userMessage.content.trim(),
           conversation_id: activeChatId,
           stream: true,
-          options: { use_reasoning: useReasoning, use_web_search: useWebSearch, use_function_calls: useFunctionCall }
+          options: { use_reasoning: useReasoning }
         },
           (content, done, conversationId, reasoning) => {
             if (!done) {
@@ -395,7 +371,7 @@ export const useChatActions = (options: ChatActionsOptions) => {
         dispatch(endStreaming());
       }
     }
-  }, [activeChatId, selectedModelId, chats, models, dispatch, reasoningEnabled, webSearchEnabled, options]);
+  }, [activeChatId, selectedModelId, chats, models, dispatch, reasoningEnabled, options]);
 
 
   const editMessage = useCallback(async (messageId: string, newContent: string) => {
@@ -424,10 +400,6 @@ export const useChatActions = (options: ChatActionsOptions) => {
 
     const supportsReasoning = selectedModel.capabilities?.deepThinking || false;
     const useReasoning = reasoningEnabled && supportsReasoning;
-    const supportsWebSearch = selectedModel.capabilities?.webSearch || false;
-    const useWebSearch = webSearchEnabled && supportsWebSearch;
-    const useFunctionCall = selectedModel.capabilities?.functionCalling || false;
-
     dispatch(startStreaming(activeChatId));
     if (useReasoning) dispatch(startStreamingReasoning());
 
@@ -438,7 +410,7 @@ export const useChatActions = (options: ChatActionsOptions) => {
         message: newContent.trim(),
         conversation_id: activeChatId,
         stream: true,
-        options: { use_reasoning: useReasoning, use_web_search: useWebSearch, use_function_calls: useFunctionCall }
+        options: { use_reasoning: useReasoning }
       },
         (content, done, conversationId, reasoning) => {
           if (!done) {
@@ -476,7 +448,7 @@ export const useChatActions = (options: ChatActionsOptions) => {
       dispatch(endStreamingReasoning());
       dispatch(endStreaming());
     }
-  }, [activeChatId, selectedModelId, chats, models, dispatch, reasoningEnabled, webSearchEnabled, options]);
+  }, [activeChatId, selectedModelId, chats, models, dispatch, reasoningEnabled, options]);
 
   return { newChat, clearCurrentChat, sendMessage, retryMessage, editMessage };
 }; 

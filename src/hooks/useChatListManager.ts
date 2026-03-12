@@ -25,7 +25,6 @@ export const useChatListManager = () => {
     serverPagination,
     isLoadingServerList,
     isLoadingMoreServer,
-    activeChatId,
   } = useAppSelector((state) => state.chat);
 
   const parseTimestamp = (ts: any): number => {
@@ -43,7 +42,7 @@ export const useChatListManager = () => {
     return isNaN(date.getTime()) ? 0 : date.getTime();
   };
 
-  const useServerData = serverChatList.length > 0;
+  const useServerData = isAuthenticated;
   
   // 智能合并本地和服务端聊天数据，解决竞态条件问题
   const chats: Chat[] = useMemo(() => {
@@ -69,10 +68,9 @@ export const useChatListManager = () => {
       // 没有服务端数据时，使用本地数据
       return localChats;
     }
-  }, [useServerData, serverChatList, localChats, parseTimestamp, activeChatId]);
+  }, [useServerData, serverChatList, localChats, parseTimestamp]);
 
   const isInitializedRef = useRef(false);
-  const lastActiveChatIdRef = useRef<string | null>(null);
 
   const fetchChatList = useCallback(async (page: number = 1, pageSize: number = 10) => {
     if (!isAuthenticated) return;
@@ -168,6 +166,11 @@ export const useChatListManager = () => {
   }, [useServerData, serverPagination, isLoadingMoreServer, dispatch, toast, isAuthenticated]);
 
   useEffect(() => {
+    if (!isAuthenticated) {
+      isInitializedRef.current = false;
+      return;
+    }
+
     if (isInitializedRef.current || !isAuthenticated) {
       return;
     }

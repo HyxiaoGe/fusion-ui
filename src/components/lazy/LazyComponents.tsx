@@ -5,9 +5,7 @@ import LoadingIndicator from '@/components/ui/loading-indicator';
 export const LazyChatMessageList = lazy(() => import('@/components/chat/ChatMessageList'));
 export const LazyChatSidebar = lazy(() => import('@/components/chat/ChatSidebar'));
 export const LazyModelSelector = lazy(() => import('@/components/models/ModelSelector'));
-export const LazyRelatedDiscussions = lazy(() => import('@/components/search/RelatedDiscussions'));
 export const LazyHomePage = lazy(() => import('@/components/home/HomePage'));
-export const LazyFunctionCallDisplay = lazy(() => import('@/components/chat/FunctionCallDisplay'));
 
 // 通用懒加载包装器组件
 interface LazyWrapperProps {
@@ -53,20 +51,8 @@ export const ModelSelectorLazy: React.FC<any> = (props) => (
   </LazyWrapper>
 );
 
-export const RelatedDiscussionsLazy: React.FC<any> = (props) => (
-  <LazyWrapper>
-    <LazyRelatedDiscussions {...props} />
-  </LazyWrapper>
-);
-
 export const HomePageLazy: React.FC<any> = (props) => (
   <LazyWrapper>
     <LazyHomePage {...props} />
   </LazyWrapper>
 );
-
-export const FunctionCallDisplayLazy: React.FC<any> = (props) => (
-  <LazyWrapper>
-    <LazyFunctionCallDisplay {...props} />
-  </LazyWrapper>
-); 

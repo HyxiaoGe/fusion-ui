@@ -2,15 +2,11 @@ import { Button } from "@/components/ui/button";
 import {
     Card,
     CardContent,
-    CardFooter,
     CardHeader,
     CardTitle,
 } from "@/components/ui/card";
-import { cn } from "@/lib/utils";
-import { HotTopic, getCachedHotTopics } from "@/lib/api/hotTopics";
-import { FileText, Image, Lightbulb, MessageSquare, Plus, RefreshCw, Calendar, Globe, ExternalLink } from "lucide-react";
-import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
-import { useEffect, useState, useCallback, memo } from "react";
+import { FileText, Image, Lightbulb, MessageSquare, Plus } from "lucide-react";
+import { useCallback, memo } from "react";
 import { useAppSelector } from "@/redux/hooks";
 import { useToast } from "@/components/ui/toast";
 
@@ -22,74 +18,8 @@ interface HomePageProps {
 
 // 主页组件
 const HomePage: React.FC<HomePageProps> = ({ onNewChat, onSendMessage }) => {
-  const [allHotTopics, setAllHotTopics] = useState<HotTopic[]>([]);
-  const [displayTopics, setDisplayTopics] = useState<HotTopic[]>([]);
-  const [isRefreshing, setIsRefreshing] = useState(false);
   const { isAuthenticated } = useAppSelector((state) => state.auth);
   const { toast } = useToast();
-  
-  const loadHotTopics = async () => {
-    try {      
-      const topics = await getCachedHotTopics(30);
-      setAllHotTopics(topics);
-      if (topics.length > 0 && displayTopics.length === 0) {
-        const initialTopics = [...topics].sort(() => 0.5 - Math.random()).slice(0, 6);
-        setDisplayTopics(initialTopics);
-      }
-    } catch (error) {
-      console.error('加载热点话题失败:', error);
-    }
-  };
-  
-  useEffect(() => {
-    loadHotTopics();
-    const retryTimer = setTimeout(() => {
-      if (displayTopics.length === 0) {
-        if (allHotTopics.length > 0) {
-          const initialTopics = [...allHotTopics].sort(() => 0.5 - Math.random()).slice(0, 6);
-          setDisplayTopics(initialTopics);
-        } 
-      }
-    }, 3000);
-    
-    const interval = setInterval(() => {
-      loadHotTopics();
-    }, 60 * 1000); 
-    
-    return () => {
-      clearTimeout(retryTimer);
-      clearInterval(interval);
-    };
-  }, []);
-
-  const refreshDisplayTopics = useCallback(() => {
-    if (allHotTopics.length === 0) return;
-    
-    setIsRefreshing(true);
-    const shuffled = [...allHotTopics].sort(() => 0.5 - Math.random());
-    const selected = shuffled.slice(0, 6);
-    setDisplayTopics(selected);
-    
-    setTimeout(() => setIsRefreshing(false), 300);
-  }, [allHotTopics]);
-
-  const handleTopicClick = useCallback((topic: HotTopic) => {
-    // 检查登录状态
-    if (!isAuthenticated) {
-      toast({
-        message: "请先登录后再使用聊天功能",
-        type: "warning",
-        duration: 3000
-      });
-      if ((globalThis as any).triggerLoginDialog) {
-        (globalThis as any).triggerLoginDialog();
-      }
-      return;
-    }
-    
-    const messageContent = `请帮我分析以下热点话题：\n\n${topic.title}`;
-    onSendMessage(messageContent);
-  }, [onSendMessage, isAuthenticated, toast]);
 
   // 处理对话示例点击的通用函数
   const handleExampleClick = useCallback((message: string) => {
@@ -109,23 +39,6 @@ const HomePage: React.FC<HomePageProps> = ({ onNewChat, onSendMessage }) => {
     onSendMessage(message);
   }, [onSendMessage, isAuthenticated, toast]);
 
-  // 格式化日期显示
-  const formatDate = (dateString: string) => {
-    try {
-      return new Date(dateString).toLocaleString('zh-CN', {
-        year: 'numeric',
-        month: 'short',
-        day: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit'
-      });
-    } catch {
-      return dateString;
-    }
-  };
-
-
-
   return (
     <div className="flex flex-col space-y-8 pb-8 px-4 max-w-5xl mx-auto w-full h-full overflow-y-auto">
       <div className="pt-8 text-center">
@@ -133,112 +46,12 @@ const HomePage: React.FC<HomePageProps> = ({ onNewChat, onSendMessage }) => {
         <p className="text-muted-foreground">选择下方话题开始，或直接输入您的问题</p>
       </div>
 
-      {/* 热门话题区域 */}
-      <div className="space-y-4">
-        <div className="flex items-center justify-between">
-          <h2 className="text-xl font-semibold">热门话题</h2>
-          <Button 
-            variant="ghost" 
-            size="sm" 
-            className="gap-1" 
-            onClick={refreshDisplayTopics}
-          >
-            <RefreshCw className={cn(
-              "h-4 w-4",
-              isRefreshing && "animate-spin"
-            )} />
-            <span>刷新</span>
-          </Button>
-        </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {displayTopics.length > 0 ? (
-            displayTopics.map((topic) => (
-              <HoverCard key={topic.id} openDelay={300} closeDelay={150}>
-                <HoverCardTrigger asChild>
-                  <Card 
-                    className="cursor-pointer hover:bg-muted/50 transition-colors relative h-[120px]" 
-                    onClick={() => handleTopicClick(topic)}
-                  >
-                    <CardHeader className="pb-3">
-                      <CardTitle className="text-base mb-6 line-clamp-2">{topic.title}</CardTitle>
-                    </CardHeader>
-                    <CardFooter className="pt-1 text-xs text-muted-foreground absolute bottom-0 left-0 pb-3 pl-5">
-                      {topic.source} {topic.source && '•'} {topic.category || '热门话题'}
-                    </CardFooter>
-                  </Card>
-                </HoverCardTrigger>
-                
-                <HoverCardContent className="w-80 p-4" side="top" align="start">
-                  <div className="space-y-3">
-                    <div>
-                      <h4 className="font-semibold text-sm mb-2 leading-relaxed">{topic.title}</h4>
-                    </div>
-                    
-                    <div className="space-y-2 text-xs">
-                      {(topic.published_at || topic.timestamp) && (
-                        <div className="flex items-center gap-2">
-                          <Calendar className="w-3 h-3 text-blue-500" />
-                          <span className="text-muted-foreground">发布时间:</span>
-                          <span className="font-medium">
-                            {topic.published_at ? formatDate(topic.published_at) : 
-                             topic.timestamp ? new Date(topic.timestamp).toLocaleString() : '未知'}
-                          </span>
-                        </div>
-                      )}
-                      
-
-                      
-                      <div className="flex items-center gap-2">
-                        <Globe className="w-3 h-3 text-purple-500" />
-                        <span className="text-muted-foreground">来源:</span>
-                        <span className="font-medium">{topic.source}</span>
-                        {topic.category && (
-                          <>
-                            <span className="text-muted-foreground">•</span>
-                            <span className="font-medium">{topic.category}</span>
-                          </>
-                        )}
-                      </div>
-                    </div>
-                    
-                    <div className="pt-2 border-t">
-                      <a
-                        href={topic.url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="inline-flex items-center gap-2 text-xs bg-primary text-primary-foreground px-3 py-1.5 rounded-md hover:bg-primary/90 transition-colors"
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        <ExternalLink className="w-3 h-3" />
-                        查看原文
-                      </a>
-                    </div>
-                  </div>
-                </HoverCardContent>
-              </HoverCard>
-            ))
-          ) : (
-            Array(6).fill(0).map((_, index) => (
-              <Card key={index} className="cursor-pointer hover:bg-muted/50 transition-colors opacity-50 relative h-[120px]">
-                <CardHeader className="pb-3">
-                  <CardTitle className="text-base h-5 bg-muted/50 rounded animate-pulse mb-6 line-clamp-2"></CardTitle>
-                </CardHeader>
-                <CardFooter className="pt-1 text-xs text-muted-foreground absolute bottom-0 left-0 pb-3 pl-5">
-                  <div className="h-4 w-24 bg-muted/50 rounded animate-pulse"></div>
-                </CardFooter>
-              </Card>
-            ))
-          )}
-        </div>
-      </div>
-
       {/* 对话示例区域 */}
       <div className="space-y-4">
         <div className="flex items-center justify-between">
           <h2 className="text-xl font-semibold">对话示例</h2>
-          <Button variant="ghost" size="sm" className="gap-1" onClick={() => {}}>
-            <RefreshCw className="h-4 w-4" />
-            <span>刷新</span>
+          <Button variant="ghost" size="sm" onClick={onNewChat}>
+            新建对话
           </Button>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">

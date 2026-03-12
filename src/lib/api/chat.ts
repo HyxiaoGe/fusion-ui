@@ -4,12 +4,6 @@ import { store } from '../../redux/store'; // 导入 store
 import {
   startStreamingReasoning,
   endStreamingReasoning,
-  startFunctionCall,
-  setFunctionCallData,
-  setFunctionCallError,
-  clearFunctionCallData,
-  clearChatFunctionCallOutput,
-  setFunctionCallStepContent,
   setStreamingReasoningMessageId,
 } from '../../redux/slices/chatSlice'; // 导入 actions
 
@@ -21,7 +15,6 @@ export interface ChatRequest {
   model: string;
   message: string;
   conversation_id?: string | null;
-  topic_id?: string | null;
   stream?: boolean;
   options?: {
     use_reasoning?: boolean;
@@ -181,88 +174,16 @@ export async function sendMessageStream(data: ChatRequest, onChunk: (chunk: stri
               case "answering_complete":
                 break;
 
-              case "function_stream_start":
-                store.dispatch(clearFunctionCallData()); 
-                break;
-
               case "function_call_detected":
-                if (parsedData.content && parsedData.content.function_type) {
-                  const functionType = parsedData.content.function_type;
-                  
-                  // 根据函数类型进行不同处理
-                  switch (functionType) {
-                    case 'web_search':
-                      // 如果是web_search类型，才清除之前的搜索结果
-                      if (conversationId) {
-                        store.dispatch(clearChatFunctionCallOutput({ chatId: conversationId }));
-                      }
-                      break;
-                    case 'hot_topics':
-                      // 如果是hot_topics类型，也清除之前的结果
-                      if (conversationId) {
-                        store.dispatch(clearChatFunctionCallOutput({ chatId: conversationId }));
-                      }
-                      break;
-                    default:
-                      // 对于其他类型的函数，可以添加特定处理逻辑
-                      console.log(`检测到${functionType}调用`);
-                      break;
-                  }
-                  
-                  // 设置全局函数调用类型
-                  if (!store.getState().chat.functionCallType) {
-                    store.dispatch(startFunctionCall({ type: functionType }));
-                  }
-                }
+                // 在聊天精简模式下忽略工具调用事件，但继续保持主回答流正常工作
                 break;
 
               case "executing_function":
-              case "user_search_start":           
-              case "generating_query":
-              case "performing_search":
-              case "query_generated":
-              case "synthesizing_answer":
-                // 提取 content 并更新状态
-                if (parsedData.content && typeof parsedData.content === 'string') {
-                  store.dispatch(setFunctionCallStepContent({ 
-                    content: parsedData.content 
-                  }));
-                }
+                // 在聊天精简模式下忽略工具执行步骤事件
                 break;
 
               case "function_result":
-                if (parsedData.content && parsedData.content.function_type && parsedData.content.result) {
-                  try {
-                    // 直接使用已解析的对象，而不是再次解析
-                    const functionResult = parsedData.content.result; 
-                    const currentFunctionType = parsedData.content.function_type;
-                    let query = null;
-                    // 如果是 web_search，我们期望 functionResult 中有 query 字段
-                    if (currentFunctionType === 'web_search' && functionResult.query) {
-                      query = functionResult.query;
-                    }
-
-                    store.dispatch(setFunctionCallData({ 
-                      chatId: conversationId || '', // 确保 chatId 被传递
-                      type: currentFunctionType,
-                      query: query, // 传递 query
-                      data: functionResult 
-                    }));
-                  } catch (e) {
-                    console.error('Failed to parse function_executed result:', e, parsedData.content.result);
-                    store.dispatch(setFunctionCallError({ 
-                      chatId: conversationId || '', // 确保 chatId 被传递
-                      type: parsedData.content.function_type, 
-                      error: 'Failed to parse function result' 
-                    }));
-                  }
-                } else {
-                   store.dispatch(setFunctionCallError({ 
-                      chatId: conversationId || '', // 确保 chatId 被传递
-                      type: parsedData.content?.function_type || 'unknown', 
-                      error: 'Missing data in function_executed event' 
-                    }));
-                }
+                // 在聊天精简模式下忽略工具结果事件
                 break;
               
               case "content_direct":
@@ -409,24 +330,6 @@ export const fetchSuggestedQuestions = async (
     throw error;
   }
 };
-
-// 更新对话标题
-export async function updateConversationTitle(conversationId: string, title: string) {
-  const response = await fetchWithAuth(`${API_BASE_URL}/api/chat/conversations/${conversationId}/title`, {
-    method: 'PUT',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({ title }),
-  });
-
-  if (!response.ok) {
-    const errorData = await response.json();
-    throw new Error(errorData.detail || '更新标题失败');
-  }
-
-  return await response.json();
-}
 
 export async function updateMessageDuration(conversationId: string, messageId: string, duration: number, retryCount = 3) {
   const attemptUpdate = async (attempt: number): Promise<any> => {

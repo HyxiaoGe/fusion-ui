@@ -76,9 +76,8 @@ export const convertApiModelToModelInfo = (apiModel: ApiModelData): ModelInfo =>
   };
 };
 
-// 模型信息 - 从服务器获取或使用默认值
-// 此变量将在应用启动时初始化
-export let models: ModelInfo[] = [];
+// 仅作为当前会话内的请求缓存，不作为产品真源。
+let cachedModels: ModelInfo[] = [];
 
 // 添加标志和Promise缓存
 let isModelsFetching = false;
@@ -87,8 +86,8 @@ let modelsFetchPromise: Promise<ModelInfo[]> | null = null;
 // 获取模型配置的函数
 export const fetchModels = async (): Promise<ModelInfo[]> => {
   // 如果已经有数据且不是在获取中，直接返回现有数据
-  if (models.length > 0 && !isModelsFetching) {
-    return models;
+  if (cachedModels.length > 0 && !isModelsFetching) {
+    return cachedModels;
   }
   
   // 如果已经在获取中，返回正在进行的Promise
@@ -111,7 +110,7 @@ export const fetchModels = async (): Promise<ModelInfo[]> => {
         
         // 将API返回的模型数据转换为ModelInfo格式并更新缓存
         const modelInfoList = data.models.map(convertApiModelToModelInfo);
-        models = modelInfoList;
+        cachedModels = modelInfoList;
         return modelInfoList;
       } finally {
         // 请求完成后重置标志
@@ -124,14 +123,21 @@ export const fetchModels = async (): Promise<ModelInfo[]> => {
     console.error('获取模型配置时出错:', error);
     isModelsFetching = false;
     modelsFetchPromise = null;
-    return models.length > 0 ? models : [];
+    return cachedModels.length > 0 ? cachedModels : [];
   }
 };
 
 // 初始化模型配置
 export const initializeModels = async () => {
-  if (models.length === 0) {
+  if (cachedModels.length === 0) {
     return await fetchModels();
   }
-  return models;
+  return cachedModels;
+};
+
+export const refreshModels = async (): Promise<ModelInfo[]> => {
+  cachedModels = [];
+  modelsFetchPromise = null;
+  isModelsFetching = false;
+  return fetchModels();
 };

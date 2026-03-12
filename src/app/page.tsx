@@ -5,9 +5,7 @@ import {
   ChatMessageListLazy, 
   ChatSidebarLazy, 
   ModelSelectorLazy, 
-  RelatedDiscussionsLazy, 
-  HomePageLazy,
-  FunctionCallDisplayLazy
+  HomePageLazy
 } from '@/components/lazy/LazyComponents';
 import MainLayout from '@/components/layouts/MainLayout';
 import { Button } from '@/components/ui/button';
@@ -34,20 +32,13 @@ import {
   updateStreamingContent,
   updateStreamingReasoningContent,
   setAnimatingTitleChatId,
-  clearFunctionCallData,
-  resetFunctionCallProgress,
-  clearChatFunctionCallOutput,
   Message,
   Chat,
 } from '@/redux/slices/chatSlice';
-import { fetchEnhancedContext } from '@/redux/slices/searchSlice';
 import { store } from '@/redux/store';
-import { SettingsIcon } from 'lucide-react';
 import { useEffect, useRef, useState, useMemo, useCallback } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import Link from 'next/link';
-import { cn } from '@/lib/utils';
-import FunctionCallDisplay from '@/components/chat/FunctionCallDisplay';
 
 import { useToast } from '@/components/ui/toast';
 import { usePathname, useSearchParams, useRouter } from 'next/navigation';
@@ -78,8 +69,6 @@ export default function Home() {
     isStreaming,
     error,
     animatingTitleChatId,
-    isFunctionCallInProgress: globalIsFunctionCallInProgress,
-    functionCallType: globalFunctionCallType,
     chats: localChats,
     activeChatId,
     isLoadingServerChat,
@@ -92,8 +81,6 @@ export default function Home() {
     isStreaming: state.chat.isStreaming,
     error: state.chat.error,
     animatingTitleChatId: state.chat.animatingTitleChatId,
-    isFunctionCallInProgress: state.chat.isFunctionCallInProgress,
-    functionCallType: state.chat.functionCallType,
     chats: state.chat.chats,
     activeChatId: state.chat.activeChatId,
     isLoadingServerChat: state.chat.isLoadingServerChat,
@@ -202,8 +189,6 @@ export default function Home() {
     }
   }, [isNewChatMode, shouldShowWelcome, activeChatId, activeChat]);
 
-  const [currentUserQuery, setCurrentUserQuery] = useState('');
-
   const { 
     suggestedQuestions, 
     isLoadingQuestions, 
@@ -247,11 +232,7 @@ export default function Home() {
   // 监听activeChatId变化，强制重新挂载输入组件
   useEffect(() => {
     setInputKey(Date.now());
-    // 切换活动聊天时，清除全局的函数调用指示状态
-    if (activeChatId) {
-      dispatch(clearFunctionCallData());
-    }
-  }, [activeChatId, dispatch]);
+  }, [activeChatId]);
 
   // 监听活动聊天变化
   useEffect(() => {
@@ -364,9 +345,6 @@ export default function Home() {
     return activeChat?.title || "AI 聊天";
   };
 
-  // Determine if the right panel should be shown
-  const shouldShowRightPanel = activeChatId && (globalIsFunctionCallInProgress || activeChat?.functionCallOutput);
-
   // 渲染界面
   return (
     <MainLayout
@@ -407,14 +385,6 @@ export default function Home() {
           </div>
         </header>
       }
-      rightPanel={ (
-        // Only render FunctionCallDisplay if conditions are met
-        shouldShowRightPanel && activeChatId
-          ? <FunctionCallDisplayLazy chatId={activeChatId} /> 
-          : (activeChatId && currentUserQuery && currentUserQuery.length > 0 && !showHomePage
-            ? <RelatedDiscussionsLazy currentQuery={currentUserQuery} chatId={activeChatId} />
-            : null)
-      )}
     >
       <div className="h-full flex flex-col relative">
         {showHomePage ? (

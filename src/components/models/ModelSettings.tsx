@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { useAppDispatch, useAppSelector } from "@/redux/hooks";
-import { updateModelConfig } from "@/redux/slices/modelsSlice";
+import { setModelEnabled, updateModels as updateModelsState } from "@/redux/slices/modelsSlice";
 import React, { useState, useEffect } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
@@ -18,6 +18,8 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { CalendarIcon } from "lucide-react";
 import { LoginDialog } from "@/components/auth/LoginDialog";
 import { API_CONFIG } from '@/lib/config';
+import fetchWithAuth from "@/lib/api/fetchWithAuth";
+import { refreshModels } from "@/lib/config/modelConfig";
 
 interface ModelSettingsProps {
   modelId?: string;
@@ -73,11 +75,11 @@ interface ModelDetail {
     output: number;
     unit: string;
   };
-  auth_config: {
+  auth_config?: {
     fields: ModelField[];
     auth_type: string;
   };
-  model_configuration: {
+  model_configuration?: {
     params: ModelField[];
   };
 }
@@ -181,9 +183,9 @@ const fetchModelDetail = async (modelId: string) => {
 // 获取模型凭证
 const fetchModelCredentials = async (modelId: string) => {
   try {
-    const url = `${API_CONFIG.BASE_URL}/api/credentials?model_id=${modelId}`;
+    const url = `${API_CONFIG.BASE_URL}/api/models/${modelId}/credentials`;
     
-    const response = await fetch(url, {
+    const response = await fetchWithAuth(url, {
       method: 'GET',
       headers: {
         'Content-Type': 'application/json',
@@ -209,9 +211,9 @@ const fetchModelCredentials = async (modelId: string) => {
 // 测试模型凭证
 const testModelCredential = async (modelId: string, credentials: any) => {
   try {
-    const url = `${API_CONFIG.BASE_URL}/api/credentials/test`;
+    const url = `${API_CONFIG.BASE_URL}/api/models/credentials/test`;
     
-    const response = await fetch(url, {
+    const response = await fetchWithAuth(url, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
@@ -240,16 +242,16 @@ const testModelCredential = async (modelId: string, credentials: any) => {
 // 保存模型凭证
 const saveModelCredential = async (modelId: string, name: string, isDefault: boolean, credentials: any, credentialId?: number) => {
   try {
-    let url = `${API_CONFIG.BASE_URL}/api/credentials`;
+    let url = `${API_CONFIG.BASE_URL}/api/models/${modelId}/credentials`;
     let method = 'POST';
     
     // 如果有凭证ID，则是更新操作
     if (credentialId) {
-      url = `${url}/${credentialId}`;
+      url = `${API_CONFIG.BASE_URL}/api/models/credentials/${credentialId}`;
       method = 'PUT';
     }
         
-    const response = await fetch(url, {
+    const response = await fetchWithAuth(url, {
       method: method,
       headers: {
         'Content-Type': 'application/json'
@@ -275,6 +277,40 @@ const saveModelCredential = async (modelId: string, name: string, isDefault: boo
     console.error(`${credentialId ? '更新' : '创建'}模型[${modelId}]凭证失败:`, error);
     return Promise.reject(error);
   }
+};
+
+const createModel = async (payload: any) => {
+  const response = await fetchWithAuth(`${API_CONFIG.BASE_URL}/api/models`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify(payload)
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json();
+    throw new Error(errorData.detail || '创建模型失败');
+  }
+
+  return response.json();
+};
+
+const updateModelEnabledStatus = async (modelId: string, enabled: boolean) => {
+  const response = await fetchWithAuth(`${API_CONFIG.BASE_URL}/api/models/${modelId}`, {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({ enabled })
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json();
+    throw new Error(errorData.detail || '更新模型状态失败');
+  }
+
+  return response.json();
 };
 
 // 添加复制功能组件
@@ -375,6 +411,9 @@ const ModelSettings: React.FC<ModelSettingsProps> = ({ modelId, initialAddModelO
     outputPrice: '0.0',
     priceUnit: 'USD'
   });
+
+  const authFields = modelDetail?.auth_config?.fields ?? [];
+  const modelParams = modelDetail?.model_configuration?.params ?? [];
   
   // 处理initialAddModelOpen参数
   useEffect(() => {
@@ -506,13 +545,14 @@ const ModelSettings: React.FC<ModelSettingsProps> = ({ modelId, initialAddModelO
     try {
       const modelData = await fetchModels();
       setModels(modelData);
+      dispatch(updateModelsState(await refreshModels()));
       
       // 如果已选择了模型，则刷新模型详情和凭证
       if (selectedModelId) {
-        const [detailData, credentialsData] = await Promise.all([
-          fetchModelDetail(selectedModelId),
-          fetchModelCredentials(selectedModelId)
-        ]);
+        const detailData = await fetchModelDetail(selectedModelId);
+        const credentialsData = isAuthenticated
+          ? await fetchModelCredentials(selectedModelId)
+          : [];
         
         setModelDetail(detailData);
         setModelCredentials(credentialsData);
@@ -587,7 +627,7 @@ const ModelSettings: React.FC<ModelSettingsProps> = ({ modelId, initialAddModelO
     }
     
     // 检查必填字段
-    const missingFields = modelDetail.auth_config.fields
+    const missingFields = authFields
       .filter(field => field.required)
       .filter(field => !formCredentials[field.name]);
     
@@ -667,7 +707,7 @@ const ModelSettings: React.FC<ModelSettingsProps> = ({ modelId, initialAddModelO
     }
     
     // 检查必填字段
-    const missingFields = modelDetail.auth_config.fields
+    const missingFields = authFields
       .filter(field => field.required)
       .filter(field => !formCredentials[field.name]);
     
@@ -813,9 +853,9 @@ const ModelSettings: React.FC<ModelSettingsProps> = ({ modelId, initialAddModelO
         }
         // auth_config和model_configuration将从提供商继承
       };
-            
-      // 模拟API调用成功
-      await new Promise(resolve => setTimeout(resolve, 500));
+
+      const createdModel = await createModel(addModelData);
+      dispatch(updateModelsState(await refreshModels()));
       
       toast({
         message: `模型"${newModel.name}"已添加`,
@@ -825,8 +865,12 @@ const ModelSettings: React.FC<ModelSettingsProps> = ({ modelId, initialAddModelO
       // 重新加载模型列表
       await handleRefresh();
       
+      const createdModelDetail = await fetchModelDetail(createdModel.modelId);
+
       // 关闭对话框
       setIsAddModelOpen(false);
+      setSelectedModelId(createdModel.modelId);
+      setModelDetail(createdModelDetail);
       
       // 重置表单
       setNewModel({
@@ -846,6 +890,38 @@ const ModelSettings: React.FC<ModelSettingsProps> = ({ modelId, initialAddModelO
       console.error("添加模型失败:", error);
       toast({
         message: "添加模型失败，请稍后再试",
+        type: "error",
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleToggleModelEnabled = async (checked: boolean) => {
+    if (!selectedModelId || !modelDetail) {
+      return;
+    }
+
+    try {
+      setIsLoading(true);
+      const updatedModel = await updateModelEnabledStatus(selectedModelId, checked);
+
+      setModelDetail(updatedModel);
+      setModels(prev =>
+        prev.map(model =>
+          model.modelId === selectedModelId ? { ...model, enabled: updatedModel.enabled } : model
+        )
+      );
+      dispatch(setModelEnabled({ modelId: selectedModelId, enabled: updatedModel.enabled }));
+
+      toast({
+        message: `${updatedModel.name}已${updatedModel.enabled ? '启用' : '停用'}`,
+        type: "success",
+      });
+    } catch (error) {
+      console.error("更新模型状态失败:", error);
+      toast({
+        message: error instanceof Error ? error.message : "更新模型状态失败",
         type: "error",
       });
     } finally {
@@ -1003,12 +1079,8 @@ const ModelSettings: React.FC<ModelSettingsProps> = ({ modelId, initialAddModelO
                 <CardTitle>{modelDetail.name}</CardTitle>
                 <Switch 
                   checked={modelDetail.enabled}
-                  onCheckedChange={(checked) => 
-                    dispatch(updateModelConfig({
-                      modelId: selectedModelId!,
-                      config: { enabled: checked }
-                    }))
-                  }
+                  disabled={isLoading}
+                  onCheckedChange={handleToggleModelEnabled}
                 />
               </div>
               
@@ -1041,14 +1113,14 @@ const ModelSettings: React.FC<ModelSettingsProps> = ({ modelId, initialAddModelO
                 )}
                 
                 {/* 添加模型参数 */}
-                {modelDetail.model_configuration.params.length > 0 && (
+                {modelParams.length > 0 && (
                   <div className="mt-2 p-2 bg-muted/30 rounded-md border border-border text-sm">
                     <div className="flex items-center mb-1">
                       <Settings className="h-4 w-4 mr-1.5 text-blue-500 flex-shrink-0" />
                       <span className="font-medium">模型参数:</span>
                     </div>
                     <div className="space-y-2 mt-2">
-                        {modelDetail.model_configuration.params.map((param) => (
+                        {modelParams.map((param) => (
                         <div key={param.name} className="flex flex-wrap items-center gap-x-3">
                           <span className="font-medium">{param.display_name}:</span>
                           <code className="bg-background px-1.5 py-0.5 rounded text-xs font-mono">
@@ -1184,7 +1256,7 @@ const ModelSettings: React.FC<ModelSettingsProps> = ({ modelId, initialAddModelO
                   </div>
                   
                   {/* 动态生成凭证字段 */}
-                  {modelDetail.auth_config.fields.map(field => (
+                  {authFields.length > 0 ? authFields.map(field => (
                     <div key={field.name} className="space-y-2">
                       <div className="flex justify-between">
                         <Label className="text-sm font-medium">
@@ -1237,7 +1309,11 @@ const ModelSettings: React.FC<ModelSettingsProps> = ({ modelId, initialAddModelO
                         </p>
                       )}
                     </div>
-                  ))}
+                  )) : (
+                    <div className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">
+                      当前模型没有额外的凭证字段配置。
+                    </div>
+                  )}
                   
                   <div className="flex justify-end gap-2 mt-6">
                     <Button onClick={handleTestConnection} variant="outline" disabled={isLoading}>

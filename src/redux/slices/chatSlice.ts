@@ -33,13 +33,6 @@ export interface Chat {
   provider?: string;
   createdAt: number;
   updatedAt: number;
-  functionCallOutput?: {
-    type: string;
-    query?: string;
-    data: any;
-    error?: string | null;
-    timestamp: number;
-  } | null;
 }
 
 export interface ChatState {
@@ -58,15 +51,6 @@ export interface ChatState {
   isStreamingReasoning: boolean;
   isThinkingPhaseComplete: boolean;
   animatingTitleChatId: string | null;
-  webSearchEnabled: boolean;
-  functionCallEnabled: boolean;
-
-  // 新增 Function Call 相关状态
-  functionCallType: string | null;
-  functionCallData: any | null; // 用于存储解析后的函数调用结果
-  isFunctionCallInProgress: boolean;
-  functionCallError: string | null;
-  functionCallStepContent: string | null; // 新增：存储函数调用步骤内容
 
   // 服务端数据相关状态
   serverChatList: any[]; // 服务端会话列表
@@ -100,15 +84,6 @@ const initialState: ChatState = {
   isStreamingReasoning: false,
   isThinkingPhaseComplete: false,
   animatingTitleChatId: null,
-  webSearchEnabled: false,
-  functionCallEnabled: false,
-
-  // 初始化 Function Call 相关状态
-  functionCallType: null,
-  functionCallData: null,
-  isFunctionCallInProgress: false,
-  functionCallError: null,
-  functionCallStepContent: null, // 初始化新状态
 
   // 服务端数据相关状态
   serverChatList: [],
@@ -125,9 +100,6 @@ const chatSlice = createSlice({
   reducers: {
     setActiveChat: (state, action: PayloadAction<string | null>) => {
       state.activeChatId = action.payload;
-      state.isFunctionCallInProgress = false;
-      state.functionCallType = null;
-      state.functionCallError = null;
     },
     createChat: (state, action: PayloadAction<{id?: string, title?: string, model: string, provider?: string}>) => {
       const { id, title, model, provider } = action.payload;
@@ -140,7 +112,6 @@ const chatSlice = createSlice({
         provider,
         createdAt: Date.now(),
         updatedAt: Date.now(),
-        functionCallOutput: null,
       };
       state.chats.push(newChat);
       state.activeChatId = newChat.id;
@@ -260,12 +231,6 @@ const chatSlice = createSlice({
     toggleReasoning: (state, action: PayloadAction<boolean>) => {
       state.reasoningEnabled = action.payload;
     },
-    toggleWebSearch: (state, action: PayloadAction<boolean>) => {
-      state.webSearchEnabled = action.payload;
-    },
-    toggleFunctionCall: (state, action: PayloadAction<boolean>) => {
-      state.functionCallEnabled = action.payload;
-    },
     startStreamingReasoning: (state) => {
       state.isStreamingReasoning = true;
       state.streamingReasoningStartTime = Date.now();
@@ -307,10 +272,6 @@ const chatSlice = createSlice({
       state.streamingReasoningMessageId = null;
       state.error = null;
       state.isThinkingPhaseComplete = false;
-      state.functionCallType = null;
-      state.functionCallData = null;
-      state.isFunctionCallInProgress = false;
-      state.functionCallError = null;
 
       const chat = state.chats.find(c => c.id === chatId);
       if (chat) {
@@ -387,71 +348,6 @@ const chatSlice = createSlice({
     setAnimatingTitleChatId: (state, action: PayloadAction<string | null>) => {
       state.animatingTitleChatId = action.payload;
     },
-    // Function Call Actions
-    startFunctionCall: (state, action: PayloadAction<{ type: string }>) => {
-      state.isFunctionCallInProgress = true;
-      state.functionCallType = action.payload.type;
-      state.functionCallError = null;
-    },
-    setFunctionCallData: (state, action: PayloadAction<{ chatId: string, type: string, query?: string, data: any }>) => {
-      const { chatId, type, query, data } = action.payload;
-      const chat = state.chats.find(c => c.id === chatId);
-      if (chat) {
-        chat.functionCallOutput = {
-          type,
-          query,
-          data,
-          error: null,
-          timestamp: Date.now(),
-        };
-      }
-      if (state.functionCallType === type) {
-        state.isFunctionCallInProgress = false;
-      }
-    },
-    setFunctionCallError: (state, action: PayloadAction<{ chatId: string, type: string, error: string | null }>) => {
-      const { chatId, type, error } = action.payload;
-      const chat = state.chats.find(c => c.id === chatId);
-      if (chat) {
-        chat.functionCallOutput = {
-          type,
-          query: chat.functionCallOutput?.query,
-          data: null,
-          error: error,
-          timestamp: Date.now(),
-        };
-      }
-      if (state.functionCallType === type) {
-        state.isFunctionCallInProgress = false;
-        state.functionCallError = error;
-      }
-    },
-    clearFunctionCallData: (state) => {
-      state.functionCallType = null;
-      state.functionCallData = null;
-      state.isFunctionCallInProgress = false;
-      state.functionCallError = null;
-      state.functionCallStepContent = null; // 清理时也重置
-    },
-    setFunctionCallStepContent: (state, action: PayloadAction<{ content: string | null }>) => {
-      // 这个状态似乎是全局的，不需要 chatId
-      state.functionCallStepContent = action.payload.content;
-    },
-    clearChatFunctionCallOutput: (state, action: PayloadAction<{ chatId: string }>) => {
-      const chat = state.chats.find(c => c.id === action.payload.chatId);
-      if (chat) {
-        chat.functionCallOutput = null;
-        // 当切换聊天或清理时，也清理全局状态
-        state.functionCallType = null;
-        state.functionCallData = null;
-        state.isFunctionCallInProgress = false;
-        state.functionCallError = null;
-        state.functionCallStepContent = null;
-      }
-    },
-    resetFunctionCallProgress: (state) => {
-      state.isFunctionCallInProgress = false;
-    },
     // 服务端数据管理actions
     setServerChatList: (state, action: PayloadAction<{ chats: any[]; pagination: any }>) => {
       state.serverChatList = action.payload.chats;
@@ -514,13 +410,6 @@ const chatSlice = createSlice({
         isStreamingReasoning: false,
         isThinkingPhaseComplete: false,
         animatingTitleChatId: null,
-        webSearchEnabled: state.webSearchEnabled, // 保持用户设置
-        functionCallEnabled: state.functionCallEnabled, // 保持用户设置
-        functionCallType: null,
-        functionCallData: null,
-        isFunctionCallInProgress: false,
-        functionCallError: null,
-        functionCallStepContent: null,
         serverChatList: [],
         isLoadingServerList: false,
         isLoadingServerChat: false,
@@ -564,15 +453,6 @@ export const {
   clearDbSyncFlag,
   completeThinkingPhase,
   setAnimatingTitleChatId,
-  startFunctionCall,
-  setFunctionCallData,
-  setFunctionCallError,
-  clearFunctionCallData,
-  setFunctionCallStepContent,
-  clearChatFunctionCallOutput,
-  resetFunctionCallProgress,
-  toggleWebSearch,
-  toggleFunctionCall,
   setServerChatList,
   updateServerChatTitle,
   appendServerChatList,

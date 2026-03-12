@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { FileWithPreview, createFileWithPreview } from "@/lib/utils/fileHelpers";
 import { useAppDispatch, useAppSelector } from "@/redux/hooks";
-import { toggleReasoning, toggleWebSearch } from "@/redux/slices/chatSlice";
+import { toggleReasoning } from "@/redux/slices/chatSlice";
 import { 
   clearFiles, 
   addFileId, 
@@ -13,7 +13,7 @@ import {
   makeSelectChatFileIds, 
   selectFileUploadStatuses 
 } from "@/redux/slices/fileUploadSlice";
-import { EraserIcon, Lightbulb, PaperclipIcon, SendIcon, X, Globe } from "lucide-react";
+import { EraserIcon, Lightbulb, PaperclipIcon, SendIcon, X } from "lucide-react";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useToast } from "../ui/toast";
 import FileUpload from "./FileUpload";
@@ -519,16 +519,12 @@ const ChatInput: React.FC<ChatInputProps> = ({
   );
 
   const reasoningEnabled = useAppSelector((state) => state.chat.reasoningEnabled);
-  const webSearchEnabled = useAppSelector((state) => state.chat.webSearchEnabled);
 
   // 检查当前模型是否支持推理
   const supportsReasoning = selectedModel?.capabilities?.deepThinking || false;
 
   // 检查当前模型是否支持文件上传
   const supportsFileUpload = selectedModel?.capabilities?.fileSupport || false;
-
-  // 检查当前模型是否支持网络搜索
-  const supportsWebSearch = selectedModel?.capabilities?.webSearch || false;
 
   // 如果尝试显示文件上传区域但模型不支持，则自动关闭
   useEffect(() => {
@@ -790,22 +786,6 @@ const ChatInput: React.FC<ChatInputProps> = ({
         >
           <Lightbulb
             className={`h-5 w-5 ${reasoningEnabled && supportsReasoning ? 'text-amber-400' : ''}`}
-          />
-        </Button>
-
-        <Button
-          variant="ghost"
-          size="icon"
-          className={`h-10 w-10 flex items-center justify-center ${!supportsWebSearch ? "opacity-50 cursor-not-allowed" : ""}`}
-          onClick={() => {
-            if (!supportsWebSearch || disabled) return;
-            dispatch(toggleWebSearch(!webSearchEnabled));
-          }}
-          disabled={!supportsWebSearch || disabled}
-          title={supportsWebSearch ? (webSearchEnabled ? '网络搜索已开启' : '网络搜索已关闭') : '当前模型不支持网络搜索'}
-        >
-          <Globe
-            className={`h-5 w-5 ${webSearchEnabled && supportsWebSearch ? 'text-blue-500' : ''}`}
           />
         </Button>
 

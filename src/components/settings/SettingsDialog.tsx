@@ -8,12 +8,11 @@ import { useAppDispatch, useAppSelector } from "@/redux/hooks";
 import { closeSettingsDialog, setActiveSettingsTab, resetAddModelFlag } from "@/redux/slices/settingsSlice";
 import { setThemeMode } from "@/redux/slices/themeSlice";
 import { motion } from "framer-motion";
-import { Database, Globe, Rss, Server, Settings, Sun, Moon, Laptop } from "lucide-react";
+import { Database, Globe, Server, Settings, Sun, Moon, Laptop } from "lucide-react";
 import { useEffect } from "react";
 import ModelSettings from "@/components/models/ModelSettings";
 import AvatarSelector from "@/app/settings/AvatarSelector";
 import DataManagement from "@/app/settings/DataManagement";
-import RssSettings from "@/app/settings/RssSettings";
 
 export const SettingsDialog = () => {
   const dispatch = useAppDispatch();
@@ -56,7 +55,7 @@ export const SettingsDialog = () => {
         <div className="flex-1 overflow-hidden">
           <Tabs value={activeSettingsTab} onValueChange={handleTabChange} className="h-full flex flex-col">
             <div className="bg-card/50 backdrop-blur-sm border rounded-lg shadow-sm p-1 flex-shrink-0">
-              <TabsList className="w-full grid grid-cols-4 gap-1 bg-transparent">
+              <TabsList className="w-full grid grid-cols-3 gap-1 bg-transparent">
                 <TabsTrigger value="general" className="flex gap-2 items-center justify-center">
                   <Settings className="h-4 w-4" />
                   <span className="hidden md:inline">常规设置</span>
@@ -71,11 +70,6 @@ export const SettingsDialog = () => {
                   <Database className="h-4 w-4" />
                   <span className="hidden md:inline">数据管理</span>
                   <span className="md:hidden">数据</span>
-                </TabsTrigger>
-                <TabsTrigger value="rss" className="flex gap-2 items-center justify-center">
-                  <Rss className="h-4 w-4" />
-                  <span className="hidden md:inline">RSS订阅</span>
-                  <span className="md:hidden">RSS</span>
                 </TabsTrigger>
               </TabsList>
             </div>
@@ -201,11 +195,6 @@ export const SettingsDialog = () => {
             {/* 数据管理标签页 */}
             <TabsContent value="data" className="flex-1 overflow-auto mt-4">
               <DataManagement />
-            </TabsContent>
-
-            {/* RSS订阅标签页 */}
-            <TabsContent value="rss" className="flex-1 overflow-auto mt-4">
-              <RssSettings />
             </TabsContent>
           </Tabs>
         </div>

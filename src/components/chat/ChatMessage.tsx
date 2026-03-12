@@ -145,20 +145,17 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, files, isLastMessage
   // 同步思考时间到数据库
   useEffect(() => {
     // 只在shouldSyncToDb为true时同步到数据库
-    if (message.shouldSyncToDb) {
+    if (message.shouldSyncToDb && (message.chatId || activeChatId)) {
       // 提取需要更新的字段
-      const updates = {
-        content: message.content,
-        reasoning: message.reasoning,
-        isReasoningVisible: message.isReasoningVisible,
-        reasoningStartTime: message.reasoningStartTime,
-        reasoningEndTime: message.reasoningEndTime
+      const messageSnapshot = {
+        ...message,
+        chatId: message.chatId || activeChatId || undefined,
       };
       
       // 异步更新数据库，不阻塞UI
       const syncToDb = async () => {
         try {
-          await chatStore.updateMessage(message.id, updates);
+          await chatStore.upsertMessage(messageSnapshot);
         } catch (error) {
           console.error('同步到数据库失败:', error);
         }
@@ -166,8 +163,7 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, files, isLastMessage
       
       syncToDb();
     }
-  }, [message.shouldSyncToDb, message.id, message.content, message.reasoning, 
-      message.isReasoningVisible, message.reasoningStartTime, message.reasoningEndTime]);
+  }, [message, activeChatId]);
 
   // 当推理内容生成完成时，标记思考阶段结束
   useEffect(() => {

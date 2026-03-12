@@ -5,7 +5,6 @@ import { useParams, useRouter } from 'next/navigation';
 import { useAppDispatch, useAppSelector } from '@/redux/hooks';
 import {
   setActiveChat,
-  clearFunctionCallData,
   Chat,
   setLoadingServerChat,
   updateChatFromServer,
@@ -17,9 +16,7 @@ import { getConversation } from '@/lib/api/chat';
 import { 
   ChatMessageListLazy, 
   ChatSidebarLazy, 
-  ModelSelectorLazy, 
-  RelatedDiscussionsLazy,
-  FunctionCallDisplayLazy
+  ModelSelectorLazy
 } from '@/components/lazy/LazyComponents';
 import MainLayout from '@/components/layouts/MainLayout';
 import ChatInput from '@/components/chat/ChatInput';
@@ -48,8 +45,6 @@ export default function ChatPage() {
     isStreaming,
     error,
     animatingTitleChatId,
-    isFunctionCallInProgress: globalIsFunctionCallInProgress,
-    functionCallType: globalFunctionCallType,
     chats: localChats,
     activeChatId,
     isLoadingServerChat,
@@ -60,8 +55,6 @@ export default function ChatPage() {
     isStreaming: state.chat.isStreaming,
     error: state.chat.error,
     animatingTitleChatId: state.chat.animatingTitleChatId,
-    isFunctionCallInProgress: state.chat.isFunctionCallInProgress,
-    functionCallType: state.chat.functionCallType,
     chats: state.chat.chats,
     activeChatId: state.chat.activeChatId,
     isLoadingServerChat: state.chat.isLoadingServerChat,
@@ -73,8 +66,6 @@ export default function ChatPage() {
   const activeChat: Chat | null = useMemo(() => {
     return chatId ? localChats.find(c => c.id === chatId) || null : null;
   }, [chatId, localChats]);
-
-  const [currentUserQuery, setCurrentUserQuery] = useState('');
 
   const { 
     suggestedQuestions, 
@@ -108,7 +99,6 @@ export default function ChatPage() {
       // 处理服务端消息
       const processedMessages = [];
       const messageMap = new Map();
-      let functionCallOutput = null; // 用于保存function call输出
       
       // 按turn_id分组消息
       for (const msg of serverChatData.messages) {
@@ -119,7 +109,7 @@ export default function ChatPage() {
         messageMap.get(turnId).push(msg);
       }
       
-      // 合并每个turn中的消息
+      // 合并每个turn中的消息，只保留用户可见的问答内容
       for (const [turnId, turnMessages] of messageMap) {
         if (turnMessages.length === 1) {
           const msg = turnMessages[0];
@@ -135,8 +125,6 @@ export default function ChatPage() {
           const userMsg = turnMessages.find((m: any) => m.role === 'user');
           const reasoningMsg = turnMessages.find((m: any) => m.type === 'reasoning_content');
           const assistantMsg = turnMessages.find((m: any) => m.type === 'assistant_content');
-          const functionCallMsg = turnMessages.find((m: any) => m.type === 'function_call');
-          const functionResultMsg = turnMessages.find((m: any) => m.type === 'function_result');
           
           // 添加用户消息
           if (userMsg) {
@@ -149,70 +137,15 @@ export default function ChatPage() {
             });
           }
           
-          // 处理function_result消息并转换为functionCallOutput
-          if (functionResultMsg && functionResultMsg.content) {
-            try {
-              const functionResult = typeof functionResultMsg.content === 'string' 
-                ? JSON.parse(functionResultMsg.content) 
-                : functionResultMsg.content;
-              
-              // 根据结果数据结构判断function type
-              let functionType = 'unknown';
-              let query = null;
-              
-              if (functionResult.results && Array.isArray(functionResult.results)) {
-                functionType = 'web_search';
-                query = functionResult.query;
-              } else if (functionResult.topics && Array.isArray(functionResult.topics)) {
-                functionType = 'hot_topics';
-              }
-              
-              // 保存最新的functionCallOutput（一般是最后一个turn的）
-              functionCallOutput = {
-                type: functionType,
-                query: query,
-                data: functionResult,
-                error: null,
-                timestamp: parseTimestamp(functionResultMsg.created_at),
-              };
-            } catch (e) {
-              console.error('解析function_result失败:', e, functionResultMsg.content);
-            }
-          }
-          
-          // 合并function_call和assistant_content为一个完整的助手消息
-          if (functionCallMsg || assistantMsg) {
-            let combinedContent = '';
-            let messageId = '';
-            let messageTimestamp = 0;
-            
-            // 如果有function_call，先添加其内容
-            if (functionCallMsg) {
-              combinedContent += functionCallMsg.content;
-              messageId = functionCallMsg.id;
-              messageTimestamp = parseTimestamp(functionCallMsg.created_at);
-            }
-            
-            // 如果有assistant_content，添加其内容
-            if (assistantMsg) {
-              // 如果已经有function_call内容，在中间添加分隔符
-              if (combinedContent) {
-                combinedContent += '\n\n';
-              }
-              combinedContent += assistantMsg.content;
-              // 使用assistant_content的ID和时间戳作为主要标识
-              messageId = assistantMsg.id;
-              messageTimestamp = parseTimestamp(assistantMsg.created_at);
-            }
-            
+          if (assistantMsg) {
             processedMessages.push({
-              id: messageId,
+              id: assistantMsg.id,
               role: 'assistant',
-              content: combinedContent,
+              content: assistantMsg.content,
               reasoning: reasoningMsg ? reasoningMsg.content : undefined,
               duration: reasoningMsg ? reasoningMsg.duration : undefined,
               isReasoningVisible: false, // 默认隐藏思考过程
-              timestamp: messageTimestamp,
+              timestamp: parseTimestamp(assistantMsg.created_at),
               turnId: turnId,
             });
           }
@@ -230,7 +163,6 @@ export default function ChatPage() {
         provider: serverChatData.provider,
         createdAt: parseTimestamp(serverChatData.created_at),
         updatedAt: parseTimestamp(serverChatData.updated_at),
-        functionCallOutput: functionCallOutput,
       };
 
       // 使用updateChatFromServer来更新数据
@@ -285,10 +217,7 @@ export default function ChatPage() {
   // 监听activeChatId变化，强制重新挂载输入组件
   useEffect(() => {
     setInputKey(Date.now());
-    if (chatId) {
-      dispatch(clearFunctionCallData());
-    }
-  }, [chatId, dispatch]);
+  }, [chatId]);
 
   // 监听活动聊天变化，清空推荐问题
   useEffect(() => {
@@ -346,9 +275,6 @@ export default function ChatPage() {
   const getChatTitle = () => {
     return activeChat?.title || "AI 聊天";
   };
-
-  // 判断是否显示右侧面板
-  const shouldShowRightPanel = chatId && (globalIsFunctionCallInProgress || activeChat?.functionCallOutput);
 
   // 如果正在加载
   if (isLoadingServerChat || (chatId && !activeChat && loading)) {
@@ -453,13 +379,6 @@ export default function ChatPage() {
             <UserAvatarMenu />
           </div>
         </header>
-      }
-      rightPanel={
-        shouldShowRightPanel && chatId
-          ? <FunctionCallDisplayLazy chatId={chatId} /> 
-          : (chatId && currentUserQuery && currentUserQuery.length > 0
-            ? <RelatedDiscussionsLazy currentQuery={currentUserQuery} chatId={chatId} />
-            : null)
       }
     >
       <div className="h-full flex flex-col relative">

@@ -85,7 +85,7 @@ export async function importDataFromFile(file: File, dispatch: AppDispatch): Pro
     });
     
     // 重新初始化Redux存储
-    await initializeStoreFromDB(dispatch);
+    await initializeStoreFromDB(dispatch, { includeChats: true });
     
     return `成功导入 ${importData.chats.length} 个聊天记录和 ${
       Object.keys(importData.settings || {}).length

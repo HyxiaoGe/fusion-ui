@@ -38,51 +38,12 @@ const nextConfig = {
     ignoreBuildErrors: true,
   },
   // Webpack配置优化
-  webpack: (config, { isServer, dev }) => {
-    // 启用轮询模式以在Docker中支持热重载
-    config.watchOptions = {
-      poll: 1000,
-      aggregateTimeout: 300,
-    };
-
-    // 生产环境优化
-    if (!dev && !isServer) {
-      // 代码分割优化
-      config.optimization = {
-        ...config.optimization,
-        splitChunks: {
-          chunks: 'all',
-          cacheGroups: {
-            // 第三方库单独打包
-            vendor: {
-              test: /[\\/]node_modules[\\/]/,
-              name: 'vendors',
-              chunks: 'all',
-              priority: 10,
-            },
-            // UI组件库单独打包
-            ui: {
-              test: /[\\/]node_modules[\\/](@radix-ui|lucide-react)[\\/]/,
-              name: 'ui-libs',
-              chunks: 'all',
-              priority: 20,
-            },
-            // React相关库
-            react: {
-              test: /[\\/]node_modules[\\/](react|react-dom)[\\/]/,
-              name: 'react-libs',
-              chunks: 'all',
-              priority: 20,
-            },
-            // 工具库
-            utils: {
-              test: /[\\/]node_modules[\\/](lodash|date-fns|uuid)[\\/]/,
-              name: 'utils-libs',
-              chunks: 'all',
-              priority: 15,
-            },
-          },
-        },
+  webpack: (config, { dev }) => {
+    // 仅在开发环境启用轮询，避免覆盖 Next 生产构建的 chunk 规划
+    if (dev) {
+      config.watchOptions = {
+        poll: 1000,
+        aggregateTimeout: 300,
       };
     }
 

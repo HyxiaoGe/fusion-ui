@@ -92,9 +92,9 @@ export default function DatabaseDebugPage() {
           // 先清空设置表
           await db.settings.clear();
           
-          // 仅保留模型相关设置
+          // 仅保留当前选中的模型
           for (const setting of allSettings) {
-            if (setting.id.startsWith('modelConfig_') || setting.id === 'selectedModelId') {
+            if (setting.id === 'selectedModelId') {
               await db.settings.put(setting);
             }
           }
@@ -133,7 +133,7 @@ export default function DatabaseDebugPage() {
   // 重新加载数据到Redux
   const handleReloadToRedux = async () => {
     try {
-      await initializeStoreFromDB(dispatch);
+      await initializeStoreFromDB(dispatch, { includeChats: true });
       setMessage({ text: '数据已重新加载到Redux', type: 'success' });
     } catch (error) {
       console.error('重新加载数据失败:', error);

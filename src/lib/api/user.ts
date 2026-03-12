@@ -12,7 +12,7 @@ export interface UserProfile {
 }
 
 export const fetchUserProfileAPI = async (): Promise<UserProfile> => {
-  const response = await fetchWithAuth(`${API_CONFIG.BASE_URL}/api/users/profile`);
+  const response = await fetchWithAuth(`${API_CONFIG.BASE_URL}/api/auth/me`);
   if (!response.ok) {
     throw new Error('Failed to fetch user profile');
   }

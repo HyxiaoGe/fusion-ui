@@ -6,7 +6,6 @@ import chatReducer from './slices/chatSlice';
 import fileUploadReducer from './slices/fileUploadSlice';
 import modelsReducer from './slices/modelsSlice';
 import promptTemplatesReducer from './slices/promptTemplatesSlice';
-import searchReducer from './slices/searchSlice';
 import settingsReducer from './slices/settingsSlice';
 import themeReducer from './slices/themeSlice';
 import authReducer from './slices/authSlice';
@@ -41,7 +40,6 @@ export const store = configureStore({
         promptTemplates: promptTemplatesReducer,
         settings: settingsReducer,
         app: appReducer,
-        search: searchReducer,
         auth: authReducer,
     },
     middleware: (getDefaultMiddleware) => 
