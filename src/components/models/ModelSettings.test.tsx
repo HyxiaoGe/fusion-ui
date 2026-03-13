@@ -80,6 +80,55 @@ function jsonResponse(body: unknown, ok = true, status = 200): Response {
   });
 }
 
+function mockModelFetches() {
+  return vi
+    .spyOn(globalThis, 'fetch')
+    .mockResolvedValueOnce(
+      jsonResponse({
+        models: [
+          {
+            name: 'Qwen Max',
+            modelId: 'qwen-max',
+            provider: 'qwen',
+            enabled: true,
+            capabilities: {
+              deepThinking: true,
+            },
+            description: 'desc',
+          },
+        ],
+      })
+    )
+    .mockResolvedValueOnce(
+      jsonResponse({
+        name: 'Qwen Max',
+        modelId: 'qwen-max',
+        provider: 'qwen',
+        knowledgeCutoff: '2026-01',
+        capabilities: {
+          deepThinking: true,
+        },
+        priority: 1,
+        enabled: true,
+        description: 'desc',
+        auth_config: {
+          auth_type: 'api_key',
+          fields: [
+            {
+              name: 'api_key',
+              display_name: 'API Key',
+              type: 'password',
+              required: true,
+            },
+          ],
+        },
+        model_configuration: {
+          params: [],
+        },
+      })
+    );
+}
+
 describe('ModelSettings', () => {
   beforeEach(() => {
     dispatchMock.mockReset();
@@ -121,45 +170,7 @@ describe('ModelSettings', () => {
   it('updates model enabled status and dispatches store sync after toggle', async () => {
     currentState.auth.isAuthenticated = true;
 
-    const fetchMock = vi
-      .spyOn(globalThis, 'fetch')
-      .mockResolvedValueOnce(
-        jsonResponse({
-          models: [
-            {
-              name: 'Qwen Max',
-              modelId: 'qwen-max',
-              provider: 'qwen',
-              enabled: true,
-              capabilities: {
-                deepThinking: true,
-              },
-              description: 'desc',
-            },
-          ],
-        })
-      )
-      .mockResolvedValueOnce(
-        jsonResponse({
-          name: 'Qwen Max',
-          modelId: 'qwen-max',
-          provider: 'qwen',
-          knowledgeCutoff: '2026-01',
-          capabilities: {
-            deepThinking: true,
-          },
-          priority: 1,
-          enabled: true,
-          description: 'desc',
-          auth_config: {
-            auth_type: 'api_key',
-            fields: [],
-          },
-          model_configuration: {
-            params: [],
-          },
-        })
-      );
+    const fetchMock = mockModelFetches();
 
     fetchWithAuthMock
       .mockResolvedValueOnce(
@@ -221,5 +232,127 @@ describe('ModelSettings', () => {
     });
 
     expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('tests credentials with the current form payload', async () => {
+    currentState.auth.isAuthenticated = true;
+    mockModelFetches();
+
+    fetchWithAuthMock
+      .mockResolvedValueOnce(
+        jsonResponse({
+          credentials: [],
+        })
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          success: true,
+          message: 'ok',
+        })
+      );
+
+    render(<ModelSettings modelId="qwen-max" />);
+
+    const apiKeyInput = await screen.findByPlaceholderText('请输入API Key');
+    fireEvent.change(apiKeyInput, { target: { value: 'sk-test-1' } });
+    fireEvent.click(screen.getByRole('button', { name: '测试连接' }));
+
+    await waitFor(() => {
+      expect(fetchWithAuthMock).toHaveBeenLastCalledWith(
+        expect.stringContaining('/api/models/credentials/test'),
+        expect.objectContaining({
+          method: 'POST',
+          body: JSON.stringify({
+            model_id: 'qwen-max',
+            credentials: {
+              api_key: 'sk-test-1',
+            },
+          }),
+        })
+      );
+      expect(toastMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          message: '连接测试成功: ok',
+          type: 'success',
+        })
+      );
+    });
+  });
+
+  it('saves credentials and refreshes the credential list', async () => {
+    currentState.auth.isAuthenticated = true;
+    mockModelFetches();
+
+    fetchWithAuthMock
+      .mockResolvedValueOnce(
+        jsonResponse({
+          credentials: [],
+        })
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          id: 9,
+          model_id: 'qwen-max',
+          name: '默认',
+          is_default: true,
+          credentials: {
+            api_key: 'sk-save-1',
+          },
+        })
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          credentials: [
+            {
+              id: 9,
+              model_id: 'qwen-max',
+              name: '默认',
+              is_default: true,
+              credentials: {
+                api_key: 'sk-save-1',
+              },
+              created_at: '2026-03-13T00:00:00Z',
+              updated_at: '2026-03-13T00:00:00Z',
+            },
+          ],
+        })
+      );
+
+    render(<ModelSettings modelId="qwen-max" />);
+
+    const apiKeyInput = await screen.findByPlaceholderText('请输入API Key');
+    fireEvent.change(apiKeyInput, { target: { value: 'sk-save-1' } });
+    fireEvent.click(screen.getByRole('button', { name: '保存凭证' }));
+
+    await waitFor(() => {
+      expect(fetchWithAuthMock).toHaveBeenNthCalledWith(
+        2,
+        expect.stringContaining('/api/models/qwen-max/credentials'),
+        expect.objectContaining({
+          method: 'POST',
+          body: JSON.stringify({
+            model_id: 'qwen-max',
+            name: '默认',
+            is_default: true,
+            credentials: {
+              api_key: 'sk-save-1',
+            },
+          }),
+        })
+      );
+      expect(fetchWithAuthMock).toHaveBeenNthCalledWith(
+        3,
+        expect.stringContaining('/api/models/qwen-max/credentials'),
+        expect.objectContaining({
+          method: 'GET',
+        })
+      );
+      expect(toastMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          message: 'Qwen Max的凭证已保存',
+          type: 'success',
+        })
+      );
+    });
   });
 });
