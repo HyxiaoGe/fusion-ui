@@ -66,6 +66,10 @@ src/
 - 搜索增强、热点话题、RSS、摘要等非核心能力已从主产品面移除
 - IndexedDB 仅作为本地缓存，不是产品真源
 
+## 数据流文档
+
+- 前端聊天主数据流说明见 [`CHAT_UI_DATA_FLOW.md`](/Users/sean/code/fusion/fusion-ui/CHAT_UI_DATA_FLOW.md)
+
 ## 许可证
 
 [MIT](LICENSE)
