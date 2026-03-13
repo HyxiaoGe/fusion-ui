@@ -1,5 +1,5 @@
 import { renderHook } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const {
   currentState,
@@ -28,8 +28,10 @@ const {
   sendMessageStreamMock,
   updateMessageDurationMock,
   generateChatTitleMock,
+  uuidMock,
 } = vi.hoisted(() => {
   const action = (type: string) => vi.fn((payload?: unknown) => ({ type, payload }));
+  let uuidCounter = 0;
 
   return {
     currentState: {
@@ -68,6 +70,7 @@ const {
     sendMessageStreamMock: vi.fn(),
     updateMessageDurationMock: vi.fn(),
     generateChatTitleMock: vi.fn(),
+    uuidMock: vi.fn(() => `uuid-${++uuidCounter}`),
   };
 });
 
@@ -119,17 +122,30 @@ vi.mock('@/redux/store', () => ({
   },
 }));
 
+vi.mock('uuid', () => ({
+  v4: uuidMock,
+}));
+
 import { useChatActions } from './useChatActions';
 
 describe('useChatActions.newChat', () => {
   beforeEach(() => {
+    vi.useRealTimers();
     dispatchMock.mockReset();
     triggerRefreshMock.mockReset();
     createChatMock.mockClear();
     setActiveChatMock.mockClear();
     setErrorMock.mockClear();
+    addMessageMock.mockClear();
+    startStreamingMock.mockClear();
+    updateStreamingContentMock.mockClear();
+    updateStreamingReasoningContentMock.mockClear();
+    endStreamingMock.mockClear();
+    setMessageStatusMock.mockClear();
     sendMessageStreamMock.mockReset();
     generateChatTitleMock.mockReset();
+    updateMessageDurationMock.mockReset();
+    uuidMock.mockClear();
     currentState.models.models = [];
     currentState.models.selectedModelId = null;
     currentState.chat.activeChatId = null;
@@ -186,5 +202,150 @@ describe('useChatActions.newChat', () => {
 
     expect(setErrorMock).toHaveBeenCalledWith('没有可用的模型，无法创建对话');
     expect(createChatMock).not.toHaveBeenCalled();
+  });
+});
+
+describe('useChatActions.sendMessage', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    currentState.models.models = [
+      {
+        id: 'model-1',
+        provider: 'qwen',
+        capabilities: {
+          deepThinking: true,
+        },
+      },
+    ];
+    currentState.models.selectedModelId = 'model-1';
+    currentState.chat.activeChatId = null;
+    currentState.chat.chats = [];
+    currentState.chat.reasoningEnabled = true;
+  });
+
+  afterEach(() => {
+    vi.runOnlyPendingTimers();
+    vi.useRealTimers();
+  });
+
+  it('creates a chat and starts streaming with reasoning enabled', async () => {
+    dispatchMock.mockImplementation(action => {
+      if (action?.type === 'chat/createChat') {
+        currentState.chat.activeChatId = action.payload.id;
+        currentState.chat.chats = [
+          ...currentState.chat.chats,
+          {
+            id: action.payload.id,
+            title: action.payload.title,
+            messages: [],
+          },
+        ];
+      }
+
+      if (action?.type === 'chat/addMessage') {
+        currentState.chat.chats = currentState.chat.chats.map(chat =>
+          chat.id === action.payload.chatId
+            ? {
+                ...chat,
+                messages: [...chat.messages, action.payload.message],
+              }
+            : chat
+        );
+      }
+
+      return action;
+    });
+
+    sendMessageStreamMock.mockImplementation(async (_payload, onChunk) => {
+      onChunk('assistant answer', false, undefined, 'reasoning text');
+    });
+
+    const onSendMessageStart = vi.fn();
+    const { result } = renderHook(() =>
+      useChatActions({
+        onSendMessageStart,
+      })
+    );
+
+    const sendPromise = result.current.sendMessage('你好，介绍一下自己');
+    await vi.advanceTimersByTimeAsync(50);
+    await sendPromise;
+
+    expect(onSendMessageStart).toHaveBeenCalledTimes(1);
+    expect(createChatMock).toHaveBeenCalledWith({
+      id: 'uuid-1',
+      model: 'model-1',
+      provider: 'qwen',
+      title: '你好，介绍一下自己',
+    });
+    expect(addMessageMock).toHaveBeenCalledWith({
+      chatId: 'uuid-1',
+      message: expect.objectContaining({
+        id: 'uuid-2',
+        role: 'user',
+        content: '你好，介绍一下自己',
+        status: 'pending',
+      }),
+    });
+    expect(startStreamingMock).toHaveBeenCalledWith('uuid-1');
+    expect(sendMessageStreamMock).toHaveBeenCalledWith(
+      {
+        provider: 'qwen',
+        model: 'model-1',
+        message: '你好，介绍一下自己',
+        conversation_id: 'uuid-1',
+        stream: true,
+        options: {
+          use_reasoning: true,
+        },
+      },
+      expect.any(Function)
+    );
+    expect(updateStreamingContentMock).toHaveBeenCalledWith({
+      chatId: 'uuid-1',
+      content: 'assistant answer',
+    });
+    expect(updateStreamingReasoningContentMock).toHaveBeenCalledWith('reasoning text');
+  });
+
+  it('marks the latest user message as failed when streaming request errors', async () => {
+    currentState.chat.activeChatId = 'chat-1';
+    currentState.chat.chats = [
+      {
+        id: 'chat-1',
+        title: '',
+        messages: [],
+      },
+    ];
+
+    dispatchMock.mockImplementation(action => {
+      if (action?.type === 'chat/addMessage') {
+        currentState.chat.chats = currentState.chat.chats.map(chat =>
+          chat.id === action.payload.chatId
+            ? {
+                ...chat,
+                messages: [...chat.messages, action.payload.message],
+              }
+            : chat
+        );
+      }
+
+      return action;
+    });
+
+    sendMessageStreamMock.mockRejectedValue(new Error('network down'));
+
+    const { result } = renderHook(() => useChatActions({}));
+
+    await result.current.sendMessage('继续');
+    const failedMessageId = currentState.chat.chats[0]?.messages[0]?.id;
+
+    expect(setErrorMock).toHaveBeenCalledWith('network down');
+    expect(endStreamingMock).toHaveBeenCalledTimes(1);
+    expect(setMessageStatusMock).toHaveBeenCalledWith({
+      chatId: 'chat-1',
+      messageId: failedMessageId,
+      status: 'failed',
+    });
   });
 });
