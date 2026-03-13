@@ -73,6 +73,7 @@
   },
   "devDependencies": {
     "@next/bundle-analyzer": "^15.3.3",
+    "@testing-library/react": "^16.3.2",
     "@types/react-dom": "^19.0.4",
     "autoprefixer": "^10.4.21",
     "cross-env": "^7.0.3",
