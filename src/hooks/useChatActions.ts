@@ -35,6 +35,17 @@ type ChatActionsOptions = {
   onStreamEnd?: (chatId: string) => void;
 };
 
+const STREAM_SETTLE_DELAY_MS = 300;
+const FOLLOW_UP_REQUEST_DELAY_MS = 200;
+const TITLE_GENERATION_DELAY_MS = 300;
+
+const shouldGenerateInitialTitle = (messages: Message[]) => {
+  const userMessageCount = messages.filter((message) => message.role === 'user').length;
+  const assistantMessageCount = messages.filter((message) => message.role === 'assistant').length;
+
+  return userMessageCount === 1 && assistantMessageCount === 1;
+};
+
 export const useChatActions = (options: ChatActionsOptions) => {
   const dispatch = useAppDispatch();
   const { triggerRefresh: refreshChatList } = useChatListRefresh();
@@ -53,6 +64,31 @@ export const useChatActions = (options: ChatActionsOptions) => {
   }));
 
   const pendingQuestionRequestRef = useRef<NodeJS.Timeout | null>(null);
+
+  const scheduleStreamEnd = useCallback((chatId: string, delayMs: number = FOLLOW_UP_REQUEST_DELAY_MS) => {
+    if (pendingQuestionRequestRef.current) {
+      clearTimeout(pendingQuestionRequestRef.current);
+    }
+
+    pendingQuestionRequestRef.current = setTimeout(() => {
+      pendingQuestionRequestRef.current = null;
+      options.onStreamEnd?.(chatId);
+    }, delayMs);
+  }, [options]);
+
+  const scheduleInitialTitleGeneration = useCallback((chatId: string) => {
+    setTimeout(async () => {
+      try {
+        const generatedTitle = await generateChatTitle(chatId, undefined, { max_length: 20 });
+        dispatch(setAnimatingTitleChatId(chatId));
+        dispatch(updateChatTitle({ chatId, title: generatedTitle }));
+        dispatch(updateServerChatTitle({ chatId, title: generatedTitle }));
+        refreshChatList();
+        setTimeout(() => dispatch(setAnimatingTitleChatId(null)), generatedTitle.length * 200 + 1000);
+      } catch {
+      }
+    }, TITLE_GENERATION_DELAY_MS);
+  }, [dispatch, refreshChatList]);
 
   const cleanupStreamingFailure = useCallback((chatId: string) => {
     const { streamingMessageId } = store.getState().chat;
@@ -208,6 +244,7 @@ export const useChatActions = (options: ChatActionsOptions) => {
             setTimeout(() => {
               const stateBeforeEnd = store.getState().chat;
               const messageIdToUpdate = stateBeforeEnd.streamingMessageId;
+              const finalChatId = conversationId || currentActiveChatId;
 
               if (reasoning && reasoning.trim()) {
                 if (messageIdToUpdate) {
@@ -241,16 +278,13 @@ export const useChatActions = (options: ChatActionsOptions) => {
                 }
               }
               
-              // 在 endStreaming 之后立即调用 onStreamEnd，确保 isStreaming 已经是 false
-              if (pendingQuestionRequestRef.current) clearTimeout(pendingQuestionRequestRef.current);
-              pendingQuestionRequestRef.current = setTimeout(() => {
-                pendingQuestionRequestRef.current = null;
-                const finalChatId = conversationId || currentActiveChatId;
-                if (finalChatId) {
-                  options.onStreamEnd?.(finalChatId);
-                }
-              }, 500); // 减少延迟到 500ms
-            }, 1000);
+              scheduleStreamEnd(finalChatId);
+
+              const finalChat = store.getState().chat.chats.find(c => c.id === finalChatId);
+              if (finalChat && shouldGenerateInitialTitle(finalChat.messages)) {
+                scheduleInitialTitleGeneration(finalChatId);
+              }
+            }, STREAM_SETTLE_DELAY_MS);
 
             if (conversationId && conversationId !== currentActiveChatId) {
               dispatch(setActiveChat(conversationId));
@@ -259,22 +293,6 @@ export const useChatActions = (options: ChatActionsOptions) => {
             }
             // 不再在每次消息发送后都刷新列表，避免过度同步
           }
-
-          const finalChatId = conversationId || currentActiveChatId;
-          const chat = store.getState().chat.chats.find(c => c.id === finalChatId);
-          if (done && chat && chat.messages.length === 2) {
-            setTimeout(async () => {
-              try {
-                const generatedTitle = await generateChatTitle(finalChatId, undefined, { max_length: 20 });
-                dispatch(setAnimatingTitleChatId(finalChatId));
-                dispatch(updateChatTitle({ chatId: finalChatId, title: generatedTitle }));
-                dispatch(updateServerChatTitle({ chatId: finalChatId, title: generatedTitle }));
-                refreshChatList();
-                setTimeout(() => dispatch(setAnimatingTitleChatId(null)), generatedTitle.length * 200 + 1000);
-              } catch {
-              }
-            }, 1000);
-          }
         });
     } catch (error) {
       console.error('发送消息失败:', error);
@@ -282,7 +300,7 @@ export const useChatActions = (options: ChatActionsOptions) => {
       dispatch(setMessageStatus({ chatId: currentActiveChatId, messageId: userMessage.id, status: 'failed' }));
       cleanupStreamingFailure(currentActiveChatId);
     }
-  }, [activeChatId, selectedModelId, models, dispatch, reasoningEnabled, options, refreshChatList, cleanupStreamingFailure]);
+  }, [activeChatId, selectedModelId, models, dispatch, reasoningEnabled, scheduleInitialTitleGeneration, scheduleStreamEnd, refreshChatList, cleanupStreamingFailure]);
 
 
   const retryMessage = useCallback(async (messageId: string) => {
@@ -343,16 +361,12 @@ export const useChatActions = (options: ChatActionsOptions) => {
                 }
               }
               dispatch(endStreaming());
-            }, 1000);
+            }, STREAM_SETTLE_DELAY_MS);
 
-            if (pendingQuestionRequestRef.current) clearTimeout(pendingQuestionRequestRef.current);
-            pendingQuestionRequestRef.current = setTimeout(() => {
-              pendingQuestionRequestRef.current = null;
-              const currentRetryChatId = store.getState().chat.activeChatId;
-              if (currentRetryChatId) {
-                options.onStreamEnd?.(currentRetryChatId);
-              }
-            }, 1500);
+            const currentRetryChatId = store.getState().chat.activeChatId;
+            if (currentRetryChatId) {
+              scheduleStreamEnd(currentRetryChatId);
+            }
           });
       } catch (error) {
         dispatch(setMessageStatus({ chatId: activeChatId, messageId: userMessage.id, status: 'failed' }));
@@ -379,7 +393,7 @@ export const useChatActions = (options: ChatActionsOptions) => {
 
       await resendMessage(userMessage);
     }
-  }, [activeChatId, selectedModelId, chats, models, dispatch, reasoningEnabled, options, cleanupStreamingFailure]);
+  }, [activeChatId, selectedModelId, chats, models, dispatch, reasoningEnabled, scheduleStreamEnd, cleanupStreamingFailure]);
 
 
   const editMessage = useCallback(async (messageId: string, newContent: string) => {
@@ -437,16 +451,12 @@ export const useChatActions = (options: ChatActionsOptions) => {
                 if (!store.getState().chat.isThinkingPhaseComplete) dispatch(endStreamingReasoning());
               }
               dispatch(endStreaming());
-            }, 1000);
+            }, STREAM_SETTLE_DELAY_MS);
 
-            if (pendingQuestionRequestRef.current) clearTimeout(pendingQuestionRequestRef.current);
-            pendingQuestionRequestRef.current = setTimeout(() => {
-              pendingQuestionRequestRef.current = null;
-              const currentActiveChatId = store.getState().chat.activeChatId;
-              if (currentActiveChatId) {
-                options.onStreamEnd?.(currentActiveChatId);
-              }
-            }, 1500);
+            const currentEditedChatId = store.getState().chat.activeChatId;
+            if (currentEditedChatId) {
+              scheduleStreamEnd(currentEditedChatId);
+            }
           }
         });
     } catch (error) {
@@ -455,7 +465,7 @@ export const useChatActions = (options: ChatActionsOptions) => {
       dispatch(setError('发送编辑后的消息失败，请重试'));
       cleanupStreamingFailure(activeChatId);
     }
-  }, [activeChatId, selectedModelId, chats, models, dispatch, reasoningEnabled, options, cleanupStreamingFailure]);
+  }, [activeChatId, selectedModelId, chats, models, dispatch, reasoningEnabled, scheduleStreamEnd, cleanupStreamingFailure]);
 
   return { newChat, clearCurrentChat, sendMessage, retryMessage, editMessage };
 }; 

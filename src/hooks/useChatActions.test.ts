@@ -357,6 +357,79 @@ describe('useChatActions.sendMessage', () => {
       status: 'failed',
     });
   });
+
+  it('triggers the stream completion callback after the first completed reply settles', async () => {
+    currentState.chat.activeChatId = null;
+    currentState.chat.streamingMessageId = null;
+    currentState.chat.chats = [];
+
+    dispatchMock.mockImplementation(action => {
+      if (action?.type === 'chat/createChat') {
+        currentState.chat.activeChatId = action.payload.id;
+        currentState.chat.chats = [
+          {
+            id: action.payload.id,
+            title: action.payload.title,
+            messages: [],
+          },
+        ];
+      }
+
+      if (action?.type === 'chat/addMessage') {
+        currentState.chat.chats = currentState.chat.chats.map(chat =>
+          chat.id === action.payload.chatId
+            ? {
+                ...chat,
+                messages: [...chat.messages, action.payload.message],
+              }
+            : chat
+        );
+      }
+
+      if (action?.type === 'chat/startStreaming') {
+        currentState.chat.streamingMessageId = 'assistant-stream-1';
+        currentState.chat.chats = currentState.chat.chats.map(chat =>
+          chat.id === action.payload
+            ? {
+                ...chat,
+                messages: [
+                  ...chat.messages,
+                  {
+                    id: 'assistant-stream-1',
+                    role: 'assistant',
+                    content: '',
+                  },
+                ],
+              }
+            : chat
+        );
+      }
+
+      if (action?.type === 'chat/endStreaming') {
+        currentState.chat.streamingMessageId = null;
+      }
+
+      return action;
+    });
+
+    sendMessageStreamMock.mockImplementation(async (_payload, onChunk) => {
+      onChunk('完整回复', false, 'uuid-1', '推理内容');
+      onChunk('完整回复', true, 'uuid-1', '推理内容');
+    });
+    const onStreamEnd = vi.fn();
+    const { result } = renderHook(() =>
+      useChatActions({
+        onStreamEnd,
+      })
+    );
+
+    const sendPromise = result.current.sendMessage('第一条消息');
+    await vi.advanceTimersByTimeAsync(50);
+    await sendPromise;
+    await vi.runAllTimersAsync();
+
+    expect(onStreamEnd).toHaveBeenCalledWith('uuid-1');
+  });
 });
 
 describe('useChatActions.retryMessage', () => {
