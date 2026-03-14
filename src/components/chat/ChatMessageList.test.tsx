@@ -146,4 +146,17 @@ describe('ChatMessageList', () => {
     expect(screen.getByText('发送第一条消息，继续这段会话。')).toBeTruthy();
     expect(screen.queryByText('开始一个新对话')).toBeNull();
   });
+
+  it('shows an in-place history hydration skeleton instead of the generic empty state', () => {
+    render(
+      <ChatMessageList
+        messages={[]}
+        loadingState="history-hydration"
+      />
+    );
+
+    expect(screen.getByText('正在恢复这段对话')).toBeTruthy();
+    expect(screen.getByText('消息会在几秒内加载完成。')).toBeTruthy();
+    expect(screen.queryByText('开始一个新对话')).toBeNull();
+  });
 });

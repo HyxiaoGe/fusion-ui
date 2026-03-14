@@ -9,6 +9,7 @@ interface ChatMessageListProps {
   messages: Message[];
   loading?: boolean;
   isStreaming?: boolean;
+  loadingState?: 'default' | 'history-hydration';
   onRetry?: (messageId: string) => void;
   onEdit?: (messageId: string, content: string) => void;
   suggestedQuestions?: string[];
@@ -41,6 +42,7 @@ const ChatMessageList: React.FC<ChatMessageListProps> = ({
   messages,
   loading = false,
   isStreaming = false,
+  loadingState = 'default',
   onRetry,
   onEdit,
   suggestedQuestions = [],
@@ -117,6 +119,28 @@ const ChatMessageList: React.FC<ChatMessageListProps> = ({
 
     return null;
   }, [completionStateVisible, isLoadingQuestions, isStreaming, sortedMessages]);
+
+  if (messages.length === 0 && loadingState === 'history-hydration') {
+    return (
+      <div className="mx-auto flex w-full max-w-3xl flex-col gap-6 px-4 py-8">
+        <div className="space-y-2 text-center">
+          <h3 className="text-xl font-medium">正在恢复这段对话</h3>
+          <p className="text-sm text-muted-foreground">消息会在几秒内加载完成。</p>
+        </div>
+        <div className="space-y-4">
+          <div className="ml-auto w-full max-w-xl space-y-3 rounded-3xl bg-primary/8 px-5 py-4">
+            <div className="h-4 w-3/4 rounded-full bg-primary/15" />
+            <div className="h-4 w-2/3 rounded-full bg-primary/10" />
+          </div>
+          <div className="w-full max-w-2xl space-y-3 rounded-3xl border border-border/60 bg-card px-5 py-4 shadow-sm">
+            <div className="h-4 w-5/6 rounded-full bg-muted" />
+            <div className="h-4 w-3/4 rounded-full bg-muted/80" />
+            <div className="h-4 w-2/3 rounded-full bg-muted/70" />
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   if (messages.length === 0) {
     return (

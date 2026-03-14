@@ -248,7 +248,7 @@ export default function ChatPage() {
               </Link>
             </div>
             <div className="absolute left-1/2 transform -translate-x-1/2 flex items-center gap-4">
-              <div className="font-medium text-base px-3 py-1">加载中...</div>
+              <div className="font-medium text-base px-3 py-1">{activeChat?.title || '正在恢复对话'}</div>
               <ModelSelectorLazy onChange={clearQuestions} />
             </div>
             <div className="flex items-center gap-3">
@@ -257,10 +257,12 @@ export default function ChatPage() {
           </header>
         }
       >
-        <div className="h-full flex items-center justify-center">
-          <div className="text-center space-y-4">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto"></div>
-            <p className="text-muted-foreground">正在加载对话内容...</p>
+        <div className="h-full flex flex-col relative">
+          <div className="flex-1 overflow-y-auto px-4 pt-4">
+            <ChatMessageListLazy
+              messages={[]}
+              loadingState="history-hydration"
+            />
           </div>
         </div>
       </MainLayout>
