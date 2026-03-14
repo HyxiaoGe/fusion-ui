@@ -212,13 +212,11 @@ export default function Home() {
       router.push(`/?new=true&model=${modelToUse}`);
     },
     onSendMessageStart: () => {
-      // 如果是新对话准备状态，发送消息后跳转到对话页面
-      if (isNewChatMode && activeChatId) {
-        // 清理URL参数，避免页面刷新时重复创建
-        router.replace(`/chat/${activeChatId}`);
-        // 重置创建标记，因为用户已经开始使用这个对话了
-        hasCreatedChatForCurrentUrl.current = false;
-      } else if (showHomePage) {
+      if (isNewChatMode) {
+        hasCreatedChatForCurrentUrl.current = true;
+      }
+
+      if (showHomePage) {
         setShowHomePage(false);
       }
     },
@@ -290,6 +288,15 @@ export default function Home() {
       }
     }
   }, [activeChatId, showHomePage, activeChat]);
+
+  useEffect(() => {
+    if (!isNewChatMode || !activeChatId || showHomePage) {
+      return;
+    }
+
+    router.replace(`/chat/${activeChatId}`);
+    hasCreatedChatForCurrentUrl.current = false;
+  }, [activeChatId, isNewChatMode, router, showHomePage]);
 
   const handleSendMessage = sendMessage;
   const handleRetryMessage = retryMessage;
