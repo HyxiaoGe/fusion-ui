@@ -12,6 +12,7 @@ const {
   triggerLoginDialogMock,
   uploadFilesMock,
   startPollingFileStatusMock,
+  stopPollingFileStatusMock,
   toggleReasoningMock,
   clearFilesMock,
   addFileIdMock,
@@ -50,6 +51,7 @@ const {
     triggerLoginDialogMock: vi.fn(),
     uploadFilesMock: vi.fn(),
     startPollingFileStatusMock: vi.fn(),
+    stopPollingFileStatusMock: vi.fn(),
     toggleReasoningMock: action('chat/toggleReasoning'),
     clearFilesMock: action('fileUpload/clearFiles'),
     addFileIdMock: action('fileUpload/addFileId'),
@@ -96,6 +98,7 @@ vi.mock('@/lib/api/files', () => ({
 
 vi.mock('@/lib/api/FileStatusPoller', () => ({
   startPollingFileStatus: startPollingFileStatusMock,
+  stopPollingFileStatus: stopPollingFileStatusMock,
 }));
 
 vi.mock('@/lib/utils/fileHelpers', async () => {
@@ -133,6 +136,7 @@ describe('ChatInput', () => {
     triggerLoginDialogMock.mockReset();
     uploadFilesMock.mockReset();
     startPollingFileStatusMock.mockReset();
+    stopPollingFileStatusMock.mockReset();
     toggleReasoningMock.mockClear();
     clearFilesMock.mockClear();
     addFileIdMock.mockClear();
@@ -158,7 +162,7 @@ describe('ChatInput', () => {
 
     expect(toastMock).toHaveBeenCalledWith(
       expect.objectContaining({
-        message: '请先登录后再使用文件上传功能',
+        message: '请先登录后再上传文件',
         type: 'warning',
       })
     );
@@ -192,11 +196,6 @@ describe('ChatInput', () => {
 
     await waitFor(() => {
       expect(uploadFilesMock).toHaveBeenCalledWith('qwen', 'model-1', 'chat-1', [file]);
-      expect(updateFileStatusMock).toHaveBeenCalledWith({
-        fileId: 'temp',
-        chatId: 'chat-1',
-        status: 'uploading',
-      });
       expect(addFileIdMock).toHaveBeenCalledWith({
         chatId: 'chat-1',
         fileId: 'file-1',

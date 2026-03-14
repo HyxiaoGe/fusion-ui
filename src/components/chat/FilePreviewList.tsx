@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React from 'react';
 import FilePreviewItem from './FilePreviewItem';
 
 interface FilePreviewListProps {
@@ -11,10 +11,6 @@ interface FilePreviewListProps {
 }
 
 const FilePreviewList: React.FC<FilePreviewListProps> = ({ files, onRemove }) => {
-  useEffect(() => {
-    console.log('FilePreviewList接收到的文件列表:', files);
-  }, [files]);
-
   if (files.length === 0) return null;
   
   return (

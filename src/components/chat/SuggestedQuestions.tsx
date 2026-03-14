@@ -1,7 +1,7 @@
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { HelpCircle, MessageSquare, RefreshCw } from 'lucide-react';
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useAppSelector } from '@/redux/hooks';
 import { useToast } from '@/components/ui/toast';
 
@@ -22,14 +22,32 @@ const SuggestedQuestions: React.FC<SuggestedQuestionsProps> = ({
 }) => {
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [pendingQuestion, setPendingQuestion] = useState<string | null>(null);
   const { isAuthenticated } = useAppSelector((state) => state.auth);
   const { toast } = useToast();
+  const isBusy = isLoading || isRefreshing || pendingQuestion !== null;
+
+  useEffect(() => {
+    if (!isLoading) {
+      setIsRefreshing(false);
+    }
+  }, [isLoading]);
+
+  useEffect(() => {
+    if (!questions.length) {
+      setPendingQuestion(null);
+    }
+  }, [questions]);
 
   // 如果没有问题且没有在加载中，则不显示组件
   if (questions.length === 0 && !isLoading) return null;
 
   // 处理问题选择的函数，添加登录检查
   const handleQuestionSelect = (question: string) => {
+    if (isBusy) {
+      return;
+    }
+
     // 检查登录状态
     if (!isAuthenticated) {
       toast({
@@ -43,16 +61,16 @@ const SuggestedQuestions: React.FC<SuggestedQuestionsProps> = ({
       return;
     }
     
+    setPendingQuestion(question);
     onSelectQuestion(question);
   };
   
   // 处理刷新按钮点击
   const handleRefresh = () => {
-    if (onRefresh && !isLoading) {
+    if (onRefresh && !isBusy) {
+      setPendingQuestion(null);
       setIsRefreshing(true);
       onRefresh();
-      // 添加动画效果，0.5秒后重置
-      setTimeout(() => setIsRefreshing(false), 500);
     }
   };
   
@@ -71,15 +89,15 @@ const SuggestedQuestions: React.FC<SuggestedQuestionsProps> = ({
             size="sm"
             className="h-6 px-2 text-xs text-muted-foreground hover:text-primary flex items-center gap-1"
             onClick={handleRefresh}
-            disabled={isLoading}
+            disabled={isBusy}
           >
             <RefreshCw 
               className={cn(
                 "h-3 w-3 transition-transform duration-500", 
-                isRefreshing && "rotate-180"
+                isRefreshing && "animate-spin"
               )} 
             />
-            <span>换一批</span>
+            <span>{isRefreshing ? '更新中' : '换一批'}</span>
           </Button>
         )}
       </div>
@@ -102,17 +120,19 @@ const SuggestedQuestions: React.FC<SuggestedQuestionsProps> = ({
                 "shadow-md",
                 "translate-y-[-1px]",
                 "scale-[1.01]"
-              ] : ""
+              ] : "",
+              pendingQuestion === question && "border-primary bg-primary/5 text-primary"
             )}
             onClick={() => handleQuestionSelect(question)}
             onMouseEnter={() => setHoveredIndex(index)}
             onMouseLeave={() => setHoveredIndex(null)}
+            disabled={isBusy}
           >
             <MessageSquare className={cn(
               "h-3.5 w-3.5 flex-shrink-0", 
-              hoveredIndex === index ? "text-primary" : "text-muted-foreground"
+              hoveredIndex === index || pendingQuestion === question ? "text-primary" : "text-muted-foreground"
             )} />
-            <span>{question}</span>
+            <span>{pendingQuestion === question ? '发送中...' : question}</span>
           </Button>
         ))}
         

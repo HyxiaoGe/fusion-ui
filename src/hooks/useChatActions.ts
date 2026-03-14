@@ -60,17 +60,14 @@ export const useChatActions = (options: ChatActionsOptions) => {
   const newChat = useCallback(() => {
     const modelToUse = selectedModelId || (models.length > 0 ? models[0].id : null);
     if (!modelToUse) {
-      console.error('没有可用的模型，无法创建对话');
       dispatch(setError('没有可用的模型，无法创建对话'));
       return;
     }
 
-    console.log('[useChatActions.newChat] Called, current chats:', chats.length);
     // 首先检查是否已经存在空对话（没有消息的对话）
     const existingEmptyChat = chats.find(chat => chat.messages.length === 0);
     
     if (existingEmptyChat) {
-      console.log('[useChatActions.newChat] Found existing empty chat:', existingEmptyChat.id);
       // 如果已经有空对话，直接激活它，不创建新的
       if (existingEmptyChat.id !== activeChatId) {
         dispatch(setActiveChat(existingEmptyChat.id));
@@ -84,14 +81,12 @@ export const useChatActions = (options: ChatActionsOptions) => {
     const providerToUse = selectedModel?.provider;
 
     try {
-      console.log('[useChatActions.newChat] Creating new chat');
       // 只有当没有空对话时，才创建新对话
       dispatch(createChat({ model: modelToUse, provider: providerToUse, title: '' }));
       
       options.onNewChatCreated?.();
 
     } catch (error) {
-      console.error('创建对话失败:', error);
       dispatch(setError('创建对话失败，请重试'));
     }
   }, [selectedModelId, models, dispatch, options, chats, activeChatId]);
@@ -107,7 +102,6 @@ export const useChatActions = (options: ChatActionsOptions) => {
   const sendMessage = useCallback(async (content: string, files?: FileWithPreview[]) => {
     if ((!content.trim() && (!files || files.length === 0)) || !selectedModelId) return;
 
-    console.log('[useChatActions.sendMessage] Starting, activeChatId:', activeChatId);
     options.onSendMessageStart?.();
     
     let currentActiveChatId = activeChatId;
@@ -115,12 +109,10 @@ export const useChatActions = (options: ChatActionsOptions) => {
     if (!currentActiveChatId) {
       // 先检查是否有空对话可以复用
       const existingEmptyChat = chats.find(chat => chat.messages.length === 0);
-      console.log('[useChatActions.sendMessage] No active chat, found empty chat:', existingEmptyChat?.id);
       
       if (existingEmptyChat) {
         // 复用已存在的空对话
         currentActiveChatId = existingEmptyChat.id;
-        console.log('[useChatActions.sendMessage] Reusing empty chat:', currentActiveChatId);
         // 如果空对话不是当前激活的，激活它
         if (existingEmptyChat.id !== activeChatId) {
           dispatch(setActiveChat(existingEmptyChat.id));
@@ -133,7 +125,6 @@ export const useChatActions = (options: ChatActionsOptions) => {
         const selectedModel = models.find(m => m.id === selectedModelId);
         const providerToUse = selectedModel?.provider;
         
-        console.log('[useChatActions.sendMessage] Creating new chat:', newChatId);
         dispatch(
           createChat({
             id: newChatId,
@@ -202,7 +193,6 @@ export const useChatActions = (options: ChatActionsOptions) => {
               dispatch(updateStreamingReasoningContent(reasoning));
             }
           } else {
-            console.log('[useChatActions] Stream done=true received');
             dispatch(updateStreamingContent({ chatId: currentActiveChatId, content }));
 
             // 保存思考内容到消息的reasoning字段
@@ -247,9 +237,7 @@ export const useChatActions = (options: ChatActionsOptions) => {
               pendingQuestionRequestRef.current = setTimeout(() => {
                 pendingQuestionRequestRef.current = null;
                 const finalChatId = conversationId || currentActiveChatId;
-                console.log('[useChatActions] onStreamEnd - conversationId:', conversationId, 'currentActiveChatId:', currentActiveChatId, 'finalChatId:', finalChatId);
                 if (finalChatId) {
-                  console.log('[useChatActions] Calling onStreamEnd with chatId:', finalChatId);
                   options.onStreamEnd?.(finalChatId);
                 }
               }, 500); // 减少延迟到 500ms
@@ -274,8 +262,7 @@ export const useChatActions = (options: ChatActionsOptions) => {
                 dispatch(updateServerChatTitle({ chatId: finalChatId, title: generatedTitle }));
                 refreshChatList();
                 setTimeout(() => dispatch(setAnimatingTitleChatId(null)), generatedTitle.length * 200 + 1000);
-              } catch (error) {
-                console.error('生成标题失败:', error);
+              } catch {
               }
             }, 1000);
           }

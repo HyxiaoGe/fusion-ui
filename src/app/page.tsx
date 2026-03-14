@@ -224,7 +224,6 @@ export default function Home() {
     },
     onStreamEnd: (chatId: string) => {
       // 强制刷新以获取新问题
-      console.log('[page.tsx] onStreamEnd called for chatId:', chatId, 'current activeChatId:', activeChatId);
       fetchQuestions(true);
     }
   });
@@ -239,6 +238,22 @@ export default function Home() {
     // 切换会话时，清空推荐问题
     clearQuestions();
   }, [activeChatId]);
+
+  useEffect(() => {
+    if (!activeChatId || !activeChat || isStreaming || isLoadingQuestions || suggestedQuestions.length > 0) {
+      return;
+    }
+
+    const hasAssistantMessage = activeChat.messages.some(
+      (message) => message.role === 'assistant' && message.content?.trim()
+    );
+
+    if (!hasAssistantMessage) {
+      return;
+    }
+
+    void fetchQuestions();
+  }, [activeChat, activeChatId, fetchQuestions, isLoadingQuestions, isStreaming, suggestedQuestions.length]);
 
   // 添加新的状态变量来跟踪聊天中是否有消息
   const [hasMessages, setHasMessages] = useState(false);

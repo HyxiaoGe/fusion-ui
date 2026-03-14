@@ -1,21 +1,25 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { store } from '@/redux/store';
 import { fetchSuggestedQuestions as fetchApi } from '@/lib/api/chat';
 
 export const useSuggestedQuestions = (chatId: string | null) => {
   const [suggestedQuestions, setSuggestedQuestions] = useState<string[]>([]);
   const [isLoadingQuestions, setIsLoadingQuestions] = useState(false);
+  const requestIdRef = useRef(0);
+  const lastFetchKeyRef = useRef<string | null>(null);
 
   // Clear questions when the chat changes
   useEffect(() => {
+    requestIdRef.current += 1;
+    lastFetchKeyRef.current = null;
+    setIsLoadingQuestions(false);
     setSuggestedQuestions([]);
   }, [chatId]);
 
   const fetchQuestions = useCallback(async (forceRefresh: boolean = false) => {
-    console.log('[useSuggestedQuestions] fetchQuestions called, chatId:', chatId, 'forceRefresh:', forceRefresh);
-    
     if (!chatId) {
-      console.log('[useSuggestedQuestions] No chatId, aborting');
+      setSuggestedQuestions([]);
+      setIsLoadingQuestions(false);
       return;
     }
 
@@ -23,43 +27,58 @@ export const useSuggestedQuestions = (chatId: string | null) => {
     const state = store.getState().chat;
     const chat = state.chats.find(c => c.id === chatId);
     const isStreaming = state.isStreaming;
+    const requestId = requestIdRef.current + 1;
 
     if (!chat) {
-      console.error(`[useSuggestedQuestions] Aborting: Chat with id ${chatId} not found.`);
+      setSuggestedQuestions([]);
       return;
     }
 
     const hasAIMessage = chat.messages.some(msg => msg.role === 'assistant' && msg.content?.trim());
-    console.log('[useSuggestedQuestions] hasAIMessage:', hasAIMessage, 'message count:', chat.messages.length);
-    
-    // 只有当聊天中有 AI 回复时才获取建议问题
     if (!hasAIMessage) {
-      console.log('[useSuggestedQuestions] No AI message yet, aborting');
-      return;
-    }
-    
-    // Do not fetch questions if a stream is in progress.
-    if (isStreaming) {
-      console.log('[useSuggestedQuestions] Stream is in progress, aborting');
+      setSuggestedQuestions([]);
       return;
     }
 
-    console.log('[useSuggestedQuestions] Fetching suggested questions from API...');
+    const fetchKey = `${chatId}:${chat.messages.length}`;
+    if (!forceRefresh && lastFetchKeyRef.current === fetchKey) {
+      return;
+    }
+    
+    if (isStreaming) {
+      setIsLoadingQuestions(false);
+      return;
+    }
+
+    if (isLoadingQuestions && !forceRefresh) {
+      return;
+    }
+
+    requestIdRef.current = requestId;
     setIsLoadingQuestions(true);
     try {
       const messageCount = chat.messages.length || 0;
       const { questions } = await fetchApi(chatId, {}, forceRefresh, messageCount);
-      console.log('[useSuggestedQuestions] Received questions:', questions);
+      if (requestId !== requestIdRef.current) {
+        return;
+      }
+      lastFetchKeyRef.current = fetchKey;
       setSuggestedQuestions(questions);
     } catch (error) {
-      console.error('Error fetching suggested questions:', error);
+      if (requestId !== requestIdRef.current) {
+        return;
+      }
       setSuggestedQuestions([]);
     } finally {
-      setIsLoadingQuestions(false);
+      if (requestId === requestIdRef.current) {
+        setIsLoadingQuestions(false);
+      }
     }
-  }, [chatId]);
+  }, [chatId, isLoadingQuestions]);
 
   const clearQuestions = useCallback(() => {
+    requestIdRef.current += 1;
+    setIsLoadingQuestions(false);
     setSuggestedQuestions([]);
   }, []);
 

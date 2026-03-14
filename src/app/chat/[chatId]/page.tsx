@@ -224,6 +224,22 @@ export default function ChatPage() {
     clearQuestions();
   }, [chatId, clearQuestions]);
 
+  useEffect(() => {
+    if (!chatId || !activeChat || isStreaming || isLoadingQuestions || suggestedQuestions.length > 0) {
+      return;
+    }
+
+    const hasAssistantMessage = activeChat.messages.some(
+      (message) => message.role === 'assistant' && message.content?.trim()
+    );
+
+    if (!hasAssistantMessage) {
+      return;
+    }
+
+    void fetchQuestions();
+  }, [activeChat, chatId, fetchQuestions, isLoadingQuestions, isStreaming, suggestedQuestions.length]);
+
   // 检查聊天是否存在（延迟判断，给服务端加载时间）
   useEffect(() => {
     if (chatId && !activeChat && !isLoadingServerChat && !loading) {
