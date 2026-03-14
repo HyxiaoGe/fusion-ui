@@ -4,6 +4,7 @@ import { act } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const dispatchMock = vi.fn();
+const toastMock = vi.fn();
 const selectorState = {
   chat: {
     activeChatId: 'chat-1',
@@ -34,6 +35,10 @@ vi.mock('@/lib/db/chatStore', () => ({
   chatStore: { upsertMessage: vi.fn() },
 }));
 
+vi.mock('@/components/ui/toast', () => ({
+  useToast: () => ({ toast: toastMock }),
+}));
+
 vi.mock('./ReasoningContent', () => ({
   default: () => null,
 }));
@@ -59,6 +64,7 @@ import ChatMessage from './ChatMessage';
 describe('ChatMessage', () => {
   beforeEach(() => {
     vi.useFakeTimers();
+    toastMock.mockReset();
     Object.assign(navigator, {
       clipboard: {
         writeText: vi.fn().mockResolvedValue(undefined),
@@ -99,5 +105,33 @@ describe('ChatMessage', () => {
     });
 
     expect(screen.getByRole('button', { name: '复制消息' })).toBeTruthy();
+  });
+
+  it('surfaces a toast instead of throwing when clipboard copy fails', async () => {
+    vi.mocked(navigator.clipboard.writeText).mockRejectedValueOnce(new Error('blocked'));
+
+    render(
+      <ChatMessage
+        message={{
+          id: 'assistant-1',
+          role: 'assistant',
+          content: '复制失败测试',
+          timestamp: 1,
+        }}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: '复制消息' }));
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(toastMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        message: '复制失败，请重试',
+        type: 'error',
+      }),
+    );
   });
 });

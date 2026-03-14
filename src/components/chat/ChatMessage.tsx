@@ -20,6 +20,7 @@ import { chatStore } from '@/lib/db/chatStore';
 import SuggestedQuestions from './SuggestedQuestions';
 import CodeBlock from './CodeBlock';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { useToast } from '@/components/ui/toast';
 
 interface ChatMessageProps {
   message: Message;
@@ -52,6 +53,7 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, files, isLastMessage
 
   const { userAvatar, assistantAvatar } = useAppSelector(state => state.settings);
   const { isAuthenticated, user } = useAppSelector(state => state.auth);
+  const { toast } = useToast();
 
   // 获取当前聊天使用的模型信息
   const chats = useAppSelector(state => state.chat.chats);
@@ -183,17 +185,24 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, files, isLastMessage
   }, []);
 
   const handleCopyMessage = async () => {
-    await navigator.clipboard.writeText(message.content);
-    setCopied(true);
+    try {
+      await navigator.clipboard.writeText(message.content);
+      setCopied(true);
 
-    if (copiedResetTimerRef.current) {
-      clearTimeout(copiedResetTimerRef.current);
+      if (copiedResetTimerRef.current) {
+        clearTimeout(copiedResetTimerRef.current);
+      }
+
+      copiedResetTimerRef.current = setTimeout(() => {
+        setCopied(false);
+        copiedResetTimerRef.current = null;
+      }, 2000);
+    } catch {
+      toast({
+        message: '复制失败，请重试',
+        type: 'error',
+      });
     }
-
-    copiedResetTimerRef.current = setTimeout(() => {
-      setCopied(false);
-      copiedResetTimerRef.current = null;
-    }, 2000);
   };
 
   return (
