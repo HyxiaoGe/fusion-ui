@@ -144,12 +144,16 @@ const ChatMessageList: React.FC<ChatMessageListProps> = ({
       return '正在准备推荐追问...';
     }
 
+    if (suggestedQuestions.length > 0) {
+      return null;
+    }
+
     if (completionStateVisible && lastMessage.role === 'assistant' && lastMessage.content?.trim()) {
       return '本轮回复已完成';
     }
 
     return null;
-  }, [completionStateVisible, isLoadingQuestions, isStreaming, sortedMessages]);
+  }, [completionStateVisible, isLoadingQuestions, isStreaming, sortedMessages, suggestedQuestions.length]);
 
   if (messages.length === 0 && loadingState === 'history-hydration') {
     return (

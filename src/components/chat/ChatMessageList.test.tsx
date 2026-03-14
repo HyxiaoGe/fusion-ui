@@ -97,6 +97,27 @@ describe('ChatMessageList', () => {
     expect(screen.getByText('本轮回复已完成')).toBeTruthy();
   });
 
+  it('hides the completed status once suggested follow-up questions are ready', () => {
+    render(
+      <ChatMessageList
+        messages={[
+          {
+            id: 'assistant-1',
+            role: 'assistant',
+            content: '回复完成',
+            timestamp: 1,
+          },
+        ]}
+        suggestedQuestions={['继续追问']}
+        isStreaming={false}
+        isLoadingQuestions={false}
+        completionStateVisible={true}
+      />
+    );
+
+    expect(screen.queryByText('本轮回复已完成')).toBeNull();
+  });
+
   it('does not show a completed status for historical assistant messages by default', () => {
     render(
       <ChatMessageList
