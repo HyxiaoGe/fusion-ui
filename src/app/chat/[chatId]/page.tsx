@@ -43,6 +43,7 @@ export default function ChatPage() {
 
   const [inputKey, setInputKey] = useState(Date.now());
   const [confirmDialogOpen, setConfirmDialogOpen] = useState(false);
+  const [hydrationFailed, setHydrationFailed] = useState(false);
   const hydrationRequestRef = useRef<string | null>(null);
 
   // Redux 状态
@@ -90,9 +91,9 @@ export default function ChatPage() {
         chatId,
         chat: activeChat,
         isLoadingServerChat,
-        serverError,
+        serverError: hydrationFailed ? (serverError || '加载聊天数据失败') : null,
       }),
-    [activeChat, chatId, isLoadingServerChat, serverError]
+    [activeChat, chatId, hydrationFailed, isLoadingServerChat, serverError]
   );
 
   // 从服务端加载聊天数据的函数
@@ -100,9 +101,11 @@ export default function ChatPage() {
     try {
       dispatch(setLoadingServerChat(true));
       dispatch(setServerError(null));
+      setHydrationFailed(false);
       const serverChatData = await getConversation(chatId);
       dispatch(updateChatFromServer(buildChatFromServerConversation(serverChatData)));
     } catch (error) {
+      setHydrationFailed(true);
       dispatch(setServerError('加载聊天数据失败'));
       toast({
         message: "加载对话失败，请重试",
@@ -136,6 +139,7 @@ export default function ChatPage() {
 
   useEffect(() => {
     hydrationRequestRef.current = null;
+    setHydrationFailed(false);
   }, [chatId]);
 
   // 设置当前活跃聊天并尝试加载数据
@@ -210,6 +214,7 @@ export default function ChatPage() {
     }
 
     hydrationRequestRef.current = null;
+    setHydrationFailed(false);
     void loadChatFromServer(chatId);
   }, [chatId, loadChatFromServer]);
 
