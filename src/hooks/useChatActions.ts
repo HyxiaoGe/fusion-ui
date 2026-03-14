@@ -292,25 +292,17 @@ export const useChatActions = (options: ChatActionsOptions) => {
     const message = chat.messages.find(m => m.id === messageId);
     if (!message) return;
 
-    if (message.role === 'assistant') {
-      let userMessageIndex = chat.messages.findIndex(m => m.id === messageId) - 1;
-      while (userMessageIndex >= 0 && chat.messages[userMessageIndex].role !== 'user') {
-        userMessageIndex--;
-      }
+    const selectedModel = models.find(m => m.id === selectedModelId);
+    if (!selectedModel) {
+      dispatch(setError('找不到选中的模型信息'));
+      return;
+    }
 
-      if (userMessageIndex < 0) return;
-      const userMessage = chat.messages[userMessageIndex];
+    const supportsReasoning = selectedModel.capabilities?.deepThinking || false;
+    const useReasoning = reasoningEnabled && supportsReasoning;
 
-      dispatch(deleteMessage({ chatId: activeChatId, messageId: message.id }));
-
-      const selectedModel = models.find(m => m.id === selectedModelId);
-      if (!selectedModel) {
-        dispatch(setError('找不到选中的模型信息'));
-        return;
-      }
-
-      const supportsReasoning = selectedModel.capabilities?.deepThinking || false;
-      const useReasoning = reasoningEnabled && supportsReasoning;
+    const resendMessage = async (userMessage: Message) => {
+      dispatch(setMessageStatus({ chatId: activeChatId, messageId: userMessage.id, status: 'pending' }));
       dispatch(startStreaming(activeChatId));
       if (useReasoning) dispatch(startStreamingReasoning());
 
@@ -323,40 +315,68 @@ export const useChatActions = (options: ChatActionsOptions) => {
           stream: true,
           options: { use_reasoning: useReasoning }
         },
-          (content, done, conversationId, reasoning) => {
+          (content, done, _conversationId, reasoning) => {
             if (!done) {
               dispatch(updateStreamingContent({ chatId: activeChatId, content }));
               if (reasoning) dispatch(updateStreamingReasoningContent(reasoning));
-            } else {
-              dispatch(updateStreamingContent({ chatId: activeChatId, content: content }));
-
-              setTimeout(() => {
-                if (reasoning && reasoning.trim()) {
-                  const streamingMessageId = store.getState().chat.streamingMessageId;
-                  if (streamingMessageId) {
-                    dispatch(updateMessageReasoning({ chatId: activeChatId, messageId: streamingMessageId, reasoning: reasoning, isVisible: true }));
-                  }
-                  if (!store.getState().chat.isThinkingPhaseComplete) dispatch(endStreamingReasoning());
-                }
-                dispatch(endStreaming());
-              }, 1000);
-
-              if (pendingQuestionRequestRef.current) clearTimeout(pendingQuestionRequestRef.current);
-              pendingQuestionRequestRef.current = setTimeout(() => {
-                pendingQuestionRequestRef.current = null;
-                const currentActiveChatId = store.getState().chat.activeChatId;
-                if (currentActiveChatId) {
-                  options.onStreamEnd?.(currentActiveChatId);
-                }
-              }, 1500);
+              return;
             }
+
+            dispatch(updateStreamingContent({ chatId: activeChatId, content }));
+            dispatch(setMessageStatus({ chatId: activeChatId, messageId: userMessage.id, status: null }));
+
+            setTimeout(() => {
+              if (reasoning && reasoning.trim()) {
+                const streamingMessageId = store.getState().chat.streamingMessageId;
+                if (streamingMessageId) {
+                  dispatch(updateMessageReasoning({
+                    chatId: activeChatId,
+                    messageId: streamingMessageId,
+                    reasoning,
+                    isVisible: true,
+                  }));
+                }
+                if (!store.getState().chat.isThinkingPhaseComplete) {
+                  dispatch(endStreamingReasoning());
+                }
+              }
+              dispatch(endStreaming());
+            }, 1000);
+
+            if (pendingQuestionRequestRef.current) clearTimeout(pendingQuestionRequestRef.current);
+            pendingQuestionRequestRef.current = setTimeout(() => {
+              pendingQuestionRequestRef.current = null;
+              const currentRetryChatId = store.getState().chat.activeChatId;
+              if (currentRetryChatId) {
+                options.onStreamEnd?.(currentRetryChatId);
+              }
+            }, 1500);
           });
       } catch (error) {
-        console.error('重新生成回复失败:', error);
+        dispatch(setMessageStatus({ chatId: activeChatId, messageId: userMessage.id, status: 'failed' }));
         dispatch(setError('重新生成失败，请检查网络连接'));
         dispatch(endStreamingReasoning());
         dispatch(endStreaming());
       }
+    };
+
+    if (message.role === 'user') {
+      await resendMessage(message);
+      return;
+    }
+
+    if (message.role === 'assistant') {
+      let userMessageIndex = chat.messages.findIndex(m => m.id === messageId) - 1;
+      while (userMessageIndex >= 0 && chat.messages[userMessageIndex].role !== 'user') {
+        userMessageIndex--;
+      }
+
+      if (userMessageIndex < 0) return;
+      const userMessage = chat.messages[userMessageIndex];
+
+      dispatch(deleteMessage({ chatId: activeChatId, messageId: message.id }));
+
+      await resendMessage(userMessage);
     }
   }, [activeChatId, selectedModelId, chats, models, dispatch, reasoningEnabled, options]);
 

@@ -58,6 +58,30 @@ const ChatMessageList: React.FC<ChatMessageListProps> = ({ messages, loading = f
     scrollToBottom();
   }, [messages.length, isStreaming]);
 
+  const statusText = useMemo(() => {
+    if (sortedMessages.length === 0) return null;
+
+    const lastMessage = sortedMessages[sortedMessages.length - 1];
+
+    if (lastMessage.role === 'user' && lastMessage.status === 'failed') {
+      return '发送失败，可重新发送';
+    }
+
+    if (isStreaming) {
+      return 'AI 正在回复...';
+    }
+
+    if (isLoadingQuestions) {
+      return '正在准备推荐追问...';
+    }
+
+    if (lastMessage.role === 'assistant' && lastMessage.content?.trim()) {
+      return '本轮回复已完成';
+    }
+
+    return null;
+  }, [isLoadingQuestions, isStreaming, sortedMessages]);
+
   if (messages.length === 0) {
     return (
       <div className="flex h-full items-center justify-center text-center p-8">
@@ -89,6 +113,12 @@ const ChatMessageList: React.FC<ChatMessageListProps> = ({ messages, loading = f
       ))}
       
       {loading && !isStreaming && <LoadingIndicator />}
+
+      {statusText ? (
+        <div className="px-4 pb-2 text-xs text-muted-foreground">
+          {statusText}
+        </div>
+      ) : null}
       
       <div ref={messagesEndRef} />
     </div>

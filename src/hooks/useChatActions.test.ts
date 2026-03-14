@@ -349,3 +349,100 @@ describe('useChatActions.sendMessage', () => {
     });
   });
 });
+
+describe('useChatActions.retryMessage', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    dispatchMock.mockReset();
+    triggerRefreshMock.mockReset();
+    createChatMock.mockClear();
+    setActiveChatMock.mockClear();
+    setErrorMock.mockClear();
+    addMessageMock.mockClear();
+    startStreamingMock.mockClear();
+    updateStreamingContentMock.mockClear();
+    updateStreamingReasoningContentMock.mockClear();
+    endStreamingMock.mockClear();
+    setMessageStatusMock.mockClear();
+    sendMessageStreamMock.mockReset();
+    generateChatTitleMock.mockReset();
+    updateMessageDurationMock.mockReset();
+    uuidMock.mockClear();
+    currentState.models.models = [
+      {
+        id: 'model-1',
+        provider: 'qwen',
+        capabilities: {
+          deepThinking: true,
+        },
+      },
+    ];
+    currentState.models.selectedModelId = 'model-1';
+    currentState.chat.activeChatId = 'chat-1';
+    currentState.chat.reasoningEnabled = true;
+    currentState.chat.chats = [
+      {
+        id: 'chat-1',
+        title: '测试会话',
+        messages: [
+          {
+            id: 'user-1',
+            role: 'user',
+            content: '重试这条消息',
+            status: 'failed',
+          },
+        ],
+      },
+    ];
+    useAppDispatchMock.mockReturnValue(dispatchMock);
+    useAppSelectorMock.mockImplementation(selector => selector(currentState));
+  });
+
+  afterEach(() => {
+    vi.runOnlyPendingTimers();
+    vi.useRealTimers();
+  });
+
+  it('retries a failed user message and clears the failed state after success', async () => {
+    sendMessageStreamMock.mockImplementation(async (_payload, onChunk) => {
+      onChunk('重新生成的回复', false, undefined, '补充推理');
+      onChunk('重新生成的回复', true, undefined, '补充推理');
+    });
+
+    const onStreamEnd = vi.fn();
+    const { result } = renderHook(() =>
+      useChatActions({
+        onStreamEnd,
+      })
+    );
+
+    const retryPromise = result.current.retryMessage('user-1');
+    await retryPromise;
+    await vi.advanceTimersByTimeAsync(2500);
+
+    expect(setMessageStatusMock).toHaveBeenNthCalledWith(1, {
+      chatId: 'chat-1',
+      messageId: 'user-1',
+      status: 'pending',
+    });
+    expect(sendMessageStreamMock).toHaveBeenCalledWith(
+      {
+        provider: 'qwen',
+        model: 'model-1',
+        message: '重试这条消息',
+        conversation_id: 'chat-1',
+        stream: true,
+        options: {
+          use_reasoning: true,
+        },
+      },
+      expect.any(Function)
+    );
+    expect(setMessageStatusMock).toHaveBeenCalledWith({
+      chatId: 'chat-1',
+      messageId: 'user-1',
+      status: null,
+    });
+    expect(onStreamEnd).toHaveBeenCalledWith('chat-1');
+  });
+});

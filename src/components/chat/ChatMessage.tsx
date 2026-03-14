@@ -446,9 +446,20 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, files, isLastMessage
           )}
         </div>
 
-        {/* 编辑按钮 - 仅用户消息显示且非编辑状态 */}
-        {isUser && !isEditing && !message.status && (
-          <div className="opacity-100 transition-opacity duration-150">
+        {/* 用户消息操作 */}
+        {isUser && !isEditing && (
+          <div className="opacity-100 transition-opacity duration-150 flex gap-2">
+            {message.status === 'failed' ? (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-6 text-xs text-red-100/80 hover:text-red-50 hover:bg-transparent"
+                onClick={() => onRetry && onRetry(message.id)}
+              >
+                <RotateCcw className="h-3 w-3 mr-1" />
+                重新发送
+              </Button>
+            ) : null}
             <Button
               variant="ghost"
               size="sm"
