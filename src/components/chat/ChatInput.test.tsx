@@ -262,6 +262,90 @@ describe('ChatInput', () => {
     );
   });
 
+  it('skips duplicate files in the same batch and warns the user', async () => {
+    currentState.auth.isAuthenticated = true;
+    currentState.models.selectedModelId = 'model-1';
+    currentState.models.models = [
+      {
+        id: 'model-1',
+        provider: 'qwen',
+        capabilities: {
+          fileSupport: true,
+          deepThinking: true,
+        },
+      },
+    ];
+    uploadFilesMock.mockResolvedValue(['file-1']);
+
+    const { container } = render(<ChatInput onSendMessage={vi.fn()} />);
+    const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement;
+    const duplicateA = new File(['hello'], 'same.txt', { type: 'text/plain', lastModified: 1 });
+    const duplicateB = new File(['hello'], 'same.txt', { type: 'text/plain', lastModified: 1 });
+
+    fireEvent.change(fileInput, {
+      target: {
+        files: [duplicateA, duplicateB],
+      },
+    });
+
+    await waitFor(() => {
+      expect(uploadFilesMock).toHaveBeenCalledWith('qwen', 'model-1', 'chat-1', [duplicateA]);
+    });
+
+    expect(toastMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        message: '已跳过重复文件',
+        type: 'warning',
+      })
+    );
+  });
+
+  it('removes a failed file and clears its polling state', async () => {
+    currentState.auth.isAuthenticated = true;
+    currentState.models.selectedModelId = 'model-1';
+    currentState.models.models = [
+      {
+        id: 'model-1',
+        provider: 'qwen',
+        capabilities: {
+          fileSupport: true,
+          deepThinking: true,
+        },
+      },
+    ];
+    uploadFilesMock.mockResolvedValue(['file-1']);
+
+    const { container } = render(<ChatInput onSendMessage={vi.fn()} />);
+    const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement;
+    const file = new File(['hello'], 'remove-me.txt', { type: 'text/plain' });
+
+    fireEvent.change(fileInput, {
+      target: {
+        files: [file],
+      },
+    });
+
+    await waitFor(() => {
+      expect(startPollingFileStatusMock).toHaveBeenCalledTimes(1);
+    });
+
+    const onComplete = startPollingFileStatusMock.mock.calls[0][3] as (result: {
+      success: boolean;
+      errorMessage?: string;
+    }) => void;
+    await act(async () => {
+      onComplete({
+        success: false,
+        errorMessage: '文件处理失败，请重试',
+      });
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: '移除文件 remove-me.txt' }));
+
+    expect(stopPollingFileStatusMock).toHaveBeenCalledWith('file-1');
+    expect(screen.queryByText('remove-me.txt')).toBeNull();
+  });
+
   it('shows readable retry actions when file processing fails', async () => {
     currentState.auth.isAuthenticated = true;
     currentState.models.selectedModelId = 'model-1';

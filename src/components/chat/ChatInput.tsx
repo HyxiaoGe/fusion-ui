@@ -41,6 +41,10 @@ interface LocalFileWithStatus {
   errorMessage?: string;
 }
 
+function getFileIdentity(file: File): string {
+  return `${file.name}:${file.size}:${file.lastModified}`;
+}
+
 function formatFileErrorMessage(errorMessage?: string): string {
   if (!errorMessage) {
     return "文件处理失败，请重试";
@@ -153,6 +157,26 @@ const ChatInput: React.FC<ChatInputProps> = ({
     return pendingFiles;
   };
 
+  const splitDedupedFiles = (selectedFiles: File[]) => {
+    const existingIdentities = new Set(localFiles.map((item) => getFileIdentity(item.file)));
+    const seenInBatch = new Set<string>();
+    const acceptedFiles: File[] = [];
+    let skippedCount = 0;
+
+    selectedFiles.forEach((file) => {
+      const identity = getFileIdentity(file);
+      if (existingIdentities.has(identity) || seenInBatch.has(identity)) {
+        skippedCount += 1;
+        return;
+      }
+
+      seenInBatch.add(identity);
+      acceptedFiles.push(file);
+    });
+
+    return { acceptedFiles, skippedCount };
+  };
+
   const handleUploadFiles = async (filesToUpload: LocalFileWithStatus[]) => {
     if (filesToUpload.length === 0 || !selectedModel) {
       return;
@@ -239,7 +263,21 @@ const ChatInput: React.FC<ChatInputProps> = ({
       return;
     }
 
-    const pendingFiles = addPendingFiles(selectedFiles);
+    const { acceptedFiles, skippedCount } = splitDedupedFiles(selectedFiles);
+
+    if (skippedCount > 0) {
+      toast({
+        message: skippedCount === 1 ? "已跳过重复文件" : `已跳过 ${skippedCount} 个重复文件`,
+        type: "warning",
+        duration: 3000,
+      });
+    }
+
+    if (acceptedFiles.length === 0) {
+      return;
+    }
+
+    const pendingFiles = addPendingFiles(acceptedFiles);
     await handleUploadFiles(pendingFiles);
   };
 
@@ -594,6 +632,8 @@ const ChatInput: React.FC<ChatInputProps> = ({
                 <button
                   type="button"
                   onClick={() => handleRemoveFile(file.id)}
+                  aria-label={`移除文件 ${file.file.name}`}
+                  title={`移除文件 ${file.file.name}`}
                   className="p-1 rounded-full hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
                 >
                   <X className="h-4 w-4" />
