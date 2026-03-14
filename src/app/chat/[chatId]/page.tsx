@@ -352,6 +352,10 @@ export default function ChatPage() {
             isLoadingQuestions={isLoadingQuestions}
             onSelectQuestion={handleSelectQuestion}
             onRefreshQuestions={handleRefreshQuestions}
+            emptyState={{
+              title: '这个会话还没有消息',
+              description: '发送第一条消息，继续这段会话。',
+            }}
           />
         </div>
         

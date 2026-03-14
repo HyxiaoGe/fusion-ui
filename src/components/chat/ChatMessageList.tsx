@@ -15,6 +15,10 @@ interface ChatMessageListProps {
   isLoadingQuestions?: boolean;
   onSelectQuestion?: (question: string) => void;
   onRefreshQuestions?: () => void;
+  emptyState?: {
+    title: string;
+    description: string;
+  };
 }
 
 // 定义角色排序优先级
@@ -27,7 +31,23 @@ const getRolePriority = (role: string): number => {
   }
 };
 
-const ChatMessageList: React.FC<ChatMessageListProps> = ({ messages, loading = false, isStreaming = false, onRetry, onEdit, suggestedQuestions = [], isLoadingQuestions = false, onSelectQuestion, onRefreshQuestions }) => {
+const DEFAULT_EMPTY_STATE = {
+  title: '开始一个新对话',
+  description: '输入你的问题，开始与 AI 助手对话...',
+};
+
+const ChatMessageList: React.FC<ChatMessageListProps> = ({
+  messages,
+  loading = false,
+  isStreaming = false,
+  onRetry,
+  onEdit,
+  suggestedQuestions = [],
+  isLoadingQuestions = false,
+  onSelectQuestion,
+  onRefreshQuestions,
+  emptyState = DEFAULT_EMPTY_STATE,
+}) => {
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   // 按时间戳排序消息 - 确保使用完整毫秒精度
@@ -100,9 +120,9 @@ const ChatMessageList: React.FC<ChatMessageListProps> = ({ messages, loading = f
     return (
       <div className="flex h-full items-center justify-center text-center p-8">
         <div className="max-w-md space-y-4">
-          <h3 className="text-xl font-medium">开始一个新对话</h3>
+          <h3 className="text-xl font-medium">{emptyState.title}</h3>
           <p className="text-muted-foreground">
-            输入你的问题，开始与 AI 助手对话...
+            {emptyState.description}
           </p>
         </div>
       </div>

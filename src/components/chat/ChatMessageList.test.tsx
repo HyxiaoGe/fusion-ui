@@ -110,4 +110,20 @@ describe('ChatMessageList', () => {
 
     expect(screen.queryByText('建议问题')).toBeNull();
   });
+
+  it('supports a routed-chat empty state copy that differs from the home view', () => {
+    render(
+      <ChatMessageList
+        messages={[]}
+        emptyState={{
+          title: '这个会话还没有消息',
+          description: '发送第一条消息，继续这段会话。',
+        }}
+      />
+    );
+
+    expect(screen.getByText('这个会话还没有消息')).toBeTruthy();
+    expect(screen.getByText('发送第一条消息，继续这段会话。')).toBeTruthy();
+    expect(screen.queryByText('开始一个新对话')).toBeNull();
+  });
 });
