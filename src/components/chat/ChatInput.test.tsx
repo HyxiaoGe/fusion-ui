@@ -87,9 +87,8 @@ vi.mock('@/redux/slices/fileUploadSlice', () => ({
   clearFiles: clearFilesMock,
   addFileId: addFileIdMock,
   updateFileStatus: updateFileStatusMock,
-  makeSelectChatFiles: () => (state: any, chatId: string) => state.fileUpload.files[chatId] || [],
   makeSelectChatFileIds: () => (state: any, chatId: string) => state.fileUpload.fileIds[chatId] || [],
-  selectFileUploadStatuses: (state: any) => Object.values(state.fileUpload.processingFiles || {}),
+  removeFileId: vi.fn((payload?: unknown) => ({ type: 'fileUpload/removeFileId', payload })),
 }));
 
 vi.mock('@/lib/api/files', () => ({
@@ -114,10 +113,6 @@ vi.mock('@/lib/utils/fileHelpers', async () => {
 
 vi.mock('uuid', () => ({
   v4: uuidMock,
-}));
-
-vi.mock('./FileUpload', () => ({
-  default: () => React.createElement('div', { 'data-testid': 'file-upload' }),
 }));
 
 vi.mock('./FilePreviewList', () => ({
