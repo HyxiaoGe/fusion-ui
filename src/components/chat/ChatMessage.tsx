@@ -39,6 +39,8 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, files, isLastMessage
   const isUser = message.role === 'user';
   const [isEditing, setIsEditing] = useState(false);
   const [editContent, setEditContent] = useState(message.content);
+  const [copied, setCopied] = useState(false);
+  const copiedResetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [localReasoningVisible, setLocalReasoningVisible] = useState(message.isReasoningVisible || false);
   const activeChatId = useAppSelector(state => state.chat.activeChatId);
@@ -171,6 +173,28 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, files, isLastMessage
       dispatch(completeThinkingPhase());
     }
   }, [message.reasoning, isStreaming, dispatch]);
+
+  useEffect(() => {
+    return () => {
+      if (copiedResetTimerRef.current) {
+        clearTimeout(copiedResetTimerRef.current);
+      }
+    };
+  }, []);
+
+  const handleCopyMessage = async () => {
+    await navigator.clipboard.writeText(message.content);
+    setCopied(true);
+
+    if (copiedResetTimerRef.current) {
+      clearTimeout(copiedResetTimerRef.current);
+    }
+
+    copiedResetTimerRef.current = setTimeout(() => {
+      setCopied(false);
+      copiedResetTimerRef.current = null;
+    }, 2000);
+  };
 
   return (
     <div
@@ -366,20 +390,10 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, files, isLastMessage
                   variant="ghost"
                   size="sm"
                   className="h-6 text-xs text-muted-foreground hover:text-foreground hover:bg-transparent"
-                  onClick={() => {
-                    navigator.clipboard.writeText(message.content);
-                    const button = document.activeElement as HTMLButtonElement;
-                    const originalText = button.textContent;
-                    button.textContent = '已复制!';
-                    setTimeout(() => {
-                      if (button.textContent === '已复制!') {
-                        button.textContent = originalText;
-                      }
-                    }, 2000);
-                  }}
+                  onClick={handleCopyMessage}
                 >
                   <Copy className="h-3 w-3 mr-1" />
-                  复制消息
+                  {copied ? '已复制!' : '复制消息'}
                 </Button>
                 <Button
                   variant="ghost"
