@@ -3,8 +3,19 @@ import { render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('./ChatMessage', () => ({
-  default: ({ message }: { message: { content: string } }) => (
-    <div>{message.content}</div>
+  default: ({
+    message,
+    suggestedQuestions,
+  }: {
+    message: { content: string };
+    suggestedQuestions?: string[];
+  }) => (
+    <div>
+      <div>{message.content}</div>
+      {suggestedQuestions?.map((question) => (
+        <div key={question}>{question}</div>
+      ))}
+    </div>
   ),
 }));
 
@@ -71,5 +82,32 @@ describe('ChatMessageList', () => {
     );
 
     expect(screen.getByText('发送失败，可重新发送')).toBeTruthy();
+  });
+
+  it('only attaches suggested questions to the latest assistant message', () => {
+    render(
+      <ChatMessageList
+        messages={[
+          {
+            id: 'assistant-1',
+            role: 'assistant',
+            content: '上一条回复',
+            timestamp: 1_000,
+          },
+          {
+            id: 'user-1',
+            role: 'user',
+            content: '最新用户消息',
+            status: 'failed',
+            timestamp: 3_000,
+          },
+        ]}
+        suggestedQuestions={['建议问题']}
+        isStreaming={false}
+        isLoadingQuestions={false}
+      />
+    );
+
+    expect(screen.queryByText('建议问题')).toBeNull();
   });
 });

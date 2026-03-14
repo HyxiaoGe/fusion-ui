@@ -49,6 +49,20 @@ const ChatMessageList: React.FC<ChatMessageListProps> = ({ messages, loading = f
     });
   }, [messages]);
 
+  const lastAssistantIndex = useMemo(() => {
+    const lastMessage = sortedMessages[sortedMessages.length - 1];
+    if (lastMessage?.role !== 'assistant') {
+      return -1;
+    }
+
+    for (let index = sortedMessages.length - 1; index >= 0; index -= 1) {
+      if (sortedMessages[index]?.role === 'assistant') {
+        return index;
+      }
+    }
+    return -1;
+  }, [sortedMessages]);
+
   // 滚动到底部
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -105,8 +119,8 @@ const ChatMessageList: React.FC<ChatMessageListProps> = ({ messages, loading = f
           isStreaming={isStreaming && index === sortedMessages.length - 1 && message.role === 'assistant'}
           onRetry={onRetry}
           onEdit={onEdit}
-          suggestedQuestions={index === sortedMessages.length - 1 ? suggestedQuestions : []}
-          isLoadingQuestions={isLoadingQuestions}
+          suggestedQuestions={index === lastAssistantIndex ? suggestedQuestions : []}
+          isLoadingQuestions={index === lastAssistantIndex ? isLoadingQuestions : false}
           onSelectQuestion={onSelectQuestion}
           onRefreshQuestions={onRefreshQuestions}
         />

@@ -273,8 +273,14 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, files, isLastMessage
                 </div>
               ) : (
                 // 用户消息显示
-                <div>
-                  {message.content || isStreaming}
+                <div className="space-y-2">
+                  <div>{message.content || isStreaming}</div>
+                  {message.status === 'failed' ? (
+                    <div className="flex items-center gap-2 text-xs text-red-100/90">
+                      <X className="h-3 w-3" />
+                      <span>发送失败，请重新发送</span>
+                    </div>
+                  ) : null}
                 </div>
               )
             ) : (

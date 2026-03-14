@@ -310,6 +310,7 @@ describe('useChatActions.sendMessage', () => {
 
   it('marks the latest user message as failed when streaming request errors', async () => {
     currentState.chat.activeChatId = 'chat-1';
+    currentState.chat.streamingMessageId = null;
     currentState.chat.chats = [
       {
         id: 'chat-1',
@@ -330,6 +331,10 @@ describe('useChatActions.sendMessage', () => {
         );
       }
 
+      if (action?.type === 'chat/startStreaming') {
+        currentState.chat.streamingMessageId = 'assistant-stream-1';
+      }
+
       return action;
     });
 
@@ -341,10 +346,14 @@ describe('useChatActions.sendMessage', () => {
     const failedMessageId = currentState.chat.chats[0]?.messages[0]?.id;
 
     expect(setErrorMock).toHaveBeenCalledWith('network down');
+    expect(deleteMessageMock).toHaveBeenCalledWith({
+      chatId: 'chat-1',
+      messageId: 'assistant-stream-1',
+    });
     expect(endStreamingMock).toHaveBeenCalledTimes(1);
     expect(setMessageStatusMock).toHaveBeenCalledWith({
       chatId: 'chat-1',
-      messageId: failedMessageId,
+      messageId: failedMessageId || 'uuid-2',
       status: 'failed',
     });
   });

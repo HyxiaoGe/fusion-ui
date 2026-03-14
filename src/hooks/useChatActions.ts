@@ -54,6 +54,15 @@ export const useChatActions = (options: ChatActionsOptions) => {
 
   const pendingQuestionRequestRef = useRef<NodeJS.Timeout | null>(null);
 
+  const cleanupStreamingFailure = useCallback((chatId: string) => {
+    const { streamingMessageId } = store.getState().chat;
+    if (streamingMessageId) {
+      dispatch(deleteMessage({ chatId, messageId: streamingMessageId }));
+    }
+    dispatch(endStreamingReasoning());
+    dispatch(endStreaming());
+  }, [dispatch]);
+
   /**
    * Creates a new chat session or reuses existing empty chat.
    */
@@ -270,17 +279,10 @@ export const useChatActions = (options: ChatActionsOptions) => {
     } catch (error) {
       console.error('发送消息失败:', error);
       dispatch(setError(error instanceof Error ? error.message : '发送消息失败'));
-      dispatch(endStreaming());
-      
-      const chat = store.getState().chat.chats.find(c => c.id === currentActiveChatId);
-      if (chat && chat.messages.length > 0) {
-        const lastMessage = chat.messages[chat.messages.length - 1];
-        if (lastMessage.role === 'user') {
-          dispatch(setMessageStatus({ chatId: currentActiveChatId, messageId: lastMessage.id, status: 'failed' }));
-        }
-      }
+      dispatch(setMessageStatus({ chatId: currentActiveChatId, messageId: userMessage.id, status: 'failed' }));
+      cleanupStreamingFailure(currentActiveChatId);
     }
-  }, [activeChatId, selectedModelId, models, dispatch, reasoningEnabled, options, refreshChatList]);
+  }, [activeChatId, selectedModelId, models, dispatch, reasoningEnabled, options, refreshChatList, cleanupStreamingFailure]);
 
 
   const retryMessage = useCallback(async (messageId: string) => {
@@ -355,8 +357,7 @@ export const useChatActions = (options: ChatActionsOptions) => {
       } catch (error) {
         dispatch(setMessageStatus({ chatId: activeChatId, messageId: userMessage.id, status: 'failed' }));
         dispatch(setError('重新生成失败，请检查网络连接'));
-        dispatch(endStreamingReasoning());
-        dispatch(endStreaming());
+        cleanupStreamingFailure(activeChatId);
       }
     };
 
@@ -378,7 +379,7 @@ export const useChatActions = (options: ChatActionsOptions) => {
 
       await resendMessage(userMessage);
     }
-  }, [activeChatId, selectedModelId, chats, models, dispatch, reasoningEnabled, options]);
+  }, [activeChatId, selectedModelId, chats, models, dispatch, reasoningEnabled, options, cleanupStreamingFailure]);
 
 
   const editMessage = useCallback(async (messageId: string, newContent: string) => {
@@ -452,10 +453,9 @@ export const useChatActions = (options: ChatActionsOptions) => {
       console.error('发送编辑后的消息失败:', error);
       dispatch(setMessageStatus({ chatId: activeChatId, messageId, status: 'failed' }));
       dispatch(setError('发送编辑后的消息失败，请重试'));
-      dispatch(endStreamingReasoning());
-      dispatch(endStreaming());
+      cleanupStreamingFailure(activeChatId);
     }
-  }, [activeChatId, selectedModelId, chats, models, dispatch, reasoningEnabled, options]);
+  }, [activeChatId, selectedModelId, chats, models, dispatch, reasoningEnabled, options, cleanupStreamingFailure]);
 
   return { newChat, clearCurrentChat, sendMessage, retryMessage, editMessage };
 }; 
