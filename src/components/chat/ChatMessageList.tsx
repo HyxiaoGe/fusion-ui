@@ -1,7 +1,7 @@
 'use client';
 
 import { Message } from '@/redux/slices/chatSlice';
-import React, { useEffect, useMemo, useRef } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import LoadingIndicator from '../ui/loading-indicator';
 import ChatMessage from './ChatMessage';
 import { isNearBottom } from '@/lib/chat/scrollBehavior';
@@ -55,6 +55,7 @@ const ChatMessageList: React.FC<ChatMessageListProps> = ({
 }) => {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const shouldStickToBottomRef = useRef(true);
+  const [showJumpToBottom, setShowJumpToBottom] = useState(false);
 
   // 按时间戳排序消息 - 确保使用完整毫秒精度
   const sortedMessages = useMemo(() => {
@@ -103,7 +104,9 @@ const ChatMessageList: React.FC<ChatMessageListProps> = ({
     }
 
     const updateStickiness = () => {
-      shouldStickToBottomRef.current = isNearBottom(scrollContainer);
+      const nearBottom = isNearBottom(scrollContainer);
+      shouldStickToBottomRef.current = nearBottom;
+      setShowJumpToBottom(!nearBottom && sortedMessages.length > 0);
     };
 
     updateStickiness();
@@ -112,7 +115,7 @@ const ChatMessageList: React.FC<ChatMessageListProps> = ({
     return () => {
       scrollContainer.removeEventListener('scroll', updateStickiness);
     };
-  }, []);
+  }, [sortedMessages.length]);
 
   useEffect(() => {
     if (messages.length === 0) {
@@ -205,6 +208,22 @@ const ChatMessageList: React.FC<ChatMessageListProps> = ({
       {statusText ? (
         <div className="px-4 pb-2 text-xs text-muted-foreground">
           {statusText}
+        </div>
+      ) : null}
+
+      {showJumpToBottom ? (
+        <div className="sticky bottom-4 z-10 flex justify-end px-4">
+          <button
+            type="button"
+            onClick={() => {
+              shouldStickToBottomRef.current = true;
+              setShowJumpToBottom(false);
+              scrollToBottom();
+            }}
+            className="rounded-full border border-border/70 bg-background/95 px-3 py-1.5 text-xs text-foreground shadow-sm backdrop-blur hover:bg-muted"
+          >
+            回到底部
+          </button>
         </div>
       ) : null}
       

@@ -210,4 +210,30 @@ describe('ChatMessageList', () => {
     expect(screen.getByText('消息会在几秒内加载完成。')).toBeTruthy();
     expect(screen.queryByText('开始一个新对话')).toBeNull();
   });
+
+  it('shows a jump-to-bottom button when the reader scrolls away from the bottom', () => {
+    const { container } = render(
+      <div data-chat-scroll-container="true">
+        <ChatMessageList
+          messages={[
+            {
+              id: 'assistant-1',
+              role: 'assistant',
+              content: '第一条',
+              timestamp: 1,
+            },
+          ]}
+        />
+      </div>
+    );
+
+    const scrollContainer = container.firstChild as HTMLElement;
+    Object.defineProperty(scrollContainer, 'scrollHeight', { configurable: true, value: 1600 });
+    Object.defineProperty(scrollContainer, 'clientHeight', { configurable: true, value: 400 });
+    Object.defineProperty(scrollContainer, 'scrollTop', { configurable: true, value: 600, writable: true });
+
+    fireEvent.scroll(scrollContainer);
+
+    expect(screen.getByRole('button', { name: '回到底部' })).toBeTruthy();
+  });
 });
