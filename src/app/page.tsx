@@ -47,6 +47,7 @@ import { useChatActions } from '@/hooks/useChatActions';
 import { useSuggestedQuestions } from '@/hooks/useSuggestedQuestions';
 import { useSuggestedQuestionContinuation } from '@/hooks/useSuggestedQuestionContinuation';
 import { useTransientCompletionState } from '@/hooks/useTransientCompletionState';
+import { shouldAutoFetchSuggestedQuestions } from '@/lib/chat/suggestedQuestionTiming';
 import { UserAvatarMenu } from '@/components/layouts/UserAvatarMenu';
 import ConfirmDialog from '@/components/ui/confirm-dialog';
 
@@ -255,11 +256,7 @@ export default function Home() {
       return;
     }
 
-    const hasAssistantMessage = activeChat.messages.some(
-      (message) => message.role === 'assistant' && message.content?.trim()
-    );
-
-    if (!hasAssistantMessage) {
+    if (!shouldAutoFetchSuggestedQuestions(activeChat.messages)) {
       return;
     }
 
