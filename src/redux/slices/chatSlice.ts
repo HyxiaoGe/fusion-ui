@@ -157,15 +157,15 @@ const chatSlice = createSlice({
         chat.updatedAt = Date.now();
       }
     },
-    addMessage: (state, action: PayloadAction<{chatId: string, message: Omit<Message, 'id' | 'timestamp'>}>) => {
+    addMessage: (state, action: PayloadAction<{chatId: string, message: Omit<Message, 'chatId'>}>) => {
       const { chatId, message } = action.payload;
       const chat = state.chats.find(c => c.id === chatId);
       if (chat) {
         const newMessage: Message = {
           ...message,
-          id: uuidv4(),
-          timestamp: Date.now(),
-          status: null,
+          id: message.id || uuidv4(),
+          timestamp: message.timestamp || Date.now(),
+          status: message.status ?? null,
           chatId: chatId,
         };
         chat.messages.push(newMessage);
