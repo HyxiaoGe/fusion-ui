@@ -356,7 +356,12 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, files, isLastMessage
 
             {/* 重新生成按钮 */}
             {!isUser && !isStreaming && (
-              <div className="opacity-0 group-hover:opacity-100 transition-opacity duration-150 flex gap-2 mt-2">
+              <div className={cn(
+                'transition-opacity duration-150 flex gap-2 mt-2',
+                isLastMessage || message.status === 'failed'
+                  ? 'opacity-100'
+                  : 'opacity-100 md:opacity-0 md:group-hover:opacity-100'
+              )}>
                 <Button
                   variant="ghost"
                   size="sm"
