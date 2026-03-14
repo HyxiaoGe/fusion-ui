@@ -44,6 +44,7 @@ export default function ChatPage() {
     loading, 
     isStreaming,
     error,
+    serverError,
     animatingTitleChatId,
     chats: localChats,
     activeChatId,
@@ -54,6 +55,7 @@ export default function ChatPage() {
     loading: state.chat.loading,
     isStreaming: state.chat.isStreaming,
     error: state.chat.error,
+    serverError: state.chat.serverError,
     animatingTitleChatId: state.chat.animatingTitleChatId,
     chats: state.chat.chats,
     activeChatId: state.chat.activeChatId,
@@ -325,7 +327,7 @@ export default function ChatPage() {
   }
 
   // 如果聊天不存在或有错误
-  if (error || !activeChat) {
+  if (!activeChat) {
     return (
       <MainLayout
         sidebar={<ChatSidebarLazy onNewChat={handleNewChat} />}
@@ -350,7 +352,7 @@ export default function ChatPage() {
           <div className="text-center space-y-4">
             <div className="text-red-500 text-2xl">⚠️</div>
             <p className="text-muted-foreground">
-              {error || '对话不存在或已被删除'}
+              {serverError || error || '对话不存在或已被删除'}
             </p>
             <button 
               onClick={() => router.push('/')}

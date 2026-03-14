@@ -2,7 +2,7 @@
 
 import { cn } from '@/lib/utils';
 import { AlertCircle, CheckCircle, Info, X } from 'lucide-react';
-import React, { createContext, useContext, useEffect, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { Button } from './button';
 
 // Toast配置类型
@@ -86,7 +86,15 @@ const ToastContext = createContext<ToastContextType | undefined>(undefined);
 export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [toasts, setToasts] = useState<ToastProps[]>([]);
   
-  const toast = (props: Omit<ToastProps, 'id' | 'onClose'>) => {
+  const dismiss = useCallback((id: string) => {
+    setToasts(prev => prev.filter(toast => toast.id !== id));
+  }, []);
+
+  const dismissAll = useCallback(() => {
+    setToasts([]);
+  }, []);
+
+  const toast = useCallback((props: Omit<ToastProps, 'id' | 'onClose'>) => {
     const id = `toast-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
     const newToast = {
       ...props,
@@ -96,18 +104,15 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     
     setToasts(prev => [...prev, newToast]);
     return id;
-  };
-  
-  const dismiss = (id: string) => {
-    setToasts(prev => prev.filter(toast => toast.id !== id));
-  };
-  
-  const dismissAll = () => {
-    setToasts([]);
-  };
+  }, [dismiss]);
+
+  const contextValue = useMemo(
+    () => ({ toasts, toast, dismiss, dismissAll }),
+    [toasts, toast, dismiss, dismissAll]
+  );
   
   return (
-    <ToastContext.Provider value={{ toasts, toast, dismiss, dismissAll }}>
+    <ToastContext.Provider value={contextValue}>
       {children}
       {toasts.length > 0 && (
         <div className="fixed top-4 right-4 z-50 flex flex-col items-end">
