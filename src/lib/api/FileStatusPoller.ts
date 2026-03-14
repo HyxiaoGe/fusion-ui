@@ -12,7 +12,7 @@ interface PollerConfig {
   fileId: string;
   chatId?: string;
   dispatch: AppDispatch;
-  onComplete?: (success: boolean) => void;
+  onComplete?: (result: { success: boolean; errorMessage?: string }) => void;
 }
 
 /**
@@ -26,7 +26,7 @@ export class FileStatusPoller {
   private attempts: number = 0;
   private timerId?: NodeJS.Timeout;
   private isPolling: boolean = false;
-  private onComplete?: (success: boolean) => void;
+  private onComplete?: (result: { success: boolean; errorMessage?: string }) => void;
 
   constructor(config: PollerConfig) {
     this.fileId = config.fileId;
@@ -72,7 +72,10 @@ export class FileStatusPoller {
           errorMessage: '文件处理超时，请重试'
         }));
         if (this.onComplete) {
-          this.onComplete(false);
+          this.onComplete({
+            success: false,
+            errorMessage: '文件处理超时，请重试',
+          });
         }
       }
       this.stop();
@@ -95,7 +98,10 @@ export class FileStatusPoller {
         // 处理完成或出错，停止轮询
         this.stop();
         if (this.onComplete) {
-          this.onComplete(statusResponse.status === 'processed');
+          this.onComplete({
+            success: statusResponse.status === 'processed',
+            errorMessage: statusResponse.error_message,
+          });
         }
         return;
       }
@@ -135,7 +141,10 @@ export class FileStatusPoller {
         }));
         this.stop();
         if (this.onComplete) {
-          this.onComplete(false);
+          this.onComplete({
+            success: false,
+            errorMessage: '获取文件状态失败，请重试',
+          });
         }
       }
     }
@@ -152,7 +161,7 @@ export function startPollingFileStatus(
   fileId: string,
   chatId: string,
   dispatch: AppDispatch,
-  onComplete?: (success: boolean) => void
+  onComplete?: (result: { success: boolean; errorMessage?: string }) => void
 ): void {
   // 如果已经在轮询，先停止
   if (pollers[fileId]) {

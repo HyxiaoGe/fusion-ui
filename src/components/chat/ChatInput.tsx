@@ -41,6 +41,26 @@ interface LocalFileWithStatus {
   errorMessage?: string;
 }
 
+function formatFileErrorMessage(errorMessage?: string): string {
+  if (!errorMessage) {
+    return "文件处理失败，请重试";
+  }
+
+  if (errorMessage.includes("超时")) {
+    return "文件处理超时，请重新上传";
+  }
+
+  if (errorMessage.includes("not found")) {
+    return "文件不存在或已失效，请重新上传";
+  }
+
+  if (errorMessage.includes("Could not validate credentials")) {
+    return "登录状态已失效，请重新登录后上传";
+  }
+
+  return errorMessage.replace(/^文件上传失败[:：]?\s*/u, "").trim() || "文件处理失败，请重试";
+}
+
 const ChatInput: React.FC<ChatInputProps> = ({
   onSendMessage,
   onClearMessage,
@@ -171,28 +191,30 @@ const ChatInput: React.FC<ChatInputProps> = ({
         dispatch(addFileId({ chatId, fileId, fileIndex: index }));
         dispatch(updateFileStatus({ fileId, chatId, status: "parsing" }));
 
-        startPollingFileStatus(fileId, chatId, dispatch, (success) => {
+        startPollingFileStatus(fileId, chatId, dispatch, ({ success, errorMessage }) => {
+          const readableError = success ? undefined : formatFileErrorMessage(errorMessage);
+
           setLocalFiles((prev) =>
             prev.map((file) =>
               file.fileId === fileId
                 ? {
                     ...file,
                     status: success ? "processed" : "error",
-                    errorMessage: success ? undefined : "文件处理失败，请重试",
+                    errorMessage: readableError,
                   }
                 : file
             )
           );
 
           toast({
-            message: success ? "文件处理完成，可以发送消息" : "文件处理失败，请重试",
+            message: success ? "文件处理完成，可以发送消息" : readableError || "文件处理失败，请重试",
             type: success ? "success" : "error",
             duration: 3000,
           });
         });
       });
     } catch (error) {
-      const errorMessage = (error as Error).message || "文件上传失败，请重试";
+      const errorMessage = formatFileErrorMessage((error as Error).message || "文件上传失败，请重试");
 
       setLocalFiles((prev) =>
         prev.map((file) =>
@@ -271,12 +293,46 @@ const ChatInput: React.FC<ChatInputProps> = ({
     });
   };
 
+  const handleRetryFile = async (id: string) => {
+    const targetFile = localFiles.find((file) => file.id === id);
+    if (!targetFile || !ensureCanUploadFiles()) {
+      return;
+    }
+
+    if (targetFile.fileId) {
+      stopPollingFileStatus(targetFile.fileId);
+      dispatch(removeFileId({ chatId, fileId: targetFile.fileId }));
+    }
+
+    const retryFile: LocalFileWithStatus = {
+      ...targetFile,
+      fileId: undefined,
+      status: "pending",
+      errorMessage: undefined,
+    };
+
+    setLocalFiles((prev) =>
+      prev.map((file) => (file.id === id ? retryFile : file))
+    );
+
+    await handleUploadFiles([retryFile]);
+  };
+
   const handleSendMessage = () => {
     if ((!message.trim() && localFiles.length === 0) || disabled) {
       return;
     }
 
     if (!ensureAuthenticated("请先登录后再发送消息")) {
+      return;
+    }
+
+    if (localFiles.some((file) => file.status === "error")) {
+      toast({
+        message: "请先重试或移除失败文件",
+        type: "warning",
+        duration: 3000,
+      });
       return;
     }
 
@@ -400,28 +456,53 @@ const ChatInput: React.FC<ChatInputProps> = ({
         );
       case "processed":
         return (
-          <div className="flex items-center text-green-600 dark:text-green-500">
-            <svg className="w-4 h-4 mr-1.5" viewBox="0 0 20 20" fill="currentColor">
-              <path
-                fillRule="evenodd"
-                d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"
-                clipRule="evenodd"
-              />
-            </svg>
-            <span className="text-xs font-medium">文件已就绪</span>
+          <div className="space-y-1">
+            <div className="flex items-center text-green-600 dark:text-green-500">
+              <svg className="w-4 h-4 mr-1.5" viewBox="0 0 20 20" fill="currentColor">
+                <path
+                  fillRule="evenodd"
+                  d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"
+                  clipRule="evenodd"
+                />
+              </svg>
+              <span className="text-xs font-medium">文件已就绪</span>
+            </div>
+            <p className="text-xs text-muted-foreground">发送消息时会自动附带这个文件</p>
           </div>
         );
       case "error":
         return (
-          <div className="flex items-center text-red-600 dark:text-red-500">
-            <svg className="w-4 h-4 mr-1.5" viewBox="0 0 20 20" fill="currentColor">
-              <path
-                fillRule="evenodd"
-                d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z"
-                clipRule="evenodd"
-              />
-            </svg>
-            <span className="text-xs font-medium">{file.errorMessage || "处理失败"}</span>
+          <div className="space-y-2">
+            <div className="flex items-center text-red-600 dark:text-red-500">
+              <svg className="w-4 h-4 mr-1.5" viewBox="0 0 20 20" fill="currentColor">
+                <path
+                  fillRule="evenodd"
+                  d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z"
+                  clipRule="evenodd"
+                />
+              </svg>
+              <span className="text-xs font-medium">{formatFileErrorMessage(file.errorMessage)}</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="h-7 px-2 text-xs"
+                onClick={() => void handleRetryFile(file.id)}
+              >
+                重试上传
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                className="h-7 px-2 text-xs"
+                onClick={() => handleRemoveFile(file.id)}
+              >
+                移除文件
+              </Button>
+            </div>
           </div>
         );
       default:
@@ -461,6 +542,14 @@ const ChatInput: React.FC<ChatInputProps> = ({
         <div className="flex items-center text-xs text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 px-3 py-2 rounded-md">
           <div className="w-3 h-3 border-2 border-amber-300 border-t-amber-500 rounded-full animate-spin mr-2"></div>
           AI正在处理文件，请等待处理完成后发送...
+        </div>
+      );
+    }
+
+    if (localFiles.some((file) => file.status === "error")) {
+      return (
+        <div className="flex items-center text-xs text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20 px-3 py-2 rounded-md">
+          请先重试或移除失败文件后再发送消息
         </div>
       );
     }

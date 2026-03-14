@@ -1,5 +1,5 @@
 import React from 'react';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const {
@@ -208,6 +208,166 @@ describe('ChatInput', () => {
         expect.any(Function)
       );
     });
+  });
+
+  it('shows readable retry actions when file processing fails', async () => {
+    currentState.auth.isAuthenticated = true;
+    currentState.models.selectedModelId = 'model-1';
+    currentState.models.models = [
+      {
+        id: 'model-1',
+        provider: 'qwen',
+        capabilities: {
+          fileSupport: true,
+          deepThinking: true,
+        },
+      },
+    ];
+    uploadFilesMock.mockResolvedValue(['file-1']);
+
+    const { container } = render(<ChatInput onSendMessage={vi.fn()} />);
+    const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement;
+    const file = new File(['hello'], 'hello.txt', { type: 'text/plain' });
+
+    fireEvent.change(fileInput, {
+      target: {
+        files: [file],
+      },
+    });
+
+    await waitFor(() => {
+      expect(startPollingFileStatusMock).toHaveBeenCalledTimes(1);
+    });
+
+    const onComplete = startPollingFileStatusMock.mock.calls[0][3] as (result: {
+      success: boolean;
+      errorMessage?: string;
+    }) => void;
+
+    await act(async () => {
+      onComplete({
+        success: false,
+        errorMessage: '文件处理超时，请重试',
+      });
+    });
+
+    expect(screen.getByText('文件处理超时，请重新上传')).toBeTruthy();
+    expect(screen.getByRole('button', { name: '重试上传' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: '移除文件' })).toBeTruthy();
+  });
+
+  it('retries a failed file upload from the inline action', async () => {
+    currentState.auth.isAuthenticated = true;
+    currentState.models.selectedModelId = 'model-1';
+    currentState.models.models = [
+      {
+        id: 'model-1',
+        provider: 'qwen',
+        capabilities: {
+          fileSupport: true,
+          deepThinking: true,
+        },
+      },
+    ];
+    uploadFilesMock
+      .mockResolvedValueOnce(['file-1'])
+      .mockResolvedValueOnce(['file-2']);
+
+    const { container } = render(<ChatInput onSendMessage={vi.fn()} />);
+    const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement;
+    const file = new File(['hello'], 'hello.txt', { type: 'text/plain' });
+
+    fireEvent.change(fileInput, {
+      target: {
+        files: [file],
+      },
+    });
+
+    await waitFor(() => {
+      expect(startPollingFileStatusMock).toHaveBeenCalledTimes(1);
+    });
+
+    const firstComplete = startPollingFileStatusMock.mock.calls[0][3] as (result: {
+      success: boolean;
+      errorMessage?: string;
+    }) => void;
+    await act(async () => {
+      firstComplete({
+        success: false,
+        errorMessage: '文件处理失败，请重试',
+      });
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: '重试上传' }));
+
+    await waitFor(() => {
+      expect(stopPollingFileStatusMock).toHaveBeenCalledWith('file-1');
+      expect(uploadFilesMock).toHaveBeenCalledTimes(2);
+      expect(uploadFilesMock).toHaveBeenLastCalledWith('qwen', 'model-1', 'chat-1', [file]);
+      expect(addFileIdMock).toHaveBeenLastCalledWith({
+        chatId: 'chat-1',
+        fileId: 'file-2',
+        fileIndex: 0,
+      });
+    });
+  });
+
+  it('blocks sending when failed files still need attention', async () => {
+    currentState.auth.isAuthenticated = true;
+    currentState.models.selectedModelId = 'model-1';
+    currentState.models.models = [
+      {
+        id: 'model-1',
+        provider: 'qwen',
+        capabilities: {
+          fileSupport: true,
+          deepThinking: true,
+        },
+      },
+    ];
+    uploadFilesMock.mockResolvedValue(['file-1']);
+    const onSendMessage = vi.fn();
+
+    const { container } = render(<ChatInput onSendMessage={onSendMessage} />);
+    const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement;
+    const file = new File(['hello'], 'hello.txt', { type: 'text/plain' });
+
+    fireEvent.change(fileInput, {
+      target: {
+        files: [file],
+      },
+    });
+
+    await waitFor(() => {
+      expect(startPollingFileStatusMock).toHaveBeenCalledTimes(1);
+    });
+
+    const onComplete = startPollingFileStatusMock.mock.calls[0][3] as (result: {
+      success: boolean;
+      errorMessage?: string;
+    }) => void;
+    await act(async () => {
+      onComplete({
+        success: false,
+        errorMessage: '文件处理失败，请重试',
+      });
+    });
+
+    fireEvent.change(screen.getByPlaceholderText('输入您的问题...'), {
+      target: {
+        value: '带失败文件也想发送',
+      },
+    });
+
+    fireEvent.click(screen.getAllByRole('button').at(-1) as HTMLElement);
+
+    expect(onSendMessage).not.toHaveBeenCalled();
+    expect(toastMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        message: '请先重试或移除失败文件',
+        type: 'warning',
+      })
+    );
   });
 
   it('blocks send action for unauthenticated users', () => {

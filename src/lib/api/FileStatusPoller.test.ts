@@ -70,7 +70,10 @@ describe('FileStatusPoller', () => {
         errorMessage: undefined,
       },
     });
-    expect(onComplete).toHaveBeenCalledWith(true);
+    expect(onComplete).toHaveBeenCalledWith({
+      success: true,
+      errorMessage: undefined,
+    });
   });
 
   it('retries after a status lookup failure and eventually completes', async () => {
@@ -109,7 +112,10 @@ describe('FileStatusPoller', () => {
       status: 'processed',
       errorMessage: undefined,
     });
-    expect(onComplete).toHaveBeenCalledWith(true);
+    expect(onComplete).toHaveBeenCalledWith({
+      success: true,
+      errorMessage: undefined,
+    });
   });
 
   it('replaces an existing poller when the same file starts polling again', async () => {
@@ -139,7 +145,10 @@ describe('FileStatusPoller', () => {
         errorMessage: undefined,
       },
     });
-    expect(firstComplete).toHaveBeenCalledWith(true);
+    expect(firstComplete).toHaveBeenCalledWith({
+      success: true,
+      errorMessage: undefined,
+    });
     expect(secondDispatch).toHaveBeenCalledWith({
       type: 'fileUpload/updateFileStatus',
       payload: {
@@ -149,7 +158,10 @@ describe('FileStatusPoller', () => {
         errorMessage: undefined,
       },
     });
-    expect(secondComplete).toHaveBeenCalledWith(true);
+    expect(secondComplete).toHaveBeenCalledWith({
+      success: true,
+      errorMessage: undefined,
+    });
   });
 
   it('stops an active poller before it dispatches more updates', async () => {
