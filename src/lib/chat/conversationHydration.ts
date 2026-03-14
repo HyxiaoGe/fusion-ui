@@ -71,18 +71,6 @@ export function getConversationHydrationView(options: {
   return 'ready';
 }
 
-export function shouldAutoRedirectMissingConversation(options: {
-  chatId?: string | null;
-  chat: Pick<Chat, 'messages'> | null | undefined;
-  isLoadingServerChat: boolean;
-  loading: boolean;
-  serverError?: string | null;
-}): boolean {
-  const { chatId, chat, isLoadingServerChat, loading, serverError } = options;
-
-  return Boolean(chatId) && !chat && !isLoadingServerChat && !loading && !serverError;
-}
-
 function mergeTurnMessages(turnId: string, turnMessages: ServerMessage[]): Message[] {
   if (turnMessages.length === 1) {
     const singleMessage = turnMessages[0];

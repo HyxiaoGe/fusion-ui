@@ -4,7 +4,6 @@ import {
   buildChatFromServerConversation,
   getConversationHydrationView,
   parseServerTimestamp,
-  shouldAutoRedirectMissingConversation,
   shouldHydrateConversation,
 } from './conversationHydration';
 
@@ -39,30 +38,6 @@ describe('conversationHydration', () => {
         serverError: null,
       })
     ).toBe('loading');
-  });
-
-  it('does not auto-redirect a missing conversation while an explicit server error is being shown', () => {
-    expect(
-      shouldAutoRedirectMissingConversation({
-        chatId: 'chat-1',
-        chat: null,
-        isLoadingServerChat: false,
-        loading: false,
-        serverError: '加载聊天数据失败',
-      })
-    ).toBe(false);
-  });
-
-  it('auto-redirects only when the conversation is still missing without a known error', () => {
-    expect(
-      shouldAutoRedirectMissingConversation({
-        chatId: 'chat-1',
-        chat: null,
-        isLoadingServerChat: false,
-        loading: false,
-        serverError: null,
-      })
-    ).toBe(true);
   });
 
   it('merges server turn messages into visible user and assistant messages', () => {

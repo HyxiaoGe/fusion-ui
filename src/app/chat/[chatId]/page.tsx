@@ -14,7 +14,6 @@ import { getConversation } from '@/lib/api/chat';
 import {
   buildChatFromServerConversation,
   getConversationHydrationView,
-  shouldAutoRedirectMissingConversation,
   shouldHydrateConversation,
 } from '@/lib/chat/conversationHydration';
 
@@ -182,28 +181,6 @@ export default function ChatPage() {
 
     void fetchQuestions();
   }, [activeChat, chatId, fetchQuestions, isLoadingQuestions, isStreaming, suggestedQuestions.length]);
-
-  // 检查聊天是否存在（延迟判断，给服务端加载时间）
-  useEffect(() => {
-    if (shouldAutoRedirectMissingConversation({
-      chatId,
-      chat: activeChat,
-      isLoadingServerChat,
-      loading,
-      serverError,
-    })) {
-      // 延迟一段时间再判断，确保服务端数据有机会加载
-      const timer = setTimeout(() => {
-        // 再次检查聊天是否存在
-        const currentActiveChat = localChats.find(c => c.id === chatId);
-        if (!currentActiveChat && !isLoadingServerChat && !serverError) {
-          router.replace('/');
-        }
-      }, 2000); // 给服务端加载2秒时间
-
-      return () => clearTimeout(timer);
-    }
-  }, [activeChat, chatId, isLoadingServerChat, loading, localChats, router, serverError]);
 
   // 如果没有chatId，跳转到首页
   useEffect(() => {
