@@ -26,6 +26,7 @@ const SuggestedQuestions: React.FC<SuggestedQuestionsProps> = ({
   const { isAuthenticated } = useAppSelector((state) => state.auth);
   const { toast } = useToast();
   const isBusy = isLoading || isRefreshing || pendingQuestion !== null;
+  const showManualFetchEntry = questions.length === 0 && !isLoading && Boolean(onRefresh);
 
   useEffect(() => {
     if (!isLoading) {
@@ -82,7 +83,7 @@ const SuggestedQuestions: React.FC<SuggestedQuestionsProps> = ({
         </div>
         
         {/* 添加换一批按钮 */}
-        {onRefresh && (
+        {onRefresh && !showManualFetchEntry && (
           <Button
             variant="ghost"
             size="sm"
@@ -102,7 +103,7 @@ const SuggestedQuestions: React.FC<SuggestedQuestionsProps> = ({
       </div>
       
       <div className="flex flex-col space-y-2">
-        {questions.length === 0 && !isLoading && onRefresh ? (
+        {showManualFetchEntry ? (
           <Button
             variant="outline"
             size="sm"

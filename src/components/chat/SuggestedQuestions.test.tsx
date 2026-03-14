@@ -123,5 +123,6 @@ describe('SuggestedQuestions', () => {
     fireEvent.click(screen.getByRole('button', { name: /获取这轮对话的推荐追问/ }));
 
     expect(onRefresh).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole('button', { name: /换一批/ })).toBeNull();
   });
 });
