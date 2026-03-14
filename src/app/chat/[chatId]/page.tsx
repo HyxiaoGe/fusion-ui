@@ -9,9 +9,13 @@ import {
   setLoadingServerChat,
   updateChatFromServer,
   setServerError,
-  Message
 } from '@/redux/slices/chatSlice';
 import { getConversation } from '@/lib/api/chat';
+import {
+  buildChatFromServerConversation,
+  getConversationHydrationView,
+  shouldHydrateConversation,
+} from '@/lib/chat/conversationHydration';
 
 import { 
   ChatMessageListLazy, 
@@ -39,6 +43,7 @@ export default function ChatPage() {
 
   const [inputKey, setInputKey] = useState(Date.now());
   const [confirmDialogOpen, setConfirmDialogOpen] = useState(false);
+  const hydrationRequestRef = useRef<string | null>(null);
 
   // Redux 状态
   const {
@@ -78,107 +83,33 @@ export default function ChatPage() {
   } = useSuggestedQuestions(chatId);
 
   const chatInputRef = useRef<HTMLDivElement>(null);
+  const needsServerHydration = useMemo(() => shouldHydrateConversation(activeChat), [activeChat]);
+  const hydrationView = useMemo(
+    () =>
+      getConversationHydrationView({
+        chatId,
+        chat: activeChat,
+        isLoadingServerChat,
+        serverError,
+      }),
+    [activeChat, chatId, isLoadingServerChat, serverError]
+  );
 
   // 从服务端加载聊天数据的函数
   const loadChatFromServer = useCallback(async (chatId: string) => {
     try {
       dispatch(setLoadingServerChat(true));
+      dispatch(setServerError(null));
       const serverChatData = await getConversation(chatId);
-
-      // 解析时间戳的工具函数
-      const parseTimestamp = (ts: any): number => {
-        if (typeof ts === 'number') return ts;
-        if (typeof ts !== 'string' || !ts) return 0;
-        
-        if (ts.endsWith('Z') || /[\+\-]\d{2}:\d{2}$/.test(ts)) {
-          const date = new Date(ts);
-          return isNaN(date.getTime()) ? 0 : date.getTime();
-        }
-
-        const date = new Date(ts.replace(' ', 'T') + 'Z');
-        return isNaN(date.getTime()) ? 0 : date.getTime();
-      };
-
-      // 处理服务端消息
-      const processedMessages = [];
-      const messageMap = new Map();
-      
-      // 按turn_id分组消息
-      for (const msg of serverChatData.messages) {
-        const turnId = msg.turn_id || msg.id;
-        if (!messageMap.has(turnId)) {
-          messageMap.set(turnId, []);
-        }
-        messageMap.get(turnId).push(msg);
-      }
-      
-      // 合并每个turn中的消息，只保留用户可见的问答内容
-      for (const [turnId, turnMessages] of messageMap) {
-        if (turnMessages.length === 1) {
-          const msg = turnMessages[0];
-          processedMessages.push({
-            id: msg.id,
-            role: msg.role,
-            content: msg.content,
-            timestamp: parseTimestamp(msg.created_at),
-            turnId: turnId,
-          });
-        } else {
-          // 多条消息需要合并
-          const userMsg = turnMessages.find((m: any) => m.role === 'user');
-          const reasoningMsg = turnMessages.find((m: any) => m.type === 'reasoning_content');
-          const assistantMsg = turnMessages.find((m: any) => m.type === 'assistant_content');
-          
-          // 添加用户消息
-          if (userMsg) {
-            processedMessages.push({
-              id: userMsg.id,
-              role: userMsg.role,
-              content: userMsg.content,
-              timestamp: parseTimestamp(userMsg.created_at),
-              turnId: turnId,
-            });
-          }
-          
-          if (assistantMsg) {
-            processedMessages.push({
-              id: assistantMsg.id,
-              role: 'assistant',
-              content: assistantMsg.content,
-              reasoning: reasoningMsg ? reasoningMsg.content : undefined,
-              duration: reasoningMsg ? reasoningMsg.duration : undefined,
-              isReasoningVisible: false, // 默认隐藏思考过程
-              timestamp: parseTimestamp(assistantMsg.created_at),
-              turnId: turnId,
-            });
-          }
-        }
-      }
-      
-      // 按时间戳排序
-      processedMessages.sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
-
-      const localChat: Chat = {
-        id: serverChatData.id,
-        title: serverChatData.title,
-        messages: processedMessages as Message[],
-        model: serverChatData.model,
-        provider: serverChatData.provider,
-        createdAt: parseTimestamp(serverChatData.created_at),
-        updatedAt: parseTimestamp(serverChatData.updated_at),
-      };
-
-      // 使用updateChatFromServer来更新数据
-      dispatch(updateChatFromServer(localChat));
-      dispatch(setLoadingServerChat(false));
+      dispatch(updateChatFromServer(buildChatFromServerConversation(serverChatData)));
     } catch (error) {
-      console.error('加载聊天数据失败:', error);
       dispatch(setServerError('加载聊天数据失败'));
-      dispatch(setLoadingServerChat(false));
       toast({
         message: "加载对话失败，请重试",
         type: "error",
       });
+    } finally {
+      dispatch(setLoadingServerChat(false));
     }
   }, [dispatch, toast]);
 
@@ -203,19 +134,27 @@ export default function ChatPage() {
     }
   });
 
+  useEffect(() => {
+    hydrationRequestRef.current = null;
+  }, [chatId]);
+
   // 设置当前活跃聊天并尝试加载数据
   useEffect(() => {
-    if (chatId && chatId !== activeChatId) {
-      dispatch(setActiveChat(chatId));
-      
-      // 如果本地没有这个聊天的数据，尝试从服务端加载
-      const existingChat = localChats.find(c => c.id === chatId);
-      if (!existingChat) {
-        console.log(`Loading chat ${chatId} from server`);
-        loadChatFromServer(chatId);
-      }
+    if (!chatId) {
+      return;
     }
-      }, [chatId, activeChatId, dispatch, localChats, loadChatFromServer]);
+
+    if (chatId !== activeChatId) {
+      dispatch(setActiveChat(chatId));
+    }
+
+    if (!needsServerHydration || isLoadingServerChat || hydrationRequestRef.current === chatId) {
+      return;
+    }
+
+    hydrationRequestRef.current = chatId;
+    void loadChatFromServer(chatId);
+  }, [activeChatId, chatId, dispatch, isLoadingServerChat, loadChatFromServer, needsServerHydration]);
 
   // 监听activeChatId变化，强制重新挂载输入组件
   useEffect(() => {
@@ -251,7 +190,6 @@ export default function ChatPage() {
         // 再次检查聊天是否存在
         const currentActiveChat = localChats.find(c => c.id === chatId);
         if (!currentActiveChat && !isLoadingServerChat) {
-          console.warn(`Chat ${chatId} not found after loading attempt, redirecting to home`);
           router.replace('/');
         }
       }, 2000); // 给服务端加载2秒时间
@@ -289,6 +227,15 @@ export default function ChatPage() {
     setConfirmDialogOpen(true);
   };
 
+  const handleRetryLoadChat = useCallback(() => {
+    if (!chatId) {
+      return;
+    }
+
+    hydrationRequestRef.current = null;
+    void loadChatFromServer(chatId);
+  }, [chatId, loadChatFromServer]);
+
   const confirmClearChat = clearCurrentChat;
 
   // 获取当前对话的标题
@@ -297,7 +244,7 @@ export default function ChatPage() {
   };
 
   // 如果正在加载
-  if (isLoadingServerChat || (chatId && !activeChat && loading)) {
+  if (hydrationView === 'loading') {
     return (
       <MainLayout
         sidebar={<ChatSidebarLazy onNewChat={handleNewChat} />}
@@ -329,7 +276,7 @@ export default function ChatPage() {
   }
 
   // 如果聊天不存在或有错误
-  if (!activeChat) {
+  if (!activeChat || hydrationView === 'error') {
     return (
       <MainLayout
         sidebar={<ChatSidebarLazy onNewChat={handleNewChat} />}
@@ -356,12 +303,22 @@ export default function ChatPage() {
             <p className="text-muted-foreground">
               {serverError || error || '对话不存在或已被删除'}
             </p>
-            <button 
-              onClick={() => router.push('/')}
-              className="px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90"
-            >
-              返回首页
-            </button>
+            <div className="flex items-center justify-center gap-3">
+              {hydrationView === 'error' ? (
+                <button
+                  onClick={handleRetryLoadChat}
+                  className="px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90"
+                >
+                  重试加载
+                </button>
+              ) : null}
+              <button 
+                onClick={() => router.push('/')}
+                className="px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90"
+              >
+                返回首页
+              </button>
+            </div>
           </div>
         </div>
       </MainLayout>
