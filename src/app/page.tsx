@@ -214,6 +214,12 @@ export default function Home() {
     onSendMessageStart: () => {
       if (isNewChatMode) {
         hasCreatedChatForCurrentUrl.current = true;
+
+        const latestActiveChatId = activeChatId || store.getState().chat.activeChatId;
+        if (latestActiveChatId) {
+          router.replace(`/chat/${latestActiveChatId}`);
+          hasCreatedChatForCurrentUrl.current = false;
+        }
       }
 
       if (showHomePage) {
