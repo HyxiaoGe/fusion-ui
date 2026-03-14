@@ -182,13 +182,6 @@ export default function ChatPage() {
     void fetchQuestions();
   }, [activeChat, chatId, fetchQuestions, isLoadingQuestions, isStreaming, suggestedQuestions.length]);
 
-  // 如果没有chatId，跳转到首页
-  useEffect(() => {
-    if (!chatId) {
-      router.replace('/');
-    }
-  }, [chatId, router]);
-
   const handleSendMessage = sendMessage;
   const handleRetryMessage = retryMessage;
   const handleEditMessage = editMessage;
