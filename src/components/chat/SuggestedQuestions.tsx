@@ -39,8 +39,7 @@ const SuggestedQuestions: React.FC<SuggestedQuestionsProps> = ({
     }
   }, [questions]);
 
-  // 如果没有问题且没有在加载中，则不显示组件
-  if (questions.length === 0 && !isLoading) return null;
+  if (questions.length === 0 && !isLoading && !onRefresh) return null;
 
   // 处理问题选择的函数，添加登录检查
   const handleQuestionSelect = (question: string) => {
@@ -103,6 +102,19 @@ const SuggestedQuestions: React.FC<SuggestedQuestionsProps> = ({
       </div>
       
       <div className="flex flex-col space-y-2">
+        {questions.length === 0 && !isLoading && onRefresh ? (
+          <Button
+            variant="outline"
+            size="sm"
+            className="w-full justify-start gap-2 border-dashed py-2.5 text-sm font-normal text-muted-foreground hover:text-primary"
+            onClick={handleRefresh}
+            disabled={isBusy}
+          >
+            <RefreshCw className="h-3.5 w-3.5" />
+            获取这轮对话的推荐追问
+          </Button>
+        ) : null}
+
         {/* 显示推荐问题列表 */}
         {questions.map((question, index) => (
           <Button

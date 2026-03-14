@@ -107,4 +107,21 @@ describe('SuggestedQuestions', () => {
 
     expect(screen.getByRole('button', { name: /更新中/ }).hasAttribute('disabled')).toBe(true);
   });
+
+  it('keeps a manual fetch entry point when a historical chat has no suggestions yet', () => {
+    const onRefresh = vi.fn();
+
+    render(
+      <SuggestedQuestions
+        questions={[]}
+        isLoading={false}
+        onSelectQuestion={vi.fn()}
+        onRefresh={onRefresh}
+      />
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /获取这轮对话的推荐追问/ }));
+
+    expect(onRefresh).toHaveBeenCalledTimes(1);
+  });
 });
