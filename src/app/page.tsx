@@ -45,6 +45,7 @@ import { usePathname, useSearchParams, useRouter } from 'next/navigation';
 import TypingTitle from '@/components/ui/TypingTitle';
 import { useChatActions } from '@/hooks/useChatActions';
 import { useSuggestedQuestions } from '@/hooks/useSuggestedQuestions';
+import { useSuggestedQuestionContinuation } from '@/hooks/useSuggestedQuestionContinuation';
 import { UserAvatarMenu } from '@/components/layouts/UserAvatarMenu';
 import ConfirmDialog from '@/components/ui/confirm-dialog';
 
@@ -317,15 +318,12 @@ export default function Home() {
   }, [showHomePage]);
 
   // 获取推荐问题函数
-  const handleSelectQuestion = useCallback((question: string) => {
-    if (!activeChatId) return;
-    
-    // 清空推荐问题
-    clearQuestions();
-    
-    // 发送问题
-    handleSendMessage(question);
-  }, [activeChatId, clearQuestions, handleSendMessage]);
+  const handleSelectQuestion = useSuggestedQuestionContinuation({
+    canContinue: Boolean(activeChatId),
+    clearQuestions,
+    sendMessage: handleSendMessage,
+    scrollTargetRef: chatInputRef,
+  });
 
   const handleRefreshQuestions = useCallback(async () => {
     if (!activeChatId) return;

@@ -25,6 +25,7 @@ import { useToast } from '@/components/ui/toast';
 import TypingTitle from '@/components/ui/TypingTitle';
 import { useChatActions } from '@/hooks/useChatActions';
 import { useSuggestedQuestions } from '@/hooks/useSuggestedQuestions';
+import { useSuggestedQuestionContinuation } from '@/hooks/useSuggestedQuestionContinuation';
 import { UserAvatarMenu } from '@/components/layouts/UserAvatarMenu';
 import ConfirmDialog from '@/components/ui/confirm-dialog';
 import Link from 'next/link';
@@ -271,11 +272,12 @@ export default function ChatPage() {
   const handleEditMessage = editMessage;
   const handleNewChat = newChat;
 
-  const handleSelectQuestion = useCallback((question: string) => {
-    if (!chatId) return;
-    clearQuestions();
-    handleSendMessage(question);
-  }, [chatId, clearQuestions, handleSendMessage]);
+  const handleSelectQuestion = useSuggestedQuestionContinuation({
+    canContinue: Boolean(chatId),
+    clearQuestions,
+    sendMessage: handleSendMessage,
+    scrollTargetRef: chatInputRef,
+  });
 
   const handleRefreshQuestions = useCallback(async () => {
     if (!chatId) return;
