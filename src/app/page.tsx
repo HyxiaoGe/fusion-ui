@@ -443,7 +443,7 @@ export default function Home() {
             </div>
           </div>
         ) : (
-          <div className="flex-1 overflow-y-auto px-4 pt-4">
+        <div className="flex-1 overflow-y-auto px-4 pt-4" data-chat-scroll-container="true">
             <ChatMessageListLazy
               messages={activeChat?.messages || []}
               loading={loading}

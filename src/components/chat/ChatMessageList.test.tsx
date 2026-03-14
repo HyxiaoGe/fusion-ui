@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('./ChatMessage', () => ({
@@ -24,6 +24,57 @@ import ChatMessageList from './ChatMessageList';
 describe('ChatMessageList', () => {
   beforeEach(() => {
     window.HTMLElement.prototype.scrollIntoView = vi.fn();
+  });
+
+  it('does not force-scroll when the reader has moved away from the bottom', () => {
+    const scrollIntoView = vi.fn();
+    window.HTMLElement.prototype.scrollIntoView = scrollIntoView;
+
+    const { container, rerender } = render(
+      <div data-chat-scroll-container="true">
+        <ChatMessageList
+          messages={[
+            {
+              id: 'assistant-1',
+              role: 'assistant',
+              content: '第一条',
+              timestamp: 1,
+            },
+          ]}
+        />
+      </div>
+    );
+
+    const scrollContainer = container.firstChild as HTMLElement;
+    Object.defineProperty(scrollContainer, 'scrollHeight', { configurable: true, value: 1600 });
+    Object.defineProperty(scrollContainer, 'clientHeight', { configurable: true, value: 400 });
+    Object.defineProperty(scrollContainer, 'scrollTop', { configurable: true, value: 600, writable: true });
+
+    fireEvent.scroll(scrollContainer);
+    scrollIntoView.mockClear();
+
+    rerender(
+      <div data-chat-scroll-container="true">
+        <ChatMessageList
+          messages={[
+            {
+              id: 'assistant-1',
+              role: 'assistant',
+              content: '第一条',
+              timestamp: 1,
+            },
+            {
+              id: 'assistant-2',
+              role: 'assistant',
+              content: '第二条',
+              timestamp: 2,
+            },
+          ]}
+        />
+      </div>
+    );
+
+    expect(scrollIntoView).not.toHaveBeenCalled();
   });
 
   it('shows a completed status after the last assistant message finishes', () => {

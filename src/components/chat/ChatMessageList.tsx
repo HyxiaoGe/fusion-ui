@@ -4,6 +4,7 @@ import { Message } from '@/redux/slices/chatSlice';
 import React, { useEffect, useMemo, useRef } from 'react';
 import LoadingIndicator from '../ui/loading-indicator';
 import ChatMessage from './ChatMessage';
+import { isNearBottom } from '@/lib/chat/scrollBehavior';
 
 interface ChatMessageListProps {
   messages: Message[];
@@ -53,6 +54,7 @@ const ChatMessageList: React.FC<ChatMessageListProps> = ({
   emptyState = DEFAULT_EMPTY_STATE,
 }) => {
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const shouldStickToBottomRef = useRef(true);
 
   // 按时间戳排序消息 - 确保使用完整毫秒精度
   const sortedMessages = useMemo(() => {
@@ -93,7 +95,33 @@ const ChatMessageList: React.FC<ChatMessageListProps> = ({
   };
 
   useEffect(() => {
-    scrollToBottom();
+    const scrollContainer = messagesEndRef.current?.closest('[data-chat-scroll-container="true"]') as HTMLElement | null;
+
+    if (!scrollContainer) {
+      shouldStickToBottomRef.current = true;
+      return;
+    }
+
+    const updateStickiness = () => {
+      shouldStickToBottomRef.current = isNearBottom(scrollContainer);
+    };
+
+    updateStickiness();
+    scrollContainer.addEventListener('scroll', updateStickiness, { passive: true });
+
+    return () => {
+      scrollContainer.removeEventListener('scroll', updateStickiness);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (messages.length === 0) {
+      return;
+    }
+
+    if (shouldStickToBottomRef.current) {
+      scrollToBottom();
+    }
   }, [messages.length, isStreaming]);
 
   const statusText = useMemo(() => {

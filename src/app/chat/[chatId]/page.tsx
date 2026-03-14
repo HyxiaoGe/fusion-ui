@@ -258,7 +258,7 @@ export default function ChatPage() {
         }
       >
         <div className="h-full flex flex-col relative">
-          <div className="flex-1 overflow-y-auto px-4 pt-4">
+          <div className="flex-1 overflow-y-auto px-4 pt-4" data-chat-scroll-container="true">
             <ChatMessageListLazy
               messages={[]}
               loadingState="history-hydration"
@@ -353,7 +353,7 @@ export default function ChatPage() {
       }
     >
       <div className="h-full flex flex-col relative">
-        <div className="flex-1 overflow-y-auto px-4 pt-4">
+        <div className="flex-1 overflow-y-auto px-4 pt-4" data-chat-scroll-container="true">
           <ChatMessageListLazy
             messages={activeChat?.messages || []}
             loading={loading}
