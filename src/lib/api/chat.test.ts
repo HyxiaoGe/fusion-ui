@@ -40,7 +40,7 @@ vi.mock('../../redux/slices/chatSlice', () => ({
   setStreamingReasoningMessageId: setStreamingReasoningMessageIdMock,
 }));
 
-import { sendMessageStream } from './chat';
+import { getConversation, sendMessageStream } from './chat';
 
 function createStreamResponse(chunks: string[]) {
   const encoder = new TextEncoder();
@@ -123,5 +123,18 @@ describe('sendMessageStream', () => {
 
     expect(onChunk).toHaveBeenNthCalledWith(1, 'hello', false, 'conv-2', '');
     expect(onChunk).toHaveBeenNthCalledWith(2, 'hello', true, 'conv-2', '');
+  });
+
+  it('surfaces backend detail when fetching a conversation fails', async () => {
+    fetchWithAuthMock.mockResolvedValue(
+      new Response(JSON.stringify({ detail: '对话不存在或无权访问' }), {
+        status: 404,
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      })
+    );
+
+    await expect(getConversation('missing-chat')).rejects.toThrow('对话不存在或无权访问');
   });
 });

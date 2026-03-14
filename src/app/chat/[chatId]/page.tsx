@@ -111,10 +111,11 @@ export default function ChatPage() {
       const serverChatData = await getConversation(chatId);
       dispatch(updateChatFromServer(buildChatFromServerConversation(serverChatData)));
     } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : '加载聊天数据失败';
       setHydrationFailed(true);
-      dispatch(setServerError('加载聊天数据失败'));
+      dispatch(setServerError(errorMessage));
       toast({
-        message: "加载对话失败，请重试",
+        message: errorMessage,
         type: "error",
       });
     } finally {

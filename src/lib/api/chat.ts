@@ -269,7 +269,8 @@ export async function getConversation(conversationId: string) {
     const response = await fetchWithAuth(`${API_BASE_URL}/api/chat/conversations/${conversationId}`);
     
     if (!response.ok) {
-      throw new Error('获取对话详情失败');
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.detail || '获取对话详情失败');
     }
     
     return await response.json();
