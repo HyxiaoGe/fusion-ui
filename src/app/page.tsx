@@ -46,6 +46,7 @@ import TypingTitle from '@/components/ui/TypingTitle';
 import { useChatActions } from '@/hooks/useChatActions';
 import { useSuggestedQuestions } from '@/hooks/useSuggestedQuestions';
 import { useSuggestedQuestionContinuation } from '@/hooks/useSuggestedQuestionContinuation';
+import { useTransientCompletionState } from '@/hooks/useTransientCompletionState';
 import { UserAvatarMenu } from '@/components/layouts/UserAvatarMenu';
 import ConfirmDialog from '@/components/ui/confirm-dialog';
 
@@ -94,6 +95,11 @@ export default function Home() {
   const activeChat: Chat | null = useMemo(() => {
     return activeChatId ? localChats.find(c => c.id === activeChatId) || null : null;
   }, [activeChatId, localChats]);
+  const showCompletionState = useTransientCompletionState({
+    isStreaming,
+    isLoadingQuestions,
+    messages: activeChat?.messages || [],
+  });
 
   // 使用本地Redux状态数据
   const chats = localChats;
@@ -448,6 +454,7 @@ export default function Home() {
               isLoadingQuestions={isLoadingQuestions}
               onSelectQuestion={handleSelectQuestion}
               onRefreshQuestions={handleRefreshQuestions}
+              completionStateVisible={showCompletionState}
             />
           </div>
         )}

@@ -30,6 +30,7 @@ import TypingTitle from '@/components/ui/TypingTitle';
 import { useChatActions } from '@/hooks/useChatActions';
 import { useSuggestedQuestions } from '@/hooks/useSuggestedQuestions';
 import { useSuggestedQuestionContinuation } from '@/hooks/useSuggestedQuestionContinuation';
+import { useTransientCompletionState } from '@/hooks/useTransientCompletionState';
 import { UserAvatarMenu } from '@/components/layouts/UserAvatarMenu';
 import ConfirmDialog from '@/components/ui/confirm-dialog';
 import Link from 'next/link';
@@ -85,6 +86,11 @@ export default function ChatPage() {
 
   const chatInputRef = useRef<HTMLDivElement>(null);
   const needsServerHydration = useMemo(() => shouldHydrateConversation(activeChat), [activeChat]);
+  const showCompletionState = useTransientCompletionState({
+    isStreaming,
+    isLoadingQuestions,
+    messages: activeChat?.messages || [],
+  });
   const hydrationView = useMemo(
     () =>
       getConversationHydrationView({
@@ -352,6 +358,7 @@ export default function ChatPage() {
             isLoadingQuestions={isLoadingQuestions}
             onSelectQuestion={handleSelectQuestion}
             onRefreshQuestions={handleRefreshQuestions}
+            completionStateVisible={showCompletionState}
             emptyState={{
               title: '这个会话还没有消息',
               description: '发送第一条消息，继续这段会话。',

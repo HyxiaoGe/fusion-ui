@@ -15,6 +15,7 @@ interface ChatMessageListProps {
   isLoadingQuestions?: boolean;
   onSelectQuestion?: (question: string) => void;
   onRefreshQuestions?: () => void;
+  completionStateVisible?: boolean;
   emptyState?: {
     title: string;
     description: string;
@@ -46,6 +47,7 @@ const ChatMessageList: React.FC<ChatMessageListProps> = ({
   isLoadingQuestions = false,
   onSelectQuestion,
   onRefreshQuestions,
+  completionStateVisible = false,
   emptyState = DEFAULT_EMPTY_STATE,
 }) => {
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -109,12 +111,12 @@ const ChatMessageList: React.FC<ChatMessageListProps> = ({
       return '正在准备推荐追问...';
     }
 
-    if (lastMessage.role === 'assistant' && lastMessage.content?.trim()) {
+    if (completionStateVisible && lastMessage.role === 'assistant' && lastMessage.content?.trim()) {
       return '本轮回复已完成';
     }
 
     return null;
-  }, [isLoadingQuestions, isStreaming, sortedMessages]);
+  }, [completionStateVisible, isLoadingQuestions, isStreaming, sortedMessages]);
 
   if (messages.length === 0) {
     return (
