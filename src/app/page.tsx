@@ -96,11 +96,6 @@ export default function Home() {
   const activeChat: Chat | null = useMemo(() => {
     return activeChatId ? localChats.find(c => c.id === activeChatId) || null : null;
   }, [activeChatId, localChats]);
-  const showCompletionState = useTransientCompletionState({
-    isStreaming,
-    isLoadingQuestions,
-    messages: activeChat?.messages || [],
-  });
 
   // 使用本地Redux状态数据
   const chats = localChats;
@@ -203,6 +198,12 @@ export default function Home() {
     fetchQuestions, 
     clearQuestions 
   } = useSuggestedQuestions(activeChatId);
+
+  const showCompletionState = useTransientCompletionState({
+    isStreaming,
+    isLoadingQuestions,
+    messages: activeChat?.messages || [],
+  });
 
   const chatInputRef = useRef<HTMLDivElement>(null);
 
