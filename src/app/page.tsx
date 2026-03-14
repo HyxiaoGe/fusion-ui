@@ -421,13 +421,11 @@ export default function Home() {
             <HomePageLazy onSendMessage={handleSendMessage} onNewChat={handleNewChat} onChatSelected={handleChatSelected} />
           </div>
         ) : shouldShowLoadingChat ? (
-          <div className="flex-1 overflow-y-auto px-4 pt-4 flex items-center justify-center">
-            <div className="text-center space-y-4">
-              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto"></div>
-              <p className="text-muted-foreground">
-                {isLoadingServerChat ? '正在加载对话内容...' : '正在加载对话...'}
-              </p>
-            </div>
+          <div className="flex-1 overflow-y-auto px-4 pt-4" data-chat-scroll-container="true">
+            <ChatMessageListLazy
+              messages={[]}
+              loadingState="history-hydration"
+            />
           </div>
         ) : error && activeChatId && !hasMessages ? (
           <div className="flex-1 overflow-y-auto px-4 pt-4 flex items-center justify-center">
@@ -437,6 +435,10 @@ export default function Home() {
                 加载对话失败，请重试
               </p>
               <p className="text-sm text-red-500">{error}</p>
+              <div className="flex items-center justify-center gap-3">
+                <Button onClick={() => router.push(`/chat/${activeChatId}`)}>打开对话页重试</Button>
+                <Button variant="outline" onClick={() => router.push('/')}>返回首页</Button>
+              </div>
             </div>
           </div>
         ) : (
