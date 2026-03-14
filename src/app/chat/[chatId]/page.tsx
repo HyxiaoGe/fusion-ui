@@ -45,6 +45,7 @@ export default function ChatPage() {
   const [inputKey, setInputKey] = useState(Date.now());
   const [confirmDialogOpen, setConfirmDialogOpen] = useState(false);
   const [hydrationFailed, setHydrationFailed] = useState(false);
+  const [hydrationErrorMessage, setHydrationErrorMessage] = useState<string | null>(null);
   const hydrationRequestRef = useRef<string | null>(null);
 
   // Redux 状态
@@ -52,7 +53,6 @@ export default function ChatPage() {
     loading, 
     isStreaming,
     error,
-    serverError,
     animatingTitleChatId,
     chats: localChats,
     activeChatId,
@@ -63,7 +63,6 @@ export default function ChatPage() {
     loading: state.chat.loading,
     isStreaming: state.chat.isStreaming,
     error: state.chat.error,
-    serverError: state.chat.serverError,
     animatingTitleChatId: state.chat.animatingTitleChatId,
     chats: state.chat.chats,
     activeChatId: state.chat.activeChatId,
@@ -97,9 +96,9 @@ export default function ChatPage() {
         chatId,
         chat: activeChat,
         isLoadingServerChat,
-        serverError: hydrationFailed ? (serverError || '加载聊天数据失败') : null,
+        serverError: hydrationFailed ? (hydrationErrorMessage || '加载聊天数据失败') : null,
       }),
-    [activeChat, chatId, hydrationFailed, isLoadingServerChat, serverError]
+    [activeChat, chatId, hydrationErrorMessage, hydrationFailed, isLoadingServerChat]
   );
 
   // 从服务端加载聊天数据的函数
@@ -108,11 +107,13 @@ export default function ChatPage() {
       dispatch(setLoadingServerChat(true));
       dispatch(setServerError(null));
       setHydrationFailed(false);
+      setHydrationErrorMessage(null);
       const serverChatData = await getConversation(chatId);
       dispatch(updateChatFromServer(buildChatFromServerConversation(serverChatData)));
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : '加载聊天数据失败';
       setHydrationFailed(true);
+      setHydrationErrorMessage(errorMessage);
       dispatch(setServerError(errorMessage));
       toast({
         message: errorMessage,
@@ -147,6 +148,7 @@ export default function ChatPage() {
   useEffect(() => {
     hydrationRequestRef.current = null;
     setHydrationFailed(false);
+    setHydrationErrorMessage(null);
   }, [chatId]);
 
   // 设置当前活跃聊天并尝试加载数据
@@ -222,6 +224,7 @@ export default function ChatPage() {
 
     hydrationRequestRef.current = null;
     setHydrationFailed(false);
+    setHydrationErrorMessage(null);
     void loadChatFromServer(chatId);
   }, [chatId, loadChatFromServer]);
 
@@ -290,7 +293,7 @@ export default function ChatPage() {
           <div className="text-center space-y-4">
             <div className="text-red-500 text-2xl">⚠️</div>
             <p className="text-muted-foreground">
-              {serverError || error || '对话不存在或已被删除'}
+              {hydrationErrorMessage || error || '对话不存在或已被删除'}
             </p>
             <div className="flex items-center justify-center gap-3">
               {hydrationView === 'error' ? (
