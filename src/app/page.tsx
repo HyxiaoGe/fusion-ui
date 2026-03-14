@@ -308,9 +308,21 @@ export default function Home() {
     hasCreatedChatForCurrentUrl.current = false;
   }, [activeChatId, isNewChatMode, router, showHomePage]);
 
-  const handleSendMessage = sendMessage;
-  const handleRetryMessage = retryMessage;
-  const handleEditMessage = editMessage;
+  const handleSendMessage = useCallback((content: string, files?: File[]) => {
+    clearQuestions();
+    return sendMessage(content, files as any);
+  }, [clearQuestions, sendMessage]);
+
+  const handleRetryMessage = useCallback((messageId: string) => {
+    clearQuestions();
+    return retryMessage(messageId);
+  }, [clearQuestions, retryMessage]);
+
+  const handleEditMessage = useCallback((messageId: string, content: string) => {
+    clearQuestions();
+    return editMessage(messageId, content);
+  }, [clearQuestions, editMessage]);
+
   const handleNewChat = newChat;
 
   // 当显示聊天界面时，关闭首页
