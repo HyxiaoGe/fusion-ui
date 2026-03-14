@@ -236,4 +236,31 @@ describe('ChatMessageList', () => {
 
     expect(screen.getByRole('button', { name: '回到底部' })).toBeTruthy();
   });
+
+  it('uses a streaming-specific label when new assistant output is arriving off-screen', () => {
+    const { container } = render(
+      <div data-chat-scroll-container="true">
+        <ChatMessageList
+          messages={[
+            {
+              id: 'assistant-1',
+              role: 'assistant',
+              content: '第一条',
+              timestamp: 1,
+            },
+          ]}
+          isStreaming={true}
+        />
+      </div>
+    );
+
+    const scrollContainer = container.firstChild as HTMLElement;
+    Object.defineProperty(scrollContainer, 'scrollHeight', { configurable: true, value: 1600 });
+    Object.defineProperty(scrollContainer, 'clientHeight', { configurable: true, value: 400 });
+    Object.defineProperty(scrollContainer, 'scrollTop', { configurable: true, value: 600, writable: true });
+
+    fireEvent.scroll(scrollContainer);
+
+    expect(screen.getByRole('button', { name: '查看最新回复' })).toBeTruthy();
+  });
 });

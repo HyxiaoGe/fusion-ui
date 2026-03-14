@@ -222,7 +222,7 @@ const ChatMessageList: React.FC<ChatMessageListProps> = ({
             }}
             className="rounded-full border border-border/70 bg-background/95 px-3 py-1.5 text-xs text-foreground shadow-sm backdrop-blur hover:bg-muted"
           >
-            回到底部
+            {isStreaming ? '查看最新回复' : '回到底部'}
           </button>
         </div>
       ) : null}
