@@ -31,6 +31,7 @@ const {
       chat: {
         activeChatId: 'chat-1',
         reasoningEnabled: false,
+        chats: [],
       },
       fileUpload: {
         files: {},
@@ -141,6 +142,7 @@ describe('ChatInput', () => {
     currentState.models.selectedModelId = null;
     currentState.chat.activeChatId = 'chat-1';
     currentState.chat.reasoningEnabled = false;
+    currentState.chat.chats = [];
     currentState.fileUpload.files = {};
     currentState.fileUpload.fileIds = {};
     currentState.fileUpload.processingFiles = {};
@@ -208,6 +210,56 @@ describe('ChatInput', () => {
         expect.any(Function)
       );
     });
+  });
+
+  it('uses the active chat model capabilities instead of a stale global selection', async () => {
+    currentState.auth.isAuthenticated = true;
+    currentState.models.selectedModelId = 'model-unsupported';
+    currentState.models.models = [
+      {
+        id: 'model-unsupported',
+        provider: 'qwen',
+        capabilities: {
+          fileSupport: false,
+          deepThinking: false,
+        },
+      },
+      {
+        id: 'model-supported',
+        provider: 'openai',
+        capabilities: {
+          fileSupport: true,
+          deepThinking: false,
+        },
+      },
+    ];
+    currentState.chat.chats = [
+      {
+        id: 'chat-1',
+        model: 'model-supported',
+      },
+    ];
+    uploadFilesMock.mockResolvedValue(['file-1']);
+
+    const { container } = render(<ChatInput onSendMessage={vi.fn()} />);
+    const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement;
+    const file = new File(['hello'], 'hello.txt', { type: 'text/plain' });
+
+    fireEvent.change(fileInput, {
+      target: {
+        files: [file],
+      },
+    });
+
+    await waitFor(() => {
+      expect(uploadFilesMock).toHaveBeenCalledWith('openai', 'model-supported', 'chat-1', [file]);
+    });
+
+    expect(toastMock).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        message: '当前选择的模型不支持文件上传功能',
+      })
+    );
   });
 
   it('shows readable retry actions when file processing fails', async () => {

@@ -76,14 +76,16 @@ const ChatInput: React.FC<ChatInputProps> = ({
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const { models, selectedModelId } = useAppSelector((state) => state.models);
-  const { activeChatId: currentActiveChatId } = useAppSelector((state) => state.chat);
+  const { activeChatId: currentActiveChatId, chats } = useAppSelector((state) => state.chat);
   const { isAuthenticated } = useAppSelector((state) => state.auth);
   const processingFiles = useAppSelector((state) => state.fileUpload.processingFiles);
   const reasoningEnabled = useAppSelector((state) => state.chat.reasoningEnabled);
 
   const chatId = activeChatId || currentActiveChatId || "default-chat";
-  const selectedModel = useAppSelector((state) =>
-    state.models.models.find((model) => model.id === selectedModelId)
+  const activeChatModelId = chats.find((chat) => chat.id === chatId)?.model;
+  const selectedModel = useMemo(
+    () => models.find((model) => model.id === (activeChatModelId || selectedModelId)),
+    [activeChatModelId, models, selectedModelId]
   );
 
   const supportsReasoning = selectedModel?.capabilities?.deepThinking || false;
