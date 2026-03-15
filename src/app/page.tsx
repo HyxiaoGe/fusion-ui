@@ -16,7 +16,6 @@ import { useAppDispatch, useAppSelector } from '@/redux/hooks';
 import {
   addMessage,
   clearMessages,
-  createChat,
   deleteMessage,
   editMessage,
   endStreaming,
@@ -113,59 +112,12 @@ export default function Home() {
   // 判断是否显示欢迎页面
   const shouldShowWelcome = !activeChatId || chats.length === 0;
   
-  // 使用ref跟踪是否已经为当前URL创建过对话
-  const hasCreatedChatForCurrentUrl = useRef(false);
-  const currentUrlRef = useRef('');
-  
-  // 处理新对话准备状态
-  useEffect(() => {
-    if (isNewChatMode) {
-      // 构建当前URL标识符
-      const currentUrl = `new=${isNewChatMode}&model=${urlModelParam}`;
-      
-      // 如果URL发生变化，重置创建标记
-      if (currentUrlRef.current !== currentUrl) {
-        currentUrlRef.current = currentUrl;
-        hasCreatedChatForCurrentUrl.current = false;
-      }
-      
-      // 如果已经为当前URL创建过对话，不再重复创建
-      if (hasCreatedChatForCurrentUrl.current) {
-        return;
-      }
-      
-      // 检查当前是否已经有合适的活跃对话
-      if (activeChatId) {
-        const activeChat = localChats.find(c => c.id === activeChatId);
-        // 如果已经有空的活跃对话，就不需要再创建了
-        if (activeChat && activeChat.messages.length === 0) {
-          hasCreatedChatForCurrentUrl.current = true; // 标记已处理
-          return; // 已经有合适的空对话，不需要创建
-        }
-      }
-
-      // 如果没有合适的对话，才创建新对话
-      const modelToUse = getFirstEnabledModelId(models);
-      if (modelToUse) {
-        const selectedModel = models.find(m => m.id === modelToUse);
-        const providerToUse = selectedModel?.provider;
-        dispatch(createChat({ model: modelToUse, provider: providerToUse, title: '' }));
-        hasCreatedChatForCurrentUrl.current = true; // 标记已创建
-      }
-    }
-  }, [isNewChatMode, activeChatId, urlModelParam, selectedModelId, models, dispatch, localChats]);
-
   // 根据当前状态决定是否显示主页
   useEffect(() => {
     if (isNewChatMode) {
       // 新对话准备状态，显示输入界面
       setShowHomePage(true);
     } else {
-      // 离开新对话准备状态时，重置创建标记
-      if (hasCreatedChatForCurrentUrl.current) {
-        hasCreatedChatForCurrentUrl.current = false;
-      }
-      
       if (shouldShowWelcome) {
         setShowHomePage(true);
       } else if (activeChatId) {
@@ -212,12 +164,9 @@ export default function Home() {
     },
     onSendMessageStart: () => {
       if (isNewChatMode) {
-        hasCreatedChatForCurrentUrl.current = true;
-
         const latestActiveChatId = activeChatId || store.getState().chat.activeChatId;
         if (latestActiveChatId) {
           router.replace(`/chat/${latestActiveChatId}`);
-          hasCreatedChatForCurrentUrl.current = false;
         }
       }
 
@@ -289,15 +238,6 @@ export default function Home() {
       }
     }
   }, [activeChatId, showHomePage, activeChat]);
-
-  useEffect(() => {
-    if (!isNewChatMode || !activeChatId || showHomePage) {
-      return;
-    }
-
-    router.replace(`/chat/${activeChatId}`);
-    hasCreatedChatForCurrentUrl.current = false;
-  }, [activeChatId, isNewChatMode, router, showHomePage]);
 
   const handleSendMessage = useCallback((content: string, files?: File[]) => {
     clearQuestions();

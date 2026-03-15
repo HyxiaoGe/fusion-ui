@@ -125,7 +125,7 @@ export const useChatActions = (options: ChatActionsOptions) => {
   }, [dispatch]);
 
   /**
-   * Creates a new chat session or keeps the currently active empty draft.
+   * Enters new-chat mode without creating a placeholder conversation.
    */
   const newChat = useCallback(() => {
     const firstEnabledModel = getFirstEnabledModel();
@@ -134,24 +134,13 @@ export const useChatActions = (options: ChatActionsOptions) => {
       return;
     }
 
-    const activeChat = activeChatId ? chats.find((chat) => chat.id === activeChatId) : null;
-    const activeEmptyChat = activeChat && activeChat.messages.length === 0 ? activeChat : null;
-
-    if (activeEmptyChat) {
-      if (activeEmptyChat.model !== firstEnabledModel.id) {
-        dispatch(updateChatModel({ chatId: activeEmptyChat.id, model: firstEnabledModel.id }));
-      }
-      options.onNewChatCreated?.();
-      return;
-    }
-
     try {
-      dispatch(createChat({ model: firstEnabledModel.id, provider: firstEnabledModel.provider, title: '' }));
+      dispatch(setActiveChat(null));
       options.onNewChatCreated?.();
     } catch (error) {
       dispatch(setError('创建对话失败，请重试'));
     }
-  }, [activeChatId, chats, dispatch, getFirstEnabledModel, options]);
+  }, [dispatch, getFirstEnabledModel, options]);
 
   /**
    * Clears all messages from the currently active chat.

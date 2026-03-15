@@ -57,9 +57,9 @@ export const useChatListManager = () => {
       }));
       
       // 找出本地独有的对话（新建但未同步到服务端的）
-      const localOnlyChats = localChats.filter(localChat => 
-        !serverChats.find(serverChat => serverChat.id === localChat.id)
-        // 移除过度过滤，让本地对话由用户主动管理，而不是系统自动过滤
+      const localOnlyChats = localChats.filter(localChat =>
+        !serverChats.find(serverChat => serverChat.id === localChat.id) &&
+        localChat.messages.length > 0
       );
       
       // 合并：本地新对话在前，服务端对话在后

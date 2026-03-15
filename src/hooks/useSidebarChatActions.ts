@@ -73,16 +73,6 @@ export const useSidebarChatActions = ({
   const handleSelectChat = async (chatId: string) => {
     if (chatId === activeChatId) return;
 
-    const currentChats = store.getState().chat.chats;
-    const selectedChat = currentChats.find((c) => c.id === chatId);
-
-    // 如果是空对话，直接跳转到新对话准备状态，避免"上蹿下跳"
-    if (selectedChat && selectedChat.messages.length === 0) {
-      dispatch(setActiveChat(chatId));
-      router.push(`/?new=true&model=${selectedChat.model}`);
-      return;
-    }
-
     // 跳转到聊天页面（类似ChatGPT的行为）
     router.push(`/chat/${chatId}`);
 

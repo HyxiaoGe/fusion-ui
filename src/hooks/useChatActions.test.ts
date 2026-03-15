@@ -158,7 +158,7 @@ describe('useChatActions.newChat', () => {
     useAppSelectorMock.mockImplementation(selector => selector(currentState));
   });
 
-  it('creates a new chat instead of reusing a historical empty chat', () => {
+  it('enters new-chat mode without reusing a historical empty chat', () => {
     currentState.models.models = [
       { id: 'model-1', provider: 'qwen' },
     ];
@@ -172,16 +172,12 @@ describe('useChatActions.newChat', () => {
 
     result.current.newChat();
 
-    expect(createChatMock).toHaveBeenCalledWith({
-      model: 'model-1',
-      provider: 'qwen',
-      title: '',
-    });
-    expect(setActiveChatMock).not.toHaveBeenCalled();
+    expect(createChatMock).not.toHaveBeenCalled();
+    expect(setActiveChatMock).toHaveBeenCalledWith(null);
     expect(onNewChatCreated).toHaveBeenCalledTimes(1);
   });
 
-  it('creates a new chat when there is no reusable empty chat', () => {
+  it('enters new-chat mode when there is no reusable empty chat', () => {
     currentState.models.models = [
       { id: 'model-1', provider: 'qwen' },
     ];
@@ -194,12 +190,8 @@ describe('useChatActions.newChat', () => {
 
     result.current.newChat();
 
-    expect(createChatMock).toHaveBeenCalledWith({
-      model: 'model-1',
-      provider: 'qwen',
-      title: '',
-    });
-    expect(setActiveChatMock).not.toHaveBeenCalled();
+    expect(createChatMock).not.toHaveBeenCalled();
+    expect(setActiveChatMock).toHaveBeenCalledWith(null);
   });
 
   it('dispatches an error when no model is available', () => {
@@ -211,7 +203,7 @@ describe('useChatActions.newChat', () => {
     expect(createChatMock).not.toHaveBeenCalled();
   });
 
-  it('creates a new chat with the first enabled fallback model', () => {
+  it('enters new-chat mode with the first enabled fallback model', () => {
     currentState.models.selectedModelId = 'disabled-model';
     currentState.models.models = [
       { id: 'disabled-model', provider: 'qwen', capabilities: {}, enabled: false },
@@ -226,11 +218,8 @@ describe('useChatActions.newChat', () => {
 
     result.current.newChat();
 
-    expect(createChatMock).toHaveBeenCalledWith({
-      model: 'enabled-model',
-      provider: 'deepseek',
-      title: '',
-    });
+    expect(createChatMock).not.toHaveBeenCalled();
+    expect(setActiveChatMock).toHaveBeenCalledWith(null);
   });
 
   it('does not create a new chat when every model is unavailable', () => {
