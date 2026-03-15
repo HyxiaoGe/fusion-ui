@@ -409,7 +409,7 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({ onChange, modelId, disabl
               <div className={isDisabled ? "cursor-not-allowed" : ""}>
                 <Select value={currentModelId || ""} onValueChange={handleModelChange} disabled={isDisabled}>
                   <SelectTrigger 
-                    className={`w-[300px] transition-all duration-300 hover:shadow-lg focus:ring-2 focus:ring-offset-2 
+                    className={`w-[min(18rem,calc(100vw-8rem))] sm:w-[300px] transition-all duration-300 hover:shadow-lg focus:ring-2 focus:ring-offset-2 
                     ${isDisabled ? 'opacity-70' : 'hover:border-primary/50'}`}
                   >
                     {selectedModel ? (
@@ -483,7 +483,7 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({ onChange, modelId, disabl
                   </SelectTrigger>
                   <SelectContent 
                     ref={dropdownRef}
-                    className="max-h-[var(--select-dropdown-max-height)] w-[300px] overflow-y-auto p-0 bg-background border-border shadow-lg animate-in fade-in-20 zoom-in-95"
+                    className="max-h-[var(--select-dropdown-max-height)] w-[min(18rem,calc(100vw-8rem))] sm:w-[300px] overflow-y-auto p-0 bg-background border-border shadow-lg animate-in fade-in-20 zoom-in-95"
                   >
                     {modelsByProvider.map((provider) => (
                       <div key={provider.id} className="py-1 first:pt-2 last:pb-2">

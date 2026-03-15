@@ -250,17 +250,17 @@ export default function ChatPage() {
       <MainLayout
         sidebar={<ChatSidebarLazy onNewChat={handleNewChat} />}
         header={
-          <header className="h-14 border-b flex items-center justify-between px-5 sticky top-0 z-10 shadow-sm bg-background">
-            <div className="flex items-center">
-              <Link href="/" className="text-xl font-bold flex items-center mr-6">
+          <header className="h-14 border-b flex items-center justify-between gap-3 px-4 sm:px-5 sticky top-0 z-10 shadow-sm bg-background">
+            <div className="flex items-center shrink-0">
+              <Link href="/" className="text-xl font-bold flex items-center">
                 <span className="bg-gradient-to-r from-blue-600 via-purple-500 to-pink-500 text-transparent bg-clip-text">Fusion AI</span>
               </Link>
             </div>
-            <div className="absolute left-1/2 transform -translate-x-1/2 flex items-center gap-4">
-              <div className="font-medium text-base px-3 py-1">{activeChat?.title || '正在恢复对话'}</div>
+            <div className="flex min-w-0 flex-1 items-center justify-center gap-2 sm:gap-4 px-2">
+              <div className="hidden truncate px-2 py-1 font-medium text-sm sm:block sm:text-base">{activeChat?.title || '正在恢复对话'}</div>
               <ModelSelectorLazy onChange={clearQuestions} />
             </div>
-            <div className="flex items-center gap-3">
+            <div className="flex shrink-0 items-center gap-3">
               <UserAvatarMenu />
             </div>
           </header>
@@ -284,17 +284,17 @@ export default function ChatPage() {
       <MainLayout
         sidebar={<ChatSidebarLazy onNewChat={handleNewChat} />}
         header={
-          <header className="h-14 border-b flex items-center justify-between px-5 sticky top-0 z-10 shadow-sm bg-background">
-            <div className="flex items-center">
-              <Link href="/" className="text-xl font-bold flex items-center mr-6">
+          <header className="h-14 border-b flex items-center justify-between gap-3 px-4 sm:px-5 sticky top-0 z-10 shadow-sm bg-background">
+            <div className="flex items-center shrink-0">
+              <Link href="/" className="text-xl font-bold flex items-center">
                 <span className="bg-gradient-to-r from-blue-600 via-purple-500 to-pink-500 text-transparent bg-clip-text">Fusion AI</span>
               </Link>
             </div>
-            <div className="absolute left-1/2 transform -translate-x-1/2 flex items-center gap-4">
-              <div className="font-medium text-base px-3 py-1">聊天不存在</div>
+            <div className="flex min-w-0 flex-1 items-center justify-center gap-2 sm:gap-4 px-2">
+              <div className="hidden truncate px-2 py-1 font-medium text-sm sm:block sm:text-base">聊天不存在</div>
               <ModelSelectorLazy onChange={clearQuestions} />
             </div>
-            <div className="flex items-center gap-3">
+            <div className="flex shrink-0 items-center gap-3">
               <UserAvatarMenu />
             </div>
           </header>
@@ -332,30 +332,29 @@ export default function ChatPage() {
     <MainLayout
       sidebar={<ChatSidebarLazy onNewChat={handleNewChat} />}
       header={
-        <header className="h-14 border-b flex items-center justify-between px-5 sticky top-0 z-10 shadow-sm bg-background">
-          <div className="flex items-center">
-            <Link href="/" className="text-xl font-bold flex items-center mr-6">
+        <header className="h-14 border-b flex items-center justify-between gap-3 px-4 sm:px-5 sticky top-0 z-10 shadow-sm bg-background">
+          <div className="flex items-center shrink-0">
+            <Link href="/" className="text-xl font-bold flex items-center">
               <span className="bg-gradient-to-r from-blue-600 via-purple-500 to-pink-500 text-transparent bg-clip-text">Fusion AI</span>
             </Link>
           </div>
 
-          {/* 中间部分：显示当前对话标题和模型选择器 */}
-          <div className="absolute left-1/2 transform -translate-x-1/2 flex items-center gap-4">
+          <div className="flex min-w-0 flex-1 items-center justify-center gap-2 sm:gap-4 px-2">
             {animatingTitleChatId === chatId ? (
               <TypingTitle 
                 title={getChatTitle()} 
-                className="font-medium text-base"
+                className="hidden truncate px-2 font-medium text-sm sm:block sm:text-base"
                 onAnimationComplete={() => {}}
               />
             ) : (
-              <div className="font-medium text-base px-3 py-1">
+              <div className="hidden truncate px-2 py-1 font-medium text-sm sm:block sm:text-base">
                 {getChatTitle()}
               </div>
             )}
             <ModelSelectorLazy onChange={clearQuestions} />
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex shrink-0 items-center gap-3">
             <UserAvatarMenu />
           </div>
         </header>
