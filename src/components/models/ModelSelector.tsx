@@ -53,7 +53,7 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({ onChange, modelId, disabl
   const isDisabled = disabled || (!!activeChatId && hasMessages);
   const currentModelId = modelId || activeChatModelId || getPreferredModelId(models, selectedModelId);
   const selectedModel = models.find(model => model.id === currentModelId);
-  const isCurrentModelUnavailable = Boolean(selectedModel && !selectedModel.enabled);
+  const isCurrentModelUnavailable = Boolean(selectedModel?.enabled === false);
   
   // 禁用提示信息
   const disabledReason = isCurrentModelUnavailable
@@ -423,7 +423,7 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({ onChange, modelId, disabl
                             />
                           </div>
                           <span className="truncate font-medium">{selectedModel.name}</span>
-                          {!selectedModel.enabled ? (
+                          {selectedModel.enabled === false ? (
                             <span className="shrink-0 rounded-full bg-amber-500/10 px-2 py-0.5 text-[10px] font-medium text-amber-700 dark:text-amber-300">
                               当前不可用
                             </span>
@@ -533,10 +533,10 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({ onChange, modelId, disabl
                                   {model.name}
                                 </div>
                                 <div className="flex gap-1 items-center mt-0.5">
-                                  {!model.enabled ? (
+                                  {model.enabled === false ? (
                                     <span className="text-[10px] text-gray-500 font-medium">未启用</span>
                                   ) : null}
-                                  {model.id === recommendedModelId && model.enabled ? (
+                                  {model.id === recommendedModelId && model.enabled !== false ? (
                                     <span className="rounded-full bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary">
                                       推荐
                                     </span>

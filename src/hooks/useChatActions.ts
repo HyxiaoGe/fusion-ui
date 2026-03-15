@@ -73,7 +73,7 @@ export const useChatActions = (options: ChatActionsOptions) => {
     }
 
     const chatModel = models.find((model) => model.id === chat.model);
-    if (!chatModel || chatModel.enabled) {
+    if (!chatModel || chatModel.enabled !== false) {
       return null;
     }
 

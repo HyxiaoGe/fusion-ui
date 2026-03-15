@@ -91,7 +91,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
     () => models.find((model) => model.id === (activeChatModelId || selectedModelId)),
     [activeChatModelId, models, selectedModelId]
   );
-  const isCurrentModelUnavailable = Boolean(selectedModel && !selectedModel.enabled);
+  const isCurrentModelUnavailable = Boolean(selectedModel?.enabled === false);
   const isComposerBlocked = disabled || isCurrentModelUnavailable;
 
   const supportsReasoning = selectedModel?.capabilities?.deepThinking || false;

@@ -6,7 +6,7 @@ export const getPreferredModelId = (
 ): string | null => {
   const requestedModel = requestedModelId ? models.find((model) => model.id === requestedModelId) : null;
 
-  if (requestedModel?.enabled) {
+  if (requestedModel && requestedModel.enabled !== false) {
     return requestedModel.id;
   }
 
@@ -16,7 +16,7 @@ export const getPreferredModelId = (
 export const getFirstEnabledModelId = (
   models: Pick<ModelInfo, 'id' | 'enabled'>[],
 ): string | null => {
-  const firstEnabledModel = models.find((model) => model.enabled);
+  const firstEnabledModel = models.find((model) => model.enabled !== false);
   return firstEnabledModel?.id ?? null;
 };
 
