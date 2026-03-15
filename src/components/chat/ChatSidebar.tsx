@@ -16,9 +16,10 @@ import { formatInTimeZone } from 'date-fns-tz';
 
 interface ChatSidebarProps {
   onNewChat: () => void;
+  activeChatIdOverride?: string | null;
 }
 
-const ChatSidebar: React.FC<ChatSidebarProps> = ({ onNewChat }) => {
+const ChatSidebar: React.FC<ChatSidebarProps> = ({ onNewChat, activeChatIdOverride }) => {
   const { toast } = useToast();
   
   const {
@@ -51,7 +52,8 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ onNewChat }) => {
     serverPagination,
   });
 
-  const { activeChatId } = useAppSelector((state) => state.chat);
+  const { activeChatId: storeActiveChatId } = useAppSelector((state) => state.chat);
+  const activeChatId = activeChatIdOverride ?? storeActiveChatId;
   const { models } = useAppSelector((state) => state.models);
   const containerRef = useRef<HTMLDivElement | null>(null);
   

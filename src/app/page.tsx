@@ -113,6 +113,8 @@ export default function Home() {
   // 判断是否显示欢迎页面
   const shouldShowWelcome = !activeChatId || chats.length === 0;
   const shouldRenderHomePage = isNewChatMode || showHomePage;
+  const displayActiveChatId = isNewChatMode ? null : activeChatId;
+  const displayChat = isNewChatMode ? null : activeChat;
 
   useEffect(() => {
     if (isNewChatMode) {
@@ -155,7 +157,7 @@ export default function Home() {
   const showCompletionState = useTransientCompletionState({
     isStreaming,
     isLoadingQuestions,
-    messages: activeChat?.messages || [],
+    messages: displayChat?.messages || [],
   });
 
   const chatInputRef = useRef<HTMLDivElement>(null);
@@ -203,30 +205,30 @@ export default function Home() {
   }, [activeChatId]);
 
   useEffect(() => {
-    if (!activeChatId || !activeChat || isStreaming || isLoadingQuestions || suggestedQuestions.length > 0) {
+    if (!displayActiveChatId || !displayChat || isStreaming || isLoadingQuestions || suggestedQuestions.length > 0) {
       return;
     }
 
-    if (!shouldAutoFetchSuggestedQuestions(activeChat.messages)) {
+    if (!shouldAutoFetchSuggestedQuestions(displayChat.messages)) {
       return;
     }
 
     void fetchQuestions();
-  }, [activeChat, activeChatId, fetchQuestions, isLoadingQuestions, isStreaming, suggestedQuestions.length]);
+  }, [displayChat, displayActiveChatId, fetchQuestions, isLoadingQuestions, isStreaming, suggestedQuestions.length]);
 
   // 添加新的状态变量来跟踪聊天中是否有消息
   const [hasMessages, setHasMessages] = useState(false);
 
   // 在useEffect中检测活动对话是否有消息
   useEffect(() => {
-    if (activeChat && activeChat.messages && activeChat.messages.length > 0) {
+    if (displayChat && displayChat.messages && displayChat.messages.length > 0) {
       setHasMessages(true);
-      setFullTitle(activeChat.title);
-      setTypingTitle(activeChat.title);
+      setFullTitle(displayChat.title);
+      setTypingTitle(displayChat.title);
     } else {
       setHasMessages(false);
     }
-  }, [activeChat]);
+  }, [displayChat]);
 
   // 添加状态跟踪标题动画
   const [titleToAnimate, setTitleToAnimate] = useState<string | null>(null);
@@ -237,18 +239,18 @@ export default function Home() {
   }, [activeChatId]);
 
   // 当有activeChatId但还没有messages时的处理，或者正在加载服务端聊天时
-  const shouldShowLoadingChat = activeChatId && (!hasMessages || isLoadingServerChat) && !shouldRenderHomePage && !error;
+  const shouldShowLoadingChat = displayActiveChatId && (!hasMessages || isLoadingServerChat) && !shouldRenderHomePage && !error;
   
   // 当选择对话时，立即关闭首页显示（仅对有内容的对话）
   useEffect(() => {
-    if (activeChatId && shouldRenderHomePage) {
+    if (displayActiveChatId && shouldRenderHomePage) {
       // 检查是否是有内容的对话
-      const hasContent = activeChat && activeChat.messages.length > 0;
+      const hasContent = displayChat && displayChat.messages.length > 0;
       if (hasContent) {
         setShowHomePage(false);
       }
     }
-  }, [activeChatId, shouldRenderHomePage, activeChat]);
+  }, [displayActiveChatId, shouldRenderHomePage, displayChat]);
 
   useEffect(() => {
     if (!isNewChatMode || !activeChatId || !activeChat || activeChat.messages.length === 0) {
@@ -337,14 +339,14 @@ export default function Home() {
 
   // 获取当前对话的标题
   const getChatTitle = () => {
-    return activeChat?.title || "AI 聊天";
+    return displayChat?.title || "AI 聊天";
   };
 
   // 渲染界面
   return (
     <MainLayout
       sidebar={
-        <ChatSidebarLazy onNewChat={handleNewChat} />
+        <ChatSidebarLazy onNewChat={handleNewChat} activeChatIdOverride={displayActiveChatId} />
       }
       header={
         <header className="h-14 border-b flex items-center justify-between gap-3 px-4 sm:px-5 sticky top-0 z-10 shadow-sm bg-background">
@@ -355,7 +357,7 @@ export default function Home() {
           </div>
 
           <div className="flex min-w-0 flex-1 items-center justify-center gap-2 sm:gap-4 px-2">
-            {animatingTitleChatId === activeChatId ? (
+            {animatingTitleChatId === displayActiveChatId ? (
               <TypingTitle 
                 title={getChatTitle()} 
                 className="hidden truncate px-2 font-medium text-sm sm:block sm:text-base"
@@ -368,7 +370,7 @@ export default function Home() {
             )}
             <ModelSelectorLazy onChange={() => {
               // 当模型变更时，清空当前会话的问题缓存
-              if (activeChatId) {
+              if (displayActiveChatId) {
                 clearQuestions();
               }
             }} />
@@ -392,7 +394,7 @@ export default function Home() {
               loadingState="history-hydration"
             />
           </div>
-        ) : error && activeChatId && !hasMessages ? (
+        ) : error && displayActiveChatId && !hasMessages ? (
           <div className="flex-1 overflow-y-auto px-4 pt-4 flex items-center justify-center">
             <div className="text-center space-y-4">
               <div className="text-red-500 text-2xl">⚠️</div>
@@ -401,7 +403,7 @@ export default function Home() {
               </p>
               <p className="text-sm text-red-500">{error}</p>
               <div className="flex items-center justify-center gap-3">
-                <Button onClick={() => router.push(`/chat/${activeChatId}`)}>打开对话页重试</Button>
+                <Button onClick={() => router.push(`/chat/${displayActiveChatId}`)}>打开对话页重试</Button>
                 <Button variant="outline" onClick={() => router.push('/')}>返回首页</Button>
               </div>
             </div>
@@ -409,7 +411,7 @@ export default function Home() {
         ) : (
         <div className="flex-1 overflow-y-auto px-4 pt-4" data-chat-scroll-container="true">
             <ChatMessageListLazy
-              messages={activeChat?.messages || []}
+              messages={displayChat?.messages || []}
               loading={loading}
               isStreaming={isStreaming}
               onRetry={handleRetryMessage}
