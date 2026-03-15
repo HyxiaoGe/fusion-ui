@@ -53,7 +53,7 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ onNewChat, activeChatIdOverri
   });
 
   const { activeChatId: storeActiveChatId } = useAppSelector((state) => state.chat);
-  const activeChatId = activeChatIdOverride ?? storeActiveChatId;
+  const activeChatId = activeChatIdOverride === undefined ? storeActiveChatId : activeChatIdOverride;
   const { models } = useAppSelector((state) => state.models);
   const containerRef = useRef<HTMLDivElement | null>(null);
   
