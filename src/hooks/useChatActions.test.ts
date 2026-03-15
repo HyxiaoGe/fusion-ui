@@ -204,6 +204,28 @@ describe('useChatActions.newChat', () => {
     expect(createChatMock).not.toHaveBeenCalled();
   });
 
+  it('creates a new chat with the first enabled fallback model', () => {
+    currentState.models.selectedModelId = 'disabled-model';
+    currentState.models.models = [
+      { id: 'disabled-model', provider: 'qwen', capabilities: {}, enabled: false },
+      { id: 'enabled-model', provider: 'deepseek', capabilities: {}, enabled: true },
+    ] as any;
+
+    const { result } = renderHook(() =>
+      useChatActions({
+        onNewChatCreated: vi.fn(),
+      }),
+    );
+
+    result.current.newChat();
+
+    expect(createChatMock).toHaveBeenCalledWith({
+      model: 'enabled-model',
+      provider: 'deepseek',
+      title: '',
+    });
+  });
+
   it('blocks sending when the active chat model is unavailable', async () => {
     currentState.models.selectedModelId = 'enabled-model';
     currentState.models.models = [

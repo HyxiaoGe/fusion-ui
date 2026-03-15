@@ -48,6 +48,7 @@ import { useSuggestedQuestions } from '@/hooks/useSuggestedQuestions';
 import { useSuggestedQuestionContinuation } from '@/hooks/useSuggestedQuestionContinuation';
 import { useTransientCompletionState } from '@/hooks/useTransientCompletionState';
 import { shouldAutoFetchSuggestedQuestions } from '@/lib/chat/suggestedQuestionTiming';
+import { getPreferredModelId } from '@/lib/models/modelPreference';
 import { UserAvatarMenu } from '@/components/layouts/UserAvatarMenu';
 import ConfirmDialog from '@/components/ui/confirm-dialog';
 
@@ -155,7 +156,7 @@ export default function Home() {
       }
 
       // 如果没有合适的对话，才创建新对话
-      const modelToUse = urlModelParam || selectedModelId || (models.length > 0 ? models[0].id : null);
+      const modelToUse = getPreferredModelId(models, urlModelParam || selectedModelId);
       if (modelToUse) {
         const selectedModel = models.find(m => m.id === modelToUse);
         const providerToUse = selectedModel?.provider;
@@ -217,7 +218,7 @@ export default function Home() {
   } = useChatActions({
     onNewChatCreated: () => {
       // 创建新对话时跳转到准备状态（类似ChatGPT）
-      const modelToUse = selectedModelId || (models.length > 0 ? models[0].id : null);
+      const modelToUse = getPreferredModelId(models, selectedModelId);
       router.push(`/?new=true&model=${modelToUse}`);
     },
     onSendMessageStart: () => {
