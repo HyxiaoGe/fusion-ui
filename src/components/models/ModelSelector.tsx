@@ -51,11 +51,16 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({ onChange, modelId, disabl
 
   // 只有当当前聊天存在且有消息时，才禁用模型选择器
   const isDisabled = disabled || (!!activeChatId && hasMessages);
+  const currentModelId = modelId || activeChatModelId || getPreferredModelId(models, selectedModelId);
+  const selectedModel = models.find(model => model.id === currentModelId);
+  const isCurrentModelUnavailable = Boolean(selectedModel && !selectedModel.enabled);
   
   // 禁用提示信息
-  const disabledReason = hasMessages
-    ? "会话开始后无法更改模型" 
-    : disabled ? "模型选择器已禁用" : "";
+  const disabledReason = isCurrentModelUnavailable
+    ? "当前会话使用的模型目前不可用。你仍然可以查看历史消息，但需要新建会话后切换到可用模型。"
+    : hasMessages
+      ? "会话开始后无法更改模型"
+      : disabled ? "模型选择器已禁用" : "";
 
   // 在组件挂载后设置一个短暂的延迟，以确保模型数据加载
   useEffect(() => {
@@ -118,10 +123,6 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({ onChange, modelId, disabl
     }
   };
 
-  // 计算当前选中的模型
-  const currentModelId = modelId || activeChatModelId || getPreferredModelId(models, selectedModelId);
-  const selectedModel = models.find(model => model.id === currentModelId);
-  
   // 显示加载中状态
   if ((isLoading || localLoading) && models.length === 0) {
     return (
@@ -406,7 +407,7 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({ onChange, modelId, disabl
           <Tooltip delayDuration={300}>
             <TooltipTrigger asChild>
               <div className={isDisabled ? "cursor-not-allowed" : ""}>
-                <Select value={modelId || activeChatModelId || selectedModelId || ""} onValueChange={handleModelChange} disabled={isDisabled}>
+                <Select value={currentModelId || ""} onValueChange={handleModelChange} disabled={isDisabled}>
                   <SelectTrigger 
                     className={`w-[300px] transition-all duration-300 hover:shadow-lg focus:ring-2 focus:ring-offset-2 
                     ${isDisabled ? 'opacity-70' : 'hover:border-primary/50'}`}
@@ -428,6 +429,11 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({ onChange, modelId, disabl
                             </span>
                           ) : null}
                         </div>
+                        {isCurrentModelUnavailable ? (
+                          <span className="shrink-0 rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[10px] font-medium text-amber-700 dark:text-amber-300">
+                            建议新建会话切换
+                          </span>
+                        ) : null}
                         <div className="flex items-center gap-0.5">
                           {selectedModel.capabilities?.deepThinking && (
                             <span title="支持深度思考">
