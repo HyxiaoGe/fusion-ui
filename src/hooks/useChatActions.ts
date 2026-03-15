@@ -135,7 +135,6 @@ export const useChatActions = (options: ChatActionsOptions) => {
     }
 
     try {
-      dispatch(setActiveChat(null));
       options.onNewChatCreated?.();
     } catch (error) {
       dispatch(setError('创建对话失败，请重试'));

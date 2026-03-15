@@ -112,6 +112,12 @@ export default function Home() {
   // 判断是否显示欢迎页面
   const shouldShowWelcome = !activeChatId || chats.length === 0;
   
+  useEffect(() => {
+    if (isNewChatMode && activeChatId) {
+      dispatch(setActiveChat(null));
+    }
+  }, [activeChatId, dispatch, isNewChatMode]);
+
   // 根据当前状态决定是否显示主页
   useEffect(() => {
     if (isNewChatMode) {
@@ -170,7 +176,7 @@ export default function Home() {
         }
       }
 
-      if (showHomePage) {
+      if (shouldRenderHomePage) {
         setShowHomePage(false);
       }
     },
@@ -226,18 +232,18 @@ export default function Home() {
   }, [activeChatId]);
 
   // 当有activeChatId但还没有messages时的处理，或者正在加载服务端聊天时
-  const shouldShowLoadingChat = activeChatId && (!hasMessages || isLoadingServerChat) && !showHomePage && !error;
+  const shouldShowLoadingChat = activeChatId && (!hasMessages || isLoadingServerChat) && !shouldRenderHomePage && !error;
   
   // 当选择对话时，立即关闭首页显示（仅对有内容的对话）
   useEffect(() => {
-    if (activeChatId && showHomePage) {
+    if (activeChatId && shouldRenderHomePage) {
       // 检查是否是有内容的对话
       const hasContent = activeChat && activeChat.messages.length > 0;
       if (hasContent) {
         setShowHomePage(false);
       }
     }
-  }, [activeChatId, showHomePage, activeChat]);
+  }, [activeChatId, shouldRenderHomePage, activeChat]);
 
   const handleSendMessage = useCallback((content: string, files?: File[]) => {
     clearQuestions();
@@ -258,10 +264,10 @@ export default function Home() {
 
   // 当显示聊天界面时，关闭首页
   const handleChatSelected = useCallback(() => {
-    if (showHomePage) {
+    if (shouldRenderHomePage) {
       setShowHomePage(false);
     }
-  }, [showHomePage]);
+  }, [shouldRenderHomePage]);
 
   // 获取推荐问题函数
   const handleSelectQuestion = useSuggestedQuestionContinuation({
@@ -358,7 +364,7 @@ export default function Home() {
       }
     >
       <div className="h-full flex flex-col relative">
-        {showHomePage ? (
+        {shouldRenderHomePage ? (
           <div className="flex-1 overflow-y-auto">
             <HomePageLazy onSendMessage={handleSendMessage} onNewChat={handleNewChat} onChatSelected={handleChatSelected} />
           </div>
@@ -426,3 +432,4 @@ export default function Home() {
     </MainLayout>
   );
 }
+  const shouldRenderHomePage = isNewChatMode || showHomePage;

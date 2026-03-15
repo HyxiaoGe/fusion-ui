@@ -173,7 +173,7 @@ describe('useChatActions.newChat', () => {
     result.current.newChat();
 
     expect(createChatMock).not.toHaveBeenCalled();
-    expect(setActiveChatMock).toHaveBeenCalledWith(null);
+    expect(setActiveChatMock).not.toHaveBeenCalled();
     expect(onNewChatCreated).toHaveBeenCalledTimes(1);
   });
 
@@ -191,7 +191,7 @@ describe('useChatActions.newChat', () => {
     result.current.newChat();
 
     expect(createChatMock).not.toHaveBeenCalled();
-    expect(setActiveChatMock).toHaveBeenCalledWith(null);
+    expect(setActiveChatMock).not.toHaveBeenCalled();
   });
 
   it('dispatches an error when no model is available', () => {
@@ -219,7 +219,7 @@ describe('useChatActions.newChat', () => {
     result.current.newChat();
 
     expect(createChatMock).not.toHaveBeenCalled();
-    expect(setActiveChatMock).toHaveBeenCalledWith(null);
+    expect(setActiveChatMock).not.toHaveBeenCalled();
   });
 
   it('does not create a new chat when every model is unavailable', () => {
