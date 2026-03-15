@@ -246,6 +246,14 @@ export default function Home() {
     }
   }, [activeChatId, shouldRenderHomePage, activeChat]);
 
+  useEffect(() => {
+    if (!isNewChatMode || !activeChatId || !activeChat || activeChat.messages.length === 0) {
+      return;
+    }
+
+    router.replace(`/chat/${activeChatId}`);
+  }, [activeChat, activeChatId, isNewChatMode, router]);
+
   const handleSendMessage = useCallback((content: string, files?: File[]) => {
     clearQuestions();
     return sendMessage(content, files as any);
