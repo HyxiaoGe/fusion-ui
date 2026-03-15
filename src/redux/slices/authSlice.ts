@@ -34,6 +34,14 @@ function buildTokenUser(decoded: DecodedToken): UserProfile {
   };
 }
 
+function needsProfileRefresh(profile: UserProfile | null): boolean {
+  if (!profile) {
+    return true;
+  }
+
+  return profile.nickname == null && profile.avatar == null;
+}
+
 // 在模块加载时就读取localStorage，避免渲染闪烁
 const getInitialAuthState = (): AuthState => {
   const defaultState: AuthState = {
@@ -62,11 +70,15 @@ const getInitialAuthState = (): AuthState => {
           ? JSON.parse(userProfile)
           : buildTokenUser(decoded);
 
+        const parsedUser: UserProfile = userProfile
+          ? JSON.parse(userProfile)
+          : buildTokenUser(decoded);
+
         return {
           isAuthenticated: true,
-          user: user,
+          user: parsedUser,
           token: token,
-          status: 'succeeded',
+          status: needsProfileRefresh(parsedUser) ? 'idle' : 'succeeded',
           error: null,
         };
       } else {
@@ -107,6 +119,8 @@ const authSlice = createSlice({
             state.isAuthenticated = true;
             state.token = action.payload;
             state.user = buildTokenUser(decoded);
+            state.status = 'idle';
+            state.error = null;
             if (typeof window !== "undefined") {
               localStorage.setItem("auth_token", action.payload);
             }
