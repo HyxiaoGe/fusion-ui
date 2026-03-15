@@ -111,6 +111,7 @@ export default function Home() {
 
   // 判断是否显示欢迎页面
   const shouldShowWelcome = !activeChatId || chats.length === 0;
+  const shouldRenderHomePage = isNewChatMode || showHomePage;
   
   useEffect(() => {
     if (isNewChatMode && activeChatId) {
@@ -432,4 +433,3 @@ export default function Home() {
     </MainLayout>
   );
 }
-  const shouldRenderHomePage = isNewChatMode || showHomePage;
