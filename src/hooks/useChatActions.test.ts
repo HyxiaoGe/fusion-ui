@@ -226,6 +226,20 @@ describe('useChatActions.newChat', () => {
     });
   });
 
+  it('does not create a new chat when every model is unavailable', () => {
+    currentState.models.selectedModelId = 'disabled-model';
+    currentState.models.models = [
+      { id: 'disabled-model', provider: 'qwen', capabilities: {}, enabled: false },
+    ] as any;
+
+    const { result } = renderHook(() => useChatActions({}));
+
+    result.current.newChat();
+
+    expect(createChatMock).not.toHaveBeenCalled();
+    expect(setErrorMock).toHaveBeenCalledWith('没有可用的模型，无法创建对话');
+  });
+
   it('blocks sending when the active chat model is unavailable', async () => {
     currentState.models.selectedModelId = 'enabled-model';
     currentState.models.models = [

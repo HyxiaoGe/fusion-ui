@@ -13,12 +13,19 @@ export const getPreferredModelId = (
   return getDefaultModelId(models);
 };
 
-export const getDefaultModelId = (
+export const getFirstEnabledModelId = (
   models: Pick<ModelInfo, 'id' | 'enabled'>[],
 ): string | null => {
   const firstEnabledModel = models.find((model) => model.enabled);
+  return firstEnabledModel?.id ?? null;
+};
+
+export const getDefaultModelId = (
+  models: Pick<ModelInfo, 'id' | 'enabled'>[],
+): string | null => {
+  const firstEnabledModel = getFirstEnabledModelId(models);
   if (firstEnabledModel) {
-    return firstEnabledModel.id;
+    return firstEnabledModel;
   }
 
   return models[0]?.id ?? null;

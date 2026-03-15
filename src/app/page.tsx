@@ -48,7 +48,7 @@ import { useSuggestedQuestions } from '@/hooks/useSuggestedQuestions';
 import { useSuggestedQuestionContinuation } from '@/hooks/useSuggestedQuestionContinuation';
 import { useTransientCompletionState } from '@/hooks/useTransientCompletionState';
 import { shouldAutoFetchSuggestedQuestions } from '@/lib/chat/suggestedQuestionTiming';
-import { getPreferredModelId } from '@/lib/models/modelPreference';
+import { getFirstEnabledModelId, getPreferredModelId } from '@/lib/models/modelPreference';
 import { UserAvatarMenu } from '@/components/layouts/UserAvatarMenu';
 import ConfirmDialog from '@/components/ui/confirm-dialog';
 
@@ -218,8 +218,8 @@ export default function Home() {
   } = useChatActions({
     onNewChatCreated: () => {
       // 创建新对话时跳转到准备状态（类似ChatGPT）
-      const modelToUse = getPreferredModelId(models, selectedModelId);
-      router.push(`/?new=true&model=${modelToUse}`);
+      const modelToUse = getFirstEnabledModelId(models);
+      router.push(modelToUse ? `/?new=true&model=${modelToUse}` : '/?new=true');
     },
     onSendMessageStart: () => {
       if (isNewChatMode) {

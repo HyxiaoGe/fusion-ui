@@ -26,7 +26,7 @@ import { FileWithPreview } from '@/lib/utils/fileHelpers';
 import { sendMessageStream, updateMessageDuration } from '@/lib/api/chat';
 import { delayedExecution } from '@/lib/utils/retryHelper';
 import { generateChatTitle } from '@/lib/api/title';
-import { getPreferredModelId } from '@/lib/models/modelPreference';
+import { getFirstEnabledModelId, getPreferredModelId } from '@/lib/models/modelPreference';
 import { v4 as uuidv4 } from 'uuid';
 import { store } from '@/redux/store';
 
@@ -118,7 +118,7 @@ export const useChatActions = (options: ChatActionsOptions) => {
    * Creates a new chat session or reuses existing empty chat.
    */
   const newChat = useCallback(() => {
-    const modelToUse = getPreferredModelId(models, selectedModelId);
+    const modelToUse = getFirstEnabledModelId(models);
     if (!modelToUse) {
       dispatch(setError('没有可用的模型，无法创建对话'));
       return;

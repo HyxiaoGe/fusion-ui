@@ -262,6 +262,27 @@ describe('ChatInput', () => {
     );
   });
 
+  it('blocks the composer when the current selected model is unavailable', () => {
+    currentState.auth.isAuthenticated = true;
+    currentState.models.selectedModelId = 'legacy-model';
+    currentState.models.models = [
+      {
+        id: 'legacy-model',
+        provider: 'qwen',
+        enabled: false,
+        capabilities: {
+          fileSupport: false,
+          deepThinking: false,
+        },
+      },
+    ];
+
+    render(<ChatInput onSendMessage={vi.fn()} />);
+
+    expect(screen.getByPlaceholderText('当前会话模型不可用，请新建会话后继续')).toBeTruthy();
+    expect(screen.getByText('当前会话绑定的模型已不可用。请新建会话后切换到可用模型再继续聊天。')).toBeTruthy();
+  });
+
   it('skips duplicate files in the same batch and warns the user', async () => {
     currentState.auth.isAuthenticated = true;
     currentState.models.selectedModelId = 'model-1';
