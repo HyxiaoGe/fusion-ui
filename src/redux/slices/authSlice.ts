@@ -1,6 +1,7 @@
 import { createSlice, PayloadAction, createAsyncThunk } from "@reduxjs/toolkit";
 import { jwtDecode } from "jwt-decode";
 import { fetchUserProfileAPI, UserProfile } from '../../lib/api/user';
+import { clearAuthStorage, getStoredAccessToken } from '@/lib/auth/authService';
 
 interface AuthState {
   isAuthenticated: boolean;
@@ -11,10 +12,26 @@ interface AuthState {
 }
 
 interface DecodedToken {
-  id: string;
-  login: string;
-  avatar_url: string;
+  sub: string;
+  email?: string;
+  aud?: string;
   exp: number;
+}
+
+function buildTokenUser(decoded: DecodedToken): UserProfile {
+  const email = decoded.email?.trim() || null;
+  const username =
+    email?.split('@')[0] ||
+    `user-${decoded.sub.slice(0, 8)}`;
+
+  return {
+    id: decoded.sub,
+    username,
+    avatar: null,
+    email,
+    nickname: null,
+    mobile: null,
+  };
 }
 
 // 在模块加载时就读取localStorage，避免渲染闪烁
@@ -33,15 +50,18 @@ const getInitialAuthState = (): AuthState => {
   }
 
   try {
-    const token = localStorage.getItem("auth_token");
+    const token = getStoredAccessToken();
     const userProfile = localStorage.getItem("user_profile");
     
-    if (token && userProfile) {
+    if (token) {
       const decoded: DecodedToken = jwtDecode(token);
-      const user: UserProfile = JSON.parse(userProfile);
       
       // 检查token是否还有效
       if (decoded.exp * 1000 > Date.now()) {
+        const user: UserProfile = userProfile
+          ? JSON.parse(userProfile)
+          : buildTokenUser(decoded);
+
         return {
           isAuthenticated: true,
           user: user,
@@ -50,18 +70,12 @@ const getInitialAuthState = (): AuthState => {
           error: null,
         };
       } else {
-        // Token过期，清理localStorage
-        localStorage.removeItem("auth_token");
-        localStorage.removeItem("user_profile");
-        localStorage.removeItem("user_profile_timestamp");
+        clearAuthStorage();
       }
     }
   } catch (error) {
     console.error("Error initializing auth state:", error);
-    // 清理可能损坏的数据
-    localStorage.removeItem("auth_token");
-    localStorage.removeItem("user_profile");
-    localStorage.removeItem("user_profile_timestamp");
+    clearAuthStorage();
   }
 
   return defaultState;
@@ -92,23 +106,13 @@ const authSlice = createSlice({
           if (decoded.exp * 1000 > Date.now()) {
             state.isAuthenticated = true;
             state.token = action.payload;
-            state.user = { // Partially populate user from token
-              id: decoded.id,
-              username: decoded.login,
-              avatar: decoded.avatar_url,
-              email: null,
-              nickname: null,
-              mobile: null,
-            };
+            state.user = buildTokenUser(decoded);
             if (typeof window !== "undefined") {
               localStorage.setItem("auth_token", action.payload);
             }
           } else {
-            // Token过期，清理数据并重置状态
             if (typeof window !== "undefined") {
-              localStorage.removeItem("auth_token");
-              localStorage.removeItem("user_profile");
-              localStorage.removeItem("user_profile_timestamp");
+              clearAuthStorage();
             }
             state.isAuthenticated = false;
             state.user = null;
@@ -118,11 +122,8 @@ const authSlice = createSlice({
           }
         } catch (error) {
           console.error("Invalid token:", error);
-          // 清理无效数据并重置状态
           if (typeof window !== "undefined") {
-            localStorage.removeItem("auth_token");
-            localStorage.removeItem("user_profile");
-            localStorage.removeItem("user_profile_timestamp");
+            clearAuthStorage();
           }
           state.isAuthenticated = false;
           state.user = null;
@@ -131,11 +132,8 @@ const authSlice = createSlice({
           state.error = null;
         }
       } else {
-        // token为null，清理数据并重置状态
         if (typeof window !== "undefined") {
-          localStorage.removeItem("auth_token");
-          localStorage.removeItem("user_profile");
-          localStorage.removeItem("user_profile_timestamp");
+          clearAuthStorage();
         }
         state.isAuthenticated = false;
         state.user = null;
@@ -162,14 +160,9 @@ const authSlice = createSlice({
       }
     },
     logout: (state) => {
-      // 先清理localStorage
       if (typeof window !== "undefined") {
-        localStorage.removeItem("auth_token");
-        localStorage.removeItem("user_profile");
-        localStorage.removeItem("user_profile_timestamp");
+        clearAuthStorage();
       }
-      
-      // 重置为真正的空状态，而不是initialState
       state.isAuthenticated = false;
       state.user = null;
       state.token = null;

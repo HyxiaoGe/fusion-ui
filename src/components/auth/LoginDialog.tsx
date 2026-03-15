@@ -12,7 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Github, Mail, Loader2 } from "lucide-react";
 import { useState } from "react";
 import { useToast } from "@/components/ui/toast";
-import { API_CONFIG } from "@/lib/config";
+import { buildOAuthLoginUrl } from "@/lib/auth/authService";
 
 export function LoginDialog({
   open,
@@ -27,14 +27,29 @@ export function LoginDialog({
   const [isGoogleLoading, setIsGoogleLoading] = useState(false);
   const { toast } = useToast();
 
+  const startOAuthLogin = (provider: "github" | "google") => {
+    const loginUrl = buildOAuthLoginUrl(provider);
+    if (!loginUrl) {
+      toast({
+        message: "登录配置缺失，请稍后再试",
+        type: "error",
+      });
+      setIsGitHubLoading(false);
+      setIsGoogleLoading(false);
+      return;
+    }
+
+    window.location.href = loginUrl;
+  };
+
   const handleGitHubLogin = () => {
     setIsGitHubLoading(true);
-    window.location.href = `${API_CONFIG.BASE_URL}/api/auth/login/github`;
+    startOAuthLogin("github");
   };
 
   const handleGoogleLogin = () => {
     setIsGoogleLoading(true);
-    window.location.href = `${API_CONFIG.BASE_URL}/api/auth/login/google`;
+    startOAuthLogin("google");
   };
 
   return (

@@ -18,9 +18,8 @@ describe('authSlice', () => {
 
   it('accepts a valid token and persists it', () => {
     jwtDecodeMock.mockReturnValue({
-      id: 'user-1',
-      login: 'fusion-user',
-      avatar_url: 'https://example.com/avatar.png',
+      sub: 'user-1',
+      email: 'fusion-user@example.com',
       exp: Math.floor(Date.now() / 1000) + 3600,
     });
 
@@ -31,8 +30,8 @@ describe('authSlice', () => {
     expect(state.user).toEqual({
       id: 'user-1',
       username: 'fusion-user',
-      avatar: 'https://example.com/avatar.png',
-      email: null,
+      avatar: null,
+      email: 'fusion-user@example.com',
       nickname: null,
       mobile: null,
     });
@@ -44,9 +43,8 @@ describe('authSlice', () => {
     localStorage.setItem('user_profile', '{"id":"user-1"}');
     localStorage.setItem('user_profile_timestamp', '123');
     jwtDecodeMock.mockReturnValue({
-      id: 'user-1',
-      login: 'fusion-user',
-      avatar_url: 'https://example.com/avatar.png',
+      sub: 'user-1',
+      email: 'fusion-user@example.com',
       exp: Math.floor(Date.now() / 1000) - 60,
     });
 

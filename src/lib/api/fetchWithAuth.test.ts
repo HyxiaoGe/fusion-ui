@@ -28,6 +28,7 @@ describe('fetchWithAuth', () => {
 
   it('clears local auth data and throws on 401', async () => {
     localStorage.setItem('auth_token', 'token-123');
+    localStorage.setItem('auth_refresh_token', 'refresh-123');
     localStorage.setItem('user_profile', '{"id":"user-1"}');
     localStorage.setItem('user_profile_timestamp', '123');
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('{}', { status: 401 }));
@@ -35,6 +36,7 @@ describe('fetchWithAuth', () => {
     await expect(fetchWithAuth('/api/test')).rejects.toThrow('Unauthorized');
 
     expect(localStorage.getItem('auth_token')).toBeNull();
+    expect(localStorage.getItem('auth_refresh_token')).toBeNull();
     expect(localStorage.getItem('user_profile')).toBeNull();
     expect(localStorage.getItem('user_profile_timestamp')).toBeNull();
   });

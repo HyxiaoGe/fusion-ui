@@ -9,6 +9,24 @@ export const API_CONFIG = {
     // 重试次数
     RETRY_COUNT: 3,
   };
+
+export const AUTH_SERVICE_CONFIG = {
+  BASE_URL: process.env.NEXT_PUBLIC_AUTH_SERVICE_BASE_URL || '',
+  CLIENT_ID: process.env.NEXT_PUBLIC_AUTH_SERVICE_CLIENT_ID || '',
+  CALLBACK_URL: process.env.NEXT_PUBLIC_AUTH_CALLBACK_URL || '',
+};
+
+export function getAuthCallbackUrl(): string {
+  if (AUTH_SERVICE_CONFIG.CALLBACK_URL) {
+    return AUTH_SERVICE_CONFIG.CALLBACK_URL;
+  }
+
+  if (typeof window !== 'undefined') {
+    return `${window.location.origin}/auth/callback`;
+  }
+
+  return 'http://localhost:3000/auth/callback';
+}
   
   // 应用程序配置
   export const APP_CONFIG = {

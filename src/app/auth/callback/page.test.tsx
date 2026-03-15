@@ -5,17 +5,23 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const {
   dispatchMock,
   replaceMock,
-  getTokenMock,
+  getSearchParamMock,
   useAppDispatchMock,
   setTokenMock,
   fetchUserProfileMock,
+  exchangeAuthCodeMock,
+  storeAuthSessionMock,
+  toastMock,
 } = vi.hoisted(() => ({
   dispatchMock: vi.fn(),
   replaceMock: vi.fn(),
-  getTokenMock: vi.fn(),
+  getSearchParamMock: vi.fn(),
   useAppDispatchMock: vi.fn(),
   setTokenMock: vi.fn((token: string) => ({ type: 'auth/setToken', payload: token })),
   fetchUserProfileMock: vi.fn(() => ({ type: 'auth/fetchUserProfile' })),
+  exchangeAuthCodeMock: vi.fn(),
+  storeAuthSessionMock: vi.fn(),
+  toastMock: vi.fn(),
 }));
 
 vi.mock('next/navigation', () => ({
@@ -23,7 +29,7 @@ vi.mock('next/navigation', () => ({
     replace: replaceMock,
   }),
   useSearchParams: () => ({
-    get: getTokenMock,
+    get: getSearchParamMock,
   }),
 }));
 
@@ -31,9 +37,20 @@ vi.mock('@/redux/hooks', () => ({
   useAppDispatch: useAppDispatchMock,
 }));
 
+vi.mock('@/components/ui/toast', () => ({
+  useToast: () => ({
+    toast: toastMock,
+  }),
+}));
+
 vi.mock('@/redux/slices/authSlice', () => ({
   setToken: setTokenMock,
   fetchUserProfile: fetchUserProfileMock,
+}));
+
+vi.mock('@/lib/auth/authService', () => ({
+  exchangeAuthCode: exchangeAuthCodeMock,
+  storeAuthSession: storeAuthSessionMock,
 }));
 
 import AuthCallbackPage from './page';
@@ -42,18 +59,37 @@ describe('AuthCallbackPage', () => {
   beforeEach(() => {
     dispatchMock.mockReset();
     replaceMock.mockReset();
-    getTokenMock.mockReset();
+    getSearchParamMock.mockReset();
     useAppDispatchMock.mockReturnValue(dispatchMock);
     setTokenMock.mockClear();
     fetchUserProfileMock.mockClear();
+    exchangeAuthCodeMock.mockReset();
+    storeAuthSessionMock.mockReset();
+    toastMock.mockReset();
   });
 
-  it('stores token, fetches profile and redirects home when token exists', async () => {
-    getTokenMock.mockReturnValue('jwt-token');
+  it('exchanges auth code, stores session and redirects home', async () => {
+    getSearchParamMock.mockImplementation((key: string) => {
+      if (key === 'code') return 'auth-code';
+      return null;
+    });
+    exchangeAuthCodeMock.mockResolvedValue({
+      access_token: 'jwt-token',
+      refresh_token: 'refresh-token',
+      token_type: 'bearer',
+      expires_in: 3600,
+    });
 
     render(React.createElement(AuthCallbackPage));
 
     await waitFor(() => {
+      expect(exchangeAuthCodeMock).toHaveBeenCalledWith('auth-code');
+      expect(storeAuthSessionMock).toHaveBeenCalledWith({
+        access_token: 'jwt-token',
+        refresh_token: 'refresh-token',
+        token_type: 'bearer',
+        expires_in: 3600,
+      });
       expect(setTokenMock).toHaveBeenCalledWith('jwt-token');
       expect(fetchUserProfileMock).toHaveBeenCalledTimes(1);
       expect(dispatchMock).toHaveBeenCalledWith({ type: 'auth/setToken', payload: 'jwt-token' });
@@ -62,8 +98,24 @@ describe('AuthCallbackPage', () => {
     });
   });
 
-  it('redirects home directly when token is missing', async () => {
-    getTokenMock.mockReturnValue(null);
+  it('still accepts legacy token callbacks', async () => {
+    getSearchParamMock.mockImplementation((key: string) => {
+      if (key === 'token') return 'legacy-token';
+      return null;
+    });
+
+    render(React.createElement(AuthCallbackPage));
+
+    await waitFor(() => {
+      expect(exchangeAuthCodeMock).not.toHaveBeenCalled();
+      expect(setTokenMock).toHaveBeenCalledWith('legacy-token');
+      expect(fetchUserProfileMock).toHaveBeenCalledTimes(1);
+      expect(replaceMock).toHaveBeenCalledWith('/');
+    });
+  });
+
+  it('redirects home directly when auth params are missing', async () => {
+    getSearchParamMock.mockReturnValue(null);
 
     render(React.createElement(AuthCallbackPage));
 

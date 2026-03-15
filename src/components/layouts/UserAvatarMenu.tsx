@@ -18,6 +18,7 @@ import { resetFileUploadState } from "@/redux/slices/fileUploadSlice";
 import { Settings, LogOut, LogIn } from "lucide-react";
 import { useState } from "react";
 import { LoginDialog } from "@/components/auth/LoginDialog";
+import { revokeAuthSession } from "@/lib/auth/authService";
 
 export function UserAvatarMenu() {
   const dispatch = useAppDispatch();
@@ -58,7 +59,7 @@ export function UserAvatarMenu() {
   };
 
   const handleLogout = () => {
-    // 同时清理所有用户相关数据
+    void revokeAuthSession();
     dispatch(logout());
     dispatch(resetChatState());
     dispatch(resetFileUploadState());

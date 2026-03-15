@@ -14,12 +14,14 @@ import { logout } from "@/redux/slices/authSlice";
 import { openSettingsDialog } from "@/redux/slices/settingsSlice";
 import { LogIn, LogOut, Settings } from "lucide-react";
 import { LoginDialog } from "../auth/LoginDialog";
+import { revokeAuthSession } from "@/lib/auth/authService";
 
 export function UserMenu() {
   const dispatch = useAppDispatch();
   const { isAuthenticated, user } = useAppSelector((state) => state.auth);
 
   const handleLogout = () => {
+    void revokeAuthSession();
     dispatch(logout());
   };
 
