@@ -125,7 +125,7 @@ export const useChatActions = (options: ChatActionsOptions) => {
   }, [dispatch]);
 
   /**
-   * Creates a new chat session or reuses existing empty chat.
+   * Creates a new chat session or keeps the currently active empty draft.
    */
   const newChat = useCallback(() => {
     const firstEnabledModel = getFirstEnabledModel();
@@ -134,28 +134,20 @@ export const useChatActions = (options: ChatActionsOptions) => {
       return;
     }
 
-    // 首先检查是否已经存在空对话（没有消息的对话）
-    const existingEmptyChat = chats.find(chat => chat.messages.length === 0);
-    
-    if (existingEmptyChat) {
-      if (existingEmptyChat.model !== firstEnabledModel.id) {
-        dispatch(updateChatModel({ chatId: existingEmptyChat.id, model: firstEnabledModel.id }));
+    const activeChat = activeChatId ? chats.find((chat) => chat.id === activeChatId) : null;
+    const activeEmptyChat = activeChat && activeChat.messages.length === 0 ? activeChat : null;
+
+    if (activeEmptyChat) {
+      if (activeEmptyChat.model !== firstEnabledModel.id) {
+        dispatch(updateChatModel({ chatId: activeEmptyChat.id, model: firstEnabledModel.id }));
       }
-      // 如果已经有空对话，直接激活它，不创建新的
-      if (existingEmptyChat.id !== activeChatId) {
-        dispatch(setActiveChat(existingEmptyChat.id));
-      }
-      // 调用回调，让页面处理UI状态
       options.onNewChatCreated?.();
       return;
     }
 
     try {
-      // 只有当没有空对话时，才创建新对话
       dispatch(createChat({ model: firstEnabledModel.id, provider: firstEnabledModel.provider, title: '' }));
-      
       options.onNewChatCreated?.();
-
     } catch (error) {
       dispatch(setError('创建对话失败，请重试'));
     }
@@ -186,39 +178,19 @@ export const useChatActions = (options: ChatActionsOptions) => {
     }
 
     if (!currentActiveChatId) {
-      // 先检查是否有空对话可以复用
-      const existingEmptyChat = chats.find(chat => chat.messages.length === 0);
-      
-      if (existingEmptyChat) {
-        if (existingEmptyChat.model !== firstEnabledModel?.id && firstEnabledModel) {
-          dispatch(updateChatModel({ chatId: existingEmptyChat.id, model: firstEnabledModel.id }));
-        }
-        // 复用已存在的空对话
-        currentActiveChatId = existingEmptyChat.id;
-        modelIdForSend = firstEnabledModel?.id || existingEmptyChat.model || selectedModelId;
-        // 如果空对话不是当前激活的，激活它
-        if (existingEmptyChat.id !== activeChatId) {
-          dispatch(setActiveChat(existingEmptyChat.id));
-        }
-        // 使用短暂延迟，让状态更新生效
-        await new Promise(resolve => setTimeout(resolve, 50));
-      } else {
-        // 没有空对话，创建新的
-        const newChatId = uuidv4();
-        
-        dispatch(
-          createChat({
-            id: newChatId,
-            model: firstEnabledModel!.id,
-            provider: firstEnabledModel!.provider,
-            title: content.substring(0, 30),
-          })
-        );
-        currentActiveChatId = newChatId;
-        modelIdForSend = firstEnabledModel!.id;
-        // 使用短暂延迟，让状态更新生效
-        await new Promise(resolve => setTimeout(resolve, 50));
-      }
+      const newChatId = uuidv4();
+
+      dispatch(
+        createChat({
+          id: newChatId,
+          model: firstEnabledModel!.id,
+          provider: firstEnabledModel!.provider,
+          title: content.substring(0, 30),
+        })
+      );
+      currentActiveChatId = newChatId;
+      modelIdForSend = firstEnabledModel!.id;
+      await new Promise(resolve => setTimeout(resolve, 50));
     }
     
     if (!currentActiveChatId) {

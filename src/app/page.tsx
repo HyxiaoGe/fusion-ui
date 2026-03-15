@@ -144,17 +144,6 @@ export default function Home() {
         }
       }
 
-      // 检查是否有其他空对话可以使用
-      const emptyChat = localChats.find(chat => chat.messages.length === 0);
-      if (emptyChat) {
-        // 如果有空对话，直接激活它
-        if (emptyChat.id !== activeChatId) {
-          dispatch(setActiveChat(emptyChat.id));
-        }
-        hasCreatedChatForCurrentUrl.current = true; // 标记已处理
-        return;
-      }
-
       // 如果没有合适的对话，才创建新对话
       const modelToUse = getFirstEnabledModelId(models);
       if (modelToUse) {

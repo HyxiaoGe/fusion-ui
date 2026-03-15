@@ -158,7 +158,7 @@ describe('useChatActions.newChat', () => {
     useAppSelectorMock.mockImplementation(selector => selector(currentState));
   });
 
-  it('reuses an existing empty chat instead of creating a new one', () => {
+  it('creates a new chat instead of reusing a historical empty chat', () => {
     currentState.models.models = [
       { id: 'model-1', provider: 'qwen' },
     ];
@@ -172,8 +172,12 @@ describe('useChatActions.newChat', () => {
 
     result.current.newChat();
 
-    expect(setActiveChatMock).toHaveBeenCalledWith('chat-empty');
-    expect(createChatMock).not.toHaveBeenCalled();
+    expect(createChatMock).toHaveBeenCalledWith({
+      model: 'model-1',
+      provider: 'qwen',
+      title: '',
+    });
+    expect(setActiveChatMock).not.toHaveBeenCalled();
     expect(onNewChatCreated).toHaveBeenCalledTimes(1);
   });
 
@@ -609,6 +613,70 @@ describe('useChatActions.sendMessage', () => {
     await vi.runAllTimersAsync();
 
     expect(onStreamEnd).toHaveBeenCalledWith('uuid-1');
+  });
+
+  it('creates a fresh chat when sending from home instead of jumping to an older empty chat', async () => {
+    currentState.chat.activeChatId = null;
+    currentState.chat.chats = [
+      {
+        id: 'chat-empty',
+        model: 'model-1',
+        title: '',
+        messages: [],
+      },
+    ] as any;
+
+    dispatchMock.mockImplementation(action => {
+      if (action?.type === 'chat/createChat') {
+        currentState.chat.activeChatId = action.payload.id;
+        currentState.chat.chats = [
+          ...currentState.chat.chats,
+          {
+            id: action.payload.id,
+            title: action.payload.title,
+            model: action.payload.model,
+            messages: [],
+          },
+        ];
+      }
+
+      if (action?.type === 'chat/addMessage') {
+        currentState.chat.chats = currentState.chat.chats.map(chat =>
+          chat.id === action.payload.chatId
+            ? {
+                ...chat,
+                messages: [...chat.messages, action.payload.message],
+              }
+            : chat
+        );
+      }
+
+      return action;
+    });
+
+    sendMessageStreamMock.mockResolvedValue(undefined);
+
+    const { result } = renderHook(() => useChatActions({}));
+
+    const sendPromise = result.current.sendMessage('新的问题');
+    await vi.advanceTimersByTimeAsync(50);
+    await sendPromise;
+
+    expect(createChatMock).toHaveBeenCalledWith({
+      id: expect.any(String),
+      model: 'model-1',
+      provider: 'qwen',
+      title: '新的问题',
+    });
+    expect(createChatMock.mock.calls[0]?.[0]?.id).not.toBe('chat-empty');
+    expect(setActiveChatMock).not.toHaveBeenCalled();
+    expect(sendMessageStreamMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        conversation_id: expect.any(String),
+      }),
+      expect.any(Function)
+    );
+    expect(sendMessageStreamMock.mock.calls[0]?.[0]?.conversation_id).not.toBe('chat-empty');
   });
 });
 
