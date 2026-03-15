@@ -64,6 +64,7 @@ export default function Home() {
 
   const [inputKey, setInputKey] = useState(Date.now());
   const [showHomePage, setShowHomePage] = useState(false);
+  const newModeEntryChatIdRef = useRef<string | null>(null);
 
   // 优化：合并状态选择器，减少重渲染
   const {
@@ -112,12 +113,15 @@ export default function Home() {
   // 判断是否显示欢迎页面
   const shouldShowWelcome = !activeChatId || chats.length === 0;
   const shouldRenderHomePage = isNewChatMode || showHomePage;
-  
+
   useEffect(() => {
-    if (isNewChatMode && activeChatId) {
-      dispatch(setActiveChat(null));
+    if (isNewChatMode) {
+      newModeEntryChatIdRef.current = activeChatId;
+      return;
     }
-  }, [activeChatId, dispatch, isNewChatMode]);
+
+    newModeEntryChatIdRef.current = null;
+  }, [activeChatId, isNewChatMode]);
 
   // 根据当前状态决定是否显示主页
   useEffect(() => {
@@ -248,6 +252,10 @@ export default function Home() {
 
   useEffect(() => {
     if (!isNewChatMode || !activeChatId || !activeChat || activeChat.messages.length === 0) {
+      return;
+    }
+
+    if (newModeEntryChatIdRef.current && newModeEntryChatIdRef.current === activeChatId) {
       return;
     }
 
