@@ -91,6 +91,8 @@ const ChatInput: React.FC<ChatInputProps> = ({
     () => models.find((model) => model.id === (activeChatModelId || selectedModelId)),
     [activeChatModelId, models, selectedModelId]
   );
+  const isCurrentModelUnavailable = Boolean(activeChatModelId && selectedModel && !selectedModel.enabled);
+  const isComposerBlocked = disabled || isCurrentModelUnavailable;
 
   const supportsReasoning = selectedModel?.capabilities?.deepThinking || false;
   const supportsFileUpload = selectedModel?.capabilities?.fileSupport || false;
@@ -126,7 +128,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
 
     if (!selectedModel) {
       toast({
-        message: "请先选择模型再上传文件",
+        message: "请先选择可用模型再上传文件",
         type: "error",
         duration: 3000,
       });
@@ -359,7 +361,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
   };
 
   const handleSendMessage = () => {
-    if ((!message.trim() && localFiles.length === 0) || disabled) {
+    if ((!message.trim() && localFiles.length === 0) || isComposerBlocked) {
       return;
     }
 
@@ -420,10 +422,10 @@ const ChatInput: React.FC<ChatInputProps> = ({
 
     const input = textareaRef.current;
     setTimeout(() => {
-      input.disabled = disabled;
+      input.disabled = isComposerBlocked;
       input.readOnly = false;
     }, 100);
-  }, [disabled, chatId]);
+  }, [isComposerBlocked, chatId]);
 
   useEffect(() => {
     if (!textareaRef.current) {
@@ -649,7 +651,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
         {onClearMessage && (
           <Button
             onClick={onClearMessage}
-            disabled={disabled}
+            disabled={isComposerBlocked}
             variant="ghost"
             size="icon"
             className="h-10 w-10"
@@ -664,12 +666,12 @@ const ChatInput: React.FC<ChatInputProps> = ({
           size="icon"
           className={`h-10 w-10 flex items-center justify-center ${!supportsReasoning ? "opacity-50 cursor-not-allowed" : ""}`}
           onClick={() => {
-            if (!supportsReasoning || disabled) {
+            if (!supportsReasoning || isComposerBlocked) {
               return;
             }
             dispatch(toggleReasoning(!reasoningEnabled));
           }}
-          disabled={!supportsReasoning || disabled}
+          disabled={!supportsReasoning || isComposerBlocked}
           title={supportsReasoning ? (reasoningEnabled ? "AI思考过程已开启" : "AI思考过程已关闭") : "当前模型不支持思考过程"}
         >
           <Lightbulb className={`h-5 w-5 ${reasoningEnabled && supportsReasoning ? "text-amber-400" : ""}`} />
@@ -677,7 +679,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
 
         <Button
           onClick={handleFileSelect}
-          disabled={disabled}
+          disabled={isComposerBlocked}
           variant="ghost"
           size="icon"
           className="h-10 w-10"
@@ -704,21 +706,27 @@ const ChatInput: React.FC<ChatInputProps> = ({
           onChange={(event) => setMessage(event.target.value)}
           onKeyDown={handleKeyDown}
           onPaste={handlePaste}
-          placeholder={placeholder}
-          disabled={disabled}
+          placeholder={isCurrentModelUnavailable ? "当前会话模型不可用，请新建会话后继续" : placeholder}
+          disabled={isComposerBlocked}
           className="min-h-10 max-h-64 flex-1 resize-none"
           rows={1}
         />
 
         <Button
           onClick={handleSendMessage}
-          disabled={(!message.trim() && localFiles.length === 0) || disabled || hasProcessingFiles}
+          disabled={(!message.trim() && localFiles.length === 0) || isComposerBlocked || hasProcessingFiles}
           size="icon"
           className="h-10 w-10"
         >
           <SendIcon className="h-5 w-5" />
         </Button>
       </div>
+
+      {isCurrentModelUnavailable ? (
+        <div className="rounded-md border border-amber-500/20 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-300">
+          当前会话绑定的模型已不可用。请新建会话后切换到可用模型再继续聊天。
+        </div>
+      ) : null}
 
       {hasProcessingFiles && renderProcessingMessage()}
 

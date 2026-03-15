@@ -1,4 +1,4 @@
-import { renderHook } from '@testing-library/react';
+import { act, renderHook } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const {
@@ -202,6 +202,38 @@ describe('useChatActions.newChat', () => {
 
     expect(setErrorMock).toHaveBeenCalledWith('没有可用的模型，无法创建对话');
     expect(createChatMock).not.toHaveBeenCalled();
+  });
+
+  it('blocks sending when the active chat model is unavailable', async () => {
+    currentState.models.selectedModelId = 'enabled-model';
+    currentState.models.models = [
+      { id: 'enabled-model', provider: 'qwen', capabilities: {}, enabled: true },
+      { id: 'legacy-model', provider: 'qwen', capabilities: {}, enabled: false },
+    ] as any;
+    currentState.chat.activeChatId = 'chat-1';
+    currentState.chat.chats = [
+      {
+        id: 'chat-1',
+        model: 'legacy-model',
+        messages: [],
+      },
+    ] as any;
+
+    const { result } = renderHook(() =>
+      useChatActions({
+        onSendMessageStart: vi.fn(),
+      }),
+    );
+
+    await act(async () => {
+      await result.current.sendMessage('hello');
+    });
+
+    expect(dispatchMock).toHaveBeenCalledWith({
+      type: 'chat/setError',
+      payload: '当前会话绑定的模型已不可用，请新建会话后切换到可用模型',
+    });
+    expect(sendMessageStreamMock).not.toHaveBeenCalled();
   });
 });
 

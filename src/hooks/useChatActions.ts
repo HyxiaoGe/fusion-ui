@@ -65,6 +65,20 @@ export const useChatActions = (options: ChatActionsOptions) => {
 
   const pendingQuestionRequestRef = useRef<NodeJS.Timeout | null>(null);
 
+  const getBlockedChatModelMessage = useCallback((chatId: string) => {
+    const chat = chats.find((item) => item.id === chatId);
+    if (!chat?.model) {
+      return null;
+    }
+
+    const chatModel = models.find((model) => model.id === chat.model);
+    if (!chatModel || chatModel.enabled) {
+      return null;
+    }
+
+    return '当前会话绑定的模型已不可用，请新建会话后切换到可用模型';
+  }, [chats, models]);
+
   const scheduleStreamEnd = useCallback((chatId: string, delayMs: number = FOLLOW_UP_REQUEST_DELAY_MS) => {
     if (pendingQuestionRequestRef.current) {
       clearTimeout(pendingQuestionRequestRef.current);
@@ -189,6 +203,12 @@ export const useChatActions = (options: ChatActionsOptions) => {
       return;
     }
 
+    const blockedChatModelMessage = getBlockedChatModelMessage(currentActiveChatId);
+    if (blockedChatModelMessage) {
+      dispatch(setError(blockedChatModelMessage));
+      return;
+    }
+
     const userMessage: Message = {
       role: 'user',
       content: content.trim(),
@@ -300,11 +320,17 @@ export const useChatActions = (options: ChatActionsOptions) => {
       dispatch(setMessageStatus({ chatId: currentActiveChatId, messageId: userMessage.id, status: 'failed' }));
       cleanupStreamingFailure(currentActiveChatId);
     }
-  }, [activeChatId, selectedModelId, models, dispatch, reasoningEnabled, scheduleInitialTitleGeneration, scheduleStreamEnd, refreshChatList, cleanupStreamingFailure]);
+  }, [activeChatId, selectedModelId, models, dispatch, reasoningEnabled, scheduleInitialTitleGeneration, scheduleStreamEnd, refreshChatList, cleanupStreamingFailure, getBlockedChatModelMessage, chats]);
 
 
   const retryMessage = useCallback(async (messageId: string) => {
     if (!activeChatId || !selectedModelId) return;
+
+    const blockedChatModelMessage = getBlockedChatModelMessage(activeChatId);
+    if (blockedChatModelMessage) {
+      dispatch(setError(blockedChatModelMessage));
+      return;
+    }
 
     const chat = chats.find(c => c.id === activeChatId);
     if (!chat) return;
@@ -393,11 +419,17 @@ export const useChatActions = (options: ChatActionsOptions) => {
 
       await resendMessage(userMessage);
     }
-  }, [activeChatId, selectedModelId, chats, models, dispatch, reasoningEnabled, scheduleStreamEnd, cleanupStreamingFailure]);
+  }, [activeChatId, selectedModelId, chats, models, dispatch, reasoningEnabled, scheduleStreamEnd, cleanupStreamingFailure, getBlockedChatModelMessage]);
 
 
   const editMessage = useCallback(async (messageId: string, newContent: string) => {
     if (!activeChatId || !selectedModelId) return;
+
+    const blockedChatModelMessage = getBlockedChatModelMessage(activeChatId);
+    if (blockedChatModelMessage) {
+      dispatch(setError(blockedChatModelMessage));
+      return;
+    }
 
     dispatch(editMessageAction({ chatId: activeChatId, messageId, content: newContent }));
 
@@ -465,7 +497,7 @@ export const useChatActions = (options: ChatActionsOptions) => {
       dispatch(setError('发送编辑后的消息失败，请重试'));
       cleanupStreamingFailure(activeChatId);
     }
-  }, [activeChatId, selectedModelId, chats, models, dispatch, reasoningEnabled, scheduleStreamEnd, cleanupStreamingFailure]);
+  }, [activeChatId, selectedModelId, chats, models, dispatch, reasoningEnabled, scheduleStreamEnd, cleanupStreamingFailure, getBlockedChatModelMessage]);
 
   return { newChat, clearCurrentChat, sendMessage, retryMessage, editMessage };
 }; 
