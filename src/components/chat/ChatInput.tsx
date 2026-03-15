@@ -686,9 +686,19 @@ const ChatInput: React.FC<ChatInputProps> = ({
           <PaperclipIcon className="h-5 w-5" />
         </Button>
 
-        <input type="file" ref={fileInputRef} onChange={handleFileChange} className="hidden" multiple />
+        <input
+          id="chat-file-input"
+          name="chatFiles"
+          type="file"
+          ref={fileInputRef}
+          onChange={handleFileChange}
+          className="hidden"
+          multiple
+        />
 
         <Textarea
+          id="chat-message-input"
+          name="chatMessage"
           ref={textareaRef}
           value={message}
           onChange={(event) => setMessage(event.target.value)}
