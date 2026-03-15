@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { getPreferredModelId } from './modelPreference';
+import { getDefaultModelId, getPreferredModelId } from './modelPreference';
 
 describe('getPreferredModelId', () => {
   const models = [
@@ -14,6 +14,10 @@ describe('getPreferredModelId', () => {
 
   it('falls back to the first enabled model when the requested one is disabled', () => {
     expect(getPreferredModelId(models, 'disabled-a')).toBe('enabled-b');
+  });
+
+  it('returns the stable default enabled model for recommendation purposes', () => {
+    expect(getDefaultModelId(models)).toBe('enabled-b');
   });
 
   it('falls back to the first model when none are enabled', () => {

@@ -10,6 +10,12 @@ export const getPreferredModelId = (
     return requestedModel.id;
   }
 
+  return getDefaultModelId(models);
+};
+
+export const getDefaultModelId = (
+  models: Pick<ModelInfo, 'id' | 'enabled'>[],
+): string | null => {
   const firstEnabledModel = models.find((model) => model.enabled);
   if (firstEnabledModel) {
     return firstEnabledModel.id;
