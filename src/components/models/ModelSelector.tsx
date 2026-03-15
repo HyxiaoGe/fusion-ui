@@ -7,6 +7,7 @@ import {
   SelectTrigger
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
+import { getPreferredModelId } from "@/lib/models/modelPreference";
 import { useAppDispatch, useAppSelector } from "@/redux/hooks";
 import { updateChatModel } from "@/redux/slices/chatSlice";
 import { setSelectedModel } from "@/redux/slices/modelsSlice";
@@ -46,6 +47,7 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({ onChange, modelId, disabl
   
   // 优先使用当前聊天的模型ID，如果存在活动聊天
   const activeChatModelId = activeChat?.model;
+  const preferredModelId = getPreferredModelId(models, activeChatModelId || selectedModelId);
 
   // 只有当当前聊天存在且有消息时，才禁用模型选择器
   const isDisabled = disabled || (!!activeChatId && hasMessages);
@@ -117,7 +119,7 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({ onChange, modelId, disabl
   };
 
   // 计算当前选中的模型
-  const currentModelId = modelId || activeChatModelId || selectedModelId;
+  const currentModelId = modelId || activeChatModelId || selectedModelId || preferredModelId;
   const selectedModel = models.find(model => model.id === currentModelId);
   
   // 显示加载中状态
@@ -420,6 +422,11 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({ onChange, modelId, disabl
                             />
                           </div>
                           <span className="truncate font-medium">{selectedModel.name}</span>
+                          {!selectedModel.enabled ? (
+                            <span className="shrink-0 rounded-full bg-amber-500/10 px-2 py-0.5 text-[10px] font-medium text-amber-700 dark:text-amber-300">
+                              当前不可用
+                            </span>
+                          ) : null}
                         </div>
                         <div className="flex items-center gap-0.5">
                           {selectedModel.capabilities?.deepThinking && (
@@ -520,9 +527,14 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({ onChange, modelId, disabl
                                   {model.name}
                                 </div>
                                 <div className="flex gap-1 items-center mt-0.5">
-                                  {!model.enabled && (
-                                    <span className="text-[10px] text-gray-500 font-medium">即将开放</span>
-                                  )}
+                                  {!model.enabled ? (
+                                    <span className="text-[10px] text-gray-500 font-medium">未启用</span>
+                                  ) : null}
+                                  {model.id === preferredModelId && model.enabled ? (
+                                    <span className="rounded-full bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary">
+                                      推荐
+                                    </span>
+                                  ) : null}
                                 </div>
                               </div>
                               

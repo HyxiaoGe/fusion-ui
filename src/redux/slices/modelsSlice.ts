@@ -1,4 +1,5 @@
 import { ModelInfo, ProviderInfo, providers } from "@/lib/config/modelConfig";
+import { getPreferredModelId } from "@/lib/models/modelPreference";
 import { createSlice, PayloadAction } from "@reduxjs/toolkit";
 
 // 从localStorage获取之前选择的模型ID
@@ -61,22 +62,21 @@ const modelsSlice = createSlice({
       
       // 获取保存的模型ID
       const savedModelId = getSavedModelId();
-      
-      // 如果有保存的模型ID且该模型在新数据中存在，则使用保存的模型ID
-      if (savedModelId && action.payload.find(m => m.id === savedModelId)) {
-        state.selectedModelId = savedModelId;
+
+      const preferredModelId = getPreferredModelId(
+        action.payload,
+        savedModelId || state.selectedModelId,
+      );
+
+      if (preferredModelId !== state.selectedModelId) {
+        state.selectedModelId = preferredModelId;
       }
-      // 否则，如果没有选择模型或者选择的模型在新数据中不存在，则自动选择第一个模型
-      else if (!state.selectedModelId || !action.payload.find(m => m.id === state.selectedModelId)) {
-        state.selectedModelId = action.payload.length > 0 ? action.payload[0].id : null;
-        
-        // 保存新选择的模型ID
-        if (state.selectedModelId && typeof window !== 'undefined') {
-          try {
-            localStorage.setItem('selectedModelId', state.selectedModelId);
-          } catch (error) {
-            console.error('Error saving selectedModelId to localStorage:', error);
-          }
+
+      if (state.selectedModelId && typeof window !== 'undefined') {
+        try {
+          localStorage.setItem('selectedModelId', state.selectedModelId);
+        } catch (error) {
+          console.error('Error saving selectedModelId to localStorage:', error);
         }
       }
     }
