@@ -32,12 +32,21 @@ export function UserAvatarMenu() {
     return avatarOption ? avatarOption.emoji : '👤';
   };
 
-  // 获取用户显示名称
   const getUserDisplayName = () => {
     if (isAuthenticated && user) {
-      return user.username || user.nickname || '用户';
+      return user.nickname || user.username || '用户';
     }
     return '用户';
+  };
+
+  const getAvatarFallbackText = () => {
+    if (isAuthenticated && user) {
+      const displayName = getUserDisplayName().trim();
+      if (displayName) {
+        return displayName.slice(0, 1).toUpperCase();
+      }
+    }
+    return getCurrentAvatarEmoji();
   };
 
   // 获取用户状态描述
@@ -52,7 +61,7 @@ export function UserAvatarMenu() {
   const hasUserAvatar = Boolean(isAuthenticated && user?.avatar);
   
   // 确保总是有一个emoji作为备用
-  const fallbackEmoji = getCurrentAvatarEmoji();
+  const fallbackText = getAvatarFallbackText();
 
   const handleOpenSettings = () => {
     dispatch(openSettingsDialog({}));
@@ -83,14 +92,14 @@ export function UserAvatarMenu() {
                   <AvatarImage src={user.avatar} alt={getUserDisplayName()} />
                   <AvatarFallback className="text-sm bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-blue-900/20 dark:to-indigo-900/20 text-foreground border">
                     <div className="w-full h-full flex items-center justify-center">
-                      <span className="block text-center leading-none">{fallbackEmoji}</span>
+                      <span className="block text-center leading-none">{fallbackText}</span>
                     </div>
                   </AvatarFallback>
                 </>
               ) : (
                 <AvatarFallback className="text-sm bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-blue-900/20 dark:to-indigo-900/20 text-foreground border">
                   <div className="w-full h-full flex items-center justify-center">
-                    <span className="block text-center leading-none">{fallbackEmoji}</span>
+                    <span className="block text-center leading-none">{fallbackText}</span>
                   </div>
                 </AvatarFallback>
               )}
@@ -110,13 +119,13 @@ export function UserAvatarMenu() {
                     <AvatarImage src={user.avatar} alt={getUserDisplayName()} />
                     <AvatarFallback className="text-sm">
                       <div className="w-full h-full flex items-center justify-center">
-                        <span className="block text-center leading-none">{fallbackEmoji}</span>
+                        <span className="block text-center leading-none">{fallbackText}</span>
                       </div>
                     </AvatarFallback>
                   </Avatar>
                 ) : (
                   <div className="w-8 h-8 flex items-center justify-center">
-                    <span className="text-2xl block text-center leading-none">{fallbackEmoji}</span>
+                    <span className="text-lg block text-center leading-none">{fallbackText}</span>
                   </div>
                 )}
               </div>
