@@ -80,33 +80,34 @@ export function UserAvatarMenu() {
 
   return (
     <>
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <Button variant="ghost" className="relative h-9 w-9 rounded-full hover:scale-110 transition-all duration-300 shadow-sm hover:shadow-md">
-            <Avatar 
-              key={`avatar-${isAuthenticated}-${user?.avatar || userAvatar}`}
-              className="h-8 w-8"
-            >
-              {hasUserAvatar && user?.avatar ? (
-                <>
-                  <AvatarImage src={user.avatar} alt={getUserDisplayName()} />
+      {isAuthenticated ? (
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="ghost" className="relative h-9 w-9 rounded-full hover:scale-110 transition-all duration-300 shadow-sm hover:shadow-md">
+              <Avatar 
+                key={`avatar-${isAuthenticated}-${user?.avatar || userAvatar}`}
+                className="h-8 w-8"
+              >
+                {hasUserAvatar && user?.avatar ? (
+                  <>
+                    <AvatarImage src={user.avatar} alt={getUserDisplayName()} />
+                    <AvatarFallback className="text-sm bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-blue-900/20 dark:to-indigo-900/20 text-foreground border">
+                      <div className="w-full h-full flex items-center justify-center">
+                        <span className="block text-center leading-none">{fallbackText}</span>
+                      </div>
+                    </AvatarFallback>
+                  </>
+                ) : (
                   <AvatarFallback className="text-sm bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-blue-900/20 dark:to-indigo-900/20 text-foreground border">
                     <div className="w-full h-full flex items-center justify-center">
                       <span className="block text-center leading-none">{fallbackText}</span>
                     </div>
                   </AvatarFallback>
-                </>
-              ) : (
-                <AvatarFallback className="text-sm bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-blue-900/20 dark:to-indigo-900/20 text-foreground border">
-                  <div className="w-full h-full flex items-center justify-center">
-                    <span className="block text-center leading-none">{fallbackText}</span>
-                  </div>
-                </AvatarFallback>
-              )}
-            </Avatar>
-          </Button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent className="w-56" align="end" forceMount>
+                )}
+              </Avatar>
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent className="w-56" align="end" forceMount>
           {/* 用户信息 */}
           <DropdownMenuItem>
             <div className="flex items-center space-x-3">
@@ -160,8 +161,18 @@ export function UserAvatarMenu() {
               <span>立即登录</span>
             </DropdownMenuItem>
           )}
-        </DropdownMenuContent>
-      </DropdownMenu>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      ) : (
+        <Button
+          variant="outline"
+          onClick={handleOpenLogin}
+          className="h-9 rounded-full px-3 text-sm shadow-sm"
+        >
+          <LogIn className="mr-2 h-4 w-4" />
+          登录
+        </Button>
+      )}
       
       {/* 登录弹窗 */}
       <LoginDialog 

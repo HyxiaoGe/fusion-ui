@@ -42,6 +42,18 @@ function renderMenu(preloadedAuth: unknown) {
 }
 
 describe('UserAvatarMenu', () => {
+  it('shows a clear login button when unauthenticated', () => {
+    renderMenu({
+      isAuthenticated: false,
+      token: null,
+      status: 'idle',
+      error: null,
+      user: null,
+    });
+
+    expect(screen.getByRole('button', { name: '登录' })).toBeTruthy();
+  });
+
   it('prefers nickname over username for authenticated users', () => {
     renderMenu({
       isAuthenticated: true,
