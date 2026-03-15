@@ -7,7 +7,7 @@ import {
   SelectTrigger
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
-import { getDefaultModelId, getPreferredModelId } from "@/lib/models/modelPreference";
+import { getDefaultModelId, getFirstEnabledModelId, getPreferredModelId } from "@/lib/models/modelPreference";
 import { useAppDispatch, useAppSelector } from "@/redux/hooks";
 import { updateChatModel } from "@/redux/slices/chatSlice";
 import { setSelectedModel } from "@/redux/slices/modelsSlice";
@@ -48,19 +48,26 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({ onChange, modelId, disabl
   // 优先使用当前聊天的模型ID，如果存在活动聊天
   const activeChatModelId = activeChat?.model;
   const recommendedModelId = getDefaultModelId(models);
+  const firstEnabledModelId = getFirstEnabledModelId(models);
+  const hasEnabledModels = Boolean(firstEnabledModelId);
 
   // 只有当当前聊天存在且有消息时，才禁用模型选择器
-  const isDisabled = disabled || (!!activeChatId && hasMessages);
-  const currentModelId = modelId || activeChatModelId || getPreferredModelId(models, selectedModelId);
+  const isDisabled = disabled || (!!activeChatId && hasMessages) || !hasEnabledModels;
+  const currentModelId =
+    modelId ||
+    activeChatModelId ||
+    (hasEnabledModels ? getPreferredModelId(models, selectedModelId) : selectedModelId);
   const selectedModel = models.find(model => model.id === currentModelId);
   const isCurrentModelUnavailable = Boolean(selectedModel?.enabled === false);
   
   // 禁用提示信息
-  const disabledReason = isCurrentModelUnavailable
-    ? "当前会话使用的模型目前不可用。你仍然可以查看历史消息，但需要新建会话后切换到可用模型。"
-    : hasMessages
-      ? "会话开始后无法更改模型"
-      : disabled ? "模型选择器已禁用" : "";
+  const disabledReason = !hasEnabledModels
+    ? "当前没有可用模型，请先前往模型设置启用或配置至少一个模型。"
+    : isCurrentModelUnavailable
+      ? "当前会话使用的模型目前不可用。你仍然可以查看历史消息，但需要新建会话后切换到可用模型。"
+      : hasMessages
+        ? "会话开始后无法更改模型"
+        : disabled ? "模型选择器已禁用" : "";
 
   // 在组件挂载后设置一个短暂的延迟，以确保模型数据加载
   useEffect(() => {
@@ -102,7 +109,7 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({ onChange, modelId, disabl
   const handleModelChange = (value: string) => {
     // 检查选择的模型是否启用
     const selectedModel = models.find(m => m.id === value);
-    if (!selectedModel?.enabled) {
+    if (selectedModel?.enabled === false) {
       return;
     }
 
@@ -478,7 +485,9 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({ onChange, modelId, disabl
                         </div>
                       </div>
                     ) : (
-                      <span className="text-muted-foreground">请选择模型...</span>
+                      <span className="text-muted-foreground">
+                        {hasEnabledModels ? "请选择模型..." : "暂无可用模型"}
+                      </span>
                     )}
                   </SelectTrigger>
                   <SelectContent 
@@ -502,7 +511,7 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({ onChange, modelId, disabl
                           <SelectItem
                             key={model.id}
                             value={model.id}
-                            disabled={!model.enabled || isDisabled}
+                            disabled={model.enabled === false || isDisabled}
                             className={cn(
                               "model-item-ultra mx-1 my-1.5 px-3 py-3 rounded-lg",
                               "border border-transparent",
@@ -511,7 +520,7 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({ onChange, modelId, disabl
                               model.id === (modelId || selectedModelId) 
                                 ? "highlight-selected selected-item border-blue-400/30 bg-blue-500/10" 
                                 : "hover:border-blue-300/20",
-                              !model.enabled && "opacity-60 cursor-not-allowed"
+                              model.enabled === false && "opacity-60 cursor-not-allowed"
                             )}
                             onMouseEnter={(e) => {
                               setHoveredModel(model.id);

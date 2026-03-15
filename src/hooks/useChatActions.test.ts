@@ -19,6 +19,7 @@ const {
   setAnimatingTitleChatIdMock,
   updateChatTitleMock,
   updateServerChatTitleMock,
+  updateChatModelMock,
   deleteMessageMock,
   startStreamingReasoningMock,
   updateMessageReasoningMock,
@@ -61,6 +62,7 @@ const {
     setAnimatingTitleChatIdMock: action('chat/setAnimatingTitleChatId'),
     updateChatTitleMock: action('chat/updateChatTitle'),
     updateServerChatTitleMock: action('chat/updateServerChatTitle'),
+    updateChatModelMock: action('chat/updateChatModel'),
     deleteMessageMock: action('chat/deleteMessage'),
     startStreamingReasoningMock: action('chat/startStreamingReasoning'),
     updateMessageReasoningMock: action('chat/updateMessageReasoning'),
@@ -98,6 +100,7 @@ vi.mock('@/redux/slices/chatSlice', () => ({
   setAnimatingTitleChatId: setAnimatingTitleChatIdMock,
   updateChatTitle: updateChatTitleMock,
   updateServerChatTitle: updateServerChatTitleMock,
+  updateChatModel: updateChatModelMock,
   deleteMessage: deleteMessageMock,
   startStreamingReasoning: startStreamingReasoningMock,
   updateMessageReasoning: updateMessageReasoningMock,
@@ -276,6 +279,21 @@ describe('useChatActions.newChat', () => {
 describe('useChatActions.sendMessage', () => {
   beforeEach(() => {
     vi.useFakeTimers();
+    createChatMock.mockClear();
+    setActiveChatMock.mockClear();
+    setErrorMock.mockClear();
+    updateChatModelMock.mockClear();
+    addMessageMock.mockClear();
+    startStreamingMock.mockClear();
+    updateStreamingContentMock.mockClear();
+    updateStreamingReasoningContentMock.mockClear();
+    endStreamingMock.mockClear();
+    setMessageStatusMock.mockClear();
+    dispatchMock.mockReset();
+    sendMessageStreamMock.mockReset();
+    generateChatTitleMock.mockReset();
+    updateMessageDurationMock.mockReset();
+    uuidMock.mockClear();
     currentState.models.models = [
       {
         id: 'model-1',
@@ -374,6 +392,100 @@ describe('useChatActions.sendMessage', () => {
       content: 'assistant answer',
     });
     expect(updateStreamingReasoningContentMock).toHaveBeenCalledWith('reasoning text');
+  });
+
+  it('uses the first enabled model when the saved selection is unavailable', async () => {
+    currentState.models.models = [
+      {
+        id: 'disabled-model',
+        provider: 'qwen',
+        enabled: false,
+        capabilities: {
+          deepThinking: false,
+        },
+      },
+      {
+        id: 'enabled-model',
+        provider: 'deepseek',
+        enabled: true,
+        capabilities: {
+          deepThinking: false,
+        },
+      },
+    ];
+    currentState.models.selectedModelId = 'disabled-model';
+
+    dispatchMock.mockImplementation(action => {
+      if (action?.type === 'chat/createChat') {
+        currentState.chat.activeChatId = action.payload.id;
+        currentState.chat.chats = [
+          ...currentState.chat.chats,
+          {
+            id: action.payload.id,
+            title: action.payload.title,
+            model: action.payload.model,
+            messages: [],
+          },
+        ];
+      }
+
+      if (action?.type === 'chat/addMessage') {
+        currentState.chat.chats = currentState.chat.chats.map(chat =>
+          chat.id === action.payload.chatId
+            ? {
+                ...chat,
+                messages: [...chat.messages, action.payload.message],
+              }
+            : chat
+        );
+      }
+
+      return action;
+    });
+
+    sendMessageStreamMock.mockResolvedValue(undefined);
+
+    const { result } = renderHook(() => useChatActions({}));
+
+    const sendPromise = result.current.sendMessage('继续');
+    await vi.advanceTimersByTimeAsync(50);
+    await sendPromise;
+
+    expect(createChatMock).toHaveBeenCalledWith({
+      id: expect.any(String),
+      model: 'enabled-model',
+      provider: 'deepseek',
+      title: '继续',
+    });
+    expect(sendMessageStreamMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        provider: 'deepseek',
+        model: 'enabled-model',
+      }),
+      expect.any(Function)
+    );
+  });
+
+  it('does not send when no enabled model exists for a new chat', async () => {
+    currentState.models.models = [
+      {
+        id: 'disabled-model',
+        provider: 'qwen',
+        enabled: false,
+        capabilities: {
+          deepThinking: false,
+        },
+      },
+    ];
+    currentState.models.selectedModelId = 'disabled-model';
+
+    const { result } = renderHook(() => useChatActions({}));
+
+    await result.current.sendMessage('继续');
+
+    expect(createChatMock).not.toHaveBeenCalled();
+    expect(sendMessageStreamMock).not.toHaveBeenCalled();
+    expect(setErrorMock).toHaveBeenCalledWith('没有可用的模型，无法创建对话');
   });
 
   it('marks the latest user message as failed when streaming request errors', async () => {

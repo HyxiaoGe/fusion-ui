@@ -100,4 +100,53 @@ describe('ModelSelector', () => {
     expect(screen.getByText('推荐')).toBeTruthy();
     expect(screen.getByText('Qwen3')).toBeTruthy();
   });
+
+  it('treats models without an explicit enabled flag as available', () => {
+    const state = {
+      models: {
+        models: [
+          { id: 'legacy', name: 'Legacy', provider: 'qwen', capabilities: {}, temperature: 0.7 },
+        ],
+        providers: [{ id: 'qwen', name: '通义千问', order: 1 }],
+        selectedModelId: 'legacy',
+        isLoading: false,
+      },
+      chat: {
+        activeChatId: null,
+        chats: [],
+      },
+      theme: { mode: 'light' },
+    };
+
+    useAppSelectorMock.mockImplementation((selector: (state: typeof state) => unknown) => selector(state));
+
+    render(<ModelSelector onChange={() => {}} />);
+
+    expect(screen.getAllByText('Legacy').length).toBeGreaterThan(0);
+    expect(screen.getByText('推荐')).toBeTruthy();
+  });
+
+  it('shows an explicit empty state when no model is available', () => {
+    const state = {
+      models: {
+        models: [
+          { id: 'disabled-only', name: 'Disabled Only', provider: 'qwen', enabled: false, capabilities: {}, temperature: 0.7 },
+        ],
+        providers: [{ id: 'qwen', name: '通义千问', order: 1 }],
+        selectedModelId: null,
+        isLoading: false,
+      },
+      chat: {
+        activeChatId: null,
+        chats: [],
+      },
+      theme: { mode: 'light' },
+    };
+
+    useAppSelectorMock.mockImplementation((selector: (state: typeof state) => unknown) => selector(state));
+
+    render(<ModelSelector onChange={() => {}} />);
+
+    expect(screen.getByText('暂无可用模型')).toBeTruthy();
+  });
 });

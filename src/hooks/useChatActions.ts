@@ -13,6 +13,7 @@ import {
   setAnimatingTitleChatId,
   updateChatTitle,
   updateServerChatTitle,
+  updateChatModel,
   deleteMessage,
   startStreamingReasoning,
   updateMessageReasoning,
@@ -66,6 +67,15 @@ export const useChatActions = (options: ChatActionsOptions) => {
 
   const pendingQuestionRequestRef = useRef<NodeJS.Timeout | null>(null);
 
+  const getFirstEnabledModel = useCallback(() => {
+    const modelId = getFirstEnabledModelId(models);
+    if (!modelId) {
+      return null;
+    }
+
+    return models.find((model) => model.id === modelId) || null;
+  }, [models]);
+
   const getBlockedChatModelMessage = useCallback((chatId: string) => {
     const chat = chats.find((item) => item.id === chatId);
     if (!chat?.model) {
@@ -118,8 +128,8 @@ export const useChatActions = (options: ChatActionsOptions) => {
    * Creates a new chat session or reuses existing empty chat.
    */
   const newChat = useCallback(() => {
-    const modelToUse = getFirstEnabledModelId(models);
-    if (!modelToUse) {
+    const firstEnabledModel = getFirstEnabledModel();
+    if (!firstEnabledModel) {
       dispatch(setError('没有可用的模型，无法创建对话'));
       return;
     }
@@ -128,6 +138,9 @@ export const useChatActions = (options: ChatActionsOptions) => {
     const existingEmptyChat = chats.find(chat => chat.messages.length === 0);
     
     if (existingEmptyChat) {
+      if (existingEmptyChat.model !== firstEnabledModel.id) {
+        dispatch(updateChatModel({ chatId: existingEmptyChat.id, model: firstEnabledModel.id }));
+      }
       // 如果已经有空对话，直接激活它，不创建新的
       if (existingEmptyChat.id !== activeChatId) {
         dispatch(setActiveChat(existingEmptyChat.id));
@@ -137,19 +150,16 @@ export const useChatActions = (options: ChatActionsOptions) => {
       return;
     }
 
-    const selectedModel = models.find(m => m.id === modelToUse);
-    const providerToUse = selectedModel?.provider;
-
     try {
       // 只有当没有空对话时，才创建新对话
-      dispatch(createChat({ model: modelToUse, provider: providerToUse, title: '' }));
+      dispatch(createChat({ model: firstEnabledModel.id, provider: firstEnabledModel.provider, title: '' }));
       
       options.onNewChatCreated?.();
 
     } catch (error) {
       dispatch(setError('创建对话失败，请重试'));
     }
-  }, [selectedModelId, models, dispatch, options, chats, activeChatId]);
+  }, [activeChatId, chats, dispatch, getFirstEnabledModel, options]);
 
   /**
    * Clears all messages from the currently active chat.
@@ -160,19 +170,32 @@ export const useChatActions = (options: ChatActionsOptions) => {
   }, [dispatch, activeChatId]);
 
   const sendMessage = useCallback(async (content: string, files?: FileWithPreview[]) => {
-    if ((!content.trim() && (!files || files.length === 0)) || !selectedModelId) return;
+    if (!content.trim() && (!files || files.length === 0)) return;
 
     options.onSendMessageStart?.();
     
     let currentActiveChatId = activeChatId;
+    let modelIdForSend = currentActiveChatId
+      ? chats.find((chat) => chat.id === currentActiveChatId)?.model || selectedModelId
+      : selectedModelId;
+    const firstEnabledModel = getFirstEnabledModel();
+
+    if (!currentActiveChatId && !firstEnabledModel) {
+      dispatch(setError('没有可用的模型，无法创建对话'));
+      return;
+    }
 
     if (!currentActiveChatId) {
       // 先检查是否有空对话可以复用
       const existingEmptyChat = chats.find(chat => chat.messages.length === 0);
       
       if (existingEmptyChat) {
+        if (existingEmptyChat.model !== firstEnabledModel?.id && firstEnabledModel) {
+          dispatch(updateChatModel({ chatId: existingEmptyChat.id, model: firstEnabledModel.id }));
+        }
         // 复用已存在的空对话
         currentActiveChatId = existingEmptyChat.id;
+        modelIdForSend = firstEnabledModel?.id || existingEmptyChat.model || selectedModelId;
         // 如果空对话不是当前激活的，激活它
         if (existingEmptyChat.id !== activeChatId) {
           dispatch(setActiveChat(existingEmptyChat.id));
@@ -182,18 +205,17 @@ export const useChatActions = (options: ChatActionsOptions) => {
       } else {
         // 没有空对话，创建新的
         const newChatId = uuidv4();
-        const selectedModel = models.find(m => m.id === selectedModelId);
-        const providerToUse = selectedModel?.provider;
         
         dispatch(
           createChat({
             id: newChatId,
-            model: selectedModelId,
-            provider: providerToUse,
+            model: firstEnabledModel!.id,
+            provider: firstEnabledModel!.provider,
             title: content.substring(0, 30),
           })
         );
         currentActiveChatId = newChatId;
+        modelIdForSend = firstEnabledModel!.id;
         // 使用短暂延迟，让状态更新生效
         await new Promise(resolve => setTimeout(resolve, 50));
       }
@@ -230,7 +252,9 @@ export const useChatActions = (options: ChatActionsOptions) => {
       message: userMessage
     }));
     
-    const selectedModel = models.find(m => m.id === selectedModelId);
+    const selectedModel = models.find(
+      (m) => m.id === (modelIdForSend || firstEnabledModel?.id)
+    );
     if (!selectedModel) {
       dispatch(setError('找不到选中的模型信息'));
       return;
@@ -321,7 +345,7 @@ export const useChatActions = (options: ChatActionsOptions) => {
       dispatch(setMessageStatus({ chatId: currentActiveChatId, messageId: userMessage.id, status: 'failed' }));
       cleanupStreamingFailure(currentActiveChatId);
     }
-  }, [activeChatId, selectedModelId, models, dispatch, reasoningEnabled, scheduleInitialTitleGeneration, scheduleStreamEnd, refreshChatList, cleanupStreamingFailure, getBlockedChatModelMessage, chats]);
+  }, [activeChatId, chats, cleanupStreamingFailure, dispatch, getBlockedChatModelMessage, getFirstEnabledModel, models, options, reasoningEnabled, refreshChatList, scheduleInitialTitleGeneration, scheduleStreamEnd]);
 
 
   const retryMessage = useCallback(async (messageId: string) => {

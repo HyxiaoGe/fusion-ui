@@ -48,7 +48,7 @@ import { useSuggestedQuestions } from '@/hooks/useSuggestedQuestions';
 import { useSuggestedQuestionContinuation } from '@/hooks/useSuggestedQuestionContinuation';
 import { useTransientCompletionState } from '@/hooks/useTransientCompletionState';
 import { shouldAutoFetchSuggestedQuestions } from '@/lib/chat/suggestedQuestionTiming';
-import { getFirstEnabledModelId, getPreferredModelId } from '@/lib/models/modelPreference';
+import { getFirstEnabledModelId } from '@/lib/models/modelPreference';
 import { UserAvatarMenu } from '@/components/layouts/UserAvatarMenu';
 import ConfirmDialog from '@/components/ui/confirm-dialog';
 
@@ -156,7 +156,7 @@ export default function Home() {
       }
 
       // 如果没有合适的对话，才创建新对话
-      const modelToUse = getPreferredModelId(models, urlModelParam || selectedModelId);
+      const modelToUse = getFirstEnabledModelId(models);
       if (modelToUse) {
         const selectedModel = models.find(m => m.id === modelToUse);
         const providerToUse = selectedModel?.provider;
