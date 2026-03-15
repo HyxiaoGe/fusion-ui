@@ -262,6 +262,51 @@ describe('ChatInput', () => {
     );
   });
 
+  it('uses the selected model when new-chat mode explicitly clears the active chat', async () => {
+    currentState.auth.isAuthenticated = true;
+    currentState.models.selectedModelId = 'model-supported';
+    currentState.models.models = [
+      {
+        id: 'legacy-model',
+        provider: 'qwen',
+        capabilities: {
+          fileSupport: false,
+          deepThinking: false,
+        },
+      },
+      {
+        id: 'model-supported',
+        provider: 'openai',
+        capabilities: {
+          fileSupport: true,
+          deepThinking: false,
+        },
+      },
+    ];
+    currentState.chat.activeChatId = 'chat-1';
+    currentState.chat.chats = [
+      {
+        id: 'chat-1',
+        model: 'legacy-model',
+      },
+    ];
+    uploadFilesMock.mockResolvedValue(['file-1']);
+
+    const { container } = render(<ChatInput onSendMessage={vi.fn()} activeChatId={null} />);
+    const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement;
+    const file = new File(['hello'], 'hello.txt', { type: 'text/plain' });
+
+    fireEvent.change(fileInput, {
+      target: {
+        files: [file],
+      },
+    });
+
+    await waitFor(() => {
+      expect(uploadFilesMock).toHaveBeenCalledWith('openai', 'model-supported', 'default-chat', [file]);
+    });
+  });
+
   it('blocks the composer when the current selected model is unavailable', () => {
     currentState.auth.isAuthenticated = true;
     currentState.models.selectedModelId = 'legacy-model';

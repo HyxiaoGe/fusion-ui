@@ -29,7 +29,7 @@ interface ChatInputProps {
   onClearMessage?: () => void;
   disabled?: boolean;
   placeholder?: string;
-  activeChatId?: string;
+  activeChatId?: string | null;
 }
 
 interface LocalFileWithStatus {
@@ -85,8 +85,11 @@ const ChatInput: React.FC<ChatInputProps> = ({
   const processingFiles = useAppSelector((state) => state.fileUpload.processingFiles);
   const reasoningEnabled = useAppSelector((state) => state.chat.reasoningEnabled);
 
-  const chatId = activeChatId || currentActiveChatId || "default-chat";
-  const activeChatModelId = chats.find((chat) => chat.id === chatId)?.model;
+  const effectiveChatId = activeChatId !== undefined ? activeChatId : currentActiveChatId;
+  const chatId = effectiveChatId || "default-chat";
+  const activeChatModelId = effectiveChatId
+    ? chats.find((chat) => chat.id === effectiveChatId)?.model
+    : undefined;
   const selectedModel = useMemo(
     () => models.find((model) => model.id === (activeChatModelId || selectedModelId)),
     [activeChatModelId, models, selectedModelId]

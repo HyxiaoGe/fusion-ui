@@ -9,34 +9,9 @@ import {
 } from '@/components/lazy/LazyComponents';
 import MainLayout from '@/components/layouts/MainLayout';
 import { Button } from '@/components/ui/button';
-import { sendMessageStream, fetchSuggestedQuestions  } from '@/lib/api/chat';
-import { generateChatTitle } from '@/lib/api/title';
-import { FileWithPreview } from '@/lib/utils/fileHelpers';
 import { useAppDispatch, useAppSelector } from '@/redux/hooks';
-import {
-  addMessage,
-  clearMessages,
-  deleteMessage,
-  editMessage,
-  endStreaming,
-  endStreamingReasoning,
-  setActiveChat,
-  setError,
-  setMessageStatus,
-  startStreaming,
-  startStreamingReasoning,
-  updateChatTitle,
-  updateServerChatTitle,
-  updateMessageReasoning,
-  updateStreamingContent,
-  updateStreamingReasoningContent,
-  setAnimatingTitleChatId,
-  Message,
-  Chat,
-} from '@/redux/slices/chatSlice';
-import { store } from '@/redux/store';
+import { Chat } from '@/redux/slices/chatSlice';
 import { useEffect, useRef, useState, useMemo, useCallback } from 'react';
-import { v4 as uuidv4 } from 'uuid';
 import Link from 'next/link';
 
 import { useToast } from '@/components/ui/toast';
@@ -152,7 +127,7 @@ export default function Home() {
     isLoadingQuestions, 
     fetchQuestions, 
     clearQuestions 
-  } = useSuggestedQuestions(activeChatId);
+  } = useSuggestedQuestions(displayActiveChatId);
 
   const showCompletionState = useTransientCompletionState({
     isStreaming,
@@ -177,10 +152,7 @@ export default function Home() {
     },
     onSendMessageStart: () => {
       if (isNewChatMode) {
-        const latestActiveChatId = activeChatId || store.getState().chat.activeChatId;
-        if (latestActiveChatId) {
-          router.replace(`/chat/${latestActiveChatId}`);
-        }
+        return;
       }
 
       if (shouldRenderHomePage) {
@@ -196,13 +168,13 @@ export default function Home() {
   // 监听activeChatId变化，强制重新挂载输入组件
   useEffect(() => {
     setInputKey(Date.now());
-  }, [activeChatId]);
+  }, [displayActiveChatId]);
 
   // 监听活动聊天变化
   useEffect(() => {
     // 切换会话时，清空推荐问题
     clearQuestions();
-  }, [activeChatId]);
+  }, [clearQuestions, displayActiveChatId]);
 
   useEffect(() => {
     if (!displayActiveChatId || !displayChat || isStreaming || isLoadingQuestions || suggestedQuestions.length > 0) {
@@ -290,20 +262,20 @@ export default function Home() {
 
   // 获取推荐问题函数
   const handleSelectQuestion = useSuggestedQuestionContinuation({
-    canContinue: Boolean(activeChatId),
+    canContinue: Boolean(displayActiveChatId),
     clearQuestions,
     sendMessage: handleSendMessage,
     scrollTargetRef: chatInputRef,
   });
 
   const handleRefreshQuestions = useCallback(async () => {
-    if (!activeChatId) return;
+    if (!displayActiveChatId) return;
     // 强制刷新
     fetchQuestions(true);
-  }, [activeChatId, fetchQuestions]);
+  }, [displayActiveChatId, fetchQuestions]);
 
   const handleClearChat = () => {
-    if (!activeChatId) return;
+    if (!displayActiveChatId) return;
 
     // 显示确认对话框
     setConfirmDialogOpen(true);
@@ -433,6 +405,7 @@ export default function Home() {
             key={inputKey}
             onSendMessage={handleSendMessage}
             onClearMessage={handleClearChat}
+            activeChatId={displayActiveChatId}
           />
         </div>
       </div>
