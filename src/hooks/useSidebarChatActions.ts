@@ -7,15 +7,10 @@ import { generateChatTitle } from '@/lib/api/title';
 import {
   Chat,
   deleteChat,
-  setActiveChat,
   updateChatTitle,
   setAnimatingTitleChatId,
   setServerChatList,
   updateServerChatTitle,
-  setServerError,
-  setLoadingServerChat,
-  setAllChats,
-  updateChatFromServer,
   Message
 } from '@/redux/slices/chatSlice';
 import { store } from '@/redux/store';
@@ -73,98 +68,7 @@ export const useSidebarChatActions = ({
   const handleSelectChat = async (chatId: string) => {
     if (chatId === activeChatId) return;
 
-    // 跳转到聊天页面（类似ChatGPT的行为）
     router.push(`/chat/${chatId}`);
-
-    dispatch(setActiveChat(chatId));
-
-    try {
-      dispatch(setLoadingServerChat(true));
-      const serverChatData = await getConversation(chatId);
-
-      // 处理服务端消息：合并同一个turn_id的 reasoning_content 和 assistant_content
-      const processedMessages = [];
-      const messageMap = new Map();
-      
-      // 第一步：按turn_id分组消息
-      for (const msg of serverChatData.messages) {
-        const turnId = msg.turn_id || msg.id;
-        if (!messageMap.has(turnId)) {
-          messageMap.set(turnId, []);
-        }
-        messageMap.get(turnId).push(msg);
-      }
-      
-      // 第二步：合并每个turn中的消息，只保留用户可见的问答内容
-      for (const [turnId, turnMessages] of messageMap) {
-        if (turnMessages.length === 1) {
-          // 单条消息直接添加
-          const msg = turnMessages[0];
-          processedMessages.push({
-            id: msg.id,
-            role: msg.role,
-            content: msg.content,
-            timestamp: parseTimestamp(msg.created_at),
-            turnId: turnId,
-          });
-        } else {
-          // 多条消息需要合并
-          const userMsg = turnMessages.find((m: any) => m.role === 'user');
-          const reasoningMsg = turnMessages.find((m: any) => m.type === 'reasoning_content');
-          const assistantMsg = turnMessages.find((m: any) => m.type === 'assistant_content');
-          
-          // 添加用户消息
-          if (userMsg) {
-            processedMessages.push({
-              id: userMsg.id,
-              role: userMsg.role,
-              content: userMsg.content,
-              timestamp: parseTimestamp(userMsg.created_at),
-              turnId: turnId,
-            });
-          }
-          
-          if (assistantMsg) {
-            processedMessages.push({
-              id: assistantMsg.id,
-              role: 'assistant',
-              content: assistantMsg.content,
-              reasoning: reasoningMsg ? reasoningMsg.content : undefined,
-              duration: reasoningMsg ? reasoningMsg.duration : undefined,
-              isReasoningVisible: false, // 默认隐藏思考过程
-              timestamp: parseTimestamp(assistantMsg.created_at),
-              turnId: turnId,
-            });
-          }
-        }
-      }
-      
-      // 按时间戳排序
-      processedMessages.sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
-
-      const localChat: Chat = {
-        id: serverChatData.id,
-        title: serverChatData.title,
-        messages: processedMessages as Message[],
-        model: serverChatData.model,
-        provider: serverChatData.provider,
-        createdAt: parseTimestamp(serverChatData.created_at),
-        updatedAt: parseTimestamp(serverChatData.updated_at),
-      };
-
-      // 使用新的updateChatFromServer action，只更新特定对话，不影响其他本地对话
-      dispatch(updateChatFromServer(localChat));
-
-      dispatch(setLoadingServerChat(false));
-    } catch (error) {
-      console.error('获取对话详情失败:', error);
-      dispatch(setServerError('获取对话详情失败'));
-      dispatch(setLoadingServerChat(false));
-      toast({
-        message: "加载对话失败，请重试",
-        type: "error",
-      });
-    }
   };
 
   const handleDeleteChat = (e: React.MouseEvent, chatId: string) => {
