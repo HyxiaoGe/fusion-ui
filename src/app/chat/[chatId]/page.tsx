@@ -128,17 +128,11 @@ export default function ChatPage() {
 
   // 使用聊天操作Hook
   const { 
-    newChat, 
     clearCurrentChat,
     sendMessage,
     retryMessage,
     editMessage
   } = useChatActions({
-    onNewChatCreated: () => {
-      // 新对话创建后跳转到首页新对话准备状态（类似ChatGPT）
-      const modelToUse = getFirstEnabledModelId(models);
-      router.push(modelToUse ? `/?new=true&model=${modelToUse}` : '/?new=true');
-    },
     onSendMessageStart: () => {
       // 消息发送开始
     },
@@ -208,7 +202,11 @@ export default function ChatPage() {
     return editMessage(messageId, content);
   }, [clearQuestions, editMessage]);
 
-  const handleNewChat = newChat;
+  const handleNewChat = useCallback(() => {
+    dispatch(setActiveChat(null));
+    const modelToUse = getFirstEnabledModelId(models);
+    router.push(modelToUse ? `/?new=true&model=${modelToUse}` : '/?new=true');
+  }, [dispatch, models, router]);
 
   const handleSelectQuestion = useSuggestedQuestionContinuation({
     canContinue: Boolean(chatId),

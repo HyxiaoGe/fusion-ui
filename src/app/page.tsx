@@ -56,14 +56,9 @@ export default function Home() {
   }, [activeChatId, draftChat, router]);
 
   const {
-    newChat,
     sendMessage,
   } = useChatActions({
     draftMode: true,
-    onNewChatCreated: () => {
-      const modelToUse = searchParams?.get('model') || getFirstEnabledModelId(models);
-      router.push(modelToUse ? `/?new=true&model=${modelToUse}` : '/');
-    },
   });
 
   const handleSendMessage = useCallback((content: string, files?: File[]) => {
@@ -73,8 +68,9 @@ export default function Home() {
   const handleNewChat = useCallback(() => {
     draftModeInitializedRef.current = true;
     dispatch(setActiveChat(null));
-    newChat();
-  }, [dispatch, newChat]);
+    const modelToUse = searchParams?.get('model') || getFirstEnabledModelId(models);
+    router.push(modelToUse ? `/?new=true&model=${modelToUse}` : '/');
+  }, [dispatch, models, router, searchParams]);
 
   return (
     <MainLayout
