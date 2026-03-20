@@ -58,6 +58,7 @@ export default function Home() {
   const {
     sendMessage,
   } = useChatActions({
+    activeChatIdOverride: null,
     draftMode: true,
   });
 

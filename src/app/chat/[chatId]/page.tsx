@@ -133,6 +133,7 @@ export default function ChatPage() {
     retryMessage,
     editMessage
   } = useChatActions({
+    activeChatIdOverride: chatId,
     onSendMessageStart: () => {
       // 消息发送开始
     },

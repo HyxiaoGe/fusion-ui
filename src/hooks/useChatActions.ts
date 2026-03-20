@@ -32,6 +32,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { store } from '@/redux/store';
 
 type ChatActionsOptions = {
+  activeChatIdOverride?: string | null;
   draftMode?: boolean;
   onNewChatCreated?: () => void;
   onSendMessageStart?: () => void;
@@ -65,6 +66,8 @@ export const useChatActions = (options: ChatActionsOptions) => {
     chats: state.chat.chats,
     reasoningEnabled: state.chat.reasoningEnabled,
   }));
+  const resolvedActiveChatId =
+    options.activeChatIdOverride === undefined ? activeChatId : options.activeChatIdOverride;
 
   const pendingQuestionRequestRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -147,16 +150,16 @@ export const useChatActions = (options: ChatActionsOptions) => {
    * Clears all messages from the currently active chat.
    */
   const clearCurrentChat = useCallback(() => {
-    if (!activeChatId) return;
-    dispatch(clearMessages(activeChatId));
-  }, [dispatch, activeChatId]);
+    if (!resolvedActiveChatId) return;
+    dispatch(clearMessages(resolvedActiveChatId));
+  }, [dispatch, resolvedActiveChatId]);
 
   const sendMessage = useCallback(async (content: string, files?: FileWithPreview[]) => {
     if (!content.trim() && (!files || files.length === 0)) return;
 
     options.onSendMessageStart?.();
     
-    let currentActiveChatId = options.draftMode ? null : activeChatId;
+    let currentActiveChatId = options.draftMode ? null : resolvedActiveChatId;
     let modelIdForSend = currentActiveChatId
       ? chats.find((chat) => chat.id === currentActiveChatId)?.model || selectedModelId
       : getPreferredModelId(models, selectedModelId);
@@ -352,19 +355,19 @@ export const useChatActions = (options: ChatActionsOptions) => {
         dispatch(endStreaming());
       }
     }
-  }, [activeChatId, chats, cleanupStreamingFailure, dispatch, getBlockedChatModelMessage, getFirstEnabledModel, models, options, reasoningEnabled, refreshChatList, scheduleInitialTitleGeneration, scheduleStreamEnd]);
+  }, [resolvedActiveChatId, chats, cleanupStreamingFailure, dispatch, getBlockedChatModelMessage, getFirstEnabledModel, models, options, reasoningEnabled, refreshChatList, scheduleInitialTitleGeneration, scheduleStreamEnd]);
 
 
   const retryMessage = useCallback(async (messageId: string) => {
-    if (!activeChatId || !selectedModelId) return;
+    if (!resolvedActiveChatId || !selectedModelId) return;
 
-    const blockedChatModelMessage = getBlockedChatModelMessage(activeChatId);
+    const blockedChatModelMessage = getBlockedChatModelMessage(resolvedActiveChatId);
     if (blockedChatModelMessage) {
       dispatch(setError(blockedChatModelMessage));
       return;
     }
 
-    const chat = chats.find(c => c.id === activeChatId);
+    const chat = chats.find(c => c.id === resolvedActiveChatId);
     if (!chat) return;
 
     const message = chat.messages.find(m => m.id === messageId);
@@ -380,8 +383,8 @@ export const useChatActions = (options: ChatActionsOptions) => {
     const useReasoning = reasoningEnabled && supportsReasoning;
 
     const resendMessage = async (userMessage: Message) => {
-      dispatch(setMessageStatus({ chatId: activeChatId, messageId: userMessage.id, status: 'pending' }));
-      dispatch(startStreaming(activeChatId));
+      dispatch(setMessageStatus({ chatId: resolvedActiveChatId, messageId: userMessage.id, status: 'pending' }));
+      dispatch(startStreaming(resolvedActiveChatId));
       if (useReasoning) dispatch(startStreamingReasoning());
 
       try {
@@ -389,26 +392,26 @@ export const useChatActions = (options: ChatActionsOptions) => {
           provider: selectedModel.provider,
           model: selectedModel.id,
           message: userMessage.content.trim(),
-          conversation_id: activeChatId,
+          conversation_id: resolvedActiveChatId,
           stream: true,
           options: { use_reasoning: useReasoning }
         },
           (content, done, _conversationId, reasoning) => {
             if (!done) {
-              dispatch(updateStreamingContent({ chatId: activeChatId, content }));
+              dispatch(updateStreamingContent({ chatId: resolvedActiveChatId, content }));
               if (reasoning) dispatch(updateStreamingReasoningContent(reasoning));
               return;
             }
 
-            dispatch(updateStreamingContent({ chatId: activeChatId, content }));
-            dispatch(setMessageStatus({ chatId: activeChatId, messageId: userMessage.id, status: null }));
+            dispatch(updateStreamingContent({ chatId: resolvedActiveChatId, content }));
+            dispatch(setMessageStatus({ chatId: resolvedActiveChatId, messageId: userMessage.id, status: null }));
 
             setTimeout(() => {
               if (reasoning && reasoning.trim()) {
                 const streamingMessageId = store.getState().chat.streamingMessageId;
                 if (streamingMessageId) {
                   dispatch(updateMessageReasoning({
-                    chatId: activeChatId,
+                    chatId: resolvedActiveChatId,
                     messageId: streamingMessageId,
                     reasoning,
                     isVisible: true,
@@ -427,9 +430,9 @@ export const useChatActions = (options: ChatActionsOptions) => {
             }
           });
       } catch (error) {
-        dispatch(setMessageStatus({ chatId: activeChatId, messageId: userMessage.id, status: 'failed' }));
+        dispatch(setMessageStatus({ chatId: resolvedActiveChatId, messageId: userMessage.id, status: 'failed' }));
         dispatch(setError('重新生成失败，请检查网络连接'));
-        cleanupStreamingFailure(activeChatId);
+        cleanupStreamingFailure(resolvedActiveChatId);
       }
     };
 
@@ -447,25 +450,25 @@ export const useChatActions = (options: ChatActionsOptions) => {
       if (userMessageIndex < 0) return;
       const userMessage = chat.messages[userMessageIndex];
 
-      dispatch(deleteMessage({ chatId: activeChatId, messageId: message.id }));
+      dispatch(deleteMessage({ chatId: resolvedActiveChatId, messageId: message.id }));
 
       await resendMessage(userMessage);
     }
-  }, [activeChatId, selectedModelId, chats, models, dispatch, reasoningEnabled, scheduleStreamEnd, cleanupStreamingFailure, getBlockedChatModelMessage]);
+  }, [resolvedActiveChatId, selectedModelId, chats, models, dispatch, reasoningEnabled, scheduleStreamEnd, cleanupStreamingFailure, getBlockedChatModelMessage]);
 
 
   const editMessage = useCallback(async (messageId: string, newContent: string) => {
-    if (!activeChatId || !selectedModelId) return;
+    if (!resolvedActiveChatId || !selectedModelId) return;
 
-    const blockedChatModelMessage = getBlockedChatModelMessage(activeChatId);
+    const blockedChatModelMessage = getBlockedChatModelMessage(resolvedActiveChatId);
     if (blockedChatModelMessage) {
       dispatch(setError(blockedChatModelMessage));
       return;
     }
 
-    dispatch(editMessageAction({ chatId: activeChatId, messageId, content: newContent }));
+    dispatch(editMessageAction({ chatId: resolvedActiveChatId, messageId, content: newContent }));
 
-    const chat = chats.find(c => c.id === activeChatId);
+    const chat = chats.find(c => c.id === resolvedActiveChatId);
     if (!chat) return;
 
     const messageIndex = chat.messages.findIndex(m => m.id === messageId);
@@ -473,7 +476,7 @@ export const useChatActions = (options: ChatActionsOptions) => {
 
     if (messageIndex < chat.messages.length - 1 && chat.messages[messageIndex + 1].role === 'assistant') {
       const nextMessage = chat.messages[messageIndex + 1];
-      dispatch(deleteMessage({ chatId: activeChatId, messageId: nextMessage.id }));
+      dispatch(deleteMessage({ chatId: resolvedActiveChatId, messageId: nextMessage.id }));
     }
 
     const selectedModel = models.find(m => m.id === selectedModelId);
@@ -482,11 +485,11 @@ export const useChatActions = (options: ChatActionsOptions) => {
       return;
     }
 
-    dispatch(setMessageStatus({ chatId: activeChatId, messageId, status: 'pending' }));
+    dispatch(setMessageStatus({ chatId: resolvedActiveChatId, messageId, status: 'pending' }));
 
     const supportsReasoning = selectedModel.capabilities?.deepThinking || false;
     const useReasoning = reasoningEnabled && supportsReasoning;
-    dispatch(startStreaming(activeChatId));
+    dispatch(startStreaming(resolvedActiveChatId));
     if (useReasoning) dispatch(startStreamingReasoning());
 
     try {
@@ -494,23 +497,23 @@ export const useChatActions = (options: ChatActionsOptions) => {
         provider: selectedModel.provider,
         model: selectedModel.id,
         message: newContent.trim(),
-        conversation_id: activeChatId,
+        conversation_id: resolvedActiveChatId,
         stream: true,
         options: { use_reasoning: useReasoning }
       },
         (content, done, conversationId, reasoning) => {
           if (!done) {
-            dispatch(updateStreamingContent({ chatId: activeChatId, content }));
+            dispatch(updateStreamingContent({ chatId: resolvedActiveChatId, content }));
             if (reasoning) dispatch(updateStreamingReasoningContent(reasoning));
           } else {
-            dispatch(updateStreamingContent({ chatId: activeChatId, content: content }));
-            dispatch(setMessageStatus({ chatId: activeChatId, messageId, status: null }));
+            dispatch(updateStreamingContent({ chatId: resolvedActiveChatId, content: content }));
+            dispatch(setMessageStatus({ chatId: resolvedActiveChatId, messageId, status: null }));
 
             setTimeout(() => {
               if (reasoning && reasoning.trim()) {
                 const streamingMessageId = store.getState().chat.streamingMessageId;
                 if (streamingMessageId) {
-                  dispatch(updateMessageReasoning({ chatId: activeChatId, messageId: streamingMessageId, reasoning: reasoning, isVisible: true }));
+                  dispatch(updateMessageReasoning({ chatId: resolvedActiveChatId, messageId: streamingMessageId, reasoning: reasoning, isVisible: true }));
                 }
                 if (!store.getState().chat.isThinkingPhaseComplete) dispatch(endStreamingReasoning());
               }
@@ -525,11 +528,11 @@ export const useChatActions = (options: ChatActionsOptions) => {
         });
     } catch (error) {
       console.error('发送编辑后的消息失败:', error);
-      dispatch(setMessageStatus({ chatId: activeChatId, messageId, status: 'failed' }));
+      dispatch(setMessageStatus({ chatId: resolvedActiveChatId, messageId, status: 'failed' }));
       dispatch(setError('发送编辑后的消息失败，请重试'));
-      cleanupStreamingFailure(activeChatId);
+      cleanupStreamingFailure(resolvedActiveChatId);
     }
-  }, [activeChatId, selectedModelId, chats, models, dispatch, reasoningEnabled, scheduleStreamEnd, cleanupStreamingFailure, getBlockedChatModelMessage]);
+  }, [resolvedActiveChatId, selectedModelId, chats, models, dispatch, reasoningEnabled, scheduleStreamEnd, cleanupStreamingFailure, getBlockedChatModelMessage]);
 
   return { newChat, clearCurrentChat, sendMessage, retryMessage, editMessage };
 }; 
