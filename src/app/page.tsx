@@ -18,6 +18,7 @@ export default function Home() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const draftModeInitializedRef = useRef(false);
+  const draftEntryChatIdRef = useRef<string | null>(null);
   const [inputKey, setInputKey] = useState(() => Date.now());
 
   const { models, activeChatId, chats } = useAppSelector((state) => ({
@@ -40,15 +41,21 @@ export default function Home() {
     }
 
     draftModeInitializedRef.current = true;
+    draftEntryChatIdRef.current = activeChatId;
     dispatch(setActiveChat(null));
-  }, [dispatch]);
+  }, [activeChatId, dispatch]);
 
   useEffect(() => {
     setInputKey(Date.now());
   }, [activeChatId]);
 
   useEffect(() => {
-    if (!activeChatId || !draftChat || draftChat.messages.length === 0) {
+    if (
+      !activeChatId ||
+      activeChatId === draftEntryChatIdRef.current ||
+      !draftChat ||
+      draftChat.messages.length === 0
+    ) {
       return;
     }
 
@@ -68,10 +75,11 @@ export default function Home() {
 
   const handleNewChat = useCallback(() => {
     draftModeInitializedRef.current = true;
+    draftEntryChatIdRef.current = activeChatId;
     dispatch(setActiveChat(null));
     const modelToUse = searchParams?.get('model') || getFirstEnabledModelId(models);
     router.push(modelToUse ? `/?new=true&model=${modelToUse}` : '/');
-  }, [dispatch, models, router, searchParams]);
+  }, [activeChatId, dispatch, models, router, searchParams]);
 
   return (
     <MainLayout
