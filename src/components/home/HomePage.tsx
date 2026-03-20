@@ -6,7 +6,7 @@ import {
     CardTitle,
 } from "@/components/ui/card";
 import { FileText, Image, Lightbulb, MessageSquare, Plus } from "lucide-react";
-import { useCallback, memo, useState } from "react";
+import { useCallback, memo, useEffect, useRef, useState } from "react";
 import { useAppSelector } from "@/redux/hooks";
 import { useToast } from "@/components/ui/toast";
 
@@ -21,9 +21,18 @@ const HomePage: React.FC<HomePageProps> = ({ onNewChat, onSendMessage }) => {
   const { isAuthenticated } = useAppSelector((state) => state.auth);
   const { toast } = useToast();
   const [pendingExample, setPendingExample] = useState<string | null>(null);
+  const pendingResetRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (pendingResetRef.current) {
+        clearTimeout(pendingResetRef.current);
+      }
+    };
+  }, []);
 
   // 处理对话示例点击的通用函数
-  const handleExampleClick = useCallback(async (message: string) => {
+  const handleExampleClick = useCallback((message: string) => {
     if (pendingExample) {
       return;
     }
@@ -41,15 +50,44 @@ const HomePage: React.FC<HomePageProps> = ({ onNewChat, onSendMessage }) => {
       return;
     }
 
-    try {
-      setPendingExample(message);
-      await Promise.resolve(onSendMessage(message));
-    } finally {
-      setTimeout(() => {
-        setPendingExample((current) => (current === message ? null : current));
-      }, 1200);
+    setPendingExample(message);
+    if (pendingResetRef.current) {
+      clearTimeout(pendingResetRef.current);
     }
+
+    pendingResetRef.current = setTimeout(() => {
+      setPendingExample((current) => (current === message ? null : current));
+      pendingResetRef.current = null;
+    }, 4000);
+
+    void Promise.resolve(onSendMessage(message)).catch(() => {
+      setPendingExample((current) => (current === message ? null : current));
+      if (pendingResetRef.current) {
+        clearTimeout(pendingResetRef.current);
+        pendingResetRef.current = null;
+      }
+    });
   }, [isAuthenticated, onSendMessage, pendingExample, toast]);
+
+  if (pendingExample) {
+    return (
+      <div className="flex flex-col space-y-8 pb-8 px-4 max-w-5xl mx-auto w-full h-full overflow-y-auto">
+        <div className="pt-8 text-center">
+          <h1 className="text-3xl font-bold mb-2">正在开始这轮对话</h1>
+          <p className="text-muted-foreground">正在创建会话并等待 AI 开始回复。</p>
+        </div>
+
+        <div className="max-w-3xl mx-auto w-full space-y-4">
+          <div className="ml-auto max-w-2xl rounded-3xl bg-primary/10 px-5 py-4 text-sm">
+            {pendingExample}
+          </div>
+          <div className="max-w-2xl rounded-3xl border border-border/60 bg-card px-5 py-4 text-sm text-muted-foreground shadow-sm">
+            AI 正在准备回复...
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col space-y-8 pb-8 px-4 max-w-5xl mx-auto w-full h-full overflow-y-auto">
