@@ -667,6 +667,77 @@ describe('useChatActions.sendMessage', () => {
     );
     expect(sendMessageStreamMock.mock.calls[0]?.[0]?.conversation_id).not.toBe('chat-empty');
   });
+
+  it('ignores the existing active chat when sending from draft mode', async () => {
+    currentState.chat.activeChatId = 'chat-existing';
+    currentState.chat.chats = [
+      {
+        id: 'chat-existing',
+        title: '旧会话',
+        model: 'model-1',
+        messages: [{ id: 'old-message', role: 'user', content: 'old' }],
+      },
+    ] as any;
+
+    dispatchMock.mockImplementation(action => {
+      if (action?.type === 'chat/createChat') {
+        currentState.chat.activeChatId = action.payload.id;
+        currentState.chat.chats = [
+          ...currentState.chat.chats,
+          {
+            id: action.payload.id,
+            title: action.payload.title,
+            model: action.payload.model,
+            messages: [],
+          },
+        ];
+      }
+
+      if (action?.type === 'chat/addMessage') {
+        currentState.chat.chats = currentState.chat.chats.map(chat =>
+          chat.id === action.payload.chatId
+            ? {
+                ...chat,
+                messages: [...chat.messages, action.payload.message],
+              }
+            : chat
+        );
+      }
+
+      return action;
+    });
+
+    sendMessageStreamMock.mockResolvedValue(undefined);
+
+    const { result } = renderHook(() =>
+      useChatActions({
+        draftMode: true,
+      })
+    );
+
+    const sendPromise = result.current.sendMessage('新的草稿消息');
+    await vi.advanceTimersByTimeAsync(50);
+    await sendPromise;
+
+    expect(createChatMock).toHaveBeenCalledWith({
+      id: expect.any(String),
+      model: 'model-1',
+      provider: 'qwen',
+      title: '新的草稿消息',
+    });
+    expect(sendMessageStreamMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        conversation_id: expect.any(String),
+      }),
+      expect.any(Function)
+    );
+    expect(sendMessageStreamMock).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        conversation_id: 'chat-existing',
+      }),
+      expect.any(Function)
+    );
+  });
 });
 
 describe('useChatActions.retryMessage', () => {

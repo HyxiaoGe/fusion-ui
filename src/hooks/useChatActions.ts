@@ -32,6 +32,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { store } from '@/redux/store';
 
 type ChatActionsOptions = {
+  draftMode?: boolean;
   onNewChatCreated?: () => void;
   onSendMessageStart?: () => void;
   onStreamEnd?: (chatId: string) => void;
@@ -155,7 +156,7 @@ export const useChatActions = (options: ChatActionsOptions) => {
 
     options.onSendMessageStart?.();
     
-    let currentActiveChatId = activeChatId;
+    let currentActiveChatId = options.draftMode ? null : activeChatId;
     let modelIdForSend = currentActiveChatId
       ? chats.find((chat) => chat.id === currentActiveChatId)?.model || selectedModelId
       : selectedModelId;
