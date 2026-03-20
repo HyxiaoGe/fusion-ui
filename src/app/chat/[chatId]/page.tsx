@@ -249,7 +249,7 @@ export default function ChatPage() {
   if (hydrationView === 'loading') {
     return (
       <MainLayout
-        sidebar={<ChatSidebarLazy onNewChat={handleNewChat} />}
+        sidebar={<ChatSidebarLazy onNewChat={handleNewChat} activeChatIdOverride={chatId} />}
         header={
           <header className="h-14 border-b flex items-center justify-between gap-3 px-4 sm:px-5 sticky top-0 z-10 shadow-sm bg-background">
             <div className="flex items-center shrink-0">
@@ -283,7 +283,7 @@ export default function ChatPage() {
   if (!activeChat || hydrationView === 'error') {
     return (
       <MainLayout
-        sidebar={<ChatSidebarLazy onNewChat={handleNewChat} />}
+        sidebar={<ChatSidebarLazy onNewChat={handleNewChat} activeChatIdOverride={chatId} />}
         header={
           <header className="h-14 border-b flex items-center justify-between gap-3 px-4 sm:px-5 sticky top-0 z-10 shadow-sm bg-background">
             <div className="flex items-center shrink-0">
@@ -331,7 +331,7 @@ export default function ChatPage() {
 
   return (
     <MainLayout
-      sidebar={<ChatSidebarLazy onNewChat={handleNewChat} />}
+      sidebar={<ChatSidebarLazy onNewChat={handleNewChat} activeChatIdOverride={chatId} />}
       header={
         <header className="h-14 border-b flex items-center justify-between gap-3 px-4 sm:px-5 sticky top-0 z-10 shadow-sm bg-background">
           <div className="flex items-center shrink-0">
