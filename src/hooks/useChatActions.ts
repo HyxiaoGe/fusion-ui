@@ -159,7 +159,7 @@ export const useChatActions = (options: ChatActionsOptions) => {
     let currentActiveChatId = options.draftMode ? null : activeChatId;
     let modelIdForSend = currentActiveChatId
       ? chats.find((chat) => chat.id === currentActiveChatId)?.model || selectedModelId
-      : selectedModelId;
+      : getPreferredModelId(models, selectedModelId);
     const firstEnabledModel = getFirstEnabledModel();
 
     if (!currentActiveChatId && !firstEnabledModel) {
@@ -167,31 +167,35 @@ export const useChatActions = (options: ChatActionsOptions) => {
       return;
     }
 
+    const isDraftConversation = !currentActiveChatId;
     if (!currentActiveChatId) {
       const newChatId = uuidv4();
-
-      dispatch(
-        createChat({
-          id: newChatId,
-          model: firstEnabledModel!.id,
-          provider: firstEnabledModel!.provider,
-          title: content.substring(0, 30),
-        })
-      );
-      currentActiveChatId = newChatId;
-      modelIdForSend = firstEnabledModel!.id;
-      await new Promise(resolve => setTimeout(resolve, 50));
+      if (!options.draftMode) {
+        dispatch(
+          createChat({
+            id: newChatId,
+            model: modelIdForSend || firstEnabledModel!.id,
+            provider: models.find((model) => model.id === (modelIdForSend || firstEnabledModel!.id))?.provider || firstEnabledModel!.provider,
+            title: content.substring(0, 30),
+          })
+        );
+        currentActiveChatId = newChatId;
+        modelIdForSend = modelIdForSend || firstEnabledModel!.id;
+        await new Promise(resolve => setTimeout(resolve, 50));
+      }
     }
-    
-    if (!currentActiveChatId) {
+
+    if (!currentActiveChatId && !options.draftMode) {
       dispatch(setError("无法创建或找到对话。"));
       return;
     }
 
-    const blockedChatModelMessage = getBlockedChatModelMessage(currentActiveChatId);
-    if (blockedChatModelMessage) {
-      dispatch(setError(blockedChatModelMessage));
-      return;
+    if (currentActiveChatId) {
+      const blockedChatModelMessage = getBlockedChatModelMessage(currentActiveChatId);
+      if (blockedChatModelMessage) {
+        dispatch(setError(blockedChatModelMessage));
+        return;
+      }
     }
 
     const userMessage: Message = {
@@ -209,10 +213,12 @@ export const useChatActions = (options: ChatActionsOptions) => {
       dispatch(updateChatTitle({ chatId: currentActiveChatId, title: tempTitle }));
     }
     
-    dispatch(addMessage({
-      chatId: currentActiveChatId,
-      message: userMessage
-    }));
+    if (currentActiveChatId) {
+      dispatch(addMessage({
+        chatId: currentActiveChatId,
+        message: userMessage
+      }));
+    }
     
     const selectedModel = models.find(
       (m) => m.id === (modelIdForSend || firstEnabledModel?.id)
@@ -222,41 +228,75 @@ export const useChatActions = (options: ChatActionsOptions) => {
       return;
     }
 
-    dispatch(startStreaming(currentActiveChatId));
+    if (currentActiveChatId) {
+      dispatch(startStreaming(currentActiveChatId));
+    }
 
     const supportsReasoning = selectedModel.capabilities?.deepThinking || false;
     const useReasoning = reasoningEnabled && supportsReasoning;
+
+    let didMaterializeDraftConversation = false;
+    const materializeDraftConversation = (serverConversationId?: string) => {
+      if (!isDraftConversation || didMaterializeDraftConversation || !serverConversationId) {
+        return null;
+      }
+
+      didMaterializeDraftConversation = true;
+      currentActiveChatId = serverConversationId;
+      modelIdForSend = selectedModel.id;
+
+      dispatch(
+        createChat({
+          id: serverConversationId,
+          model: selectedModel.id,
+          provider: selectedModel.provider,
+          title: content.substring(0, 30),
+        })
+      );
+      dispatch(addMessage({
+        chatId: serverConversationId,
+        message: userMessage,
+      }));
+      dispatch(startStreaming(serverConversationId));
+
+      return serverConversationId;
+    };
 
     try {
       await sendMessageStream({
         provider: selectedModel.provider,
         model: selectedModel.id,
         message: content.trim(),
-        conversation_id: currentActiveChatId,
+        conversation_id: currentActiveChatId || undefined,
         stream: true,
         options: {
           use_reasoning: useReasoning,
         }
       },
         (content, done, conversationId, reasoning) => {
+          const effectiveChatId = currentActiveChatId || materializeDraftConversation(conversationId);
+          if (!effectiveChatId) {
+            return;
+          }
+
           if (!done) {
-            dispatch(updateStreamingContent({ chatId: currentActiveChatId, content }));
+            dispatch(updateStreamingContent({ chatId: effectiveChatId, content }));
             if (reasoning) {
               dispatch(updateStreamingReasoningContent(reasoning));
             }
           } else {
-            dispatch(updateStreamingContent({ chatId: currentActiveChatId, content }));
+            dispatch(updateStreamingContent({ chatId: effectiveChatId, content }));
 
             // 保存思考内容到消息的reasoning字段
             setTimeout(() => {
               const stateBeforeEnd = store.getState().chat;
               const messageIdToUpdate = stateBeforeEnd.streamingMessageId;
-              const finalChatId = conversationId || currentActiveChatId;
+              const finalChatId = conversationId || effectiveChatId;
 
               if (reasoning && reasoning.trim()) {
                 if (messageIdToUpdate) {
                   dispatch(updateMessageReasoning({ 
-                    chatId: currentActiveChatId, 
+                    chatId: effectiveChatId, 
                     messageId: messageIdToUpdate, 
                     reasoning: reasoning, 
                     isVisible: true // 默认显示，用户可以手动隐藏
@@ -279,7 +319,7 @@ export const useChatActions = (options: ChatActionsOptions) => {
                 if (duration > 0) {
                   // 使用延迟执行工具，确保服务端已保存消息
                   delayedExecution(
-                    () => updateMessageDuration(currentActiveChatId, streamingReasoningMessageId, duration),
+                    () => updateMessageDuration(effectiveChatId, streamingReasoningMessageId, duration),
                     3000 // 3秒延迟，给服务端充足的保存时间
                   );
                 }
@@ -293,7 +333,7 @@ export const useChatActions = (options: ChatActionsOptions) => {
               }
             }, STREAM_SETTLE_DELAY_MS);
 
-            if (conversationId && conversationId !== currentActiveChatId) {
+            if (conversationId && conversationId !== effectiveChatId) {
               dispatch(setActiveChat(conversationId));
               // 只有在对话ID发生变化时才刷新列表（说明服务端创建了新对话）
               setTimeout(refreshChatList, 1000);
@@ -304,8 +344,13 @@ export const useChatActions = (options: ChatActionsOptions) => {
     } catch (error) {
       console.error('发送消息失败:', error);
       dispatch(setError(error instanceof Error ? error.message : '发送消息失败'));
-      dispatch(setMessageStatus({ chatId: currentActiveChatId, messageId: userMessage.id, status: 'failed' }));
-      cleanupStreamingFailure(currentActiveChatId);
+      if (currentActiveChatId) {
+        dispatch(setMessageStatus({ chatId: currentActiveChatId, messageId: userMessage.id, status: 'failed' }));
+        cleanupStreamingFailure(currentActiveChatId);
+      } else {
+        dispatch(endStreamingReasoning());
+        dispatch(endStreaming());
+      }
     }
   }, [activeChatId, chats, cleanupStreamingFailure, dispatch, getBlockedChatModelMessage, getFirstEnabledModel, models, options, reasoningEnabled, refreshChatList, scheduleInitialTitleGeneration, scheduleStreamEnd]);
 

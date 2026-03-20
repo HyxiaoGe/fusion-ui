@@ -144,6 +144,7 @@ describe('useChatActions.newChat', () => {
     updateStreamingContentMock.mockClear();
     updateStreamingReasoningContentMock.mockClear();
     endStreamingMock.mockClear();
+    deleteMessageMock.mockClear();
     setMessageStatusMock.mockClear();
     sendMessageStreamMock.mockReset();
     generateChatTitleMock.mockReset();
@@ -281,6 +282,7 @@ describe('useChatActions.sendMessage', () => {
     updateStreamingContentMock.mockClear();
     updateStreamingReasoningContentMock.mockClear();
     endStreamingMock.mockClear();
+    deleteMessageMock.mockClear();
     setMessageStatusMock.mockClear();
     dispatchMock.mockReset();
     sendMessageStreamMock.mockReset();
@@ -668,7 +670,7 @@ describe('useChatActions.sendMessage', () => {
     expect(sendMessageStreamMock.mock.calls[0]?.[0]?.conversation_id).not.toBe('chat-empty');
   });
 
-  it('ignores the existing active chat when sending from draft mode', async () => {
+  it('ignores the existing active chat and only materializes a real chat after the server returns one in draft mode', async () => {
     currentState.chat.activeChatId = 'chat-existing';
     currentState.chat.chats = [
       {
@@ -707,7 +709,9 @@ describe('useChatActions.sendMessage', () => {
       return action;
     });
 
-    sendMessageStreamMock.mockResolvedValue(undefined);
+    sendMessageStreamMock.mockImplementation(async (_payload, onChunk) => {
+      onChunk('新的回答', false, 'chat-created', undefined);
+    });
 
     const { result } = renderHook(() =>
       useChatActions({
@@ -715,19 +719,17 @@ describe('useChatActions.sendMessage', () => {
       })
     );
 
-    const sendPromise = result.current.sendMessage('新的草稿消息');
-    await vi.advanceTimersByTimeAsync(50);
-    await sendPromise;
+    await result.current.sendMessage('新的草稿消息');
 
     expect(createChatMock).toHaveBeenCalledWith({
-      id: expect.any(String),
+      id: 'chat-created',
       model: 'model-1',
       provider: 'qwen',
       title: '新的草稿消息',
     });
     expect(sendMessageStreamMock).toHaveBeenCalledWith(
       expect.objectContaining({
-        conversation_id: expect.any(String),
+        conversation_id: undefined,
       }),
       expect.any(Function)
     );
@@ -737,6 +739,38 @@ describe('useChatActions.sendMessage', () => {
       }),
       expect.any(Function)
     );
+  });
+
+  it('does not crash when a draft-mode send fails before a real chat is created', async () => {
+    currentState.chat.activeChatId = 'chat-existing';
+    currentState.chat.chats = [
+      {
+        id: 'chat-existing',
+        title: '旧会话',
+        model: 'model-1',
+        messages: [{ id: 'old-message', role: 'user', content: 'old' }],
+      },
+    ] as any;
+
+    sendMessageStreamMock.mockRejectedValue(new Error('draft send failed'));
+
+    const { result } = renderHook(() =>
+      useChatActions({
+        draftMode: true,
+      })
+    );
+
+    await result.current.sendMessage('新的草稿消息');
+
+    expect(createChatMock).not.toHaveBeenCalled();
+    expect(setMessageStatusMock).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        chatId: null,
+      })
+    );
+    expect(deleteMessageMock).not.toHaveBeenCalled();
+    expect(setErrorMock).toHaveBeenCalledWith('draft send failed');
+    expect(endStreamingMock).toHaveBeenCalledTimes(1);
   });
 });
 
