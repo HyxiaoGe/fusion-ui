@@ -6,7 +6,7 @@ import {
     CardTitle,
 } from "@/components/ui/card";
 import { FileText, Image, Lightbulb, MessageSquare, Plus } from "lucide-react";
-import { useCallback, memo } from "react";
+import { useCallback, memo, useState } from "react";
 import { useAppSelector } from "@/redux/hooks";
 import { useToast } from "@/components/ui/toast";
 
@@ -20,9 +20,14 @@ interface HomePageProps {
 const HomePage: React.FC<HomePageProps> = ({ onNewChat, onSendMessage }) => {
   const { isAuthenticated } = useAppSelector((state) => state.auth);
   const { toast } = useToast();
+  const [pendingExample, setPendingExample] = useState<string | null>(null);
 
   // 处理对话示例点击的通用函数
-  const handleExampleClick = useCallback((message: string) => {
+  const handleExampleClick = useCallback(async (message: string) => {
+    if (pendingExample) {
+      return;
+    }
+
     // 检查登录状态
     if (!isAuthenticated) {
       toast({
@@ -35,9 +40,16 @@ const HomePage: React.FC<HomePageProps> = ({ onNewChat, onSendMessage }) => {
       }
       return;
     }
-    
-    onSendMessage(message);
-  }, [onSendMessage, isAuthenticated, toast]);
+
+    try {
+      setPendingExample(message);
+      await Promise.resolve(onSendMessage(message));
+    } finally {
+      setTimeout(() => {
+        setPendingExample((current) => (current === message ? null : current));
+      }, 1200);
+    }
+  }, [isAuthenticated, onSendMessage, pendingExample, toast]);
 
   return (
     <div className="flex flex-col space-y-8 pb-8 px-4 max-w-5xl mx-auto w-full h-full overflow-y-auto">
@@ -67,6 +79,7 @@ const HomePage: React.FC<HomePageProps> = ({ onNewChat, onSendMessage }) => {
               <Button 
                 variant="ghost" 
                 className="w-full justify-start text-muted-foreground hover:text-foreground"
+                disabled={Boolean(pendingExample)}
                 onClick={() => handleExampleClick("写一篇科技新闻")}
               >
                 写一篇科技新闻
@@ -74,6 +87,7 @@ const HomePage: React.FC<HomePageProps> = ({ onNewChat, onSendMessage }) => {
               <Button 
                 variant="ghost" 
                 className="w-full justify-start text-muted-foreground hover:text-foreground"
+                disabled={Boolean(pendingExample)}
                 onClick={() => handleExampleClick("生成产品说明书")}
               >
                 生成产品说明书
@@ -93,6 +107,7 @@ const HomePage: React.FC<HomePageProps> = ({ onNewChat, onSendMessage }) => {
               <Button 
                 variant="ghost" 
                 className="w-full justify-start text-muted-foreground hover:text-foreground"
+                disabled={Boolean(pendingExample)}
                 onClick={() => handleExampleClick("React性能优化技巧")}
               >
                 React性能优化技巧
@@ -100,6 +115,7 @@ const HomePage: React.FC<HomePageProps> = ({ onNewChat, onSendMessage }) => {
               <Button 
                 variant="ghost" 
                 className="w-full justify-start text-muted-foreground hover:text-foreground"
+                disabled={Boolean(pendingExample)}
                 onClick={() => handleExampleClick("Python数据分析示例")}
               >
                 Python数据分析示例
@@ -119,6 +135,7 @@ const HomePage: React.FC<HomePageProps> = ({ onNewChat, onSendMessage }) => {
               <Button 
                 variant="ghost" 
                 className="w-full justify-start text-muted-foreground hover:text-foreground"
+                disabled={Boolean(pendingExample)}
                 onClick={() => handleExampleClick("分析销售数据趋势")}
               >
                 分析销售数据趋势
@@ -126,6 +143,7 @@ const HomePage: React.FC<HomePageProps> = ({ onNewChat, onSendMessage }) => {
               <Button 
                 variant="ghost" 
                 className="w-full justify-start text-muted-foreground hover:text-foreground"
+                disabled={Boolean(pendingExample)}
                 onClick={() => handleExampleClick("创建数据可视化图表")}
               >
                 创建数据可视化图表
@@ -145,6 +163,7 @@ const HomePage: React.FC<HomePageProps> = ({ onNewChat, onSendMessage }) => {
               <Button 
                 variant="ghost" 
                 className="w-full justify-start text-muted-foreground hover:text-foreground"
+                disabled={Boolean(pendingExample)}
                 onClick={() => handleExampleClick("量子计算的基本原理")}
               >
                 量子计算的基本原理
@@ -152,6 +171,7 @@ const HomePage: React.FC<HomePageProps> = ({ onNewChat, onSendMessage }) => {
               <Button 
                 variant="ghost" 
                 className="w-full justify-start text-muted-foreground hover:text-foreground"
+                disabled={Boolean(pendingExample)}
                 onClick={() => handleExampleClick("人工智能的发展历程")}
               >
                 人工智能的发展历程
@@ -171,6 +191,7 @@ const HomePage: React.FC<HomePageProps> = ({ onNewChat, onSendMessage }) => {
               <Button 
                 variant="ghost" 
                 className="w-full justify-start text-muted-foreground hover:text-foreground"
+                disabled={Boolean(pendingExample)}
                 onClick={() => handleExampleClick("写一个科幻短篇故事")}
               >
                 写一个科幻短篇故事
@@ -178,6 +199,7 @@ const HomePage: React.FC<HomePageProps> = ({ onNewChat, onSendMessage }) => {
               <Button 
                 variant="ghost" 
                 className="w-full justify-start text-muted-foreground hover:text-foreground"
+                disabled={Boolean(pendingExample)}
                 onClick={() => handleExampleClick("构思一个电影情节")}
               >
                 构思一个电影情节
@@ -197,6 +219,7 @@ const HomePage: React.FC<HomePageProps> = ({ onNewChat, onSendMessage }) => {
               <Button 
                 variant="ghost" 
                 className="w-full justify-start text-muted-foreground hover:text-foreground"
+                disabled={Boolean(pendingExample)}
                 onClick={() => handleExampleClick("创建项目计划书")}
               >
                 创建项目计划书
@@ -204,6 +227,7 @@ const HomePage: React.FC<HomePageProps> = ({ onNewChat, onSendMessage }) => {
               <Button 
                 variant="ghost" 
                 className="w-full justify-start text-muted-foreground hover:text-foreground"
+                disabled={Boolean(pendingExample)}
                 onClick={() => handleExampleClick("生成工作周报模板")}
               >
                 生成工作周报模板
