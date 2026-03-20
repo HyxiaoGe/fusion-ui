@@ -40,7 +40,7 @@ function createStore() {
       models: modelsReducer,
       stream: streamReducer,
     },
-    middleware: (getDefaultMiddleware) =>
+    middleware: (getDefaultMiddleware: any) =>
       getDefaultMiddleware({
         serializableCheck: false,
       }),

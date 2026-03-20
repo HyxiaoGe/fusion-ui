@@ -313,8 +313,8 @@ export async function deleteConversation(conversationId: string) {
 export const fetchSuggestedQuestions = async (
   conversationId: string,
   options: Record<string, any> = {},
-  forceRefresh: boolean = false,
-  messageCount?: number
+  _forceRefresh: boolean = false,
+  _messageCount?: number
 ): Promise<{ questions: string[] }> => {
   try {
     const response = await fetchWithAuth(`${API_BASE_URL}/api/chat/suggest-questions`, {

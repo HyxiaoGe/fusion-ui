@@ -19,6 +19,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - `npm run analyze:build` - Build with bundle analysis enabled
 - `npm run analyze:visual` - Cross-platform bundle analysis with visualization
 
+## Repository Conventions
+
+- Git commit message 必须使用中文。
+
 ## High-Level Architecture
 
 This is a hybrid Next.js + Electron application for AI chat conversations with the following key architectural components:
