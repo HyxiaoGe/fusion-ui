@@ -1,10 +1,10 @@
 import Dexie, { Table } from 'dexie';
-import { Chat, Message } from '@/redux/slices/chatSlice';
+import type { Conversation, Message } from '@/types/conversation';
 import { v4 as uuidv4 } from 'uuid';
 
 // 定义数据库架构
 class ChatDatabase extends Dexie {
-  chats!: Table<Chat, string>;
+  chats!: Table<Conversation, string>;
   messages!: Table<Message, string>;
   settings!: Table<{ id: string; value: any }, string>;
 
@@ -53,7 +53,7 @@ export const chatStore = {
     }
   },
   // 保存整个聊天
-  async saveChat(chat: Chat): Promise<void> {
+  async saveChat(chat: Conversation): Promise<void> {
     try {
       // 获取现有的聊天记录
       const existingChat = await db.chats.get(chat.id);
@@ -106,7 +106,7 @@ export const chatStore = {
   },
   
   // 获取所有聊天
-  async getAllChats(): Promise<Chat[]> {
+  async getAllChats(): Promise<Conversation[]> {
     try {
       // 获取所有聊天基本信息
       const chats = await db.chats.toArray();
@@ -145,7 +145,7 @@ export const chatStore = {
   },
   
   // 根据ID获取聊天
-  async getChatById(chatId: string): Promise<Chat | undefined> {
+  async getChatById(chatId: string): Promise<Conversation | undefined> {
     try {
       // 获取聊天基本信息
       const chat = await db.chats.get(chatId);

@@ -1,11 +1,5 @@
 import { API_CONFIG } from '../config';
 import fetchWithAuth from './fetchWithAuth';
-import { store } from '../../redux/store'; // 导入 store
-import {
-  startStreamingReasoning,
-  endStreamingReasoning,
-  setStreamingReasoningMessageId,
-} from '../../redux/slices/chatSlice'; // 导入 actions
 
 const API_BASE_URL = API_CONFIG.BASE_URL
 
@@ -62,7 +56,11 @@ export async function sendMessage(data: ChatRequest): Promise<ChatResponse> {
   }
 }
 
-export async function sendMessageStream(data: ChatRequest, onChunk: (chunk: string, done: boolean, conversationId?: string, reasoning?: string) => void): Promise<void> {
+export async function sendMessageStream(
+  data: ChatRequest,
+  onChunk: (chunk: string, done: boolean, conversationId?: string, reasoning?: string) => void,
+  signal?: AbortSignal
+): Promise<void> {
   try {
 
     // 确保设置了options对象
@@ -75,6 +73,7 @@ export async function sendMessageStream(data: ChatRequest, onChunk: (chunk: stri
       headers: {
         'Content-Type': 'application/json',
       },
+      signal,
       body: JSON.stringify({
         ...data,
         stream: true, // 确保设置stream为true
@@ -130,18 +129,10 @@ export async function sendMessageStream(data: ChatRequest, onChunk: (chunk: stri
             // 处理事件类型
             switch(parsedData.type) {
               case "reasoning_start":
-                // 不在这里开始，等待第一个content
-                if (parsedData.message_id && !store.getState().chat.streamingReasoningMessageId) {
-                  store.dispatch(setStreamingReasoningMessageId(parsedData.message_id));
-                }
                 break;
                 
               case "reasoning_content":
                 if (parsedData.content) {
-                  // 第一次收到内容时才开始计时
-                  if (streamReasoning === '') {
-                    store.dispatch(startStreamingReasoning());
-                  }
                   streamReasoning += parsedData.content;
                   onChunk(streamContent, false, conversationId || undefined, streamReasoning);
                 }
@@ -149,10 +140,6 @@ export async function sendMessageStream(data: ChatRequest, onChunk: (chunk: stri
                 
               case "reasoning_end":
               case "reasoning_complete":
-                if (parsedData.message_id && !store.getState().chat.streamingReasoningMessageId) {
-                  store.dispatch(setStreamingReasoningMessageId(parsedData.message_id));
-                }
-                store.dispatch(endStreamingReasoning());
                 // 推理完成，可能会收到完整的reasoning
                 if (parsedData.reasoning) {
                   streamReasoning = parsedData.reasoning;
@@ -278,6 +265,23 @@ export async function getConversation(conversationId: string) {
     console.error('获取对话详情失败:', error);
     throw error;
   }
+}
+
+export async function renameConversation(conversationId: string, title: string) {
+  const response = await fetchWithAuth(`${API_BASE_URL}/api/conversations/${conversationId}`, {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ title }),
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.detail || '重命名对话失败');
+  }
+
+  return response.json().catch(() => null);
 }
 
 // 删除对话

@@ -9,7 +9,7 @@ import {
 import { cn } from "@/lib/utils";
 import { getDefaultModelId, getFirstEnabledModelId, getPreferredModelId } from "@/lib/models/modelPreference";
 import { useAppDispatch, useAppSelector } from "@/redux/hooks";
-import { updateChatModel } from "@/redux/slices/chatSlice";
+import { updateConversationModel } from "@/redux/slices/conversationSlice";
 import { setSelectedModel } from "@/redux/slices/modelsSlice";
 import React, { useState, useRef, useEffect } from "react";
 import CapabilityIcon from "./CapabilityIcon";
@@ -21,6 +21,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { usePathname } from "next/navigation";
 
 interface ModelSelectorProps {
   onChange: (modelId: string) => void;
@@ -31,18 +32,20 @@ interface ModelSelectorProps {
 
 const ModelSelector: React.FC<ModelSelectorProps> = ({ onChange, modelId, disabled, className }) => {
   const dispatch = useAppDispatch();
+  const pathname = usePathname();
   const { models, providers, selectedModelId, isLoading } = useAppSelector(
     (state) => state.models
   );
-  const { activeChatId, chats } = useAppSelector((state) => state.chat);
+  const chats = useAppSelector((state) => state.conversation.byId);
   const { mode } = useAppSelector(state => state.theme);
   const [hoveredModel, setHoveredModel] = useState<string | null>(null);
   const [tooltipPosition, setTooltipPosition] = useState({ x: 0, y: 0 });
   const [localLoading, setLocalLoading] = useState(true); // 添加本地加载状态
   const dropdownRef = useRef<HTMLDivElement>(null);
 
+  const activeChatId = pathname.startsWith('/chat/') ? pathname.split('/chat/')[1] : null;
   // 检查当前聊天是否有消息
-  const activeChat = activeChatId ? chats.find(chat => chat.id === activeChatId) : null;
+  const activeChat = activeChatId ? chats[activeChatId] : null;
   const hasMessages = activeChat?.messages?.some(msg => msg.role === 'user') || false;
   
   // 优先使用当前聊天的模型ID，如果存在活动聊天
@@ -118,9 +121,9 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({ onChange, modelId, disabl
     // 如果有活动聊天，同时更新聊天的模型ID
     if (activeChatId) {
       dispatch(
-        updateChatModel({
-          chatId: activeChatId,
-          modelId: value,
+        updateConversationModel({
+          id: activeChatId,
+          model: value,
         })
       );
     }

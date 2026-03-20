@@ -6,12 +6,17 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const dispatchMock = vi.fn();
 const toastMock = vi.fn();
 const selectorState = {
-  chat: {
-    activeChatId: 'chat-1',
-    streamingReasoningStartTime: null,
-    streamingReasoningEndTime: null,
+  conversation: {
+    byId: {
+      'chat-1': { id: 'chat-1', model: 'model-1', provider: 'qwen', messages: [] },
+    },
+    animatingTitleId: null,
+  },
+  stream: {
+    conversationId: 'chat-1',
+    reasoningStartTime: null,
+    reasoningEndTime: null,
     isStreamingReasoning: false,
-    chats: [{ id: 'chat-1', model: 'model-1', provider: 'qwen' }],
   },
   settings: {
     userAvatar: 'default',

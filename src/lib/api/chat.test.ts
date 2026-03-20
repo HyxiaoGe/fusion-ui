@@ -2,42 +2,12 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const {
   fetchWithAuthMock,
-  dispatchMock,
-  getStateMock,
-  startStreamingReasoningMock,
-  endStreamingReasoningMock,
-  setStreamingReasoningMessageIdMock,
 } = vi.hoisted(() => ({
   fetchWithAuthMock: vi.fn(),
-  dispatchMock: vi.fn(),
-  getStateMock: vi.fn(() => ({
-    chat: {
-      streamingReasoningMessageId: null,
-    },
-  })),
-  startStreamingReasoningMock: vi.fn(() => ({ type: 'chat/startStreamingReasoning' })),
-  endStreamingReasoningMock: vi.fn(() => ({ type: 'chat/endStreamingReasoning' })),
-  setStreamingReasoningMessageIdMock: vi.fn((messageId: string) => ({
-    type: 'chat/setStreamingReasoningMessageId',
-    payload: messageId,
-  })),
 }));
 
 vi.mock('./fetchWithAuth', () => ({
   default: fetchWithAuthMock,
-}));
-
-vi.mock('../../redux/store', () => ({
-  store: {
-    dispatch: dispatchMock,
-    getState: getStateMock,
-  },
-}));
-
-vi.mock('../../redux/slices/chatSlice', () => ({
-  startStreamingReasoning: startStreamingReasoningMock,
-  endStreamingReasoning: endStreamingReasoningMock,
-  setStreamingReasoningMessageId: setStreamingReasoningMessageIdMock,
 }));
 
 import { getConversation, sendMessageStream } from './chat';
@@ -62,16 +32,6 @@ function createStreamResponse(chunks: string[]) {
 describe('sendMessageStream', () => {
   beforeEach(() => {
     fetchWithAuthMock.mockReset();
-    dispatchMock.mockReset();
-    getStateMock.mockReset();
-    getStateMock.mockReturnValue({
-      chat: {
-        streamingReasoningMessageId: null,
-      },
-    });
-    startStreamingReasoningMock.mockClear();
-    endStreamingReasoningMock.mockClear();
-    setStreamingReasoningMessageIdMock.mockClear();
   });
 
   it('parses reasoning, answer and done events from SSE stream', async () => {
@@ -95,8 +55,6 @@ describe('sendMessageStream', () => {
       onChunk
     );
 
-    expect(setStreamingReasoningMessageIdMock).toHaveBeenCalledWith('reason-1');
-    expect(startStreamingReasoningMock).toHaveBeenCalledTimes(1);
     expect(onChunk).toHaveBeenNthCalledWith(1, '', false, 'conv-1', 'step ');
     expect(onChunk).toHaveBeenNthCalledWith(2, 'answer', false, 'conv-1', 'step ');
     expect(onChunk).toHaveBeenNthCalledWith(3, 'answer', true, 'conv-1', 'step ');

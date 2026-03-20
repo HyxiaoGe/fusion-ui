@@ -13,11 +13,11 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Chat } from "@/redux/slices/chatSlice";
-import { Model } from "@/redux/slices/modelSlice";
+import type { Conversation } from "@/types/conversation";
+import type { Model } from "@/redux/slices/modelsSlice";
 
 interface ChatItemProps {
-  chat: Chat;
+  chat: Conversation;
   activeChatId: string | null;
   models: Model[];
   onSelectChat: (chatId: string) => void;

@@ -1,4 +1,5 @@
-import type { Chat, Message } from '@/redux/slices/chatSlice';
+import type { Conversation, Message } from '@/types/conversation';
+import { parseTimestamp } from '@/lib/utils/parseTimestamp';
 
 type ServerMessage = {
   id: string;
@@ -20,31 +21,15 @@ type ServerConversation = {
   messages: ServerMessage[];
 };
 
-export function parseServerTimestamp(timestamp: unknown): number {
-  if (typeof timestamp === 'number') {
-    return timestamp;
-  }
+export const parseServerTimestamp = parseTimestamp;
 
-  if (typeof timestamp !== 'string' || !timestamp) {
-    return 0;
-  }
-
-  if (timestamp.endsWith('Z') || /[\+\-]\d{2}:\d{2}$/.test(timestamp)) {
-    const date = new Date(timestamp);
-    return Number.isNaN(date.getTime()) ? 0 : date.getTime();
-  }
-
-  const date = new Date(timestamp.replace(' ', 'T') + 'Z');
-  return Number.isNaN(date.getTime()) ? 0 : date.getTime();
-}
-
-export function shouldHydrateConversation(chat: Pick<Chat, 'messages'> | null | undefined): boolean {
+export function shouldHydrateConversation(chat: Pick<Conversation, 'messages'> | null | undefined): boolean {
   return !chat || chat.messages.length === 0;
 }
 
 export function getConversationHydrationView(options: {
   chatId?: string | null;
-  chat: Pick<Chat, 'messages'> | null | undefined;
+  chat: Pick<Conversation, 'messages'> | null | undefined;
   isLoadingServerChat: boolean;
   serverError?: string | null;
 }): 'loading' | 'error' | 'ready' {
@@ -117,7 +102,7 @@ function mergeTurnMessages(turnId: string, turnMessages: ServerMessage[]): Messa
   return mergedMessages;
 }
 
-export function buildChatFromServerConversation(serverConversation: ServerConversation): Chat {
+export function buildChatFromServerConversation(serverConversation: ServerConversation): Conversation {
   const groupedMessages = new Map<string, ServerMessage[]>();
 
   for (const message of serverConversation.messages) {

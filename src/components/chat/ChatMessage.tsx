@@ -4,7 +4,9 @@ import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { FileWithPreview, formatFileSize } from '@/lib/utils/fileHelpers';
 import { useAppDispatch, useAppSelector } from '@/redux/hooks';
-import { Message, toggleReasoningVisibility, completeThinkingPhase } from '@/redux/slices/chatSlice';
+import type { Message } from '@/types/conversation';
+import { toggleReasoningVisibility } from '@/redux/slices/conversationSlice';
+import { completeThinkingPhase } from '@/redux/slices/streamSlice';
 import { avatarOptions } from '@/redux/slices/settingsSlice';
 import { Edit2, FileIcon, RefreshCw, Lightbulb, FileText, Image, Film, PenLine, RotateCcw, FileArchive, X, Check, Copy } from 'lucide-react';
 import React, { useState, useEffect, useRef } from 'react';
@@ -44,23 +46,23 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, files, isLastMessage
   const copiedResetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [localReasoningVisible, setLocalReasoningVisible] = useState(message.isReasoningVisible || false);
-  const activeChatId = useAppSelector(state => state.chat.activeChatId);
+  const activeChatId = useAppSelector(state => state.stream.conversationId);
   
   // 获取流式状态的时间戳
-  const streamingStartTime = useAppSelector(state => state.chat.streamingReasoningStartTime);
-  const streamingEndTime = useAppSelector(state => state.chat.streamingReasoningEndTime);
-  const isStreamingReasoning = useAppSelector(state => state.chat.isStreamingReasoning);
+  const streamingStartTime = useAppSelector(state => state.stream.reasoningStartTime);
+  const streamingEndTime = useAppSelector(state => state.stream.reasoningEndTime);
+  const isStreamingReasoning = useAppSelector(state => state.stream.isStreamingReasoning);
 
   const { userAvatar, assistantAvatar } = useAppSelector(state => state.settings);
   const { isAuthenticated, user } = useAppSelector(state => state.auth);
   const { toast } = useToast();
 
   // 获取当前聊天使用的模型信息
-  const chats = useAppSelector(state => state.chat.chats);
+  const chats = useAppSelector(state => state.conversation.byId);
   const models = useAppSelector(state => state.models.models);
 
   // 查找消息所属的聊天及其使用的模型
-  const chat = chats.find(c => c.id === message.chatId || c.id === activeChatId);
+  const chat = (message.chatId ? chats[message.chatId] : undefined) || (activeChatId ? chats[activeChatId] : undefined);
   const model = chat ? models.find(m => m.id === chat.model) : null;
   const providerId = chat?.provider || model?.provider;
 
@@ -127,7 +129,7 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, files, isLastMessage
 
     if (activeChatId) {
       dispatch(toggleReasoningVisibility({
-        chatId: activeChatId,
+        conversationId: activeChatId,
         messageId: message.id,
         visible: !message.isReasoningVisible
       }));
@@ -139,7 +141,7 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, files, isLastMessage
 
   // 获取流式推理内容
   const streamingReasoningContent = useAppSelector(
-    state => isStreaming && isLastMessage ? state.chat.streamingReasoningContent : ''
+    state => isStreaming && isLastMessage ? state.stream.reasoning : ''
   );
 
   const displayReasoning = isStreaming && isLastMessage && streamingReasoningContent

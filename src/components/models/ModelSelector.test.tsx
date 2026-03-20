@@ -3,9 +3,10 @@ import { render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import ModelSelector from './ModelSelector';
 
-const { useAppSelectorMock, useAppDispatchMock } = vi.hoisted(() => ({
+const { useAppSelectorMock, useAppDispatchMock, pathnameMock } = vi.hoisted(() => ({
   useAppSelectorMock: vi.fn(),
   useAppDispatchMock: vi.fn(),
+  pathnameMock: vi.fn(),
 }));
 
 vi.mock('@/redux/hooks', () => ({
@@ -13,12 +14,16 @@ vi.mock('@/redux/hooks', () => ({
   useAppDispatch: () => useAppDispatchMock,
 }));
 
-vi.mock('@/redux/slices/chatSlice', () => ({
-  updateChatModel: (payload: unknown) => ({ type: 'chat/updateChatModel', payload }),
+vi.mock('@/redux/slices/conversationSlice', () => ({
+  updateConversationModel: (payload: unknown) => ({ type: 'conversation/updateConversationModel', payload }),
 }));
 
 vi.mock('@/redux/slices/modelsSlice', () => ({
   setSelectedModel: (payload: unknown) => ({ type: 'models/setSelectedModel', payload }),
+}));
+
+vi.mock('next/navigation', () => ({
+  usePathname: pathnameMock,
 }));
 
 vi.mock('next/image', () => ({
@@ -46,6 +51,8 @@ vi.mock('@/components/ui/tooltip', () => ({
 describe('ModelSelector', () => {
   beforeEach(() => {
     useAppDispatchMock.mockReset();
+    pathnameMock.mockReset();
+    pathnameMock.mockReturnValue('/chat/chat-1');
   });
 
   it('surfaces an unavailable active chat model clearly', () => {
@@ -59,14 +66,15 @@ describe('ModelSelector', () => {
         selectedModelId: 'qwen3',
         isLoading: false,
       },
-      chat: {
-        activeChatId: 'chat-1',
-        chats: [{ id: 'chat-1', model: 'legacy', messages: [{ id: 'm1', role: 'user', content: 'hi' }] }],
+      conversation: {
+        byId: {
+          'chat-1': { id: 'chat-1', model: 'legacy', messages: [{ id: 'm1', role: 'user', content: 'hi' }] },
+        },
       },
       theme: { mode: 'light' },
     };
 
-    useAppSelectorMock.mockImplementation((selector: (state: typeof state) => unknown) => selector(state));
+    useAppSelectorMock.mockImplementation((selector: (state: any) => unknown) => selector(state));
 
     render(<ModelSelector onChange={() => {}} />);
 
@@ -86,14 +94,14 @@ describe('ModelSelector', () => {
         selectedModelId: 'qwen-max',
         isLoading: false,
       },
-      chat: {
-        activeChatId: null,
-        chats: [],
+      conversation: {
+        byId: {},
       },
       theme: { mode: 'light' },
     };
+    pathnameMock.mockReturnValue('/');
 
-    useAppSelectorMock.mockImplementation((selector: (state: typeof state) => unknown) => selector(state));
+    useAppSelectorMock.mockImplementation((selector: (state: any) => unknown) => selector(state));
 
     render(<ModelSelector onChange={() => {}} />);
 
@@ -111,14 +119,14 @@ describe('ModelSelector', () => {
         selectedModelId: 'legacy',
         isLoading: false,
       },
-      chat: {
-        activeChatId: null,
-        chats: [],
+      conversation: {
+        byId: {},
       },
       theme: { mode: 'light' },
     };
+    pathnameMock.mockReturnValue('/');
 
-    useAppSelectorMock.mockImplementation((selector: (state: typeof state) => unknown) => selector(state));
+    useAppSelectorMock.mockImplementation((selector: (state: any) => unknown) => selector(state));
 
     render(<ModelSelector onChange={() => {}} />);
 
@@ -136,14 +144,14 @@ describe('ModelSelector', () => {
         selectedModelId: null,
         isLoading: false,
       },
-      chat: {
-        activeChatId: null,
-        chats: [],
+      conversation: {
+        byId: {},
       },
       theme: { mode: 'light' },
     };
+    pathnameMock.mockReturnValue('/');
 
-    useAppSelectorMock.mockImplementation((selector: (state: typeof state) => unknown) => selector(state));
+    useAppSelectorMock.mockImplementation((selector: (state: any) => unknown) => selector(state));
 
     render(<ModelSelector onChange={() => {}} />);
 

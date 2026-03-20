@@ -1,6 +1,7 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { store } from '@/redux/store';
 import { fetchSuggestedQuestions as fetchApi } from '@/lib/api/chat';
+import type { Conversation, Message } from '@/types/conversation';
 
 export const useSuggestedQuestions = (chatId: string | null) => {
   const [suggestedQuestions, setSuggestedQuestions] = useState<string[]>([]);
@@ -24,9 +25,9 @@ export const useSuggestedQuestions = (chatId: string | null) => {
     }
 
     // Directly get the latest state from the store to avoid stale closures
-    const state = store.getState().chat;
-    const chat = state.chats.find(c => c.id === chatId);
-    const isStreaming = state.isStreaming;
+    const state = store.getState();
+    const chat = state.conversation.byId[chatId] as Conversation | undefined;
+    const isStreaming = state.stream.isStreaming;
     const requestId = requestIdRef.current + 1;
 
     if (!chat) {
@@ -34,7 +35,9 @@ export const useSuggestedQuestions = (chatId: string | null) => {
       return;
     }
 
-    const hasAIMessage = chat.messages.some(msg => msg.role === 'assistant' && msg.content?.trim());
+    const hasAIMessage = chat.messages.some(
+      (msg: Message) => msg.role === 'assistant' && msg.content?.trim()
+    );
     if (!hasAIMessage) {
       setSuggestedQuestions([]);
       return;

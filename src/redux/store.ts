@@ -2,11 +2,12 @@ import { configureStore } from '@reduxjs/toolkit';
 import { setupListeners } from '@reduxjs/toolkit/query';
 import toastMiddleware from './middleware/toastMiddleware';
 import appReducer from './slices/appSlice';
-import chatReducer from './slices/chatSlice';
+import conversationReducer from './slices/conversationSlice';
 import fileUploadReducer from './slices/fileUploadSlice';
 import modelsReducer from './slices/modelsSlice';
 import promptTemplatesReducer from './slices/promptTemplatesSlice';
 import settingsReducer from './slices/settingsSlice';
+import streamReducer from './slices/streamSlice';
 import themeReducer from './slices/themeSlice';
 import authReducer from './slices/authSlice';
 
@@ -15,17 +16,22 @@ const dbSyncMiddleware = (store: any) => (next: any) => (action: any) => {
   const result = next(action);
   
   // 检查是否有消息在使用updateMessageReasoning后被标记为shouldSyncToDb
-  if (action.type === 'chat/updateMessageReasoning') {
-    const state = store.getState();
-    const { chatId, messageId } = action.payload;
+  if (action.type === 'conversation/updateMessage') {
+    const { conversationId, messageId, patch } = action.payload;
     
     // 在下一个事件循环中清除标记(给足够时间让组件同步)
-    setTimeout(() => {
-      store.dispatch({
-        type: 'chat/clearDbSyncFlag',
-        payload: { chatId, messageId }
-      });
-    }, 2000); // 2秒后清除标记，确保组件有足够时间同步
+    if (patch?.shouldSyncToDb) {
+      setTimeout(() => {
+        store.dispatch({
+          type: 'conversation/updateMessage',
+          payload: {
+            conversationId,
+            messageId,
+            patch: { shouldSyncToDb: false },
+          }
+        });
+      }, 2000);
+    }
   }
   
   return result;
@@ -34,7 +40,8 @@ const dbSyncMiddleware = (store: any) => (next: any) => (action: any) => {
 export const store = configureStore({
     reducer: {
         theme: themeReducer,
-        chat: chatReducer,
+        conversation: conversationReducer,
+        stream: streamReducer,
         models: modelsReducer,
         fileUpload: fileUploadReducer,
         promptTemplates: promptTemplatesReducer,

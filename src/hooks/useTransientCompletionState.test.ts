@@ -2,6 +2,7 @@ import { act, renderHook } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
 import { useTransientCompletionState } from './useTransientCompletionState';
+import type { Message } from '@/types/conversation';
 
 describe('useTransientCompletionState', () => {
   it('only becomes visible after streaming transitions to complete', async () => {
@@ -14,7 +15,7 @@ describe('useTransientCompletionState', () => {
         initialProps: {
           isStreaming: true,
           isLoadingQuestions: false,
-          messages: [{ id: 'assistant-1', role: 'assistant', content: '回复完成' }],
+          messages: [{ id: 'assistant-1', role: 'assistant', content: '回复完成' }] as Message[],
         },
       }
     );
@@ -24,7 +25,7 @@ describe('useTransientCompletionState', () => {
     rerender({
       isStreaming: false,
       isLoadingQuestions: false,
-      messages: [{ id: 'assistant-1', role: 'assistant', content: '回复完成' }],
+      messages: [{ id: 'assistant-1', role: 'assistant', content: '回复完成' }] as Message[],
     });
 
     expect(result.current).toBe(true);
@@ -42,7 +43,7 @@ describe('useTransientCompletionState', () => {
       useTransientCompletionState({
         isStreaming: false,
         isLoadingQuestions: false,
-        messages: [{ id: 'assistant-1', role: 'assistant', content: '旧回复' }],
+        messages: [{ id: 'assistant-1', role: 'assistant', content: '旧回复' }] as Message[],
       })
     );
 

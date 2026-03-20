@@ -11,7 +11,7 @@ describe('useSuggestedQuestionContinuation', () => {
     const scrollTargetRef = {
       current: {
         scrollIntoView,
-      },
+      } as unknown as HTMLElement,
     };
 
     const { result } = renderHook(() =>

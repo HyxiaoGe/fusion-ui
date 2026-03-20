@@ -2,12 +2,14 @@ import React from 'react';
 import { render, screen } from '@testing-library/react';
 import { Provider } from 'react-redux';
 import { configureStore } from '@reduxjs/toolkit';
+import { describe, expect, it, vi } from 'vitest';
 
 import authReducer from '@/redux/slices/authSlice';
-import settingsReducer from '@/redux/slices/settingsSlice';
-import chatReducer from '@/redux/slices/chatSlice';
+import conversationReducer from '@/redux/slices/conversationSlice';
 import fileUploadReducer from '@/redux/slices/fileUploadSlice';
 import modelsReducer from '@/redux/slices/modelsSlice';
+import settingsReducer from '@/redux/slices/settingsSlice';
+import streamReducer from '@/redux/slices/streamSlice';
 import { UserAvatarMenu } from './UserAvatarMenu';
 
 vi.mock('@/components/auth/LoginDialog', () => ({
@@ -25,14 +27,15 @@ function renderMenu(preloadedAuth: unknown) {
     reducer: {
       auth: authReducer,
       settings: settingsReducer,
-      chat: chatReducer,
+      conversation: conversationReducer,
+      stream: streamReducer,
       fileUpload: fileUploadReducer,
       models: modelsReducer,
     },
     preloadedState: {
       auth: preloadedAuth,
     },
-  });
+  } as any);
 
   return render(
     <Provider store={store}>

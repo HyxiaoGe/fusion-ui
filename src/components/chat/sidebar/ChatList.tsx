@@ -1,11 +1,11 @@
 import React from "react";
 import ChatItem from "./ChatItem";
-import { Chat } from "@/redux/slices/chatSlice";
-import { Model } from "@/redux/slices/modelSlice";
+import type { Conversation } from "@/types/conversation";
+import type { Model } from "@/redux/slices/modelsSlice";
 
 interface ChatListProps {
-  chats: Chat[];
-  sortedAndGroupedChats: { groupLabel: string; groupChats: Chat[] }[];
+  chats: Conversation[];
+  sortedAndGroupedChats: { groupLabel: string; groupChats: Conversation[] }[];
   activeChatId: string | null;
   models: Model[];
   isLoadingServerList: boolean;

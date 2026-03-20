@@ -13,7 +13,7 @@ const {
   uploadFilesMock,
   startPollingFileStatusMock,
   stopPollingFileStatusMock,
-  toggleReasoningMock,
+  setReasoningEnabledMock,
   clearFilesMock,
   addFileIdMock,
   updateFileStatusMock,
@@ -28,10 +28,12 @@ const {
         models: [],
         selectedModelId: null,
       },
-      chat: {
-        activeChatId: 'chat-1',
+      conversation: {
         reasoningEnabled: false,
-        chats: [],
+        byId: {},
+      },
+      stream: {
+        isStreaming: false,
       },
       fileUpload: {
         files: {},
@@ -53,7 +55,7 @@ const {
     uploadFilesMock: vi.fn(),
     startPollingFileStatusMock: vi.fn(),
     stopPollingFileStatusMock: vi.fn(),
-    toggleReasoningMock: action('chat/toggleReasoning'),
+    setReasoningEnabledMock: action('conversation/setReasoningEnabled'),
     clearFilesMock: action('fileUpload/clearFiles'),
     addFileIdMock: action('fileUpload/addFileId'),
     updateFileStatusMock: action('fileUpload/updateFileStatus'),
@@ -80,8 +82,8 @@ vi.mock('@/components/ui/toast', () => ({
   }),
 }));
 
-vi.mock('@/redux/slices/chatSlice', () => ({
-  toggleReasoning: toggleReasoningMock,
+vi.mock('@/redux/slices/conversationSlice', () => ({
+  setReasoningEnabled: setReasoningEnabledMock,
 }));
 
 vi.mock('@/redux/slices/fileUploadSlice', () => ({
@@ -133,16 +135,16 @@ describe('ChatInput', () => {
     uploadFilesMock.mockReset();
     startPollingFileStatusMock.mockReset();
     stopPollingFileStatusMock.mockReset();
-    toggleReasoningMock.mockClear();
+    setReasoningEnabledMock.mockClear();
     clearFilesMock.mockClear();
     addFileIdMock.mockClear();
     updateFileStatusMock.mockClear();
     uuidMock.mockClear();
     currentState.models.models = [];
     currentState.models.selectedModelId = null;
-    currentState.chat.activeChatId = 'chat-1';
-    currentState.chat.reasoningEnabled = false;
-    currentState.chat.chats = [];
+    currentState.conversation.reasoningEnabled = false;
+    currentState.conversation.byId = {};
+    currentState.stream.isStreaming = false;
     currentState.fileUpload.files = {};
     currentState.fileUpload.fileIds = {};
     currentState.fileUpload.processingFiles = {};
@@ -181,7 +183,7 @@ describe('ChatInput', () => {
     ];
     uploadFilesMock.mockResolvedValue(['file-1']);
 
-    const { container } = render(<ChatInput onSendMessage={vi.fn()} />);
+    const { container } = render(<ChatInput onSendMessage={vi.fn()} activeChatId="chat-1" />);
     const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement;
     const file = new File(['hello'], 'hello.txt', { type: 'text/plain' });
 
@@ -233,15 +235,15 @@ describe('ChatInput', () => {
         },
       },
     ];
-    currentState.chat.chats = [
-      {
+    currentState.conversation.byId = {
+      'chat-1': {
         id: 'chat-1',
         model: 'model-supported',
       },
-    ];
+    };
     uploadFilesMock.mockResolvedValue(['file-1']);
 
-    const { container } = render(<ChatInput onSendMessage={vi.fn()} />);
+    const { container } = render(<ChatInput onSendMessage={vi.fn()} activeChatId="chat-1" />);
     const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement;
     const file = new File(['hello'], 'hello.txt', { type: 'text/plain' });
 
@@ -283,13 +285,12 @@ describe('ChatInput', () => {
         },
       },
     ];
-    currentState.chat.activeChatId = 'chat-1';
-    currentState.chat.chats = [
-      {
+    currentState.conversation.byId = {
+      'chat-1': {
         id: 'chat-1',
         model: 'legacy-model',
       },
-    ];
+    };
     uploadFilesMock.mockResolvedValue(['file-1']);
 
     const { container } = render(<ChatInput onSendMessage={vi.fn()} activeChatId={null} />);
@@ -343,7 +344,7 @@ describe('ChatInput', () => {
     ];
     uploadFilesMock.mockResolvedValue(['file-1']);
 
-    const { container } = render(<ChatInput onSendMessage={vi.fn()} />);
+    const { container } = render(<ChatInput onSendMessage={vi.fn()} activeChatId="chat-1" />);
     const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement;
     const duplicateA = new File(['hello'], 'same.txt', { type: 'text/plain', lastModified: 1 });
     const duplicateB = new File(['hello'], 'same.txt', { type: 'text/plain', lastModified: 1 });
@@ -381,7 +382,7 @@ describe('ChatInput', () => {
     ];
     uploadFilesMock.mockResolvedValue(['file-1']);
 
-    const { container } = render(<ChatInput onSendMessage={vi.fn()} />);
+    const { container } = render(<ChatInput onSendMessage={vi.fn()} activeChatId="chat-1" />);
     const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement;
     const file = new File(['hello'], 'remove-me.txt', { type: 'text/plain' });
 
@@ -427,7 +428,7 @@ describe('ChatInput', () => {
     ];
     uploadFilesMock.mockResolvedValue(['file-1']);
 
-    const { container } = render(<ChatInput onSendMessage={vi.fn()} />);
+    const { container } = render(<ChatInput onSendMessage={vi.fn()} activeChatId="chat-1" />);
     const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement;
     const file = new File(['hello'], 'hello.txt', { type: 'text/plain' });
 
@@ -475,7 +476,7 @@ describe('ChatInput', () => {
       .mockResolvedValueOnce(['file-1'])
       .mockResolvedValueOnce(['file-2']);
 
-    const { container } = render(<ChatInput onSendMessage={vi.fn()} />);
+    const { container } = render(<ChatInput onSendMessage={vi.fn()} activeChatId="chat-1" />);
     const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement;
     const file = new File(['hello'], 'hello.txt', { type: 'text/plain' });
 
@@ -530,7 +531,7 @@ describe('ChatInput', () => {
     uploadFilesMock.mockResolvedValue(['file-1']);
     const onSendMessage = vi.fn();
 
-    const { container } = render(<ChatInput onSendMessage={onSendMessage} />);
+    const { container } = render(<ChatInput onSendMessage={onSendMessage} activeChatId="chat-1" />);
     const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement;
     const file = new File(['hello'], 'hello.txt', { type: 'text/plain' });
 
@@ -574,7 +575,7 @@ describe('ChatInput', () => {
 
   it('blocks send action for unauthenticated users', () => {
     const onSendMessage = vi.fn();
-    render(<ChatInput onSendMessage={onSendMessage} />);
+    render(<ChatInput onSendMessage={onSendMessage} activeChatId="chat-1" />);
 
     fireEvent.change(screen.getByPlaceholderText('输入您的问题...'), {
       target: {

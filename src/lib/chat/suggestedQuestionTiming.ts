@@ -1,4 +1,4 @@
-import type { Message } from '@/redux/slices/chatSlice';
+import type { Message } from '@/types/conversation';
 
 const AUTO_FETCH_FRESHNESS_MS = 90_000;
 

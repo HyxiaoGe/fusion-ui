@@ -1,12 +1,11 @@
-import db, { chatStore, settingsStore } from './chatStore';
-import { Chat, Message } from '@/redux/slices/chatSlice';
+import db from './chatStore';
+import type { Conversation } from '@/types/conversation';
 import { AppDispatch } from '@/redux/store';
 import initializeStoreFromDB from './initializeStore';
-import { v4 as uuidv4 } from 'uuid';
 
 // 定义导入数据的类型
 interface ImportData {
-  chats: Chat[];
+  chats: Conversation[];
   settings: Record<string, any>;
 }
 
@@ -73,7 +72,10 @@ export async function importDataFromFile(file: File, dispatch: AppDispatch): Pro
         
         // 添加不含消息的聊天记录到chats表
         const { messages: _, ...chatWithoutMessages } = chat;
-        await db.chats.put(chatWithoutMessages);
+        await db.chats.put({
+          ...chatWithoutMessages,
+          messages: [],
+        });
       }
       
       // 导入设置数据

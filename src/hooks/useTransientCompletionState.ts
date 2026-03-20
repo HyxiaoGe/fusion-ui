@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 
-import type { Message } from '@/redux/slices/chatSlice';
+import type { Message } from '@/types/conversation';
 
 const COMPLETION_VISIBILITY_MS = 2500;
 

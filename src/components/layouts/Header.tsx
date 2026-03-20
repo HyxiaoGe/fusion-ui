@@ -1,7 +1,6 @@
 'use client';
 
-import { useAppDispatch, useAppSelector } from "@/redux/hooks";
-import { cn } from "@/lib/utils";
+import { useAppSelector } from "@/redux/hooks";
 import { usePathname } from "next/navigation";
 import Link from "next/link";
 import { ChevronRightIcon } from "lucide-react";
@@ -13,12 +12,11 @@ interface HeaderProps {
 }
 
 const Header: React.FC<HeaderProps> = ({ title }) => {
-  const dispatch = useAppDispatch();
   const pathname = usePathname();
-  
-  const { activeChatId, chats } = useAppSelector((state) => ({
-    activeChatId: state.chat.activeChatId,
-    chats: state.chat.chats,
+  const routeConversationId = pathname.startsWith('/chat/') ? pathname.split('/chat/')[1] : null;
+
+  const { conversationsById } = useAppSelector((state) => ({
+    conversationsById: state.conversation.byId,
   }));
 
   const { models, selectedModelId } = useAppSelector((state) => state.models);
@@ -38,8 +36,8 @@ const Header: React.FC<HeaderProps> = ({ title }) => {
     if (title) return title;
     
     // 否则根据当前选择的聊天生成标题
-    if (activeChatId) {
-      const activeChat = chats.find(chat => chat.id === activeChatId);
+    if (routeConversationId) {
+      const activeChat = conversationsById[routeConversationId];
       if (activeChat && activeChat.title) {
         return activeChat.title;
       }
@@ -47,7 +45,7 @@ const Header: React.FC<HeaderProps> = ({ title }) => {
     }
     
     return '';
-  }, [pathname, title, activeChatId, chats, getSelectedModelName]);
+  }, [pathname, title, routeConversationId, conversationsById, getSelectedModelName]);
   
   return (
     <header className="h-14 border-b flex items-center justify-between px-5 sticky top-0 z-10 shadow-sm bg-background">
@@ -59,7 +57,7 @@ const Header: React.FC<HeaderProps> = ({ title }) => {
         {/* 面包屑导航 */}
         <div className="hidden sm:flex items-center text-sm">
           <Link href="/" className="text-muted-foreground hover:text-foreground transition-colors">首页</Link>
-          {activeChatId && (
+          {routeConversationId && (
             <>
               <ChevronRightIcon className="h-4 w-4 mx-1.5 text-muted-foreground" />
               <span className="text-primary font-medium transition-colors">

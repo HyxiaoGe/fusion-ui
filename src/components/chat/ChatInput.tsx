@@ -6,7 +6,7 @@ import { FileWithPreview, createFileWithPreview } from "@/lib/utils/fileHelpers"
 import { uploadFiles } from "@/lib/api/files";
 import { startPollingFileStatus, stopPollingFileStatus } from "@/lib/api/FileStatusPoller";
 import { useAppDispatch, useAppSelector } from "@/redux/hooks";
-import { toggleReasoning } from "@/redux/slices/chatSlice";
+import { setReasoningEnabled } from "@/redux/slices/conversationSlice";
 import {
   addFileId,
   clearFiles,
@@ -27,6 +27,7 @@ interface ChatInputProps {
     fileIds?: string[]
   ) => void;
   onClearMessage?: () => void;
+  onStopStreaming?: () => void;
   disabled?: boolean;
   placeholder?: string;
   activeChatId?: string | null;
@@ -68,6 +69,7 @@ function formatFileErrorMessage(errorMessage?: string): string {
 const ChatInput: React.FC<ChatInputProps> = ({
   onSendMessage,
   onClearMessage,
+  onStopStreaming,
   disabled = false,
   placeholder = "输入您的问题...",
   activeChatId,
@@ -80,15 +82,16 @@ const ChatInput: React.FC<ChatInputProps> = ({
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const { models, selectedModelId } = useAppSelector((state) => state.models);
-  const { activeChatId: currentActiveChatId, chats } = useAppSelector((state) => state.chat);
+  const chats = useAppSelector((state) => state.conversation.byId);
   const { isAuthenticated } = useAppSelector((state) => state.auth);
   const processingFiles = useAppSelector((state) => state.fileUpload.processingFiles);
-  const reasoningEnabled = useAppSelector((state) => state.chat.reasoningEnabled);
+  const reasoningEnabled = useAppSelector((state) => state.conversation.reasoningEnabled);
+  const isStreaming = useAppSelector((state) => state.stream.isStreaming);
 
-  const effectiveChatId = activeChatId !== undefined ? activeChatId : currentActiveChatId;
+  const effectiveChatId = activeChatId;
   const chatId = effectiveChatId || "default-chat";
   const activeChatModelId = effectiveChatId
-    ? chats.find((chat) => chat.id === effectiveChatId)?.model
+    ? chats[effectiveChatId]?.model
     : undefined;
   const selectedModel = useMemo(
     () => models.find((model) => model.id === (activeChatModelId || selectedModelId)),
@@ -672,7 +675,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
             if (!supportsReasoning || isComposerBlocked) {
               return;
             }
-            dispatch(toggleReasoning(!reasoningEnabled));
+            dispatch(setReasoningEnabled(!reasoningEnabled));
           }}
           disabled={!supportsReasoning || isComposerBlocked}
           title={supportsReasoning ? (reasoningEnabled ? "AI思考过程已开启" : "AI思考过程已关闭") : "当前模型不支持思考过程"}
@@ -716,12 +719,16 @@ const ChatInput: React.FC<ChatInputProps> = ({
         />
 
         <Button
-          onClick={handleSendMessage}
-          disabled={(!message.trim() && localFiles.length === 0) || isComposerBlocked || hasProcessingFiles}
+          onClick={isStreaming && onStopStreaming ? onStopStreaming : handleSendMessage}
+          disabled={((!message.trim() && localFiles.length === 0) || isComposerBlocked || hasProcessingFiles) && !(isStreaming && onStopStreaming)}
           size="icon"
           className="h-10 w-10"
         >
-          <SendIcon className="h-5 w-5" />
+          {isStreaming && onStopStreaming ? (
+            <X className="h-5 w-5" />
+          ) : (
+            <SendIcon className="h-5 w-5" />
+          )}
         </Button>
       </div>
 

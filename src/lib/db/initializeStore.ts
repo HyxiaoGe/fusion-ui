@@ -1,6 +1,6 @@
 import db, { chatStore, settingsStore } from './chatStore';
 import { AppDispatch } from '@/redux/store';
-import { setAllChats, setActiveChat } from '@/redux/slices/chatSlice';
+import { setAllConversations } from '@/redux/slices/conversationSlice';
 import { setThemeMode } from '@/redux/slices/themeSlice';
 import { setUserAvatar, setAssistantAvatar } from '@/redux/slices/settingsSlice';
 
@@ -27,8 +27,7 @@ export async function initializeStoreFromDB(
       const chatCount = await db.chats.count();
 
       if (chatCount === 0) {
-        dispatch(setAllChats([]));
-        dispatch(setActiveChat(null));
+        dispatch(setAllConversations([]));
       } else {
         const chats = await chatStore.getAllChats();
         if (chats.length > 0) {
@@ -51,13 +50,7 @@ export async function initializeStoreFromDB(
             };
           });
 
-          dispatch(setAllChats(deduplicatedChats));
-
-          const latestChat = deduplicatedChats.reduce((latest, chat) => {
-            return chat.updatedAt > latest.updatedAt ? chat : latest;
-          }, deduplicatedChats[0]);
-
-          dispatch(setActiveChat(latestChat.id));
+          dispatch(setAllConversations(deduplicatedChats));
         }
       }
     }

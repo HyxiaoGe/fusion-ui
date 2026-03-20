@@ -14,8 +14,9 @@ import db, { chatStore, settingsStore } from '@/lib/db/chatStore';
 import { importDataFromFile } from '@/lib/db/importData';
 import initializeStoreFromDB from '@/lib/db/initializeStore';
 import { useAppDispatch } from '@/redux/hooks';
-import { Message, setActiveChat, setAllChats } from '@/redux/slices/chatSlice';
+import { resetConversationState, setAllConversations } from '@/redux/slices/conversationSlice';
 import { store } from '@/redux/store';
+import type { Message } from '@/types/conversation';
 import { Eye } from 'lucide-react';
 import React, { useEffect, useRef, useState } from 'react';
 
@@ -27,7 +28,6 @@ export default function DatabaseDebugPage() {
   const [message, setMessage] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const [previewChatId, setPreviewChatId] = useState<string | null>(null);
   const [previewMessages, setPreviewMessages] = useState<Message[]>([]);
   const [previewTitle, setPreviewTitle] = useState('');
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
@@ -40,7 +40,6 @@ export default function DatabaseDebugPage() {
       if (chat) {
         setPreviewMessages(chat.messages);
         setPreviewTitle(title);
-        setPreviewChatId(chatId);
         setIsPreviewOpen(true);
       } else {
         setMessage({ text: '无法加载聊天记录', type: 'error' });
@@ -109,8 +108,8 @@ export default function DatabaseDebugPage() {
         });
         
         // 重置Redux状态，但保留模型选择
-        dispatch(setAllChats([]));
-        dispatch(setActiveChat(null));
+        dispatch(setAllConversations([]));
+        dispatch(resetConversationState());
         // 确保不重置模型选择
         // 不要调用 dispatch(setSelectedModel(null));
         

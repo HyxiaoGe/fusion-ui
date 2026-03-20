@@ -13,8 +13,9 @@ import { Button } from "@/components/ui/button";
 import { openSettingsDialog } from "@/redux/slices/settingsSlice";
 import { avatarOptions } from "@/redux/slices/settingsSlice";
 import { logout } from "@/redux/slices/authSlice";
-import { resetChatState } from "@/redux/slices/chatSlice";
+import { resetConversationState } from "@/redux/slices/conversationSlice";
 import { resetFileUploadState } from "@/redux/slices/fileUploadSlice";
+import { endStream } from "@/redux/slices/streamSlice";
 import { Settings, LogOut, LogIn } from "lucide-react";
 import { useState } from "react";
 import { LoginDialog } from "@/components/auth/LoginDialog";
@@ -70,7 +71,8 @@ export function UserAvatarMenu() {
   const handleLogout = () => {
     void revokeAuthSession();
     dispatch(logout());
-    dispatch(resetChatState());
+    dispatch(resetConversationState());
+    dispatch(endStream());
     dispatch(resetFileUploadState());
   };
 

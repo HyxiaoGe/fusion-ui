@@ -1,7 +1,7 @@
 'use client';
 
 import { useAppDispatch, useAppSelector } from '@/redux/hooks';
-import { setError } from '@/redux/slices/chatSlice';
+import { setGlobalError } from '@/redux/slices/conversationSlice';
 import { AlertCircle, X } from 'lucide-react';
 import { useEffect } from 'react';
 import { useToast } from './toast';
@@ -34,7 +34,7 @@ const ErrorToast: React.FC<ErrorToastProps> = ({ message, onClose }) => {
 
 const ErrorToastContainer: React.FC = () => {
   const dispatch = useAppDispatch();
-  const error = useAppSelector((state) => state.chat.error);
+  const error = useAppSelector((state) => state.conversation.globalError);
   const { toast } = useToast();
 
   useEffect(() => {
@@ -47,7 +47,7 @@ const ErrorToastContainer: React.FC = () => {
       
       // 清除错误，防止重复显示
       setTimeout(() => {
-        dispatch(setError(null));
+        dispatch(setGlobalError(null));
       }, 100);
     }
   }, [error, toast, dispatch]);

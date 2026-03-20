@@ -1,91 +1,54 @@
 'use client';
 
+import { useCallback, useMemo, useState } from 'react';
+import Link from 'next/link';
+import { useRouter, useSearchParams } from 'next/navigation';
 import ChatInput from '@/components/chat/ChatInput';
 import { ChatSidebarLazy, HomePageLazy, ModelSelectorLazy } from '@/components/lazy/LazyComponents';
 import MainLayout from '@/components/layouts/MainLayout';
 import { UserAvatarMenu } from '@/components/layouts/UserAvatarMenu';
-import Link from 'next/link';
-import { useRouter, useSearchParams } from 'next/navigation';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-
-import { useAppDispatch, useAppSelector } from '@/redux/hooks';
-import { setActiveChat } from '@/redux/slices/chatSlice';
-import { useChatActions } from '@/hooks/useChatActions';
+import { useAppSelector } from '@/redux/hooks';
+import { useSendMessage } from '@/hooks/useSendMessage';
 import { getFirstEnabledModelId } from '@/lib/models/modelPreference';
 
 export default function Home() {
-  const dispatch = useAppDispatch();
   const router = useRouter();
   const searchParams = useSearchParams();
-  const draftModeInitializedRef = useRef(false);
-  const draftEntryChatIdRef = useRef<string | null>(null);
   const [inputKey, setInputKey] = useState(() => Date.now());
-
-  const { models, activeChatId, chats } = useAppSelector((state) => ({
+  const { models, pendingConversationId, conversationsById } = useAppSelector((state) => ({
     models: state.models.models,
-    activeChatId: state.chat.activeChatId,
-    chats: state.chat.chats,
+    pendingConversationId: state.conversation.pendingConversationId,
+    conversationsById: state.conversation.byId,
   }));
-
-  const draftChat = useMemo(() => {
-    if (!activeChatId) {
-      return null;
-    }
-
-    return chats.find((chat) => chat.id === activeChatId) || null;
-  }, [activeChatId, chats]);
-
-  useEffect(() => {
-    if (draftModeInitializedRef.current) {
-      return;
-    }
-
-    draftModeInitializedRef.current = true;
-    draftEntryChatIdRef.current = activeChatId;
-    dispatch(setActiveChat(null));
-  }, [activeChatId, dispatch]);
-
-  useEffect(() => {
-    setInputKey(Date.now());
-  }, [activeChatId]);
-
-  useEffect(() => {
-    if (
-      !activeChatId ||
-      activeChatId === draftEntryChatIdRef.current ||
-      !draftChat ||
-      draftChat.messages.length === 0
-    ) {
-      return;
-    }
-
-    router.replace(`/chat/${activeChatId}`);
-  }, [activeChatId, draftChat, router]);
-
-  const {
-    sendMessage,
-  } = useChatActions({
-    activeChatIdOverride: null,
-    draftMode: true,
-  });
+  const draftChat = useMemo(
+    () => (pendingConversationId ? conversationsById[pendingConversationId] || null : null),
+    [conversationsById, pendingConversationId]
+  );
+  const { sendMessage } = useSendMessage();
 
   const handleSendMessage = useCallback((content: string, files?: File[]) => {
-    return sendMessage(content, files as any);
-  }, [sendMessage]);
+    return sendMessage(
+      content,
+      {
+        conversationId: null,
+        onMaterialized: (serverConversationId) => {
+          router.replace(`/chat/${serverConversationId}`);
+          setInputKey(Date.now());
+        },
+      },
+      files as any
+    );
+  }, [router, sendMessage]);
 
   const handleNewChat = useCallback(() => {
-    draftModeInitializedRef.current = true;
-    draftEntryChatIdRef.current = activeChatId;
-    dispatch(setActiveChat(null));
     const modelToUse = searchParams?.get('model') || getFirstEnabledModelId(models);
+    setInputKey(Date.now());
     router.push(modelToUse ? `/?new=true&model=${modelToUse}` : '/');
-  }, [activeChatId, dispatch, models, router, searchParams]);
+  }, [models, router, searchParams]);
 
   return (
     <MainLayout
-      sidebar={
-        <ChatSidebarLazy onNewChat={handleNewChat} activeChatIdOverride={null} />
-      }
+      sidebar={<ChatSidebarLazy onNewChat={handleNewChat} />}
       header={
         <header className="h-14 border-b flex items-center justify-between gap-3 px-4 sm:px-5 sticky top-0 z-10 shadow-sm bg-background">
           <div className="flex items-center shrink-0">
@@ -115,7 +78,7 @@ export default function Home() {
           <ChatInput
             key={inputKey}
             onSendMessage={handleSendMessage}
-            activeChatId={null}
+            activeChatId={draftChat?.id ?? null}
           />
         </div>
       </div>
