@@ -225,7 +225,7 @@ export function useSendMessage() {
               dispatch(
                 updateMessage({
                   conversationId: finalConvId,
-                  messageId: messageId || assistantMessageId,
+                  messageId: assistantMessageId,
                   patch: {
                     content: accumulatedContent,
                     reasoning: accumulatedReasoning.trim() ? accumulatedReasoning : null,

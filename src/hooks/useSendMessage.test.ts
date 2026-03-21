@@ -235,4 +235,42 @@ describe('useSendMessage', () => {
       );
     });
   });
+
+  it('uses the local assistant placeholder id when the server returns a different message id', async () => {
+    const store = createStore();
+    const onMaterialized = vi.fn();
+
+    sendMessageStreamMock.mockImplementationOnce(
+      async (_payload, callbacks: {
+        onContent: (delta: string) => void;
+        onDone: (messageId: string, conversationId: string, content: string, reasoning: string) => void;
+      }) => {
+        callbacks.onContent('answer');
+        callbacks.onDone('server-assistant-id', 'server-conv', 'answer', 'thinking');
+      }
+    );
+
+    const { result } = renderHook(() => useSendMessage(), {
+      wrapper: createWrapper(store),
+    });
+
+    await act(async () => {
+      await result.current.sendMessage('hello', {
+        conversationId: null,
+        onMaterialized,
+      });
+    });
+
+    await waitFor(() => {
+      const state = store.getState();
+      expect(onMaterialized).toHaveBeenCalledWith('server-conv');
+      expect(state.conversation.byId['server-conv'].messages[1]).toEqual(
+        expect.objectContaining({
+          id: 'assistant-1',
+          content: 'answer',
+          reasoning: 'thinking',
+        })
+      );
+    });
+  });
 });
