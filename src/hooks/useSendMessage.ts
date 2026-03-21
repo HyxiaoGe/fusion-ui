@@ -83,7 +83,8 @@ function _dbgLogDone(networkLen: number, displayedLen: number) {
     .sort((a, b) => b.gap - a.gap)
     .slice(0, 5);
 
-  console.log(
+  // 用 console.warn 避免被 next.config.js 的 removeConsole 剥除
+  console.warn(
     `\n📊 [Stream Diagnostic Report]\n` +
     `─────────────────────────────\n` +
     `Chunks: ${_dbgChunks.length}  |  Total chars: ${totalChars}  |  Duration: ${(elapsed / 1000).toFixed(1)}s\n` +
@@ -361,11 +362,11 @@ export function useSendMessage() {
           },
           {
             onReady: ({ conversationId: incomingConvId }) => {
-              console.log('[stream:dbg] onReady fired');
+              console.warn('[stream:dbg] onReady fired');
               materializeIfNeeded(incomingConvId);
             },
             onContent: (delta) => {
-              if (!networkContent) console.log('[stream:dbg] first onContent delta:', delta.length, 'chars');
+              if (!networkContent) console.warn('[stream:dbg] first onContent delta:', delta.length, 'chars');
               networkContent += delta;
               _dbgLogChunk(delta, networkContent.length, displayedLength);
               const effectiveConvId = activeConvIdRef.current;
@@ -384,7 +385,7 @@ export function useSendMessage() {
               dispatch(updateStreamReasoning(localReasoning));
             },
             onDone: (_messageId, incomingConvId, accumulatedContent, accumulatedReasoning) => {
-              console.log('[stream:dbg] onDone fired, networkContent.length=', networkContent.length);
+              console.warn('[stream:dbg] onDone fired, networkContent.length=', networkContent.length);
               _dbgLogDone(networkContent.length, displayedLength);
               networkDone = true;
               donePayload = { incomingConvId, accumulatedContent, accumulatedReasoning };
