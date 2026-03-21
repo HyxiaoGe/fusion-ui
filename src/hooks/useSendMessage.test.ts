@@ -94,6 +94,30 @@ describe('useSendMessage', () => {
       .mockReturnValueOnce('temp-conv-2')
       .mockReturnValueOnce('user-2')
       .mockReturnValueOnce('assistant-2');
+    let nextRafId = 0;
+    const rafCallbacks = new Map<number, FrameRequestCallback>();
+    vi.stubGlobal(
+      'requestAnimationFrame',
+      vi.fn((callback: FrameRequestCallback) => {
+        const id = ++nextRafId;
+        rafCallbacks.set(id, callback);
+        queueMicrotask(() => {
+          const pendingCallback = rafCallbacks.get(id);
+          if (!pendingCallback) {
+            return;
+          }
+          rafCallbacks.delete(id);
+          pendingCallback(16);
+        });
+        return id;
+      })
+    );
+    vi.stubGlobal(
+      'cancelAnimationFrame',
+      vi.fn((id: number) => {
+        rafCallbacks.delete(id);
+      })
+    );
   });
 
   it('materializes a draft conversation and migrates the active stream', async () => {
@@ -337,6 +361,69 @@ describe('useSendMessage', () => {
 
     await waitFor(() => {
       expect(store.getState().stream.isStreaming).toBe(false);
+    });
+  });
+
+  it('keeps assistant content in stream state during streaming and only commits it on done', async () => {
+    const store = createStore();
+    let releaseStream: (() => void) | undefined;
+
+    store.dispatch(
+      upsertConversation({
+        id: 'existing-conv',
+        title: 'Existing',
+        model: 'model-1',
+        provider: 'openai',
+        messages: [],
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      })
+    );
+
+    sendMessageStreamMock.mockImplementationOnce(async (_payload, callbacks) => {
+      callbacks.onReady({ messageId: 'assistant-1', conversationId: 'existing-conv' });
+      callbacks.onReasoning('think', { messageId: 'assistant-1', conversationId: 'existing-conv' });
+      callbacks.onContent('hello', { messageId: 'assistant-1', conversationId: 'existing-conv' });
+      callbacks.onContent(' world', { messageId: 'assistant-1', conversationId: 'existing-conv' });
+      await new Promise<void>((resolve) => {
+        releaseStream = resolve;
+      });
+      callbacks.onDone('assistant-1', 'existing-conv', 'hello world', 'think');
+    });
+
+    const { result } = renderHook(() => useSendMessage(), {
+      wrapper: createWrapper(store),
+    });
+
+    await act(async () => {
+      void result.current.sendMessage('hello', { conversationId: 'existing-conv' });
+    });
+
+    await waitFor(() => {
+      const state = store.getState();
+      expect(state.stream.content).toBe('hello world');
+      expect(state.stream.reasoning).toBe('think');
+      expect(state.conversation.byId['existing-conv'].messages.find((message) => message.role === 'assistant')).toEqual(
+        expect.objectContaining({
+          content: '',
+          reasoning: null,
+        })
+      );
+    });
+
+    await act(async () => {
+      releaseStream?.();
+    });
+
+    await waitFor(() => {
+      const state = store.getState();
+      expect(state.stream.isStreaming).toBe(false);
+      expect(state.conversation.byId['existing-conv'].messages.find((message) => message.role === 'assistant')).toEqual(
+        expect.objectContaining({
+          content: 'hello world',
+          reasoning: 'think',
+        })
+      );
     });
   });
 });

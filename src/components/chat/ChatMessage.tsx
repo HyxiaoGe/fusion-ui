@@ -143,10 +143,14 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, files, isLastMessage
   const streamingReasoningContent = useAppSelector(
     state => isStreaming && isLastMessage ? state.stream.reasoning : ''
   );
+  const streamingContent = useAppSelector(
+    state => isStreaming && isLastMessage ? state.stream.content : ''
+  );
 
   const displayReasoning = isStreaming && isLastMessage && streamingReasoningContent
     ? streamingReasoningContent
     : message.reasoning;
+  const displayContent = isStreaming && isLastMessage ? streamingContent : message.content;
 
   // 同步思考时间到数据库
   useEffect(() => {
@@ -380,7 +384,7 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, files, isLastMessage
                     },
                   }}
                 >
-                  {message.content || ''}
+                  {displayContent || ''}
                 </ReactMarkdown>
 
                 {isStreaming && (

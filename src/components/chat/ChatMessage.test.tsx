@@ -14,6 +14,8 @@ const selectorState = {
   },
   stream: {
     conversationId: 'chat-1',
+    content: '',
+    reasoning: '',
     reasoningStartTime: null,
     reasoningEndTime: null,
     isStreamingReasoning: false,
@@ -138,5 +140,28 @@ describe('ChatMessage', () => {
         type: 'error',
       }),
     );
+  });
+
+  it('renders streaming assistant content from stream state instead of persisted message content', () => {
+    selectorState.stream.content = '流式正文';
+
+    render(
+      <ChatMessage
+        message={{
+          id: 'assistant-1',
+          role: 'assistant',
+          content: '',
+          reasoning: null,
+          timestamp: 1,
+          chatId: 'chat-1',
+        }}
+        isStreaming
+        isLastMessage
+      />,
+    );
+
+    expect(screen.getByText('流式正文')).toBeTruthy();
+
+    selectorState.stream.content = '';
   });
 });

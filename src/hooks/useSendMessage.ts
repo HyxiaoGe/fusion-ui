@@ -55,12 +55,18 @@ export function useSendMessage() {
   const userMessageIdRef = useRef<string | null>(null);
   const assistantMessageIdRef = useRef<string | null>(null);
   const assistantHasContentRef = useRef(false);
+  const rafRef = useRef<number | null>(null);
 
   const stopStreaming = useCallback(() => {
     const convId = activeConvIdRef.current;
     const userMsgId = userMessageIdRef.current;
     const assistantMsgId = assistantMessageIdRef.current;
     const hasContent = assistantHasContentRef.current;
+
+    if (rafRef.current !== null) {
+      cancelAnimationFrame(rafRef.current);
+      rafRef.current = null;
+    }
 
     abortControllerRef.current?.abort();
     abortControllerRef.current = null;
@@ -133,6 +139,7 @@ export function useSendMessage() {
         id: userMessageId,
         role: 'user',
         content: content.trim(),
+        reasoning: null,
         status: 'pending',
         timestamp: Date.now(),
       };
@@ -141,6 +148,7 @@ export function useSendMessage() {
         id: assistantMessageId,
         role: 'assistant',
         content: '',
+        reasoning: null,
         timestamp: Date.now(),
       };
 
@@ -156,6 +164,34 @@ export function useSendMessage() {
       let materializedOnce = false;
       let localContent = '';
       let localReasoning = '';
+      let hasPendingContent = false;
+      let hasPendingReasoning = false;
+      let reasoningStarted = false;
+
+      const flushPendingStreamState = () => {
+        if (hasPendingReasoning) {
+          dispatch(updateStreamReasoning(localReasoning));
+          hasPendingReasoning = false;
+        }
+        if (hasPendingContent) {
+          dispatch(updateStreamContent(localContent));
+          hasPendingContent = false;
+        }
+      };
+
+      const scheduleDrain = () => {
+        if (rafRef.current !== null) {
+          return;
+        }
+
+        rafRef.current = requestAnimationFrame(() => {
+          rafRef.current = null;
+          // localContent/localReasoning and chat.ts accumulated values are appended in lockstep.
+          // If either side changes its accumulation logic later, both must be updated together.
+          flushPendingStreamState();
+        });
+      };
+
       const materializeIfNeeded = (incomingConvId?: string) => {
         if (!isDraft || !incomingConvId || materializedOnce) {
           return;
@@ -204,23 +240,26 @@ export function useSendMessage() {
               const effectiveConvId = activeConvIdRef.current;
               if (!effectiveConvId) return;
               assistantHasContentRef.current = assistantHasContentRef.current || Boolean(delta);
-              dispatch(updateStreamContent(localContent));
-              dispatch(
-                updateMessage({
-                  conversationId: effectiveConvId,
-                  messageId: assistantMessageId,
-                  patch: { content: localContent },
-                  })
-                );
+              hasPendingContent = true;
+              scheduleDrain();
             },
             onReasoning: (delta) => {
               localReasoning += delta;
               const effectiveConvId = activeConvIdRef.current;
               if (!effectiveConvId) return;
-              dispatch(startStreamingReasoning());
-              dispatch(updateStreamReasoning(localReasoning));
+              if (!reasoningStarted) {
+                reasoningStarted = true;
+                dispatch(startStreamingReasoning());
+              }
+              hasPendingReasoning = true;
+              scheduleDrain();
             },
-            onDone: (messageId, incomingConvId, accumulatedContent, accumulatedReasoning) => {
+            onDone: (_messageId, incomingConvId, accumulatedContent, accumulatedReasoning) => {
+              if (rafRef.current !== null) {
+                cancelAnimationFrame(rafRef.current);
+                rafRef.current = null;
+              }
+              flushPendingStreamState();
               materializeIfNeeded(incomingConvId);
 
               const effectiveConvId = activeConvIdRef.current;
@@ -269,10 +308,14 @@ export function useSendMessage() {
           controller.signal
         );
       } catch (error) {
+        if (rafRef.current !== null) {
+          cancelAnimationFrame(rafRef.current);
+          rafRef.current = null;
+        }
         if (controller.signal.aborted) return;
 
         if (isDraft && serverConvId && !materializedOnce) {
-              materializedOnce = true;
+          materializedOnce = true;
         }
         const effectiveConvId = activeConvIdRef.current ?? tempConvId;
         if (materializedOnce || !isDraft) {
