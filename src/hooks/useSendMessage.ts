@@ -361,9 +361,11 @@ export function useSendMessage() {
           },
           {
             onReady: ({ conversationId: incomingConvId }) => {
+              console.log('[stream:dbg] onReady fired');
               materializeIfNeeded(incomingConvId);
             },
             onContent: (delta) => {
+              if (!networkContent) console.log('[stream:dbg] first onContent delta:', delta.length, 'chars');
               networkContent += delta;
               _dbgLogChunk(delta, networkContent.length, displayedLength);
               const effectiveConvId = activeConvIdRef.current;
@@ -382,6 +384,7 @@ export function useSendMessage() {
               dispatch(updateStreamReasoning(localReasoning));
             },
             onDone: (_messageId, incomingConvId, accumulatedContent, accumulatedReasoning) => {
+              console.log('[stream:dbg] onDone fired, networkContent.length=', networkContent.length);
               _dbgLogDone(networkContent.length, displayedLength);
               networkDone = true;
               donePayload = { incomingConvId, accumulatedContent, accumulatedReasoning };
