@@ -35,6 +35,70 @@ import type { Message } from '@/types/conversation';
 const TYPEWRITER_CHARS_PER_TICK = 4;
 const TYPEWRITER_TICK_MS = 30;
 
+// ── 诊断日志（临时，调完删除） ──
+// 只在流结束时输出一份汇总，不逐条刷屏
+type _ChunkRecord = { size: number; gap: number; elapsed: number; buffered: number };
+let _dbgStreamStart = 0;
+let _dbgLastChunkTime = 0;
+let _dbgChunks: _ChunkRecord[] = [];
+let _dbgTickCount = 0;
+let _dbgMaxBuffered = 0;
+
+function _dbgResetStream() {
+  _dbgStreamStart = performance.now();
+  _dbgLastChunkTime = _dbgStreamStart;
+  _dbgChunks = [];
+  _dbgTickCount = 0;
+  _dbgMaxBuffered = 0;
+}
+
+function _dbgLogChunk(delta: string, networkLen: number, displayedLen: number) {
+  const now = performance.now();
+  const gap = now - _dbgLastChunkTime;
+  _dbgLastChunkTime = now;
+  const buffered = networkLen - displayedLen;
+  if (buffered > _dbgMaxBuffered) _dbgMaxBuffered = buffered;
+  _dbgChunks.push({ size: delta.length, gap, elapsed: now - _dbgStreamStart, buffered });
+}
+
+function _dbgLogTick(_displayedLen: number, networkLen: number) {
+  _dbgTickCount++;
+  const buffered = networkLen - _displayedLen;
+  if (buffered > _dbgMaxBuffered) _dbgMaxBuffered = buffered;
+}
+
+function _dbgLogDone(networkLen: number, displayedLen: number) {
+  const elapsed = performance.now() - _dbgStreamStart;
+  const totalChars = _dbgChunks.reduce((s, c) => s + c.size, 0);
+  const gaps = _dbgChunks.map(c => c.gap);
+  const sizes = _dbgChunks.map(c => c.size);
+  const sortedGaps = [...gaps].sort((a, b) => a - b);
+  const sortedSizes = [...sizes].sort((a, b) => a - b);
+  const median = (arr: number[]) => arr.length === 0 ? 0 : arr[Math.floor(arr.length / 2)];
+  const avg = (arr: number[]) => arr.length === 0 ? 0 : arr.reduce((s, v) => s + v, 0) / arr.length;
+
+  // 找出间隔最大的 5 个 chunk（可能是卡顿点）
+  const topGaps = _dbgChunks
+    .map((c, i) => ({ index: i + 1, gap: c.gap, size: c.size }))
+    .sort((a, b) => b.gap - a.gap)
+    .slice(0, 5);
+
+  console.log(
+    `\n📊 [Stream Diagnostic Report]\n` +
+    `─────────────────────────────\n` +
+    `Chunks: ${_dbgChunks.length}  |  Total chars: ${totalChars}  |  Duration: ${(elapsed / 1000).toFixed(1)}s\n` +
+    `Typewriter ticks: ${_dbgTickCount}  |  Buffered at done: ${networkLen - displayedLen}\n` +
+    `\n` +
+    `Chunk size:  min=${sortedSizes[0] ?? 0}  median=${median(sortedSizes)}  avg=${avg(sizes).toFixed(1)}  max=${sortedSizes[sortedSizes.length - 1] ?? 0}\n` +
+    `Chunk gap:   min=${sortedGaps[0]?.toFixed(0) ?? 0}ms  median=${median(sortedGaps).toFixed(0)}ms  avg=${avg(gaps).toFixed(0)}ms  max=${sortedGaps[sortedGaps.length - 1]?.toFixed(0) ?? 0}ms\n` +
+    `Max buffered: ${_dbgMaxBuffered} chars\n` +
+    `\n` +
+    `Top 5 longest gaps:\n` +
+    topGaps.map(g => `  #${g.index}: gap=${g.gap.toFixed(0)}ms  size=${g.size}ch`).join('\n') +
+    `\n─────────────────────────────`
+  );
+}
+
 type SendMessageOptions = {
   conversationId: string | null;
   onMaterialized?: (serverConversationId: string) => void;
@@ -166,6 +230,7 @@ export function useSendMessage() {
 
       const controller = new AbortController();
       abortControllerRef.current = controller;
+      _dbgResetStream();
       const supportsReasoning = enabledModel.capabilities?.deepThinking ?? false;
       const useReasoning = reasoningEnabled && supportsReasoning;
       let serverConvId: string | null = null;
@@ -268,6 +333,7 @@ export function useSendMessage() {
               displayedLength + TYPEWRITER_CHARS_PER_TICK,
               networkContent.length
             );
+            _dbgLogTick(displayedLength, networkContent.length);
             dispatch(updateStreamContent(networkContent.slice(0, displayedLength)));
           }
 
@@ -299,6 +365,7 @@ export function useSendMessage() {
             },
             onContent: (delta) => {
               networkContent += delta;
+              _dbgLogChunk(delta, networkContent.length, displayedLength);
               const effectiveConvId = activeConvIdRef.current;
               if (!effectiveConvId) return;
               assistantHasContentRef.current = assistantHasContentRef.current || Boolean(delta);
@@ -315,6 +382,7 @@ export function useSendMessage() {
               dispatch(updateStreamReasoning(localReasoning));
             },
             onDone: (_messageId, incomingConvId, accumulatedContent, accumulatedReasoning) => {
+              _dbgLogDone(networkContent.length, displayedLength);
               networkDone = true;
               donePayload = { incomingConvId, accumulatedContent, accumulatedReasoning };
 
