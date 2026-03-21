@@ -9,6 +9,11 @@ import conversationReducer from '@/redux/slices/conversationSlice';
 import modelsReducer from '@/redux/slices/modelsSlice';
 import streamReducer from '@/redux/slices/streamSlice';
 import { upsertConversation } from '@/redux/slices/conversationSlice';
+import {
+  endStream,
+  startStreamingReasoning,
+  updateStreamContent,
+} from '@/redux/slices/streamSlice';
 import { useSendMessage } from './useSendMessage';
 
 const {
@@ -425,5 +430,107 @@ describe('useSendMessage', () => {
         })
       );
     });
+  });
+
+  it('dispatches startStreamingReasoning only once for multiple reasoning deltas', async () => {
+    const store = createStore();
+    const dispatchSpy = vi.spyOn(store, 'dispatch');
+
+    store.dispatch(
+      upsertConversation({
+        id: 'existing-conv',
+        title: 'Existing',
+        model: 'model-1',
+        provider: 'openai',
+        messages: [],
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      })
+    );
+
+    sendMessageStreamMock.mockImplementationOnce(async (_payload, callbacks) => {
+      callbacks.onReady({ messageId: 'assistant-1', conversationId: 'existing-conv' });
+      callbacks.onReasoning('thi', { messageId: 'assistant-1', conversationId: 'existing-conv' });
+      callbacks.onReasoning('nki', { messageId: 'assistant-1', conversationId: 'existing-conv' });
+      callbacks.onReasoning('ng', { messageId: 'assistant-1', conversationId: 'existing-conv' });
+      callbacks.onDone('assistant-1', 'existing-conv', '', 'thinking');
+    });
+
+    const { result } = renderHook(() => useSendMessage(), {
+      wrapper: createWrapper(store),
+    });
+
+    await act(async () => {
+      await result.current.sendMessage('hello', { conversationId: 'existing-conv' });
+    });
+
+    const reasoningStartActions = dispatchSpy.mock.calls.filter(
+      ([action]) => action.type === startStreamingReasoning.type
+    );
+
+    expect(reasoningStartActions).toHaveLength(1);
+  });
+
+  it('flushes pending stream content before endStream when onDone arrives before RAF drains', async () => {
+    const store = createStore();
+    const dispatchSpy = vi.spyOn(store, 'dispatch');
+    let nextRafId = 1000;
+    const rafCallbacks = new Map<number, FrameRequestCallback>();
+
+    vi.stubGlobal(
+      'requestAnimationFrame',
+      vi.fn((callback: FrameRequestCallback) => {
+        const id = ++nextRafId;
+        rafCallbacks.set(id, callback);
+        return id;
+      })
+    );
+    vi.stubGlobal(
+      'cancelAnimationFrame',
+      vi.fn((id: number) => {
+        rafCallbacks.delete(id);
+      })
+    );
+
+    store.dispatch(
+      upsertConversation({
+        id: 'existing-conv',
+        title: 'Existing',
+        model: 'model-1',
+        provider: 'openai',
+        messages: [],
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      })
+    );
+
+    sendMessageStreamMock.mockImplementationOnce(async (_payload, callbacks) => {
+      callbacks.onReady({ messageId: 'assistant-1', conversationId: 'existing-conv' });
+      callbacks.onContent('hello', { messageId: 'assistant-1', conversationId: 'existing-conv' });
+      callbacks.onContent(' world', { messageId: 'assistant-1', conversationId: 'existing-conv' });
+      callbacks.onDone('assistant-1', 'existing-conv', 'hello world', '');
+    });
+
+    const { result } = renderHook(() => useSendMessage(), {
+      wrapper: createWrapper(store),
+    });
+
+    await act(async () => {
+      await result.current.sendMessage('hello', { conversationId: 'existing-conv' });
+    });
+
+    const actionTypes = dispatchSpy.mock.calls.map(([action]) => action.type);
+    const flushedContentIndex = dispatchSpy.mock.calls.findIndex(
+      ([action]) =>
+        action.type === updateStreamContent.type && action.payload === 'hello world'
+    );
+    const endStreamIndex = dispatchSpy.mock.calls.findIndex(
+      ([action]) => action.type === endStream.type
+    );
+
+    expect(actionTypes).toContain(updateStreamContent.type);
+    expect(flushedContentIndex).toBeGreaterThan(-1);
+    expect(endStreamIndex).toBeGreaterThan(-1);
+    expect(flushedContentIndex).toBeLessThan(endStreamIndex);
   });
 });
