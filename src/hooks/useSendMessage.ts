@@ -27,6 +27,14 @@ import { sendMessageStream } from '@/lib/api/chat';
 import { generateChatTitle } from '@/lib/api/title';
 import type { Message } from '@/types/conversation';
 
+// 打字机参数（可调节）
+// CHARS_PER_TICK × (1000 / TICK_MS) ≈ 每秒显示字符数
+// 当前配置：4 × 33 ≈ 133 字符/秒，中文约 66 字/秒
+// 实现注意：setInterval 是 wall clock 固定节奏，不与浏览器渲染帧对齐（有意选择）
+// ⚠️ slice 按 UTF-16 code unit 计数，emoji 等多 code unit 字符可能被切断（已知简化）
+const TYPEWRITER_CHARS_PER_TICK = 4;
+const TYPEWRITER_TICK_MS = 30;
+
 type SendMessageOptions = {
   conversationId: string | null;
   onMaterialized?: (serverConversationId: string) => void;
@@ -55,7 +63,7 @@ export function useSendMessage() {
   const userMessageIdRef = useRef<string | null>(null);
   const assistantMessageIdRef = useRef<string | null>(null);
   const assistantHasContentRef = useRef(false);
-  const rafRef = useRef<number | null>(null);
+  const typewriterIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const stopStreaming = useCallback(() => {
     const convId = activeConvIdRef.current;
@@ -63,9 +71,9 @@ export function useSendMessage() {
     const assistantMsgId = assistantMessageIdRef.current;
     const hasContent = assistantHasContentRef.current;
 
-    if (rafRef.current !== null) {
-      cancelAnimationFrame(rafRef.current);
-      rafRef.current = null;
+    if (typewriterIntervalRef.current !== null) {
+      clearInterval(typewriterIntervalRef.current);
+      typewriterIntervalRef.current = null;
     }
 
     abortControllerRef.current?.abort();
@@ -162,35 +170,16 @@ export function useSendMessage() {
       const useReasoning = reasoningEnabled && supportsReasoning;
       let serverConvId: string | null = null;
       let materializedOnce = false;
-      let localContent = '';
+      let networkContent = '';
+      let displayedLength = 0;
+      let networkDone = false;
+      let donePayload: {
+        incomingConvId: string | undefined;
+        accumulatedContent: string;
+        accumulatedReasoning: string;
+      } | null = null;
       let localReasoning = '';
-      let hasPendingContent = false;
-      let hasPendingReasoning = false;
       let reasoningStarted = false;
-
-      const flushPendingStreamState = () => {
-        if (hasPendingReasoning) {
-          dispatch(updateStreamReasoning(localReasoning));
-          hasPendingReasoning = false;
-        }
-        if (hasPendingContent) {
-          dispatch(updateStreamContent(localContent));
-          hasPendingContent = false;
-        }
-      };
-
-      const scheduleDrain = () => {
-        if (rafRef.current !== null) {
-          return;
-        }
-
-        rafRef.current = requestAnimationFrame(() => {
-          rafRef.current = null;
-          // localContent/localReasoning and chat.ts accumulated values are appended in lockstep.
-          // If either side changes its accumulation logic later, both must be updated together.
-          flushPendingStreamState();
-        });
-      };
 
       const materializeIfNeeded = (incomingConvId?: string) => {
         if (!isDraft || !incomingConvId || materializedOnce) {
@@ -221,6 +210,79 @@ export function useSendMessage() {
         options.onMaterialized?.(incomingConvId);
       };
 
+      const completeStream = (
+        payload: NonNullable<typeof donePayload>
+      ) => {
+        const { incomingConvId, accumulatedContent, accumulatedReasoning } = payload;
+
+        materializeIfNeeded(incomingConvId);
+
+        const effectiveConvId = activeConvIdRef.current;
+        if (!effectiveConvId) return;
+
+        const finalConvId = serverConvId ?? incomingConvId ?? effectiveConvId;
+        if (accumulatedReasoning.trim()) {
+          dispatch(completeThinkingPhase());
+        }
+        dispatch(
+          updateMessage({
+            conversationId: finalConvId,
+            messageId: assistantMessageId,
+            patch: {
+              content: accumulatedContent,
+              reasoning: accumulatedReasoning.trim() ? accumulatedReasoning : null,
+              ...(accumulatedReasoning.trim()
+                ? {
+                    isReasoningVisible: false,
+                    reasoningEndTime: Date.now(),
+                  }
+                : {}),
+            },
+          })
+        );
+        dispatch(
+          updateMessage({
+            conversationId: finalConvId,
+            messageId: userMessageId,
+            patch: { status: null },
+          })
+        );
+        dispatch(endStream());
+        abortControllerRef.current = null;
+        activeConvIdRef.current = null;
+        userMessageIdRef.current = null;
+        assistantMessageIdRef.current = null;
+        assistantHasContentRef.current = false;
+        options.onStreamEnd?.(finalConvId);
+        void postStreamActions(finalConvId, dispatch);
+      };
+
+      const startTypewriter = () => {
+        if (typewriterIntervalRef.current !== null) {
+          return;
+        }
+
+        typewriterIntervalRef.current = setInterval(() => {
+          if (displayedLength < networkContent.length) {
+            displayedLength = Math.min(
+              displayedLength + TYPEWRITER_CHARS_PER_TICK,
+              networkContent.length
+            );
+            dispatch(updateStreamContent(networkContent.slice(0, displayedLength)));
+          }
+
+          if (
+            networkDone &&
+            displayedLength >= networkContent.length &&
+            donePayload !== null
+          ) {
+            clearInterval(typewriterIntervalRef.current!);
+            typewriterIntervalRef.current = null;
+            completeStream(donePayload);
+          }
+        }, TYPEWRITER_TICK_MS);
+      };
+
       try {
         await sendMessageStream(
           {
@@ -236,12 +298,11 @@ export function useSendMessage() {
               materializeIfNeeded(incomingConvId);
             },
             onContent: (delta) => {
-              localContent += delta;
+              networkContent += delta;
               const effectiveConvId = activeConvIdRef.current;
               if (!effectiveConvId) return;
               assistantHasContentRef.current = assistantHasContentRef.current || Boolean(delta);
-              hasPendingContent = true;
-              scheduleDrain();
+              startTypewriter();
             },
             onReasoning: (delta) => {
               localReasoning += delta;
@@ -251,55 +312,19 @@ export function useSendMessage() {
                 reasoningStarted = true;
                 dispatch(startStreamingReasoning());
               }
-              hasPendingReasoning = true;
-              scheduleDrain();
+              dispatch(updateStreamReasoning(localReasoning));
             },
             onDone: (_messageId, incomingConvId, accumulatedContent, accumulatedReasoning) => {
-              if (rafRef.current !== null) {
-                cancelAnimationFrame(rafRef.current);
-                rafRef.current = null;
-              }
-              flushPendingStreamState();
-              materializeIfNeeded(incomingConvId);
+              networkDone = true;
+              donePayload = { incomingConvId, accumulatedContent, accumulatedReasoning };
 
-              const effectiveConvId = activeConvIdRef.current;
-              if (!effectiveConvId) return;
-
-              const finalConvId = serverConvId ?? incomingConvId ?? effectiveConvId;
-              if (accumulatedReasoning.trim()) {
-                dispatch(completeThinkingPhase());
+              if (displayedLength >= networkContent.length) {
+                if (typewriterIntervalRef.current !== null) {
+                  clearInterval(typewriterIntervalRef.current);
+                  typewriterIntervalRef.current = null;
+                }
+                completeStream(donePayload);
               }
-              dispatch(
-                updateMessage({
-                  conversationId: finalConvId,
-                  messageId: assistantMessageId,
-                  patch: {
-                    content: accumulatedContent,
-                    reasoning: accumulatedReasoning.trim() ? accumulatedReasoning : null,
-                    ...(accumulatedReasoning.trim()
-                      ? {
-                          isReasoningVisible: false,
-                          reasoningEndTime: Date.now(),
-                        }
-                      : {}),
-                  },
-                })
-              );
-              dispatch(
-                updateMessage({
-                  conversationId: finalConvId,
-                  messageId: userMessageId,
-                  patch: { status: null },
-                })
-              );
-              dispatch(endStream());
-              abortControllerRef.current = null;
-              activeConvIdRef.current = null;
-              userMessageIdRef.current = null;
-              assistantMessageIdRef.current = null;
-              assistantHasContentRef.current = false;
-              options.onStreamEnd?.(finalConvId);
-              void postStreamActions(finalConvId, dispatch);
             },
             onError: (message) => {
               dispatch(setGlobalError(message));
@@ -308,11 +333,24 @@ export function useSendMessage() {
           controller.signal
         );
       } catch (error) {
-        if (rafRef.current !== null) {
-          cancelAnimationFrame(rafRef.current);
-          rafRef.current = null;
+        if (typewriterIntervalRef.current !== null) {
+          clearInterval(typewriterIntervalRef.current);
+          typewriterIntervalRef.current = null;
         }
         if (controller.signal.aborted) return;
+
+        const effectiveConvIdOnError = activeConvIdRef.current ?? tempConvId;
+        if ((materializedOnce || !isDraft) && displayedLength > 0) {
+          dispatch(
+            updateMessage({
+              conversationId: effectiveConvIdOnError,
+              messageId: assistantMessageId,
+              patch: {
+                content: networkContent.slice(0, displayedLength),
+              },
+            })
+          );
+        }
 
         if (isDraft && serverConvId && !materializedOnce) {
           materializedOnce = true;

@@ -2,7 +2,7 @@ import React from 'react';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { Provider } from 'react-redux';
 import { configureStore } from '@reduxjs/toolkit';
-import { describe, expect, it, vi, beforeEach } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import authReducer from '@/redux/slices/authSlice';
 import conversationReducer from '@/redux/slices/conversationSlice';
@@ -86,6 +86,16 @@ function createWrapper(store: ReturnType<typeof createStore>) {
   );
 }
 
+let nextIntervalId = 0;
+let intervalCallbacks = new Map<number, () => void>();
+
+function tickIntervals(times = 1) {
+  for (let i = 0; i < times; i += 1) {
+    const callbacks = Array.from(intervalCallbacks.values());
+    callbacks.forEach((callback) => callback());
+  }
+}
+
 describe('useSendMessage', () => {
   beforeEach(() => {
     sendMessageStreamMock.mockReset();
@@ -99,30 +109,27 @@ describe('useSendMessage', () => {
       .mockReturnValueOnce('temp-conv-2')
       .mockReturnValueOnce('user-2')
       .mockReturnValueOnce('assistant-2');
-    let nextRafId = 0;
-    const rafCallbacks = new Map<number, FrameRequestCallback>();
+    nextIntervalId = 0;
+    intervalCallbacks = new Map<number, () => void>();
     vi.stubGlobal(
-      'requestAnimationFrame',
-      vi.fn((callback: FrameRequestCallback) => {
-        const id = ++nextRafId;
-        rafCallbacks.set(id, callback);
-        queueMicrotask(() => {
-          const pendingCallback = rafCallbacks.get(id);
-          if (!pendingCallback) {
-            return;
-          }
-          rafCallbacks.delete(id);
-          pendingCallback(16);
-        });
+      'setInterval',
+      vi.fn((callback: TimerHandler) => {
+        const id = ++nextIntervalId;
+        intervalCallbacks.set(id, callback as () => void);
         return id;
       })
     );
     vi.stubGlobal(
-      'cancelAnimationFrame',
+      'clearInterval',
       vi.fn((id: number) => {
-        rafCallbacks.delete(id);
+        intervalCallbacks.delete(id);
       })
     );
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
   });
 
   it('materializes a draft conversation and migrates the active stream', async () => {
@@ -154,6 +161,10 @@ describe('useSendMessage', () => {
         conversationId: null,
         onMaterialized,
       });
+    });
+
+    await act(async () => {
+      tickIntervals(2);
     });
 
     await waitFor(() => {
@@ -212,6 +223,10 @@ describe('useSendMessage', () => {
 
     releaseFirstStream?.();
 
+    await act(async () => {
+      tickIntervals(4);
+    });
+
     await waitFor(() => {
       const state = store.getState();
       expect(firstSignal?.aborted).toBe(true);
@@ -241,10 +256,10 @@ describe('useSendMessage', () => {
 
     sendMessageStreamMock.mockImplementationOnce(async (_payload, callbacks) => {
       callbacks.onReady({ messageId: 'assistant-1', conversationId: 'existing-conv' });
-      callbacks.onReasoning('thin', { messageId: 'assistant-1', conversationId: 'existing-conv' });
-      callbacks.onReasoning('king', { messageId: 'assistant-1', conversationId: 'existing-conv' });
-      callbacks.onContent('par', { messageId: 'assistant-1', conversationId: 'existing-conv' });
-      callbacks.onContent('tial', { messageId: 'assistant-1', conversationId: 'existing-conv' });
+      callbacks.onReasoning('thinking', { messageId: 'assistant-1', conversationId: 'existing-conv' });
+      callbacks.onContent('hello ', { messageId: 'assistant-1', conversationId: 'existing-conv' });
+      callbacks.onContent('world!', { messageId: 'assistant-1', conversationId: 'existing-conv' });
+      tickIntervals(2);
       callbacks.onError('模型调用超时');
       throw new Error('模型调用超时');
     });
@@ -265,6 +280,9 @@ describe('useSendMessage', () => {
       expect(state.conversation.globalError).toBe('模型调用超时');
       expect(state.conversation.byId['existing-conv'].messages[0]).toEqual(
         expect.objectContaining({ role: 'user', status: 'failed', content: 'hello' })
+      );
+      expect(state.conversation.byId['existing-conv'].messages).not.toContainEqual(
+        expect.objectContaining({ role: 'assistant' })
       );
     });
   });
@@ -300,6 +318,10 @@ describe('useSendMessage', () => {
         conversationId: null,
         onMaterialized,
       });
+    });
+
+    await act(async () => {
+      tickIntervals(2);
     });
 
     await waitFor(() => {
@@ -364,14 +386,17 @@ describe('useSendMessage', () => {
       releaseStream?.();
     });
 
+    await act(async () => {
+      tickIntervals(4);
+    });
+
     await waitFor(() => {
       expect(store.getState().stream.isStreaming).toBe(false);
     });
   });
 
-  it('keeps assistant content in stream state during streaming and only commits it on done', async () => {
+  it('consumes burst content at a fixed typewriter pace', async () => {
     const store = createStore();
-    let releaseStream: (() => void) | undefined;
 
     store.dispatch(
       upsertConversation({
@@ -387,13 +412,10 @@ describe('useSendMessage', () => {
 
     sendMessageStreamMock.mockImplementationOnce(async (_payload, callbacks) => {
       callbacks.onReady({ messageId: 'assistant-1', conversationId: 'existing-conv' });
-      callbacks.onReasoning('think', { messageId: 'assistant-1', conversationId: 'existing-conv' });
-      callbacks.onContent('hello', { messageId: 'assistant-1', conversationId: 'existing-conv' });
-      callbacks.onContent(' world', { messageId: 'assistant-1', conversationId: 'existing-conv' });
-      await new Promise<void>((resolve) => {
-        releaseStream = resolve;
+      callbacks.onContent('abcdefghijklmnopqrst', {
+        messageId: 'assistant-1',
+        conversationId: 'existing-conv',
       });
-      callbacks.onDone('assistant-1', 'existing-conv', 'hello world', 'think');
     });
 
     const { result } = renderHook(() => useSendMessage(), {
@@ -404,37 +426,29 @@ describe('useSendMessage', () => {
       void result.current.sendMessage('hello', { conversationId: 'existing-conv' });
     });
 
-    await waitFor(() => {
-      const state = store.getState();
-      expect(state.stream.content).toBe('hello world');
-      expect(state.stream.reasoning).toBe('think');
-      expect(state.conversation.byId['existing-conv'].messages.find((message) => message.role === 'assistant')).toEqual(
-        expect.objectContaining({
-          content: '',
-          reasoning: null,
-        })
-      );
+    await act(async () => {
+      tickIntervals(1);
     });
+
+    expect(store.getState().stream.content).toBe('abcd');
 
     await act(async () => {
-      releaseStream?.();
+      tickIntervals(1);
     });
 
-    await waitFor(() => {
-      const state = store.getState();
-      expect(state.stream.isStreaming).toBe(false);
-      expect(state.conversation.byId['existing-conv'].messages.find((message) => message.role === 'assistant')).toEqual(
-        expect.objectContaining({
-          content: 'hello world',
-          reasoning: 'think',
-        })
-      );
+    expect(store.getState().stream.content).toBe('abcdefgh');
+
+    await act(async () => {
+      tickIntervals(3);
     });
+
+    expect(store.getState().stream.content).toBe('abcdefghijklmnopqrst');
   });
 
   it('dispatches startStreamingReasoning only once for multiple reasoning deltas', async () => {
     const store = createStore();
     const dispatchSpy = vi.spyOn(store, 'dispatch');
+    let releaseStream: (() => void) | undefined;
 
     store.dispatch(
       upsertConversation({
@@ -453,6 +467,9 @@ describe('useSendMessage', () => {
       callbacks.onReasoning('thi', { messageId: 'assistant-1', conversationId: 'existing-conv' });
       callbacks.onReasoning('nki', { messageId: 'assistant-1', conversationId: 'existing-conv' });
       callbacks.onReasoning('ng', { messageId: 'assistant-1', conversationId: 'existing-conv' });
+      await new Promise<void>((resolve) => {
+        releaseStream = resolve;
+      });
       callbacks.onDone('assistant-1', 'existing-conv', '', 'thinking');
     });
 
@@ -461,7 +478,7 @@ describe('useSendMessage', () => {
     });
 
     await act(async () => {
-      await result.current.sendMessage('hello', { conversationId: 'existing-conv' });
+      void result.current.sendMessage('hello', { conversationId: 'existing-conv' });
     });
 
     const reasoningStartActions = dispatchSpy.mock.calls.filter(
@@ -469,28 +486,20 @@ describe('useSendMessage', () => {
     );
 
     expect(reasoningStartActions).toHaveLength(1);
+    expect(store.getState().stream.reasoning).toBe('thinking');
+
+    await act(async () => {
+      releaseStream?.();
+    });
+
+    await waitFor(() => {
+      expect(store.getState().stream.isStreaming).toBe(false);
+    });
   });
 
-  it('flushes pending stream content before endStream when onDone arrives before RAF drains', async () => {
+  it('delays completion until buffered content is fully rendered', async () => {
     const store = createStore();
     const dispatchSpy = vi.spyOn(store, 'dispatch');
-    let nextRafId = 1000;
-    const rafCallbacks = new Map<number, FrameRequestCallback>();
-
-    vi.stubGlobal(
-      'requestAnimationFrame',
-      vi.fn((callback: FrameRequestCallback) => {
-        const id = ++nextRafId;
-        rafCallbacks.set(id, callback);
-        return id;
-      })
-    );
-    vi.stubGlobal(
-      'cancelAnimationFrame',
-      vi.fn((id: number) => {
-        rafCallbacks.delete(id);
-      })
-    );
 
     store.dispatch(
       upsertConversation({
@@ -519,6 +528,18 @@ describe('useSendMessage', () => {
       await result.current.sendMessage('hello', { conversationId: 'existing-conv' });
     });
 
+    expect(dispatchSpy.mock.calls.some(([action]) => action.type === endStream.type)).toBe(false);
+
+    await act(async () => {
+      tickIntervals(2);
+    });
+
+    expect(dispatchSpy.mock.calls.some(([action]) => action.type === endStream.type)).toBe(false);
+
+    await act(async () => {
+      tickIntervals(1);
+    });
+
     const actionTypes = dispatchSpy.mock.calls.map(([action]) => action.type);
     const flushedContentIndex = dispatchSpy.mock.calls.findIndex(
       ([action]) =>
@@ -532,5 +553,100 @@ describe('useSendMessage', () => {
     expect(flushedContentIndex).toBeGreaterThan(-1);
     expect(endStreamIndex).toBeGreaterThan(-1);
     expect(flushedContentIndex).toBeLessThan(endStreamIndex);
+    expect(
+      store.getState().conversation.byId['existing-conv'].messages.find((message) => message.role === 'assistant')
+    ).toEqual(
+      expect.objectContaining({
+        content: 'hello world',
+      })
+    );
+  });
+
+  it('completes immediately when onDone arrives without any content', async () => {
+    const store = createStore();
+
+    store.dispatch(
+      upsertConversation({
+        id: 'existing-conv',
+        title: 'Existing',
+        model: 'model-1',
+        provider: 'openai',
+        messages: [],
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      })
+    );
+
+    sendMessageStreamMock.mockImplementationOnce(async (_payload, callbacks) => {
+      callbacks.onReady({ messageId: 'assistant-1', conversationId: 'existing-conv' });
+      callbacks.onReasoning('thinking', { messageId: 'assistant-1', conversationId: 'existing-conv' });
+      callbacks.onDone('assistant-1', 'existing-conv', '', 'thinking');
+    });
+
+    const { result } = renderHook(() => useSendMessage(), {
+      wrapper: createWrapper(store),
+    });
+
+    await act(async () => {
+      await result.current.sendMessage('hello', { conversationId: 'existing-conv' });
+    });
+
+    await waitFor(() => {
+      const state = store.getState();
+      expect(state.stream.isStreaming).toBe(false);
+      expect(
+        state.conversation.byId['existing-conv'].messages.find((message) => message.role === 'assistant')
+      ).toEqual(
+        expect.objectContaining({
+          content: '',
+          reasoning: 'thinking',
+        })
+      );
+    });
+  });
+
+  it('writes back already displayed content before error cleanup runs', async () => {
+    const store = createStore();
+    const dispatchSpy = vi.spyOn(store, 'dispatch');
+
+    store.dispatch(
+      upsertConversation({
+        id: 'existing-conv',
+        title: 'Existing',
+        model: 'model-1',
+        provider: 'openai',
+        messages: [],
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      })
+    );
+
+    sendMessageStreamMock.mockImplementationOnce(async (_payload, callbacks) => {
+      callbacks.onReady({ messageId: 'assistant-1', conversationId: 'existing-conv' });
+      callbacks.onContent('abcdefghijkl', {
+        messageId: 'assistant-1',
+        conversationId: 'existing-conv',
+      });
+      tickIntervals(2);
+      callbacks.onError('模型调用超时');
+      throw new Error('模型调用超时');
+    });
+
+    const { result } = renderHook(() => useSendMessage(), {
+      wrapper: createWrapper(store),
+    });
+
+    await act(async () => {
+      await result.current.sendMessage('hello', { conversationId: 'existing-conv' });
+    });
+
+    const writeBackCall = dispatchSpy.mock.calls.find(
+      ([action]) =>
+        action.type === 'conversation/updateMessage' &&
+        action.payload?.patch?.content === 'abcdefgh'
+    );
+
+    expect(writeBackCall).toBeDefined();
+    expect(store.getState().stream.content).toBe('');
   });
 });
