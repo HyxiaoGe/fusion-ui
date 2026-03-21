@@ -33,6 +33,18 @@ export interface ChatResponse {
   created_at: string;
 }
 
+export interface StreamCallbacks {
+  onContent: (delta: string) => void;
+  onReasoning: (delta: string) => void;
+  onDone: (
+    messageId: string,
+    conversationId: string,
+    accumulatedContent: string,
+    accumulatedReasoning: string
+  ) => void;
+  onError: (message: string) => void;
+}
+
 // 发送消息到AI
 export async function sendMessage(data: ChatRequest): Promise<ChatResponse> {
   try {
@@ -58,7 +70,7 @@ export async function sendMessage(data: ChatRequest): Promise<ChatResponse> {
 
 export async function sendMessageStream(
   data: ChatRequest,
-  onChunk: (chunk: string, done: boolean, conversationId?: string, reasoning?: string) => void,
+  callbacks: StreamCallbacks,
   signal?: AbortSignal
 ): Promise<void> {
   try {
@@ -91,11 +103,13 @@ export async function sendMessageStream(
 
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
-    let streamContent = '';
-    let streamReasoning = '';
-    let conversationId = data.conversation_id;
-    let buffer = ''; // 用于累积数据
-    let currentEventData = ''; // 用于累积当前SSE事件的data部分
+    let accumulatedContent = '';
+    let accumulatedReasoning = '';
+    let conversationId = data.conversation_id ?? '';
+    let messageId = '';
+    let terminated = false;
+    let buffer = '';
+    let currentEventData = '';
 
     while (true) {
       const { done, value } = await reader.read();
@@ -103,131 +117,72 @@ export async function sendMessageStream(
         break;
       }
 
-      // 解码响应块
       const chunk = decoder.decode(value, { stream: true });
       buffer += chunk;
-      
-      // 处理SSE格式的响应
       const lines = buffer.split('\n');
-      // 保留最后一行，因为它可能是不完整的
       buffer = lines.pop() || '';
-      
+
       for (const line of lines) {
-        if (line.startsWith('data: ')) {
-          const data = line.substring(6); // 移除 "data: " 前缀
-          currentEventData += data;
-        } else if (line.trim() === '' && currentEventData.trim() !== '') {
-          // 空行表示SSE事件结束，现在尝试解析累积的数据
+        if (!line.trim()) {
+          if (!currentEventData.trim()) continue;
+
+          if (currentEventData === '[DONE]') {
+            if (!terminated) {
+              callbacks.onDone(messageId, conversationId, accumulatedContent, accumulatedReasoning);
+              terminated = true;
+            }
+            return;
+          }
+
           try {
             const parsedData = JSON.parse(currentEventData);
+            messageId = parsedData.id || messageId;
+            conversationId = parsedData.conversation_id || conversationId;
 
-            // 保存conversationId
-            if (parsedData.conversation_id) {
-              conversationId = parsedData.conversation_id;
+            const choice = parsedData.choices?.[0];
+            const delta = choice?.delta ?? {};
+            const finishReason = choice?.finish_reason ?? null;
+
+            if (delta.reasoning_content) {
+              accumulatedReasoning += delta.reasoning_content;
+              callbacks.onReasoning(delta.reasoning_content);
             }
-            
-            // 处理事件类型
-            switch(parsedData.type) {
-              case "reasoning_start":
-                break;
-                
-              case "reasoning_content":
-                if (parsedData.content) {
-                  streamReasoning += parsedData.content;
-                  onChunk(streamContent, false, conversationId || undefined, streamReasoning);
-                }
-                break;
-                
-              case "reasoning_end":
-              case "reasoning_complete":
-                // 推理完成，可能会收到完整的reasoning
-                if (parsedData.reasoning) {
-                  streamReasoning = parsedData.reasoning;
-                }
-                // 添加完成标记
-                onChunk(streamContent, false, conversationId || undefined, streamReasoning + "[REASONING_COMPLETE]");
-                break;
-                
-              case "answering_start":
-                break;
-                
-              case "answering_content":
-                if (parsedData.content) {
-                  streamContent += parsedData.content;
-                  onChunk(streamContent, false, conversationId || undefined, streamReasoning);
-                }
-                break;
-                
-              case "answering_complete":
-                break;
 
-              case "function_call_detected":
-                // 在聊天精简模式下忽略工具调用事件，但继续保持主回答流正常工作
-                break;
-
-              case "executing_function":
-                // 在聊天精简模式下忽略工具执行步骤事件
-                break;
-
-              case "function_result":
-                // 在聊天精简模式下忽略工具结果事件
-                break;
-              
-              case "content_direct":
-                break;
-                
-              case "done":
-                // 流结束
-                console.log('[sendMessageStream] Received "done" event, calling onChunk with done=true');
-                onChunk(streamContent, true, conversationId || undefined, streamReasoning);
-                return;
-                
-              default:
-                // 兼容旧格式或者其他格式
-                if (parsedData.content === "[DONE]") {
-                  onChunk(streamContent, true, conversationId || undefined, streamReasoning);
-                  return;
-                } else if (parsedData.content) {
-                  streamContent += parsedData.content;
-                  onChunk(streamContent, false, conversationId || undefined, streamReasoning);
-                }
-                
-                // 兼容旧版本的推理内容处理
-                if (parsedData.reasoning_content) {
-                  streamReasoning += parsedData.reasoning_content;
-                  onChunk(streamContent, false, conversationId || undefined, streamReasoning);
-                }
+            if (delta.content) {
+              accumulatedContent += delta.content;
+              callbacks.onContent(delta.content);
             }
-            
-            // 重置当前事件数据，准备处理下一个事件
+
+            if (finishReason === 'error' && !terminated) {
+              terminated = true;
+              callbacks.onError(parsedData.error?.message ?? '未知错误');
+              throw new Error(parsedData.error?.message ?? '未知错误');
+            }
+          } catch (error) {
             currentEventData = '';
-            
-          } catch (e) {
-            console.error('解析SSE事件数据失败:', e, '数据:', currentEventData);
-            // 重置缓冲区，避免影响后续数据
-            currentEventData = '';
+            if (error instanceof Error && terminated) {
+              throw error;
+            }
+            if (error instanceof SyntaxError) {
+              console.error('解析SSE事件数据失败:', error, '数据:', currentEventData);
+            }
+            continue;
           }
+
+          currentEventData = '';
+          continue;
+        }
+
+        if (line.startsWith('data: ')) {
+          currentEventData += line.substring(6);
         }
       }
     }
-    
-    // 处理流结束时缓冲区中可能剩余的数据
-    if (currentEventData.trim() !== '') {
-      try {
-        console.log("处理流结束时的剩余数据:", currentEventData);
-        const parsedData = JSON.parse(currentEventData);
-        if (parsedData.type === "done" || parsedData.content === "[DONE]") {
-          onChunk(streamContent, true, conversationId || undefined, streamReasoning);
-          return;
-        }
-      } catch (e) {
-        console.warn('处理剩余数据时解析失败:', e, currentEventData);
-      }
+
+    if (!terminated) {
+      callbacks.onError('流异常结束');
+      throw new Error('流异常结束');
     }
-    
-    // 如果没有收到[DONE]但流结束了，也标记为完成
-    console.log('[sendMessageStream] Stream ended without explicit done event, calling onChunk with done=true');
-    onChunk(streamContent, true, conversationId || undefined, streamReasoning);
   } catch (error) {
     console.error('流式消息请求失败:', error);
     throw error;

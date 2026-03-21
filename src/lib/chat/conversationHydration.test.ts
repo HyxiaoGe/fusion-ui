@@ -40,7 +40,7 @@ describe('conversationHydration', () => {
     ).toBe('loading');
   });
 
-  it('merges server turn messages into visible user and assistant messages', () => {
+  it('hydrates assistant reasoning directly from assistant_content messages', () => {
     const chat = buildChatFromServerConversation({
       id: 'chat-1',
       title: 'Server chat',
@@ -55,6 +55,7 @@ describe('conversationHydration', () => {
           content: 'hello',
           created_at: '2026-03-14T08:00:00Z',
           turn_id: 'turn-1',
+          type: 'user_query',
         },
         {
           id: 'reason-1',
@@ -72,6 +73,7 @@ describe('conversationHydration', () => {
           created_at: '2026-03-14T08:00:02Z',
           turn_id: 'turn-1',
           type: 'assistant_content',
+          reasoning: 'thinking...',
         },
       ],
     });
@@ -88,9 +90,80 @@ describe('conversationHydration', () => {
       role: 'assistant',
       content: 'world',
       reasoning: 'thinking...',
-      duration: 321,
       isReasoningVisible: false,
       turnId: 'turn-1',
     });
+  });
+
+  it('hydrates assistant messages with null reasoning when absent', () => {
+    const chat = buildChatFromServerConversation({
+      id: 'chat-2',
+      title: 'Server chat',
+      model: 'qwen-max-latest',
+      provider: 'qwen',
+      messages: [
+        {
+          id: 'user-1',
+          role: 'user',
+          type: 'user_query',
+          content: 'hello',
+          turn_id: 'turn-1',
+          created_at: '2026-03-14T08:00:00Z',
+        },
+        {
+          id: 'assistant-1',
+          role: 'assistant',
+          type: 'assistant_content',
+          content: 'world',
+          reasoning: null,
+          turn_id: 'turn-1',
+          created_at: '2026-03-14T08:00:02Z',
+        },
+      ],
+    });
+
+    expect(chat.messages[1]).toMatchObject({
+      id: 'assistant-1',
+      reasoning: null,
+    });
+  });
+
+  it('filters legacy reasoning_content records from visible messages', () => {
+    const chat = buildChatFromServerConversation({
+      id: 'chat-3',
+      title: 'Server chat',
+      model: 'qwen-max-latest',
+      provider: 'qwen',
+      messages: [
+        {
+          id: 'user-1',
+          role: 'user',
+          type: 'user_query',
+          content: 'hello',
+          turn_id: 'turn-1',
+          created_at: '2026-03-14T08:00:00Z',
+        },
+        {
+          id: 'reason-1',
+          role: 'assistant',
+          type: 'reasoning_content',
+          content: 'legacy reasoning',
+          turn_id: 'turn-1',
+          created_at: '2026-03-14T08:00:01Z',
+        },
+        {
+          id: 'assistant-1',
+          role: 'assistant',
+          type: 'assistant_content',
+          content: 'world',
+          reasoning: null,
+          turn_id: 'turn-1',
+          created_at: '2026-03-14T08:00:02Z',
+        },
+      ],
+    });
+
+    expect(chat.messages.map((message) => message.id)).toEqual(['user-1', 'assistant-1']);
+    expect(chat.messages[1].reasoning).toBeNull();
   });
 });

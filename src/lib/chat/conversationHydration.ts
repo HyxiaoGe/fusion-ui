@@ -9,6 +9,7 @@ type ServerMessage = {
   turn_id?: string | null;
   type?: string | null;
   duration?: number | null;
+  reasoning?: string | null;
 };
 
 type ServerConversation = {
@@ -56,64 +57,44 @@ export function getConversationHydrationView(options: {
   return 'ready';
 }
 
-function mergeTurnMessages(turnId: string, turnMessages: ServerMessage[]): Message[] {
-  if (turnMessages.length === 1) {
-    const singleMessage = turnMessages[0];
-    return [
-      {
-        id: singleMessage.id,
-        role: singleMessage.role,
-        content: singleMessage.content,
-        timestamp: parseServerTimestamp(singleMessage.created_at),
-        turnId,
-      },
-    ];
+function buildVisibleMessage(serverMessage: ServerMessage): Message | null {
+  const turnId = serverMessage.turn_id || serverMessage.id;
+
+  if (serverMessage.type === 'reasoning_content') {
+    return null;
   }
 
-  const userMessage = turnMessages.find((message) => message.role === 'user');
-  const reasoningMessage = turnMessages.find((message) => message.type === 'reasoning_content');
-  const assistantMessage = turnMessages.find((message) => message.type === 'assistant_content');
-
-  const mergedMessages: Message[] = [];
-
-  if (userMessage) {
-    mergedMessages.push({
-      id: userMessage.id,
-      role: userMessage.role,
-      content: userMessage.content,
-      timestamp: parseServerTimestamp(userMessage.created_at),
+  if (serverMessage.type === 'user_query') {
+    return {
+      id: serverMessage.id,
+      role: 'user',
+      content: serverMessage.content,
+      reasoning: null,
+      timestamp: parseServerTimestamp(serverMessage.created_at),
       turnId,
-    });
+    };
   }
 
-  if (assistantMessage) {
-    mergedMessages.push({
-      id: assistantMessage.id,
+  if (serverMessage.type === 'assistant_content') {
+    return {
+      id: serverMessage.id,
       role: 'assistant',
-      content: assistantMessage.content,
-      reasoning: reasoningMessage?.content,
-      duration: reasoningMessage?.duration ?? undefined,
+      content: serverMessage.content,
+      reasoning: serverMessage.reasoning ?? null,
+      duration: serverMessage.duration ?? undefined,
       isReasoningVisible: false,
-      timestamp: parseServerTimestamp(assistantMessage.created_at),
+      timestamp: parseServerTimestamp(serverMessage.created_at),
       turnId,
-    });
+    };
   }
 
-  return mergedMessages;
+  return null;
 }
 
 export function buildChatFromServerConversation(serverConversation: ServerConversation): Conversation {
-  const groupedMessages = new Map<string, ServerMessage[]>();
-
-  for (const message of serverConversation.messages) {
-    const turnId = message.turn_id || message.id;
-    const existingMessages = groupedMessages.get(turnId) || [];
-    existingMessages.push(message);
-    groupedMessages.set(turnId, existingMessages);
-  }
-
-  const messages = [...groupedMessages.entries()]
-    .flatMap(([turnId, turnMessages]) => mergeTurnMessages(turnId, turnMessages))
+  const messages = serverConversation.messages
+    .map(buildVisibleMessage)
+    .filter((message): message is Message => Boolean(message))
     .sort((left, right) => (left.timestamp || 0) - (right.timestamp || 0));
 
   return {

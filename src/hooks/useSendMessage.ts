@@ -154,6 +154,8 @@ export function useSendMessage() {
       const useReasoning = reasoningEnabled && supportsReasoning;
       let serverConvId: string | null = null;
       let materializedOnce = false;
+      let localContent = '';
+      let localReasoning = '';
 
       try {
         await sendMessageStream(
@@ -165,96 +167,107 @@ export function useSendMessage() {
             stream: true,
             options: { use_reasoning: useReasoning },
           },
-          (chunk, done, incomingConvId, reasoning) => {
-            if (isDraft && incomingConvId && !materializedOnce) {
-              materializedOnce = true;
-              serverConvId = incomingConvId;
-              activeConvIdRef.current = incomingConvId;
-              dispatch(
-                materializeConversation({
-                  pendingId: tempConvId,
-                  serverConversation: {
-                    id: incomingConvId,
-                    title: content.substring(0, 30),
-                    model: enabledModel.id,
-                    provider: enabledModel.provider,
-                    messages: [
-                      { ...userMessage, chatId: incomingConvId },
-                      { ...assistantPlaceholder, chatId: incomingConvId },
-                    ],
-                    createdAt: Date.now(),
-                    updatedAt: Date.now(),
-                  },
-                })
-              );
-              dispatch(migrateStreamConversation(incomingConvId));
-              options.onMaterialized?.(incomingConvId);
-            }
-
-            const effectiveConvId = activeConvIdRef.current;
-            if (!effectiveConvId) return;
-
-            if (reasoning) {
-              dispatch(startStreamingReasoning());
-              dispatch(updateStreamReasoning(reasoning));
-            }
-
-            if (!done) {
-              if (chunk) assistantHasContentRef.current = true;
-              dispatch(updateStreamContent(chunk));
+          {
+            onContent: (delta) => {
+              localContent += delta;
+              const effectiveConvId = activeConvIdRef.current;
+              if (!effectiveConvId) return;
+              assistantHasContentRef.current = assistantHasContentRef.current || Boolean(delta);
+              dispatch(updateStreamContent(localContent));
               dispatch(
                 updateMessage({
                   conversationId: effectiveConvId,
                   messageId: assistantMessageId,
-                  patch: { content: chunk },
+                  patch: { content: localContent },
                 })
               );
-              return;
-            }
+            },
+            onReasoning: (delta) => {
+              localReasoning += delta;
+              const effectiveConvId = activeConvIdRef.current;
+              if (!effectiveConvId) return;
+              dispatch(startStreamingReasoning());
+              dispatch(updateStreamReasoning(localReasoning));
+            },
+            onDone: (messageId, incomingConvId, accumulatedContent, accumulatedReasoning) => {
+              if (isDraft && incomingConvId && !materializedOnce) {
+                materializedOnce = true;
+                serverConvId = incomingConvId;
+                activeConvIdRef.current = incomingConvId;
+                dispatch(
+                  materializeConversation({
+                    pendingId: tempConvId,
+                    serverConversation: {
+                      id: incomingConvId,
+                      title: content.substring(0, 30),
+                      model: enabledModel.id,
+                      provider: enabledModel.provider,
+                      messages: [
+                        { ...userMessage, chatId: incomingConvId },
+                        { ...assistantPlaceholder, chatId: incomingConvId },
+                      ],
+                      createdAt: Date.now(),
+                      updatedAt: Date.now(),
+                    },
+                  })
+                );
+                dispatch(migrateStreamConversation(incomingConvId));
+                options.onMaterialized?.(incomingConvId);
+              }
 
-            const finalConvId = serverConvId ?? effectiveConvId;
-            if (reasoning?.trim()) {
-              dispatch(completeThinkingPhase());
-            }
-            dispatch(
-              updateMessage({
-                conversationId: finalConvId,
-                messageId: assistantMessageId,
-                patch: {
-                  content: chunk,
-                  ...(reasoning?.trim()
-                    ? {
-                        reasoning,
-                        isReasoningVisible: false,
-                        reasoningEndTime: Date.now(),
-                      }
-                    : {}),
-                },
-              })
-            );
-            dispatch(
-              updateMessage({
-                conversationId: finalConvId,
-                messageId: userMessageId,
-                patch: { status: null },
-              })
-            );
-            dispatch(endStream());
-            abortControllerRef.current = null;
-            activeConvIdRef.current = null;
-            userMessageIdRef.current = null;
-            assistantMessageIdRef.current = null;
-            assistantHasContentRef.current = false;
-            options.onStreamEnd?.(finalConvId);
-            void postStreamActions(finalConvId, dispatch);
+              const effectiveConvId = activeConvIdRef.current;
+              if (!effectiveConvId) return;
+
+              const finalConvId = serverConvId ?? incomingConvId ?? effectiveConvId;
+              if (accumulatedReasoning.trim()) {
+                dispatch(completeThinkingPhase());
+              }
+              dispatch(
+                updateMessage({
+                  conversationId: finalConvId,
+                  messageId: messageId || assistantMessageId,
+                  patch: {
+                    content: accumulatedContent,
+                    reasoning: accumulatedReasoning.trim() ? accumulatedReasoning : null,
+                    ...(accumulatedReasoning.trim()
+                      ? {
+                          isReasoningVisible: false,
+                          reasoningEndTime: Date.now(),
+                        }
+                      : {}),
+                  },
+                })
+              );
+              dispatch(
+                updateMessage({
+                  conversationId: finalConvId,
+                  messageId: userMessageId,
+                  patch: { status: null },
+                })
+              );
+              dispatch(endStream());
+              abortControllerRef.current = null;
+              activeConvIdRef.current = null;
+              userMessageIdRef.current = null;
+              assistantMessageIdRef.current = null;
+              assistantHasContentRef.current = false;
+              options.onStreamEnd?.(finalConvId);
+              void postStreamActions(finalConvId, dispatch);
+            },
+            onError: (message) => {
+              dispatch(setGlobalError(message));
+            },
           },
           controller.signal
         );
       } catch (error) {
         if (controller.signal.aborted) return;
 
+        if (isDraft && serverConvId && !materializedOnce) {
+              materializedOnce = true;
+        }
         const effectiveConvId = activeConvIdRef.current ?? tempConvId;
-        if (materializedOnce) {
+        if (materializedOnce || !isDraft) {
           dispatch(
             updateMessage({
               conversationId: effectiveConvId,

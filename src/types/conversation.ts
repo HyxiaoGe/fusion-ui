@@ -12,7 +12,7 @@ export interface Message {
     previewUrl?: string;
     fileId?: string;
   }[];
-  reasoning?: string;
+  reasoning: string | null;
   isReasoningVisible?: boolean;
   reasoningStartTime?: number;
   reasoningEndTime?: number;

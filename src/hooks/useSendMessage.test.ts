@@ -8,6 +8,7 @@ import authReducer from '@/redux/slices/authSlice';
 import conversationReducer from '@/redux/slices/conversationSlice';
 import modelsReducer from '@/redux/slices/modelsSlice';
 import streamReducer from '@/redux/slices/streamSlice';
+import { upsertConversation } from '@/redux/slices/conversationSlice';
 import { useSendMessage } from './useSendMessage';
 
 const {
@@ -100,9 +101,16 @@ describe('useSendMessage', () => {
     const onMaterialized = vi.fn();
 
     sendMessageStreamMock.mockImplementation(
-      async (_payload, onChunk: (chunk: string, done: boolean, incomingConvId?: string, reasoning?: string) => void) => {
-        onChunk('answer', false, 'server-conv', 'thinking');
-        onChunk('answer', true, 'server-conv', 'thinking');
+      async (_payload, callbacks: {
+        onContent: (delta: string) => void;
+        onReasoning: (delta: string) => void;
+        onDone: (messageId: string, conversationId: string, content: string, reasoning: string) => void;
+      }) => {
+        callbacks.onReasoning('think');
+        callbacks.onReasoning('ing');
+        callbacks.onContent('ans');
+        callbacks.onContent('wer');
+        callbacks.onDone('assistant-1', 'server-conv', 'answer', 'thinking');
       }
     );
 
@@ -140,16 +148,17 @@ describe('useSendMessage', () => {
 
     sendMessageStreamMock
       .mockImplementationOnce(
-        async (_payload, _onChunk, signal?: AbortSignal) => {
+        async (_payload, _callbacks, signal?: AbortSignal) => {
           firstSignal = signal;
           await new Promise<void>((resolve) => {
             releaseFirstStream = resolve;
           });
         }
       )
-      .mockImplementationOnce(async (_payload, onChunk) => {
-        onChunk('second answer', false, 'server-conv-2', '');
-        onChunk('second answer', true, 'server-conv-2', '');
+      .mockImplementationOnce(async (_payload, callbacks) => {
+        callbacks.onContent('second ');
+        callbacks.onContent('answer');
+        callbacks.onDone('assistant-2', 'server-conv-2', 'second answer', '');
       });
 
     const { result } = renderHook(() => useSendMessage(), {
@@ -180,6 +189,49 @@ describe('useSendMessage', () => {
       expect(state.conversation.byId['server-conv-2']).toBeDefined();
       expect(state.conversation.byId['server-conv-2'].messages[1]).toEqual(
         expect.objectContaining({ id: 'assistant-2', content: 'second answer' })
+      );
+    });
+  });
+
+  it('keeps accumulated content visible while catch handles stream errors', async () => {
+    const store = createStore();
+    store.dispatch(
+      upsertConversation({
+        id: 'existing-conv',
+        title: 'Existing',
+        model: 'model-1',
+        provider: 'openai',
+        messages: [],
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      })
+    );
+
+    sendMessageStreamMock.mockImplementationOnce(async (_payload, callbacks) => {
+      callbacks.onReasoning('thin');
+      callbacks.onReasoning('king');
+      callbacks.onContent('par');
+      callbacks.onContent('tial');
+      callbacks.onError('模型调用超时');
+      throw new Error('模型调用超时');
+    });
+
+    const { result } = renderHook(() => useSendMessage(), {
+      wrapper: createWrapper(store),
+    });
+
+    await act(async () => {
+      await result.current.sendMessage('hello', { conversationId: 'existing-conv' });
+    });
+
+    await waitFor(() => {
+      const state = store.getState();
+      expect(state.stream.isStreaming).toBe(false);
+      expect(state.stream.content).toBe('');
+      expect(state.stream.reasoning).toBe('');
+      expect(state.conversation.globalError).toBe('模型调用超时');
+      expect(state.conversation.byId['existing-conv'].messages[0]).toEqual(
+        expect.objectContaining({ role: 'user', status: 'failed', content: 'hello' })
       );
     });
   });
