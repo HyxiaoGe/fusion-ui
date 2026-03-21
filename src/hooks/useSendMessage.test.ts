@@ -102,14 +102,16 @@ describe('useSendMessage', () => {
 
     sendMessageStreamMock.mockImplementation(
       async (_payload, callbacks: {
-        onContent: (delta: string) => void;
-        onReasoning: (delta: string) => void;
+        onReady: (meta: { messageId: string; conversationId: string }) => void;
+        onContent: (delta: string, meta: { messageId: string; conversationId: string }) => void;
+        onReasoning: (delta: string, meta: { messageId: string; conversationId: string }) => void;
         onDone: (messageId: string, conversationId: string, content: string, reasoning: string) => void;
       }) => {
-        callbacks.onReasoning('think');
-        callbacks.onReasoning('ing');
-        callbacks.onContent('ans');
-        callbacks.onContent('wer');
+        callbacks.onReady({ messageId: 'assistant-1', conversationId: 'server-conv' });
+        callbacks.onReasoning('think', { messageId: 'assistant-1', conversationId: 'server-conv' });
+        callbacks.onReasoning('ing', { messageId: 'assistant-1', conversationId: 'server-conv' });
+        callbacks.onContent('ans', { messageId: 'assistant-1', conversationId: 'server-conv' });
+        callbacks.onContent('wer', { messageId: 'assistant-1', conversationId: 'server-conv' });
         callbacks.onDone('assistant-1', 'server-conv', 'answer', 'thinking');
       }
     );
@@ -156,8 +158,9 @@ describe('useSendMessage', () => {
         }
       )
       .mockImplementationOnce(async (_payload, callbacks) => {
-        callbacks.onContent('second ');
-        callbacks.onContent('answer');
+        callbacks.onReady({ messageId: 'assistant-2', conversationId: 'server-conv-2' });
+        callbacks.onContent('second ', { messageId: 'assistant-2', conversationId: 'server-conv-2' });
+        callbacks.onContent('answer', { messageId: 'assistant-2', conversationId: 'server-conv-2' });
         callbacks.onDone('assistant-2', 'server-conv-2', 'second answer', '');
       });
 
@@ -208,10 +211,11 @@ describe('useSendMessage', () => {
     );
 
     sendMessageStreamMock.mockImplementationOnce(async (_payload, callbacks) => {
-      callbacks.onReasoning('thin');
-      callbacks.onReasoning('king');
-      callbacks.onContent('par');
-      callbacks.onContent('tial');
+      callbacks.onReady({ messageId: 'assistant-1', conversationId: 'existing-conv' });
+      callbacks.onReasoning('thin', { messageId: 'assistant-1', conversationId: 'existing-conv' });
+      callbacks.onReasoning('king', { messageId: 'assistant-1', conversationId: 'existing-conv' });
+      callbacks.onContent('par', { messageId: 'assistant-1', conversationId: 'existing-conv' });
+      callbacks.onContent('tial', { messageId: 'assistant-1', conversationId: 'existing-conv' });
       callbacks.onError('模型调用超时');
       throw new Error('模型调用超时');
     });
@@ -242,10 +246,18 @@ describe('useSendMessage', () => {
 
     sendMessageStreamMock.mockImplementationOnce(
       async (_payload, callbacks: {
-        onContent: (delta: string) => void;
+        onReady: (meta: { messageId: string; conversationId: string }) => void;
+        onContent: (delta: string, meta: { messageId: string; conversationId: string }) => void;
         onDone: (messageId: string, conversationId: string, content: string, reasoning: string) => void;
       }) => {
-        callbacks.onContent('answer');
+        callbacks.onReady({
+          messageId: 'server-assistant-id',
+          conversationId: 'server-conv',
+        });
+        callbacks.onContent('answer', {
+          messageId: 'server-assistant-id',
+          conversationId: 'server-conv',
+        });
         callbacks.onDone('server-assistant-id', 'server-conv', 'answer', 'thinking');
       }
     );
@@ -271,6 +283,60 @@ describe('useSendMessage', () => {
           reasoning: 'thinking',
         })
       );
+    });
+  });
+
+  it('materializes the draft conversation on the first streamed chunk before completion', async () => {
+    const store = createStore();
+    const onMaterialized = vi.fn();
+    let releaseStream: (() => void) | undefined;
+
+    sendMessageStreamMock.mockImplementationOnce(
+      async (_payload, callbacks: {
+        onReady: (meta: { messageId: string; conversationId: string }) => void;
+        onContent: (delta: string, meta: { messageId: string; conversationId: string }) => void;
+        onDone: (messageId: string, conversationId: string, content: string, reasoning: string) => void;
+      }) => {
+        callbacks.onReady({
+          messageId: 'server-assistant-id',
+          conversationId: 'server-conv',
+        });
+        callbacks.onContent('part', {
+          messageId: 'server-assistant-id',
+          conversationId: 'server-conv',
+        });
+        await new Promise<void>((resolve) => {
+          releaseStream = resolve;
+        });
+        callbacks.onDone('server-assistant-id', 'server-conv', 'partial answer', '');
+      }
+    );
+
+    const { result } = renderHook(() => useSendMessage(), {
+      wrapper: createWrapper(store),
+    });
+
+    await act(async () => {
+      void result.current.sendMessage('hello', {
+        conversationId: null,
+        onMaterialized,
+      });
+    });
+
+    await waitFor(() => {
+      const state = store.getState();
+      expect(onMaterialized).toHaveBeenCalledWith('server-conv');
+      expect(state.conversation.byId['server-conv']).toBeDefined();
+      expect(state.conversation.pendingConversationId).toBeNull();
+      expect(state.stream.conversationId).toBe('server-conv');
+    });
+
+    await act(async () => {
+      releaseStream?.();
+    });
+
+    await waitFor(() => {
+      expect(store.getState().stream.isStreaming).toBe(false);
     });
   });
 });

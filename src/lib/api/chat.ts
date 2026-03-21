@@ -34,8 +34,9 @@ export interface ChatResponse {
 }
 
 export interface StreamCallbacks {
-  onContent: (delta: string) => void;
-  onReasoning: (delta: string) => void;
+  onReady: (meta: { messageId: string; conversationId: string }) => void;
+  onContent: (delta: string, meta: { messageId: string; conversationId: string }) => void;
+  onReasoning: (delta: string, meta: { messageId: string; conversationId: string }) => void;
   onDone: (
     messageId: string,
     conversationId: string,
@@ -108,6 +109,7 @@ export async function sendMessageStream(
     let conversationId = data.conversation_id ?? '';
     let messageId = '';
     let terminated = false;
+    let readyEmitted = false;
     let buffer = '';
     let currentEventData = '';
 
@@ -138,6 +140,10 @@ export async function sendMessageStream(
             const parsedData = JSON.parse(currentEventData);
             messageId = parsedData.id || messageId;
             conversationId = parsedData.conversation_id || conversationId;
+            if (!readyEmitted && messageId && conversationId) {
+              readyEmitted = true;
+              callbacks.onReady({ messageId, conversationId });
+            }
 
             const choice = parsedData.choices?.[0];
             const delta = choice?.delta ?? {};
@@ -145,12 +151,18 @@ export async function sendMessageStream(
 
             if (delta.reasoning_content) {
               accumulatedReasoning += delta.reasoning_content;
-              callbacks.onReasoning(delta.reasoning_content);
+              callbacks.onReasoning(delta.reasoning_content, {
+                messageId,
+                conversationId,
+              });
             }
 
             if (delta.content) {
               accumulatedContent += delta.content;
-              callbacks.onContent(delta.content);
+              callbacks.onContent(delta.content, {
+                messageId,
+                conversationId,
+              });
             }
 
             if (finishReason === 'error' && !terminated) {

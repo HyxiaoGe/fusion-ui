@@ -156,6 +156,34 @@ export function useSendMessage() {
       let materializedOnce = false;
       let localContent = '';
       let localReasoning = '';
+      const materializeIfNeeded = (incomingConvId?: string) => {
+        if (!isDraft || !incomingConvId || materializedOnce) {
+          return;
+        }
+
+        materializedOnce = true;
+        serverConvId = incomingConvId;
+        activeConvIdRef.current = incomingConvId;
+        dispatch(
+          materializeConversation({
+            pendingId: tempConvId,
+            serverConversation: {
+              id: incomingConvId,
+              title: content.substring(0, 30),
+              model: enabledModel.id,
+              provider: enabledModel.provider,
+              messages: [
+                { ...userMessage, chatId: incomingConvId },
+                { ...assistantPlaceholder, chatId: incomingConvId },
+              ],
+              createdAt: Date.now(),
+              updatedAt: Date.now(),
+            },
+          })
+        );
+        dispatch(migrateStreamConversation(incomingConvId));
+        options.onMaterialized?.(incomingConvId);
+      };
 
       try {
         await sendMessageStream(
@@ -168,6 +196,9 @@ export function useSendMessage() {
             options: { use_reasoning: useReasoning },
           },
           {
+            onReady: ({ conversationId: incomingConvId }) => {
+              materializeIfNeeded(incomingConvId);
+            },
             onContent: (delta) => {
               localContent += delta;
               const effectiveConvId = activeConvIdRef.current;
@@ -179,8 +210,8 @@ export function useSendMessage() {
                   conversationId: effectiveConvId,
                   messageId: assistantMessageId,
                   patch: { content: localContent },
-                })
-              );
+                  })
+                );
             },
             onReasoning: (delta) => {
               localReasoning += delta;
@@ -190,30 +221,7 @@ export function useSendMessage() {
               dispatch(updateStreamReasoning(localReasoning));
             },
             onDone: (messageId, incomingConvId, accumulatedContent, accumulatedReasoning) => {
-              if (isDraft && incomingConvId && !materializedOnce) {
-                materializedOnce = true;
-                serverConvId = incomingConvId;
-                activeConvIdRef.current = incomingConvId;
-                dispatch(
-                  materializeConversation({
-                    pendingId: tempConvId,
-                    serverConversation: {
-                      id: incomingConvId,
-                      title: content.substring(0, 30),
-                      model: enabledModel.id,
-                      provider: enabledModel.provider,
-                      messages: [
-                        { ...userMessage, chatId: incomingConvId },
-                        { ...assistantPlaceholder, chatId: incomingConvId },
-                      ],
-                      createdAt: Date.now(),
-                      updatedAt: Date.now(),
-                    },
-                  })
-                );
-                dispatch(migrateStreamConversation(incomingConvId));
-                options.onMaterialized?.(incomingConvId);
-              }
+              materializeIfNeeded(incomingConvId);
 
               const effectiveConvId = activeConvIdRef.current;
               if (!effectiveConvId) return;

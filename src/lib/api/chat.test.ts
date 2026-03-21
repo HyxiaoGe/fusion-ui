@@ -43,6 +43,7 @@ describe('sendMessageStream', () => {
       ])
     );
     const callbacks = {
+      onReady: vi.fn(),
       onContent: vi.fn(),
       onReasoning: vi.fn(),
       onDone: vi.fn(),
@@ -59,8 +60,18 @@ describe('sendMessageStream', () => {
       callbacks
     );
 
-    expect(callbacks.onContent).toHaveBeenNthCalledWith(1, 'hel');
-    expect(callbacks.onContent).toHaveBeenNthCalledWith(2, 'lo');
+    expect(callbacks.onReady).toHaveBeenCalledWith({
+      messageId: 'assistant-1',
+      conversationId: 'conv-1',
+    });
+    expect(callbacks.onContent).toHaveBeenNthCalledWith(1, 'hel', {
+      messageId: 'assistant-1',
+      conversationId: 'conv-1',
+    });
+    expect(callbacks.onContent).toHaveBeenNthCalledWith(2, 'lo', {
+      messageId: 'assistant-1',
+      conversationId: 'conv-1',
+    });
     expect(callbacks.onDone).toHaveBeenCalledWith('assistant-1', 'conv-1', 'hello', '');
     expect(callbacks.onError).not.toHaveBeenCalled();
   });
@@ -74,6 +85,7 @@ describe('sendMessageStream', () => {
       ])
     );
     const callbacks = {
+      onReady: vi.fn(),
       onContent: vi.fn(),
       onReasoning: vi.fn(),
       onDone: vi.fn(),
@@ -90,6 +102,10 @@ describe('sendMessageStream', () => {
       callbacks
     );
 
+    expect(callbacks.onReady).toHaveBeenCalledWith({
+      messageId: 'assistant-2',
+      conversationId: 'conv-2',
+    });
     expect(callbacks.onReasoning).toHaveBeenCalledBefore(callbacks.onContent);
     expect(callbacks.onDone).toHaveBeenCalledWith('assistant-2', 'conv-2', 'answer', 'think ');
   });
@@ -103,6 +119,7 @@ describe('sendMessageStream', () => {
       ])
     );
     const callbacks = {
+      onReady: vi.fn(),
       onContent: vi.fn(),
       onReasoning: vi.fn(),
       onDone: vi.fn(),
@@ -134,6 +151,7 @@ describe('sendMessageStream', () => {
       ])
     );
     const callbacks = {
+      onReady: vi.fn(),
       onContent: vi.fn(),
       onReasoning: vi.fn(),
       onDone: vi.fn(),
@@ -150,7 +168,10 @@ describe('sendMessageStream', () => {
       callbacks
     );
 
-    expect(callbacks.onContent).toHaveBeenCalledWith('hello');
+    expect(callbacks.onContent).toHaveBeenCalledWith('hello', {
+      messageId: 'assistant-4',
+      conversationId: 'conv-4',
+    });
     expect(callbacks.onDone).toHaveBeenCalledWith('assistant-4', 'conv-4', 'hello', '');
   });
 
@@ -163,6 +184,7 @@ describe('sendMessageStream', () => {
       ])
     );
     const callbacks = {
+      onReady: vi.fn(),
       onContent: vi.fn(),
       onReasoning: vi.fn(),
       onDone: vi.fn(),
@@ -179,7 +201,10 @@ describe('sendMessageStream', () => {
       callbacks
     );
 
-    expect(callbacks.onContent).toHaveBeenCalledWith('ok');
+    expect(callbacks.onContent).toHaveBeenCalledWith('ok', {
+      messageId: 'assistant-5',
+      conversationId: 'conv-5',
+    });
     expect(callbacks.onDone).toHaveBeenCalledWith('assistant-5', 'conv-5', 'ok', '');
   });
 
@@ -190,6 +215,7 @@ describe('sendMessageStream', () => {
       ])
     );
     const callbacks = {
+      onReady: vi.fn(),
       onContent: vi.fn(),
       onReasoning: vi.fn(),
       onDone: vi.fn(),
