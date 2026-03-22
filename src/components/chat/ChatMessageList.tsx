@@ -2,6 +2,7 @@
 
 import type { Message } from '@/types/conversation';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { useAppSelector } from '@/redux/hooks';
 import LoadingIndicator from '../ui/loading-indicator';
 import ChatMessage from './ChatMessage';
 import { isNearBottom } from '@/lib/chat/scrollBehavior';
@@ -117,6 +118,11 @@ const ChatMessageList: React.FC<ChatMessageListProps> = ({
     };
   }, [sortedMessages.length]);
 
+  // 流式内容长度，用于触发流式期间的自动滚动
+  const streamContentLength = useAppSelector(
+    state => isStreaming ? state.stream.content.length : 0
+  );
+
   useEffect(() => {
     if (messages.length === 0) {
       return;
@@ -126,6 +132,19 @@ const ChatMessageList: React.FC<ChatMessageListProps> = ({
       scrollToBottom();
     }
   }, [messages.length, isStreaming]);
+
+  // 流式期间：content 增长时自动滚动（节流，避免过于频繁）
+  const lastScrollTimeRef = useRef(0);
+  useEffect(() => {
+    if (!isStreaming || streamContentLength === 0) return;
+    if (!shouldStickToBottomRef.current) return;
+
+    const now = Date.now();
+    if (now - lastScrollTimeRef.current < 300) return; // 最多 300ms 滚一次
+    lastScrollTimeRef.current = now;
+
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [isStreaming, streamContentLength]);
 
   const statusText = useMemo(() => {
     if (sortedMessages.length === 0) return null;
