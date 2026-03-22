@@ -210,21 +210,26 @@ const ChatMessageList: React.FC<ChatMessageListProps> = ({
   }
 
   return (
-    <div className="flex flex-col px-4">
-      {sortedMessages.map((message, index) => (
-        <ChatMessage 
-          key={message.id} 
-          message={message} 
-          isLastMessage={index === sortedMessages.length - 1}
-          isStreaming={isStreaming && index === sortedMessages.length - 1 && message.role === 'assistant'}
-          onRetry={onRetry}
-          onEdit={onEdit}
-          suggestedQuestions={index === lastAssistantIndex ? suggestedQuestions : []}
-          isLoadingQuestions={index === lastAssistantIndex ? isLoadingQuestions : false}
-          onSelectQuestion={onSelectQuestion}
-          onRefreshQuestions={onRefreshQuestions}
-        />
-      ))}
+    <div className="flex flex-col px-4 pb-[120px]">
+      {sortedMessages.map((message, index) => {
+        const prevMessage = index > 0 ? sortedMessages[index - 1] : null;
+        const isSameRole = prevMessage?.role === message.role;
+        return (
+          <div key={message.id} className={isSameRole ? 'mt-2' : index === 0 ? '' : 'mt-6'}>
+            <ChatMessage
+              message={message}
+              isLastMessage={index === sortedMessages.length - 1}
+              isStreaming={isStreaming && index === sortedMessages.length - 1 && message.role === 'assistant'}
+              onRetry={onRetry}
+              onEdit={onEdit}
+              suggestedQuestions={index === lastAssistantIndex ? suggestedQuestions : []}
+              isLoadingQuestions={index === lastAssistantIndex ? isLoadingQuestions : false}
+              onSelectQuestion={onSelectQuestion}
+              onRefreshQuestions={onRefreshQuestions}
+            />
+          </div>
+        );
+      })}
       
       {loading && !isStreaming && <LoadingIndicator />}
 

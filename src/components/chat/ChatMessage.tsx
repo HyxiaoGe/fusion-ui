@@ -8,7 +8,7 @@ import type { Message } from '@/types/conversation';
 import { toggleReasoningVisibility } from '@/redux/slices/conversationSlice';
 import { completeThinkingPhase } from '@/redux/slices/streamSlice';
 import { avatarOptions } from '@/redux/slices/settingsSlice';
-import { Edit2, FileIcon, RefreshCw, Lightbulb, FileText, Image, Film, PenLine, RotateCcw, FileArchive, X, Check, Copy } from 'lucide-react';
+import { Edit2, FileIcon, RefreshCw, X, Check, Copy } from 'lucide-react';
 import React, { useState, useEffect, useRef } from 'react';
 import ReactMarkdown from 'react-markdown';
 import TextareaAutosize from 'react-textarea-autosize';
@@ -21,7 +21,6 @@ import { ImageIcon } from 'lucide-react';
 import { chatStore } from '@/lib/db/chatStore';
 import SuggestedQuestions from './SuggestedQuestions';
 import CodeBlock from './CodeBlock';
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { useToast } from '@/components/ui/toast';
 
 interface ChatMessageProps {
@@ -53,8 +52,7 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, files, isLastMessage
   const streamingEndTime = useAppSelector(state => state.stream.reasoningEndTime);
   const isStreamingReasoning = useAppSelector(state => state.stream.isStreamingReasoning);
 
-  const { userAvatar, assistantAvatar } = useAppSelector(state => state.settings);
-  const { isAuthenticated, user } = useAppSelector(state => state.auth);
+  const { assistantAvatar } = useAppSelector(state => state.settings);
   const { toast } = useToast();
 
   // 获取当前聊天使用的模型信息
@@ -65,12 +63,6 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, files, isLastMessage
   const chat = (message.chatId ? chats[message.chatId] : undefined) || (activeChatId ? chats[activeChatId] : undefined);
   const model = chat ? models.find(m => m.id === chat.model) : null;
   const providerId = chat?.provider || model?.provider;
-
-  // 获取头像表情
-  const getUserEmoji = () => {
-    const avatar = avatarOptions.user.find(a => a.id === userAvatar);
-    return avatar ? avatar.emoji : '👤';
-  };
 
   const getAssistantEmoji = () => {
     const avatar = avatarOptions.assistant.find(a => a.id === assistantAvatar);
@@ -214,86 +206,84 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, files, isLastMessage
   return (
     <div
       className={cn(
-        'flex w-full gap-3 py-4 px-4 group',
-        isLastMessage && 'mb-4',
+        'flex w-full gap-3 py-2 px-4 group',
         isUser ? 'justify-end' : 'justify-start',
         isEditing && 'px-2'
       )}
     >
-      {!isUser && (
-        <div className="h-8 w-8 mt-1 flex-shrink-0 rounded-full bg-secondary/10 flex items-center justify-center border shadow-sm">
-          {providerId ? (
-            <ProviderIcon providerId={providerId} size={16} />
-          ) : (
-            <span className="text-sm">{getAssistantEmoji()}</span>
-          )}
-        </div>
-      )}
-
       <div className={cn(
         'flex flex-col space-y-1',
-        isEditing ? 'w-full max-w-none min-w-[1000px]' : 'max-w-[85%]',
+        isEditing ? 'w-full max-w-2xl' : isUser ? 'max-w-[70%]' : 'max-w-[85%]',
         isUser ? 'items-end' : 'items-start'
       )}>
-        <div className="flex items-center gap-2">
-          <span className="text-xs font-medium">
-            {isUser ? '用户' : model ? model.name : 'AI助手'}
-          </span>
-          <span className="text-xs text-muted-foreground">
-            {formatTime(message.timestamp)}
-          </span>
-        </div>
+        {/* AI 消息头部：ProviderIcon + 模型名 */}
+        {!isUser && (
+          <div className="flex items-center gap-1.5 mb-0.5">
+            {providerId ? (
+              <ProviderIcon providerId={providerId} size={16} />
+            ) : (
+              <span className="text-sm">{getAssistantEmoji()}</span>
+            )}
+            <span className="text-xs text-muted-foreground">
+              {model ? model.name : 'AI助手'}
+            </span>
+          </div>
+        )}
+
+        {/* 时间戳：hover 显示 */}
+        <span className="text-xs text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity duration-150">
+          {formatTime(message.timestamp)}
+        </span>
 
         <div>
           <div className={cn(
-            'rounded-2xl px-4 py-2.5 shadow-sm',
             isUser
-              ? 'bg-primary text-primary-foreground rounded-tr-sm'
-              : 'bg-muted rounded-tl-sm',
-            isEditing && 'min-w-[1200px] w-full'
+              ? 'rounded-2xl px-4 py-2 bg-muted/50 text-foreground'
+              : '',
+            isEditing && 'w-full'
           )}>
             {isUser ? (
               isEditing ? (
                 // 编辑模式 - 优化版
                 <div className="w-full space-y-3 animate-in fade-in-50 duration-200">
                   {/* 编辑提示标签 */}
-                  <div className="flex items-center gap-2 text-xs text-primary-foreground/70">
+                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
                     <Edit2 className="h-3 w-3" />
                     <span>编辑消息</span>
                   </div>
-                  
+
                   {/* 文本编辑区域 */}
-                  <div className="relative w-full rounded-xl overflow-hidden border border-primary-foreground/20 bg-primary-foreground/5 backdrop-blur-sm">
+                  <div className="relative w-full rounded-xl overflow-hidden border border-border bg-background">
                     <TextareaAutosize
                       value={editContent}
                       onChange={(e) => setEditContent(e.target.value)}
                       minRows={6}
                       maxRows={15}
-                      className="w-full min-w-full px-4 py-3 bg-transparent text-primary-foreground text-sm resize-none focus:outline-none border-none placeholder:text-primary-foreground/50"
+                      className="w-full min-w-full px-4 py-3 bg-transparent text-foreground text-sm resize-none focus:outline-none border-none placeholder:text-muted-foreground"
                       autoFocus
                       placeholder="编辑您的消息..."
                       onKeyDown={handleKeyDown}
                       style={{ width: '100%', minWidth: '100%' }}
                     />
-                    
+
                     {/* 字符计数 */}
-                    <div className="absolute bottom-2 right-3 text-xs text-primary-foreground/50">
+                    <div className="absolute bottom-2 right-3 text-xs text-muted-foreground">
                       {editContent.length} 字符
                     </div>
                   </div>
-                  
+
                   {/* 操作按钮区域 */}
                   <div className="flex justify-between items-center w-full">
-                    <div className="text-xs text-primary-foreground/60">
+                    <div className="text-xs text-muted-foreground">
                       按 Esc 取消，Ctrl+Enter 保存
                     </div>
-                    
+
                     <div className="flex gap-2">
                       <Button
                         size="sm"
                         variant="outline"
                         onClick={handleCancelEdit}
-                        className="h-9 px-4 bg-primary-foreground/10 border-primary-foreground/20 text-primary-foreground hover:bg-primary-foreground/20 hover:border-primary-foreground/30"
+                        className="h-9 px-4"
                       >
                         <X className="h-3 w-3 mr-1" />
                         取消
@@ -302,7 +292,7 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, files, isLastMessage
                         size="sm"
                         onClick={handleSaveEdit}
                         disabled={!editContent.trim() || editContent === message.content}
-                        className="h-9 px-4 bg-primary-foreground text-primary hover:bg-primary-foreground/90 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
+                        className="h-9 px-4 disabled:opacity-50 disabled:cursor-not-allowed"
                       >
                         <Check className="h-3 w-3 mr-1" />
                         保存
@@ -315,7 +305,7 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, files, isLastMessage
                 <div className="space-y-2">
                   <div>{message.content || isStreaming}</div>
                   {message.status === 'failed' ? (
-                    <div className="flex items-center gap-2 text-xs text-red-100/90">
+                    <div className="flex items-center gap-2 text-xs text-red-500">
                       <X className="h-3 w-3" />
                       <span>发送失败，请重新发送</span>
                     </div>
@@ -388,32 +378,27 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, files, isLastMessage
                 </ReactMarkdown>
 
                 {isStreaming && (
-                  <span className="ml-1 inline-block h-4 w-0.5 bg-current animate-pulse"></span>
+                  <span className="animate-pulse">▌</span>
                 )}
               </div>
             )}
 
-            {/* 重新生成按钮 */}
+            {/* AI 消息操作栏：统一 hover 显示 */}
             {!isUser && !isStreaming && (
-              <div className={cn(
-                'transition-opacity duration-150 flex gap-2 mt-2',
-                isLastMessage || message.status === 'failed'
-                  ? 'opacity-100'
-                  : 'opacity-100 md:opacity-0 md:group-hover:opacity-100'
-              )}>
+              <div className="flex gap-1 mt-2 opacity-0 group-hover:opacity-100 transition-opacity duration-150">
                 <Button
                   variant="ghost"
                   size="sm"
-                  className="h-6 text-xs text-muted-foreground hover:text-foreground hover:bg-transparent"
+                  className="h-7 text-xs text-muted-foreground hover:text-foreground"
                   onClick={handleCopyMessage}
                 >
                   <Copy className="h-3 w-3 mr-1" />
-                  {copied ? '已复制!' : '复制消息'}
+                  {copied ? '已复制' : '复制'}
                 </Button>
                 <Button
                   variant="ghost"
                   size="sm"
-                  className="h-6 text-xs text-muted-foreground hover:text-foreground hover:bg-transparent"
+                  className="h-7 text-xs text-muted-foreground hover:text-foreground"
                   onClick={() => onRetry && onRetry(message.id)}
                 >
                   <RefreshCw className="h-3 w-3 mr-1" />
@@ -486,24 +471,13 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, files, isLastMessage
           )}
         </div>
 
-        {/* 用户消息操作 */}
+        {/* 用户消息操作：hover 显示编辑按钮 */}
         {isUser && !isEditing && (
-          <div className="opacity-100 transition-opacity duration-150 flex gap-2">
-            {message.status === 'failed' ? (
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-6 text-xs text-red-100/80 hover:text-red-50 hover:bg-transparent"
-                onClick={() => onRetry && onRetry(message.id)}
-              >
-                <RotateCcw className="h-3 w-3 mr-1" />
-                重新发送
-              </Button>
-            ) : null}
+          <div className="opacity-0 group-hover:opacity-100 transition-opacity duration-150 flex gap-1">
             <Button
               variant="ghost"
               size="sm"
-              className="h-6 text-xs text-primary-foreground/70 hover:text-primary-foreground hover:bg-transparent"
+              className="h-7 text-xs text-muted-foreground hover:text-foreground"
               onClick={() => setIsEditing(true)}
             >
               <Edit2 className="h-3 w-3 mr-1" />
@@ -522,72 +496,8 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, files, isLastMessage
         )}
       </div>
 
-      {isUser && (
-        <div className="h-8 w-8 mt-1 flex-shrink-0">
-          {isAuthenticated && user?.avatar ? (
-            <Avatar 
-              key={`chat-avatar-${isAuthenticated}-${user?.avatar}`}
-              className="h-8 w-8"
-            >
-              <AvatarImage src={user.avatar} alt="用户头像" />
-              <AvatarFallback className="text-sm">
-                <div className="w-full h-full flex items-center justify-center">
-                  <span className="block text-center leading-none">{getUserEmoji()}</span>
-                </div>
-              </AvatarFallback>
-            </Avatar>
-          ) : (
-            <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center border shadow-sm">
-              <div className="w-full h-full flex items-center justify-center">
-                <span className="text-sm block text-center leading-none">{getUserEmoji()}</span>
-              </div>
-            </div>
-          )}
-        </div>
-      )}
     </div>
   );
 };
-
-// 添加全局CSS样式
-const styles = `
-.typing-indicator {
-  display: inline-flex;
-  align-items: center;
-}
-
-.typing-indicator span {
-  height: 4px;
-  width: 4px;
-  margin: 0 2px;
-  background-color: currentColor;
-  border-radius: 50%;
-  display: inline-block;
-  opacity: 0.6;
-}
-
-.typing-indicator span:nth-child(1) {
-  animation: pulse 1.5s infinite ease-in-out;
-}
-
-.typing-indicator span:nth-child(2) {
-  animation: pulse 1.5s infinite ease-in-out 0.4s;
-}
-
-.typing-indicator span:nth-child(3) {
-  animation: pulse 1.5s infinite ease-in-out 0.8s;
-}
-
-@keyframes pulse {
-  0%, 100% {
-    opacity: 0.6;
-    transform: scale(1);
-  }
-  50% {
-    opacity: 1;
-    transform: scale(1.3);
-  }
-}
-`;
 
 export default ChatMessage;
