@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation";
 import React from "react";
 import ErrorToastContainer from "../ui/error-toast";
 import ResizableSidebar from "./ResizableSidebar";
+import { UserAvatarMenu } from "./UserAvatarMenu";
 import { Button } from "../ui/button";
 
 interface MainLayoutProps {
@@ -78,7 +79,7 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children, sidebar, title, heade
           </Button>
           <span className="text-sm font-semibold text-foreground">Fusion AI</span>
           <div className="flex items-center">
-            {/* UserAvatarMenu is rendered in sidebar bottom for desktop; here for mobile */}
+            <UserAvatarMenu />
           </div>
         </header>
       )}
