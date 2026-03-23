@@ -703,6 +703,9 @@ const ChatInput: React.FC<ChatInputProps> = ({
               <span className="text-xs">{reasoningEnabled && supportsReasoning ? "思考已开" : "思考"}</span>
             </Button>
 
+            {/* 分隔线 */}
+            <div className="h-4 border-l border-border/50 mx-1" />
+
             {/* 模型选择器 — 工具栏内嵌模式 */}
             <ModelSelector
               onChange={onModelChange || (() => {})}

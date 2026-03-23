@@ -107,7 +107,7 @@ const HomePage: React.FC<HomePageProps> = ({ onSendMessage }) => {
         今天我能帮你做什么？
       </h1>
 
-      <div className="w-full max-w-xl space-y-2">
+      <div className="w-full max-w-xl mx-auto space-y-2">
         {randomExamples.map((example) => (
           <button
             key={example}

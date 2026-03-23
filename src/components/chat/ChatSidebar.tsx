@@ -134,7 +134,7 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ onNewChat, activeChatIdOverri
   };
 
   return (
-    <div className="flex flex-col h-full py-2 relative">
+    <div className="flex flex-col h-full py-2">
       <ChatSidebarHeader onNewChat={onNewChat} />
 
       {/* 搜索框 */}
@@ -143,7 +143,7 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ onNewChat, activeChatIdOverri
           "flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm transition-colors",
           isSearchFocused
             ? "bg-background border border-input ring-1 ring-ring"
-            : "bg-muted/50 hover:bg-muted/80 cursor-text"
+            : "bg-muted/50 border border-transparent hover:bg-muted/80 cursor-text"
         )}>
           <Search className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground" />
           <input
@@ -200,28 +200,23 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ onNewChat, activeChatIdOverri
       />
 
       {showLoadMoreButton && (
-        <div className="absolute bottom-4 left-4 right-4 flex justify-center">
-          <div className="relative">
-            <div className="absolute inset-0 rounded-full bg-gradient-to-r from-primary/20 to-purple-500/20 opacity-30 animate-pulse blur-sm"></div>
-            <Button
-              onClick={() => void loadMore()}
-              disabled={isLoadingMore}
-              className="relative px-6 py-2 rounded-full bg-gradient-to-r from-primary to-primary/80 hover:from-primary/90 hover:to-primary/70 dark:from-blue-500 dark:to-purple-600 dark:hover:from-blue-600 dark:hover:to-purple-700 text-primary-foreground font-medium text-sm shadow-lg hover:shadow-xl border-0 backdrop-blur-sm transition-all duration-300 ease-out hover:scale-105 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 animate-bounce-subtle before:absolute before:inset-0 before:rounded-full before:bg-gradient-to-r before:from-white/20 before:to-transparent before:opacity-0 hover:before:opacity-100 before:transition-opacity before:duration-300 overflow-hidden"
-              size="sm"
-            >
-              <div className="absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-white/30 to-transparent animate-shimmer"></div>
-              <span className="relative z-10">
-                {isLoadingMore ? (
-                  <>
-                    <RefreshCwIcon size={16} className="mr-2 animate-spin" />
-                    加载中...
-                  </>
-                ) : (
-                  <>显示更多</>
-                )}
-              </span>
-            </Button>
-          </div>
+        <div className="px-4 py-2 flex justify-center">
+          <Button
+            onClick={() => void loadMore()}
+            disabled={isLoadingMore}
+            variant="ghost"
+            size="sm"
+            className="text-xs text-muted-foreground hover:text-foreground"
+          >
+            {isLoadingMore ? (
+              <>
+                <RefreshCwIcon size={14} className="mr-1.5 animate-spin" />
+                加载中...
+              </>
+            ) : (
+              '显示更多'
+            )}
+          </Button>
         </div>
       )}
 
