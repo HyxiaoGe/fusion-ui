@@ -2,7 +2,8 @@
 
 import React, { useRef, useState, useEffect, useCallback } from "react";
 import { usePathname } from "next/navigation";
-import { RefreshCwIcon } from "lucide-react";
+import { RefreshCwIcon, Search } from "lucide-react";
+import { UserAvatarMenu } from "@/components/layouts/UserAvatarMenu";
 import { Button } from "@/components/ui/button";
 import DeleteChatDialog from "./sidebar/DeleteChatDialog";
 import RenameChatDialog from "./sidebar/RenameChatDialog";
@@ -111,6 +112,14 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ onNewChat, activeChatIdOverri
     <div className="flex flex-col h-full py-2 relative">
       <ChatSidebarHeader onNewChat={onNewChat} />
 
+      {/* 搜索占位 UI（P6 再实现功能） */}
+      <div className="px-3 pb-2">
+        <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-muted/50 text-muted-foreground text-sm cursor-not-allowed opacity-60">
+          <Search className="h-3.5 w-3.5 flex-shrink-0" />
+          <span className="text-xs">搜索对话...</span>
+        </div>
+      </div>
+
       <ChatList
         chats={conversations}
         sortedAndGroupedChats={sortedAndGroupedChats}
@@ -161,6 +170,11 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ onNewChat, activeChatIdOverri
           </div>
         </div>
       )}
+
+      {/* 底部用户区（固定不随列表滚动） */}
+      <div className="mt-auto border-t pt-2 px-2 pb-3">
+        <UserAvatarMenu />
+      </div>
 
       <DeleteChatDialog
         open={Boolean(deleteTargetId)}

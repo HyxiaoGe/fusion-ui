@@ -35,8 +35,7 @@ const ChatList: React.FC<ChatListProps> = ({
   formatDate,
 }) => {
   return (
-    <div className="px-4 flex-1 overflow-y-auto" ref={containerRef} onScroll={handleScroll}>
-      <p className="text-sm font-medium text-muted-foreground tracking-wider mb-3 px-2">最近对话</p>
+    <div className="px-2 flex-1 overflow-y-auto" ref={containerRef} onScroll={handleScroll}>
       {chats.length === 0 ? (
         <div className="text-sm text-muted-foreground mt-4 text-center">
           暂无对话记录

@@ -43,8 +43,8 @@ const ChatItem: React.FC<ChatItemProps> = ({
     <div
       className={`flex items-center group rounded-lg p-3 text-sm cursor-pointer transition-all duration-200 ${
         isActive
-          ? "bg-primary/15 dark:bg-primary/20 shadow-lg border border-primary/20 dark:border-primary/30 pl-4 relative z-10"
-          : "hover:bg-muted/50 hover:shadow-sm"
+          ? "relative pl-4 bg-muted/50 before:absolute before:left-0 before:top-2 before:bottom-2 before:w-0.5 before:rounded-full before:bg-primary"
+          : "hover:bg-muted/50"
       }`}
       onClick={() => onSelectChat(chat.id)}
     >
@@ -66,17 +66,13 @@ const ChatItem: React.FC<ChatItemProps> = ({
           </div>
         </div>
       </div>
-      <div
-        className={`ml-2 ${
-          isActive ? "opacity-100" : "opacity-0 group-hover:opacity-100"
-        } transition-opacity duration-200`}
-      >
+      <div className="ml-2">
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button
               variant="ghost"
               size="icon"
-              className="h-6 w-6"
+              className="h-6 w-6 p-0 rounded opacity-0 group-hover:opacity-60 hover:!opacity-100"
               title="更多操作"
             >
               <MoreVerticalIcon size={14} />

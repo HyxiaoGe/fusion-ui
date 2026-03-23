@@ -1,13 +1,10 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { ChatMessageListLazy, ChatSidebarLazy } from '@/components/lazy/LazyComponents';
 import MainLayout from '@/components/layouts/MainLayout';
 import ChatInput from '@/components/chat/ChatInput';
-import TypingTitle from '@/components/ui/TypingTitle';
-import { UserAvatarMenu } from '@/components/layouts/UserAvatarMenu';
 import ConfirmDialog from '@/components/ui/confirm-dialog';
 import { useAppDispatch, useAppSelector } from '@/redux/hooks';
 import { clearConversationMessages } from '@/redux/slices/conversationSlice';
@@ -35,10 +32,10 @@ export default function ChatPage() {
     fetchQuestions,
     clearQuestions,
   } = useSuggestedQuestions(chatId);
-  const { models, animatingTitleId, conversationError, isStreaming, streamConversationId } =
+  const { models, conversationError, isStreaming, streamConversationId } =
     useAppSelector((state) => ({
       models: state.models.models,
-      animatingTitleId: state.conversation.animatingTitleId,
+
       conversationError: state.conversation.globalError,
       isStreaming: state.stream.isStreaming,
       streamConversationId: state.stream.conversationId,
@@ -112,28 +109,11 @@ export default function ChatPage() {
     dispatch(clearConversationMessages(chatId));
   }, [chatId, dispatch]);
 
-  const getChatTitle = () => conversation?.title || 'AI 聊天';
 
   if (hydrationView === 'loading') {
     return (
       <MainLayout
         sidebar={<ChatSidebarLazy onNewChat={handleNewChat} activeChatIdOverride={chatId} />}
-        header={
-          <header className="h-14 border-b flex items-center justify-between gap-3 px-4 sm:px-5 sticky top-0 z-10 shadow-sm bg-background">
-            <div className="flex items-center shrink-0">
-              <Link href="/" className="text-xl font-bold flex items-center">
-                <span className="bg-gradient-to-r from-blue-600 via-purple-500 to-pink-500 text-transparent bg-clip-text">Fusion AI</span>
-              </Link>
-            </div>
-            <div className="flex min-w-0 flex-1 items-center justify-center gap-2 sm:gap-4 px-2">
-              <div className="hidden truncate px-2 py-1 font-medium text-sm sm:block sm:text-base">{conversation?.title || '正在恢复对话'}</div>
-
-            </div>
-            <div className="flex shrink-0 items-center gap-3">
-              <UserAvatarMenu />
-            </div>
-          </header>
-        }
       >
         <div className="h-full flex flex-col relative">
           <div className="flex-1 overflow-y-auto px-4 pt-4" data-chat-scroll-container="true">
@@ -148,22 +128,6 @@ export default function ChatPage() {
     return (
       <MainLayout
         sidebar={<ChatSidebarLazy onNewChat={handleNewChat} activeChatIdOverride={chatId} />}
-        header={
-          <header className="h-14 border-b flex items-center justify-between gap-3 px-4 sm:px-5 sticky top-0 z-10 shadow-sm bg-background">
-            <div className="flex items-center shrink-0">
-              <Link href="/" className="text-xl font-bold flex items-center">
-                <span className="bg-gradient-to-r from-blue-600 via-purple-500 to-pink-500 text-transparent bg-clip-text">Fusion AI</span>
-              </Link>
-            </div>
-            <div className="flex min-w-0 flex-1 items-center justify-center gap-2 sm:gap-4 px-2">
-              <div className="hidden truncate px-2 py-1 font-medium text-sm sm:block sm:text-base">聊天不存在</div>
-
-            </div>
-            <div className="flex shrink-0 items-center gap-3">
-              <UserAvatarMenu />
-            </div>
-          </header>
-        }
       >
         <div className="h-full flex items-center justify-center">
           <div className="text-center space-y-4">
@@ -194,33 +158,6 @@ export default function ChatPage() {
   return (
     <MainLayout
       sidebar={<ChatSidebarLazy onNewChat={handleNewChat} activeChatIdOverride={chatId} />}
-      header={
-        <header className="h-14 border-b flex items-center justify-between gap-3 px-4 sm:px-5 sticky top-0 z-10 shadow-sm bg-background">
-          <div className="flex items-center shrink-0">
-            <Link href="/" className="text-xl font-bold flex items-center">
-              <span className="bg-gradient-to-r from-blue-600 via-purple-500 to-pink-500 text-transparent bg-clip-text">Fusion AI</span>
-            </Link>
-          </div>
-
-          <div className="flex min-w-0 flex-1 items-center justify-center gap-2 sm:gap-4 px-2">
-            {animatingTitleId === chatId ? (
-              <TypingTitle
-                title={getChatTitle()}
-                className="hidden truncate px-2 font-medium text-sm sm:block sm:text-base"
-                onAnimationComplete={() => {}}
-              />
-            ) : (
-              <div className="hidden truncate px-2 py-1 font-medium text-sm sm:block sm:text-base">
-                {getChatTitle()}
-              </div>
-            )}
-          </div>
-
-          <div className="flex shrink-0 items-center gap-3">
-            <UserAvatarMenu />
-          </div>
-        </header>
-      }
     >
       <div className="h-full flex flex-col relative">
         <div className="flex-1 overflow-y-auto px-4 pt-4" data-chat-scroll-container="true">
