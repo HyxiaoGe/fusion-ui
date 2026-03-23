@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
-import { ChatMessageListLazy, ChatSidebarLazy, ModelSelectorLazy } from '@/components/lazy/LazyComponents';
+import { ChatMessageListLazy, ChatSidebarLazy } from '@/components/lazy/LazyComponents';
 import MainLayout from '@/components/layouts/MainLayout';
 import ChatInput from '@/components/chat/ChatInput';
 import TypingTitle from '@/components/ui/TypingTitle';
@@ -127,7 +127,7 @@ export default function ChatPage() {
             </div>
             <div className="flex min-w-0 flex-1 items-center justify-center gap-2 sm:gap-4 px-2">
               <div className="hidden truncate px-2 py-1 font-medium text-sm sm:block sm:text-base">{conversation?.title || '正在恢复对话'}</div>
-              <ModelSelectorLazy onChange={clearQuestions} />
+
             </div>
             <div className="flex shrink-0 items-center gap-3">
               <UserAvatarMenu />
@@ -157,7 +157,7 @@ export default function ChatPage() {
             </div>
             <div className="flex min-w-0 flex-1 items-center justify-center gap-2 sm:gap-4 px-2">
               <div className="hidden truncate px-2 py-1 font-medium text-sm sm:block sm:text-base">聊天不存在</div>
-              <ModelSelectorLazy onChange={clearQuestions} />
+
             </div>
             <div className="flex shrink-0 items-center gap-3">
               <UserAvatarMenu />
@@ -246,6 +246,7 @@ export default function ChatPage() {
             onSendMessage={handleSendMessage}
             onClearMessage={handleClearChat}
             onStopStreaming={stopStreaming}
+            onModelChange={clearQuestions}
             activeChatId={chatId}
           />
         </div>

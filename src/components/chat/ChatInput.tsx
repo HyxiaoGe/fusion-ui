@@ -15,7 +15,8 @@ import {
   updateFileStatus,
   type FileProcessingStatus,
 } from "@/redux/slices/fileUploadSlice";
-import { EraserIcon, Lightbulb, PaperclipIcon, SendIcon, X } from "lucide-react";
+import { ArrowUp, Lightbulb, PaperclipIcon, Square, X } from "lucide-react";
+import ModelSelector from "@/components/models/ModelSelector";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useToast } from "../ui/toast";
 import { v4 as uuidv4 } from "uuid";
@@ -28,6 +29,7 @@ interface ChatInputProps {
   ) => void;
   onClearMessage?: () => void;
   onStopStreaming?: () => void;
+  onModelChange?: (modelId: string) => void;
   disabled?: boolean;
   placeholder?: string;
   activeChatId?: string | null;
@@ -70,8 +72,9 @@ const ChatInput: React.FC<ChatInputProps> = ({
   onSendMessage,
   onClearMessage,
   onStopStreaming,
+  onModelChange,
   disabled = false,
-  placeholder = "输入您的问题...",
+  placeholder,
   activeChatId,
 }) => {
   const dispatch = useAppDispatch();
@@ -605,94 +608,58 @@ const ChatInput: React.FC<ChatInputProps> = ({
     return null;
   };
 
-  return (
-    <div className="flex flex-col space-y-2 p-4 border-t">
-      {localFiles.length > 0 && (
-        <div className="p-3 border rounded-md bg-background/50 space-y-3">
-          <div className="text-xs font-medium text-muted-foreground mb-2">已选择文件</div>
-          {localFiles.map((file) => (
-            <div key={file.id} className="flex flex-col gap-1.5">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center">
-                  <div className="flex-shrink-0 w-8 h-8 bg-primary/10 rounded flex items-center justify-center mr-2">
-                    <svg
-                      className="w-4 h-4 text-primary"
-                      xmlns="http://www.w3.org/2000/svg"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    >
-                      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
-                      <polyline points="14 2 14 8 20 8"></polyline>
-                      <line x1="16" y1="13" x2="8" y2="13"></line>
-                      <line x1="16" y1="17" x2="8" y2="17"></line>
-                      <polyline points="10 9 9 9 8 9"></polyline>
-                    </svg>
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-foreground truncate">{file.file.name}</p>
-                    <p className="text-xs text-muted-foreground">{(file.file.size / 1024).toFixed(1)} KB</p>
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => handleRemoveFile(file.id)}
-                  aria-label={`移除文件 ${file.file.name}`}
-                  title={`移除文件 ${file.file.name}`}
-                  className="p-1 rounded-full hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
-                >
-                  <X className="h-4 w-4" />
-                </button>
-              </div>
-              <div className="pl-10 pr-1">{renderFileStatus(file)}</div>
-            </div>
-          ))}
-        </div>
-      )}
+  const canSend = (message.trim() || localFiles.length > 0) && !isComposerBlocked && !hasProcessingFiles;
 
-      <div className="flex items-end gap-2">
-        {onClearMessage && (
-          <Button
-            onClick={onClearMessage}
-            disabled={isComposerBlocked}
-            variant="ghost"
-            size="icon"
-            className="h-10 w-10"
-            title="清空聊天内容"
-          >
-            <EraserIcon className="h-5 w-5" />
-          </Button>
+  return (
+    <div className="flex flex-col space-y-2">
+      {/* 外层卡片容器 */}
+      <div className="relative rounded-2xl border border-input bg-background shadow-sm focus-within:ring-1 focus-within:ring-ring transition-shadow">
+        {/* 文件预览区（卡片内部顶部） */}
+        {localFiles.length > 0 && (
+          <div className="p-3 border-b border-border/50 space-y-3">
+            <div className="text-xs font-medium text-muted-foreground mb-2">已选择文件</div>
+            {localFiles.map((file) => (
+              <div key={file.id} className="flex flex-col gap-1.5">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center">
+                    <div className="flex-shrink-0 w-8 h-8 bg-primary/10 rounded flex items-center justify-center mr-2">
+                      <PaperclipIcon className="w-4 h-4 text-primary" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-foreground truncate">{file.file.name}</p>
+                      <p className="text-xs text-muted-foreground">{(file.file.size / 1024).toFixed(1)} KB</p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => handleRemoveFile(file.id)}
+                    aria-label={`移除文件 ${file.file.name}`}
+                    title={`移除文件 ${file.file.name}`}
+                    className="p-1 rounded-full hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+                <div className="pl-10 pr-1">{renderFileStatus(file)}</div>
+              </div>
+            ))}
+          </div>
         )}
 
-        <Button
-          variant="ghost"
-          size="icon"
-          className={`h-10 w-10 flex items-center justify-center ${!supportsReasoning ? "opacity-50 cursor-not-allowed" : ""}`}
-          onClick={() => {
-            if (!supportsReasoning || isComposerBlocked) {
-              return;
-            }
-            dispatch(setReasoningEnabled(!reasoningEnabled));
-          }}
-          disabled={!supportsReasoning || isComposerBlocked}
-          title={supportsReasoning ? (reasoningEnabled ? "AI思考过程已开启" : "AI思考过程已关闭") : "当前模型不支持思考过程"}
-        >
-          <Lightbulb className={`h-5 w-5 ${reasoningEnabled && supportsReasoning ? "text-amber-400" : ""}`} />
-        </Button>
-
-        <Button
-          onClick={handleFileSelect}
+        {/* Textarea 区域 */}
+        <Textarea
+          id="chat-message-input"
+          name="chatMessage"
+          ref={textareaRef}
+          value={message}
+          onChange={(event) => setMessage(event.target.value)}
+          onKeyDown={handleKeyDown}
+          onPaste={handlePaste}
+          placeholder={isCurrentModelUnavailable ? "当前会话模型不可用，请新建会话后继续" : (placeholder || "发消息给 Fusion AI（Enter 发送）")}
           disabled={isComposerBlocked}
-          variant="ghost"
-          size="icon"
-          className="h-10 w-10"
-          title="上传文件"
-        >
-          <PaperclipIcon className="h-5 w-5" />
-        </Button>
+          className="min-h-[44px] max-h-[168px] resize-none border-0 shadow-none focus-visible:ring-0 px-4 pt-3 pb-2 text-sm"
+          rows={1}
+        />
 
         <input
           id="chat-file-input"
@@ -704,34 +671,63 @@ const ChatInput: React.FC<ChatInputProps> = ({
           multiple
         />
 
-        <Textarea
-          id="chat-message-input"
-          name="chatMessage"
-          ref={textareaRef}
-          value={message}
-          onChange={(event) => setMessage(event.target.value)}
-          onKeyDown={handleKeyDown}
-          onPaste={handlePaste}
-          placeholder={isCurrentModelUnavailable ? "当前会话模型不可用，请新建会话后继续" : placeholder}
-          disabled={isComposerBlocked}
-          className="min-h-10 max-h-64 flex-1 resize-none"
-          rows={1}
-        />
+        {/* 工具栏 */}
+        <div className="flex items-center gap-1 px-2 py-1.5 border-t border-border/50">
+          {/* 左侧工具按钮组 */}
+          <div className="flex items-center gap-1 flex-1">
+            {/* 文件上传按钮 */}
+            <Button
+              onClick={handleFileSelect}
+              disabled={isComposerBlocked}
+              variant="ghost"
+              size="sm"
+              className="h-8 w-8 p-0 text-muted-foreground hover:text-foreground"
+              title="上传文件"
+            >
+              <PaperclipIcon className="h-4 w-4" />
+            </Button>
 
-        <Button
-          onClick={isStreaming && onStopStreaming ? onStopStreaming : handleSendMessage}
-          disabled={((!message.trim() && localFiles.length === 0) || isComposerBlocked || hasProcessingFiles) && !(isStreaming && onStopStreaming)}
-          size="icon"
-          className="h-10 w-10"
-        >
-          {isStreaming && onStopStreaming ? (
-            <X className="h-5 w-5" />
-          ) : (
-            <SendIcon className="h-5 w-5" />
-          )}
-        </Button>
+            {/* 思考按钮 */}
+            <Button
+              variant="ghost"
+              size="sm"
+              className={`h-8 px-2 gap-1.5 text-muted-foreground hover:text-foreground ${!supportsReasoning ? "opacity-50 cursor-not-allowed" : ""}`}
+              onClick={() => {
+                if (!supportsReasoning || isComposerBlocked) return;
+                dispatch(setReasoningEnabled(!reasoningEnabled));
+              }}
+              disabled={!supportsReasoning || isComposerBlocked}
+              title={supportsReasoning ? (reasoningEnabled ? "AI思考过程已开启" : "AI思考过程已关闭") : "当前模型不支持思考过程"}
+            >
+              <Lightbulb className={`h-4 w-4 ${reasoningEnabled && supportsReasoning ? "text-amber-400" : ""}`} />
+              <span className="text-xs">{reasoningEnabled && supportsReasoning ? "思考已开" : "思考"}</span>
+            </Button>
+
+            {/* 模型选择器 — 工具栏内嵌模式 */}
+            <ModelSelector
+              onChange={onModelChange || (() => {})}
+              toolbarMode={true}
+              className="h-8"
+            />
+          </div>
+
+          {/* 右侧发送/停止按钮 */}
+          <Button
+            onClick={isStreaming && onStopStreaming ? onStopStreaming : handleSendMessage}
+            disabled={!canSend && !(isStreaming && onStopStreaming)}
+            size="sm"
+            className="h-8 w-8 p-0 rounded-lg"
+          >
+            {isStreaming && onStopStreaming ? (
+              <Square className="h-4 w-4" />
+            ) : (
+              <ArrowUp className="h-4 w-4" />
+            )}
+          </Button>
+        </div>
       </div>
 
+      {/* 状态提示（卡片外部） */}
       {isCurrentModelUnavailable ? (
         <div className="rounded-md border border-amber-500/20 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-300">
           当前会话绑定的模型已不可用。请新建会话后切换到可用模型再继续聊天。
@@ -739,8 +735,6 @@ const ChatInput: React.FC<ChatInputProps> = ({
       ) : null}
 
       {hasProcessingFiles && renderProcessingMessage()}
-
-      <div className="text-xs text-muted-foreground">按 Enter 发送，Shift + Enter 换行</div>
     </div>
   );
 };

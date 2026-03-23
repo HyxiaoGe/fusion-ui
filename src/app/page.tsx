@@ -4,7 +4,7 @@ import { useCallback, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import ChatInput from '@/components/chat/ChatInput';
-import { ChatSidebarLazy, HomePageLazy, ModelSelectorLazy } from '@/components/lazy/LazyComponents';
+import { ChatSidebarLazy, HomePageLazy } from '@/components/lazy/LazyComponents';
 import MainLayout from '@/components/layouts/MainLayout';
 import { UserAvatarMenu } from '@/components/layouts/UserAvatarMenu';
 import { useAppSelector } from '@/redux/hooks';
@@ -65,7 +65,6 @@ export default function Home() {
             <div className="hidden truncate px-2 py-1 font-medium text-sm sm:block sm:text-base">
               新对话
             </div>
-            <ModelSelectorLazy />
           </div>
 
           <div className="flex shrink-0 items-center gap-3">

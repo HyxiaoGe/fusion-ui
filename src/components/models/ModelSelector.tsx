@@ -28,9 +28,10 @@ interface ModelSelectorProps {
   modelId?: string;
   disabled?: boolean;
   className?: string;
+  toolbarMode?: boolean;
 }
 
-const ModelSelector: React.FC<ModelSelectorProps> = ({ onChange, modelId, disabled, className }) => {
+const ModelSelector: React.FC<ModelSelectorProps> = ({ onChange, modelId, disabled, className, toolbarMode = false }) => {
   const dispatch = useAppDispatch();
   const pathname = usePathname();
   const { models, providers, selectedModelId, isLoading } = useAppSelector(
@@ -69,7 +70,7 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({ onChange, modelId, disabl
     : isCurrentModelUnavailable
       ? "当前会话使用的模型目前不可用。你仍然可以查看历史消息，但需要新建会话后切换到可用模型。"
       : hasMessages
-        ? "会话开始后无法更改模型"
+        ? "如需切换模型请新建对话"
         : disabled ? "模型选择器已禁用" : "";
 
   // 在组件挂载后设置一个短暂的延迟，以确保模型数据加载
@@ -418,78 +419,88 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({ onChange, modelId, disabl
             <TooltipTrigger asChild>
               <div className={isDisabled ? "cursor-not-allowed" : ""}>
                 <Select value={currentModelId || ""} onValueChange={handleModelChange} disabled={isDisabled}>
-                  <SelectTrigger 
-                    className={`w-[min(18rem,calc(100vw-8rem))] sm:w-[300px] transition-all duration-300 hover:shadow-lg focus:ring-2 focus:ring-offset-2 
-                    ${isDisabled ? 'opacity-70' : 'hover:border-primary/50'}`}
+                  <SelectTrigger
+                    className={cn(
+                      toolbarMode
+                        ? "w-auto h-8 border-0 shadow-none px-2 text-xs text-muted-foreground hover:text-foreground hover:bg-muted/60 focus:ring-0 focus:ring-offset-0"
+                        : `w-[min(18rem,calc(100vw-8rem))] sm:w-[300px] transition-all duration-300 hover:shadow-lg focus:ring-2 focus:ring-offset-2 ${isDisabled ? 'opacity-70' : 'hover:border-primary/50'}`
+                    )}
                   >
                     {selectedModel ? (
-                      <div className="flex items-center justify-between gap-2 w-full">
-                        <div className="flex items-center gap-2 overflow-hidden">
-                          <div className="shrink-0">
-                            <ProviderIcon 
-                              providerId={selectedModel.provider} 
-                              size={20} 
-                              className="text-primary/80" 
-                            />
+                      toolbarMode ? (
+                        <div className="flex items-center gap-1.5">
+                          <ProviderIcon providerId={selectedModel.provider} size={14} />
+                          <span className="truncate max-w-[120px]">{selectedModel.name}</span>
+                        </div>
+                      ) : (
+                        <div className="flex items-center justify-between gap-2 w-full">
+                          <div className="flex items-center gap-2 overflow-hidden">
+                            <div className="shrink-0">
+                              <ProviderIcon
+                                providerId={selectedModel.provider}
+                                size={20}
+                                className="text-primary/80"
+                              />
+                            </div>
+                            <span className="truncate font-medium">{selectedModel.name}</span>
+                            {selectedModel.enabled === false ? (
+                              <span className="shrink-0 rounded-full bg-amber-500/10 px-2 py-0.5 text-[10px] font-medium text-amber-700 dark:text-amber-300">
+                                当前不可用
+                              </span>
+                            ) : null}
                           </div>
-                          <span className="truncate font-medium">{selectedModel.name}</span>
-                          {selectedModel.enabled === false ? (
-                            <span className="shrink-0 rounded-full bg-amber-500/10 px-2 py-0.5 text-[10px] font-medium text-amber-700 dark:text-amber-300">
-                              当前不可用
+                          {isCurrentModelUnavailable ? (
+                            <span className="shrink-0 rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[10px] font-medium text-amber-700 dark:text-amber-300">
+                              建议新建会话切换
                             </span>
                           ) : null}
+                          <div className="flex items-center gap-0.5">
+                            {selectedModel.capabilities?.deepThinking && (
+                              <span title="支持深度思考">
+                                <CapabilityIcon
+                                  type="deepThinking"
+                                  className="text-amber-500"
+                                />
+                              </span>
+                            )}
+                            {selectedModel.capabilities?.imageGen && (
+                              <span title="支持图像生成">
+                                <CapabilityIcon
+                                  type="imageGen"
+                                  className="text-blue-500"
+                                />
+                              </span>
+                            )}
+                            {selectedModel.capabilities?.fileSupport && (
+                              <span title="支持文件处理">
+                                <CapabilityIcon
+                                  type="fileSupport"
+                                  className="text-green-500"
+                                />
+                              </span>
+                            )}
+                            {selectedModel.capabilities?.functionCalling && (
+                              <span title="支持工具调用">
+                                <CapabilityIcon
+                                  type="functionCalling"
+                                  className="text-blue-500"
+                                />
+                              </span>
+                            )}
+                            {selectedModel.capabilities?.webSearch && (
+                              <span title="支持网络搜索">
+                                <CapabilityIcon
+                                  type="webSearch"
+                                  className="text-indigo-500"
+                                />
+                              </span>
+                            )}
+                          </div>
                         </div>
-                        {isCurrentModelUnavailable ? (
-                          <span className="shrink-0 rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[10px] font-medium text-amber-700 dark:text-amber-300">
-                            建议新建会话切换
-                          </span>
-                        ) : null}
-                        <div className="flex items-center gap-0.5">
-                          {selectedModel.capabilities?.deepThinking && (
-                            <span title="支持深度思考">
-                              <CapabilityIcon 
-                                type="deepThinking" 
-                                className="text-amber-500" 
-                              />
-                            </span>
-                          )}
-                          {selectedModel.capabilities?.imageGen && (
-                            <span title="支持图像生成">
-                              <CapabilityIcon 
-                                type="imageGen" 
-                                className="text-blue-500" 
-                              />
-                            </span>
-                          )}
-                          {selectedModel.capabilities?.fileSupport && (
-                            <span title="支持文件处理">
-                              <CapabilityIcon 
-                                type="fileSupport" 
-                                className="text-green-500" 
-                              />
-                            </span>
-                          )}
-                          {selectedModel.capabilities?.functionCalling && (
-                            <span title="支持工具调用">
-                              <CapabilityIcon 
-                                type="functionCalling" 
-                                className="text-blue-500" 
-                              />
-                            </span>
-                          )}
-                          {selectedModel.capabilities?.webSearch && (
-                            <span title="支持网络搜索">
-                              <CapabilityIcon 
-                                type="webSearch" 
-                                className="text-indigo-500" 
-                              />
-                            </span>
-                          )}
-                        </div>
-                      </div>
+                      )
                     ) : (
-                      <span className="text-muted-foreground">
-                        {hasEnabledModels ? "请选择模型..." : "暂无可用模型"}
+                      <span className="text-muted-foreground text-xs">
+                        {hasEnabledModels ? "选择模型" : "无可用模型"}
                       </span>
                     )}
                   </SelectTrigger>
