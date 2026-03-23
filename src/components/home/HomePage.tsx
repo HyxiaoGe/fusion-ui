@@ -103,11 +103,12 @@ const HomePage: React.FC<HomePageProps> = ({ onSendMessage }) => {
 
   return (
     <div className="flex flex-col items-center justify-center h-full px-4 pb-32">
-      <h1 className="text-2xl font-semibold text-foreground mb-8 text-center">
-        今天我能帮你做什么？
-      </h1>
+      <div className="w-full max-w-xl mx-auto">
+        <h1 className="text-2xl font-semibold text-foreground mb-8 text-center">
+          今天我能帮你做什么？
+        </h1>
 
-      <div className="w-full max-w-xl mx-auto space-y-2">
+        <div className="space-y-2">
         {randomExamples.map((example) => (
           <button
             key={example}
@@ -122,6 +123,7 @@ const HomePage: React.FC<HomePageProps> = ({ onSendMessage }) => {
                                    transition-opacity flex-shrink-0 ml-2" />
           </button>
         ))}
+        </div>
       </div>
     </div>
   );

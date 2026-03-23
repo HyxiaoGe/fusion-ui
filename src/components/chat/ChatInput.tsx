@@ -613,7 +613,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
   return (
     <div className="flex flex-col space-y-2">
       {/* 外层卡片容器 */}
-      <div className="relative rounded-2xl border border-input bg-background shadow-sm focus-within:ring-1 focus-within:ring-ring transition-shadow">
+      <div className="relative rounded-2xl border border-border/60 bg-background shadow-sm focus-within:border-border focus-within:ring-1 focus-within:ring-ring transition-shadow">
         {/* 文件预览区（卡片内部顶部） */}
         {localFiles.length > 0 && (
           <div className="p-3 border-b border-border/50 space-y-3">
