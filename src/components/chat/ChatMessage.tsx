@@ -240,7 +240,7 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, files, isLastMessage
         isEditing ? 'w-full max-w-2xl' : isUser ? 'max-w-[70%]' : 'max-w-[85%]',
         isUser ? 'items-end' : 'items-start'
       )}>
-        {/* AI 消息头部：ProviderIcon + 模型名 */}
+        {/* AI 消息头部：ProviderIcon + 模型名 + 时间戳 */}
         {!isUser && (
           <div className="flex items-center gap-1.5 mb-0.5">
             {providerId ? (
@@ -251,18 +251,16 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, files, isLastMessage
             <span className="text-xs text-muted-foreground">
               {model ? model.name : 'AI助手'}
             </span>
+            <span className="text-xs text-muted-foreground/60 opacity-0 group-hover:opacity-100 transition-opacity duration-150">
+              {formatTime(message.timestamp)}
+            </span>
           </div>
         )}
-
-        {/* 时间戳：hover 显示 */}
-        <span className="text-xs text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity duration-150">
-          {formatTime(message.timestamp)}
-        </span>
 
         <div>
           <div className={cn(
             isUser
-              ? 'rounded-2xl px-4 py-2 bg-muted/50 text-foreground'
+              ? 'rounded-2xl px-4 py-2 bg-black/5 dark:bg-white/10 text-foreground'
               : '',
             isEditing && 'w-full'
           )}>
@@ -326,14 +324,17 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, files, isLastMessage
                 </div>
               ) : (
                 // 用户消息显示
-                <div className="space-y-2">
+                <div>
                   <div>{message.content || isStreaming}</div>
                   {message.status === 'failed' ? (
-                    <div className="flex items-center gap-2 text-xs text-red-500">
+                    <div className="flex items-center gap-2 text-xs text-red-500 mt-1">
                       <X className="h-3 w-3" />
                       <span>发送失败，请重新发送</span>
                     </div>
                   ) : null}
+                  <div className="text-[10px] text-muted-foreground/50 mt-1 text-right opacity-0 group-hover:opacity-100 transition-opacity duration-150">
+                    {formatTime(message.timestamp)}
+                  </div>
                 </div>
               )
             ) : (

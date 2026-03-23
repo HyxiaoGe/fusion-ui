@@ -210,7 +210,7 @@ const ChatMessageList: React.FC<ChatMessageListProps> = ({
   }
 
   return (
-    <div className="flex flex-col px-4 pb-[120px]">
+    <div className="flex flex-col justify-end min-h-full px-4 pb-[120px]">
       {sortedMessages.map((message, index) => {
         const prevMessage = index > 0 ? sortedMessages[index - 1] : null;
         const isSameRole = prevMessage?.role === message.role;
