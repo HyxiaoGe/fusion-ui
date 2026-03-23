@@ -1,4 +1,3 @@
-import { ArrowRight } from "lucide-react";
 import { useCallback, memo, useEffect, useMemo, useRef, useState } from "react";
 import { useAppSelector } from "@/redux/hooks";
 import { useToast } from "@/components/ui/toast";
@@ -34,7 +33,7 @@ const HomePage: React.FC<HomePageProps> = ({ onSendMessage }) => {
   const pendingResetRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const randomExamples = useMemo(() => {
-    return [...ALL_EXAMPLES].sort(() => Math.random() - 0.5).slice(0, 6);
+    return [...ALL_EXAMPLES].sort(() => Math.random() - 0.5).slice(0, 8);
   }, []);
 
   useEffect(() => {
@@ -103,26 +102,24 @@ const HomePage: React.FC<HomePageProps> = ({ onSendMessage }) => {
 
   return (
     <div className="flex h-full items-center justify-center px-4 pb-32">
-      <div className="w-full max-w-xl">
+      <div className="max-w-2xl mx-auto">
         <h1 className="text-2xl font-semibold text-foreground mb-8 text-center">
           今天我能帮你做什么？
         </h1>
 
-        <div className="space-y-2">
-        {randomExamples.map((example) => (
-          <button
-            key={example}
-            onClick={() => handleExampleClick(example)}
-            disabled={Boolean(pendingExample)}
-            className="w-full text-left px-4 py-3 rounded-xl text-sm text-muted-foreground
-                       hover:bg-muted/60 hover:text-foreground transition-colors
-                       flex items-center justify-between group"
-          >
-            <span>{example}</span>
-            <ArrowRight className="h-3.5 w-3.5 opacity-0 group-hover:opacity-100
-                                   transition-opacity flex-shrink-0 ml-2" />
-          </button>
-        ))}
+        <div className="flex flex-wrap gap-2 justify-center">
+          {randomExamples.map((example) => (
+            <button
+              key={example}
+              onClick={() => handleExampleClick(example)}
+              disabled={Boolean(pendingExample)}
+              className="px-4 py-2 rounded-full border border-border/60 text-sm text-muted-foreground
+                         hover:bg-muted/60 hover:text-foreground hover:border-border
+                         transition-colors cursor-pointer"
+            >
+              {example}
+            </button>
+          ))}
         </div>
       </div>
     </div>
