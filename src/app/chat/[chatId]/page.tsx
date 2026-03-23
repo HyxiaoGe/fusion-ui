@@ -214,7 +214,6 @@ export default function ChatPage() {
                 {getChatTitle()}
               </div>
             )}
-            <ModelSelectorLazy onChange={clearQuestions} />
           </div>
 
           <div className="flex shrink-0 items-center gap-3">
