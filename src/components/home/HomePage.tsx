@@ -113,7 +113,7 @@ const HomePage: React.FC<HomePageProps> = ({ onSendMessage }) => {
               key={example}
               onClick={() => handleExampleClick(example)}
               disabled={Boolean(pendingExample)}
-              className="px-4 py-2 rounded-full border border-border/60 text-sm text-muted-foreground
+              className="px-4 py-2 rounded-full border border-border text-sm text-muted-foreground
                          hover:bg-muted/60 hover:text-foreground hover:border-border
                          transition-colors cursor-pointer"
             >
