@@ -1,27 +1,41 @@
-import { Button } from "@/components/ui/button";
-import {
-    Card,
-    CardContent,
-    CardHeader,
-    CardTitle,
-} from "@/components/ui/card";
-import { FileText, Image, Lightbulb, MessageSquare, Plus } from "lucide-react";
-import { useCallback, memo, useEffect, useRef, useState } from "react";
+import { ArrowRight } from "lucide-react";
+import { useCallback, memo, useEffect, useMemo, useRef, useState } from "react";
 import { useAppSelector } from "@/redux/hooks";
 import { useToast } from "@/components/ui/toast";
 
-// 统一接口定义
+const ALL_EXAMPLES = [
+  '写一个 Python 快速排序函数',
+  '帮我 review 这段代码',
+  '如何用 Docker 部署 FastAPI 服务',
+  '解释 React useEffect 的执行时机',
+  '写一篇关于 AI 发展的短文',
+  '帮我润色这段产品介绍',
+  '写一封正式的商务邮件',
+  '给这篇文章起 5 个标题',
+  '分析这段用户行为数据的趋势',
+  '对比 PostgreSQL 和 MongoDB 的适用场景',
+  '解释一下量子计算的基本原理',
+  '帮我梳理这个项目的架构问题',
+  '构思一个科幻短篇故事的开头',
+  '设计一套移动端 App 的配色方案',
+  '帮我想 10 个产品功能点子',
+  '写一段产品发布会的开场白',
+];
+
 interface HomePageProps {
-  onNewChat: () => void;
+  onNewChat?: () => void;
   onSendMessage: (content: string) => void;
 }
 
-// 主页组件
-const HomePage: React.FC<HomePageProps> = ({ onNewChat, onSendMessage }) => {
+const HomePage: React.FC<HomePageProps> = ({ onSendMessage }) => {
   const { isAuthenticated } = useAppSelector((state) => state.auth);
   const { toast } = useToast();
   const [pendingExample, setPendingExample] = useState<string | null>(null);
   const pendingResetRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const randomExamples = useMemo(() => {
+    return [...ALL_EXAMPLES].sort(() => Math.random() - 0.5).slice(0, 6);
+  }, []);
 
   useEffect(() => {
     return () => {
@@ -31,13 +45,11 @@ const HomePage: React.FC<HomePageProps> = ({ onNewChat, onSendMessage }) => {
     };
   }, []);
 
-  // 处理对话示例点击的通用函数
   const handleExampleClick = useCallback((message: string) => {
     if (pendingExample) {
       return;
     }
 
-    // 检查登录状态
     if (!isAuthenticated) {
       toast({
         message: "请先登录后再使用聊天功能",
@@ -90,189 +102,26 @@ const HomePage: React.FC<HomePageProps> = ({ onNewChat, onSendMessage }) => {
   }
 
   return (
-    <div className="flex flex-col space-y-8 pb-8 px-4 max-w-5xl mx-auto w-full h-full overflow-y-auto">
-      <div className="pt-8 text-center">
-        <h1 className="text-3xl font-bold mb-2">开始一个新对话</h1>
-        <p className="text-muted-foreground">选择下方话题开始，或直接输入您的问题</p>
-      </div>
+    <div className="flex flex-col items-center justify-center h-full px-4 pb-32">
+      <h1 className="text-2xl font-semibold text-foreground mb-8 text-center">
+        今天我能帮你做什么？
+      </h1>
 
-      {/* 对话示例区域 */}
-      <div className="space-y-4">
-        <div className="flex items-center justify-between">
-          <h2 className="text-xl font-semibold">对话示例</h2>
-          <Button variant="ghost" size="sm" onClick={onNewChat}>
-            新建对话
-          </Button>
-        </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          <Card className="border shadow-sm">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-lg">
-                <FileText className="h-5 w-5" />
-                智能写作
-              </CardTitle>
-              <p className="text-sm text-muted-foreground">生成文章、报告、内容创作</p>
-            </CardHeader>
-            <CardContent className="space-y-2">
-              <Button 
-                variant="ghost" 
-                className="w-full justify-start text-muted-foreground hover:text-foreground"
-                disabled={Boolean(pendingExample)}
-                onClick={() => handleExampleClick("写一篇科技新闻")}
-              >
-                写一篇科技新闻
-              </Button>
-              <Button 
-                variant="ghost" 
-                className="w-full justify-start text-muted-foreground hover:text-foreground"
-                disabled={Boolean(pendingExample)}
-                onClick={() => handleExampleClick("生成产品说明书")}
-              >
-                生成产品说明书
-              </Button>
-            </CardContent>
-          </Card>
-          
-          <Card className="border shadow-sm">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-lg">
-                <span className="text-base">⌨️</span>
-                代码助手
-              </CardTitle>
-              <p className="text-sm text-muted-foreground">编程问题、调试、代码生成</p>
-            </CardHeader>
-            <CardContent className="space-y-2">
-              <Button 
-                variant="ghost" 
-                className="w-full justify-start text-muted-foreground hover:text-foreground"
-                disabled={Boolean(pendingExample)}
-                onClick={() => handleExampleClick("React性能优化技巧")}
-              >
-                React性能优化技巧
-              </Button>
-              <Button 
-                variant="ghost" 
-                className="w-full justify-start text-muted-foreground hover:text-foreground"
-                disabled={Boolean(pendingExample)}
-                onClick={() => handleExampleClick("Python数据分析示例")}
-              >
-                Python数据分析示例
-              </Button>
-            </CardContent>
-          </Card>
-
-          <Card className="border shadow-sm">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-lg">
-                <Lightbulb className="h-5 w-5" />
-                数据分析
-              </CardTitle>
-              <p className="text-sm text-muted-foreground">数据处理、统计分析、可视化</p>
-            </CardHeader>
-            <CardContent className="space-y-2">
-              <Button 
-                variant="ghost" 
-                className="w-full justify-start text-muted-foreground hover:text-foreground"
-                disabled={Boolean(pendingExample)}
-                onClick={() => handleExampleClick("分析销售数据趋势")}
-              >
-                分析销售数据趋势
-              </Button>
-              <Button 
-                variant="ghost" 
-                className="w-full justify-start text-muted-foreground hover:text-foreground"
-                disabled={Boolean(pendingExample)}
-                onClick={() => handleExampleClick("创建数据可视化图表")}
-              >
-                创建数据可视化图表
-              </Button>
-            </CardContent>
-          </Card>
-          
-          <Card className="border shadow-sm">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-lg">
-                <MessageSquare className="h-5 w-5" />
-                知识问答
-              </CardTitle>
-              <p className="text-sm text-muted-foreground">概念解释、学术知识、百科</p>
-            </CardHeader>
-            <CardContent className="space-y-2">
-              <Button 
-                variant="ghost" 
-                className="w-full justify-start text-muted-foreground hover:text-foreground"
-                disabled={Boolean(pendingExample)}
-                onClick={() => handleExampleClick("量子计算的基本原理")}
-              >
-                量子计算的基本原理
-              </Button>
-              <Button 
-                variant="ghost" 
-                className="w-full justify-start text-muted-foreground hover:text-foreground"
-                disabled={Boolean(pendingExample)}
-                onClick={() => handleExampleClick("人工智能的发展历程")}
-              >
-                人工智能的发展历程
-              </Button>
-            </CardContent>
-          </Card>
-
-          <Card className="border shadow-sm">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-lg">
-                <Image className="h-5 w-5" />
-                创意写作
-              </CardTitle>
-              <p className="text-sm text-muted-foreground">故事创作、剧本、创意构思</p>
-            </CardHeader>
-            <CardContent className="space-y-2">
-              <Button 
-                variant="ghost" 
-                className="w-full justify-start text-muted-foreground hover:text-foreground"
-                disabled={Boolean(pendingExample)}
-                onClick={() => handleExampleClick("写一个科幻短篇故事")}
-              >
-                写一个科幻短篇故事
-              </Button>
-              <Button 
-                variant="ghost" 
-                className="w-full justify-start text-muted-foreground hover:text-foreground"
-                disabled={Boolean(pendingExample)}
-                onClick={() => handleExampleClick("构思一个电影情节")}
-              >
-                构思一个电影情节
-              </Button>
-            </CardContent>
-          </Card>
-
-          <Card className="border shadow-sm">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-lg">
-                <Plus className="h-5 w-5" />
-                工作助手
-              </CardTitle>
-              <p className="text-sm text-muted-foreground">计划制定、模板生成、总结</p>
-            </CardHeader>
-            <CardContent className="space-y-2">
-              <Button 
-                variant="ghost" 
-                className="w-full justify-start text-muted-foreground hover:text-foreground"
-                disabled={Boolean(pendingExample)}
-                onClick={() => handleExampleClick("创建项目计划书")}
-              >
-                创建项目计划书
-              </Button>
-              <Button 
-                variant="ghost" 
-                className="w-full justify-start text-muted-foreground hover:text-foreground"
-                disabled={Boolean(pendingExample)}
-                onClick={() => handleExampleClick("生成工作周报模板")}
-              >
-                生成工作周报模板
-              </Button>
-            </CardContent>
-          </Card>
-        </div>
+      <div className="w-full max-w-xl space-y-2">
+        {randomExamples.map((example) => (
+          <button
+            key={example}
+            onClick={() => handleExampleClick(example)}
+            disabled={Boolean(pendingExample)}
+            className="w-full text-left px-4 py-3 rounded-xl text-sm text-muted-foreground
+                       hover:bg-muted/60 hover:text-foreground transition-colors
+                       flex items-center justify-between group"
+          >
+            <span>{example}</span>
+            <ArrowRight className="h-3.5 w-3.5 opacity-0 group-hover:opacity-100
+                                   transition-opacity flex-shrink-0 ml-2" />
+          </button>
+        ))}
       </div>
     </div>
   );
