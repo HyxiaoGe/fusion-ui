@@ -81,13 +81,19 @@ const ClientLayout = ({ children }: { children: React.ReactNode }) => {
     }
 
     // 只在首次访问且未登录时弹出登录窗口
+    // 检查 localStorage 是否有 token，避免 SSR hydration 期间误弹
     if (!hasShownInitialLogin) {
-    const timer = setTimeout(() => {
-      setIsLoginDialogOpen(true);
-        setHasShownInitialLogin(true); // 标记已显示过
-    }, 1000);
+      const hasStoredToken = typeof window !== 'undefined' && Boolean(localStorage.getItem('auth_token'));
+      if (hasStoredToken) {
+        // token 存在但 Redux 还没 hydrate，等一下再判断
+        return;
+      }
+      const timer = setTimeout(() => {
+        setIsLoginDialogOpen(true);
+        setHasShownInitialLogin(true);
+      }, 1500);
 
-    return () => clearTimeout(timer);
+      return () => clearTimeout(timer);
     }
   }, [isAuthenticated, hasShownInitialLogin]);
 
