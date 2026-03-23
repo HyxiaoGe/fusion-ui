@@ -143,7 +143,7 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ onNewChat, activeChatIdOverri
           "flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm transition-colors",
           isSearchFocused
             ? "bg-background border border-input ring-1 ring-ring"
-            : "bg-muted/50 border border-border/40 hover:border-border/60 hover:bg-muted/80 cursor-text"
+            : "bg-muted/50 border border-border hover:border-border hover:bg-muted/80 cursor-text"
         )}>
           <Search className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground" />
           <input

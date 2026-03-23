@@ -102,8 +102,8 @@ const HomePage: React.FC<HomePageProps> = ({ onSendMessage }) => {
   }
 
   return (
-    <div className="flex flex-col items-center justify-center h-full px-4 pb-32">
-      <div className="w-full max-w-xl mx-auto">
+    <div className="flex h-full items-center justify-center px-4 pb-32">
+      <div className="w-full max-w-xl">
         <h1 className="text-2xl font-semibold text-foreground mb-8 text-center">
           今天我能帮你做什么？
         </h1>

@@ -61,13 +61,13 @@ const ChatItem: React.FC<ChatItemProps> = ({
       className={`flex items-center group rounded-lg p-3 text-sm cursor-pointer transition-all duration-200 ${
         isActive
           ? "relative pl-4 bg-muted/50 before:absolute before:left-0 before:top-2 before:bottom-2 before:w-0.5 before:rounded-full before:bg-primary"
-          : "hover:bg-muted hover:text-foreground"
+          : "hover:bg-accent hover:text-accent-foreground"
       }`}
       onClick={() => onSelectChat(chat.id)}
     >
       <div className="flex-1 min-w-0 relative">
-        <div className="flex items-start gap-2">
-          <MessageSquareIcon size={16} className={`shrink-0 mt-0.5 ${isActive ? "text-primary" : "text-muted-foreground"}`} />
+        <div className="flex items-center gap-2">
+          <MessageSquareIcon size={16} className={`shrink-0 ${isActive ? "text-primary" : "text-muted-foreground"}`} />
           <div className="truncate flex-1 pr-1">
             <div className={`font-medium truncate ${isActive ? "text-primary font-semibold" : ""}`} title={chat.title || "新对话"}>
               {searchQuery ? (
