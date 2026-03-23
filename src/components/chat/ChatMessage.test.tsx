@@ -96,7 +96,7 @@ describe('ChatMessage', () => {
       />,
     );
 
-    const button = screen.getByRole('button', { name: '复制消息' });
+    const button = screen.getByRole('button', { name: '复制' });
     fireEvent.click(button);
 
     expect(navigator.clipboard.writeText).toHaveBeenCalledWith('复制这条消息');
@@ -105,13 +105,13 @@ describe('ChatMessage', () => {
       await Promise.resolve();
     });
 
-    expect(screen.getByRole('button', { name: '已复制!' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: '已复制' })).toBeTruthy();
 
     act(() => {
       vi.advanceTimersByTime(2000);
     });
 
-    expect(screen.getByRole('button', { name: '复制消息' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: '复制' })).toBeTruthy();
   });
 
   it('surfaces a toast instead of throwing when clipboard copy fails', async () => {
@@ -128,7 +128,7 @@ describe('ChatMessage', () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole('button', { name: '复制消息' }));
+    fireEvent.click(screen.getByRole('button', { name: '复制' }));
 
     await act(async () => {
       await Promise.resolve();

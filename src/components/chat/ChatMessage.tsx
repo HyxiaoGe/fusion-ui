@@ -9,7 +9,7 @@ import { toggleReasoningVisibility } from '@/redux/slices/conversationSlice';
 import { completeThinkingPhase } from '@/redux/slices/streamSlice';
 import { avatarOptions } from '@/redux/slices/settingsSlice';
 import { Edit2, FileIcon, RefreshCw, X, Check, Copy } from 'lucide-react';
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import ReactMarkdown from 'react-markdown';
 import TextareaAutosize from 'react-textarea-autosize';
 import rehypeRaw from 'rehype-raw';
@@ -174,6 +174,30 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, files, isLastMessage
     }
   }, [message.reasoning, isStreaming, dispatch]);
 
+  // 计算思考用时
+  const reasoningDuration = useMemo(() => {
+    if (message.reasoningStartTime && message.reasoningEndTime) {
+      return ((message.reasoningEndTime - message.reasoningStartTime) / 1000).toFixed(1);
+    }
+    return null;
+  }, [message.reasoningStartTime, message.reasoningEndTime]);
+
+  // 思考完成后自动折叠（延迟 800ms）
+  useEffect(() => {
+    if (!isStreaming && message.reasoning && message.content && message.isReasoningVisible) {
+      const timer = setTimeout(() => {
+        if (activeChatId) {
+          dispatch(toggleReasoningVisibility({
+            conversationId: activeChatId,
+            messageId: message.id,
+            visible: false,
+          }));
+        }
+      }, 800);
+      return () => clearTimeout(timer);
+    }
+  }, [isStreaming]);
+
   useEffect(() => {
     return () => {
       if (copiedResetTimerRef.current) {
@@ -321,15 +345,13 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, files, isLastMessage
 
                 {displayReasoning && (
                   <ReasoningContent
-                    reasoning={displayReasoning}
+                    content={displayReasoning}
                     isVisible={message.isReasoningVisible || localReasoningVisible}
-                    onToggleVisibility={handleToggleReasoning}
+                    onToggle={handleToggleReasoning}
                     isStreaming={isStreamingReasoning && isLastMessage}
-                    forceShow={isStreamingReasoning && isLastMessage}
+                    duration={reasoningDuration}
                     startTime={(isLastMessage ? streamingStartTime : message.reasoningStartTime) ?? undefined}
                     endTime={isLastMessage ? streamingEndTime : message.reasoningEndTime}
-                    duration={message.duration}
-                    className="mt-2"
                   />
                 )}
 
