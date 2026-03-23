@@ -210,7 +210,9 @@ const ChatMessageList: React.FC<ChatMessageListProps> = ({
   }
 
   return (
-    <div className="flex flex-col justify-end min-h-full px-4 pb-[120px]">
+    <div className="flex flex-col min-h-full px-4 pb-[120px]">
+      {/* spacer 把消息推到底部，但不阻止向上滚动 */}
+      <div className="flex-1" />
       {sortedMessages.map((message, index) => {
         const prevMessage = index > 0 ? sortedMessages[index - 1] : null;
         const isSameRole = prevMessage?.role === message.role;
