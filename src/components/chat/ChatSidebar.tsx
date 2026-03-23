@@ -1,8 +1,9 @@
 "use client";
 
-import React, { useRef, useState, useEffect, useCallback } from "react";
+import React, { useRef, useState, useEffect, useCallback, useMemo } from "react";
 import { usePathname } from "next/navigation";
-import { RefreshCwIcon, Search } from "lucide-react";
+import { RefreshCwIcon, Search, X } from "lucide-react";
+import { cn } from "@/lib/utils";
 import { UserAvatarMenu } from "@/components/layouts/UserAvatarMenu";
 import { Button } from "@/components/ui/button";
 import DeleteChatDialog from "./sidebar/DeleteChatDialog";
@@ -42,6 +43,9 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ onNewChat, activeChatIdOverri
   const activeChatId = activeChatIdOverride === undefined ? routeConversationId : activeChatIdOverride;
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [showLoadMoreButton, setShowLoadMoreButton] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [isSearchFocused, setIsSearchFocused] = useState(false);
+  const searchInputRef = useRef<HTMLInputElement>(null);
 
   const checkScrollbar = useCallback(() => {
     if (!containerRef.current) return;
@@ -100,6 +104,27 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ onNewChat, activeChatIdOverri
       .filter((group) => group.groupChats.length > 0);
   }, [conversations]);
 
+  // 搜索过滤
+  const filteredConversations = useMemo(() => {
+    if (!searchQuery.trim()) return conversations;
+    const query = searchQuery.trim().toLowerCase();
+    return conversations.filter(conv =>
+      conv.title?.toLowerCase().includes(query)
+    );
+  }, [conversations, searchQuery]);
+
+  // Cmd/Ctrl+K 聚焦搜索框
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+        e.preventDefault();
+        searchInputRef.current?.focus();
+      }
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, []);
+
   const handleScroll = () => {
     if (!containerRef.current || isLoadingMore) return;
     const { scrollTop, scrollHeight, clientHeight } = containerRef.current;
@@ -112,16 +137,44 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ onNewChat, activeChatIdOverri
     <div className="flex flex-col h-full py-2 relative">
       <ChatSidebarHeader onNewChat={onNewChat} />
 
-      {/* 搜索占位 UI（P6 再实现功能） */}
+      {/* 搜索框 */}
       <div className="px-3 pb-2">
-        <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-muted/50 text-muted-foreground text-sm cursor-not-allowed opacity-60">
-          <Search className="h-3.5 w-3.5 flex-shrink-0" />
-          <span className="text-xs">搜索对话...</span>
+        <div className={cn(
+          "flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm transition-colors",
+          isSearchFocused
+            ? "bg-background border border-input ring-1 ring-ring"
+            : "bg-muted/50 hover:bg-muted/80 cursor-text"
+        )}>
+          <Search className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground" />
+          <input
+            ref={searchInputRef}
+            type="text"
+            placeholder="搜索对话..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            onFocus={() => setIsSearchFocused(true)}
+            onBlur={() => setIsSearchFocused(false)}
+            onKeyDown={(e) => {
+              if (e.key === 'Escape') {
+                setSearchQuery('');
+                searchInputRef.current?.blur();
+              }
+            }}
+            className="flex-1 bg-transparent text-xs outline-none placeholder:text-muted-foreground"
+          />
+          {searchQuery && (
+            <button
+              onClick={() => setSearchQuery('')}
+              className="text-muted-foreground hover:text-foreground"
+            >
+              <X className="h-3 w-3" />
+            </button>
+          )}
         </div>
       </div>
 
       <ChatList
-        chats={conversations}
+        chats={searchQuery.trim() ? filteredConversations : conversations}
         sortedAndGroupedChats={sortedAndGroupedChats}
         activeChatId={activeChatId}
         models={models}
@@ -130,6 +183,7 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ onNewChat, activeChatIdOverri
         containerRef={containerRef}
         handleScroll={handleScroll}
         handleSelectChat={selectConversation}
+        searchQuery={searchQuery.trim() || undefined}
         handleStartEditing={(e, chatId, currentTitle) => {
           e.stopPropagation();
           openRenameDialog(chatId, currentTitle);

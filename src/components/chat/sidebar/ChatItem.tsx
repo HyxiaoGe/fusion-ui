@@ -25,7 +25,23 @@ interface ChatItemProps {
   onDeleteChat: (e: React.MouseEvent, chatId: string) => void;
   onGenerateTitle: (e: React.MouseEvent, chatId: string) => void;
   formatDate: (timestamp: number) => string;
+  searchQuery?: string;
 }
+
+const HighlightedText: React.FC<{ text: string; query: string }> = ({ text, query }) => {
+  if (!query) return <span>{text}</span>;
+  const index = text.toLowerCase().indexOf(query.toLowerCase());
+  if (index === -1) return <span>{text}</span>;
+  return (
+    <span>
+      {text.slice(0, index)}
+      <mark className="bg-yellow-200/60 dark:bg-yellow-500/30 rounded-sm px-0.5">
+        {text.slice(index, index + query.length)}
+      </mark>
+      {text.slice(index + query.length)}
+    </span>
+  );
+};
 
 const ChatItem: React.FC<ChatItemProps> = ({
   chat,
@@ -36,6 +52,7 @@ const ChatItem: React.FC<ChatItemProps> = ({
   onDeleteChat,
   onGenerateTitle,
   formatDate,
+  searchQuery,
 }) => {
   const isActive = chat.id === activeChatId;
 
@@ -53,7 +70,11 @@ const ChatItem: React.FC<ChatItemProps> = ({
           <MessageSquareIcon size={16} className={`shrink-0 mt-0.5 ${isActive ? "text-primary" : "text-muted-foreground"}`} />
           <div className="truncate flex-1 pr-1">
             <div className={`font-medium truncate ${isActive ? "text-primary font-semibold" : ""}`} title={chat.title || "新对话"}>
-              {chat.title || "新对话"}
+              {searchQuery ? (
+                <HighlightedText text={chat.title || "新对话"} query={searchQuery} />
+              ) : (
+                chat.title || "新对话"
+              )}
             </div>
             <div className="text-xs text-muted-foreground truncate mt-0.5">
               {formatDate(chat.updatedAt || chat.createdAt)}

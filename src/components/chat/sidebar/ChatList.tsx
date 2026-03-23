@@ -17,6 +17,7 @@ interface ChatListProps {
   handleDeleteChat: (e: React.MouseEvent, chatId: string) => void;
   handleGenerateTitle: (e: React.MouseEvent, chatId: string) => void;
   formatDate: (timestamp: number) => string;
+  searchQuery?: string;
 }
 
 const ChatList: React.FC<ChatListProps> = ({
@@ -33,14 +34,34 @@ const ChatList: React.FC<ChatListProps> = ({
   handleDeleteChat,
   handleGenerateTitle,
   formatDate,
+  searchQuery,
 }) => {
   return (
     <div className="px-2 flex-1 overflow-y-auto" ref={containerRef} onScroll={handleScroll}>
       {chats.length === 0 ? (
         <div className="text-sm text-muted-foreground mt-4 text-center">
-          暂无对话记录
+          {searchQuery ? `未找到包含 "${searchQuery}" 的对话` : '暂无对话记录'}
+        </div>
+      ) : searchQuery ? (
+        /* 搜索模式：扁平列表，不分组 */
+        <div className="space-y-2">
+          {chats.map((chat) => (
+            <ChatItem
+              key={chat.id}
+              chat={chat}
+              activeChatId={activeChatId}
+              models={models}
+              onSelectChat={handleSelectChat}
+              onStartEditing={handleStartEditing}
+              onDeleteChat={handleDeleteChat}
+              onGenerateTitle={handleGenerateTitle}
+              formatDate={formatDate}
+              searchQuery={searchQuery}
+            />
+          ))}
         </div>
       ) : (
+        /* 正常模式：分组列表 */
         <div>
           {sortedAndGroupedChats.map(({ groupLabel, groupChats }) => (
             <div key={groupLabel} className="mb-4">
