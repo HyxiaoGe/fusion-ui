@@ -9,6 +9,7 @@ import { toggleReasoningVisibility } from '@/redux/slices/conversationSlice';
 import { completeThinkingPhase } from '@/redux/slices/streamSlice';
 import { avatarOptions } from '@/redux/slices/settingsSlice';
 import { Edit2, FileIcon, RefreshCw, X, Check, Copy } from 'lucide-react';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import TextareaAutosize from 'react-textarea-autosize';
 import FileCard from './FileCard';
@@ -248,9 +249,6 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, files, isLastMessage
             <span className="text-xs text-muted-foreground">
               {model ? model.name : 'AI助手'}
             </span>
-            <span className="text-xs text-muted-foreground/60 opacity-0 group-hover:opacity-100 transition-opacity duration-150">
-              {formatTime(message.timestamp)}
-            </span>
           </div>
         )}
 
@@ -329,9 +327,6 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, files, isLastMessage
                       <span>发送失败，请重新发送</span>
                     </div>
                   ) : null}
-                  <div className="text-[10px] text-muted-foreground/40 mt-1 text-right">
-                    {formatTime(message.timestamp)}
-                  </div>
                 </div>
               )
             ) : (
@@ -367,27 +362,30 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, files, isLastMessage
               </div>
             )}
 
-            {/* AI 消息操作栏：统一 hover 显示 */}
+            {/* AI 消息操作栏：hover 时显示，不占高度 */}
             {!isUser && !isStreaming && (
-              <div className="flex gap-1 mt-2 opacity-0 group-hover:opacity-100 transition-opacity duration-150">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="h-7 text-xs text-muted-foreground hover:text-foreground"
-                  onClick={handleCopyMessage}
-                >
-                  <Copy className="h-3 w-3 mr-1" />
-                  {copied ? '已复制' : '复制'}
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="h-7 text-xs text-muted-foreground hover:text-foreground"
-                  onClick={() => onRetry && onRetry(message.id)}
-                >
-                  <RefreshCw className="h-3 w-3 mr-1" />
-                  重新生成
-                </Button>
+              <div className="hidden group-hover:flex items-center gap-1 mt-1">
+                <span className="text-[10px] text-muted-foreground/50 mr-1">
+                  {formatTime(message.timestamp)}
+                </span>
+                <TooltipProvider delayDuration={300}>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button variant="ghost" size="icon" className="h-6 w-6 text-muted-foreground hover:text-foreground" onClick={handleCopyMessage}>
+                        {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent side="bottom"><p>{copied ? '已复制' : '复制'}</p></TooltipContent>
+                  </Tooltip>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button variant="ghost" size="icon" className="h-6 w-6 text-muted-foreground hover:text-foreground" onClick={() => onRetry && onRetry(message.id)}>
+                        <RefreshCw className="h-3.5 w-3.5" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent side="bottom"><p>重新生成</p></TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
               </div>
             )}
           </div>
@@ -455,18 +453,22 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, files, isLastMessage
           )}
         </div>
 
-        {/* 用户消息操作：hover 显示编辑按钮 */}
+        {/* 用户消息操作：hover 时显示，不占高度 */}
         {isUser && !isEditing && (
-          <div className="opacity-0 group-hover:opacity-100 transition-opacity duration-150 flex gap-1">
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-7 text-xs text-muted-foreground hover:text-foreground"
-              onClick={() => setIsEditing(true)}
-            >
-              <Edit2 className="h-3 w-3 mr-1" />
-              编辑
-            </Button>
+          <div className="hidden group-hover:flex items-center gap-1 mt-1">
+            <span className="text-[10px] text-muted-foreground/50 mr-1">
+              {formatTime(message.timestamp)}
+            </span>
+            <TooltipProvider delayDuration={300}>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button variant="ghost" size="icon" className="h-6 w-6 text-muted-foreground hover:text-foreground" onClick={() => setIsEditing(true)}>
+                    <Edit2 className="h-3.5 w-3.5" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="bottom"><p>编辑</p></TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
           </div>
         )}
 
