@@ -329,7 +329,7 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, files, isLastMessage
                       <span>发送失败，请重新发送</span>
                     </div>
                   ) : null}
-                  <div className="text-[10px] text-muted-foreground/50 mt-1 text-right opacity-0 group-hover:opacity-100 transition-opacity duration-150">
+                  <div className="text-[10px] text-muted-foreground/40 mt-1 text-right">
                     {formatTime(message.timestamp)}
                   </div>
                 </div>

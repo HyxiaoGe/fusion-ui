@@ -1,7 +1,7 @@
 'use client';
 
 import type { Message } from '@/types/conversation';
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef } from 'react';
 import { useAppSelector } from '@/redux/hooks';
 import LoadingIndicator from '../ui/loading-indicator';
 import ChatMessage from './ChatMessage';
@@ -56,7 +56,6 @@ const ChatMessageList: React.FC<ChatMessageListProps> = ({
 }) => {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const shouldStickToBottomRef = useRef(true);
-  const [showJumpToBottom, setShowJumpToBottom] = useState(false);
 
   // 按时间戳排序消息 - 确保使用完整毫秒精度
   const sortedMessages = useMemo(() => {
@@ -107,7 +106,6 @@ const ChatMessageList: React.FC<ChatMessageListProps> = ({
     const updateStickiness = () => {
       const nearBottom = isNearBottom(scrollContainer);
       shouldStickToBottomRef.current = nearBottom;
-      setShowJumpToBottom(!nearBottom && sortedMessages.length > 0);
     };
 
     updateStickiness();
@@ -241,22 +239,6 @@ const ChatMessageList: React.FC<ChatMessageListProps> = ({
         </div>
       ) : null}
 
-      {showJumpToBottom ? (
-        <div className="sticky bottom-4 z-10 flex justify-end px-4">
-          <button
-            type="button"
-            onClick={() => {
-              shouldStickToBottomRef.current = true;
-              setShowJumpToBottom(false);
-              scrollToBottom();
-            }}
-            className="rounded-full border border-border/70 bg-background/95 px-3 py-1.5 text-xs text-foreground shadow-sm backdrop-blur hover:bg-muted"
-          >
-            {isStreaming ? '查看最新回复' : '回到底部'}
-          </button>
-        </div>
-      ) : null}
-      
       <div ref={messagesEndRef} />
     </div>
   );
