@@ -50,7 +50,9 @@ const conversationSlice = createSlice({
       state.listIds = conversations.map((conversation) => conversation.id);
       conversations.forEach((conversation) => {
         const existing = state.byId[conversation.id];
-        if (existing && existing.messages.length > 0) {
+        if (existing) {
+          // 只更新元数据，永远不覆盖已有消息
+          // 服务端列表接口返回 messages: []，覆盖会丢失本地已 append 的消息
           state.byId[conversation.id] = {
             ...existing,
             title: conversation.title,
@@ -77,7 +79,17 @@ const conversationSlice = createSlice({
           state.listIds.push(conversation.id);
         }
         const existing = state.byId[conversation.id];
-        if (!existing || existing.messages.length === 0) {
+        if (existing) {
+          // 只更新元数据，保留本地消息
+          state.byId[conversation.id] = {
+            ...existing,
+            title: conversation.title,
+            updatedAt: conversation.updatedAt,
+            model: conversation.model,
+            provider: conversation.provider,
+            createdAt: conversation.createdAt,
+          };
+        } else {
           state.byId[conversation.id] = conversation;
         }
       });
