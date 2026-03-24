@@ -3,6 +3,7 @@ import { useAppDispatch, useAppSelector } from '@/redux/hooks';
 import { upsertConversation, setHydrationStatus } from '@/redux/slices/conversationSlice';
 import { getConversation } from '@/lib/api/chat';
 import { buildChatFromServerConversation } from '@/lib/chat/conversationHydration';
+import { store } from '@/redux/store';
 
 export type ConversationHydrationView = 'loading' | 'error' | 'ready';
 
@@ -31,7 +32,18 @@ export function useConversation(conversationId: string | null | undefined) {
 
     void getConversation(conversationId)
       .then((data) => {
-        dispatch(upsertConversation(buildChatFromServerConversation(data)));
+        const serverChat = buildChatFromServerConversation(data);
+        // 合并：保留本地已有但服务端还没落库的消息（如刚 append 的用户消息）
+        const existing = store.getState().conversation.byId[conversationId];
+        if (existing && existing.messages.length > 0) {
+          const serverIds = new Set(serverChat.messages.map(m => m.id));
+          const localOnlyMessages = existing.messages.filter(m => !serverIds.has(m.id));
+          if (localOnlyMessages.length > 0) {
+            serverChat.messages = [...serverChat.messages, ...localOnlyMessages]
+              .sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
+          }
+        }
+        dispatch(upsertConversation(serverChat));
         dispatch(setHydrationStatus({ id: conversationId, status: 'done' }));
       })
       .catch((error) => {
