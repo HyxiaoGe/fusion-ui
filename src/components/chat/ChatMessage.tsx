@@ -205,14 +205,28 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, files, isLastMessage
   }, []);
 
   const handleCopyMessage = async () => {
-    try {
-      await navigator.clipboard.writeText(message.content);
-      setCopied(true);
+    const textToCopy = displayContent || message.content;
+    if (!textToCopy) return;
 
+    try {
+      // 优先用 clipboard API，不可用时 fallback 到 execCommand
+      if (navigator.clipboard && window.isSecureContext) {
+        await navigator.clipboard.writeText(textToCopy);
+      } else {
+        const textarea = document.createElement('textarea');
+        textarea.value = textToCopy;
+        textarea.style.position = 'fixed';
+        textarea.style.opacity = '0';
+        document.body.appendChild(textarea);
+        textarea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textarea);
+      }
+
+      setCopied(true);
       if (copiedResetTimerRef.current) {
         clearTimeout(copiedResetTimerRef.current);
       }
-
       copiedResetTimerRef.current = setTimeout(() => {
         setCopied(false);
         copiedResetTimerRef.current = null;
