@@ -362,9 +362,9 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, files, isLastMessage
               </div>
             )}
 
-            {/* AI 消息操作栏：hover 时显示，不占高度 */}
+            {/* AI 消息操作栏：hover 时显示，固定高度不引起布局抖动 */}
             {!isUser && !isStreaming && (
-              <div className="hidden group-hover:flex items-center gap-1 mt-1">
+              <div className="flex items-center gap-1 h-6 mt-1 opacity-0 group-hover:opacity-100 transition-opacity duration-150 pointer-events-none group-hover:pointer-events-auto">
                 <span className="text-[10px] text-muted-foreground/50 mr-1">
                   {formatTime(message.timestamp)}
                 </span>
@@ -453,9 +453,9 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, files, isLastMessage
           )}
         </div>
 
-        {/* 用户消息操作：hover 时显示，不占高度 */}
+        {/* 用户消息操作：hover 时显示，固定高度不引起布局抖动 */}
         {isUser && !isEditing && (
-          <div className="hidden group-hover:flex items-center gap-1 mt-1">
+          <div className="flex items-center gap-1 h-6 mt-1 opacity-0 group-hover:opacity-100 transition-opacity duration-150 pointer-events-none group-hover:pointer-events-auto">
             <span className="text-[10px] text-muted-foreground/50 mr-1">
               {formatTime(message.timestamp)}
             </span>
