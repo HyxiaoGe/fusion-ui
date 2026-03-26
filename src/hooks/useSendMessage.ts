@@ -16,11 +16,13 @@ import {
   upsertConversation,
 } from '@/redux/slices/conversationSlice';
 import {
+  advanceTypewriter,
   appendTextDelta,
   appendThinkingDelta,
   completeThinkingPhase,
   endStream,
   migrateStreamConversation,
+  selectFullStreamContentBlocks,
   selectStreamContentBlocks,
   startStream,
 } from '@/redux/slices/streamSlice';
@@ -165,9 +167,6 @@ export function useSendMessage() {
       const useReasoning = reasoningEnabled && supportsReasoning;
       let serverConvId: string | null = null;
       let materializedOnce = false;
-      // 打字机状态：networkTextLength 追踪网络收到的 text 总长度
-      let networkTextLength = 0;
-      let displayedTextLength = 0;
       let networkDone = false;
       let donePayload: { incomingConvId: string; usage: Usage | null } | null = null;
 
@@ -207,7 +206,7 @@ export function useSendMessage() {
 
         // 从 streamSlice 组装最终 content blocks
         const streamState = (store.getState() as { stream: import('@/redux/slices/streamSlice').StreamState }).stream;
-        const finalBlocks = selectStreamContentBlocks(streamState);
+        const finalBlocks = selectFullStreamContentBlocks(streamState);
         const hasThinking = finalBlocks.some(b => b.type === 'thinking');
 
         dispatch(
@@ -239,21 +238,19 @@ export function useSendMessage() {
         void postStreamActions(finalConvId, dispatch);
       };
 
-      // 打字机：只控制 text block 的显示节奏，thinking 直接实时显示
+      // 打字机：通过 dispatch advanceTypewriter 推进 displayedTextLength，
+      // selectStreamContentBlocks 会按该长度截断 text blocks
       const startTypewriter = () => {
         if (typewriterIntervalRef.current !== null) return;
 
         typewriterIntervalRef.current = setInterval(() => {
-          if (displayedTextLength < networkTextLength) {
-            displayedTextLength = Math.min(
-              displayedTextLength + TYPEWRITER_CHARS_PER_TICK,
-              networkTextLength
-            );
-            // 打字机不需要额外 dispatch，streamSlice 里已有完整内容
-            // 渲染层直接用 selectStreamContentBlocks，打字机效果由组件层处理
+          const streamState = (store.getState() as { stream: import('@/redux/slices/streamSlice').StreamState }).stream;
+          if (streamState.displayedTextLength < streamState.totalTextLength) {
+            dispatch(advanceTypewriter(TYPEWRITER_CHARS_PER_TICK));
           }
 
-          if (networkDone && displayedTextLength >= networkTextLength && donePayload) {
+          const updatedState = (store.getState() as { stream: import('@/redux/slices/streamSlice').StreamState }).stream;
+          if (networkDone && updatedState.displayedTextLength >= updatedState.totalTextLength && donePayload) {
             clearInterval(typewriterIntervalRef.current!);
             typewriterIntervalRef.current = null;
             doCompleteStream(donePayload);
@@ -283,7 +280,6 @@ export function useSendMessage() {
                 dispatch(completeThinkingPhase());
               }
               assistantHasContentRef.current = true;
-              networkTextLength += delta.length;
               dispatch(appendTextDelta({ blockId, delta }));
               startTypewriter();
             },
@@ -297,7 +293,8 @@ export function useSendMessage() {
               networkDone = true;
               donePayload = { incomingConvId, usage };
 
-              if (displayedTextLength >= networkTextLength) {
+              const streamState = (store.getState() as { stream: import('@/redux/slices/streamSlice').StreamState }).stream;
+              if (streamState.displayedTextLength >= streamState.totalTextLength) {
                 if (typewriterIntervalRef.current !== null) {
                   clearInterval(typewriterIntervalRef.current);
                   typewriterIntervalRef.current = null;

@@ -10,6 +10,9 @@ export interface StreamState {
   // 保持 block 顺序（按首次出现排列）
   blockOrder: string[];
   blockTypes: Record<string, 'text' | 'thinking'>;
+  // 打字机控制：text block 总字符数 vs 已显示字符数
+  totalTextLength: number;
+  displayedTextLength: number;
   isStreaming: boolean;
   isStreamingReasoning: boolean;
   isThinkingPhaseComplete: boolean;
@@ -24,6 +27,8 @@ const initialState: StreamState = {
   thinkingBlocks: {},
   blockOrder: [],
   blockTypes: {},
+  totalTextLength: 0,
+  displayedTextLength: 0,
   isStreaming: false,
   isStreamingReasoning: false,
   isThinkingPhaseComplete: false,
@@ -45,6 +50,8 @@ const streamSlice = createSlice({
       state.thinkingBlocks = {};
       state.blockOrder = [];
       state.blockTypes = {};
+      state.totalTextLength = 0;
+      state.displayedTextLength = 0;
       state.isStreaming = true;
       state.isStreamingReasoning = false;
       state.isThinkingPhaseComplete = false;
@@ -62,6 +69,7 @@ const streamSlice = createSlice({
         state.blockOrder.push(blockId);
       }
       state.textBlocks[blockId] = (state.textBlocks[blockId] ?? '') + delta;
+      state.totalTextLength += delta.length;
     },
 
     appendThinkingDelta(
@@ -78,6 +86,14 @@ const streamSlice = createSlice({
         }
       }
       state.thinkingBlocks[blockId] = (state.thinkingBlocks[blockId] ?? '') + delta;
+    },
+
+    // 打字机每 tick 推进显示长度
+    advanceTypewriter(state, action: PayloadAction<number>) {
+      state.displayedTextLength = Math.min(
+        state.displayedTextLength + action.payload,
+        state.totalTextLength
+      );
     },
 
     completeThinkingPhase(state) {
@@ -97,8 +113,33 @@ const streamSlice = createSlice({
 });
 
 // Selector：从 streamSlice 组装出当前流式 content blocks 数组
-// 供渲染层使用，和历史消息的 ContentBlock[] 格式完全一致
+// thinking blocks 全量返回（实时显示），text blocks 按 displayedTextLength 截断（打字机效果）
 export function selectStreamContentBlocks(state: StreamState): ContentBlock[] {
+  let remainingChars = state.displayedTextLength;
+
+  return state.blockOrder.map(blockId => {
+    const type = state.blockTypes[blockId];
+    if (type === 'thinking') {
+      return {
+        type: 'thinking' as const,
+        id: blockId,
+        thinking: state.thinkingBlocks[blockId] ?? '',
+      };
+    }
+    // text block：按 displayedTextLength 截断
+    const fullText = state.textBlocks[blockId] ?? '';
+    const visibleLength = Math.min(remainingChars, fullText.length);
+    remainingChars -= visibleLength;
+    return {
+      type: 'text' as const,
+      id: blockId,
+      text: fullText.slice(0, visibleLength),
+    };
+  });
+}
+
+// 完整版 selector（不截断），用于流结束时写入最终消息
+export function selectFullStreamContentBlocks(state: StreamState): ContentBlock[] {
   return state.blockOrder.map(blockId => {
     const type = state.blockTypes[blockId];
     if (type === 'thinking') {
@@ -117,6 +158,7 @@ export function selectStreamContentBlocks(state: StreamState): ContentBlock[] {
 }
 
 export const {
+  advanceTypewriter,
   appendTextDelta,
   appendThinkingDelta,
   completeThinkingPhase,
