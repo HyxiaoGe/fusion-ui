@@ -36,7 +36,7 @@ export const useSuggestedQuestions = (chatId: string | null) => {
     }
 
     const hasAIMessage = chat.messages.some(
-      (msg: Message) => msg.role === 'assistant' && msg.content?.trim()
+      (msg: Message) => msg.role === 'assistant' && msg.content?.length > 0
     );
     if (!hasAIMessage) {
       setSuggestedQuestions([]);

@@ -94,7 +94,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
   const effectiveChatId = activeChatId;
   const chatId = effectiveChatId || "default-chat";
   const activeChatModelId = effectiveChatId
-    ? chats[effectiveChatId]?.model
+    ? chats[effectiveChatId]?.model_id
     : undefined;
   const selectedModel = useMemo(
     () => models.find((model) => model.id === (activeChatModelId || selectedModelId)),

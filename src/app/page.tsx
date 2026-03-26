@@ -23,10 +23,14 @@ export default function Home() {
     () => (pendingConversationId ? conversationsById[pendingConversationId] || null : null),
     [conversationsById, pendingConversationId]
   );
-  const pendingDraftMessage = useMemo(
-    () => draftChat?.messages.find((message) => message.role === 'user')?.content ?? null,
-    [draftChat]
-  );
+  const pendingDraftMessage = useMemo(() => {
+    const userMsg = draftChat?.messages.find((message) => message.role === 'user');
+    if (!userMsg) return null;
+    return userMsg.content
+      .filter((b): b is import('@/types/conversation').TextBlock => b.type === 'text')
+      .map(b => b.text)
+      .join('') || null;
+  }, [draftChat]);
   const { sendMessage } = useSendMessage();
 
   const handleSendMessage = useCallback((content: string, files?: File[]) => {

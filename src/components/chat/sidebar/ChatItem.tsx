@@ -78,9 +78,9 @@ const ChatItem: React.FC<ChatItemProps> = ({
             </div>
             <div className="text-[11px] text-muted-foreground truncate mt-0.5">
               {formatDate(chat.updatedAt || chat.createdAt)}
-              {chat.model && models.find(m => m.id === chat.model) && (
+              {chat.model_id && models.find(m => m.id === chat.model_id) && (
                 <span className="ml-1">
-                  · {models.find(m => m.id === chat.model)?.name}
+                  · {models.find(m => m.id === chat.model_id)?.name}
                 </span>
               )}
             </div>

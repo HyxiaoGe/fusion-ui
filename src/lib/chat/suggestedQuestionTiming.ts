@@ -9,7 +9,7 @@ export function shouldAutoFetchSuggestedQuestions(
 ): boolean {
   const lastAssistantMessage = [...messages]
     .reverse()
-    .find((message) => message.role === 'assistant' && message.content?.trim());
+    .find((message) => message.role === 'assistant' && (message.content?.length ?? 0) > 0);
 
   if (!lastAssistantMessage) {
     return false;

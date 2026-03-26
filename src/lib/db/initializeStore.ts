@@ -32,15 +32,10 @@ export async function initializeStoreFromDB(
         const chats = await chatStore.getAllChats();
         if (chats.length > 0) {
           const deduplicatedChats = chats.map(chat => {
-            const uniqueMessages = new Map();
+            const uniqueMessages = new Map<string, typeof chat.messages[number]>();
             chat.messages.forEach(msg => {
-              const key = `${msg.role}:${msg.content}`;
-              if (!uniqueMessages.has(key)) {
-                uniqueMessages.set(key, {
-                  ...msg,
-                  reasoning: msg.reasoning || '',
-                  isReasoningVisible: msg.isReasoningVisible || false
-                });
+              if (!uniqueMessages.has(msg.id)) {
+                uniqueMessages.set(msg.id, msg);
               }
             });
 
@@ -56,18 +51,18 @@ export async function initializeStoreFromDB(
     }
 
     // 加载主题设置
-    const themeMode = await settingsStore.getSetting('themeMode');
+    const themeMode = await settingsStore.getSetting('themeMode') as string | undefined;
     if (themeMode) {
-      dispatch(setThemeMode(themeMode));
+      dispatch(setThemeMode(themeMode as 'light' | 'dark' | 'system'));
     }
-    
+
     // 加载头像设置
-    const userAvatar = await settingsStore.getSetting('userAvatar');
+    const userAvatar = await settingsStore.getSetting('userAvatar') as string | undefined;
     if (userAvatar) {
       dispatch(setUserAvatar(userAvatar));
     }
-    
-    const assistantAvatar = await settingsStore.getSetting('assistantAvatar');
+
+    const assistantAvatar = await settingsStore.getSetting('assistantAvatar') as string | undefined;
     if (assistantAvatar) {
       dispatch(setAssistantAvatar(assistantAvatar));
     }

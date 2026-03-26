@@ -15,8 +15,7 @@ function mapServerItem(item: any): Conversation {
   return {
     id: item.id,
     title: item.title || '新对话',
-    model: item.model || 'unknown',
-    provider: item.provider,
+    model_id: item.model_id || 'unknown',
     messages: [],
     createdAt: parseTimestamp(item.created_at),
     updatedAt: parseTimestamp(item.updated_at),

@@ -57,8 +57,7 @@ const conversationSlice = createSlice({
             ...existing,
             title: conversation.title,
             updatedAt: conversation.updatedAt,
-            model: conversation.model,
-            provider: conversation.provider,
+            model_id: conversation.model_id,
             createdAt: conversation.createdAt,
           };
         } else {
@@ -85,8 +84,7 @@ const conversationSlice = createSlice({
             ...existing,
             title: conversation.title,
             updatedAt: conversation.updatedAt,
-            model: conversation.model,
-            provider: conversation.provider,
+            model_id: conversation.model_id,
             createdAt: conversation.createdAt,
           };
         } else {
@@ -144,11 +142,11 @@ const conversationSlice = createSlice({
     },
     updateConversationModel(
       state,
-      action: PayloadAction<{ id: string; model: string }>
+      action: PayloadAction<{ id: string; model_id: string }>
     ) {
-      const { id, model } = action.payload;
+      const { id, model_id } = action.payload;
       if (state.byId[id]) {
-        state.byId[id].model = model;
+        state.byId[id].model_id = model_id;
         state.byId[id].updatedAt = Date.now();
       }
     },

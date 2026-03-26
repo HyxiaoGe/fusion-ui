@@ -118,7 +118,7 @@ const ChatMessageList: React.FC<ChatMessageListProps> = ({
 
   // 流式内容长度，用于触发流式期间的自动滚动
   const streamContentLength = useAppSelector(
-    state => isStreaming ? state.stream.content.length : 0
+    state => isStreaming ? state.stream.blockOrder.length : 0
   );
 
   useEffect(() => {
@@ -165,7 +165,7 @@ const ChatMessageList: React.FC<ChatMessageListProps> = ({
       return null;
     }
 
-    if (completionStateVisible && lastMessage.role === 'assistant' && lastMessage.content?.trim()) {
+    if (completionStateVisible && lastMessage.role === 'assistant' && lastMessage.content?.length > 0) {
       return '本轮回复已完成';
     }
 

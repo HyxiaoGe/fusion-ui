@@ -16,7 +16,7 @@ export function useTransientCompletionState(options: {
 
   const hasCompletedAssistantMessage = useMemo(() => {
     const lastMessage = messages[messages.length - 1];
-    return lastMessage?.role === 'assistant' && Boolean(lastMessage.content?.trim());
+    return lastMessage?.role === 'assistant' && (lastMessage.content?.length ?? 0) > 0;
   }, [messages]);
 
   useEffect(() => {

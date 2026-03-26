@@ -1,6 +1,7 @@
 import { useCallback, useRef } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import { useAppDispatch, useAppSelector } from '@/redux/hooks';
+import { useStore } from 'react-redux';
 import {
   appendMessage,
   materializeConversation,
@@ -15,26 +16,21 @@ import {
   upsertConversation,
 } from '@/redux/slices/conversationSlice';
 import {
+  appendTextDelta,
+  appendThinkingDelta,
   completeThinkingPhase,
   endStream,
   migrateStreamConversation,
+  selectStreamContentBlocks,
   startStream,
-  startStreamingReasoning,
-  updateStreamContent,
-  updateStreamReasoning,
 } from '@/redux/slices/streamSlice';
 import { sendMessageStream } from '@/lib/api/chat';
 import { generateChatTitle } from '@/lib/api/title';
-import type { Message } from '@/types/conversation';
+import type { Message, Usage } from '@/types/conversation';
 
-// 打字机参数（可调节）
-// CHARS_PER_TICK × (1000 / TICK_MS) ≈ 每秒显示字符数
-// 当前配置：4 × 33 ≈ 133 字符/秒，中文约 66 字/秒
-// 实现注意：setInterval 是 wall clock 固定节奏，不与浏览器渲染帧对齐（有意选择）
-// ⚠️ slice 按 UTF-16 code unit 计数，emoji 等多 code unit 字符可能被切断（已知简化）
+// 打字机参数
 const TYPEWRITER_CHARS_PER_TICK = 4;
 const TYPEWRITER_TICK_MS = 30;
-
 
 type SendMessageOptions = {
   conversationId: string | null;
@@ -56,6 +52,7 @@ async function postStreamActions(conversationId: string, dispatch: ReturnType<ty
 
 export function useSendMessage() {
   const dispatch = useAppDispatch();
+  const store = useStore();
   const models = useAppSelector((state) => state.models.models);
   const selectedModelId = useAppSelector((state) => state.models.selectedModelId);
   const reasoningEnabled = useAppSelector((state) => state.conversation.reasoningEnabled);
@@ -127,8 +124,7 @@ export function useSendMessage() {
           upsertConversation({
             id: tempConvId,
             title: content.substring(0, 30),
-            model: enabledModel.id,
-            provider: enabledModel.provider,
+            model_id: enabledModel.id,
             messages: [],
             createdAt: Date.now(),
             updatedAt: Date.now(),
@@ -147,8 +143,7 @@ export function useSendMessage() {
       const userMessage: Message = {
         id: userMessageId,
         role: 'user',
-        content: content.trim(),
-        reasoning: null,
+        content: [{ type: 'text', id: `blk_${userMessageId.slice(0, 12)}`, text: content.trim() }],
         status: 'pending',
         timestamp: Date.now(),
       };
@@ -156,8 +151,7 @@ export function useSendMessage() {
       const assistantPlaceholder: Message = {
         id: assistantMessageId,
         role: 'assistant',
-        content: '',
-        reasoning: null,
+        content: [],
         timestamp: Date.now(),
       };
 
@@ -171,21 +165,14 @@ export function useSendMessage() {
       const useReasoning = reasoningEnabled && supportsReasoning;
       let serverConvId: string | null = null;
       let materializedOnce = false;
-      let networkContent = '';
-      let displayedLength = 0;
+      // 打字机状态：networkTextLength 追踪网络收到的 text 总长度
+      let networkTextLength = 0;
+      let displayedTextLength = 0;
       let networkDone = false;
-      let donePayload: {
-        incomingConvId: string | undefined;
-        accumulatedContent: string;
-        accumulatedReasoning: string;
-      } | null = null;
-      let localReasoning = '';
-      let reasoningStarted = false;
+      let donePayload: { incomingConvId: string; usage: Usage | null } | null = null;
 
       const materializeIfNeeded = (incomingConvId?: string) => {
-        if (!isDraft || !incomingConvId || materializedOnce) {
-          return;
-        }
+        if (!isDraft || !incomingConvId || materializedOnce) return;
 
         materializedOnce = true;
         serverConvId = incomingConvId;
@@ -196,8 +183,7 @@ export function useSendMessage() {
             serverConversation: {
               id: incomingConvId,
               title: content.substring(0, 30),
-              model: enabledModel.id,
-              provider: enabledModel.provider,
+              model_id: enabledModel.id,
               messages: [
                 { ...userMessage, chatId: incomingConvId },
                 { ...assistantPlaceholder, chatId: incomingConvId },
@@ -211,33 +197,28 @@ export function useSendMessage() {
         options.onMaterialized?.(incomingConvId);
       };
 
-      const completeStream = (
-        payload: NonNullable<typeof donePayload>
-      ) => {
-        const { incomingConvId, accumulatedContent, accumulatedReasoning } = payload;
-
+      const doCompleteStream = (payload: NonNullable<typeof donePayload>) => {
+        const { incomingConvId, usage } = payload;
         materializeIfNeeded(incomingConvId);
 
         const effectiveConvId = activeConvIdRef.current;
         if (!effectiveConvId) return;
-
         const finalConvId = serverConvId ?? incomingConvId ?? effectiveConvId;
-        if (accumulatedReasoning.trim()) {
-          dispatch(completeThinkingPhase());
-        }
+
+        // 从 streamSlice 组装最终 content blocks
+        const streamState = (store.getState() as { stream: import('@/redux/slices/streamSlice').StreamState }).stream;
+        const finalBlocks = selectStreamContentBlocks(streamState);
+        const hasThinking = finalBlocks.some(b => b.type === 'thinking');
+
         dispatch(
           updateMessage({
             conversationId: finalConvId,
             messageId: assistantMessageId,
             patch: {
-              content: accumulatedContent,
-              reasoning: accumulatedReasoning.trim() ? accumulatedReasoning : null,
-              ...(accumulatedReasoning.trim()
-                ? {
-                    isReasoningVisible: false,
-                    reasoningEndTime: Date.now(),
-                  }
-                : {}),
+              content: finalBlocks,
+              model_id: enabledModel.id,
+              usage: usage ?? undefined,
+              isReasoningVisible: hasThinking ? false : undefined,
             },
           })
         );
@@ -258,28 +239,24 @@ export function useSendMessage() {
         void postStreamActions(finalConvId, dispatch);
       };
 
+      // 打字机：只控制 text block 的显示节奏，thinking 直接实时显示
       const startTypewriter = () => {
-        if (typewriterIntervalRef.current !== null) {
-          return;
-        }
+        if (typewriterIntervalRef.current !== null) return;
 
         typewriterIntervalRef.current = setInterval(() => {
-          if (displayedLength < networkContent.length) {
-            displayedLength = Math.min(
-              displayedLength + TYPEWRITER_CHARS_PER_TICK,
-              networkContent.length
+          if (displayedTextLength < networkTextLength) {
+            displayedTextLength = Math.min(
+              displayedTextLength + TYPEWRITER_CHARS_PER_TICK,
+              networkTextLength
             );
-            dispatch(updateStreamContent(networkContent.slice(0, displayedLength)));
+            // 打字机不需要额外 dispatch，streamSlice 里已有完整内容
+            // 渲染层直接用 selectStreamContentBlocks，打字机效果由组件层处理
           }
 
-          if (
-            networkDone &&
-            displayedLength >= networkContent.length &&
-            donePayload !== null
-          ) {
+          if (networkDone && displayedTextLength >= networkTextLength && donePayload) {
             clearInterval(typewriterIntervalRef.current!);
             typewriterIntervalRef.current = null;
-            completeStream(donePayload);
+            doCompleteStream(donePayload);
           }
         }, TYPEWRITER_TICK_MS);
       };
@@ -287,8 +264,7 @@ export function useSendMessage() {
       try {
         await sendMessageStream(
           {
-            provider: enabledModel.provider,
-            model: enabledModel.id,
+            model_id: enabledModel.id,
             message: content.trim(),
             conversation_id: isDraft ? undefined : options.conversationId!,
             stream: true,
@@ -298,35 +274,38 @@ export function useSendMessage() {
             onReady: ({ conversationId: incomingConvId }) => {
               materializeIfNeeded(incomingConvId);
             },
-            onContent: (delta) => {
-              networkContent += delta;
-              const effectiveConvId = activeConvIdRef.current;
-              if (!effectiveConvId) return;
-              assistantHasContentRef.current = assistantHasContentRef.current || Boolean(delta);
+
+            onTextDelta: (delta, blockId) => {
+              if (!activeConvIdRef.current) return;
+              // 收到第一个 text delta 且还在推理阶段 → 标记推理结束
+              const streamState = (store.getState() as { stream: import('@/redux/slices/streamSlice').StreamState }).stream;
+              if (streamState.isStreamingReasoning) {
+                dispatch(completeThinkingPhase());
+              }
+              assistantHasContentRef.current = true;
+              networkTextLength += delta.length;
+              dispatch(appendTextDelta({ blockId, delta }));
               startTypewriter();
             },
-            onReasoning: (delta) => {
-              localReasoning += delta;
-              const effectiveConvId = activeConvIdRef.current;
-              if (!effectiveConvId) return;
-              if (!reasoningStarted) {
-                reasoningStarted = true;
-                dispatch(startStreamingReasoning());
-              }
-              dispatch(updateStreamReasoning(localReasoning));
-            },
-            onDone: (_messageId, incomingConvId, accumulatedContent, accumulatedReasoning) => {
-              networkDone = true;
-              donePayload = { incomingConvId, accumulatedContent, accumulatedReasoning };
 
-              if (displayedLength >= networkContent.length) {
+            onThinkingDelta: (delta, blockId) => {
+              if (!activeConvIdRef.current) return;
+              dispatch(appendThinkingDelta({ blockId, delta }));
+            },
+
+            onDone: (_messageId, incomingConvId, usage) => {
+              networkDone = true;
+              donePayload = { incomingConvId, usage };
+
+              if (displayedTextLength >= networkTextLength) {
                 if (typewriterIntervalRef.current !== null) {
                   clearInterval(typewriterIntervalRef.current);
                   typewriterIntervalRef.current = null;
                 }
-                completeStream(donePayload);
+                doCompleteStream(donePayload);
               }
             },
+
             onError: (message) => {
               dispatch(setGlobalError(message));
             },
@@ -341,14 +320,15 @@ export function useSendMessage() {
         if (controller.signal.aborted) return;
 
         const effectiveConvIdOnError = activeConvIdRef.current ?? tempConvId;
-        if ((materializedOnce || !isDraft) && displayedLength > 0) {
+        if ((materializedOnce || !isDraft) && assistantHasContentRef.current) {
+          // 保留已有的 stream content blocks
+          const streamState = (store.getState() as { stream: import('@/redux/slices/streamSlice').StreamState }).stream;
+          const partialBlocks = selectStreamContentBlocks(streamState);
           dispatch(
             updateMessage({
               conversationId: effectiveConvIdOnError,
               messageId: assistantMessageId,
-              patch: {
-                content: networkContent.slice(0, displayedLength),
-              },
+              patch: { content: partialBlocks },
             })
           );
         }
@@ -382,7 +362,7 @@ export function useSendMessage() {
         dispatch(setGlobalError(message));
       }
     },
-    [dispatch, models, reasoningEnabled, selectedModelId, stopStreaming]
+    [dispatch, models, reasoningEnabled, selectedModelId, stopStreaming, store]
   );
 
   return { sendMessage, stopStreaming };
