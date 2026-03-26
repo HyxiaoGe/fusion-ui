@@ -380,29 +380,48 @@ export function useSendMessage() {
       if (!conversation) return;
 
       const messages = conversation.messages;
-      const assistantIndex = messages.findIndex((m) => m.id === messageId);
-      if (assistantIndex === -1) return;
+      const targetIndex = messages.findIndex((m) => m.id === messageId);
+      if (targetIndex === -1) return;
 
-      // 向上找对应的 user 消息
-      let userMessage: import('@/types/conversation').Message | null = null;
-      for (let i = assistantIndex - 1; i >= 0; i--) {
-        if (messages[i].role === 'user') {
-          userMessage = messages[i];
-          break;
+      const targetMsg = messages[targetIndex];
+
+      if (targetMsg.role === 'assistant') {
+        // 重新生成：向上找 user 消息，删除 assistant 后重发
+        let userMessage: import('@/types/conversation').Message | null = null;
+        for (let i = targetIndex - 1; i >= 0; i--) {
+          if (messages[i].role === 'user') {
+            userMessage = messages[i];
+            break;
+          }
         }
-      }
-      if (!userMessage) return;
+        if (!userMessage) return;
 
-      // 删除当前 assistant 消息，用原始 user 消息重新发送
-      dispatch(removeMessage({ conversationId, messageId }));
+        dispatch(removeMessage({ conversationId, messageId }));
 
-      const userText = userMessage.content
-        .filter((b): b is import('@/types/conversation').TextBlock => b.type === 'text')
-        .map(b => b.text)
-        .join('');
+        const userText = userMessage.content
+          .filter((b): b is import('@/types/conversation').TextBlock => b.type === 'text')
+          .map(b => b.text)
+          .join('');
 
-      if (userText) {
-        await sendMessage(userText, { conversationId });
+        if (userText) {
+          await sendMessage(userText, { conversationId });
+        }
+      } else if (targetMsg.role === 'user') {
+        // 重新发送用户消息：删除该 user 消息及其后面紧跟的 assistant 消息，然后重发
+        const nextMsg = messages[targetIndex + 1];
+        if (nextMsg && nextMsg.role === 'assistant') {
+          dispatch(removeMessage({ conversationId, messageId: nextMsg.id }));
+        }
+        dispatch(removeMessage({ conversationId, messageId }));
+
+        const userText = targetMsg.content
+          .filter((b): b is import('@/types/conversation').TextBlock => b.type === 'text')
+          .map(b => b.text)
+          .join('');
+
+        if (userText) {
+          await sendMessage(userText, { conversationId });
+        }
       }
     },
     [dispatch, sendMessage, store]

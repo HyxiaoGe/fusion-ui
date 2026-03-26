@@ -422,6 +422,16 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, files, isLastMessage
                 </TooltipTrigger>
                 <TooltipContent side="bottom"><p>编辑</p></TooltipContent>
               </Tooltip>
+              {onRetry && (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button variant="ghost" size="icon" className="h-6 w-6 text-muted-foreground hover:text-foreground" onClick={() => onRetry(message.id)}>
+                      <RefreshCw className="h-3.5 w-3.5" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom"><p>重新发送</p></TooltipContent>
+                </Tooltip>
+              )}
             </TooltipProvider>
           </div>
         )}
