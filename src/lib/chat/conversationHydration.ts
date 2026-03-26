@@ -60,12 +60,13 @@ function buildContentBlocks(serverBlocks: ServerBlock[]): ContentBlock[] {
   return blocks;
 }
 
-function buildMessage(serverMessage: ServerMessage): Message {
+function buildMessage(serverMessage: ServerMessage, conversationId: string): Message {
   const hasThinking = serverMessage.content.some(b => b.type === 'thinking');
   return {
     id: serverMessage.id,
     role: serverMessage.role,
     content: buildContentBlocks(serverMessage.content),
+    chatId: conversationId,
     model_id: serverMessage.model_id ?? null,
     usage: serverMessage.usage ?? null,
     timestamp: parseServerTimestamp(serverMessage.created_at),
@@ -77,7 +78,7 @@ export function buildChatFromServerConversation(
   serverConversation: ServerConversation
 ): Conversation {
   const messages = serverConversation.messages
-    .map(buildMessage)
+    .map(msg => buildMessage(msg, serverConversation.id))
     .sort((a, b) => (a.timestamp ?? 0) - (b.timestamp ?? 0));
 
   return {
