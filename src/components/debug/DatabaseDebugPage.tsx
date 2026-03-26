@@ -270,7 +270,7 @@ export default function DatabaseDebugPage() {
                         </Button>
                       </div>
                       <p className="text-sm text-muted-foreground">ID: {chat.id}</p>
-                      <p className="text-sm text-muted-foreground">模型: {chat.modelId}</p>
+                      <p className="text-sm text-muted-foreground">模型: {chat.model_id}</p>
                       <p className="text-sm text-muted-foreground">
                         创建时间: {new Date(chat.createdAt).toLocaleString()}
                       </p>

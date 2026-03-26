@@ -37,27 +37,24 @@ export async function importDataFromFile(file: File, dispatch: AppDispatch): Pro
         // 先获取该聊天ID是否已存在
         const existingChat = await db.chats.get(chat.id);
         
-        // 如果聊天已存在，先获取已有消息用于去重
-        const existingContents = new Map();
+        // 如果聊天已存在，先获取已有消息用于按 id 去重
+        const existingIds = new Set<string>();
         if (existingChat) {
           const existingMessages = await db.messages
             .where('chatId')
             .equals(chat.id)
             .toArray();
-          
+
           existingMessages.forEach(msg => {
-            existingContents.set(`${msg.role}:${msg.content}`, true);
+            existingIds.add(msg.id);
           });
         }
-        
+
         // 提取消息并添加chatId关联
         const messages = chat.messages || [];
-        
-        // 过滤出不重复的消息
-        const uniqueMessages = messages.filter(msg => {
-          const key = `${msg.role}:${msg.content}`;
-          return !existingContents.has(key);
-        });
+
+        // 过滤出不重复的消息（按 id 去重）
+        const uniqueMessages = messages.filter(msg => !existingIds.has(msg.id));
         
         // 批量添加不重复的消息
         if (uniqueMessages.length > 0) {
