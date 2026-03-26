@@ -68,7 +68,7 @@ describe('ModelSelector', () => {
       },
       conversation: {
         byId: {
-          'chat-1': { id: 'chat-1', model: 'legacy', messages: [{ id: 'm1', role: 'user', content: 'hi' }] },
+          'chat-1': { id: 'chat-1', model_id: 'legacy', messages: [{ id: 'm1', role: 'user', content: [{ type: 'text', id: 'blk_1', text: 'hi' }] }] },
         },
       },
       theme: { mode: 'light' },
@@ -155,6 +155,6 @@ describe('ModelSelector', () => {
 
     render(<ModelSelector onChange={() => {}} />);
 
-    expect(screen.getByText('暂无可用模型')).toBeTruthy();
+    expect(screen.getByText('当前没有可用模型，请先前往模型设置启用或配置至少一个模型。')).toBeTruthy();
   });
 });

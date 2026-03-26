@@ -10,8 +10,7 @@ function createConversation(overrides: Partial<Conversation> = {}): Conversation
   return {
     id: overrides.id ?? 'conv-1',
     title: overrides.title ?? 'Test',
-    model: overrides.model ?? 'model-1',
-    provider: overrides.provider ?? 'openai',
+    model_id: overrides.model_id ?? 'model-1',
     messages: overrides.messages ?? [],
     createdAt: overrides.createdAt ?? 1,
     updatedAt: overrides.updatedAt ?? 1,
@@ -25,7 +24,7 @@ describe('conversationSlice', () => {
         'conv-1': createConversation({
           id: 'conv-1',
           title: 'Old Title',
-          messages: [{ id: 'm1', role: 'assistant', content: 'saved', timestamp: 1 }],
+          messages: [{ id: 'm1', role: 'assistant', content: [{ type: 'text' as const, id: 'blk_1', text: 'saved' }], timestamp: 1 }],
           updatedAt: 1,
         }),
       },
@@ -69,7 +68,7 @@ describe('conversationSlice', () => {
     expect(nextState.byId['conv-1'].title).toBe('Server Title');
     expect(nextState.byId['conv-1'].updatedAt).toBe(99);
     expect(nextState.byId['conv-1'].messages).toEqual([
-      expect.objectContaining({ id: 'm1', content: 'saved' }),
+      expect.objectContaining({ id: 'm1', content: [{ type: 'text', id: 'blk_1', text: 'saved' }] }),
     ]);
   });
 

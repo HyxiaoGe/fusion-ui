@@ -40,40 +40,28 @@ describe('conversationHydration', () => {
     ).toBe('loading');
   });
 
-  it('hydrates assistant reasoning directly from assistant_content messages', () => {
+  it('hydrates assistant thinking blocks from content', () => {
     const chat = buildChatFromServerConversation({
       id: 'chat-1',
       title: 'Server chat',
-      model: 'qwen-max-latest',
-      provider: 'qwen',
+      model_id: 'qwen-max-latest',
       created_at: '2026-03-14T08:00:00Z',
       updated_at: '2026-03-14T08:02:00Z',
       messages: [
         {
           id: 'user-1',
           role: 'user',
-          content: 'hello',
+          content: [{ type: 'text', id: 'blk_u1', text: 'hello' }],
           created_at: '2026-03-14T08:00:00Z',
-          turn_id: 'turn-1',
-          type: 'user_query',
-        },
-        {
-          id: 'reason-1',
-          role: 'assistant',
-          content: 'thinking...',
-          created_at: '2026-03-14T08:00:01Z',
-          turn_id: 'turn-1',
-          type: 'reasoning_content',
-          duration: 321,
         },
         {
           id: 'assistant-1',
           role: 'assistant',
-          content: 'world',
+          content: [
+            { type: 'thinking', id: 'blk_t1', thinking: 'thinking...' },
+            { type: 'text', id: 'blk_a1', text: 'world' },
+          ],
           created_at: '2026-03-14T08:00:02Z',
-          turn_id: 'turn-1',
-          type: 'assistant_content',
-          reasoning: 'thinking...',
         },
       ],
     });
@@ -82,41 +70,35 @@ describe('conversationHydration', () => {
     expect(chat.messages[0]).toMatchObject({
       id: 'user-1',
       role: 'user',
-      content: 'hello',
-      turnId: 'turn-1',
+      content: [{ type: 'text', id: 'blk_u1', text: 'hello' }],
     });
     expect(chat.messages[1]).toMatchObject({
       id: 'assistant-1',
       role: 'assistant',
-      content: 'world',
-      reasoning: 'thinking...',
+      content: [
+        { type: 'thinking', id: 'blk_t1', thinking: 'thinking...' },
+        { type: 'text', id: 'blk_a1', text: 'world' },
+      ],
       isReasoningVisible: false,
-      turnId: 'turn-1',
     });
   });
 
-  it('hydrates assistant messages with null reasoning when absent', () => {
+  it('hydrates assistant messages without thinking blocks', () => {
     const chat = buildChatFromServerConversation({
       id: 'chat-2',
       title: 'Server chat',
-      model: 'qwen-max-latest',
-      provider: 'qwen',
+      model_id: 'qwen-max-latest',
       messages: [
         {
           id: 'user-1',
           role: 'user',
-          type: 'user_query',
-          content: 'hello',
-          turn_id: 'turn-1',
+          content: [{ type: 'text', id: 'blk_u1', text: 'hello' }],
           created_at: '2026-03-14T08:00:00Z',
         },
         {
           id: 'assistant-1',
           role: 'assistant',
-          type: 'assistant_content',
-          content: 'world',
-          reasoning: null,
-          turn_id: 'turn-1',
+          content: [{ type: 'text', id: 'blk_a1', text: 'world' }],
           created_at: '2026-03-14T08:00:02Z',
         },
       ],
@@ -124,46 +106,37 @@ describe('conversationHydration', () => {
 
     expect(chat.messages[1]).toMatchObject({
       id: 'assistant-1',
-      reasoning: null,
+      isReasoningVisible: undefined,
     });
   });
 
-  it('filters legacy reasoning_content records from visible messages', () => {
+  it('preserves all content blocks in the hydrated messages', () => {
     const chat = buildChatFromServerConversation({
       id: 'chat-3',
       title: 'Server chat',
-      model: 'qwen-max-latest',
-      provider: 'qwen',
+      model_id: 'qwen-max-latest',
       messages: [
         {
           id: 'user-1',
           role: 'user',
-          type: 'user_query',
-          content: 'hello',
-          turn_id: 'turn-1',
+          content: [{ type: 'text', id: 'blk_u1', text: 'hello' }],
           created_at: '2026-03-14T08:00:00Z',
-        },
-        {
-          id: 'reason-1',
-          role: 'assistant',
-          type: 'reasoning_content',
-          content: 'legacy reasoning',
-          turn_id: 'turn-1',
-          created_at: '2026-03-14T08:00:01Z',
         },
         {
           id: 'assistant-1',
           role: 'assistant',
-          type: 'assistant_content',
-          content: 'world',
-          reasoning: null,
-          turn_id: 'turn-1',
+          content: [
+            { type: 'thinking', id: 'blk_t1', thinking: 'deep thought' },
+            { type: 'text', id: 'blk_a1', text: 'world' },
+          ],
           created_at: '2026-03-14T08:00:02Z',
         },
       ],
     });
 
     expect(chat.messages.map((message) => message.id)).toEqual(['user-1', 'assistant-1']);
-    expect(chat.messages[1].reasoning).toBeNull();
+    expect(chat.messages[1].content).toHaveLength(2);
+    expect(chat.messages[1].content[0]).toMatchObject({ type: 'thinking', thinking: 'deep thought' });
+    expect(chat.messages[1].content[1]).toMatchObject({ type: 'text', text: 'world' });
   });
 });

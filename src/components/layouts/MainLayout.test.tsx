@@ -10,6 +10,7 @@ const { useAppSelectorMock, usePathnameMock } = vi.hoisted(() => ({
 
 vi.mock('@/redux/hooks', () => ({
   useAppSelector: useAppSelectorMock,
+  useAppDispatch: () => vi.fn(),
 }));
 
 vi.mock('next/navigation', () => ({
@@ -24,10 +25,22 @@ vi.mock('../ui/error-toast', () => ({
   default: () => null,
 }));
 
+vi.mock('@/components/ui/toast', () => ({
+  useToast: () => ({ toast: vi.fn() }),
+}));
+
+vi.mock('@/components/auth/LoginDialog', () => ({
+  LoginDialog: () => null,
+}));
+
 describe('MainLayout', () => {
   beforeEach(() => {
-    useAppSelectorMock.mockImplementation((selector: (state: { theme: { mode: string } }) => unknown) =>
-      selector({ theme: { mode: 'light' } }),
+    useAppSelectorMock.mockImplementation((selector: (state: any) => unknown) =>
+      selector({
+        theme: { mode: 'light' },
+        settings: { userAvatar: 'default' },
+        auth: { isAuthenticated: false, user: null },
+      }),
     );
     usePathnameMock.mockReturnValue('/chat/test');
     document.documentElement.className = '';

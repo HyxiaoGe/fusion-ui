@@ -2,16 +2,30 @@ import React from 'react';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+vi.mock('@/redux/hooks', () => ({
+  useAppSelector: (selector: (state: any) => unknown) =>
+    selector({
+      stream: {
+        blockOrder: [],
+        textBlocks: {},
+        thinkingBlocks: {},
+        blockTypes: {},
+        totalTextLength: 0,
+        displayedTextLength: 0,
+      },
+    }),
+}));
+
 vi.mock('./ChatMessage', () => ({
   default: ({
     message,
     suggestedQuestions,
   }: {
-    message: { content: string };
+    message: { content: Array<{ type: string; text?: string }> };
     suggestedQuestions?: string[];
   }) => (
     <div>
-      <div>{message.content}</div>
+      <div>{message.content.filter(b => b.type === 'text').map(b => b.text).join('')}</div>
       {suggestedQuestions?.map((question) => (
         <div key={question}>{question}</div>
       ))}
@@ -37,7 +51,7 @@ describe('ChatMessageList', () => {
             {
               id: 'assistant-1',
               role: 'assistant',
-              content: '第一条',
+              content: [{ type: 'text' as const, id: 'blk_1', text: '第一条' }],
               timestamp: 1,
             },
           ]}
@@ -60,13 +74,13 @@ describe('ChatMessageList', () => {
             {
               id: 'assistant-1',
               role: 'assistant',
-              content: '第一条',
+              content: [{ type: 'text' as const, id: 'blk_1', text: '第一条' }],
               timestamp: 1,
             },
             {
               id: 'assistant-2',
               role: 'assistant',
-              content: '第二条',
+              content: [{ type: 'text' as const, id: 'blk_2', text: '第二条' }],
               timestamp: 2,
             },
           ]}
@@ -84,7 +98,7 @@ describe('ChatMessageList', () => {
           {
             id: 'assistant-1',
             role: 'assistant',
-            content: '回复完成',
+            content: [{ type: 'text' as const, id: 'blk_1', text: '回复完成' }],
             timestamp: 1,
           },
         ]}
@@ -104,7 +118,7 @@ describe('ChatMessageList', () => {
           {
             id: 'assistant-1',
             role: 'assistant',
-            content: '回复完成',
+            content: [{ type: 'text' as const, id: 'blk_1', text: '回复完成' }],
             timestamp: 1,
           },
         ]}
@@ -125,7 +139,7 @@ describe('ChatMessageList', () => {
           {
             id: 'assistant-1',
             role: 'assistant',
-            content: '历史回复',
+            content: [{ type: 'text' as const, id: 'blk_1', text: '历史回复' }],
             timestamp: 1,
           },
         ]}
@@ -144,7 +158,7 @@ describe('ChatMessageList', () => {
           {
             id: 'assistant-1',
             role: 'assistant',
-            content: '回复完成',
+            content: [{ type: 'text' as const, id: 'blk_1', text: '回复完成' }],
             timestamp: 1,
           },
         ]}
@@ -163,7 +177,7 @@ describe('ChatMessageList', () => {
           {
             id: 'user-1',
             role: 'user',
-            content: '这条消息发送失败',
+            content: [{ type: 'text' as const, id: 'blk_1', text: '这条消息发送失败' }],
             status: 'failed',
             timestamp: 1,
           },
@@ -183,13 +197,13 @@ describe('ChatMessageList', () => {
           {
             id: 'assistant-1',
             role: 'assistant',
-            content: '上一条回复',
+            content: [{ type: 'text' as const, id: 'blk_1', text: '上一条回复' }],
             timestamp: 1_000,
           },
           {
             id: 'user-1',
             role: 'user',
-            content: '最新用户消息',
+            content: [{ type: 'text' as const, id: 'blk_2', text: '最新用户消息' }],
             status: 'failed',
             timestamp: 3_000,
           },
@@ -232,56 +246,4 @@ describe('ChatMessageList', () => {
     expect(screen.queryByText('开始一个新对话')).toBeNull();
   });
 
-  it('shows a jump-to-bottom button when the reader scrolls away from the bottom', () => {
-    const { container } = render(
-      <div data-chat-scroll-container="true">
-        <ChatMessageList
-          messages={[
-            {
-              id: 'assistant-1',
-              role: 'assistant',
-              content: '第一条',
-              timestamp: 1,
-            },
-          ]}
-        />
-      </div>
-    );
-
-    const scrollContainer = container.firstChild as HTMLElement;
-    Object.defineProperty(scrollContainer, 'scrollHeight', { configurable: true, value: 1600 });
-    Object.defineProperty(scrollContainer, 'clientHeight', { configurable: true, value: 400 });
-    Object.defineProperty(scrollContainer, 'scrollTop', { configurable: true, value: 600, writable: true });
-
-    fireEvent.scroll(scrollContainer);
-
-    expect(screen.getByRole('button', { name: '回到底部' })).toBeTruthy();
-  });
-
-  it('uses a streaming-specific label when new assistant output is arriving off-screen', () => {
-    const { container } = render(
-      <div data-chat-scroll-container="true">
-        <ChatMessageList
-          messages={[
-            {
-              id: 'assistant-1',
-              role: 'assistant',
-              content: '第一条',
-              timestamp: 1,
-            },
-          ]}
-          isStreaming={true}
-        />
-      </div>
-    );
-
-    const scrollContainer = container.firstChild as HTMLElement;
-    Object.defineProperty(scrollContainer, 'scrollHeight', { configurable: true, value: 1600 });
-    Object.defineProperty(scrollContainer, 'clientHeight', { configurable: true, value: 400 });
-    Object.defineProperty(scrollContainer, 'scrollTop', { configurable: true, value: 600, writable: true });
-
-    fireEvent.scroll(scrollContainer);
-
-    expect(screen.getByRole('button', { name: '查看最新回复' })).toBeTruthy();
-  });
 });

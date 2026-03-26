@@ -26,7 +26,9 @@ const {
     currentState: {
       models: {
         models: [],
+        providers: [],
         selectedModelId: null,
+        isLoading: false,
       },
       conversation: {
         reasoningEnabled: false,
@@ -44,6 +46,9 @@ const {
       },
       auth: {
         isAuthenticated: false,
+      },
+      theme: {
+        mode: 'light',
       },
     } as any,
     dispatchMock: vi.fn(),
@@ -118,6 +123,14 @@ vi.mock('uuid', () => ({
   v4: uuidMock,
 }));
 
+vi.mock('next/navigation', () => ({
+  usePathname: () => '/',
+}));
+
+vi.mock('next/image', () => ({
+  default: (props: any) => <img {...props} />,
+}));
+
 vi.mock('./FilePreviewList', () => ({
   default: () => null,
 }));
@@ -141,7 +154,9 @@ describe('ChatInput', () => {
     updateFileStatusMock.mockClear();
     uuidMock.mockClear();
     currentState.models.models = [];
+    currentState.models.providers = [];
     currentState.models.selectedModelId = null;
+    currentState.models.isLoading = false;
     currentState.conversation.reasoningEnabled = false;
     currentState.conversation.byId = {};
     currentState.stream.isStreaming = false;
@@ -238,7 +253,7 @@ describe('ChatInput', () => {
     currentState.conversation.byId = {
       'chat-1': {
         id: 'chat-1',
-        model: 'model-supported',
+        model_id: 'model-supported',
       },
     };
     uploadFilesMock.mockResolvedValue(['file-1']);
@@ -288,7 +303,7 @@ describe('ChatInput', () => {
     currentState.conversation.byId = {
       'chat-1': {
         id: 'chat-1',
-        model: 'legacy-model',
+        model_id: 'legacy-model',
       },
     };
     uploadFilesMock.mockResolvedValue(['file-1']);
@@ -556,7 +571,7 @@ describe('ChatInput', () => {
       });
     });
 
-    fireEvent.change(screen.getByPlaceholderText('输入您的问题...'), {
+    fireEvent.change(screen.getByPlaceholderText('发消息给 Fusion AI（Enter 发送）'), {
       target: {
         value: '带失败文件也想发送',
       },
@@ -577,7 +592,7 @@ describe('ChatInput', () => {
     const onSendMessage = vi.fn();
     render(<ChatInput onSendMessage={onSendMessage} activeChatId="chat-1" />);
 
-    fireEvent.change(screen.getByPlaceholderText('输入您的问题...'), {
+    fireEvent.change(screen.getByPlaceholderText('发消息给 Fusion AI（Enter 发送）'), {
       target: {
         value: '你好',
       },

@@ -15,7 +15,7 @@ describe('useTransientCompletionState', () => {
         initialProps: {
           isStreaming: true,
           isLoadingQuestions: false,
-          messages: [{ id: 'assistant-1', role: 'assistant', content: '回复完成' }] as Message[],
+          messages: [{ id: 'assistant-1', role: 'assistant', content: [{ type: 'text' as const, id: 'blk_test', text: '回复完成' }] }] as Message[],
         },
       }
     );
@@ -25,7 +25,7 @@ describe('useTransientCompletionState', () => {
     rerender({
       isStreaming: false,
       isLoadingQuestions: false,
-      messages: [{ id: 'assistant-1', role: 'assistant', content: '回复完成' }] as Message[],
+      messages: [{ id: 'assistant-1', role: 'assistant', content: [{ type: 'text' as const, id: 'blk_test', text: '回复完成' }] }] as Message[],
     });
 
     expect(result.current).toBe(true);
@@ -43,7 +43,7 @@ describe('useTransientCompletionState', () => {
       useTransientCompletionState({
         isStreaming: false,
         isLoadingQuestions: false,
-        messages: [{ id: 'assistant-1', role: 'assistant', content: '旧回复' }] as Message[],
+        messages: [{ id: 'assistant-1', role: 'assistant', content: [{ type: 'text' as const, id: 'blk_test', text: '旧回复' }] }] as Message[],
       })
     );
 

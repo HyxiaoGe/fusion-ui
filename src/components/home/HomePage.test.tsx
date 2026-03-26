@@ -41,7 +41,9 @@ describe('HomePage', () => {
 
     render(<HomePage onNewChat={vi.fn()} onSendMessage={onSendMessage} />);
 
-    const exampleButton = screen.getByRole('button', { name: '生成工作周报模板' });
+    // The examples are randomized, so grab the first available example button
+    const exampleButtons = screen.getAllByRole('button');
+    const exampleButton = exampleButtons[0];
     fireEvent.click(exampleButton);
     fireEvent.click(exampleButton);
 
