@@ -102,8 +102,8 @@ const SuggestedQuestions: React.FC<SuggestedQuestionsProps> = ({
       </div>
       
       <div className="flex flex-col space-y-2">
-        {/* 显示推荐问题列表 */}
-        {questions.map((question, index) => (
+        {/* 显示推荐问题列表（loading 时隐藏，避免与 loading 动画重叠） */}
+        {!isLoading && questions.map((question, index) => (
           <Button
             key={index}
             variant="outline"

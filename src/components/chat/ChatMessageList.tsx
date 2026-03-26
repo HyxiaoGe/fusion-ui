@@ -157,11 +157,7 @@ const ChatMessageList: React.FC<ChatMessageListProps> = ({
       return 'AI 正在回复...';
     }
 
-    if (isLoadingQuestions) {
-      return '正在准备推荐追问...';
-    }
-
-    if (suggestedQuestions.length > 0) {
+    if (isLoadingQuestions || suggestedQuestions.length > 0) {
       return null;
     }
 
