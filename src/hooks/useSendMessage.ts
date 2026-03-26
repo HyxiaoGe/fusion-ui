@@ -89,8 +89,19 @@ export function useSendMessage() {
       );
     }
 
-    if (convId && assistantMsgId && !hasContent) {
-      dispatch(removeMessage({ conversationId: convId, messageId: assistantMsgId }));
+    if (convId && assistantMsgId) {
+      if (hasContent) {
+        // 把流里已有的内容写回消息，防止 endStream 清空后丢失
+        const streamState = (store.getState() as { stream: import('@/redux/slices/streamSlice').StreamState }).stream;
+        const partialBlocks = selectFullStreamContentBlocks(streamState);
+        dispatch(updateMessage({
+          conversationId: convId,
+          messageId: assistantMsgId,
+          patch: { content: partialBlocks },
+        }));
+      } else {
+        dispatch(removeMessage({ conversationId: convId, messageId: assistantMsgId }));
+      }
     }
 
     dispatch(endStream());
@@ -98,7 +109,7 @@ export function useSendMessage() {
     userMessageIdRef.current = null;
     assistantMessageIdRef.current = null;
     assistantHasContentRef.current = false;
-  }, [dispatch]);
+  }, [dispatch, store]);
 
   const sendMessage = useCallback(
     async (content: string, options: SendMessageOptions, files?: File[]) => {
@@ -362,5 +373,40 @@ export function useSendMessage() {
     [dispatch, models, reasoningEnabled, selectedModelId, stopStreaming, store]
   );
 
-  return { sendMessage, stopStreaming };
+  const retryMessage = useCallback(
+    async (messageId: string, conversationId: string) => {
+      const state = store.getState() as { conversation: { byId: Record<string, import('@/types/conversation').Conversation> } };
+      const conversation = state.conversation.byId[conversationId];
+      if (!conversation) return;
+
+      const messages = conversation.messages;
+      const assistantIndex = messages.findIndex((m) => m.id === messageId);
+      if (assistantIndex === -1) return;
+
+      // 向上找对应的 user 消息
+      let userMessage: import('@/types/conversation').Message | null = null;
+      for (let i = assistantIndex - 1; i >= 0; i--) {
+        if (messages[i].role === 'user') {
+          userMessage = messages[i];
+          break;
+        }
+      }
+      if (!userMessage) return;
+
+      // 删除当前 assistant 消息，用原始 user 消息重新发送
+      dispatch(removeMessage({ conversationId, messageId }));
+
+      const userText = userMessage.content
+        .filter((b): b is import('@/types/conversation').TextBlock => b.type === 'text')
+        .map(b => b.text)
+        .join('');
+
+      if (userText) {
+        await sendMessage(userText, { conversationId });
+      }
+    },
+    [dispatch, sendMessage, store]
+  );
+
+  return { sendMessage, stopStreaming, retryMessage };
 }

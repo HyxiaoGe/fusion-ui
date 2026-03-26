@@ -25,7 +25,7 @@ export default function ChatPage() {
   const [confirmDialogOpen, setConfirmDialogOpen] = useState(false);
   const chatInputRef = useRef<HTMLDivElement>(null);
   const { conversation, hydrationView, hydrationError, retryHydration } = useConversation(chatId);
-  const { sendMessage, stopStreaming } = useSendMessage();
+  const { sendMessage, stopStreaming, retryMessage } = useSendMessage();
   const {
     suggestedQuestions,
     isLoadingQuestions,
@@ -100,6 +100,14 @@ export default function ChatPage() {
     fetchQuestions(true);
   }, [chatId, fetchQuestions]);
 
+  const handleRetry = useCallback(
+    (messageId: string) => {
+      if (!chatId) return;
+      void retryMessage(messageId, chatId);
+    },
+    [chatId, retryMessage]
+  );
+
   const handleClearChat = () => {
     if (!chatId) return;
     setConfirmDialogOpen(true);
@@ -164,6 +172,7 @@ export default function ChatPage() {
           <ChatMessageListLazy
             messages={conversation.messages || []}
             isStreaming={isStreaming && streamConversationId === chatId}
+            onRetry={handleRetry}
             suggestedQuestions={suggestedQuestions}
             isLoadingQuestions={isLoadingQuestions}
             onSelectQuestion={handleSelectQuestion}
