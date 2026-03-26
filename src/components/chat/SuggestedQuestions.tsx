@@ -26,7 +26,6 @@ const SuggestedQuestions: React.FC<SuggestedQuestionsProps> = ({
   const { isAuthenticated } = useAppSelector((state) => state.auth);
   const { toast } = useToast();
   const isBusy = isLoading || isRefreshing || pendingQuestion !== null;
-  const showManualFetchEntry = questions.length === 0 && !isLoading && Boolean(onRefresh);
 
   useEffect(() => {
     if (!isLoading) {
@@ -40,7 +39,7 @@ const SuggestedQuestions: React.FC<SuggestedQuestionsProps> = ({
     }
   }, [questions]);
 
-  if (questions.length === 0 && !isLoading && !onRefresh) return null;
+  if (questions.length === 0 && !isLoading) return null;
 
   // 处理问题选择的函数，添加登录检查
   const handleQuestionSelect = (question: string) => {
@@ -82,8 +81,8 @@ const SuggestedQuestions: React.FC<SuggestedQuestionsProps> = ({
           <p>你可能想问：</p>
         </div>
         
-        {/* 添加换一批按钮 */}
-        {onRefresh && !showManualFetchEntry && (
+        {/* 换一批按钮 */}
+        {onRefresh && questions.length > 0 && (
           <Button
             variant="ghost"
             size="sm"
@@ -103,19 +102,6 @@ const SuggestedQuestions: React.FC<SuggestedQuestionsProps> = ({
       </div>
       
       <div className="flex flex-col space-y-2">
-        {showManualFetchEntry ? (
-          <Button
-            variant="outline"
-            size="sm"
-            className="w-full justify-start gap-2 border-dashed py-2.5 text-sm font-normal text-muted-foreground hover:text-primary"
-            onClick={handleRefresh}
-            disabled={isBusy}
-          >
-            <RefreshCw className="h-3.5 w-3.5" />
-            获取这轮对话的推荐追问
-          </Button>
-        ) : null}
-
         {/* 显示推荐问题列表 */}
         {questions.map((question, index) => (
           <Button

@@ -27,6 +27,7 @@ interface ServerMessage {
   model_id?: string | null;
   usage?: ServerUsage | null;
   created_at?: string | number | null;
+  suggested_questions?: string[] | null;
 }
 
 interface ServerConversation {
@@ -71,6 +72,7 @@ function buildMessage(serverMessage: ServerMessage, conversationId: string): Mes
     usage: serverMessage.usage ?? null,
     timestamp: parseServerTimestamp(serverMessage.created_at),
     isReasoningVisible: hasThinking ? false : undefined,
+    suggestedQuestions: serverMessage.suggested_questions ?? undefined,
   };
 }
 

@@ -1,89 +1,65 @@
-import { useState, useCallback, useEffect, useRef } from 'react';
-import { store } from '@/redux/store';
+import { useState, useCallback } from 'react';
+import { useAppDispatch, useAppSelector } from '@/redux/hooks';
 import { fetchSuggestedQuestions as fetchApi } from '@/lib/api/chat';
-import type { Conversation, Message } from '@/types/conversation';
+import { updateMessage } from '@/redux/slices/conversationSlice';
+import type { Conversation } from '@/types/conversation';
 
+/**
+ * 推荐问题 hook
+ *
+ * 推荐问题随 assistant 消息持久化，刷新后自动恢复，无需重新请求。
+ * fetchQuestions(forceRefresh=true) 支持"换一批"，新结果覆盖写回消息。
+ */
 export const useSuggestedQuestions = (chatId: string | null) => {
-  const [suggestedQuestions, setSuggestedQuestions] = useState<string[]>([]);
+  const dispatch = useAppDispatch();
   const [isLoadingQuestions, setIsLoadingQuestions] = useState(false);
-  const requestIdRef = useRef(0);
-  const lastFetchKeyRef = useRef<string | null>(null);
 
-  // Clear questions when the chat changes
-  useEffect(() => {
-    requestIdRef.current += 1;
-    lastFetchKeyRef.current = null;
-    setIsLoadingQuestions(false);
-    setSuggestedQuestions([]);
-  }, [chatId]);
+  const conversation = useAppSelector((state) =>
+    chatId ? (state.conversation.byId[chatId] as Conversation | undefined) : undefined
+  );
 
-  const fetchQuestions = useCallback(async (forceRefresh: boolean = false) => {
-    if (!chatId) {
-      setSuggestedQuestions([]);
-      setIsLoadingQuestions(false);
-      return;
-    }
+  // 从最后一条有内容的 assistant 消息派生推荐问题
+  const lastAssistantMsg = conversation?.messages
+    .filter((m) => m.role === 'assistant' && m.content?.length > 0)
+    .at(-1);
 
-    // Directly get the latest state from the store to avoid stale closures
-    const state = store.getState();
-    const chat = state.conversation.byId[chatId] as Conversation | undefined;
-    const isStreaming = state.stream.isStreaming;
-    const requestId = requestIdRef.current + 1;
+  const suggestedQuestions = lastAssistantMsg?.suggestedQuestions ?? [];
 
-    if (!chat) {
-      setSuggestedQuestions([]);
-      return;
-    }
+  const fetchQuestions = useCallback(
+    async (forceRefresh = false) => {
+      if (!chatId || !lastAssistantMsg) return;
+      if (!forceRefresh && suggestedQuestions.length > 0) return;
 
-    const hasAIMessage = chat.messages.some(
-      (msg: Message) => msg.role === 'assistant' && msg.content?.length > 0
-    );
-    if (!hasAIMessage) {
-      setSuggestedQuestions([]);
-      return;
-    }
+      // 锁住本次请求的 chatId，防止切换会话后写到错误会话
+      const requestChatId = chatId;
+      const requestMsgId = lastAssistantMsg.id;
 
-    const fetchKey = `${chatId}:${chat.messages.length}`;
-    if (!forceRefresh && lastFetchKeyRef.current === fetchKey) {
-      return;
-    }
-    
-    if (isStreaming) {
-      setIsLoadingQuestions(false);
-      return;
-    }
-
-    if (isLoadingQuestions && !forceRefresh) {
-      return;
-    }
-
-    requestIdRef.current = requestId;
-    setIsLoadingQuestions(true);
-    try {
-      const messageCount = chat.messages.length || 0;
-      const { questions } = await fetchApi(chatId, {}, forceRefresh, messageCount);
-      if (requestId !== requestIdRef.current) {
-        return;
+      setIsLoadingQuestions(true);
+      try {
+        const { questions } = await fetchApi(requestChatId, {});
+        if (questions.length > 0) {
+          // dispatch 前检查 chatId 是否还一致，已切换则丢弃结果
+          if (requestChatId !== chatId) return;
+          dispatch(
+            updateMessage({
+              conversationId: requestChatId,
+              messageId: requestMsgId,
+              patch: { suggestedQuestions: questions },
+            })
+          );
+        }
+      } catch {
+        // 生成失败静默处理
+      } finally {
+        if (requestChatId === chatId) {
+          setIsLoadingQuestions(false);
+        }
       }
-      lastFetchKeyRef.current = fetchKey;
-      setSuggestedQuestions(questions);
-    } catch (error) {
-      if (requestId !== requestIdRef.current) {
-        return;
-      }
-      setSuggestedQuestions([]);
-    } finally {
-      if (requestId === requestIdRef.current) {
-        setIsLoadingQuestions(false);
-      }
-    }
-  }, [chatId, isLoadingQuestions]);
+    },
+    [chatId, lastAssistantMsg, suggestedQuestions.length, dispatch]
+  );
 
-  const clearQuestions = useCallback(() => {
-    requestIdRef.current += 1;
-    setIsLoadingQuestions(false);
-    setSuggestedQuestions([]);
-  }, []);
+  const clearQuestions = useCallback(() => {}, []);
 
   return {
     suggestedQuestions,
@@ -91,4 +67,4 @@ export const useSuggestedQuestions = (chatId: string | null) => {
     fetchQuestions,
     clearQuestions,
   };
-}; 
+};
