@@ -1,4 +1,4 @@
-import { useCallback, memo, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, memo, useMemo } from "react";
 import { useAppSelector } from "@/redux/hooks";
 import { useToast } from "@/components/ui/toast";
 
@@ -29,26 +29,12 @@ interface HomePageProps {
 const HomePage: React.FC<HomePageProps> = ({ onSendMessage }) => {
   const { isAuthenticated } = useAppSelector((state) => state.auth);
   const { toast } = useToast();
-  const [pendingExample, setPendingExample] = useState<string | null>(null);
-  const pendingResetRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const randomExamples = useMemo(() => {
     return [...ALL_EXAMPLES].sort(() => Math.random() - 0.5).slice(0, 8);
   }, []);
 
-  useEffect(() => {
-    return () => {
-      if (pendingResetRef.current) {
-        clearTimeout(pendingResetRef.current);
-      }
-    };
-  }, []);
-
   const handleExampleClick = useCallback((message: string) => {
-    if (pendingExample) {
-      return;
-    }
-
     if (!isAuthenticated) {
       toast({
         message: "请先登录后再使用聊天功能",
@@ -60,45 +46,8 @@ const HomePage: React.FC<HomePageProps> = ({ onSendMessage }) => {
       }
       return;
     }
-
-    setPendingExample(message);
-    if (pendingResetRef.current) {
-      clearTimeout(pendingResetRef.current);
-    }
-
-    pendingResetRef.current = setTimeout(() => {
-      setPendingExample((current) => (current === message ? null : current));
-      pendingResetRef.current = null;
-    }, 4000);
-
-    void Promise.resolve(onSendMessage(message)).catch(() => {
-      setPendingExample((current) => (current === message ? null : current));
-      if (pendingResetRef.current) {
-        clearTimeout(pendingResetRef.current);
-        pendingResetRef.current = null;
-      }
-    });
-  }, [isAuthenticated, onSendMessage, pendingExample, toast]);
-
-  if (pendingExample) {
-    return (
-      <div className="flex flex-col space-y-8 pb-8 px-4 max-w-5xl mx-auto w-full h-full overflow-y-auto">
-        <div className="pt-8 text-center">
-          <h1 className="text-3xl font-bold mb-2">正在开始这轮对话</h1>
-          <p className="text-muted-foreground">正在创建会话并等待 AI 开始回复。</p>
-        </div>
-
-        <div className="max-w-3xl mx-auto w-full space-y-4">
-          <div className="ml-auto max-w-2xl rounded-3xl bg-primary/10 px-5 py-4 text-sm">
-            {pendingExample}
-          </div>
-          <div className="max-w-2xl rounded-3xl border border-border/60 bg-card px-5 py-4 text-sm text-muted-foreground shadow-sm">
-            AI 正在准备回复...
-          </div>
-        </div>
-      </div>
-    );
-  }
+    void Promise.resolve(onSendMessage(message));
+  }, [isAuthenticated, onSendMessage, toast]);
 
   return (
     <div className="flex h-full items-center justify-center px-4 pb-32">
@@ -112,7 +61,6 @@ const HomePage: React.FC<HomePageProps> = ({ onSendMessage }) => {
             <button
               key={example}
               onClick={() => handleExampleClick(example)}
-              disabled={Boolean(pendingExample)}
               className="px-4 py-2 rounded-full border border-border text-sm text-muted-foreground
                          hover:bg-muted/60 hover:text-foreground hover:border-border
                          transition-colors cursor-pointer"
