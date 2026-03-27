@@ -386,7 +386,7 @@ export function useSendMessage() {
       const targetMsg = messages[targetIndex];
 
       if (targetMsg.role === 'assistant') {
-        // 重新生成：向上找 user 消息，删除 assistant 后重发
+        // 重新生成：向上找 user 消息，删除 assistant + user，然后 sendMessage 会重建两条
         let userMessage: import('@/types/conversation').Message | null = null;
         for (let i = targetIndex - 1; i >= 0; i--) {
           if (messages[i].role === 'user') {
@@ -396,12 +396,13 @@ export function useSendMessage() {
         }
         if (!userMessage) return;
 
-        dispatch(removeMessage({ conversationId, messageId }));
-
         const userText = userMessage.content
           .filter((b): b is import('@/types/conversation').TextBlock => b.type === 'text')
           .map(b => b.text)
           .join('');
+
+        dispatch(removeMessage({ conversationId, messageId }));
+        dispatch(removeMessage({ conversationId, messageId: userMessage.id }));
 
         if (userText) {
           await sendMessage(userText, { conversationId });

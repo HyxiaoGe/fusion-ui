@@ -297,6 +297,34 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, files, isLastMessage
                       <span>发送失败，请重新发送</span>
                     </div>
                   ) : null}
+                  {/* 用户消息操作栏（气泡内部） */}
+                  {!isEditing && (
+                    <div className="flex items-center justify-end gap-1 h-5 mt-1 opacity-0 group-hover:opacity-100 transition-opacity duration-150 pointer-events-none group-hover:pointer-events-auto">
+                      <span className="text-[10px] text-muted-foreground/50 mr-1">
+                        {formatTime(message.timestamp)}
+                      </span>
+                      <TooltipProvider delayDuration={300}>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button variant="ghost" size="icon" className="h-5 w-5 text-muted-foreground hover:text-foreground" onClick={() => setIsEditing(true)}>
+                              <Edit2 className="h-3 w-3" />
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent side="bottom"><p>编辑</p></TooltipContent>
+                        </Tooltip>
+                        {onRetry && (
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button variant="ghost" size="icon" className="h-5 w-5 text-muted-foreground hover:text-foreground" onClick={() => onRetry(message.id)}>
+                                <RefreshCw className="h-3 w-3" />
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent side="bottom"><p>重新发送</p></TooltipContent>
+                          </Tooltip>
+                        )}
+                      </TooltipProvider>
+                    </div>
+                  )}
                 </div>
               )
             ) : (
@@ -406,35 +434,6 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, files, isLastMessage
             </div>
           )}
         </div>
-
-        {/* 用户消息操作 */}
-        {isUser && !isEditing && (
-          <div className="flex items-center gap-1 h-6 mt-1 opacity-0 group-hover:opacity-100 transition-opacity duration-150 pointer-events-none group-hover:pointer-events-auto">
-            <span className="text-[10px] text-muted-foreground/50 mr-1">
-              {formatTime(message.timestamp)}
-            </span>
-            <TooltipProvider delayDuration={300}>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button variant="ghost" size="icon" className="h-6 w-6 text-muted-foreground hover:text-foreground" onClick={() => setIsEditing(true)}>
-                    <Edit2 className="h-3.5 w-3.5" />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent side="bottom"><p>编辑</p></TooltipContent>
-              </Tooltip>
-              {onRetry && (
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button variant="ghost" size="icon" className="h-6 w-6 text-muted-foreground hover:text-foreground" onClick={() => onRetry(message.id)}>
-                      <RefreshCw className="h-3.5 w-3.5" />
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent side="bottom"><p>重新发送</p></TooltipContent>
-                </Tooltip>
-              )}
-            </TooltipProvider>
-          </div>
-        )}
 
         {!isUser && isLastMessage && !isStreaming && onSelectQuestion && (
           <SuggestedQuestions
