@@ -7,7 +7,10 @@ import MainLayout from '@/components/layouts/MainLayout';
 import ChatInput from '@/components/chat/ChatInput';
 import ConfirmDialog from '@/components/ui/confirm-dialog';
 import { useAppDispatch, useAppSelector } from '@/redux/hooks';
-import { clearConversationMessages } from '@/redux/slices/conversationSlice';
+import { clearConversationMessages, updateMessage } from '@/redux/slices/conversationSlice';
+import { setStreamStatus } from '@/redux/slices/streamSlice';
+import { fetchStreamStatus } from '@/lib/api/streamStatus';
+import type { ContentBlock } from '@/types/conversation';
 import { useConversation } from '@/hooks/useConversation';
 import { useSendMessage } from '@/hooks/useSendMessage';
 import { useSuggestedQuestions } from '@/hooks/useSuggestedQuestions';
@@ -48,6 +51,61 @@ export default function ChatPage() {
   useEffect(() => {
     clearQuestions();
   }, [chatId, clearQuestions]);
+
+  // 页面 mount 时检查是否有未完成的流（断线重连恢复）
+  const isAuthenticated = useAppSelector((state) => state.auth.isAuthenticated);
+  useEffect(() => {
+    if (!chatId || !isAuthenticated || !conversation || isStreaming) return;
+
+    const checkStreamStatus = async () => {
+      try {
+        const status = await fetchStreamStatus(chatId);
+
+        if (status.status === 'streaming' && status.content_blocks?.length) {
+          dispatch(setStreamStatus('reconnecting'));
+
+          const blocks: ContentBlock[] = [];
+          const reasoningText = status.content_blocks
+            .filter((b) => b.type === 'reasoning')
+            .map((b) => b.content)
+            .join('');
+          const answeringText = status.content_blocks
+            .filter((b) => b.type === 'answering')
+            .map((b) => b.content)
+            .join('');
+
+          if (reasoningText) {
+            blocks.push({ type: 'thinking', id: 'blk_recovered_think', thinking: reasoningText });
+          }
+          if (answeringText) {
+            blocks.push({ type: 'text', id: 'blk_recovered_text', text: answeringText });
+          }
+
+          const lastAssistantMsg = conversation?.messages
+            .filter((m) => m.role === 'assistant')
+            .at(-1);
+
+          if (lastAssistantMsg && blocks.length > 0) {
+            dispatch(
+              updateMessage({
+                conversationId: chatId,
+                messageId: lastAssistantMsg.id,
+                patch: { content: blocks },
+              })
+            );
+          }
+        }
+
+        if (status.status === 'error') {
+          dispatch(setStreamStatus('error'));
+        }
+      } catch {
+        // 查询失败静默处理
+      }
+    };
+
+    checkStreamStatus();
+  }, [chatId, isAuthenticated]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!chatId || !conversation || isStreaming || isLoadingQuestions || suggestedQuestions.length > 0) {

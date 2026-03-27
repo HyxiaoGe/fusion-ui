@@ -18,6 +18,8 @@ export interface StreamState {
   isThinkingPhaseComplete: boolean;
   reasoningStartTime: number | null;
   reasoningEndTime: number | undefined;
+  // 流状态枚举，比 isStreaming boolean 更精确（断线重连场景）
+  streamStatus: 'idle' | 'streaming' | 'reconnecting' | 'completed' | 'error';
 }
 
 const initialState: StreamState = {
@@ -34,6 +36,7 @@ const initialState: StreamState = {
   isThinkingPhaseComplete: false,
   reasoningStartTime: null,
   reasoningEndTime: undefined,
+  streamStatus: 'idle',
 };
 
 const streamSlice = createSlice({
@@ -106,6 +109,10 @@ const streamSlice = createSlice({
       state.conversationId = action.payload;
     },
 
+    setStreamStatus(state, action: PayloadAction<StreamState['streamStatus']>) {
+      state.streamStatus = action.payload;
+    },
+
     endStream() {
       return initialState;
     },
@@ -164,6 +171,7 @@ export const {
   completeThinkingPhase,
   endStream,
   migrateStreamConversation,
+  setStreamStatus,
   startStream,
 } = streamSlice.actions;
 
