@@ -167,7 +167,8 @@ describe('ChatMessageList', () => {
       />
     );
 
-    expect(screen.getByText('正在准备推荐追问...')).toBeTruthy();
+    // loading 状态现在由 SuggestedQuestions 组件展示，ChatMessageList 不再显示该文案
+    expect(screen.queryByText('正在准备推荐追问...')).toBeNull();
   });
 
   it('shows a resend hint when the latest user message failed', () => {

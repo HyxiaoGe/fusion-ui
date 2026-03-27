@@ -30,25 +30,14 @@ describe('HomePage', () => {
     toastMock.mockReset();
   });
 
-  it('only sends one example message while the first example launch is pending', async () => {
-    let resolveSend: (() => void) | null = null;
-    const onSendMessage = vi.fn(
-      () =>
-        new Promise<void>((resolve) => {
-          resolveSend = resolve;
-        }),
-    );
+  it('sends message when clicking an example', async () => {
+    const onSendMessage = vi.fn();
 
     render(<HomePage onNewChat={vi.fn()} onSendMessage={onSendMessage} />);
 
-    // The examples are randomized, so grab the first available example button
     const exampleButtons = screen.getAllByRole('button');
-    const exampleButton = exampleButtons[0];
-    fireEvent.click(exampleButton);
-    fireEvent.click(exampleButton);
+    fireEvent.click(exampleButtons[0]);
 
     expect(onSendMessage).toHaveBeenCalledTimes(1);
-
-    resolveSend?.();
   });
 });

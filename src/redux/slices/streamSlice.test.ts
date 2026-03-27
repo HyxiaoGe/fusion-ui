@@ -4,9 +4,11 @@ import reducer, {
   advanceTypewriter,
   appendTextDelta,
   appendThinkingDelta,
+  endStream,
   migrateStreamConversation,
   selectFullStreamContentBlocks,
   selectStreamContentBlocks,
+  setStreamStatus,
   startStream,
 } from './streamSlice';
 
@@ -67,5 +69,16 @@ describe('streamSlice', () => {
     expect(selectStreamContentBlocks(state)[0]).toEqual(
       expect.objectContaining({ type: 'text', text: 'hello world' })
     );
+  });
+
+  it('streamStatus defaults to idle and resets on endStream', () => {
+    const initial = reducer(undefined, { type: '@@INIT' });
+    expect(initial.streamStatus).toBe('idle');
+
+    let state = reducer(initial, setStreamStatus('reconnecting'));
+    expect(state.streamStatus).toBe('reconnecting');
+
+    state = reducer(state, endStream());
+    expect(state.streamStatus).toBe('idle');
   });
 });

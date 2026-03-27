@@ -108,21 +108,16 @@ describe('SuggestedQuestions', () => {
     expect(screen.getByRole('button', { name: /更新中/ }).hasAttribute('disabled')).toBe(true);
   });
 
-  it('keeps a manual fetch entry point when a historical chat has no suggestions yet', () => {
-    const onRefresh = vi.fn();
-
-    render(
+  it('renders nothing when questions are empty and not loading', () => {
+    const { container } = render(
       <SuggestedQuestions
         questions={[]}
         isLoading={false}
         onSelectQuestion={vi.fn()}
-        onRefresh={onRefresh}
+        onRefresh={vi.fn()}
       />
     );
 
-    fireEvent.click(screen.getByRole('button', { name: /获取这轮对话的推荐追问/ }));
-
-    expect(onRefresh).toHaveBeenCalledTimes(1);
-    expect(screen.queryByRole('button', { name: /换一批/ })).toBeNull();
+    expect(container.innerHTML).toBe('');
   });
 });
