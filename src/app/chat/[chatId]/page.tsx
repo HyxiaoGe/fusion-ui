@@ -69,8 +69,14 @@ export default function ChatPage() {
   // 页面 mount / hydration 完成后检查是否有未完成的流 → 断线重连
   const isAuthenticated = useAppSelector((state) => state.auth.isAuthenticated);
   const hydrationDone = hydrationView === 'ready';
+  const reconnectAttemptedRef = useRef(false);
+  // chatId 变化时重置
+  useEffect(() => { reconnectAttemptedRef.current = false; }, [chatId]);
   useEffect(() => {
     if (!chatId || !isAuthenticated || !hydrationDone || isStreaming) return;
+    // 每个 chatId 只尝试一次重连，防止 stop 后重复触发
+    if (reconnectAttemptedRef.current) return;
+    reconnectAttemptedRef.current = true;
 
     let cancelled = false;
     const checkAndReconnect = async () => {
