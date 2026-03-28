@@ -78,9 +78,12 @@ export default function ChatPage() {
         if (cancelled || status.status !== 'streaming') return;
 
         const messageId = status.message_id || '';
-        const lastEntryId = status.last_entry_id || '0';
 
-        // 有进行中的流 → 建立 SSE 重连，从断点续读
+        // 页面刷新后前端没有任何已有内容，从头（"0"）读取全部 Stream 内容
+        // last_entry_id 仅用于「SSE 连接中途断开后自动重连」的场景（未来实现）
+        const reconnectFromId = '0';
+
+        // 有进行中的流 → 建立 SSE 重连，从头读取
         dispatch(setStreamStatus('reconnecting'));
 
         // 确保有 assistant 消息占位
@@ -97,7 +100,7 @@ export default function ChatPage() {
         dispatch(startStream({ conversationId: chatId, messageId }));
 
         // 从 Redis Stream 断点续读
-        await reconnectStream(chatId, lastEntryId, {
+        await reconnectStream(chatId, reconnectFromId, {
           onReady: () => {},
           onTextDelta: (delta, blockId, meta) => {
             if (cancelled) return;
