@@ -68,6 +68,7 @@ export function useSendMessage() {
   const stopStreaming = useCallback(async () => {
     const convId = activeConvIdRef.current;
     const userMsgId = userMessageIdRef.current;
+    const assistantMsgId = assistantMessageIdRef.current;
 
     if (typewriterIntervalRef.current !== null) {
       clearInterval(typewriterIntervalRef.current);
@@ -87,6 +88,19 @@ export function useSendMessage() {
       );
     }
 
+    // 把 streamSlice 已有内容写回 assistant 消息，防止 endStream 清空后丢失
+    if (convId && assistantMsgId) {
+      const streamState = (store.getState() as { stream: import('@/redux/slices/streamSlice').StreamState }).stream;
+      const partialBlocks = selectFullStreamContentBlocks(streamState);
+      if (partialBlocks.length > 0) {
+        dispatch(updateMessage({
+          conversationId: convId,
+          messageId: assistantMsgId,
+          patch: { content: partialBlocks },
+        }));
+      }
+    }
+
     // 通知后端取消后台任务（后端会在 CancelledError 中落库已有内容）
     if (convId) {
       const { stopStream } = await import('@/lib/api/chat');
@@ -98,7 +112,7 @@ export function useSendMessage() {
     userMessageIdRef.current = null;
     assistantMessageIdRef.current = null;
     assistantHasContentRef.current = false;
-  }, [dispatch]);
+  }, [dispatch, store]);
 
   const sendMessage = useCallback(
     async (content: string, options: SendMessageOptions, files?: File[]) => {
