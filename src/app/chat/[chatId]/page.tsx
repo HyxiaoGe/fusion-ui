@@ -99,7 +99,9 @@ export default function ChatPage() {
         // 启动流式状态
         dispatch(startStream({ conversationId: chatId, messageId }));
 
-        // 从 Redis Stream 断点续读
+        // TODO: 遗漏3 — 重连 SSE 请求没有挂 abort controller，
+        // stopStreaming 无法立即取消。后续加 signal 支持让 stop 能中断重连读取
+        // 从 Redis Stream 读取（从头读取已有内容 + 实时新增内容）
         await reconnectStream(chatId, reconnectFromId, {
           onReady: () => {},
           onTextDelta: (delta, blockId, meta) => {

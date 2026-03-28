@@ -317,6 +317,8 @@ export function useSendMessage() {
               }
             },
 
+            // TODO: 遗漏1 — 网络抖动自动重连。当前网络断开直接报错，
+            // 后续加 retry 计数器，失败 N 次内自动调 reconnectStream，超出则报错
             onError: (message) => {
               dispatch(setGlobalError(message));
             },
