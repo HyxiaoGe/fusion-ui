@@ -67,6 +67,8 @@ export default function ChatPage() {
   }, [chatId, clearQuestions]);
 
   // 页面 mount / hydration 完成后检查是否有未完成的流 → 断线重连
+  // TODO(遗漏1): 网络抖动自动重连需要独立实现，不能复用 checkAndReconnect，
+  // 因为 reconnectAttemptedRef 在首次 mount 后已为 true，会阻止二次重连。
   const isAuthenticated = useAppSelector((state) => state.auth.isAuthenticated);
   const hydrationDone = hydrationView === 'ready';
   const reconnectAttemptedRef = useRef(false);
