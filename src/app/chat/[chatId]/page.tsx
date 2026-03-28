@@ -7,6 +7,7 @@ import MainLayout from '@/components/layouts/MainLayout';
 import ChatInput from '@/components/chat/ChatInput';
 import ConfirmDialog from '@/components/ui/confirm-dialog';
 import { useAppDispatch, useAppSelector } from '@/redux/hooks';
+import { useStore } from 'react-redux';
 import { clearConversationMessages, updateMessage } from '@/redux/slices/conversationSlice';
 import { setStreamStatus } from '@/redux/slices/streamSlice';
 import { fetchStreamStatus } from '@/lib/api/streamStatus';
@@ -23,6 +24,7 @@ export default function ChatPage() {
   const params = useParams();
   const router = useRouter();
   const dispatch = useAppDispatch();
+  const store = useStore();
   const chatId = params?.chatId as string;
   const [inputKey, setInputKey] = useState(Date.now());
   const [confirmDialogOpen, setConfirmDialogOpen] = useState(false);
@@ -52,17 +54,18 @@ export default function ChatPage() {
     clearQuestions();
   }, [chatId, clearQuestions]);
 
-  // 页面 mount 时检查是否有未完成的流（断线重连恢复）
+  // 页面 mount / hydration 完成后检查是否有未完成的流（断线重连恢复）
   const isAuthenticated = useAppSelector((state) => state.auth.isAuthenticated);
+  const hydrationDone = hydrationView === 'ready';
   useEffect(() => {
-    if (!chatId || !isAuthenticated || !conversation || isStreaming) return;
+    if (!chatId || !isAuthenticated || !hydrationDone || isStreaming) return;
 
     const checkStreamStatus = async () => {
       try {
         const status = await fetchStreamStatus(chatId);
 
-        if (status.status === 'streaming' && status.content_blocks?.length) {
-          dispatch(setStreamStatus('reconnecting'));
+        if ((status.status === 'streaming' || status.status === 'error') && status.content_blocks?.length) {
+          dispatch(setStreamStatus(status.status === 'error' ? 'error' : 'reconnecting'));
 
           const blocks: ContentBlock[] = [];
           const reasoningText = status.content_blocks
@@ -81,23 +84,38 @@ export default function ChatPage() {
             blocks.push({ type: 'text', id: 'blk_recovered_text', text: answeringText });
           }
 
-          const lastAssistantMsg = conversation?.messages
-            .filter((m) => m.role === 'assistant')
-            .at(-1);
+          if (blocks.length > 0) {
+            // 找最后一条 assistant 消息写入，如果没有则创建一条
+            const conv = (store.getState() as any).conversation.byId[chatId];
+            const lastAssistantMsg = conv?.messages
+              ?.filter((m: any) => m.role === 'assistant')
+              ?.at(-1);
 
-          if (lastAssistantMsg && blocks.length > 0) {
-            dispatch(
-              updateMessage({
-                conversationId: chatId,
-                messageId: lastAssistantMsg.id,
-                patch: { content: blocks },
-              })
-            );
+            if (lastAssistantMsg) {
+              dispatch(
+                updateMessage({
+                  conversationId: chatId,
+                  messageId: lastAssistantMsg.id,
+                  patch: { content: blocks },
+                })
+              );
+            } else {
+              // 流中断时 assistant 消息可能还没落库，创建一条占位
+              const { v4: uuidv4 } = await import('uuid');
+              const { appendMessage } = await import('@/redux/slices/conversationSlice');
+              dispatch(
+                appendMessage({
+                  conversationId: chatId,
+                  message: {
+                    id: uuidv4(),
+                    role: 'assistant',
+                    content: blocks,
+                    timestamp: Date.now(),
+                  },
+                })
+              );
+            }
           }
-        }
-
-        if (status.status === 'error') {
-          dispatch(setStreamStatus('error'));
         }
       } catch {
         // 查询失败静默处理
@@ -105,7 +123,7 @@ export default function ChatPage() {
     };
 
     checkStreamStatus();
-  }, [chatId, isAuthenticated]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [chatId, isAuthenticated, hydrationDone]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!chatId || !conversation || isStreaming || isLoadingQuestions || suggestedQuestions.length > 0) {
