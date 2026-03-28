@@ -8,10 +8,21 @@ import ChatInput from '@/components/chat/ChatInput';
 import ConfirmDialog from '@/components/ui/confirm-dialog';
 import { useAppDispatch, useAppSelector } from '@/redux/hooks';
 import { useStore } from 'react-redux';
-import { clearConversationMessages, updateMessage } from '@/redux/slices/conversationSlice';
-import { setStreamStatus } from '@/redux/slices/streamSlice';
+import {
+  appendMessage,
+  clearConversationMessages,
+  updateMessage,
+} from '@/redux/slices/conversationSlice';
+import {
+  appendTextDelta,
+  appendThinkingDelta,
+  completeThinkingPhase,
+  endStream,
+  setStreamStatus,
+  startStream,
+} from '@/redux/slices/streamSlice';
 import { fetchStreamStatus } from '@/lib/api/streamStatus';
-import type { ContentBlock } from '@/types/conversation';
+import { reconnectStream } from '@/lib/api/chat';
 import { useConversation } from '@/hooks/useConversation';
 import { useSendMessage } from '@/hooks/useSendMessage';
 import { useSuggestedQuestions } from '@/hooks/useSuggestedQuestions';
@@ -54,75 +65,74 @@ export default function ChatPage() {
     clearQuestions();
   }, [chatId, clearQuestions]);
 
-  // 页面 mount / hydration 完成后检查是否有未完成的流（断线重连恢复）
+  // 页面 mount / hydration 完成后检查是否有未完成的流 → 断线重连
   const isAuthenticated = useAppSelector((state) => state.auth.isAuthenticated);
   const hydrationDone = hydrationView === 'ready';
   useEffect(() => {
     if (!chatId || !isAuthenticated || !hydrationDone || isStreaming) return;
 
-    const checkStreamStatus = async () => {
+    let cancelled = false;
+    const checkAndReconnect = async () => {
       try {
         const status = await fetchStreamStatus(chatId);
+        if (cancelled || status.status !== 'streaming') return;
 
-        if ((status.status === 'streaming' || status.status === 'error') && status.content_blocks?.length) {
-          dispatch(setStreamStatus(status.status === 'error' ? 'error' : 'reconnecting'));
+        const messageId = status.message_id || '';
+        const lastEntryId = status.last_entry_id || '0';
 
-          const blocks: ContentBlock[] = [];
-          const reasoningText = status.content_blocks
-            .filter((b) => b.type === 'reasoning')
-            .map((b) => b.content)
-            .join('');
-          const answeringText = status.content_blocks
-            .filter((b) => b.type === 'answering')
-            .map((b) => b.content)
-            .join('');
+        // 有进行中的流 → 建立 SSE 重连，从断点续读
+        dispatch(setStreamStatus('reconnecting'));
 
-          if (reasoningText) {
-            blocks.push({ type: 'thinking', id: 'blk_recovered_think', thinking: reasoningText });
-          }
-          if (answeringText) {
-            blocks.push({ type: 'text', id: 'blk_recovered_text', text: answeringText });
-          }
-
-          if (blocks.length > 0) {
-            // 找最后一条 assistant 消息写入，如果没有则创建一条
-            const conv = (store.getState() as any).conversation.byId[chatId];
-            const lastAssistantMsg = conv?.messages
-              ?.filter((m: any) => m.role === 'assistant')
-              ?.at(-1);
-
-            if (lastAssistantMsg) {
-              dispatch(
-                updateMessage({
-                  conversationId: chatId,
-                  messageId: lastAssistantMsg.id,
-                  patch: { content: blocks },
-                })
-              );
-            } else {
-              // 流中断时 assistant 消息可能还没落库，创建一条占位
-              const { v4: uuidv4 } = await import('uuid');
-              const { appendMessage } = await import('@/redux/slices/conversationSlice');
-              dispatch(
-                appendMessage({
-                  conversationId: chatId,
-                  message: {
-                    id: uuidv4(),
-                    role: 'assistant',
-                    content: blocks,
-                    timestamp: Date.now(),
-                  },
-                })
-              );
-            }
-          }
+        // 确保有 assistant 消息占位
+        const conv = conversation;
+        const hasAssistant = conv?.messages?.some((m) => m.role === 'assistant' && m.id === messageId);
+        if (!hasAssistant && messageId) {
+          dispatch(appendMessage({
+            conversationId: chatId,
+            message: { id: messageId, role: 'assistant', content: [], timestamp: Date.now() },
+          }));
         }
+
+        // 启动流式状态
+        dispatch(startStream({ conversationId: chatId, messageId }));
+
+        // 从 Redis Stream 断点续读
+        await reconnectStream(chatId, lastEntryId, {
+          onReady: () => {},
+          onTextDelta: (delta, blockId, meta) => {
+            if (cancelled) return;
+            const streamState = (store.getState() as any).stream;
+            if (streamState.isStreamingReasoning) {
+              dispatch(completeThinkingPhase());
+            }
+            dispatch(appendTextDelta({ blockId, delta }));
+          },
+          onThinkingDelta: (delta, blockId) => {
+            if (cancelled) return;
+            dispatch(appendThinkingDelta({ blockId, delta }));
+          },
+          onDone: () => {
+            if (cancelled) return;
+            dispatch(endStream());
+            dispatch(setStreamStatus('completed'));
+            // 消息已落库，刷新 hydration
+            retryHydration();
+          },
+          onError: () => {
+            if (cancelled) return;
+            dispatch(endStream());
+            dispatch(setStreamStatus('error'));
+          },
+        });
       } catch {
-        // 查询失败静默处理
+        if (!cancelled) {
+          dispatch(endStream());
+        }
       }
     };
 
-    checkStreamStatus();
+    checkAndReconnect();
+    return () => { cancelled = true; };
   }, [chatId, isAuthenticated, hydrationDone]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {

@@ -4,13 +4,10 @@ import fetchWithAuth from './fetchWithAuth';
 const API_BASE_URL = API_CONFIG.BASE_URL;
 
 export interface StreamStatusResponse {
-  status: 'streaming' | 'error' | 'completed';
-  content_blocks?: Array<{
-    type: 'reasoning' | 'answering';
-    content: string;
-  }>;
-  model?: string;
-  started_at?: number;
+  status: 'streaming' | 'done' | 'error' | 'not_found';
+  // 仅 status=streaming 时返回
+  last_entry_id?: string;
+  message_id?: string;
 }
 
 /**
@@ -23,10 +20,10 @@ export async function fetchStreamStatus(
   try {
     const response = await fetchWithAuth(`${API_BASE_URL}/api/chat/stream-status/${conversationId}`);
     if (!response.ok) {
-      return { status: 'completed' };
+      return { status: 'not_found' };
     }
     return response.json();
   } catch {
-    return { status: 'completed' };
+    return { status: 'not_found' };
   }
 }

@@ -71,6 +71,7 @@ export async function sendMessageStream(
   let buffer = '';
   let ready = false;
   let receivedDone = false;
+  let currentEntryId = '0'; // Redis Stream entry ID，供断线重连使用
 
   try {
     while (true) {
@@ -90,6 +91,13 @@ export async function sendMessageStream(
 
       for (const line of lines) {
         const trimmed = line.trim();
+
+        // 解析 SSE id 行（Redis Stream entry ID）
+        if (trimmed.startsWith('id:')) {
+          currentEntryId = trimmed.slice(3).trim();
+          continue;
+        }
+
         if (!trimmed.startsWith('data:')) continue;
 
         const raw = trimmed.slice(5).trim();
@@ -109,7 +117,7 @@ export async function sendMessageStream(
         const conversationId = chunk.conversation_id;
         const choice = chunk.choices?.[0];
 
-        // 第一帧（心跳帧）触发 onReady
+        // 第一帧触发 onReady
         if (!ready && messageId) {
           ready = true;
           callbacks.onReady({ messageId, conversationId });
@@ -136,6 +144,93 @@ export async function sendMessageStream(
     }
   } finally {
     reader.releaseLock();
+  }
+}
+
+// ============================================================
+// 断线重连 — GET /stream/{conv_id}
+// ============================================================
+
+export async function reconnectStream(
+  conversationId: string,
+  lastEntryId: string,
+  callbacks: StreamCallbacks,
+  signal?: AbortSignal,
+): Promise<void> {
+  const response = await fetchWithAuth(
+    `${API_BASE_URL}/api/chat/stream/${conversationId}?last_entry_id=${encodeURIComponent(lastEntryId)}`,
+    { signal }
+  );
+
+  if (!response.ok) {
+    throw new Error('重连失败');
+  }
+  if (!response.body) throw new Error('响应体为空');
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  let ready = false;
+  let receivedDone = false;
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) {
+        if (!receivedDone) callbacks.onError('流异常结束');
+        break;
+      }
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() ?? '';
+
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (trimmed.startsWith('id:')) continue;
+        if (!trimmed.startsWith('data:')) continue;
+
+        const raw = trimmed.slice(5).trim();
+        if (raw === '[DONE]') { receivedDone = true; continue; }
+
+        let chunk: StreamChunkPayload;
+        try { chunk = JSON.parse(raw) as StreamChunkPayload; } catch { continue; }
+
+        const messageId = chunk.id;
+        const conversationId = chunk.conversation_id;
+        const choice = chunk.choices?.[0];
+
+        if (!ready && messageId) {
+          ready = true;
+          callbacks.onReady({ messageId, conversationId });
+        }
+
+        if (choice?.delta?.content) {
+          for (const block of choice.delta.content) {
+            if (block.type === 'text') callbacks.onTextDelta(block.text, block.id, { messageId, conversationId });
+            else if (block.type === 'thinking') callbacks.onThinkingDelta(block.thinking, block.id, { messageId, conversationId });
+          }
+        }
+
+        if (choice?.finish_reason === 'stop') callbacks.onDone(messageId, conversationId, chunk.usage ?? null);
+        else if (choice?.finish_reason === 'error') callbacks.onError('模型调用失败');
+      }
+    }
+  } finally {
+    reader.releaseLock();
+  }
+}
+
+export async function stopStream(conversationId: string): Promise<boolean> {
+  try {
+    const response = await fetchWithAuth(`${API_BASE_URL}/api/chat/stop/${conversationId}`, {
+      method: 'POST',
+    });
+    if (!response.ok) return false;
+    const data = await response.json();
+    return data.cancelled ?? false;
+  } catch {
+    return false;
   }
 }
 

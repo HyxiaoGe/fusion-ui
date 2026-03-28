@@ -18,7 +18,9 @@ export interface StreamState {
   isThinkingPhaseComplete: boolean;
   reasoningStartTime: number | null;
   reasoningEndTime: number | undefined;
-  // 流状态枚举，比 isStreaming boolean 更精确（断线重连场景）
+  // 最后收到的 Redis Stream entry ID（断线重连起点）
+  lastEntryId: string;
+  // 流状态枚举
   streamStatus: 'idle' | 'streaming' | 'reconnecting' | 'completed' | 'error';
 }
 
@@ -36,6 +38,7 @@ const initialState: StreamState = {
   isThinkingPhaseComplete: false,
   reasoningStartTime: null,
   reasoningEndTime: undefined,
+  lastEntryId: '0',
   streamStatus: 'idle',
 };
 
@@ -109,6 +112,10 @@ const streamSlice = createSlice({
       state.conversationId = action.payload;
     },
 
+    setLastEntryId(state, action: PayloadAction<string>) {
+      state.lastEntryId = action.payload;
+    },
+
     setStreamStatus(state, action: PayloadAction<StreamState['streamStatus']>) {
       state.streamStatus = action.payload;
     },
@@ -171,6 +178,7 @@ export const {
   completeThinkingPhase,
   endStream,
   migrateStreamConversation,
+  setLastEntryId,
   setStreamStatus,
   startStream,
 } = streamSlice.actions;
