@@ -140,7 +140,11 @@ export default function ChatPage() {
     };
 
     checkAndReconnect();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+      // 切换对话时清理流状态，否则 isStreaming 残留为 true 阻止重连
+      dispatch(endStream());
+    };
   }, [chatId, isAuthenticated, hydrationDone]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
