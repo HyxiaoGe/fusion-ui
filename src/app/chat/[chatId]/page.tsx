@@ -14,6 +14,7 @@ import {
   updateMessage,
 } from '@/redux/slices/conversationSlice';
 import {
+  advanceTypewriter,
   appendTextDelta,
   appendThinkingDelta,
   completeThinkingPhase,
@@ -111,6 +112,8 @@ export default function ChatPage() {
               dispatch(completeThinkingPhase());
             }
             dispatch(appendTextDelta({ blockId, delta }));
+            // 重连不需要打字机效果，立即推进显示长度
+            dispatch(advanceTypewriter(delta.length));
           },
           onThinkingDelta: (delta, blockId) => {
             if (cancelled) return;
