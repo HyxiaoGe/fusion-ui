@@ -98,6 +98,31 @@ export async function revokeAuthSession(
   }
 }
 
+export async function refreshAccessToken(): Promise<AuthServiceTokenResponse | null> {
+  const refreshToken = getStoredRefreshToken();
+  if (!refreshToken || !getAuthServiceBaseUrl()) {
+    return null;
+  }
+
+  try {
+    const response = await fetch(`${getAuthServiceBaseUrl()}/auth/token/refresh`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ refresh_token: refreshToken }),
+    });
+
+    if (!response.ok) {
+      return null;
+    }
+
+    const tokens: AuthServiceTokenResponse = await response.json();
+    storeAuthSession(tokens);
+    return tokens;
+  } catch {
+    return null;
+  }
+}
+
 export function storeAuthSession(tokens: AuthServiceTokenResponse): void {
   localStorage.setItem(ACCESS_TOKEN_KEY, tokens.access_token);
   localStorage.setItem(REFRESH_TOKEN_KEY, tokens.refresh_token);
