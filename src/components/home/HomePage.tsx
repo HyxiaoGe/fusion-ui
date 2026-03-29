@@ -66,12 +66,13 @@ const HomePage: React.FC<HomePageProps> = ({ onSendMessage }) => {
           今天我能帮你做什么？
         </h1>
 
-        <div className="grid grid-cols-3 gap-3 max-w-3xl mx-auto">
+        <div className="flex flex-wrap gap-3 justify-center">
           {loading ? (
             Array.from({ length: 9 }).map((_, i) => (
               <div
                 key={i}
-                className="h-11 rounded-xl bg-muted/40 animate-pulse"
+                className="h-10 rounded-lg bg-muted/40 animate-pulse"
+                style={{ width: `${120 + (i % 3) * 60}px` }}
               />
             ))
           ) : (
@@ -79,9 +80,9 @@ const HomePage: React.FC<HomePageProps> = ({ onSendMessage }) => {
               <button
                 key={`${example}-${index}`}
                 onClick={() => handleExampleClick(example)}
-                className="px-4 py-2.5 rounded-xl bg-muted/40 text-sm text-muted-foreground
+                className="px-5 py-2.5 rounded-lg bg-muted/40 text-sm text-muted-foreground whitespace-nowrap
                            hover:bg-muted/70 hover:text-foreground
-                           transition-all duration-200 cursor-pointer text-center"
+                           transition-all duration-200 cursor-pointer"
               >
                 {example}
               </button>
