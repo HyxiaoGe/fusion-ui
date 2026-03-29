@@ -19,9 +19,11 @@ import {
   appendThinkingDelta,
   completeThinkingPhase,
   endStream,
+  selectFullStreamContentBlocks,
   setStreamStatus,
   startStream,
 } from '@/redux/slices/streamSlice';
+import type { StreamState } from '@/redux/slices/streamSlice';
 import { fetchStreamStatus } from '@/lib/api/streamStatus';
 import { reconnectStream } from '@/lib/api/chat';
 import { useConversation } from '@/hooks/useConversation';
@@ -132,9 +134,19 @@ export default function ChatPage() {
           },
           onDone: () => {
             if (cancelled) return;
+            // 把 streamSlice 的内容写入 conversation 消息，防止 endStream 清空后内容丢失
+            const streamState = (store.getState() as { stream: StreamState }).stream;
+            const blocks = selectFullStreamContentBlocks(streamState);
+            if (messageId && blocks.length > 0) {
+              dispatch(updateMessage({
+                conversationId: chatId,
+                messageId,
+                patch: { content: blocks },
+              }));
+            }
             dispatch(endStream());
             dispatch(setStreamStatus('completed'));
-            // 消息已落库，刷新 hydration
+            // 消息已落库，刷新 hydration 获取完整数据（含 usage 等）
             retryHydration();
           },
           onError: () => {
