@@ -221,9 +221,10 @@ export async function reconnectStream(
   }
 }
 
-export async function stopStream(conversationId: string): Promise<boolean> {
+export async function stopStream(conversationId: string, messageId?: string): Promise<boolean> {
   try {
-    const response = await fetchWithAuth(`${API_BASE_URL}/api/chat/stop/${conversationId}`, {
+    const params = messageId ? `?message_id=${encodeURIComponent(messageId)}` : '';
+    const response = await fetchWithAuth(`${API_BASE_URL}/api/chat/stop/${conversationId}${params}`, {
       method: 'POST',
     });
     if (!response.ok) return false;

@@ -113,10 +113,11 @@ export function useSendMessage() {
       clearStreamingMark(convId);
     }
 
-    // 通知后端取消后台任务
+    // 通知后端取消后台任务，传 messageId 防止误杀新一轮的流
     if (convId) {
+      const streamState = (store.getState() as { stream: { messageId: string | null } }).stream;
       const { stopStream } = await import('@/lib/api/chat');
-      await stopStream(convId);
+      await stopStream(convId, streamState.messageId || assistantMsgId || undefined);
     }
 
     dispatch(endStream());
