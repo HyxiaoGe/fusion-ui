@@ -1,7 +1,8 @@
-import { useCallback, useRef } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import { useAppDispatch, useAppSelector } from '@/redux/hooks';
 import { useStore } from 'react-redux';
+import { API_CONFIG } from '@/lib/config';
 import {
   appendMessage,
   materializeConversation,
@@ -65,6 +66,24 @@ export function useSendMessage() {
   const assistantHasContentRef = useRef(false);
   const typewriterIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
+  // 页面卸载时通知后端停止生成
+  // fetch + keepalive 在页面卸载后仍能可靠送达，且支持携带 auth header
+  useEffect(() => {
+    const handleBeforeUnload = () => {
+      const convId = activeConvIdRef.current;
+      if (!convId) return;
+      const token = localStorage.getItem('auth_token');
+      const url = `${API_CONFIG.BASE_URL}/api/chat/stop/${convId}`;
+      fetch(url, {
+        method: 'POST',
+        keepalive: true,
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      }).catch(() => {});
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, []);
+
   const stopStreaming = useCallback(async () => {
     const convId = activeConvIdRef.current;
     const userMsgId = userMessageIdRef.current;
@@ -102,9 +121,10 @@ export function useSendMessage() {
     }
 
     // 通知后端取消后台任务（后端会在 CancelledError 中落库已有内容）
+    // 必须等待请求发出，否则用户点停止后立刻刷新会导致请求丢失
     if (convId) {
       const { stopStream } = await import('@/lib/api/chat');
-      void stopStream(convId);
+      await stopStream(convId);
     }
 
     dispatch(endStream());
