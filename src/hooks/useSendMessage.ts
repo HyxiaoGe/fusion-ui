@@ -1,8 +1,8 @@
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback, useRef } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import { useAppDispatch, useAppSelector } from '@/redux/hooks';
 import { useStore } from 'react-redux';
-import { API_CONFIG } from '@/lib/config';
+import { markStreaming, clearStreamingMark } from '@/lib/api/streamStatus';
 import {
   appendMessage,
   materializeConversation,
@@ -72,24 +72,6 @@ export function useSendMessage() {
       || (store.getState() as { stream: { conversationId: string | null } }).stream.conversationId;
   }, [store]);
 
-  // 页面卸载时通知后端停止生成
-  // fetch + keepalive 在页面卸载后仍能可靠送达，且支持携带 auth header
-  useEffect(() => {
-    const handleBeforeUnload = () => {
-      const convId = getStreamingConvId();
-      if (!convId) return;
-      const token = localStorage.getItem('auth_token');
-      const url = `${API_CONFIG.BASE_URL}/api/chat/stop/${convId}`;
-      fetch(url, {
-        method: 'POST',
-        keepalive: true,
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
-      }).catch(() => {});
-    };
-    window.addEventListener('beforeunload', handleBeforeUnload);
-    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
-  }, [getStreamingConvId]);
-
   const stopStreaming = useCallback(async () => {
     const convId = getStreamingConvId();
     const userMsgId = userMessageIdRef.current;
@@ -126,8 +108,12 @@ export function useSendMessage() {
       }
     }
 
-    // 通知后端取消后台任务（后端会在 CancelledError 中落库已有内容）
-    // 必须等待请求发出，否则用户点停止后立刻刷新会导致请求丢失
+    // 先清除流标记（同步操作，即使后续请求失败也能阻止重连）
+    if (convId) {
+      clearStreamingMark(convId);
+    }
+
+    // 通知后端取消后台任务
     if (convId) {
       const { stopStream } = await import('@/lib/api/chat');
       await stopStream(convId);
@@ -200,6 +186,7 @@ export function useSendMessage() {
       dispatch(appendMessage({ conversationId: tempConvId, message: userMessage }));
       dispatch(appendMessage({ conversationId: tempConvId, message: assistantPlaceholder }));
       dispatch(startStream({ conversationId: tempConvId, messageId: assistantMessageId }));
+      markStreaming(tempConvId);
 
       const controller = new AbortController();
       abortControllerRef.current = controller;
@@ -269,6 +256,7 @@ export function useSendMessage() {
           })
         );
         dispatch(endStream());
+        clearStreamingMark(finalConvId);
         abortControllerRef.current = null;
         activeConvIdRef.current = null;
         userMessageIdRef.current = null;
@@ -392,6 +380,7 @@ export function useSendMessage() {
           dispatch(setPendingConversationId(null));
         }
         dispatch(endStream());
+        clearStreamingMark(effectiveConvId);
         abortControllerRef.current = null;
         activeConvIdRef.current = null;
         userMessageIdRef.current = null;

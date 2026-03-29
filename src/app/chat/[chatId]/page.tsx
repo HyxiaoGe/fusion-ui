@@ -22,8 +22,8 @@ import {
   setStreamStatus,
   startStream,
 } from '@/redux/slices/streamSlice';
-import { fetchStreamStatus } from '@/lib/api/streamStatus';
-import { reconnectStream } from '@/lib/api/chat';
+import { fetchStreamStatus, hasStreamingMark, clearStreamingMark, markStreaming } from '@/lib/api/streamStatus';
+import { reconnectStream, stopStream } from '@/lib/api/chat';
 import { useConversation } from '@/hooks/useConversation';
 import { useSendMessage } from '@/hooks/useSendMessage';
 import { useSuggestedQuestions } from '@/hooks/useSuggestedQuestions';
@@ -83,6 +83,14 @@ export default function ChatPage() {
     let cancelled = false;
     const checkAndReconnect = async () => {
       try {
+        // 检查 localStorage 标记：如果上次是非正常退出（刷新/关闭），
+        // 说明用户没有主动点"继续"，应该先发 stop 而不是自动重连
+        if (hasStreamingMark(chatId)) {
+          clearStreamingMark(chatId);
+          await stopStream(chatId);
+          return;
+        }
+
         const status = await fetchStreamStatus(chatId);
         if (cancelled || status.status !== 'streaming') return;
 
@@ -105,8 +113,9 @@ export default function ChatPage() {
           }));
         }
 
-        // 启动流式状态
+        // 启动流式状态，标记 localStorage（重连中刷新也能捕获）
         dispatch(startStream({ conversationId: chatId, messageId }));
+        markStreaming(chatId);
 
         // TODO: 遗漏3 — 重连 SSE 请求没有挂 abort controller，
         // stopStreaming 无法立即取消。后续加 signal 支持让 stop 能中断重连读取
@@ -130,6 +139,7 @@ export default function ChatPage() {
           onDone: () => {
             if (cancelled) return;
             dispatch(endStream());
+            clearStreamingMark(chatId);
             dispatch(setStreamStatus('completed'));
             // 消息已落库，刷新 hydration
             retryHydration();
@@ -137,6 +147,7 @@ export default function ChatPage() {
           onError: () => {
             if (cancelled) return;
             dispatch(endStream());
+            clearStreamingMark(chatId);
             dispatch(setStreamStatus('error'));
           },
         });
