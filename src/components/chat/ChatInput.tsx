@@ -647,25 +647,19 @@ const ChatInput: React.FC<ChatInputProps> = ({
         )}
 
         {/* Textarea 区域 */}
-        <div className="relative">
-          <Textarea
-            id="chat-message-input"
-            name="chatMessage"
-            ref={textareaRef}
-            value={message}
-            onChange={(event) => setMessage(event.target.value)}
-            onKeyDown={handleKeyDown}
-            onPaste={handlePaste}
-            placeholder={isCurrentModelUnavailable ? "当前会话模型不可用，请新建会话后继续" : (placeholder || "发消息给 Fusion AI（Enter 发送）")}
-            disabled={isComposerBlocked}
-            className="min-h-[44px] max-h-[168px] resize-none border-0 shadow-none focus-visible:ring-0 px-4 pt-3 pb-8 text-sm"
-            rows={1}
-          />
-          {/* 模型选择器嵌入 textarea 右下角 */}
-          <div className="absolute right-2 bottom-1">
-            <ModelSelector onChange={onModelChange || (() => {})} />
-          </div>
-        </div>
+        <Textarea
+          id="chat-message-input"
+          name="chatMessage"
+          ref={textareaRef}
+          value={message}
+          onChange={(event) => setMessage(event.target.value)}
+          onKeyDown={handleKeyDown}
+          onPaste={handlePaste}
+          placeholder={isCurrentModelUnavailable ? "当前会话模型不可用，请新建会话后继续" : (placeholder || "发消息给 Fusion AI（Enter 发送）")}
+          disabled={isComposerBlocked}
+          className="min-h-[44px] max-h-[168px] resize-none border-0 shadow-none focus-visible:ring-0 px-4 pt-3 pb-2 text-sm"
+          rows={1}
+        />
 
         <input
           id="chat-file-input"
@@ -711,8 +705,10 @@ const ChatInput: React.FC<ChatInputProps> = ({
 
           </div>
 
-          {/* 右侧发送/停止按钮 */}
-          <Button
+          {/* 右侧：模型选择器 + 发送按钮 */}
+          <div className="flex items-center gap-1.5">
+            <ModelSelector onChange={onModelChange || (() => {})} />
+            <Button
             onClick={isStreaming && onStopStreaming ? onStopStreaming : handleSendMessage}
             disabled={!canSend && !(isStreaming && onStopStreaming)}
             size="sm"
@@ -724,6 +720,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
               <ArrowUp className="h-4 w-4" />
             )}
           </Button>
+          </div>
         </div>
       </div>
 
