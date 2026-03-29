@@ -18,7 +18,6 @@ const FALLBACK_EXAMPLES = [
 const PAGE_SIZE = 9;
 const ROTATE_INTERVAL = 15000;
 
-/** Fisher-Yates 洗牌 */
 function shuffle<T>(arr: T[]): T[] {
   const a = [...arr];
   for (let i = a.length - 1; i > 0; i--) {
@@ -28,6 +27,59 @@ function shuffle<T>(arr: T[]): T[] {
   return a;
 }
 
+// 单个翻牌卡片
+const FlipCard = memo(({
+  frontText,
+  backText,
+  flipped,
+  delay,
+  onClick,
+}: {
+  frontText: string;
+  backText: string;
+  flipped: boolean;
+  delay: number;
+  onClick: () => void;
+}) => (
+  <div
+    className="h-10"
+    style={{ perspective: '800px' }}
+  >
+    <div
+      onClick={onClick}
+      className="relative h-full cursor-pointer"
+      style={{
+        transformStyle: 'preserve-3d',
+        transition: `transform 0.5s ease ${delay}ms`,
+        transform: flipped ? 'rotateY(180deg)' : 'rotateY(0deg)',
+      }}
+    >
+      {/* 正面 */}
+      <div
+        className="absolute inset-0 flex items-center px-5 rounded-[20px] bg-muted/50 text-[14px] leading-5 text-foreground/70 whitespace-nowrap
+                   shadow-[0_2px_8px_rgba(0,0,0,0.12)]
+                   hover:bg-muted hover:text-foreground hover:shadow-[0_4px_12px_rgba(0,0,0,0.18)]
+                   dark:shadow-[0_2px_8px_rgba(255,255,255,0.06)] dark:border dark:border-white/10
+                   dark:hover:shadow-[0_4px_12px_rgba(255,255,255,0.1)] dark:hover:border-white/20"
+        style={{ backfaceVisibility: 'hidden' }}
+      >
+        {frontText}
+      </div>
+      {/* 背面 */}
+      <div
+        className="absolute inset-0 flex items-center px-5 rounded-[20px] bg-muted/50 text-[14px] leading-5 text-foreground/70 whitespace-nowrap
+                   shadow-[0_2px_8px_rgba(0,0,0,0.12)]
+                   dark:shadow-[0_2px_8px_rgba(255,255,255,0.06)] dark:border dark:border-white/10"
+        style={{ backfaceVisibility: 'hidden', transform: 'rotateY(180deg)' }}
+      >
+        {backText}
+      </div>
+    </div>
+  </div>
+));
+
+FlipCard.displayName = 'FlipCard';
+
 interface HomePageProps {
   onNewChat?: () => void;
   onSendMessage: (content: string) => void;
@@ -36,43 +88,41 @@ interface HomePageProps {
 const HomePage: React.FC<HomePageProps> = ({ onSendMessage }) => {
   const { isAuthenticated } = useAppSelector((state) => state.auth);
   const { toast } = useToast();
-  const [displayItems, setDisplayItems] = useState<string[]>(FALLBACK_EXAMPLES.slice(0, PAGE_SIZE));
   const [loading, setLoading] = useState(true);
-  // 逐个翻牌状态：-1 表示无动画，0~8 表示正在翻第几张
-  const [flippingIndex, setFlippingIndex] = useState(-1);
+  // 双缓冲：current 是正面文字，next 是背面文字，翻转后交换
+  const [currentItems, setCurrentItems] = useState<string[]>(FALLBACK_EXAMPLES.slice(0, PAGE_SIZE));
+  const [nextItems, setNextItems] = useState<string[]>(FALLBACK_EXAMPLES.slice(0, PAGE_SIZE));
+  const [flipped, setFlipped] = useState(false);
 
-  // 洗牌池：shuffle 后按顺序取，用完再 reshuffle，保证不重复
   const poolRef = useRef<string[]>([]);
   const cursorRef = useRef(0);
 
   const getNextBatch = useCallback((): string[] => {
     const pool = poolRef.current;
     if (pool.length === 0) return FALLBACK_EXAMPLES.slice(0, PAGE_SIZE);
-
-    // 剩余不够一批，reshuffle
     if (cursorRef.current + PAGE_SIZE > pool.length) {
       poolRef.current = shuffle(pool);
       cursorRef.current = 0;
     }
-
     const batch = poolRef.current.slice(cursorRef.current, cursorRef.current + PAGE_SIZE);
     cursorRef.current += PAGE_SIZE;
     return batch;
   }, []);
 
-  // 首次加载：拿全量问题池
+  // 首次加载
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
-        // 拿全量（limit 设大一些）
         const data = await fetchPromptExamples(50);
         if (!cancelled && data.examples.length > 0) {
           const all = data.examples.map((e) => e.question);
           poolRef.current = shuffle(all);
           cursorRef.current = 0;
-          setDisplayItems(poolRef.current.slice(0, PAGE_SIZE));
+          const first = poolRef.current.slice(0, PAGE_SIZE);
           cursorRef.current = PAGE_SIZE;
+          setCurrentItems(first);
+          setNextItems(first);
         }
       } catch {
         // fallback
@@ -83,39 +133,23 @@ const HomePage: React.FC<HomePageProps> = ({ onSendMessage }) => {
     return () => { cancelled = true; };
   }, []);
 
-  // 逐个翻牌动画
-  const doFlipTransition = useCallback(() => {
-    const nextBatch = getNextBatch();
-
-    // 依次翻出每张牌（每张间隔 80ms）
-    for (let i = 0; i < PAGE_SIZE; i++) {
-      setTimeout(() => {
-        setFlippingIndex(i);
-      }, i * 80);
-
-      // 翻到一半时换内容，再翻回来
-      setTimeout(() => {
-        setDisplayItems((prev) => {
-          const updated = [...prev];
-          updated[i] = nextBatch[i] ?? prev[i];
-          return updated;
-        });
-        setFlippingIndex((cur) => (cur === i ? -1 : cur));
-      }, i * 80 + 200);
-    }
-
-    // 全部完成后重置
-    setTimeout(() => {
-      setFlippingIndex(-1);
-    }, PAGE_SIZE * 80 + 300);
-  }, [getNextBatch]);
-
-  // 定时轮换
+  // 定时翻牌
   useEffect(() => {
     if (loading) return;
-    const timer = setInterval(doFlipTransition, ROTATE_INTERVAL);
+    const timer = setInterval(() => {
+      const batch = getNextBatch();
+      if (flipped) {
+        // 当前显示的是背面 → 准备新正面 → 翻回正面
+        setCurrentItems(batch);
+        setFlipped(false);
+      } else {
+        // 当前显示的是正面 → 准备新背面 → 翻到背面
+        setNextItems(batch);
+        setFlipped(true);
+      }
+    }, ROTATE_INTERVAL);
     return () => clearInterval(timer);
-  }, [loading, doFlipTransition]);
+  }, [loading, flipped, getNextBatch]);
 
   const handleExampleClick = useCallback((message: string) => {
     if (!isAuthenticated) {
@@ -132,6 +166,8 @@ const HomePage: React.FC<HomePageProps> = ({ onSendMessage }) => {
     void Promise.resolve(onSendMessage(message));
   }, [isAuthenticated, onSendMessage, toast]);
 
+  const getVisibleText = (index: number) => flipped ? nextItems[index] : currentItems[index];
+
   return (
     <div className="flex h-full items-center justify-center px-4 pb-32">
       <div className="w-full max-w-4xl mx-auto px-8">
@@ -139,34 +175,25 @@ const HomePage: React.FC<HomePageProps> = ({ onSendMessage }) => {
           有什么我能帮你的吗？
         </h1>
 
-        <div className="flex flex-wrap gap-3.5 justify-center" style={{ perspective: '800px' }}>
+        <div className="flex flex-wrap gap-3.5 justify-center">
           {loading ? (
             Array.from({ length: 9 }).map((_, i) => (
               <div
                 key={i}
-                className="h-11 rounded-[20px] bg-muted/50 animate-pulse"
+                className="h-10 rounded-[20px] bg-muted/50 animate-pulse"
                 style={{ width: `${140 + (i % 3) * 50}px` }}
               />
             ))
           ) : (
-            displayItems.map((example, index) => (
-              <button
-                key={`slot-${index}`}
-                onClick={() => handleExampleClick(example)}
-                className="px-5 py-2.5 rounded-[20px] bg-muted/50 text-[14px] leading-5 text-foreground/70 whitespace-nowrap
-                           shadow-[0_2px_8px_rgba(0,0,0,0.12)]
-                           hover:bg-muted hover:text-foreground hover:shadow-[0_4px_12px_rgba(0,0,0,0.18)]
-                           dark:shadow-[0_2px_8px_rgba(255,255,255,0.06)] dark:border dark:border-white/10
-                           dark:hover:shadow-[0_4px_12px_rgba(255,255,255,0.1)] dark:hover:border-white/20
-                           cursor-pointer"
-                style={{
-                  transition: 'transform 0.4s ease, opacity 0.4s ease, background-color 0.15s, box-shadow 0.15s',
-                  transform: flippingIndex === index ? 'rotateX(90deg)' : 'rotateX(0deg)',
-                  opacity: flippingIndex === index ? 0 : 1,
-                }}
-              >
-                {example}
-              </button>
+            currentItems.map((_, index) => (
+              <FlipCard
+                key={`card-${index}`}
+                frontText={currentItems[index]}
+                backText={nextItems[index]}
+                flipped={flipped}
+                delay={index * 100}
+                onClick={() => handleExampleClick(getVisibleText(index))}
+              />
             ))
           )}
         </div>
