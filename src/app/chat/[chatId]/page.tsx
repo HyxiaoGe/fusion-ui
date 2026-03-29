@@ -22,8 +22,8 @@ import {
   setStreamStatus,
   startStream,
 } from '@/redux/slices/streamSlice';
-import { fetchStreamStatus, consumeStreamingMark, markStreaming, clearStreamingMark } from '@/lib/api/streamStatus';
-import { reconnectStream, stopStream } from '@/lib/api/chat';
+import { fetchStreamStatus } from '@/lib/api/streamStatus';
+import { reconnectStream } from '@/lib/api/chat';
 import { useConversation } from '@/hooks/useConversation';
 import { useSendMessage } from '@/hooks/useSendMessage';
 import { useSuggestedQuestions } from '@/hooks/useSuggestedQuestions';
@@ -83,14 +83,9 @@ export default function ChatPage() {
     let cancelled = false;
     const checkAndReconnect = async () => {
       try {
-        // 检查 localStorage 标记：如果有活跃流记录，说明上次是非正常退出
-        // 对记录的 conversationId 发 stop，不自动重连
-        const markedConvId = consumeStreamingMark(chatId);
-        if (markedConvId) {
-          void stopStream(markedConvId);
-          return;
-        }
-
+        // 直接查后端流状态，由后端 meta 决定是否重连
+        // 用户点停止 → 后端 cancel_stream 设 meta=cancelled → 这里不会返回 streaming
+        // 用户切换对话再切回来 → 后台任务仍在跑 → meta=streaming → 自动重连
         const status = await fetchStreamStatus(chatId);
         if (cancelled || status.status !== 'streaming') return;
 
@@ -113,9 +108,8 @@ export default function ChatPage() {
           }));
         }
 
-        // 启动流式状态，标记 localStorage（重连中刷新也能捕获）
+        // 启动流式状态
         dispatch(startStream({ conversationId: chatId, messageId }));
-        markStreaming(chatId);
 
         // TODO: 遗漏3 — 重连 SSE 请求没有挂 abort controller，
         // stopStreaming 无法立即取消。后续加 signal 支持让 stop 能中断重连读取
@@ -139,7 +133,6 @@ export default function ChatPage() {
           onDone: () => {
             if (cancelled) return;
             dispatch(endStream());
-            clearStreamingMark(chatId);
             dispatch(setStreamStatus('completed'));
             // 消息已落库，刷新 hydration
             retryHydration();
@@ -147,7 +140,6 @@ export default function ChatPage() {
           onError: () => {
             if (cancelled) return;
             dispatch(endStream());
-            clearStreamingMark(chatId);
             dispatch(setStreamStatus('error'));
           },
         });

@@ -2,7 +2,7 @@ import { useCallback, useRef } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import { useAppDispatch, useAppSelector } from '@/redux/hooks';
 import { useStore } from 'react-redux';
-import { markStreaming, clearStreamingMark } from '@/lib/api/streamStatus';
+// localStorage 标记已移除，完全依赖后端 stream-status 判断是否重连
 import {
   appendMessage,
   materializeConversation,
@@ -108,11 +108,6 @@ export function useSendMessage() {
       }
     }
 
-    // 先清除流标记（同步操作，即使后续请求失败也能阻止重连）
-    if (convId) {
-      clearStreamingMark(convId);
-    }
-
     // 通知后端取消后台任务，传 messageId 防止误杀新一轮的流
     if (convId) {
       const streamState = (store.getState() as { stream: { messageId: string | null } }).stream;
@@ -187,7 +182,6 @@ export function useSendMessage() {
       dispatch(appendMessage({ conversationId: tempConvId, message: userMessage }));
       dispatch(appendMessage({ conversationId: tempConvId, message: assistantPlaceholder }));
       dispatch(startStream({ conversationId: tempConvId, messageId: assistantMessageId }));
-      markStreaming(tempConvId);
 
       const controller = new AbortController();
       abortControllerRef.current = controller;
@@ -205,8 +199,6 @@ export function useSendMessage() {
         serverConvId = incomingConvId;
         activeConvIdRef.current = incomingConvId;
         // 迁移流标记：tempConvId → serverConvId
-        clearStreamingMark(tempConvId);
-        markStreaming(incomingConvId);
         dispatch(
           materializeConversation({
             pendingId: tempConvId,
@@ -260,7 +252,6 @@ export function useSendMessage() {
           })
         );
         dispatch(endStream());
-        clearStreamingMark(finalConvId);
         abortControllerRef.current = null;
         activeConvIdRef.current = null;
         userMessageIdRef.current = null;
@@ -384,7 +375,6 @@ export function useSendMessage() {
           dispatch(setPendingConversationId(null));
         }
         dispatch(endStream());
-        clearStreamingMark(effectiveConvId);
         abortControllerRef.current = null;
         activeConvIdRef.current = null;
         userMessageIdRef.current = null;
