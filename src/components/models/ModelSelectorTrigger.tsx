@@ -14,7 +14,7 @@ interface ModelSelectorTriggerProps {
 /** 获取模型简称：优先用 name，超过 10 字符截断 */
 function getShortName(model: ModelInfo): string {
   const name = model.name;
-  return name.length > 10 ? name.slice(0, 10) + '…' : name;
+  return name.length > 16 ? name.slice(0, 16) + '…' : name;
 }
 
 const ModelSelectorTrigger = forwardRef<HTMLButtonElement, ModelSelectorTriggerProps>(
@@ -38,7 +38,7 @@ const ModelSelectorTrigger = forwardRef<HTMLButtonElement, ModelSelectorTriggerP
         {model ? (
           <>
             <ProviderIcon providerId={model.provider} size={14} />
-            <span className="truncate max-w-[100px]">{getShortName(model)}</span>
+            <span className="truncate max-w-[160px]">{getShortName(model)}</span>
           </>
         ) : (
           <span>选择模型</span>

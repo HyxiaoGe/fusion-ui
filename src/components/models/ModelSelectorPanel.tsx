@@ -1,7 +1,7 @@
 import { memo } from 'react';
 import { cn } from '@/lib/utils';
 import { CapabilityChipList } from './CapabilityChip';
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+// description tooltip 暂时隐藏
 import type { ModelInfo, ProviderInfo } from '@/lib/config/modelConfig';
 import { getDefaultModelId } from '@/lib/models/modelPreference';
 
@@ -50,19 +50,6 @@ const ModelCard = memo(({
       <CapabilityChipList capabilities={model.capabilities} maxCount={3} />
     </button>
   );
-
-  if (model.description) {
-    return (
-      <TooltipProvider delayDuration={300}>
-        <Tooltip>
-          <TooltipTrigger asChild>{card}</TooltipTrigger>
-          <TooltipContent side="right" className="max-w-[200px] text-xs">
-            {model.description}
-          </TooltipContent>
-        </Tooltip>
-      </TooltipProvider>
-    );
-  }
 
   return card;
 });
