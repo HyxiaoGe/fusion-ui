@@ -1,4 +1,4 @@
-import { useCallback, memo, useState, useEffect } from "react";
+import { useCallback, memo, useState, useEffect, useRef } from "react";
 import { useAppSelector } from "@/redux/hooks";
 import { useToast } from "@/components/ui/toast";
 import { fetchPromptExamples } from "@/lib/api/prompts";
@@ -16,6 +16,8 @@ const FALLBACK_EXAMPLES = [
   '对比 PostgreSQL 和 MongoDB 适用场景',
 ];
 
+const ROTATE_INTERVAL = 15000; // 15 秒轮换
+
 interface HomePageProps {
   onNewChat?: () => void;
   onSendMessage: (content: string) => void;
@@ -26,23 +28,47 @@ const HomePage: React.FC<HomePageProps> = ({ onSendMessage }) => {
   const { toast } = useToast();
   const [examples, setExamples] = useState<string[]>(FALLBACK_EXAMPLES);
   const [loading, setLoading] = useState(true);
+  const [flipping, setFlipping] = useState(false);
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const data = await fetchPromptExamples(9);
-        if (!cancelled && data.examples.length > 0) {
-          setExamples(data.examples.map((e) => e.question));
-        }
-      } catch {
-        // API 不可用，保持 fallback
-      } finally {
-        if (!cancelled) setLoading(false);
+  // 拉取一批新问题（API 每次从 Redis 随机采样，返回不同组合）
+  const loadExamples = useCallback(async (animate = false) => {
+    try {
+      if (animate) {
+        setFlipping(true);
+        // 等翻出动画完成后再换内容
+        await new Promise((r) => setTimeout(r, 300));
       }
-    })();
-    return () => { cancelled = true; };
+      const data = await fetchPromptExamples(9);
+      if (data.examples.length > 0) {
+        setExamples(data.examples.map((e) => e.question));
+      }
+    } catch {
+      // 静默失败，保持当前内容
+    } finally {
+      setLoading(false);
+      if (animate) {
+        // 短暂延迟后触发翻入动画
+        requestAnimationFrame(() => setFlipping(false));
+      }
+    }
   }, []);
+
+  // 首次加载
+  useEffect(() => {
+    loadExamples(false);
+  }, [loadExamples]);
+
+  // 每 15 秒轮换
+  useEffect(() => {
+    intervalRef.current = setInterval(() => {
+      loadExamples(true);
+    }, ROTATE_INTERVAL);
+
+    return () => {
+      if (intervalRef.current) clearInterval(intervalRef.current);
+    };
+  }, [loadExamples]);
 
   const handleExampleClick = useCallback((message: string) => {
     if (!isAuthenticated) {
@@ -66,7 +92,11 @@ const HomePage: React.FC<HomePageProps> = ({ onSendMessage }) => {
           有什么我能帮你的吗？
         </h1>
 
-        <div className="flex flex-wrap gap-3.5 justify-center">
+        <div
+          className={`flex flex-wrap gap-3.5 justify-center transition-all duration-300 ease-in-out ${
+            flipping ? 'opacity-0 scale-95 translate-y-2' : 'opacity-100 scale-100 translate-y-0'
+          }`}
+        >
           {loading ? (
             Array.from({ length: 9 }).map((_, i) => (
               <div
