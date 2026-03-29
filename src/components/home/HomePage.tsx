@@ -61,18 +61,18 @@ const HomePage: React.FC<HomePageProps> = ({ onSendMessage }) => {
 
   return (
     <div className="flex h-full items-center justify-center px-4 pb-32">
-      <div className="max-w-3xl mx-auto">
-        <h1 className="text-2xl font-semibold text-foreground mb-10 text-center">
-          今天我能帮你做什么？
+      <div className="w-full max-w-4xl mx-auto px-8">
+        <h1 className="text-2xl font-bold text-foreground mb-12 text-center">
+          有什么我能帮你的吗？
         </h1>
 
-        <div className="flex flex-wrap gap-3 justify-center">
+        <div className="flex flex-wrap gap-3.5 justify-center">
           {loading ? (
             Array.from({ length: 9 }).map((_, i) => (
               <div
                 key={i}
-                className="h-10 rounded-lg bg-muted/40 animate-pulse"
-                style={{ width: `${120 + (i % 3) * 60}px` }}
+                className="h-11 rounded-[20px] bg-muted/50 animate-pulse"
+                style={{ width: `${140 + (i % 3) * 50}px` }}
               />
             ))
           ) : (
@@ -80,9 +80,9 @@ const HomePage: React.FC<HomePageProps> = ({ onSendMessage }) => {
               <button
                 key={`${example}-${index}`}
                 onClick={() => handleExampleClick(example)}
-                className="px-5 py-2.5 rounded-lg bg-muted/40 text-sm text-muted-foreground whitespace-nowrap
-                           hover:bg-muted/70 hover:text-foreground
-                           transition-all duration-200 cursor-pointer"
+                className="px-5 py-2.5 rounded-[20px] bg-muted/50 text-[14px] leading-5 text-foreground/70 whitespace-nowrap
+                           hover:bg-muted hover:text-foreground
+                           transition-colors duration-150 cursor-pointer"
               >
                 {example}
               </button>
