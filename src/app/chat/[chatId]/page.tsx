@@ -22,7 +22,7 @@ import {
   setStreamStatus,
   startStream,
 } from '@/redux/slices/streamSlice';
-import { fetchStreamStatus, hasStreamingMark, clearStreamingMark, markStreaming } from '@/lib/api/streamStatus';
+import { fetchStreamStatus, consumeStreamingMark, markStreaming, clearStreamingMark } from '@/lib/api/streamStatus';
 import { reconnectStream, stopStream } from '@/lib/api/chat';
 import { useConversation } from '@/hooks/useConversation';
 import { useSendMessage } from '@/hooks/useSendMessage';
@@ -83,11 +83,11 @@ export default function ChatPage() {
     let cancelled = false;
     const checkAndReconnect = async () => {
       try {
-        // 检查 localStorage 标记：如果上次是非正常退出（刷新/关闭），
-        // 说明用户没有主动点"继续"，应该先发 stop 而不是自动重连
-        if (hasStreamingMark(chatId)) {
-          clearStreamingMark(chatId);
-          await stopStream(chatId);
+        // 检查 localStorage 标记：如果有活跃流记录，说明上次是非正常退出
+        // 对记录的 conversationId 发 stop，不自动重连
+        const markedConvId = consumeStreamingMark(chatId);
+        if (markedConvId) {
+          void stopStream(markedConvId);
           return;
         }
 

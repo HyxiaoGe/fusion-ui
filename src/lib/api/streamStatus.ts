@@ -5,35 +5,48 @@ const API_BASE_URL = API_CONFIG.BASE_URL;
 
 // ============================================================
 // 流式状态 localStorage 标记
-// 用于跨页面刷新传递 stop 意图，解决 beforeunload 不可靠的问题
+// 用一个全局 key 记录当前正在流式输出的 conversationId，
+// 页面加载时检查：如果标记存在且匹配当前 chatId → 发 stop，不重连
 // ============================================================
 
-const STREAMING_FLAG_PREFIX = 'fusion_streaming_';
+const STREAMING_KEY = 'fusion_active_stream';
 
-/** 流开始时标记 */
+/** 流开始时标记（记录 conversationId） */
 export function markStreaming(conversationId: string): void {
-  localStorage.setItem(`${STREAMING_FLAG_PREFIX}${conversationId}`, Date.now().toString());
+  localStorage.setItem(STREAMING_KEY, JSON.stringify({
+    conversationId,
+    timestamp: Date.now(),
+  }));
 }
 
 /** 流结束时（正常完成或手动停止）清除标记 */
-export function clearStreamingMark(conversationId: string): void {
-  localStorage.removeItem(`${STREAMING_FLAG_PREFIX}${conversationId}`);
+export function clearStreamingMark(_conversationId?: string): void {
+  localStorage.removeItem(STREAMING_KEY);
 }
 
 /**
- * 检查是否有未清除的流标记（说明上次页面非正常退出）。
- * 返回 true 表示应该先 stop 再决定是否重连。
+ * 检查是否有活跃的流标记。
+ * 返回匹配的 conversationId，或 null。
+ * 调用后自动清除标记（一次性消费）。
  */
-export function hasStreamingMark(conversationId: string): boolean {
-  const val = localStorage.getItem(`${STREAMING_FLAG_PREFIX}${conversationId}`);
-  if (!val) return false;
-  // 超过 10 分钟的标记视为过期（兜底清理）
-  const age = Date.now() - parseInt(val, 10);
-  if (age > 10 * 60 * 1000) {
-    localStorage.removeItem(`${STREAMING_FLAG_PREFIX}${conversationId}`);
-    return false;
+export function consumeStreamingMark(chatId: string): string | null {
+  const raw = localStorage.getItem(STREAMING_KEY);
+  if (!raw) return null;
+  try {
+    const { conversationId, timestamp } = JSON.parse(raw);
+    // 超过 10 分钟视为过期
+    if (Date.now() - timestamp > 10 * 60 * 1000) {
+      localStorage.removeItem(STREAMING_KEY);
+      return null;
+    }
+    // 清除标记（无论是否匹配，都消费掉避免反复触发）
+    localStorage.removeItem(STREAMING_KEY);
+    // 返回记录的 conversationId（可能和当前 chatId 不同）
+    return conversationId;
+  } catch {
+    localStorage.removeItem(STREAMING_KEY);
+    return null;
   }
-  return true;
 }
 
 export interface StreamStatusResponse {
