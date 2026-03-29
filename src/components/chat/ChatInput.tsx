@@ -709,8 +709,6 @@ const ChatInput: React.FC<ChatInputProps> = ({
             {/* 模型选择器 — 工具栏内嵌模式 */}
             <ModelSelector
               onChange={onModelChange || (() => {})}
-              toolbarMode={true}
-              className="h-8"
             />
           </div>
 
