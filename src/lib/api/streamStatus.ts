@@ -25,9 +25,8 @@ export function clearStreamingMark(_conversationId?: string): void {
 }
 
 /**
- * 检查是否有活跃的流标记。
- * 返回匹配的 conversationId，或 null。
- * 调用后自动清除标记（一次性消费）。
+ * 检查当前 chatId 是否有活跃的流标记。
+ * 只有 conversationId 匹配时才消费标记并返回，否则保留给正确的页面消费。
  */
 export function consumeStreamingMark(chatId: string): string | null {
   const raw = localStorage.getItem(STREAMING_KEY);
@@ -39,9 +38,9 @@ export function consumeStreamingMark(chatId: string): string | null {
       localStorage.removeItem(STREAMING_KEY);
       return null;
     }
-    // 清除标记（无论是否匹配，都消费掉避免反复触发）
+    // 只有匹配当前 chatId 才消费，不匹配则保留
+    if (conversationId !== chatId) return null;
     localStorage.removeItem(STREAMING_KEY);
-    // 返回记录的 conversationId（可能和当前 chatId 不同）
     return conversationId;
   } catch {
     localStorage.removeItem(STREAMING_KEY);
