@@ -27,59 +27,6 @@ function shuffle<T>(arr: T[]): T[] {
   return a;
 }
 
-// 单个翻牌卡片
-const FlipCard = memo(({
-  frontText,
-  backText,
-  flipped,
-  delay,
-  onClick,
-}: {
-  frontText: string;
-  backText: string;
-  flipped: boolean;
-  delay: number;
-  onClick: () => void;
-}) => (
-  <div
-    className="h-10"
-    style={{ perspective: '800px' }}
-  >
-    <div
-      onClick={onClick}
-      className="relative h-full cursor-pointer"
-      style={{
-        transformStyle: 'preserve-3d',
-        transition: `transform 0.5s ease ${delay}ms`,
-        transform: flipped ? 'rotateY(180deg)' : 'rotateY(0deg)',
-      }}
-    >
-      {/* 正面 */}
-      <div
-        className="absolute inset-0 flex items-center px-5 rounded-[20px] bg-muted/50 text-[14px] leading-5 text-foreground/70 whitespace-nowrap
-                   shadow-[0_2px_8px_rgba(0,0,0,0.12)]
-                   hover:bg-muted hover:text-foreground hover:shadow-[0_4px_12px_rgba(0,0,0,0.18)]
-                   dark:shadow-[0_2px_8px_rgba(255,255,255,0.06)] dark:border dark:border-white/10
-                   dark:hover:shadow-[0_4px_12px_rgba(255,255,255,0.1)] dark:hover:border-white/20"
-        style={{ backfaceVisibility: 'hidden' }}
-      >
-        {frontText}
-      </div>
-      {/* 背面 */}
-      <div
-        className="absolute inset-0 flex items-center px-5 rounded-[20px] bg-muted/50 text-[14px] leading-5 text-foreground/70 whitespace-nowrap
-                   shadow-[0_2px_8px_rgba(0,0,0,0.12)]
-                   dark:shadow-[0_2px_8px_rgba(255,255,255,0.06)] dark:border dark:border-white/10"
-        style={{ backfaceVisibility: 'hidden', transform: 'rotateY(180deg)' }}
-      >
-        {backText}
-      </div>
-    </div>
-  </div>
-));
-
-FlipCard.displayName = 'FlipCard';
-
 interface HomePageProps {
   onNewChat?: () => void;
   onSendMessage: (content: string) => void;
@@ -89,10 +36,9 @@ const HomePage: React.FC<HomePageProps> = ({ onSendMessage }) => {
   const { isAuthenticated } = useAppSelector((state) => state.auth);
   const { toast } = useToast();
   const [loading, setLoading] = useState(true);
-  // 双缓冲：current 是正面文字，next 是背面文字，翻转后交换
-  const [currentItems, setCurrentItems] = useState<string[]>(FALLBACK_EXAMPLES.slice(0, PAGE_SIZE));
-  const [nextItems, setNextItems] = useState<string[]>(FALLBACK_EXAMPLES.slice(0, PAGE_SIZE));
-  const [flipped, setFlipped] = useState(false);
+  const [displayItems, setDisplayItems] = useState<string[]>(FALLBACK_EXAMPLES.slice(0, PAGE_SIZE));
+  // 每张卡片的翻转状态：true = 翻到侧面（不可见）
+  const [flippedCards, setFlippedCards] = useState<boolean[]>(new Array(PAGE_SIZE).fill(false));
 
   const poolRef = useRef<string[]>([]);
   const cursorRef = useRef(0);
@@ -121,8 +67,7 @@ const HomePage: React.FC<HomePageProps> = ({ onSendMessage }) => {
           cursorRef.current = 0;
           const first = poolRef.current.slice(0, PAGE_SIZE);
           cursorRef.current = PAGE_SIZE;
-          setCurrentItems(first);
-          setNextItems(first);
+          setDisplayItems(first);
         }
       } catch {
         // fallback
@@ -133,23 +78,45 @@ const HomePage: React.FC<HomePageProps> = ({ onSendMessage }) => {
     return () => { cancelled = true; };
   }, []);
 
-  // 定时翻牌
+  // 波浪翻牌：逐张翻出 → 换文字 → 逐张翻回
+  const doWaveFlip = useCallback(() => {
+    const nextBatch = getNextBatch();
+
+    // 阶段1：从左到右逐张翻出（rotateY 90deg）
+    for (let i = 0; i < PAGE_SIZE; i++) {
+      setTimeout(() => {
+        setFlippedCards((prev) => {
+          const next = [...prev];
+          next[i] = true;
+          return next;
+        });
+      }, i * 80);
+    }
+
+    // 阶段2：全部翻出后换文字
+    const allFlippedTime = PAGE_SIZE * 80 + 300;
+    setTimeout(() => {
+      setDisplayItems(nextBatch);
+    }, allFlippedTime);
+
+    // 阶段3：从左到右逐张翻回
+    for (let i = 0; i < PAGE_SIZE; i++) {
+      setTimeout(() => {
+        setFlippedCards((prev) => {
+          const next = [...prev];
+          next[i] = false;
+          return next;
+        });
+      }, allFlippedTime + 50 + i * 80);
+    }
+  }, [getNextBatch]);
+
+  // 定时轮换
   useEffect(() => {
     if (loading) return;
-    const timer = setInterval(() => {
-      const batch = getNextBatch();
-      if (flipped) {
-        // 当前显示的是背面 → 准备新正面 → 翻回正面
-        setCurrentItems(batch);
-        setFlipped(false);
-      } else {
-        // 当前显示的是正面 → 准备新背面 → 翻到背面
-        setNextItems(batch);
-        setFlipped(true);
-      }
-    }, ROTATE_INTERVAL);
+    const timer = setInterval(doWaveFlip, ROTATE_INTERVAL);
     return () => clearInterval(timer);
-  }, [loading, flipped, getNextBatch]);
+  }, [loading, doWaveFlip]);
 
   const handleExampleClick = useCallback((message: string) => {
     if (!isAuthenticated) {
@@ -166,8 +133,6 @@ const HomePage: React.FC<HomePageProps> = ({ onSendMessage }) => {
     void Promise.resolve(onSendMessage(message));
   }, [isAuthenticated, onSendMessage, toast]);
 
-  const getVisibleText = (index: number) => flipped ? nextItems[index] : currentItems[index];
-
   return (
     <div className="flex h-full items-center justify-center px-4 pb-32">
       <div className="w-full max-w-4xl mx-auto px-8">
@@ -175,7 +140,7 @@ const HomePage: React.FC<HomePageProps> = ({ onSendMessage }) => {
           有什么我能帮你的吗？
         </h1>
 
-        <div className="flex flex-wrap gap-3.5 justify-center">
+        <div className="flex flex-wrap gap-3.5 justify-center" style={{ perspective: '1000px' }}>
           {loading ? (
             Array.from({ length: 9 }).map((_, i) => (
               <div
@@ -185,15 +150,24 @@ const HomePage: React.FC<HomePageProps> = ({ onSendMessage }) => {
               />
             ))
           ) : (
-            currentItems.map((_, index) => (
-              <FlipCard
-                key={`card-${index}`}
-                frontText={currentItems[index]}
-                backText={nextItems[index]}
-                flipped={flipped}
-                delay={index * 100}
-                onClick={() => handleExampleClick(getVisibleText(index))}
-              />
+            displayItems.map((example, index) => (
+              <button
+                key={`slot-${index}`}
+                onClick={() => handleExampleClick(example)}
+                className="px-5 py-2.5 rounded-[20px] bg-muted/50 text-[14px] leading-5 text-foreground/70 whitespace-nowrap
+                           shadow-[0_2px_8px_rgba(0,0,0,0.12)]
+                           hover:bg-muted hover:text-foreground hover:shadow-[0_4px_12px_rgba(0,0,0,0.18)]
+                           dark:shadow-[0_2px_8px_rgba(255,255,255,0.06)] dark:border dark:border-white/10
+                           dark:hover:shadow-[0_4px_12px_rgba(255,255,255,0.1)] dark:hover:border-white/20
+                           cursor-pointer"
+                style={{
+                  transition: 'transform 0.3s ease, opacity 0.3s ease, background-color 0.15s, box-shadow 0.15s',
+                  transform: flippedCards[index] ? 'rotateY(90deg)' : 'rotateY(0deg)',
+                  opacity: flippedCards[index] ? 0 : 1,
+                }}
+              >
+                {example}
+              </button>
             ))
           )}
         </div>
