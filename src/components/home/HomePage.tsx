@@ -60,19 +60,18 @@ const HomePage: React.FC<HomePageProps> = ({ onSendMessage }) => {
 
   return (
     <div className="flex h-full items-center justify-center px-4 pb-32">
-      <div className="max-w-2xl mx-auto">
-        <h1 className="text-2xl font-semibold text-foreground mb-8 text-center">
+      <div className="max-w-3xl mx-auto">
+        <h1 className="text-2xl font-semibold text-foreground mb-10 text-center">
           今天我能帮你做什么？
         </h1>
 
-        <div className="flex flex-wrap gap-2 justify-center">
+        <div className="flex flex-wrap gap-2.5 justify-center max-w-xl mx-auto">
           {loading ? (
-            // Loading skeleton
             Array.from({ length: 8 }).map((_, i) => (
               <div
                 key={i}
                 className="h-9 rounded-full bg-muted/40 animate-pulse"
-                style={{ width: `${100 + Math.random() * 80}px` }}
+                style={{ width: `${80 + (i % 3) * 50 + 20}px` }}
               />
             ))
           ) : (
@@ -80,9 +79,9 @@ const HomePage: React.FC<HomePageProps> = ({ onSendMessage }) => {
               <button
                 key={`${example}-${index}`}
                 onClick={() => handleExampleClick(example)}
-                className="px-4 py-2 rounded-full border border-border text-sm text-muted-foreground
-                           hover:bg-muted/60 hover:text-foreground hover:border-border
-                           transition-colors cursor-pointer"
+                className="px-4 py-2 rounded-full border border-border/60 text-sm text-muted-foreground
+                           hover:bg-primary/5 hover:text-foreground hover:border-primary/30 hover:shadow-sm
+                           transition-all duration-200 cursor-pointer"
               >
                 {example}
               </button>
