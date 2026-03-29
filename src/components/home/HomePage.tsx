@@ -13,6 +13,7 @@ const FALLBACK_EXAMPLES = [
   '帮我润色这段产品介绍',
   '写一封正式的商务邮件',
   '解释一下量子计算的基本原理',
+  '对比 PostgreSQL 和 MongoDB 适用场景',
 ];
 
 interface HomePageProps {
@@ -30,7 +31,7 @@ const HomePage: React.FC<HomePageProps> = ({ onSendMessage }) => {
     let cancelled = false;
     (async () => {
       try {
-        const data = await fetchPromptExamples(8);
+        const data = await fetchPromptExamples(9);
         if (!cancelled && data.examples.length > 0) {
           setExamples(data.examples.map((e) => e.question));
         }
@@ -65,13 +66,12 @@ const HomePage: React.FC<HomePageProps> = ({ onSendMessage }) => {
           今天我能帮你做什么？
         </h1>
 
-        <div className="flex flex-wrap gap-2.5 justify-center max-w-lg mx-auto">
+        <div className="grid grid-cols-3 gap-3 max-w-3xl mx-auto">
           {loading ? (
-            Array.from({ length: 8 }).map((_, i) => (
+            Array.from({ length: 9 }).map((_, i) => (
               <div
                 key={i}
-                className="h-9 rounded-full bg-muted/40 animate-pulse"
-                style={{ width: `${80 + (i % 3) * 50 + 20}px` }}
+                className="h-11 rounded-xl bg-muted/40 animate-pulse"
               />
             ))
           ) : (
@@ -79,9 +79,9 @@ const HomePage: React.FC<HomePageProps> = ({ onSendMessage }) => {
               <button
                 key={`${example}-${index}`}
                 onClick={() => handleExampleClick(example)}
-                className="px-4 py-2 rounded-full border border-border/60 text-sm text-muted-foreground
-                           hover:bg-primary/5 hover:text-foreground hover:border-primary/30 hover:shadow-sm
-                           transition-all duration-200 cursor-pointer"
+                className="px-4 py-2.5 rounded-xl bg-muted/40 text-sm text-muted-foreground
+                           hover:bg-muted/70 hover:text-foreground
+                           transition-all duration-200 cursor-pointer text-center"
               >
                 {example}
               </button>
