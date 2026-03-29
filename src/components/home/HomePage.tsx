@@ -81,8 +81,9 @@ const HomePage: React.FC<HomePageProps> = ({ onSendMessage }) => {
                 key={`${example}-${index}`}
                 onClick={() => handleExampleClick(example)}
                 className="px-5 py-2.5 rounded-[20px] bg-muted/50 text-[14px] leading-5 text-foreground/70 whitespace-nowrap
-                           hover:bg-muted hover:text-foreground
-                           transition-colors duration-150 cursor-pointer"
+                           shadow-[0_1px_3px_rgba(0,0,0,0.06)]
+                           hover:bg-muted hover:text-foreground hover:shadow-[0_2px_6px_rgba(0,0,0,0.1)]
+                           transition-all duration-150 cursor-pointer"
               >
                 {example}
               </button>
