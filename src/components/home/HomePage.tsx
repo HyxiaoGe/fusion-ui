@@ -3,7 +3,6 @@ import { useAppSelector } from "@/redux/hooks";
 import { useToast } from "@/components/ui/toast";
 import { fetchPromptExamples } from "@/lib/api/prompts";
 
-// 冷启动 fallback（API 不可用时使用）
 const FALLBACK_EXAMPLES = [
   '写一个 Python 快速排序函数',
   '帮我 review 这段代码',
@@ -16,7 +15,18 @@ const FALLBACK_EXAMPLES = [
   '对比 PostgreSQL 和 MongoDB 适用场景',
 ];
 
-const ROTATE_INTERVAL = 15000; // 15 秒轮换
+const PAGE_SIZE = 9;
+const ROTATE_INTERVAL = 15000;
+
+/** Fisher-Yates 洗牌 */
+function shuffle<T>(arr: T[]): T[] {
+  const a = [...arr];
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
 
 interface HomePageProps {
   onNewChat?: () => void;
@@ -26,49 +36,86 @@ interface HomePageProps {
 const HomePage: React.FC<HomePageProps> = ({ onSendMessage }) => {
   const { isAuthenticated } = useAppSelector((state) => state.auth);
   const { toast } = useToast();
-  const [examples, setExamples] = useState<string[]>(FALLBACK_EXAMPLES);
+  const [displayItems, setDisplayItems] = useState<string[]>(FALLBACK_EXAMPLES.slice(0, PAGE_SIZE));
   const [loading, setLoading] = useState(true);
-  const [flipping, setFlipping] = useState(false);
-  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  // 逐个翻牌状态：-1 表示无动画，0~8 表示正在翻第几张
+  const [flippingIndex, setFlippingIndex] = useState(-1);
 
-  // 拉取一批新问题（API 每次从 Redis 随机采样，返回不同组合）
-  const loadExamples = useCallback(async (animate = false) => {
-    try {
-      if (animate) {
-        setFlipping(true);
-        // 等翻出动画完成后再换内容
-        await new Promise((r) => setTimeout(r, 300));
-      }
-      const data = await fetchPromptExamples(9);
-      if (data.examples.length > 0) {
-        setExamples(data.examples.map((e) => e.question));
-      }
-    } catch {
-      // 静默失败，保持当前内容
-    } finally {
-      setLoading(false);
-      if (animate) {
-        // 短暂延迟后触发翻入动画
-        requestAnimationFrame(() => setFlipping(false));
-      }
+  // 洗牌池：shuffle 后按顺序取，用完再 reshuffle，保证不重复
+  const poolRef = useRef<string[]>([]);
+  const cursorRef = useRef(0);
+
+  const getNextBatch = useCallback((): string[] => {
+    const pool = poolRef.current;
+    if (pool.length === 0) return FALLBACK_EXAMPLES.slice(0, PAGE_SIZE);
+
+    // 剩余不够一批，reshuffle
+    if (cursorRef.current + PAGE_SIZE > pool.length) {
+      poolRef.current = shuffle(pool);
+      cursorRef.current = 0;
     }
+
+    const batch = poolRef.current.slice(cursorRef.current, cursorRef.current + PAGE_SIZE);
+    cursorRef.current += PAGE_SIZE;
+    return batch;
   }, []);
 
-  // 首次加载
+  // 首次加载：拿全量问题池
   useEffect(() => {
-    loadExamples(false);
-  }, [loadExamples]);
+    let cancelled = false;
+    (async () => {
+      try {
+        // 拿全量（limit 设大一些）
+        const data = await fetchPromptExamples(50);
+        if (!cancelled && data.examples.length > 0) {
+          const all = data.examples.map((e) => e.question);
+          poolRef.current = shuffle(all);
+          cursorRef.current = 0;
+          setDisplayItems(poolRef.current.slice(0, PAGE_SIZE));
+          cursorRef.current = PAGE_SIZE;
+        }
+      } catch {
+        // fallback
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
 
-  // 每 15 秒轮换
+  // 逐个翻牌动画
+  const doFlipTransition = useCallback(() => {
+    const nextBatch = getNextBatch();
+
+    // 依次翻出每张牌（每张间隔 80ms）
+    for (let i = 0; i < PAGE_SIZE; i++) {
+      setTimeout(() => {
+        setFlippingIndex(i);
+      }, i * 80);
+
+      // 翻到一半时换内容，再翻回来
+      setTimeout(() => {
+        setDisplayItems((prev) => {
+          const updated = [...prev];
+          updated[i] = nextBatch[i] ?? prev[i];
+          return updated;
+        });
+        setFlippingIndex((cur) => (cur === i ? -1 : cur));
+      }, i * 80 + 200);
+    }
+
+    // 全部完成后重置
+    setTimeout(() => {
+      setFlippingIndex(-1);
+    }, PAGE_SIZE * 80 + 300);
+  }, [getNextBatch]);
+
+  // 定时轮换
   useEffect(() => {
-    intervalRef.current = setInterval(() => {
-      loadExamples(true);
-    }, ROTATE_INTERVAL);
-
-    return () => {
-      if (intervalRef.current) clearInterval(intervalRef.current);
-    };
-  }, [loadExamples]);
+    if (loading) return;
+    const timer = setInterval(doFlipTransition, ROTATE_INTERVAL);
+    return () => clearInterval(timer);
+  }, [loading, doFlipTransition]);
 
   const handleExampleClick = useCallback((message: string) => {
     if (!isAuthenticated) {
@@ -92,11 +139,7 @@ const HomePage: React.FC<HomePageProps> = ({ onSendMessage }) => {
           有什么我能帮你的吗？
         </h1>
 
-        <div
-          className={`flex flex-wrap gap-3.5 justify-center transition-all duration-300 ease-in-out ${
-            flipping ? 'opacity-0 scale-95 translate-y-2' : 'opacity-100 scale-100 translate-y-0'
-          }`}
-        >
+        <div className="flex flex-wrap gap-3.5 justify-center" style={{ perspective: '800px' }}>
           {loading ? (
             Array.from({ length: 9 }).map((_, i) => (
               <div
@@ -106,16 +149,21 @@ const HomePage: React.FC<HomePageProps> = ({ onSendMessage }) => {
               />
             ))
           ) : (
-            examples.map((example, index) => (
+            displayItems.map((example, index) => (
               <button
-                key={`${example}-${index}`}
+                key={`slot-${index}`}
                 onClick={() => handleExampleClick(example)}
                 className="px-5 py-2.5 rounded-[20px] bg-muted/50 text-[14px] leading-5 text-foreground/70 whitespace-nowrap
                            shadow-[0_2px_8px_rgba(0,0,0,0.12)]
                            hover:bg-muted hover:text-foreground hover:shadow-[0_4px_12px_rgba(0,0,0,0.18)]
                            dark:shadow-[0_2px_8px_rgba(255,255,255,0.06)] dark:border dark:border-white/10
                            dark:hover:shadow-[0_4px_12px_rgba(255,255,255,0.1)] dark:hover:border-white/20
-                           transition-all duration-150 cursor-pointer"
+                           cursor-pointer"
+                style={{
+                  transition: 'transform 0.4s ease, opacity 0.4s ease, background-color 0.15s, box-shadow 0.15s',
+                  transform: flippingIndex === index ? 'rotateX(90deg)' : 'rotateX(0deg)',
+                  opacity: flippingIndex === index ? 0 : 1,
+                }}
               >
                 {example}
               </button>
