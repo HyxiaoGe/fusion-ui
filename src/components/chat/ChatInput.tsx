@@ -672,7 +672,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
         />
 
         {/* 工具栏 */}
-        <div className="flex items-center gap-1 px-2 py-1.5 border-t border-border/50">
+        <div className="flex items-center gap-1 px-2 py-1.5">
           {/* 左侧工具按钮组 */}
           <div className="flex items-center gap-1 flex-1">
             {/* 文件上传按钮 */}
