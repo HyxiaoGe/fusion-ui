@@ -66,11 +66,17 @@ export function useSendMessage() {
   const assistantHasContentRef = useRef(false);
   const typewriterIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
+  // 获取当前流式会话 ID：优先用 ref（sendMessage 设置），fallback 到 Redux（reconnect 设置）
+  const getStreamingConvId = useCallback(() => {
+    return activeConvIdRef.current
+      || (store.getState() as { stream: { conversationId: string | null } }).stream.conversationId;
+  }, [store]);
+
   // 页面卸载时通知后端停止生成
   // fetch + keepalive 在页面卸载后仍能可靠送达，且支持携带 auth header
   useEffect(() => {
     const handleBeforeUnload = () => {
-      const convId = activeConvIdRef.current;
+      const convId = getStreamingConvId();
       if (!convId) return;
       const token = localStorage.getItem('auth_token');
       const url = `${API_CONFIG.BASE_URL}/api/chat/stop/${convId}`;
@@ -82,10 +88,10 @@ export function useSendMessage() {
     };
     window.addEventListener('beforeunload', handleBeforeUnload);
     return () => window.removeEventListener('beforeunload', handleBeforeUnload);
-  }, []);
+  }, [getStreamingConvId]);
 
   const stopStreaming = useCallback(async () => {
-    const convId = activeConvIdRef.current;
+    const convId = getStreamingConvId();
     const userMsgId = userMessageIdRef.current;
     const assistantMsgId = assistantMessageIdRef.current;
 
@@ -132,7 +138,7 @@ export function useSendMessage() {
     userMessageIdRef.current = null;
     assistantMessageIdRef.current = null;
     assistantHasContentRef.current = false;
-  }, [dispatch, store]);
+  }, [dispatch, store, getStreamingConvId]);
 
   const sendMessage = useCallback(
     async (content: string, options: SendMessageOptions, files?: File[]) => {
