@@ -7,4 +7,6 @@ node_modules
 .env.local
 
 .cursor.tsbuildinfo
+tsconfig.tsbuildinfo
+.DS_Store
 .claude/
