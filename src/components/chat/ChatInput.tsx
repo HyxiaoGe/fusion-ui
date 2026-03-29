@@ -703,17 +703,14 @@ const ChatInput: React.FC<ChatInputProps> = ({
               <span className="text-xs">{reasoningEnabled && supportsReasoning ? "思考已开" : "思考"}</span>
             </Button>
 
-            {/* 分隔线 */}
-            <div className="h-4 border-l border-border/50 mx-1" />
+          </div>
 
-            {/* 模型选择器 — 工具栏内嵌模式 */}
+          {/* 右侧：模型选择器 + 发送按钮 */}
+          <div className="flex items-center gap-1.5">
             <ModelSelector
               onChange={onModelChange || (() => {})}
             />
-          </div>
-
-          {/* 右侧发送/停止按钮 */}
-          <Button
+            <Button
             onClick={isStreaming && onStopStreaming ? onStopStreaming : handleSendMessage}
             disabled={!canSend && !(isStreaming && onStopStreaming)}
             size="sm"
@@ -725,6 +722,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
               <ArrowUp className="h-4 w-4" />
             )}
           </Button>
+          </div>
         </div>
       </div>
 

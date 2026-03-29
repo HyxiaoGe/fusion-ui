@@ -92,8 +92,8 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({
         side="top"
         align="start"
         avoidCollisions={true}
-        sideOffset={8}
-        className="p-0 w-[calc(100vw-32px)] sm:w-[320px] max-h-[420px] overflow-y-auto"
+        sideOffset={4}
+        className="p-0 w-[calc(100vw-32px)] sm:w-[360px] max-h-[420px] overflow-y-auto"
       >
         <ModelSelectorPanel
           modelsByProvider={modelsByProvider}
