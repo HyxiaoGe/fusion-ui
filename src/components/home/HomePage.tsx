@@ -65,7 +65,7 @@ const HomePage: React.FC<HomePageProps> = ({ onSendMessage }) => {
           今天我能帮你做什么？
         </h1>
 
-        <div className="flex flex-wrap gap-2.5 justify-center max-w-xl mx-auto">
+        <div className="flex flex-wrap gap-2.5 justify-center max-w-lg mx-auto">
           {loading ? (
             Array.from({ length: 8 }).map((_, i) => (
               <div
