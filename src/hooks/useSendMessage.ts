@@ -203,6 +203,9 @@ export function useSendMessage() {
         materializedOnce = true;
         serverConvId = incomingConvId;
         activeConvIdRef.current = incomingConvId;
+        // 迁移流标记：tempConvId → serverConvId
+        clearStreamingMark(tempConvId);
+        markStreaming(incomingConvId);
         dispatch(
           materializeConversation({
             pendingId: tempConvId,
