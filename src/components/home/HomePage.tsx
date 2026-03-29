@@ -1,8 +1,10 @@
-import { useCallback, memo, useMemo } from "react";
+import { useCallback, memo, useState, useEffect } from "react";
 import { useAppSelector } from "@/redux/hooks";
 import { useToast } from "@/components/ui/toast";
+import { fetchPromptExamples } from "@/lib/api/prompts";
 
-const ALL_EXAMPLES = [
+// 冷启动 fallback（API 不可用时使用）
+const FALLBACK_EXAMPLES = [
   '写一个 Python 快速排序函数',
   '帮我 review 这段代码',
   '如何用 Docker 部署 FastAPI 服务',
@@ -10,15 +12,7 @@ const ALL_EXAMPLES = [
   '写一篇关于 AI 发展的短文',
   '帮我润色这段产品介绍',
   '写一封正式的商务邮件',
-  '给这篇文章起 5 个标题',
-  '分析这段用户行为数据的趋势',
-  '对比 PostgreSQL 和 MongoDB 的适用场景',
   '解释一下量子计算的基本原理',
-  '帮我梳理这个项目的架构问题',
-  '构思一个科幻短篇故事的开头',
-  '设计一套移动端 App 的配色方案',
-  '帮我想 10 个产品功能点子',
-  '写一段产品发布会的开场白',
 ];
 
 interface HomePageProps {
@@ -29,9 +23,24 @@ interface HomePageProps {
 const HomePage: React.FC<HomePageProps> = ({ onSendMessage }) => {
   const { isAuthenticated } = useAppSelector((state) => state.auth);
   const { toast } = useToast();
+  const [examples, setExamples] = useState<string[]>(FALLBACK_EXAMPLES);
+  const [loading, setLoading] = useState(true);
 
-  const randomExamples = useMemo(() => {
-    return [...ALL_EXAMPLES].sort(() => Math.random() - 0.5).slice(0, 8);
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const data = await fetchPromptExamples(8);
+        if (!cancelled && data.examples.length > 0) {
+          setExamples(data.examples.map((e) => e.question));
+        }
+      } catch {
+        // API 不可用，保持 fallback
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
   }, []);
 
   const handleExampleClick = useCallback((message: string) => {
@@ -57,17 +66,28 @@ const HomePage: React.FC<HomePageProps> = ({ onSendMessage }) => {
         </h1>
 
         <div className="flex flex-wrap gap-2 justify-center">
-          {randomExamples.map((example) => (
-            <button
-              key={example}
-              onClick={() => handleExampleClick(example)}
-              className="px-4 py-2 rounded-full border border-border text-sm text-muted-foreground
-                         hover:bg-muted/60 hover:text-foreground hover:border-border
-                         transition-colors cursor-pointer"
-            >
-              {example}
-            </button>
-          ))}
+          {loading ? (
+            // Loading skeleton
+            Array.from({ length: 8 }).map((_, i) => (
+              <div
+                key={i}
+                className="h-9 rounded-full bg-muted/40 animate-pulse"
+                style={{ width: `${100 + Math.random() * 80}px` }}
+              />
+            ))
+          ) : (
+            examples.map((example, index) => (
+              <button
+                key={`${example}-${index}`}
+                onClick={() => handleExampleClick(example)}
+                className="px-4 py-2 rounded-full border border-border text-sm text-muted-foreground
+                           hover:bg-muted/60 hover:text-foreground hover:border-border
+                           transition-colors cursor-pointer"
+              >
+                {example}
+              </button>
+            ))
+          )}
         </div>
       </div>
     </div>
