@@ -24,4 +24,6 @@ jobs:
 
           exit 1
       - name: Cleanup
-        run: docker image prune -f
+        run: |
+          docker image prune -f
+          docker builder prune --filter "until=72h" -f

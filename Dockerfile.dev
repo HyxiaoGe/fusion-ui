@@ -9,7 +9,7 @@ RUN npm install -g nodemon
 COPY package*.json ./
 
 # 安装依赖
-RUN npm install
+RUN npm install && npm cache clean --force
 
 # 暴露端口
 EXPOSE 3000
