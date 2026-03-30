@@ -1,5 +1,5 @@
 import { createSlice, PayloadAction } from '@reduxjs/toolkit';
-import type { ContentBlock } from '@/types/conversation';
+import type { ContentBlock, SearchSource } from '@/types/conversation';
 
 export interface StreamState {
   conversationId: string | null;
@@ -18,6 +18,10 @@ export interface StreamState {
   isThinkingPhaseComplete: boolean;
   reasoningStartTime: number | null;
   reasoningEndTime: number | undefined;
+  // 搜索状态
+  searchQuery: string | null;
+  searchSources: SearchSource[];
+  isSearching: boolean;
   // 最后收到的 Redis Stream entry ID（断线重连起点）
   lastEntryId: string;
   // 流状态枚举
@@ -38,6 +42,9 @@ const initialState: StreamState = {
   isThinkingPhaseComplete: false,
   reasoningStartTime: null,
   reasoningEndTime: undefined,
+  searchQuery: null,
+  searchSources: [],
+  isSearching: false,
   lastEntryId: '0',
   streamStatus: 'idle',
 };
@@ -63,6 +70,9 @@ const streamSlice = createSlice({
       state.isThinkingPhaseComplete = false;
       state.reasoningStartTime = null;
       state.reasoningEndTime = undefined;
+      state.searchQuery = null;
+      state.searchSources = [];
+      state.isSearching = false;
     },
 
     appendTextDelta(
@@ -116,6 +126,16 @@ const streamSlice = createSlice({
       state.lastEntryId = action.payload;
     },
 
+    startSearch(state, action: PayloadAction<{ query: string }>) {
+      state.isSearching = true;
+      state.searchQuery = action.payload.query;
+    },
+
+    completeSearch(state, action: PayloadAction<{ sources: SearchSource[] }>) {
+      state.isSearching = false;
+      state.searchSources = action.payload.sources;
+    },
+
     setStreamStatus(state, action: PayloadAction<StreamState['streamStatus']>) {
       state.streamStatus = action.payload;
     },
@@ -128,58 +148,97 @@ const streamSlice = createSlice({
 
 // Selector：从 streamSlice 组装出当前流式 content blocks 数组
 // thinking blocks 全量返回（实时显示），text blocks 按 displayedTextLength 截断（打字机效果）
+// search block 在 thinking 和 text 之间插入
 export function selectStreamContentBlocks(state: StreamState): ContentBlock[] {
   let remainingChars = state.displayedTextLength;
+  const blocks: ContentBlock[] = [];
 
-  return state.blockOrder.map(blockId => {
-    const type = state.blockTypes[blockId];
-    if (type === 'thinking') {
-      return {
+  // 先输出 thinking blocks
+  for (const blockId of state.blockOrder) {
+    if (state.blockTypes[blockId] === 'thinking') {
+      blocks.push({
         type: 'thinking' as const,
         id: blockId,
         thinking: state.thinkingBlocks[blockId] ?? '',
-      };
+      });
     }
-    // text block：按 displayedTextLength 截断
-    const fullText = state.textBlocks[blockId] ?? '';
-    const visibleLength = Math.min(remainingChars, fullText.length);
-    remainingChars -= visibleLength;
-    return {
-      type: 'text' as const,
-      id: blockId,
-      text: fullText.slice(0, visibleLength),
-    };
-  });
+  }
+
+  // 插入 search block（如果有搜索结果）
+  if (state.searchSources.length > 0 && state.searchQuery) {
+    blocks.push({
+      type: 'search' as const,
+      id: 'blk_stream_search',
+      query: state.searchQuery,
+      sources: state.searchSources,
+    });
+  }
+
+  // 再输出 text blocks（带打字机截断）
+  for (const blockId of state.blockOrder) {
+    if (state.blockTypes[blockId] === 'text') {
+      const fullText = state.textBlocks[blockId] ?? '';
+      const visibleLength = Math.min(remainingChars, fullText.length);
+      remainingChars -= visibleLength;
+      blocks.push({
+        type: 'text' as const,
+        id: blockId,
+        text: fullText.slice(0, visibleLength),
+      });
+    }
+  }
+
+  return blocks;
 }
 
 // 完整版 selector（不截断），用于流结束时写入最终消息
 export function selectFullStreamContentBlocks(state: StreamState): ContentBlock[] {
-  return state.blockOrder.map(blockId => {
+  const blocks: ContentBlock[] = [];
+
+  for (const blockId of state.blockOrder) {
     const type = state.blockTypes[blockId];
     if (type === 'thinking') {
-      return {
+      blocks.push({
         type: 'thinking' as const,
         id: blockId,
         thinking: state.thinkingBlocks[blockId] ?? '',
-      };
+      });
     }
-    return {
-      type: 'text' as const,
-      id: blockId,
-      text: state.textBlocks[blockId] ?? '',
-    };
-  });
+  }
+
+  if (state.searchSources.length > 0 && state.searchQuery) {
+    blocks.push({
+      type: 'search' as const,
+      id: 'blk_stream_search',
+      query: state.searchQuery,
+      sources: state.searchSources,
+    });
+  }
+
+  for (const blockId of state.blockOrder) {
+    if (state.blockTypes[blockId] === 'text') {
+      blocks.push({
+        type: 'text' as const,
+        id: blockId,
+        text: state.textBlocks[blockId] ?? '',
+      });
+    }
+  }
+
+  return blocks;
 }
 
 export const {
   advanceTypewriter,
   appendTextDelta,
   appendThinkingDelta,
+  completeSearch,
   completeThinkingPhase,
   endStream,
   migrateStreamConversation,
   setLastEntryId,
   setStreamStatus,
+  startSearch,
   startStream,
 } = streamSlice.actions;
 

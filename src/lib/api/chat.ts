@@ -1,6 +1,6 @@
 import { API_CONFIG } from '../config';
 import fetchWithAuth from './fetchWithAuth';
-import type { ContentBlock, Usage } from '@/types/conversation';
+import type { ContentBlock, SearchSource, Usage } from '@/types/conversation';
 
 const API_BASE_URL = API_CONFIG.BASE_URL;
 
@@ -39,6 +39,8 @@ export interface StreamCallbacks {
   onReady: (meta: { messageId: string; conversationId: string }) => void;
   onTextDelta: (delta: string, blockId: string, meta: { messageId: string; conversationId: string }) => void;
   onThinkingDelta: (delta: string, blockId: string, meta: { messageId: string; conversationId: string }) => void;
+  onSearchStart?: (query: string, meta: { messageId: string; conversationId: string }) => void;
+  onSearchComplete?: (sources: SearchSource[], meta: { messageId: string; conversationId: string }) => void;
   onDone: (messageId: string, conversationId: string, usage: Usage | null) => void;
   onError: (message: string) => void;
 }
@@ -127,9 +129,16 @@ export async function sendMessageStream(
         if (choice?.delta?.content) {
           for (const block of choice.delta.content) {
             if (block.type === 'text') {
-              callbacks.onTextDelta(block.text, block.id, { messageId, conversationId });
+              callbacks.onTextDelta((block as { text: string }).text, block.id, { messageId, conversationId });
             } else if (block.type === 'thinking') {
-              callbacks.onThinkingDelta(block.thinking, block.id, { messageId, conversationId });
+              callbacks.onThinkingDelta((block as { thinking: string }).thinking, block.id, { messageId, conversationId });
+            } else if (block.type === 'search') {
+              const searchBlock = block as { search_event: string; query: string; sources?: SearchSource[] };
+              if (searchBlock.search_event === 'start' && callbacks.onSearchStart) {
+                callbacks.onSearchStart(searchBlock.query, { messageId, conversationId });
+              } else if (searchBlock.search_event === 'complete' && callbacks.onSearchComplete) {
+                callbacks.onSearchComplete(searchBlock.sources ?? [], { messageId, conversationId });
+              }
             }
           }
         }

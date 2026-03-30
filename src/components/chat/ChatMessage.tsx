@@ -4,8 +4,8 @@ import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { FileWithPreview } from '@/lib/utils/fileHelpers';
 import { useAppDispatch, useAppSelector } from '@/redux/hooks';
-import type { Message, ContentBlock } from '@/types/conversation';
-import { extractTextFromBlocks, extractThinkingFromBlocks } from '@/types/conversation';
+import type { Message, ContentBlock, SearchSource } from '@/types/conversation';
+import { extractTextFromBlocks, extractThinkingFromBlocks, extractSearchBlock } from '@/types/conversation';
 import { toggleReasoningVisibility } from '@/redux/slices/conversationSlice';
 import { selectStreamContentBlocks } from '@/redux/slices/streamSlice';
 import { avatarOptions } from '@/redux/slices/settingsSlice';
@@ -15,6 +15,8 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import TextareaAutosize from 'react-textarea-autosize';
 import FileCard from './FileCard';
 import ReasoningContent from './ReasoningContent';
+import SearchStatus from './SearchStatus';
+import SourcesPanel from './SourcesPanel';
 import MarkdownRenderer from './MarkdownRenderer';
 import ProviderIcon from '../models/ProviderIcon';
 import { ImageIcon } from 'lucide-react';
@@ -76,6 +78,21 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, files, isLastMessage
   const blocksToRender: ContentBlock[] = (isStreaming && isLastMessage && streamBlocks)
     ? streamBlocks
     : message.content;
+
+  // 搜索状态：区分流式 vs 历史
+  const isCurrentlyStreaming = isStreaming && isLastMessage && streamBlocks !== null;
+  const streamSearchQuery = useAppSelector(state => state.stream.searchQuery);
+  const streamSearchSources = useAppSelector(state => state.stream.searchSources);
+  const streamIsSearching = useAppSelector(state => state.stream.isSearching);
+
+  const searchSources: SearchSource[] = useMemo(() => {
+    if (isCurrentlyStreaming) return streamSearchSources;
+    const searchBlock = extractSearchBlock(message.content);
+    return searchBlock?.sources ?? [];
+  }, [isCurrentlyStreaming, streamSearchSources, message.content]);
+
+  const showSearching = isCurrentlyStreaming && streamIsSearching;
+  const searchQuery = isCurrentlyStreaming ? streamSearchQuery : extractSearchBlock(message.content)?.query ?? null;
 
   // 从 blocks 提取文本和推理内容
   const displayText = useMemo(() => extractTextFromBlocks(blocksToRender), [blocksToRender]);
@@ -321,9 +338,20 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, files, isLastMessage
                   </div>
                 )}
 
+                {/* 搜索状态：正在搜索动画 */}
+                {showSearching && searchQuery && (
+                  <SearchStatus query={searchQuery} />
+                )}
+
+                {/* 搜索结果：来源卡片 */}
+                {!showSearching && searchSources.length > 0 && (
+                  <SourcesPanel sources={searchSources} />
+                )}
+
                 <MarkdownRenderer
                   content={displayText || ''}
                   className="prose-headings:border-0 prose-hr:border-border/30"
+                  sources={searchSources}
                 />
 
                 {isStreaming && isLastMessage && (

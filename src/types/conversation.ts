@@ -22,7 +22,20 @@ export interface FileBlock {
   mime_type: string;
 }
 
-export type ContentBlock = TextBlock | ThinkingBlock | FileBlock;
+export interface SearchSource {
+  title: string;
+  url: string;
+  description: string;
+}
+
+export interface SearchBlock {
+  type: 'search';
+  id: string;
+  query: string;
+  sources: SearchSource[];
+}
+
+export type ContentBlock = TextBlock | ThinkingBlock | FileBlock | SearchBlock;
 
 // ============================================================
 // Usage
@@ -96,4 +109,8 @@ export function extractThinkingFromBlocks(content: ContentBlock[]): string {
     .filter((b): b is ThinkingBlock => b.type === 'thinking')
     .map(b => b.thinking)
     .join('');
+}
+
+export function extractSearchBlock(content: ContentBlock[]): SearchBlock | null {
+  return (content.find((b): b is SearchBlock => b.type === 'search') ?? null);
 }

@@ -20,11 +20,13 @@ import {
   advanceTypewriter,
   appendTextDelta,
   appendThinkingDelta,
+  completeSearch,
   completeThinkingPhase,
   endStream,
   migrateStreamConversation,
   selectFullStreamContentBlocks,
   selectStreamContentBlocks,
+  startSearch,
   startStream,
 } from '@/redux/slices/streamSlice';
 import { sendMessageStream } from '@/lib/api/chat';
@@ -310,6 +312,16 @@ export function useSendMessage() {
             onThinkingDelta: (delta, blockId) => {
               if (!activeConvIdRef.current) return;
               dispatch(appendThinkingDelta({ blockId, delta }));
+            },
+
+            onSearchStart: (query) => {
+              if (!activeConvIdRef.current) return;
+              dispatch(startSearch({ query }));
+            },
+
+            onSearchComplete: (sources) => {
+              if (!activeConvIdRef.current) return;
+              dispatch(completeSearch({ sources }));
             },
 
             onDone: (_messageId, incomingConvId, usage) => {
