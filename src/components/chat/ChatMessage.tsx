@@ -323,7 +323,7 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, files, isLastMessage
               // AI 消息：渲染 content blocks
               <div>
                 {/* 推理折叠区 */}
-                {(hasThinking || (isStreaming && isLastMessage && isStreamingReasoning)) && (
+                {!hasSearch && (hasThinking || (isStreaming && isLastMessage && isStreamingReasoning)) && (
                   <ReasoningContent
                     content={displayThinking}
                     isVisible={message.isReasoningVisible || localReasoningVisible}
