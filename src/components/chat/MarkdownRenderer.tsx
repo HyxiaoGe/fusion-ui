@@ -15,21 +15,72 @@ interface MarkdownRendererProps {
 }
 
 /**
- * 预处理：将 [n] 引用标记替换为 <cite data-ref="n"></cite> HTML 标签，
- * 避免被 ReactMarkdown 解析为 Markdown 链接引用语法。
+ * 将 [n] 引用标记替换为可交互的引用组件。
+ * 仅当 sources 有值时激活。
  */
-function preprocessCitations(text: string): string {
-  return text.replace(/\[(\d+)\]/g, '<cite data-ref="$1"></cite>');
+function renderWithCitations(text: string, sources: SearchSource[]): React.ReactNode[] {
+  if (!sources.length) return [text];
+
+  const parts: React.ReactNode[] = [];
+  const regex = /\[(\d+)\]/g;
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+
+  while ((match = regex.exec(text)) !== null) {
+    // 添加匹配前的文本
+    if (match.index > lastIndex) {
+      parts.push(text.slice(lastIndex, match.index));
+    }
+
+    const num = parseInt(match[1], 10);
+    const source = sources[num - 1];
+
+    if (source) {
+      let domain = '';
+      try {
+        domain = new URL(source.url).hostname.replace('www.', '');
+      } catch {
+        domain = source.url;
+      }
+
+      parts.push(
+        <TooltipProvider key={`cite-${match.index}`} delayDuration={200}>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <a
+                href={source.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center justify-center h-4 w-4 rounded-full bg-blue-500/10 text-blue-600 dark:text-blue-400 text-[10px] font-medium hover:bg-blue-500/20 transition-colors align-super ml-0.5 no-underline"
+              >
+                {num}
+              </a>
+            </TooltipTrigger>
+            <TooltipContent side="top" className="max-w-[280px]">
+              <p className="text-xs font-medium">{source.title}</p>
+              <p className="text-[10px] text-muted-foreground">{domain}</p>
+            </TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
+      );
+    } else {
+      // 引用编号超出范围，保留原始文本
+      parts.push(match[0]);
+    }
+
+    lastIndex = regex.lastIndex;
+  }
+
+  // 添加剩余文本
+  if (lastIndex < text.length) {
+    parts.push(text.slice(lastIndex));
+  }
+
+  return parts;
 }
 
 const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({ content, className, sources = [] }) => {
   const hasSources = sources.length > 0;
-
-  // 有搜索来源时，预处理引用标记
-  const processedContent = useMemo(
-    () => hasSources ? preprocessCitations(content) : content,
-    [content, hasSources]
-  );
 
   return (
     <div className={`prose prose-neutral dark:prose-invert max-w-none ${className || ''}`}>
@@ -61,42 +112,28 @@ const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({ content, className,
               </code>
             );
           },
-          // 拦截 <cite data-ref="n"> 标签，渲染为可交互的引用圆圈
-          cite: ({ node, ...props }: { node?: unknown; [key: string]: unknown }) => {
-            const ref = (props as { 'data-ref'?: string })['data-ref'];
-            if (!ref || !hasSources) return null;
+          // 拦截文本节点，处理 [n] 引用标记
+          p: ({ node, children, ...props }) => {
+            if (!hasSources) return <p {...props}>{children}</p>;
 
-            const num = parseInt(ref, 10);
-            const source = sources[num - 1];
-            if (!source) return <sup className="text-xs text-muted-foreground">[{num}]</sup>;
+            const processed = React.Children.map(children, child => {
+              if (typeof child === 'string') {
+                return <>{renderWithCitations(child, sources)}</>;
+              }
+              return child;
+            });
+            return <p {...props}>{processed}</p>;
+          },
+          li: ({ node, children, ...props }) => {
+            if (!hasSources) return <li {...props}>{children}</li>;
 
-            let domain = '';
-            try {
-              domain = new URL(source.url).hostname.replace('www.', '');
-            } catch {
-              domain = source.url;
-            }
-
-            return (
-              <TooltipProvider delayDuration={200}>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <a
-                      href={source.url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex items-center justify-center h-4 w-4 rounded-full bg-blue-500/10 text-blue-600 dark:text-blue-400 text-[10px] font-medium hover:bg-blue-500/20 transition-colors align-super ml-0.5 no-underline"
-                    >
-                      {num}
-                    </a>
-                  </TooltipTrigger>
-                  <TooltipContent side="top" className="max-w-[280px]">
-                    <p className="text-xs font-medium">{source.title}</p>
-                    <p className="text-[10px] text-muted-foreground">{domain}</p>
-                  </TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
-            );
+            const processed = React.Children.map(children, child => {
+              if (typeof child === 'string') {
+                return <>{renderWithCitations(child, sources)}</>;
+              }
+              return child;
+            });
+            return <li {...props}>{processed}</li>;
           },
           table: ({ node, ...props }) => (
             <div className="overflow-x-auto my-4">
@@ -111,7 +148,7 @@ const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({ content, className,
           ),
         }}
       >
-        {processedContent}
+        {content}
       </ReactMarkdown>
     </div>
   );
