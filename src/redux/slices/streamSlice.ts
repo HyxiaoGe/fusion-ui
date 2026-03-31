@@ -138,8 +138,10 @@ const streamSlice = createSlice({
         }
       }
       state.isStreamingReasoning = false;
-      state.isThinkingPhaseComplete = true;
-      state.reasoningEndTime = Date.now();
+      state.isThinkingPhaseComplete = false;
+      // 重置计时，第二轮 thinking 会设置新的 startTime/endTime
+      state.reasoningStartTime = null;
+      state.reasoningEndTime = undefined;
     },
 
     completeSearch(state, action: PayloadAction<{ sources: SearchSource[] }>) {

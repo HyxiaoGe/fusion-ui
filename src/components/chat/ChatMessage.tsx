@@ -328,7 +328,7 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, files, isLastMessage
                 {!suppressThinking && (hasThinking || (isStreaming && isLastMessage && isStreamingReasoning)) && (
                   <ReasoningContent
                     content={displayThinking}
-                    isVisible={message.isReasoningVisible || localReasoningVisible}
+                    isVisible={message.isReasoningVisible || localReasoningVisible || (isStreaming && isLastMessage)}
                     onToggle={handleToggleReasoning}
                     isStreaming={isStreamingReasoning && isLastMessage && !isThinkingPhaseComplete}
                     startTime={(isLastMessage ? streamingStartTime : undefined) ?? undefined}
