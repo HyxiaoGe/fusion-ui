@@ -1,18 +1,20 @@
 import type {
   Conversation, Message, ContentBlock,
-  TextBlock, ThinkingBlock, FileBlock,
+  TextBlock, ThinkingBlock, FileBlock, SearchBlock, SearchSource,
 } from '@/types/conversation';
 import { parseTimestamp } from '@/lib/utils/parseTimestamp';
 
 // 服务端返回的原始类型（对齐后端 schema）
 interface ServerBlock {
-  type: 'text' | 'thinking' | 'file';
+  type: 'text' | 'thinking' | 'file' | 'search';
   id: string;
   text?: string;
   thinking?: string;
   file_id?: string;
   filename?: string;
   mime_type?: string;
+  query?: string;
+  sources?: SearchSource[];
 }
 
 interface ServerUsage {
@@ -56,6 +58,13 @@ function buildContentBlocks(serverBlocks: ServerBlock[]): ContentBlock[] {
         filename: b.filename ?? '',
         mime_type: b.mime_type ?? '',
       } satisfies FileBlock);
+    } else if (b.type === 'search' && b.query != null) {
+      blocks.push({
+        type: 'search',
+        id: b.id,
+        query: b.query,
+        sources: b.sources ?? [],
+      } satisfies SearchBlock);
     }
   }
   return blocks;
