@@ -26,6 +26,7 @@ const SourcesPanel: React.FC<SourcesPanelProps> = ({ sources }) => {
             href={source.url}
             target="_blank"
             rel="noopener noreferrer"
+            title={source.title}
             className="flex items-center gap-2 px-3 py-2 rounded-lg border border-border/50 bg-muted/30 hover:bg-muted/50 transition-colors max-w-[220px] group"
           >
             <span className="flex items-center justify-center h-5 w-5 rounded-full bg-blue-500/10 text-blue-600 dark:text-blue-400 text-xs font-medium shrink-0">

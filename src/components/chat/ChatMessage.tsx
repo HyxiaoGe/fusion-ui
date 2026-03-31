@@ -97,7 +97,10 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, files, isLastMessage
   // 从 blocks 提取文本和推理内容
   const displayText = useMemo(() => extractTextFromBlocks(blocksToRender), [blocksToRender]);
   const displayThinking = useMemo(() => extractThinkingFromBlocks(blocksToRender), [blocksToRender]);
-  const hasThinking = displayThinking.length > 0;
+  // 搜索场景下隐藏思考过程（搜索动画本身就是"思考"的可视化替代，
+  // 且 thinking 里包含 tool_call 推理细节对用户来说是噪音）
+  const hasSearch = searchSources.length > 0 || showSearching;
+  const hasThinking = !hasSearch && displayThinking.length > 0;
 
   const getAssistantEmoji = () => {
     const avatar = avatarOptions.assistant.find(a => a.id === assistantAvatar);
