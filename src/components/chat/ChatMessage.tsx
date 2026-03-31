@@ -93,11 +93,15 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, files, isLastMessage
 
   const showSearching = isCurrentlyStreaming && streamIsSearching;
   const searchQuery = isCurrentlyStreaming ? streamSearchQuery : extractSearchBlock(message.content)?.query ?? null;
+  // thinking pending 阶段：正在推理但内容为空（第一轮缓冲中），后续可能转为搜索
+  const isThinkingPending = isCurrentlyStreaming && isStreamingReasoning && !streamSearchQuery;
 
   // 从 blocks 提取文本和推理内容
   const displayText = useMemo(() => extractTextFromBlocks(blocksToRender), [blocksToRender]);
   const displayThinking = useMemo(() => extractThinkingFromBlocks(blocksToRender), [blocksToRender]);
-  const hasThinking = displayThinking.length > 0;
+  // 搜索场景或 pending 阶段不展示 ReasoningContent 组件
+  const hasSearch = searchSources.length > 0 || showSearching || isThinkingPending;
+  const hasThinking = !hasSearch && displayThinking.length > 0;
 
   const getAssistantEmoji = () => {
     const avatar = avatarOptions.assistant.find(a => a.id === assistantAvatar);
@@ -320,7 +324,7 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, files, isLastMessage
               // AI 消息：渲染 content blocks
               <div>
                 {/* 推理折叠区 */}
-                {(hasThinking || (isStreaming && isLastMessage && isStreamingReasoning)) && (
+                {!hasSearch && (hasThinking || (isStreaming && isLastMessage && isStreamingReasoning)) && (
                   <ReasoningContent
                     content={displayThinking}
                     isVisible={message.isReasoningVisible || localReasoningVisible}
@@ -338,7 +342,10 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, files, isLastMessage
                   </div>
                 )}
 
-                {/* 搜索状态：正在搜索动画 */}
+                {/* 搜索场景：思考中 → 搜索中过渡动画 */}
+                {isThinkingPending && (
+                  <SearchStatus isThinking />
+                )}
                 {showSearching && searchQuery && (
                   <SearchStatus query={searchQuery} />
                 )}
