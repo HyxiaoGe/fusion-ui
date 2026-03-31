@@ -129,6 +129,17 @@ const streamSlice = createSlice({
     startSearch(state, action: PayloadAction<{ query: string }>) {
       state.isSearching = true;
       state.searchQuery = action.payload.query;
+      // 清掉第一轮 thinking（tool_call 推理噪音），第二轮会用新 block ID 重新写入
+      for (const blockId of [...state.blockOrder]) {
+        if (state.blockTypes[blockId] === 'thinking') {
+          delete state.thinkingBlocks[blockId];
+          delete state.blockTypes[blockId];
+          state.blockOrder = state.blockOrder.filter(id => id !== blockId);
+        }
+      }
+      state.isStreamingReasoning = false;
+      state.isThinkingPhaseComplete = true;
+      state.reasoningEndTime = Date.now();
     },
 
     completeSearch(state, action: PayloadAction<{ sources: SearchSource[] }>) {

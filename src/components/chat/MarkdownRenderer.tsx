@@ -14,20 +14,28 @@ interface MarkdownRendererProps {
   sources?: SearchSource[];
 }
 
+// 占位符字符对（Unicode 数学角括号，正文中不会出现）
+const CITE_OPEN = '\u27E6';   // ⟦
+const CITE_CLOSE = '\u27E7';  // ⟧
+const CITE_REGEX = /\u27E6(\d+)\u27E7/g;
+
 /**
- * 将 [n] 引用标记替换为可交互的引用组件。
- * 仅当 sources 有值时激活。
+ * 预处理：将 [n] 替换为 ⟦n⟧ 占位符，避免被 Markdown 解析为链接引用。
+ */
+function preprocessCitations(text: string): string {
+  return text.replace(/\[(\d+)\]/g, `${CITE_OPEN}$1${CITE_CLOSE}`);
+}
+
+/**
+ * 将 ⟦n⟧ 占位符渲染为可交互的引用圆圈。
  */
 function renderWithCitations(text: string, sources: SearchSource[]): React.ReactNode[] {
-  if (!sources.length) return [text];
-
   const parts: React.ReactNode[] = [];
-  const regex = /\[(\d+)\]/g;
   let lastIndex = 0;
   let match: RegExpExecArray | null;
 
-  while ((match = regex.exec(text)) !== null) {
-    // 添加匹配前的文本
+  CITE_REGEX.lastIndex = 0;
+  while ((match = CITE_REGEX.exec(text)) !== null) {
     if (match.index > lastIndex) {
       parts.push(text.slice(lastIndex, match.index));
     }
@@ -64,14 +72,12 @@ function renderWithCitations(text: string, sources: SearchSource[]): React.React
         </TooltipProvider>
       );
     } else {
-      // 引用编号超出范围，保留原始文本
-      parts.push(match[0]);
+      parts.push(`[${num}]`);
     }
 
-    lastIndex = regex.lastIndex;
+    lastIndex = CITE_REGEX.lastIndex;
   }
 
-  // 添加剩余文本
   if (lastIndex < text.length) {
     parts.push(text.slice(lastIndex));
   }
@@ -79,8 +85,25 @@ function renderWithCitations(text: string, sources: SearchSource[]): React.React
   return parts;
 }
 
+/**
+ * 通用的子节点引用处理：遍历 children，对字符串子节点做引用替换。
+ */
+function processChildren(children: React.ReactNode, sources: SearchSource[]): React.ReactNode {
+  return React.Children.map(children, child => {
+    if (typeof child === 'string') {
+      return <>{renderWithCitations(child, sources)}</>;
+    }
+    return child;
+  });
+}
+
 const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({ content, className, sources = [] }) => {
   const hasSources = sources.length > 0;
+
+  const processedContent = useMemo(
+    () => hasSources ? preprocessCitations(content) : content,
+    [content, hasSources]
+  );
 
   return (
     <div className={`prose prose-neutral dark:prose-invert max-w-none ${className || ''}`}>
@@ -112,28 +135,34 @@ const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({ content, className,
               </code>
             );
           },
-          // 拦截文本节点，处理 [n] 引用标记
+          // 拦截各种文本容器标签，处理 ⟦n⟧ 引用占位符
           p: ({ node, children, ...props }) => {
             if (!hasSources) return <p {...props}>{children}</p>;
-
-            const processed = React.Children.map(children, child => {
-              if (typeof child === 'string') {
-                return <>{renderWithCitations(child, sources)}</>;
-              }
-              return child;
-            });
-            return <p {...props}>{processed}</p>;
+            return <p {...props}>{processChildren(children, sources)}</p>;
           },
           li: ({ node, children, ...props }) => {
             if (!hasSources) return <li {...props}>{children}</li>;
-
-            const processed = React.Children.map(children, child => {
-              if (typeof child === 'string') {
-                return <>{renderWithCitations(child, sources)}</>;
-              }
-              return child;
-            });
-            return <li {...props}>{processed}</li>;
+            return <li {...props}>{processChildren(children, sources)}</li>;
+          },
+          strong: ({ node, children, ...props }) => {
+            if (!hasSources) return <strong {...props}>{children}</strong>;
+            return <strong {...props}>{processChildren(children, sources)}</strong>;
+          },
+          em: ({ node, children, ...props }) => {
+            if (!hasSources) return <em {...props}>{children}</em>;
+            return <em {...props}>{processChildren(children, sources)}</em>;
+          },
+          h1: ({ node, children, ...props }) => {
+            if (!hasSources) return <h1 {...props}>{children}</h1>;
+            return <h1 {...props}>{processChildren(children, sources)}</h1>;
+          },
+          h2: ({ node, children, ...props }) => {
+            if (!hasSources) return <h2 {...props}>{children}</h2>;
+            return <h2 {...props}>{processChildren(children, sources)}</h2>;
+          },
+          h3: ({ node, children, ...props }) => {
+            if (!hasSources) return <h3 {...props}>{children}</h3>;
+            return <h3 {...props}>{processChildren(children, sources)}</h3>;
           },
           table: ({ node, ...props }) => (
             <div className="overflow-x-auto my-4">
@@ -148,7 +177,7 @@ const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({ content, className,
           ),
         }}
       >
-        {content}
+        {processedContent}
       </ReactMarkdown>
     </div>
   );
