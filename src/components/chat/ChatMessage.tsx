@@ -99,9 +99,10 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, files, isLastMessage
   // 从 blocks 提取文本和推理内容
   const displayText = useMemo(() => extractTextFromBlocks(blocksToRender), [blocksToRender]);
   const displayThinking = useMemo(() => extractThinkingFromBlocks(blocksToRender), [blocksToRender]);
-  // 搜索场景或 pending 阶段不展示 ReasoningContent 组件
-  const hasSearch = searchSources.length > 0 || showSearching || isThinkingPending;
-  const hasThinking = !hasSearch && displayThinking.length > 0;
+  // 仅流式阶段的搜索场景抑制 ReasoningContent（避免 tool_call 推理噪音）
+  // 历史消息中的 ThinkingBlock 是第二轮有效推理，正常展示
+  const suppressThinking = isCurrentlyStreaming && (showSearching || isThinkingPending);
+  const hasThinking = !suppressThinking && displayThinking.length > 0;
 
   const getAssistantEmoji = () => {
     const avatar = avatarOptions.assistant.find(a => a.id === assistantAvatar);
@@ -324,7 +325,7 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, files, isLastMessage
               // AI 消息：渲染 content blocks
               <div>
                 {/* 推理折叠区 */}
-                {!hasSearch && (hasThinking || (isStreaming && isLastMessage && isStreamingReasoning)) && (
+                {!suppressThinking && (hasThinking || (isStreaming && isLastMessage && isStreamingReasoning)) && (
                   <ReasoningContent
                     content={displayThinking}
                     isVisible={message.isReasoningVisible || localReasoningVisible}
