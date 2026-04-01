@@ -12,7 +12,8 @@ const SourcesPanel: React.FC<SourcesPanelProps> = ({ sources }) => {
   if (!sources.length) return null;
 
   return (
-    <div className="flex flex-wrap gap-2 mb-3">
+    <div className="flex items-center gap-1.5 flex-wrap mb-3">
+      <span className="text-[10px] text-muted-foreground/60 mr-0.5">来源</span>
       {sources.map((source, index) => {
         let domain = '';
         try {
@@ -29,39 +30,31 @@ const SourcesPanel: React.FC<SourcesPanelProps> = ({ sources }) => {
                   href={source.url}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="flex items-center gap-2 px-3 py-2 rounded-lg border border-border/50 bg-muted/30 hover:bg-muted/50 transition-colors max-w-[220px] group"
+                  className="inline-flex items-center gap-1.5 px-2 py-1 rounded-full border border-border/40 bg-muted/20 hover:bg-muted/40 transition-colors text-[11px] text-muted-foreground hover:text-foreground"
                 >
-                  <span className="relative flex items-center justify-center h-5 w-5 shrink-0">
-                    {source.favicon ? (
-                      <img
-                        src={source.favicon}
-                        alt=""
-                        className="h-4 w-4 rounded-sm object-contain"
-                        onError={(e) => {
-                          // favicon 加载失败时回退为编号圆圈
-                          const target = e.currentTarget;
-                          target.style.display = 'none';
-                          target.nextElementSibling?.classList.remove('hidden');
-                        }}
-                      />
-                    ) : null}
-                    <span className={`flex items-center justify-center h-5 w-5 rounded-full bg-blue-500/10 text-blue-600 dark:text-blue-400 text-xs font-medium ${source.favicon ? 'hidden' : ''}`}>
+                  {source.favicon ? (
+                    <img
+                      src={source.favicon}
+                      alt=""
+                      className="h-3.5 w-3.5 rounded-sm object-contain shrink-0"
+                      onError={(e) => {
+                        e.currentTarget.style.display = 'none';
+                      }}
+                    />
+                  ) : (
+                    <span className="flex items-center justify-center h-3.5 w-3.5 rounded-full bg-blue-500/10 text-blue-600 dark:text-blue-400 text-[9px] font-medium shrink-0">
                       {index + 1}
                     </span>
-                  </span>
-                  <div className="min-w-0">
-                    <p className="text-xs font-medium truncate group-hover:text-foreground transition-colors">
-                      {source.title}
-                    </p>
-                    <p className="text-[10px] text-muted-foreground truncate">
-                      {domain}
-                    </p>
-                  </div>
+                  )}
+                  <span className="truncate max-w-[100px]">{domain}</span>
                 </a>
               </TooltipTrigger>
               <TooltipContent side="top" className="max-w-[360px]">
                 <p className="text-xs font-medium">{source.title}</p>
-                <p className="text-[10px] text-muted-foreground mt-1">{source.description}</p>
+                {source.description && (
+                  <p className="text-[10px] text-muted-foreground mt-1 line-clamp-3">{source.description}</p>
+                )}
+                <p className="text-[10px] text-blue-500 mt-1">{source.url}</p>
               </TooltipContent>
             </Tooltip>
           </TooltipProvider>
