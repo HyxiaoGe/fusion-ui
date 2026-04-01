@@ -26,6 +26,8 @@ export interface SearchSource {
   title: string;
   url: string;
   description: string;
+  content?: string;
+  favicon?: string;
 }
 
 export interface SearchBlock {

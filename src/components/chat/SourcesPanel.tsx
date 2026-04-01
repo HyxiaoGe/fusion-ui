@@ -31,8 +31,23 @@ const SourcesPanel: React.FC<SourcesPanelProps> = ({ sources }) => {
                   rel="noopener noreferrer"
                   className="flex items-center gap-2 px-3 py-2 rounded-lg border border-border/50 bg-muted/30 hover:bg-muted/50 transition-colors max-w-[220px] group"
                 >
-                  <span className="flex items-center justify-center h-5 w-5 rounded-full bg-blue-500/10 text-blue-600 dark:text-blue-400 text-xs font-medium shrink-0">
-                    {index + 1}
+                  <span className="relative flex items-center justify-center h-5 w-5 shrink-0">
+                    {source.favicon ? (
+                      <img
+                        src={source.favicon}
+                        alt=""
+                        className="h-4 w-4 rounded-sm object-contain"
+                        onError={(e) => {
+                          // favicon 加载失败时回退为编号圆圈
+                          const target = e.currentTarget;
+                          target.style.display = 'none';
+                          target.nextElementSibling?.classList.remove('hidden');
+                        }}
+                      />
+                    ) : null}
+                    <span className={`flex items-center justify-center h-5 w-5 rounded-full bg-blue-500/10 text-blue-600 dark:text-blue-400 text-xs font-medium ${source.favicon ? 'hidden' : ''}`}>
+                      {index + 1}
+                    </span>
                   </span>
                   <div className="min-w-0">
                     <p className="text-xs font-medium truncate group-hover:text-foreground transition-colors">
