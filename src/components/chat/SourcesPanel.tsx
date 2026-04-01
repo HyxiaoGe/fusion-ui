@@ -49,12 +49,9 @@ const SourcesPanel: React.FC<SourcesPanelProps> = ({ sources }) => {
                   <span className="truncate max-w-[100px]">{domain}</span>
                 </a>
               </TooltipTrigger>
-              <TooltipContent side="top" className="max-w-[360px]">
-                <p className="text-xs font-medium">{source.title}</p>
-                {source.description && (
-                  <p className="text-[10px] text-muted-foreground mt-1 line-clamp-3">{source.description}</p>
-                )}
-                <p className="text-[10px] text-blue-500 mt-1">{source.url}</p>
+              <TooltipContent side="top" className="max-w-[280px]">
+                <p className="text-xs font-medium line-clamp-2">{source.title}</p>
+                <p className="text-[10px] text-muted-foreground mt-0.5 truncate">{domain}</p>
               </TooltipContent>
             </Tooltip>
           </TooltipProvider>
