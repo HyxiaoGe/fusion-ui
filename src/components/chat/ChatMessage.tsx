@@ -17,6 +17,7 @@ import FileCard from './FileCard';
 import ReasoningContent from './ReasoningContent';
 import SearchStatus from './SearchStatus';
 import SourcesPanel from './SourcesPanel';
+import SourcesSidebar from './SourcesSidebar';
 import MarkdownRenderer from './MarkdownRenderer';
 import ProviderIcon from '../models/ProviderIcon';
 import { ImageIcon } from 'lucide-react';
@@ -50,6 +51,7 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, files, isLastMessage
   const copiedResetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [localReasoningVisible, setLocalReasoningVisible] = useState(message.isReasoningVisible || false);
+  const [sourcesSidebarOpen, setSourcesSidebarOpen] = useState(false);
   const activeChatId = useAppSelector(state => state.stream.conversationId);
 
   // 获取流式状态
@@ -365,6 +367,16 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, files, isLastMessage
                 {isStreaming && isLastMessage && (
                   <span className="animate-pulse">▌</span>
                 )}
+
+                {/* 参考资料入口 */}
+                {!isStreaming && searchSources.length > 0 && (
+                  <button
+                    onClick={() => setSourcesSidebarOpen(true)}
+                    className="text-[11px] text-muted-foreground/60 hover:text-muted-foreground transition-colors mt-1"
+                  >
+                    参考 {searchSources.length} 篇资料
+                  </button>
+                )}
               </div>
             )}
 
@@ -481,6 +493,15 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, files, isLastMessage
           />
         )}
       </div>
+
+      {/* 参考资料侧边栏 */}
+      {searchSources.length > 0 && (
+        <SourcesSidebar
+          sources={searchSources}
+          isOpen={sourcesSidebarOpen}
+          onClose={() => setSourcesSidebarOpen(false)}
+        />
+      )}
     </div>
   );
 };
