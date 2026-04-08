@@ -3,7 +3,7 @@
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { FileWithPreview, createFileWithPreview } from "@/lib/utils/fileHelpers";
-import { uploadFiles } from "@/lib/api/files";
+import { uploadFiles, deleteFile } from "@/lib/api/files";
 import { startPollingFileStatus, stopPollingFileStatus } from "@/lib/api/FileStatusPoller";
 import { useAppDispatch, useAppSelector } from "@/redux/hooks";
 import { setReasoningEnabled } from "@/redux/slices/conversationSlice";
@@ -362,6 +362,10 @@ const ChatInput: React.FC<ChatInputProps> = ({
       if (targetFile?.fileId) {
         stopPollingFileStatus(targetFile.fileId);
         dispatch(removeFileId({ chatId, fileId: targetFile.fileId }));
+        // 同步删除后端文件记录，释放对话文件数量配额
+        deleteFile(targetFile.fileId).catch((err) =>
+          console.warn("删除后端文件记录失败:", err)
+        );
       }
       // 释放本地预览 URL，防止内存泄漏
       if (targetFile?.previewUrl) {
