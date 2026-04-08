@@ -161,7 +161,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
   const addPendingFiles = (selectedFiles: File[]) => {
     const pendingFiles = selectedFiles.map((file) => ({
       file,
-      previewUrl: "",
+      previewUrl: file.type.startsWith('image/') ? URL.createObjectURL(file) : "",
       id: uuidv4(),
       status: "pending" as FileProcessingStatus,
     }));
@@ -362,6 +362,10 @@ const ChatInput: React.FC<ChatInputProps> = ({
       if (targetFile?.fileId) {
         stopPollingFileStatus(targetFile.fileId);
         dispatch(removeFileId({ chatId, fileId: targetFile.fileId }));
+      }
+      // 释放本地预览 URL，防止内存泄漏
+      if (targetFile?.previewUrl) {
+        URL.revokeObjectURL(targetFile.previewUrl);
       }
 
       return prev.filter((file) => file.id !== id);
