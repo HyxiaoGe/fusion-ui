@@ -188,7 +188,7 @@ export default function ChatPage() {
     messages: conversation?.messages || [],
   });
 
-  const handleSendMessage = useCallback((content: string, files?: File[]) => {
+  const handleSendMessage = useCallback((content: string, files?: File[], fileIds?: string[]) => {
     clearQuestions();
     return sendMessage(
       content,
@@ -200,7 +200,8 @@ export default function ChatPage() {
           }
         },
       },
-      files as any
+      files as any,
+      fileIds
     );
   }, [chatId, clearQuestions, fetchQuestions, sendMessage]);
 

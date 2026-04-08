@@ -17,7 +17,7 @@ export default function Home() {
   const models = useAppSelector((state) => state.models.models);
   const { sendMessage } = useSendMessage();
 
-  const handleSendMessage = useCallback((content: string, files?: File[]) => {
+  const handleSendMessage = useCallback((content: string, files?: File[], fileIds?: string[]) => {
     return sendMessage(
       content,
       {
@@ -27,7 +27,8 @@ export default function Home() {
           setInputKey(Date.now());
         },
       },
-      files as any
+      files as any,
+      fileIds
     );
   }, [router, sendMessage]);
 

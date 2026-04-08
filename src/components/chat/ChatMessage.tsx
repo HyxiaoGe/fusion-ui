@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { FileWithPreview } from '@/lib/utils/fileHelpers';
 import { useAppDispatch, useAppSelector } from '@/redux/hooks';
-import type { Message, ContentBlock, SearchSource } from '@/types/conversation';
+import type { Message, ContentBlock, SearchSource, FileBlock as FileBlockType } from '@/types/conversation';
 import { extractTextFromBlocks, extractThinkingFromBlocks, extractSearchBlock } from '@/types/conversation';
 import { toggleReasoningVisibility } from '@/redux/slices/conversationSlice';
 import { selectStreamContentBlocks } from '@/redux/slices/streamSlice';
@@ -23,6 +23,7 @@ import ProviderIcon from '../models/ProviderIcon';
 import { ImageIcon } from 'lucide-react';
 import { chatStore } from '@/lib/db/chatStore';
 import SuggestedQuestions from './SuggestedQuestions';
+import ImageViewer from './ImageViewer';
 import { useToast } from '@/components/ui/toast';
 
 interface ChatMessageProps {
@@ -52,6 +53,7 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, files, isLastMessage
 
   const [localReasoningVisible, setLocalReasoningVisible] = useState(message.isReasoningVisible || false);
   const [sourcesSidebarOpen, setSourcesSidebarOpen] = useState(false);
+  const [viewingImage, setViewingImage] = useState<FileBlockType | null>(null);
   const activeChatId = useAppSelector(state => state.stream.conversationId);
 
   // 获取流式状态
@@ -414,11 +416,34 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, files, isLastMessage
               <div className="flex flex-wrap gap-2">
                 {fileBlocks.map((block) => {
                   if (block.type !== 'file') return null;
-                  return (
+                  const isImage = block.mime_type.startsWith('image/');
+                  return isImage && block.thumbnail_url ? (
+                    <div
+                      key={block.id}
+                      className="cursor-pointer group relative"
+                      onClick={() => setViewingImage(block)}
+                    >
+                      <img
+                        src={block.thumbnail_url}
+                        alt={block.filename}
+                        className="rounded-lg max-w-[240px] max-h-[240px] object-cover
+                                   border border-border/50 hover:border-primary/50 transition"
+                        loading="lazy"
+                        onError={(e) => {
+                          // presigned URL 过期时回退为图标
+                          (e.currentTarget as HTMLImageElement).style.display = 'none';
+                          (e.currentTarget.nextElementSibling as HTMLElement)?.style.removeProperty('display');
+                        }}
+                      />
+                      <div className="hidden w-10 h-10 items-center justify-center bg-muted/20 rounded-md border">
+                        <ImageIcon className="h-8 w-8 text-blue-500" />
+                      </div>
+                    </div>
+                  ) : (
                     <div key={block.id} className="flex items-center space-x-2 rounded-md border border-border p-2 bg-background shadow-sm">
                       <div className="shrink-0">
                         <div className="w-10 h-10 flex items-center justify-center bg-muted/20 rounded-md border">
-                          {block.mime_type.startsWith('image/') ? (
+                          {isImage ? (
                             <ImageIcon className="h-8 w-8 text-blue-500" />
                           ) : block.mime_type.includes('pdf') ? (
                             <FileIcon className="h-8 w-8 text-red-500" />
@@ -502,6 +527,12 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, files, isLastMessage
           onClose={() => setSourcesSidebarOpen(false)}
         />
       )}
+
+      {/* 图片查看器 */}
+      <ImageViewer
+        fileBlock={viewingImage}
+        onClose={() => setViewingImage(null)}
+      />
     </div>
   );
 };

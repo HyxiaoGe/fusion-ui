@@ -42,6 +42,7 @@ interface LocalFileWithStatus {
   fileId?: string;
   status: FileProcessingStatus;
   errorMessage?: string;
+  thumbnailUrl?: string; // 后端返回的 presigned 缩略图 URL
 }
 
 function getFileIdentity(file: File): string {
@@ -81,6 +82,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
   const { toast } = useToast();
   const [message, setMessage] = useState("");
   const [localFiles, setLocalFiles] = useState<LocalFileWithStatus[]>([]);
+  const [isDragOver, setIsDragOver] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -202,7 +204,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
         )
       );
 
-      const uploadedFileIds = await uploadFiles(
+      const uploadedFiles = await uploadFiles(
         selectedModel.provider,
         selectedModel.id,
         chatId,
@@ -212,20 +214,33 @@ const ChatInput: React.FC<ChatInputProps> = ({
       setLocalFiles((prev) =>
         prev.map((file) => {
           const fileIndex = filesToUpload.findIndex((pendingFile) => pendingFile.id === file.id);
-          if (fileIndex === -1 || !uploadedFileIds[fileIndex]) {
+          if (fileIndex === -1 || !uploadedFiles[fileIndex]) {
             return file;
           }
 
+          const uploaded = uploadedFiles[fileIndex];
+          // 图片文件：后端直接返回 processed 状态（无需轮询）
+          const isImage = file.file.type.startsWith('image/');
           return {
             ...file,
-            fileId: uploadedFileIds[fileIndex],
-            status: "parsing",
+            fileId: uploaded.file_id,
+            status: isImage ? "processed" : "parsing",
+            thumbnailUrl: uploaded.thumbnail_url,
           };
         })
       );
 
-      uploadedFileIds.forEach((fileId, index) => {
+      uploadedFiles.forEach((uploaded, index) => {
+        const fileId = uploaded.file_id;
+        const isImage = filesToUpload[index]?.file.type.startsWith('image/');
         dispatch(addFileId({ chatId, fileId, fileIndex: index }));
+
+        if (isImage) {
+          // 图片上传后已处理完毕，直接标记 processed
+          dispatch(updateFileStatus({ fileId, chatId, status: "processed" }));
+          return;
+        }
+
         dispatch(updateFileStatus({ fileId, chatId, status: "parsing" }));
 
         startPollingFileStatus(fileId, chatId, dispatch, ({ success, errorMessage }) => {
@@ -329,6 +344,15 @@ const ChatInput: React.FC<ChatInputProps> = ({
 
     if (event.clipboardData.items.length === pastedFiles.length) {
       event.preventDefault();
+    }
+  };
+
+  const handleDrop = (event: React.DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    setIsDragOver(false);
+    const droppedFiles = Array.from(event.dataTransfer.files);
+    if (droppedFiles.length > 0) {
+      void queueFilesForUpload(droppedFiles);
     }
   };
 
@@ -612,37 +636,60 @@ const ChatInput: React.FC<ChatInputProps> = ({
 
   return (
     <div className="flex flex-col space-y-2">
-      {/* 外层卡片容器 */}
-      <div className="relative rounded-2xl border border-border bg-background shadow-sm focus-within:ring-1 focus-within:ring-ring transition-shadow">
+      {/* 外层卡片容器（支持拖拽上传） */}
+      <div
+        className={`relative rounded-2xl border bg-background shadow-sm focus-within:ring-1 focus-within:ring-ring transition-all ${
+          isDragOver
+            ? "border-primary border-dashed bg-primary/5"
+            : "border-border"
+        }`}
+        onDragOver={(e) => { e.preventDefault(); setIsDragOver(true); }}
+        onDragLeave={() => setIsDragOver(false)}
+        onDrop={handleDrop}
+      >
         {/* 文件预览区（卡片内部顶部） */}
         {localFiles.length > 0 && (
           <div className="p-3 border-b border-border/50 space-y-3">
             <div className="text-xs font-medium text-muted-foreground mb-2">已选择文件</div>
-            {localFiles.map((file) => (
-              <div key={file.id} className="flex flex-col gap-1.5">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center">
-                    <div className="flex-shrink-0 w-8 h-8 bg-primary/10 rounded flex items-center justify-center mr-2">
-                      <PaperclipIcon className="w-4 h-4 text-primary" />
+            {localFiles.map((file) => {
+              const isImage = file.file.type.startsWith('image/');
+              return (
+                <div key={file.id} className="flex flex-col gap-1.5">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center">
+                      {isImage ? (
+                        <div className="flex-shrink-0 w-12 h-12 rounded overflow-hidden mr-2 border border-border/50">
+                          <img
+                            src={file.thumbnailUrl || file.previewUrl}
+                            alt={file.file.name}
+                            className="w-full h-full object-cover"
+                          />
+                        </div>
+                      ) : (
+                        <div className="flex-shrink-0 w-8 h-8 bg-primary/10 rounded flex items-center justify-center mr-2">
+                          <PaperclipIcon className="w-4 h-4 text-primary" />
+                        </div>
+                      )}
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium text-foreground truncate">{file.file.name}</p>
+                        <p className="text-xs text-muted-foreground">{(file.file.size / 1024).toFixed(1)} KB</p>
+                      </div>
                     </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-foreground truncate">{file.file.name}</p>
-                      <p className="text-xs text-muted-foreground">{(file.file.size / 1024).toFixed(1)} KB</p>
-                    </div>
+                    <button
+                      type="button"
+                      onClick={() => handleRemoveFile(file.id)}
+                      aria-label={`移除文件 ${file.file.name}`}
+                      title={`移除文件 ${file.file.name}`}
+                      className="p-1 rounded-full hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => handleRemoveFile(file.id)}
-                    aria-label={`移除文件 ${file.file.name}`}
-                    title={`移除文件 ${file.file.name}`}
-                    className="p-1 rounded-full hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
-                  >
-                    <X className="h-4 w-4" />
-                  </button>
+                  {/* 图片文件不需要显示状态条 */}
+                  {!isImage && <div className="pl-10 pr-1">{renderFileStatus(file)}</div>}
                 </div>
-                <div className="pl-10 pr-1">{renderFileStatus(file)}</div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
 

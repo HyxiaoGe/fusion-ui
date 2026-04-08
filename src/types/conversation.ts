@@ -20,6 +20,9 @@ export interface FileBlock {
   file_id: string;
   filename: string;
   mime_type: string;
+  thumbnail_url?: string;  // 缩略图 presigned URL
+  width?: number;          // 图片宽度
+  height?: number;         // 图片高度
 }
 
 export interface SearchSource {

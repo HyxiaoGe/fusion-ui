@@ -14,6 +14,12 @@ async function readErrorDetail(response: Response, fallbackMessage: string): Pro
   }
 }
 
+// 上传结果单项（后端返回 file_id + thumbnail_url）
+export interface UploadedFileInfo {
+  file_id: string;
+  thumbnail_url?: string;
+}
+
 // 文件对象接口
 export interface FileInfo {
   id: string;
@@ -23,6 +29,9 @@ export interface FileInfo {
   created_at: string;
   status: FileProcessingStatus;
   error_message: string;
+  thumbnail_key?: string;
+  width?: number;
+  height?: number;
 }
 
 export interface FileStatusResponse {
@@ -34,19 +43,19 @@ export interface FileStatusResponse {
 // 上传文件 - 添加错误处理和重试逻辑
 export async function uploadFiles(
   provider: string,
-  model: string, 
-  conversationId: string, 
-  files: File[], 
+  model: string,
+  conversationId: string,
+  files: File[],
   abortController?: AbortController,
   retryCount = 0
-): Promise<string[]> {
+): Promise<UploadedFileInfo[]> {
   try {
 
     const formData = new FormData();
     formData.append('provider', provider);
-    formData.append('model', model); 
+    formData.append('model', model);
     formData.append('conversation_id', conversationId);
-    
+
     const addedFiles = new Set();
     files.forEach(file => {
       // 避免重复添加同名文件
@@ -55,40 +64,46 @@ export async function uploadFiles(
         addedFiles.add(file.name);
       }
     });
-    
+
     // 使用传入的中止控制器或创建新的
     const controller = abortController || new AbortController();
     const signal = controller.signal;
-    
+
     // 设置超时
     const timeoutId = setTimeout(() => controller.abort(), 15000); // 15秒超时
-    
+
     const response = await fetchWithAuth(`${API_BASE_URL}/api/files/upload`, {
       method: 'POST',
       body: formData,
       signal
     });
-    
+
     clearTimeout(timeoutId);
-    
+
     if (!response.ok) {
       throw new Error(await readErrorDetail(response, '文件上传失败'));
     }
-    
+
     const data = await response.json();
-    return data.file_ids;
+
+    // 兼容新旧格式：新格式返回 files[]，旧格式返回 file_ids[]
+    if (data.files && Array.isArray(data.files)) {
+      return data.files as UploadedFileInfo[];
+    }
+    // 兼容旧格式
+    return (data.file_ids as string[]).map(id => ({ file_id: id }));
   } catch (error) {
     if ((error as any).name === 'AbortError') {
       throw error;
     }
-    
+
     console.error('上传文件失败:', error);
-    
+
     // 如果是超时或网络错误，尝试重试
     if (retryCount > 0) {
       return uploadFiles(provider, model, conversationId, files, abortController, retryCount - 1);
     }
-    
+
     throw error;
   }
 }
@@ -146,4 +161,21 @@ export async function getFileStatus(fileId: string): Promise<FileStatusResponse>
     console.error(`文件 ${fileId} 状态查询出错:`, error);
     throw error;
   }
+}
+
+// 获取文件访问 URL（presigned URL 或 API 代理路径）
+export async function getFileUrl(
+  fileId: string,
+  variant: 'processed' | 'thumbnail' = 'thumbnail'
+): Promise<string> {
+  const response = await fetchWithAuth(
+    `${API_BASE_URL}/api/files/${fileId}/url?variant=${variant}`
+  );
+
+  if (!response.ok) {
+    throw new Error(await readErrorDetail(response, '获取文件 URL 失败'));
+  }
+
+  const data = await response.json();
+  return data.url;
 }

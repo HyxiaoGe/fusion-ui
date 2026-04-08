@@ -125,7 +125,7 @@ export function useSendMessage() {
   }, [dispatch, store, getStreamingConvId]);
 
   const sendMessage = useCallback(
-    async (content: string, options: SendMessageOptions, files?: File[]) => {
+    async (content: string, options: SendMessageOptions, files?: File[], fileIds?: string[]) => {
       if (!content.trim() && (!files || files.length === 0)) return;
 
       if (abortControllerRef.current) {
@@ -291,6 +291,7 @@ export function useSendMessage() {
             conversation_id: isDraft ? undefined : options.conversationId!,
             stream: true,
             options: { use_reasoning: useReasoning },
+            file_ids: fileIds,
           },
           {
             onReady: ({ conversationId: incomingConvId }) => {
