@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
 import * as VisuallyHidden from '@radix-ui/react-visually-hidden';
-import { Loader2 } from 'lucide-react';
+import { Loader2, X } from 'lucide-react';
 import { getFileUrl } from '@/lib/api/files';
 import type { FileBlock } from '@/types/conversation';
 
@@ -64,11 +64,18 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ fileBlock, imageUrl, onClose 
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="max-w-[90vw] max-h-[90vh] sm:max-w-[90vw] p-0 border-none bg-transparent shadow-none flex items-center justify-center [&>button]:text-white [&>button]:bg-black/50 [&>button]:rounded-full [&>button]:p-1">
+      <DialogContent className="max-w-[90vw] max-h-[90vh] sm:max-w-[90vw] p-0 border-none bg-transparent shadow-none flex items-center justify-center [&>button:last-child]:hidden">
         <VisuallyHidden.Root>
           <DialogTitle>{altText}</DialogTitle>
         </VisuallyHidden.Root>
-        <div className="flex items-center justify-center min-h-[200px]">
+        <div className="relative flex items-center justify-center min-h-[200px]">
+          {/* 自定义关闭按钮：固定在图片区域右上角 */}
+          <button
+            onClick={onClose}
+            className="absolute top-2 right-2 z-10 w-8 h-8 rounded-full bg-black/50 text-white flex items-center justify-center hover:bg-black/70 transition-colors"
+          >
+            <X className="h-4 w-4" />
+          </button>
           {isLoading ? (
             <Loader2 className="h-8 w-8 animate-spin text-white" />
           ) : fullImageUrl ? (
