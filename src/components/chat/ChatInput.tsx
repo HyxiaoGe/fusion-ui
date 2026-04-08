@@ -653,47 +653,57 @@ const ChatInput: React.FC<ChatInputProps> = ({
       >
         {/* 文件预览区（卡片内部顶部） */}
         {localFiles.length > 0 && (
-          <div className="p-3 border-b border-border/50 space-y-3">
-            <div className="text-xs font-medium text-muted-foreground mb-2">已选择文件</div>
-            {localFiles.map((file) => {
-              const isImage = file.file.type.startsWith('image/');
-              return (
-                <div key={file.id} className="flex flex-col gap-1.5">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center">
-                      {isImage ? (
-                        <div className="flex-shrink-0 w-12 h-12 rounded overflow-hidden mr-2 border border-border/50">
-                          <img
-                            src={file.previewUrl || file.thumbnailUrl}
-                            alt={file.file.name}
-                            className="w-full h-full object-cover"
-                          />
-                        </div>
-                      ) : (
-                        <div className="flex-shrink-0 w-8 h-8 bg-primary/10 rounded flex items-center justify-center mr-2">
-                          <PaperclipIcon className="w-4 h-4 text-primary" />
-                        </div>
-                      )}
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium text-foreground truncate">{file.file.name}</p>
-                        <p className="text-xs text-muted-foreground">{(file.file.size / 1024).toFixed(1)} KB</p>
-                      </div>
+          <div className="p-3 border-b border-border/50">
+            <div className="flex flex-wrap gap-2">
+              {localFiles.map((file) => {
+                const isImage = file.file.type.startsWith('image/');
+                return isImage ? (
+                  /* 图片文件：大缩略图卡片 */
+                  <div key={file.id} className="relative group">
+                    <div className="w-24 h-24 rounded-lg overflow-hidden border border-border/50 bg-muted">
+                      <img
+                        src={file.previewUrl || file.thumbnailUrl}
+                        alt={file.file.name}
+                        className="w-full h-full object-cover"
+                      />
                     </div>
                     <button
                       type="button"
                       onClick={() => handleRemoveFile(file.id)}
                       aria-label={`移除文件 ${file.file.name}`}
-                      title={`移除文件 ${file.file.name}`}
-                      className="p-1 rounded-full hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
+                      className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-foreground/80 text-background flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
                     >
-                      <X className="h-4 w-4" />
+                      <X className="h-3 w-3" />
                     </button>
+                    <p className="text-[10px] text-muted-foreground mt-1 truncate w-24">{file.file.name}</p>
                   </div>
-                  {/* 图片文件不需要显示状态条 */}
-                  {!isImage && <div className="pl-10 pr-1">{renderFileStatus(file)}</div>}
-                </div>
-              );
-            })}
+                ) : (
+                  /* 非图片文件：原有行布局 */
+                  <div key={file.id} className="flex flex-col gap-1.5 w-full">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center">
+                        <div className="flex-shrink-0 w-8 h-8 bg-primary/10 rounded flex items-center justify-center mr-2">
+                          <PaperclipIcon className="w-4 h-4 text-primary" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium text-foreground truncate">{file.file.name}</p>
+                          <p className="text-xs text-muted-foreground">{(file.file.size / 1024).toFixed(1)} KB</p>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveFile(file.id)}
+                        aria-label={`移除文件 ${file.file.name}`}
+                        className="p-1 rounded-full hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
+                      >
+                        <X className="h-4 w-4" />
+                      </button>
+                    </div>
+                    <div className="pl-10 pr-1">{renderFileStatus(file)}</div>
+                  </div>
+                );
+              })}
+            </div>
           </div>
         )}
 
