@@ -64,7 +64,7 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ fileBlock, imageUrl, onClose 
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="max-w-[90vw] max-h-[90vh] p-0 border-none bg-transparent shadow-none [&>button]:text-white [&>button]:bg-black/50 [&>button]:rounded-full [&>button]:p-1">
+      <DialogContent className="max-w-[90vw] max-h-[90vh] sm:max-w-[90vw] p-0 border-none bg-transparent shadow-none flex items-center justify-center [&>button]:text-white [&>button]:bg-black/50 [&>button]:rounded-full [&>button]:p-1">
         <VisuallyHidden.Root>
           <DialogTitle>{altText}</DialogTitle>
         </VisuallyHidden.Root>

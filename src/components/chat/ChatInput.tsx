@@ -670,11 +670,11 @@ const ChatInput: React.FC<ChatInputProps> = ({
             <div className="p-3 border-b border-border/50 space-y-2">
               {/* 图片缩略图条：横排 + 水平滚动 */}
               {imageFiles.length > 0 && (
-                <div className="flex gap-2 overflow-x-auto pb-1">
+                <div className="flex gap-3 overflow-x-auto pt-1 pr-1 pb-1">
                   {imageFiles.map((file) => {
                     const isUploading = file.status === "uploading" || file.status === "pending";
                     return (
-                      <div key={file.id} className="relative flex-shrink-0 w-[60px] h-[60px]">
+                      <div key={file.id} className="relative flex-shrink-0 w-[60px] h-[60px] mt-1 mr-1">
                         {/* 缩略图 */}
                         <div
                           className="w-full h-full rounded-lg overflow-hidden border border-border/50 bg-muted cursor-pointer"
