@@ -664,7 +664,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
                       {isImage ? (
                         <div className="flex-shrink-0 w-12 h-12 rounded overflow-hidden mr-2 border border-border/50">
                           <img
-                            src={file.thumbnailUrl || file.previewUrl}
+                            src={file.previewUrl || file.thumbnailUrl}
                             alt={file.file.name}
                             className="w-full h-full object-cover"
                           />
