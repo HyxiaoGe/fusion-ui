@@ -16,6 +16,7 @@ import {
   type FileProcessingStatus,
 } from "@/redux/slices/fileUploadSlice";
 import { ArrowUp, Lightbulb, PaperclipIcon, Square, X } from "lucide-react";
+import { Dialog, DialogContent } from "@/components/ui/dialog";
 import ModelSelector from "@/components/models/ModelSelector";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useToast } from "../ui/toast";
@@ -84,6 +85,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
   const [message, setMessage] = useState("");
   const [localFiles, setLocalFiles] = useState<LocalFileWithStatus[]>([]);
   const [isDragOver, setIsDragOver] = useState(false);
+  const [previewImageUrl, setPreviewImageUrl] = useState<string | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -669,7 +671,10 @@ const ChatInput: React.FC<ChatInputProps> = ({
                 return isImage ? (
                   /* 图片文件：大缩略图卡片 */
                   <div key={file.id} className="relative group">
-                    <div className="w-24 h-24 rounded-lg overflow-hidden border border-border/50 bg-muted">
+                    <div
+                      className="w-24 h-24 rounded-lg overflow-hidden border border-border/50 bg-muted cursor-pointer"
+                      onClick={() => setPreviewImageUrl(file.previewUrl || file.thumbnailUrl || null)}
+                    >
                       <img
                         src={file.previewUrl || file.thumbnailUrl}
                         alt={file.file.name}
@@ -802,6 +807,21 @@ const ChatInput: React.FC<ChatInputProps> = ({
       ) : null}
 
       {hasProcessingFiles && renderProcessingMessage()}
+
+      {/* 图片预览弹窗 */}
+      <Dialog open={!!previewImageUrl} onOpenChange={(open) => !open && setPreviewImageUrl(null)}>
+        <DialogContent className="max-w-[90vw] max-h-[90vh] p-0 border-none bg-transparent shadow-none [&>button]:text-white [&>button]:bg-black/50 [&>button]:rounded-full [&>button]:p-1">
+          <div className="flex items-center justify-center">
+            {previewImageUrl && (
+              <img
+                src={previewImageUrl}
+                alt="预览"
+                className="max-w-[85vw] max-h-[85vh] object-contain rounded-lg"
+              />
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
