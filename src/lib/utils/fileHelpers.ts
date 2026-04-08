@@ -1,6 +1,17 @@
 export interface FileWithPreview extends File {
     preview: string;
   }
+
+  /**
+   * 发送消息时携带的文件附件元数据
+   * 替代 FileWithPreview[] + string[] 的分离传参方式
+   */
+  export interface FileAttachment {
+    fileId: string;
+    filename: string;
+    mimeType: string;
+    previewUrl?: string;  // 本地 blob URL，用于发送后立即展示缩略图
+  }
   
   export type SupportedFileType = 
     | 'image' 

@@ -31,7 +31,8 @@ import {
 } from '@/redux/slices/streamSlice';
 import { sendMessageStream } from '@/lib/api/chat';
 import { generateChatTitle } from '@/lib/api/title';
-import type { Message, Usage } from '@/types/conversation';
+import type { Message, ContentBlock, Usage } from '@/types/conversation';
+import type { FileAttachment } from '@/lib/utils/fileHelpers';
 
 // 打字机参数
 const TYPEWRITER_CHARS_PER_TICK = 4;
@@ -127,8 +128,8 @@ export function useSendMessage() {
   }, [dispatch, store, getStreamingConvId]);
 
   const sendMessage = useCallback(
-    async (content: string, options: SendMessageOptions, files?: File[], fileIds?: string[]) => {
-      if (!content.trim() && (!files || files.length === 0)) return;
+    async (content: string, options: SendMessageOptions, attachments?: FileAttachment[]) => {
+      if (!content.trim() && (!attachments || attachments.length === 0)) return;
 
       if (abortControllerRef.current) {
         stopStreaming();
@@ -168,10 +169,30 @@ export function useSendMessage() {
       userMessageIdRef.current = userMessageId;
       assistantMessageIdRef.current = assistantMessageId;
 
+      // 构建用户消息 content blocks（文本 + 文件）
+      const contentBlocks: ContentBlock[] = [
+        { type: 'text', id: `blk_${userMessageId.slice(0, 12)}`, text: content.trim() },
+      ];
+      if (attachments) {
+        for (const att of attachments) {
+          contentBlocks.push({
+            type: 'file',
+            id: `blk_${uuidv4().slice(0, 12)}`,
+            file_id: att.fileId,
+            filename: att.filename,
+            mime_type: att.mimeType,
+            // 图片文件用本地 previewUrl 作为即时缩略图，后端持久化的 thumbnail_url 在刷新后生效
+            thumbnail_url: att.mimeType.startsWith('image/') ? att.previewUrl : undefined,
+          });
+        }
+      }
+
+      const fileIds = attachments?.map((a) => a.fileId);
+
       const userMessage: Message = {
         id: userMessageId,
         role: 'user',
-        content: [{ type: 'text', id: `blk_${userMessageId.slice(0, 12)}`, text: content.trim() }],
+        content: contentBlocks,
         status: 'pending',
         timestamp: Date.now(),
       };

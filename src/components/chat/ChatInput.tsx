@@ -2,7 +2,7 @@
 
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { FileWithPreview, createFileWithPreview } from "@/lib/utils/fileHelpers";
+import type { FileAttachment } from "@/lib/utils/fileHelpers";
 import { uploadFiles, deleteFile } from "@/lib/api/files";
 import { startPollingFileStatus, stopPollingFileStatus } from "@/lib/api/FileStatusPoller";
 import { useAppDispatch, useAppSelector } from "@/redux/hooks";
@@ -25,8 +25,7 @@ import { v4 as uuidv4 } from "uuid";
 interface ChatInputProps {
   onSendMessage: (
     content: string,
-    files?: FileWithPreview[],
-    fileIds?: string[],
+    attachments?: FileAttachment[],
     pendingConversationId?: string
   ) => void;
   onClearMessage?: () => void;
@@ -425,24 +424,19 @@ const ChatInput: React.FC<ChatInputProps> = ({
     }
 
     if (localFiles.length > 0) {
-      const filesToSend: FileWithPreview[] = localFiles.map((item) => {
-        const fileWithPreview = createFileWithPreview(item.file);
-        fileWithPreview.preview = "";
-
-        if (item.fileId) {
-          (fileWithPreview as any).fileId = item.fileId;
-        }
-
-        return fileWithPreview;
-      });
-
-      const actualFileIds = localFiles
-        .map((file) => file.fileId)
-        .filter((fileId): fileId is string => Boolean(fileId));
+      // 构建结构化的文件附件元数据
+      const attachments: FileAttachment[] = localFiles
+        .filter((item) => item.fileId)
+        .map((item) => ({
+          fileId: item.fileId!,
+          filename: item.file.name,
+          mimeType: item.file.type || 'application/octet-stream',
+          previewUrl: item.previewUrl || undefined,
+        }));
 
       // 首页新对话时，传递文件上传使用的 pendingChatId，确保后端对话 ID 一致
       const pendingId = !activeChatId ? pendingChatIdRef.current : undefined;
-      onSendMessage(message, filesToSend, actualFileIds, pendingId);
+      onSendMessage(message, attachments, pendingId);
 
       localFiles.forEach((file) => {
         if (file.fileId) {

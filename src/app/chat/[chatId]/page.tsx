@@ -5,6 +5,7 @@ import { useParams, useRouter } from 'next/navigation';
 import { ChatMessageListLazy, ChatSidebarLazy } from '@/components/lazy/LazyComponents';
 import MainLayout from '@/components/layouts/MainLayout';
 import ChatInput from '@/components/chat/ChatInput';
+import type { FileAttachment } from '@/lib/utils/fileHelpers';
 import ConfirmDialog from '@/components/ui/confirm-dialog';
 import { useAppDispatch, useAppSelector } from '@/redux/hooks';
 import { useStore } from 'react-redux';
@@ -188,7 +189,7 @@ export default function ChatPage() {
     messages: conversation?.messages || [],
   });
 
-  const handleSendMessage = useCallback((content: string, files?: File[], fileIds?: string[]) => {
+  const handleSendMessage = useCallback((content: string, attachments?: FileAttachment[], _pendingConversationId?: string) => {
     clearQuestions();
     return sendMessage(
       content,
@@ -200,8 +201,7 @@ export default function ChatPage() {
           }
         },
       },
-      files as any,
-      fileIds
+      attachments
     );
   }, [chatId, clearQuestions, fetchQuestions, sendMessage]);
 

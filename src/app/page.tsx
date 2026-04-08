@@ -9,6 +9,7 @@ import MainLayout from '@/components/layouts/MainLayout';
 import { useAppSelector } from '@/redux/hooks';
 import { useSendMessage } from '@/hooks/useSendMessage';
 import { getFirstEnabledModelId } from '@/lib/models/modelPreference';
+import type { FileAttachment } from '@/lib/utils/fileHelpers';
 
 export default function Home() {
   const router = useRouter();
@@ -17,11 +18,10 @@ export default function Home() {
   const models = useAppSelector((state) => state.models.models);
   const { sendMessage } = useSendMessage();
 
-  const handleSendMessage = useCallback((content: string, files?: File[], fileIds?: string[], pendingConversationId?: string) => {
+  const handleSendMessage = useCallback((content: string, attachments?: FileAttachment[], pendingConversationId?: string) => {
     return sendMessage(
       content,
       {
-        // 有文件时使用 ChatInput 生成的 pendingConversationId，确保与文件上传关联的对话一致
         conversationId: pendingConversationId || null,
         isDraft: true,
         onMaterialized: (serverConversationId) => {
@@ -29,8 +29,7 @@ export default function Home() {
           setInputKey(Date.now());
         },
       },
-      files as any,
-      fileIds
+      attachments
     );
   }, [router, sendMessage]);
 
