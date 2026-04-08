@@ -15,8 +15,8 @@ import {
   updateFileStatus,
   type FileProcessingStatus,
 } from "@/redux/slices/fileUploadSlice";
-import { ArrowUp, Lightbulb, PaperclipIcon, Square, X } from "lucide-react";
-import { createPortal } from "react-dom";
+import { ArrowUp, Lightbulb, Loader2, PaperclipIcon, Square, X } from "lucide-react";
+import ImageViewer from "./ImageViewer";
 import ModelSelector from "@/components/models/ModelSelector";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useToast } from "../ui/toast";
@@ -85,7 +85,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
   const [message, setMessage] = useState("");
   const [localFiles, setLocalFiles] = useState<LocalFileWithStatus[]>([]);
   const [isDragOver, setIsDragOver] = useState(false);
-  const [previewImageUrl, setPreviewImageUrl] = useState<string | null>(null);
+  const [viewingImageUrl, setViewingImageUrl] = useState<string | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -663,63 +663,77 @@ const ChatInput: React.FC<ChatInputProps> = ({
         onDrop={handleDrop}
       >
         {/* 文件预览区（卡片内部顶部） */}
-        {localFiles.length > 0 && (
-          <div className="p-3 border-b border-border/50">
-            <div className="flex flex-wrap gap-2">
-              {localFiles.map((file) => {
-                const isImage = file.file.type.startsWith('image/');
-                return isImage ? (
-                  /* 图片文件：大缩略图卡片 */
-                  <div key={file.id} className="relative group">
-                    <div
-                      className="w-24 h-24 rounded-lg overflow-hidden border border-border/50 bg-muted cursor-pointer"
-                      onClick={(e) => { e.stopPropagation(); setPreviewImageUrl(file.previewUrl || file.thumbnailUrl || null); }}
-                    >
-                      <img
-                        src={file.previewUrl || file.thumbnailUrl}
-                        alt={file.file.name}
-                        className="w-full h-full object-cover"
-                      />
+        {localFiles.length > 0 && (() => {
+          const imageFiles = localFiles.filter((f) => f.file.type.startsWith('image/'));
+          const otherFiles = localFiles.filter((f) => !f.file.type.startsWith('image/'));
+          return (
+            <div className="p-3 border-b border-border/50 space-y-2">
+              {/* 图片缩略图条：横排 + 水平滚动 */}
+              {imageFiles.length > 0 && (
+                <div className="flex gap-2 overflow-x-auto pb-1">
+                  {imageFiles.map((file) => {
+                    const isUploading = file.status === "uploading" || file.status === "pending";
+                    return (
+                      <div key={file.id} className="relative flex-shrink-0 w-[60px] h-[60px]">
+                        {/* 缩略图 */}
+                        <div
+                          className="w-full h-full rounded-lg overflow-hidden border border-border/50 bg-muted cursor-pointer"
+                          onClick={() => setViewingImageUrl(file.previewUrl || file.thumbnailUrl || null)}
+                        >
+                          <img
+                            src={file.previewUrl || file.thumbnailUrl}
+                            alt={file.file.name}
+                            className="w-full h-full object-cover"
+                          />
+                        </div>
+                        {/* 上传中遮罩 + spinner */}
+                        {isUploading && (
+                          <div className="absolute inset-0 rounded-lg bg-black/40 flex items-center justify-center">
+                            <Loader2 className="h-5 w-5 animate-spin text-white" />
+                          </div>
+                        )}
+                        {/* 删除按钮（常驻显示） */}
+                        <button
+                          type="button"
+                          onClick={(e) => { e.stopPropagation(); handleRemoveFile(file.id); }}
+                          aria-label={`移除 ${file.file.name}`}
+                          className="absolute -top-1.5 -right-1.5 w-[18px] h-[18px] rounded-full bg-black/60 text-white flex items-center justify-center hover:bg-black/80 transition-colors"
+                        >
+                          <X className="h-3 w-3" />
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+              {/* 非图片文件列表 */}
+              {otherFiles.map((file) => (
+                <div key={file.id} className="flex flex-col gap-1.5">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center">
+                      <div className="flex-shrink-0 w-8 h-8 bg-primary/10 rounded flex items-center justify-center mr-2">
+                        <PaperclipIcon className="w-4 h-4 text-primary" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium text-foreground truncate">{file.file.name}</p>
+                        <p className="text-xs text-muted-foreground">{(file.file.size / 1024).toFixed(1)} KB</p>
+                      </div>
                     </div>
                     <button
                       type="button"
                       onClick={() => handleRemoveFile(file.id)}
                       aria-label={`移除文件 ${file.file.name}`}
-                      className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-foreground/80 text-background flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                      className="p-1 rounded-full hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
                     >
-                      <X className="h-3 w-3" />
+                      <X className="h-4 w-4" />
                     </button>
-                    <p className="text-[10px] text-muted-foreground mt-1 truncate w-24">{file.file.name}</p>
                   </div>
-                ) : (
-                  /* 非图片文件：原有行布局 */
-                  <div key={file.id} className="flex flex-col gap-1.5 w-full">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center">
-                        <div className="flex-shrink-0 w-8 h-8 bg-primary/10 rounded flex items-center justify-center mr-2">
-                          <PaperclipIcon className="w-4 h-4 text-primary" />
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-medium text-foreground truncate">{file.file.name}</p>
-                          <p className="text-xs text-muted-foreground">{(file.file.size / 1024).toFixed(1)} KB</p>
-                        </div>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => handleRemoveFile(file.id)}
-                        aria-label={`移除文件 ${file.file.name}`}
-                        className="p-1 rounded-full hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
-                      >
-                        <X className="h-4 w-4" />
-                      </button>
-                    </div>
-                    <div className="pl-10 pr-1">{renderFileStatus(file)}</div>
-                  </div>
-                );
-              })}
+                  <div className="pl-10 pr-1">{renderFileStatus(file)}</div>
+                </div>
+              ))}
             </div>
-          </div>
-        )}
+          );
+        })()}
 
         {/* Textarea 区域 */}
         <Textarea
@@ -808,27 +822,11 @@ const ChatInput: React.FC<ChatInputProps> = ({
 
       {hasProcessingFiles && renderProcessingMessage()}
 
-      {/* 图片预览弹窗（Portal 渲染到 body，避免父层事件干扰） */}
-      {previewImageUrl && typeof document !== "undefined" && createPortal(
-        <div
-          className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/80"
-          onClick={() => setPreviewImageUrl(null)}
-        >
-          <button
-            className="absolute top-4 right-4 text-white/70 hover:text-white text-3xl leading-none"
-            onClick={() => setPreviewImageUrl(null)}
-          >
-            ✕
-          </button>
-          <img
-            src={previewImageUrl}
-            alt="预览"
-            className="max-w-[90vw] max-h-[90vh] object-contain rounded-lg"
-            onClick={(e) => e.stopPropagation()}
-          />
-        </div>,
-        document.body
-      )}
+      {/* 图片预览 Lightbox */}
+      <ImageViewer
+        imageUrl={viewingImageUrl}
+        onClose={() => setViewingImageUrl(null)}
+      />
     </div>
   );
 };
