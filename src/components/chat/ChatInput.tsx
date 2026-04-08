@@ -16,7 +16,7 @@ import {
   type FileProcessingStatus,
 } from "@/redux/slices/fileUploadSlice";
 import { ArrowUp, Lightbulb, PaperclipIcon, Square, X } from "lucide-react";
-import { Dialog, DialogContent } from "@/components/ui/dialog";
+import { createPortal } from "react-dom";
 import ModelSelector from "@/components/models/ModelSelector";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useToast } from "../ui/toast";
@@ -673,7 +673,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
                   <div key={file.id} className="relative group">
                     <div
                       className="w-24 h-24 rounded-lg overflow-hidden border border-border/50 bg-muted cursor-pointer"
-                      onClick={() => setPreviewImageUrl(file.previewUrl || file.thumbnailUrl || null)}
+                      onClick={(e) => { e.stopPropagation(); setPreviewImageUrl(file.previewUrl || file.thumbnailUrl || null); }}
                     >
                       <img
                         src={file.previewUrl || file.thumbnailUrl}
@@ -808,20 +808,27 @@ const ChatInput: React.FC<ChatInputProps> = ({
 
       {hasProcessingFiles && renderProcessingMessage()}
 
-      {/* 图片预览弹窗 */}
-      <Dialog open={!!previewImageUrl} onOpenChange={(open) => !open && setPreviewImageUrl(null)}>
-        <DialogContent className="max-w-[90vw] max-h-[90vh] p-0 border-none bg-transparent shadow-none [&>button]:text-white [&>button]:bg-black/50 [&>button]:rounded-full [&>button]:p-1">
-          <div className="flex items-center justify-center">
-            {previewImageUrl && (
-              <img
-                src={previewImageUrl}
-                alt="预览"
-                className="max-w-[85vw] max-h-[85vh] object-contain rounded-lg"
-              />
-            )}
-          </div>
-        </DialogContent>
-      </Dialog>
+      {/* 图片预览弹窗（Portal 渲染到 body，避免父层事件干扰） */}
+      {previewImageUrl && typeof document !== "undefined" && createPortal(
+        <div
+          className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/80"
+          onClick={() => setPreviewImageUrl(null)}
+        >
+          <button
+            className="absolute top-4 right-4 text-white/70 hover:text-white text-3xl leading-none"
+            onClick={() => setPreviewImageUrl(null)}
+          >
+            ✕
+          </button>
+          <img
+            src={previewImageUrl}
+            alt="预览"
+            className="max-w-[90vw] max-h-[90vh] object-contain rounded-lg"
+            onClick={(e) => e.stopPropagation()}
+          />
+        </div>,
+        document.body
+      )}
     </div>
   );
 };
