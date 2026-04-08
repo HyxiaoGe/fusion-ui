@@ -39,6 +39,8 @@ const TYPEWRITER_TICK_MS = 30;
 
 type SendMessageOptions = {
   conversationId: string | null;
+  /** 标记为新对话（即使提供了 conversationId，也当作草稿处理）。用于首页上传文件后发送的场景 */
+  isDraft?: boolean;
   onMaterialized?: (serverConversationId: string) => void;
   onStreamEnd?: (conversationId: string) => void;
 };
@@ -141,8 +143,8 @@ export function useSendMessage() {
         return;
       }
 
-      const isDraft = options.conversationId === null;
-      const tempConvId = isDraft ? uuidv4() : options.conversationId!;
+      const isDraft = options.isDraft ?? (options.conversationId === null);
+      const tempConvId = isDraft && !options.conversationId ? uuidv4() : options.conversationId!;
 
       if (isDraft) {
         dispatch(setPendingConversationId(tempConvId));
@@ -288,7 +290,7 @@ export function useSendMessage() {
           {
             model_id: enabledModel.id,
             message: content.trim(),
-            conversation_id: isDraft ? undefined : options.conversationId!,
+            conversation_id: tempConvId,
             stream: true,
             options: { use_reasoning: useReasoning },
             file_ids: fileIds,

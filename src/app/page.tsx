@@ -17,11 +17,13 @@ export default function Home() {
   const models = useAppSelector((state) => state.models.models);
   const { sendMessage } = useSendMessage();
 
-  const handleSendMessage = useCallback((content: string, files?: File[], fileIds?: string[]) => {
+  const handleSendMessage = useCallback((content: string, files?: File[], fileIds?: string[], pendingConversationId?: string) => {
     return sendMessage(
       content,
       {
-        conversationId: null,
+        // 有文件时使用 ChatInput 生成的 pendingConversationId，确保与文件上传关联的对话一致
+        conversationId: pendingConversationId || null,
+        isDraft: true,
         onMaterialized: (serverConversationId) => {
           router.replace(`/chat/${serverConversationId}`);
           setInputKey(Date.now());

@@ -25,7 +25,8 @@ interface ChatInputProps {
   onSendMessage: (
     content: string,
     files?: FileWithPreview[],
-    fileIds?: string[]
+    fileIds?: string[],
+    pendingConversationId?: string
   ) => void;
   onClearMessage?: () => void;
   onStopStreaming?: () => void;
@@ -93,8 +94,10 @@ const ChatInput: React.FC<ChatInputProps> = ({
   const reasoningEnabled = useAppSelector((state) => state.conversation.reasoningEnabled);
   const isStreaming = useAppSelector((state) => state.stream.isStreaming);
 
+  // 首页无 activeChatId 时，生成一个稳定的临时 UUID 用于文件上传关联
+  const pendingChatIdRef = useRef<string>(uuidv4());
   const effectiveChatId = activeChatId;
-  const chatId = effectiveChatId || "default-chat";
+  const chatId = effectiveChatId || pendingChatIdRef.current;
   const activeChatModelId = effectiveChatId
     ? chats[effectiveChatId]?.model_id
     : undefined;
@@ -435,7 +438,9 @@ const ChatInput: React.FC<ChatInputProps> = ({
         .map((file) => file.fileId)
         .filter((fileId): fileId is string => Boolean(fileId));
 
-      onSendMessage(message, filesToSend, actualFileIds);
+      // 首页新对话时，传递文件上传使用的 pendingChatId，确保后端对话 ID 一致
+      const pendingId = !activeChatId ? pendingChatIdRef.current : undefined;
+      onSendMessage(message, filesToSend, actualFileIds, pendingId);
 
       localFiles.forEach((file) => {
         if (file.fileId) {
