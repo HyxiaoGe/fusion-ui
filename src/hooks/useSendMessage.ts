@@ -31,7 +31,7 @@ import {
 } from '@/redux/slices/streamSlice';
 import { sendMessageStream } from '@/lib/api/chat';
 import { generateChatTitle } from '@/lib/api/title';
-import type { Message, ContentBlock, Usage } from '@/types/conversation';
+import type { Message, ContentBlock, FileBlock, Usage } from '@/types/conversation';
 import type { FileAttachment } from '@/lib/utils/fileHelpers';
 
 // 打字机参数
@@ -435,6 +435,23 @@ export function useSendMessage() {
 
       const targetMsg = messages[targetIndex];
 
+      // 从用户消息中提取文本和文件附件
+      const extractMessageContent = (msg: import('@/types/conversation').Message) => {
+        const text = msg.content
+          .filter((b): b is import('@/types/conversation').TextBlock => b.type === 'text')
+          .map(b => b.text)
+          .join('');
+        const attachments: FileAttachment[] = msg.content
+          .filter((b): b is FileBlock => b.type === 'file')
+          .map(b => ({
+            fileId: b.file_id,
+            filename: b.filename,
+            mimeType: b.mime_type,
+            previewUrl: b.thumbnail_url,
+          }));
+        return { text, attachments };
+      };
+
       if (targetMsg.role === 'assistant') {
         // 重新生成：向上找 user 消息，删除 assistant + user，然后 sendMessage 会重建两条
         let userMessage: import('@/types/conversation').Message | null = null;
@@ -446,16 +463,13 @@ export function useSendMessage() {
         }
         if (!userMessage) return;
 
-        const userText = userMessage.content
-          .filter((b): b is import('@/types/conversation').TextBlock => b.type === 'text')
-          .map(b => b.text)
-          .join('');
+        const { text: userText, attachments } = extractMessageContent(userMessage);
 
         dispatch(removeMessage({ conversationId, messageId }));
         dispatch(removeMessage({ conversationId, messageId: userMessage.id }));
 
-        if (userText) {
-          await sendMessage(userText, { conversationId });
+        if (userText || attachments.length > 0) {
+          await sendMessage(userText, { conversationId }, attachments.length > 0 ? attachments : undefined);
         }
       } else if (targetMsg.role === 'user') {
         // 重新发送用户消息：删除该 user 消息及其后面紧跟的 assistant 消息，然后重发
@@ -465,13 +479,10 @@ export function useSendMessage() {
         }
         dispatch(removeMessage({ conversationId, messageId }));
 
-        const userText = targetMsg.content
-          .filter((b): b is import('@/types/conversation').TextBlock => b.type === 'text')
-          .map(b => b.text)
-          .join('');
+        const { text: userText, attachments } = extractMessageContent(targetMsg);
 
-        if (userText) {
-          await sendMessage(userText, { conversationId });
+        if (userText || attachments.length > 0) {
+          await sendMessage(userText, { conversationId }, attachments.length > 0 ? attachments : undefined);
         }
       }
     },
