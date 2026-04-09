@@ -761,7 +761,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
             {/* 文件上传按钮 */}
             <Button
               onClick={handleFileSelect}
-              disabled={isComposerBlocked}
+              disabled={isComposerBlocked || !supportsFileUpload}
               variant="ghost"
               size="sm"
               className="h-8 w-8 p-0 text-muted-foreground hover:text-foreground"
