@@ -1,4 +1,4 @@
-import { ModelInfo, ProviderInfo, providers } from "@/lib/config/modelConfig";
+import { ModelInfo, ProviderInfo } from "@/lib/config/modelConfig";
 import { getPreferredModelId } from "@/lib/models/modelPreference";
 import { createSlice, PayloadAction } from "@reduxjs/toolkit";
 
@@ -27,7 +27,7 @@ interface ModelsState {
 
 const initialState: ModelsState = {
   models: [],
-  providers: providers,
+  providers: [],
   selectedModelId: getSavedModelId(),
   isLoading: false,
 };
@@ -57,6 +57,9 @@ const modelsSlice = createSlice({
     setIsLoading: (state, action: PayloadAction<boolean>) => {
       state.isLoading = action.payload;
     },
+    updateProviders: (state, action: PayloadAction<ProviderInfo[]>) => {
+      state.providers = action.payload;
+    },
     updateModels: (state, action: PayloadAction<Model[]>) => {
       state.models = action.payload;
       
@@ -83,10 +86,11 @@ const modelsSlice = createSlice({
   }
 });
 
-export const { 
-  setSelectedModel, 
-  setModelEnabled, 
+export const {
+  setSelectedModel,
+  setModelEnabled,
   setIsLoading,
+  updateProviders,
   updateModels
 } = modelsSlice.actions;
 export default modelsSlice.reducer;

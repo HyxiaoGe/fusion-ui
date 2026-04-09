@@ -30,6 +30,7 @@ export interface ApiModelData {
 // API响应接口
 export interface ApiModelResponse {
   models: ApiModelData[];
+  providers: ProviderInfo[];
 }
 
 export interface ModelInfo {
@@ -50,18 +51,8 @@ export interface ProviderInfo {
   order: number; // 排序顺序
 }
 
-// 提供商信息(id 对应 svg图标名称)
-export const providers: ProviderInfo[] = [
-  { id: "qwen", name: "通义千问", order: 1 },
-  { id: "deepseek", name: "深度求索", order: 2 },
-  { id: "wenxin", name: "文心一言", order: 3 },
-  { id: "volcengine", name: "火山引擎", order: 4 },
-  { id: "hunyuan", name: "腾讯混元", order: 5 },
-  { id: "openai", name: "OpenAI", order: 6 },
-  { id: "anthropic", name: "Anthropic", order: 7 },
-  { id: "google", name: "Google", order: 8 },
-  { id: "xai", name: "X", order: 9 }
-];
+// 提供商缓存（从 API 动态获取）
+let cachedProviders: ProviderInfo[] = [];
 
 // 将API模型数据转换为ModelInfo格式
 export const convertApiModelToModelInfo = (apiModel: ApiModelData): ModelInfo => {
@@ -80,25 +71,31 @@ export const convertApiModelToModelInfo = (apiModel: ApiModelData): ModelInfo =>
 // 仅作为当前会话内的请求缓存，不作为产品真源。
 let cachedModels: ModelInfo[] = [];
 
+// 获取结果类型
+export interface FetchModelsResult {
+  models: ModelInfo[];
+  providers: ProviderInfo[];
+}
+
 // 添加标志和Promise缓存
 let isModelsFetching = false;
-let modelsFetchPromise: Promise<ModelInfo[]> | null = null;
+let modelsFetchPromise: Promise<FetchModelsResult> | null = null;
 
 // 获取模型配置的函数
-export const fetchModels = async (): Promise<ModelInfo[]> => {
+export const fetchModels = async (): Promise<FetchModelsResult> => {
   // 如果已经有数据且不是在获取中，直接返回现有数据
   if (cachedModels.length > 0 && !isModelsFetching) {
-    return cachedModels;
+    return { models: cachedModels, providers: cachedProviders };
   }
-  
+
   // 如果已经在获取中，返回正在进行的Promise
   if (isModelsFetching && modelsFetchPromise) {
     return modelsFetchPromise;
   }
-  
+
   // 设置标志并创建Promise
   isModelsFetching = true;
-  
+
   try {
     modelsFetchPromise = (async () => {
       try {
@@ -106,38 +103,39 @@ export const fetchModels = async (): Promise<ModelInfo[]> => {
         if (!response.ok) {
           throw new Error(`获取模型配置失败: ${response.status}`);
         }
-        
+
         const data: ApiModelResponse = await response.json();
-        
+
         // 将API返回的模型数据转换为ModelInfo格式并更新缓存
-        const modelInfoList = data.models.map(convertApiModelToModelInfo);
-        cachedModels = modelInfoList;
-        return modelInfoList;
+        cachedModels = data.models.map(convertApiModelToModelInfo);
+        cachedProviders = data.providers || [];
+        return { models: cachedModels, providers: cachedProviders };
       } finally {
         // 请求完成后重置标志
         isModelsFetching = false;
       }
     })();
-    
+
     return await modelsFetchPromise;
   } catch (error) {
     console.error('获取模型配置时出错:', error);
     isModelsFetching = false;
     modelsFetchPromise = null;
-    return cachedModels.length > 0 ? cachedModels : [];
+    return { models: cachedModels, providers: cachedProviders };
   }
 };
 
 // 初始化模型配置
-export const initializeModels = async () => {
+export const initializeModels = async (): Promise<FetchModelsResult> => {
   if (cachedModels.length === 0) {
     return await fetchModels();
   }
-  return cachedModels;
+  return { models: cachedModels, providers: cachedProviders };
 };
 
-export const refreshModels = async (): Promise<ModelInfo[]> => {
+export const refreshModels = async (): Promise<FetchModelsResult> => {
   cachedModels = [];
+  cachedProviders = [];
   modelsFetchPromise = null;
   isModelsFetching = false;
   return fetchModels();

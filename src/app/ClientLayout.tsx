@@ -4,7 +4,7 @@ import { ToastProvider, setGlobalToast, useToast } from "@/components/ui/toast";
 import { useEffect, useState } from "react";
 import { initializeModels } from "@/lib/config/modelConfig";
 import { useDispatch } from "react-redux";
-import { updateModels } from "@/redux/slices/modelsSlice";
+import { updateModels, updateProviders } from "@/redux/slices/modelsSlice";
 import dynamic from 'next/dynamic';
 import { useAppDispatch, useAppSelector } from "@/redux/hooks";
 
@@ -39,8 +39,9 @@ function ModelConfigInitializer() {
 
     const initializeAppModels = async () => {
       try {
-        const models = await initializeModels();
+        const { models, providers } = await initializeModels();
         dispatch(updateModels(models));
+        dispatch(updateProviders(providers));
       } catch (error) {
         console.error('Failed to initialize models:', error);
       }

@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { useAppDispatch, useAppSelector } from "@/redux/hooks";
-import { setModelEnabled, updateModels as updateModelsState } from "@/redux/slices/modelsSlice";
+import { setModelEnabled, updateModels as updateModelsState, updateProviders } from "@/redux/slices/modelsSlice";
 import React, { useState, useEffect } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
@@ -100,13 +100,6 @@ interface BasicModelInfo {
   };
 }
 
-// 提供商接口
-interface ProviderInfo {
-  id: string;
-  name: string;
-  order: number;
-  isConfigured?: boolean;
-}
 
 // 为提供商图标添加错误处理
 const ProviderIcon: React.FC<{ providerId: string }> = ({ providerId }) => {
@@ -545,7 +538,7 @@ const ModelSettings: React.FC<ModelSettingsProps> = ({ modelId, initialAddModelO
     try {
       const modelData = await fetchModels();
       setModels(modelData);
-      dispatch(updateModelsState(await refreshModels()));
+      { const result = await refreshModels(); dispatch(updateModelsState(result.models)); dispatch(updateProviders(result.providers)); }
       
       // 如果已选择了模型，则刷新模型详情和凭证
       if (selectedModelId) {
@@ -855,7 +848,7 @@ const ModelSettings: React.FC<ModelSettingsProps> = ({ modelId, initialAddModelO
       };
 
       const createdModel = await createModel(addModelData);
-      dispatch(updateModelsState(await refreshModels()));
+      { const result = await refreshModels(); dispatch(updateModelsState(result.models)); dispatch(updateProviders(result.providers)); }
       
       toast({
         message: `模型"${newModel.name}"已添加`,
