@@ -24,6 +24,7 @@ import { ImageIcon } from 'lucide-react';
 import { chatStore } from '@/lib/db/chatStore';
 import SuggestedQuestions from './SuggestedQuestions';
 import ImageViewer from './ImageViewer';
+import AuthImage from './AuthImage';
 import { useToast } from '@/components/ui/toast';
 
 interface ChatMessageProps {
@@ -265,6 +266,50 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, files, isLastMessage
           </div>
         )}
 
+        {/* 用户消息的文件 blocks（图片在上，文字在下） */}
+        {isUser && fileBlocks.length > 0 && (
+          <div className="mb-1">
+            <div className="flex flex-wrap gap-2">
+              {fileBlocks.map((block) => {
+                if (block.type !== 'file') return null;
+                const isImage = block.mime_type.startsWith('image/');
+                return isImage ? (
+                  <div
+                    key={block.id}
+                    className="cursor-pointer group/img relative"
+                    onClick={() => setViewingImage(block)}
+                  >
+                    <AuthImage
+                      fileId={block.file_id}
+                      src={block.thumbnail_url}
+                      alt={block.filename}
+                      className="rounded-lg max-w-[240px] max-h-[240px] object-cover
+                                 border border-border/50 hover:border-primary/50 transition"
+                    />
+                  </div>
+                ) : (
+                  <div key={block.id} className="flex items-center space-x-2 rounded-md border border-border p-2 bg-background shadow-sm">
+                    <div className="shrink-0">
+                      <div className="w-10 h-10 flex items-center justify-center bg-muted/20 rounded-md border">
+                        {isImage ? (
+                          <ImageIcon className="h-8 w-8 text-blue-500" />
+                        ) : block.mime_type.includes('pdf') ? (
+                          <FileIcon className="h-8 w-8 text-red-500" />
+                        ) : (
+                          <FileIcon className="h-8 w-8 text-muted-foreground" />
+                        )}
+                      </div>
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-xs font-medium truncate max-w-[180px]">{block.filename}</p>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
         <div>
           <div className={cn(
             isUser
@@ -410,57 +455,6 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, files, isLastMessage
             )}
           </div>
 
-          {/* 用户消息的文件 blocks */}
-          {isUser && fileBlocks.length > 0 && (
-            <div className="mt-2">
-              <div className="flex flex-wrap gap-2">
-                {fileBlocks.map((block) => {
-                  if (block.type !== 'file') return null;
-                  const isImage = block.mime_type.startsWith('image/');
-                  return isImage && block.thumbnail_url ? (
-                    <div
-                      key={block.id}
-                      className="cursor-pointer group relative"
-                      onClick={() => setViewingImage(block)}
-                    >
-                      <img
-                        src={block.thumbnail_url}
-                        alt={block.filename}
-                        className="rounded-lg max-w-[240px] max-h-[240px] object-cover
-                                   border border-border/50 hover:border-primary/50 transition"
-                        loading="lazy"
-                        onError={(e) => {
-                          // presigned URL 过期时回退为图标
-                          (e.currentTarget as HTMLImageElement).style.display = 'none';
-                          (e.currentTarget.nextElementSibling as HTMLElement)?.style.removeProperty('display');
-                        }}
-                      />
-                      <div className="hidden w-10 h-10 items-center justify-center bg-muted/20 rounded-md border">
-                        <ImageIcon className="h-8 w-8 text-blue-500" />
-                      </div>
-                    </div>
-                  ) : (
-                    <div key={block.id} className="flex items-center space-x-2 rounded-md border border-border p-2 bg-background shadow-sm">
-                      <div className="shrink-0">
-                        <div className="w-10 h-10 flex items-center justify-center bg-muted/20 rounded-md border">
-                          {isImage ? (
-                            <ImageIcon className="h-8 w-8 text-blue-500" />
-                          ) : block.mime_type.includes('pdf') ? (
-                            <FileIcon className="h-8 w-8 text-red-500" />
-                          ) : (
-                            <FileIcon className="h-8 w-8 text-muted-foreground" />
-                          )}
-                        </div>
-                      </div>
-                      <div className="min-w-0">
-                        <p className="text-xs font-medium truncate max-w-[180px]">{block.filename}</p>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
 
           {/* AI 消息的文件显示（旧模式：传入的 files prop） */}
           {!isUser && files && files.length > 0 && (
