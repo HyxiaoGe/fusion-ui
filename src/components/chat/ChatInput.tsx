@@ -110,7 +110,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
   const isComposerBlocked = disabled || isCurrentModelUnavailable;
 
   const supportsReasoning = selectedModel?.capabilities?.deepThinking || false;
-  const supportsFileUpload = selectedModel?.capabilities?.fileSupport || false;
+  const supportsFileUpload = selectedModel?.capabilities?.vision || false;
 
   const selectChatFileIds = useMemo(makeSelectChatFileIds, []);
   const fileIds = useAppSelector((state) => selectChatFileIds(state, chatId));
@@ -152,7 +152,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
 
     if (!supportsFileUpload) {
       toast({
-        message: "当前选择的模型不支持文件上传功能",
+        message: "当前模型不支持图片理解，请切换到支持视觉的模型",
         type: "warning",
         duration: 3000,
       });

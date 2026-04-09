@@ -8,6 +8,7 @@ export interface ModelCapability {
   fileSupport?: boolean; // 文件处理
   functionCalling?: boolean; // 工具调用
   webSearch?: boolean; // 网络搜索
+  vision?: boolean; // 图片理解
 }
 
 // API返回的模型数据接口
