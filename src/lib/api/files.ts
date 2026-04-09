@@ -69,8 +69,9 @@ export async function uploadFiles(
     const controller = abortController || new AbortController();
     const signal = controller.signal;
 
-    // 设置超时
-    const timeoutId = setTimeout(() => controller.abort(), 15000); // 15秒超时
+    // 根据文件数量动态设置超时：基础 15 秒 + 每个文件 10 秒
+    const timeoutMs = 15000 + files.length * 10000;
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
     const response = await fetchWithAuth(`${API_BASE_URL}/api/files/upload`, {
       method: 'POST',
