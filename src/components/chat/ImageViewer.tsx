@@ -64,12 +64,18 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ fileBlock, imageUrl, onClose 
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="max-w-[90vw] max-h-[90vh] sm:max-w-[90vw] p-0 border-none bg-transparent shadow-none flex items-center justify-center [&>button:last-child]:hidden">
+      <DialogContent
+        className="max-w-[90vw] max-h-[90vh] sm:max-w-[90vw] p-0 border-none bg-transparent shadow-none flex items-center justify-center [&>button:last-child]:hidden"
+        onClick={onClose}
+      >
         <VisuallyHidden.Root>
           <DialogTitle>{altText}</DialogTitle>
         </VisuallyHidden.Root>
-        <div className="relative flex items-center justify-center min-h-[200px]">
-          {/* 自定义关闭按钮：固定在图片区域右上角 */}
+        {/* 图片区域：阻止点击冒泡，避免点击图片时关闭 */}
+        <div
+          className="relative flex items-center justify-center min-h-[200px]"
+          onClick={(e) => e.stopPropagation()}
+        >
           <button
             onClick={onClose}
             className="absolute top-2 right-2 z-10 w-8 h-8 rounded-full bg-black/50 text-white flex items-center justify-center hover:bg-black/70 transition-colors"
