@@ -595,15 +595,6 @@ const ChatInput: React.FC<ChatInputProps> = ({
   };
 
   const renderProcessingMessage = () => {
-    // 有文件但当前模型不支持 vision：提示切换模型或移除文件
-    if (localFiles.length > 0 && !supportsFileUpload) {
-      return (
-        <div className="flex items-center text-xs text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 px-3 py-2 rounded-md">
-          当前模型不支持图片理解，请切换到支持视觉的模型或移除已上传的文件
-        </div>
-      );
-    }
-
     const hasPendingFiles = localFiles.some((file) => file.status === "pending" || !file.fileId);
     const hasUploadingFiles =
       localFiles.some((file) => file.status === "uploading") ||
@@ -740,6 +731,13 @@ const ChatInput: React.FC<ChatInputProps> = ({
           );
         })()}
 
+        {/* 模型不支持 vision 但有文件时的内嵌提示 */}
+        {hasFilesButNoVision && (
+          <div className="mx-3 mt-1 text-xs text-amber-600 dark:text-amber-400">
+            当前模型不支持图片理解，请切换到支持视觉的模型或移除已上传的文件
+          </div>
+        )}
+
         {/* Textarea 区域 */}
         <Textarea
           id="chat-message-input"
@@ -824,7 +822,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
         </div>
       ) : null}
 
-      {(hasProcessingFiles || hasFilesButNoVision) && renderProcessingMessage()}
+      {hasProcessingFiles && renderProcessingMessage()}
 
       {/* 图片预览 Lightbox */}
       <ImageViewer
