@@ -595,6 +595,15 @@ const ChatInput: React.FC<ChatInputProps> = ({
   };
 
   const renderProcessingMessage = () => {
+    // 有文件但当前模型不支持 vision：提示切换模型或移除文件
+    if (localFiles.length > 0 && !supportsFileUpload) {
+      return (
+        <div className="flex items-center text-xs text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 px-3 py-2 rounded-md">
+          当前模型不支持图片理解，请切换到支持视觉的模型或移除已上传的文件
+        </div>
+      );
+    }
+
     const hasPendingFiles = localFiles.some((file) => file.status === "pending" || !file.fileId);
     const hasUploadingFiles =
       localFiles.some((file) => file.status === "uploading") ||
@@ -641,7 +650,9 @@ const ChatInput: React.FC<ChatInputProps> = ({
     return null;
   };
 
-  const canSend = (message.trim() || localFiles.length > 0) && !isComposerBlocked && !hasProcessingFiles;
+  // 有图片但当前模型不支持 vision 时阻止发送
+  const hasFilesButNoVision = localFiles.length > 0 && !supportsFileUpload;
+  const canSend = (message.trim() || localFiles.length > 0) && !isComposerBlocked && !hasProcessingFiles && !hasFilesButNoVision;
 
   return (
     <div className="flex flex-col space-y-2">
@@ -813,7 +824,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
         </div>
       ) : null}
 
-      {hasProcessingFiles && renderProcessingMessage()}
+      {(hasProcessingFiles || hasFilesButNoVision) && renderProcessingMessage()}
 
       {/* 图片预览 Lightbox */}
       <ImageViewer
