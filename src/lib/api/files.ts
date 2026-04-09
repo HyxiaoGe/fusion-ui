@@ -177,5 +177,11 @@ export async function getFileUrl(
   }
 
   const data = await response.json();
-  return data.url;
+  const url: string = data.url;
+  // 后端返回的本地存储 URL 是相对路径（/api/files/...），需要拼接 API 基地址
+  // 让 <img src> 直连后端，避免走 Next.js 服务端代理（容器网络不通）
+  if (url.startsWith('/')) {
+    return `${API_BASE_URL}${url}`;
+  }
+  return url;
 }
