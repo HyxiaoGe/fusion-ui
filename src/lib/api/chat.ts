@@ -1,5 +1,5 @@
 import { API_CONFIG } from '../config';
-import fetchWithAuth from './fetchWithAuth';
+import fetchWithAuth, { apiRequest } from './fetchWithAuth';
 import type { ContentBlock, SearchSource, Usage } from '@/types/conversation';
 
 const API_BASE_URL = API_CONFIG.BASE_URL;
@@ -63,7 +63,8 @@ export async function sendMessageStream(
 
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}));
-    throw new Error((errorData as { detail?: string }).detail || '请求失败');
+    const body = errorData as { code?: string; message?: string; detail?: string };
+    throw new Error(body.message || body.detail || '请求失败');
   }
 
   if (!response.body) throw new Error('响应体为空');
@@ -232,12 +233,10 @@ export async function reconnectStream(
 
 export async function stopStream(conversationId: string, messageId?: string): Promise<boolean> {
   try {
-    const params = messageId ? `?message_id=${encodeURIComponent(messageId)}` : '';
-    const response = await fetchWithAuth(`${API_BASE_URL}/api/chat/stop/${conversationId}${params}`, {
-      method: 'POST',
-    });
-    if (!response.ok) return false;
-    const data = await response.json();
+    const data = await apiRequest<{ cancelled: boolean }>(
+      `${API_BASE_URL}/api/chat/stop/${conversationId}${messageId ? `?message_id=${encodeURIComponent(messageId)}` : ''}`,
+      { method: 'POST' },
+    );
     return data.cancelled ?? false;
   } catch {
     return false;
@@ -248,40 +247,36 @@ export async function stopStream(conversationId: string, messageId?: string): Pr
 // 非流式及其他接口
 // ============================================================
 
-export async function getConversations(page: number = 1, pageSize: number = 10) {
-  const response = await fetchWithAuth(`${API_BASE_URL}/api/chat/conversations?page=${page}&page_size=${pageSize}`);
-  if (!response.ok) throw new Error('获取对话列表失败');
-  return response.json();
+interface ConversationListData {
+  items: unknown[];
+  total: number;
+  page: number;
+  page_size: number;
+  total_pages: number;
+  has_next: boolean;
+  has_prev: boolean;
+}
+
+export async function getConversations(page: number = 1, pageSize: number = 10): Promise<ConversationListData> {
+  return apiRequest<ConversationListData>(`${API_BASE_URL}/api/chat/conversations?page=${page}&page_size=${pageSize}`);
 }
 
 export async function getConversation(conversationId: string) {
-  const response = await fetchWithAuth(`${API_BASE_URL}/api/chat/conversations/${conversationId}`);
-  if (!response.ok) {
-    const errorData = await response.json().catch(() => ({}));
-    throw new Error((errorData as { detail?: string }).detail || '获取对话详情失败');
-  }
-  return response.json();
+  return apiRequest(`${API_BASE_URL}/api/chat/conversations/${conversationId}`);
 }
 
 export async function renameConversation(conversationId: string, title: string) {
-  const response = await fetchWithAuth(`${API_BASE_URL}/api/conversations/${conversationId}`, {
+  return apiRequest(`${API_BASE_URL}/api/conversations/${conversationId}`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ title }),
   });
-  if (!response.ok) {
-    const errorData = await response.json().catch(() => ({}));
-    throw new Error((errorData as { detail?: string }).detail || '重命名对话失败');
-  }
-  return response.json().catch(() => null);
 }
 
 export async function deleteConversation(conversationId: string) {
-  const response = await fetchWithAuth(`${API_BASE_URL}/api/chat/conversations/${conversationId}`, {
+  return apiRequest(`${API_BASE_URL}/api/chat/conversations/${conversationId}`, {
     method: 'DELETE',
   });
-  if (!response.ok) throw new Error('删除对话失败');
-  return response.json();
 }
 
 export const fetchSuggestedQuestions = async (
@@ -290,17 +285,13 @@ export const fetchSuggestedQuestions = async (
   _forceRefresh: boolean = false,
   _messageCount?: number
 ): Promise<{ questions: string[] }> => {
-  const response = await fetchWithAuth(`${API_BASE_URL}/api/chat/suggest-questions`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ conversation_id: conversationId, options }),
-  });
-
-  if (!response.ok) {
-    const errorData = await response.json().catch(() => ({}));
-    throw new Error((errorData as { detail?: string }).detail || '获取推荐问题失败');
-  }
-
-  const data = await response.json();
+  const data = await apiRequest<{ questions: string[]; conversation_id: string }>(
+    `${API_BASE_URL}/api/chat/suggest-questions`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ conversation_id: conversationId, options }),
+    },
+  );
   return { questions: data.questions || [] };
 };
