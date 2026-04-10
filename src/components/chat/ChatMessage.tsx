@@ -98,12 +98,12 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, files, isLastMessage
 
   const showSearching = isCurrentlyStreaming && streamIsSearching;
   const searchQuery = isCurrentlyStreaming ? streamSearchQuery : extractSearchBlock(message.content)?.query ?? null;
-  // thinking pending 阶段：正在推理但内容为空（第一轮缓冲中），后续可能转为搜索
-  const isThinkingPending = isCurrentlyStreaming && isStreamingReasoning && !streamSearchQuery;
-
   // 从 blocks 提取文本和推理内容
   const displayText = useMemo(() => extractTextFromBlocks(blocksToRender), [blocksToRender]);
   const displayThinking = useMemo(() => extractThinkingFromBlocks(blocksToRender), [blocksToRender]);
+  // thinking pending 阶段：正在推理但内容为空（第一轮缓冲中），后续可能转为搜索
+  // 已有 thinking 内容时不算 pending（如 DeepSeek R1 直接流式输出 thinking）
+  const isThinkingPending = isCurrentlyStreaming && isStreamingReasoning && !streamSearchQuery && displayThinking.length === 0;
   // 仅流式阶段的搜索场景抑制 ReasoningContent（避免 tool_call 推理噪音）
   // 历史消息中的 ThinkingBlock 是第二轮有效推理，正常展示
   const suppressThinking = isCurrentlyStreaming && (showSearching || isThinkingPending);
