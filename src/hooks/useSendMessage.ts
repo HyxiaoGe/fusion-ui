@@ -283,7 +283,12 @@ export function useSendMessage() {
         assistantMessageIdRef.current = null;
         assistantHasContentRef.current = false;
         options.onStreamEnd?.(finalConvId);
-        void postStreamActions(finalConvId, dispatch);
+        // 仅新对话的第一轮生成标题，后续轮次不再更新
+        if (isDraft) {
+          void postStreamActions(finalConvId, dispatch);
+        } else {
+          dispatch(requestConversationListRefresh());
+        }
       };
 
       // 打字机：通过 dispatch advanceTypewriter 推进 displayedTextLength，
