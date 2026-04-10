@@ -1,4 +1,6 @@
 import { clearAuthStorage, getStoredAccessToken, refreshAccessToken } from '@/lib/auth/authService';
+import { ApiError } from '@/types/api';
+import type { ApiResponse } from '@/types/api';
 
 // 防止多个并发请求同时触发 refresh
 let refreshPromise: Promise<boolean> | null = null;
@@ -43,6 +45,27 @@ async function fetchWithAuth(url: string, options: RequestInit = {}): Promise<Re
   }
 
   return response;
+}
+
+/**
+ * 统一 API 请求：自动拆包 {code, data, message, request_id}，
+ * 成功返回 data，失败抛出 ApiError。
+ *
+ * 注意：仅用于 JSON REST 接口，SSE 和文件下载仍用 fetchWithAuth。
+ */
+export async function apiRequest<T>(url: string, options: RequestInit = {}): Promise<T> {
+  const response = await fetchWithAuth(url, options);
+  const body: ApiResponse<T> = await response.json();
+
+  if (!response.ok || body.code !== 'SUCCESS') {
+    throw new ApiError(
+      body.code || 'UNKNOWN',
+      body.message || '请求失败',
+      body.request_id || '',
+    );
+  }
+
+  return body.data as T;
 }
 
 export default fetchWithAuth;
