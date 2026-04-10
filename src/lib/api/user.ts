@@ -1,5 +1,5 @@
 import { API_CONFIG } from '../config';
-import fetchWithAuth from './fetchWithAuth';
+import { apiRequest } from './fetchWithAuth';
 
 export interface UserProfile {
   id: string;
@@ -12,10 +12,5 @@ export interface UserProfile {
 }
 
 export const fetchUserProfileAPI = async (): Promise<UserProfile> => {
-  const response = await fetchWithAuth(`${API_CONFIG.BASE_URL}/api/auth/me`);
-  if (!response.ok) {
-    throw new Error('Failed to fetch user profile');
-  }
-  const data: UserProfile = await response.json();
-  return data;
-}; 
+  return apiRequest<UserProfile>(`${API_CONFIG.BASE_URL}/api/auth/me`);
+};

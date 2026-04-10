@@ -1,4 +1,5 @@
 import { API_CONFIG } from '../config';
+import { apiRequest } from './fetchWithAuth';
 
 const API_BASE_URL = API_CONFIG.BASE_URL;
 
@@ -16,9 +17,5 @@ export interface PromptExamplesResponse {
  * 获取动态示例问题（无需鉴权）
  */
 export async function fetchPromptExamples(limit: number = 8): Promise<PromptExamplesResponse> {
-  const response = await fetch(`${API_BASE_URL}/api/prompts/examples?limit=${limit}`);
-  if (!response.ok) {
-    throw new Error('获取示例问题失败');
-  }
-  return response.json();
+  return apiRequest<PromptExamplesResponse>(`${API_BASE_URL}/api/prompts/examples?limit=${limit}`);
 }
