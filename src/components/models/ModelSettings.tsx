@@ -18,7 +18,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { CalendarIcon } from "lucide-react";
 import { LoginDialog } from "@/components/auth/LoginDialog";
 import { API_CONFIG } from '@/lib/config';
-import fetchWithAuth from "@/lib/api/fetchWithAuth";
+import { apiRequest } from "@/lib/api/fetchWithAuth";
 import { refreshModels } from "@/lib/config/modelConfig";
 
 interface ModelSettingsProps {
@@ -126,21 +126,7 @@ const ProviderIcon: React.FC<{ providerId: string }> = ({ providerId }) => {
 // 获取模型列表
 const fetchModels = async () => {
   try {
-    const url = `${API_CONFIG.BASE_URL}/api/models`;
-    
-    const response = await fetch(url, {
-      method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-        'Cache-Control': 'no-cache, no-store'
-      }
-    });
-    
-    if (!response.ok) {
-      throw new Error(`获取模型列表失败: ${response.status}`);
-    }
-    
-    const data = await response.json();
+    const data = await apiRequest<{ models: BasicModelInfo[] }>(`${API_CONFIG.BASE_URL}/api/models`);
     return data.models || [];
   } catch (error) {
     console.error("获取模型列表失败:", error);
@@ -151,22 +137,7 @@ const fetchModels = async () => {
 // 获取模型详情
 const fetchModelDetail = async (modelId: string) => {
   try {
-    const url = `${API_CONFIG.BASE_URL}/api/models/${modelId}`;
-    
-    const response = await fetch(url, {
-      method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-        'Cache-Control': 'no-cache, no-store'
-      }
-    });
-    
-    if (!response.ok) {
-      throw new Error(`获取模型详情失败: ${response.status}`);
-    }
-    
-    const data = await response.json();
-    return data;
+    return await apiRequest<ModelDetail>(`${API_CONFIG.BASE_URL}/api/models/${modelId}`);
   } catch (error) {
     console.error(`获取模型[${modelId}]详情失败:`, error);
     return Promise.reject(error);
@@ -176,24 +147,7 @@ const fetchModelDetail = async (modelId: string) => {
 // 获取模型凭证
 const fetchModelCredentials = async (modelId: string) => {
   try {
-    const url = `${API_CONFIG.BASE_URL}/api/models/${modelId}/credentials`;
-    
-    const response = await fetchWithAuth(url, {
-      method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-        'Cache-Control': 'no-cache, no-store'
-      }
-    });
-    
-    if (!response.ok) {
-      if (response.status === 401) {
-        throw new Error('Unauthorized');
-      }
-      throw new Error(`获取模型凭证失败: ${response.status}`);
-    }
-    
-    const data = await response.json();
+    const data = await apiRequest<{ credentials: ModelCredential[] }>(`${API_CONFIG.BASE_URL}/api/models/${modelId}/credentials`);
     return data.credentials || [];
   } catch (error) {
     console.error(`获取模型[${modelId}]凭证失败:`, error);
@@ -204,28 +158,11 @@ const fetchModelCredentials = async (modelId: string) => {
 // 测试模型凭证
 const testModelCredential = async (modelId: string, credentials: any) => {
   try {
-    const url = `${API_CONFIG.BASE_URL}/api/models/credentials/test`;
-    
-    const response = await fetchWithAuth(url, {
+    return await apiRequest<{ success: boolean; message: string }>(`${API_CONFIG.BASE_URL}/api/models/credentials/test`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        model_id: modelId,
-        credentials: credentials
-      })
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model_id: modelId, credentials }),
     });
-    
-    if (!response.ok) {
-      if (response.status === 401) {
-        throw new Error('Unauthorized');
-      }
-      throw new Error(`测试模型凭证失败: ${response.status}`);
-    }
-    
-    const data = await response.json();
-    return data;
   } catch (error) {
     console.error(`测试模型[${modelId}]凭证失败:`, error);
     return Promise.reject(error);
@@ -235,37 +172,16 @@ const testModelCredential = async (modelId: string, credentials: any) => {
 // 保存模型凭证
 const saveModelCredential = async (modelId: string, name: string, isDefault: boolean, credentials: any, credentialId?: number) => {
   try {
-    let url = `${API_CONFIG.BASE_URL}/api/models/${modelId}/credentials`;
-    let method = 'POST';
-    
-    // 如果有凭证ID，则是更新操作
-    if (credentialId) {
-      url = `${API_CONFIG.BASE_URL}/api/models/credentials/${credentialId}`;
-      method = 'PUT';
-    }
-        
-    const response = await fetchWithAuth(url, {
-      method: method,
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        model_id: modelId,
-        name: name,
-        is_default: isDefault,
-        credentials: credentials
-      })
+    const url = credentialId
+      ? `${API_CONFIG.BASE_URL}/api/models/credentials/${credentialId}`
+      : `${API_CONFIG.BASE_URL}/api/models/${modelId}/credentials`;
+    const method = credentialId ? 'PUT' : 'POST';
+
+    return await apiRequest<ModelCredential>(url, {
+      method,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model_id: modelId, name, is_default: isDefault, credentials }),
     });
-    
-    if (!response.ok) {
-      if (response.status === 401) {
-        throw new Error('Unauthorized');
-      }
-      throw new Error(`${credentialId ? '更新' : '创建'}模型凭证失败: ${response.status}`);
-    }
-    
-    const data = await response.json();
-    return data;
   } catch (error) {
     console.error(`${credentialId ? '更新' : '创建'}模型[${modelId}]凭证失败:`, error);
     return Promise.reject(error);
@@ -273,37 +189,19 @@ const saveModelCredential = async (modelId: string, name: string, isDefault: boo
 };
 
 const createModel = async (payload: any) => {
-  const response = await fetchWithAuth(`${API_CONFIG.BASE_URL}/api/models`, {
+  return apiRequest<ModelDetail>(`${API_CONFIG.BASE_URL}/api/models`, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify(payload)
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
   });
-
-  if (!response.ok) {
-    const errorData = await response.json();
-    throw new Error(errorData.detail || '创建模型失败');
-  }
-
-  return response.json();
 };
 
 const updateModelEnabledStatus = async (modelId: string, enabled: boolean) => {
-  const response = await fetchWithAuth(`${API_CONFIG.BASE_URL}/api/models/${modelId}`, {
+  return apiRequest<ModelDetail>(`${API_CONFIG.BASE_URL}/api/models/${modelId}`, {
     method: 'PUT',
-    headers: {
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify({ enabled })
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ enabled }),
   });
-
-  if (!response.ok) {
-    const errorData = await response.json();
-    throw new Error(errorData.detail || '更新模型状态失败');
-  }
-
-  return response.json();
 };
 
 // 添加复制功能组件

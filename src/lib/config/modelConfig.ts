@@ -1,3 +1,4 @@
+import { apiRequest } from '@/lib/api/fetchWithAuth';
 import { API_CONFIG } from '../config';
 
 const API_BASE_URL = API_CONFIG.BASE_URL
@@ -99,15 +100,10 @@ export const fetchModels = async (): Promise<FetchModelsResult> => {
   try {
     modelsFetchPromise = (async () => {
       try {
-        const response = await fetch(`${API_BASE_URL}/api/models/`);
-        if (!response.ok) {
-          throw new Error(`获取模型配置失败: ${response.status}`);
-        }
-
-        const data: ApiModelResponse = await response.json();
+        const data = await apiRequest<ApiModelResponse>(`${API_BASE_URL}/api/models/`);
 
         // 将API返回的模型数据转换为ModelInfo格式并更新缓存
-        cachedModels = data.models.map(convertApiModelToModelInfo);
+        cachedModels = (data.models || []).map(convertApiModelToModelInfo);
         cachedProviders = data.providers || [];
         return { models: cachedModels, providers: cachedProviders };
       } finally {
