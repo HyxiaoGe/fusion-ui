@@ -81,13 +81,14 @@ const ProviderTabs = memo(
     activeProvider: string;
     onProviderChange: (id: string) => void;
   }) => (
-    <div className="flex border-y border-border bg-muted/30 overflow-x-auto">
-      {providers.map((provider) => (
+    <div className="flex border-y border-border bg-muted/30 overflow-x-auto scrollbar-hide">
+      {providers.map((provider, idx) => (
         <button
           key={provider.id}
           onClick={() => onProviderChange(provider.id)}
           className={cn(
             "px-3 py-2 text-[11px] whitespace-nowrap transition-colors shrink-0",
+            idx === providers.length - 1 && "pr-6",
             provider.id === activeProvider
               ? "text-primary font-semibold border-b-2 border-primary bg-popover -mb-px"
               : "text-muted-foreground hover:text-foreground",
@@ -162,7 +163,7 @@ const ModelSelectorPanel = memo(
           activeProvider={activeProvider}
           onProviderChange={onProviderChange}
         />
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 p-2.5">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 p-2.5 min-h-[240px] content-start">
           {filteredModels.map((model) => (
             <ModelCard
               key={model.id}
