@@ -1,4 +1,4 @@
-import { memo } from "react";
+import { memo, useRef, useCallback } from "react";
 import { cn } from "@/lib/utils";
 import { Check } from "lucide-react";
 import { CapabilityChipList } from "./CapabilityChip";
@@ -81,17 +81,35 @@ const ProviderTabs = memo(
     activeProvider: string;
     onProviderChange: (id: string) => void;
   }) => {
-    const handleClick = (e: React.MouseEvent<HTMLButtonElement>, providerId: string) => {
-      onProviderChange(providerId);
-      e.currentTarget.scrollIntoView({ behavior: "smooth", inline: "nearest", block: "nearest" });
-    };
+    const containerRef = useRef<HTMLDivElement>(null);
+
+    const handleClick = useCallback(
+      (e: React.MouseEvent<HTMLButtonElement>, providerId: string, idx: number) => {
+        onProviderChange(providerId);
+
+        const container = containerRef.current;
+        if (!container) return;
+
+        // 滚动到前一个标签的位置，使点击的标签及后续标签完整可见
+        const buttons = container.querySelectorAll("button");
+        const targetIdx = Math.max(0, idx - 1);
+        const targetBtn = buttons[targetIdx];
+        if (targetBtn) {
+          container.scrollTo({
+            left: (targetBtn as HTMLElement).offsetLeft,
+            behavior: "smooth",
+          });
+        }
+      },
+      [onProviderChange],
+    );
 
     return (
-      <div className="flex border-y border-border bg-muted/30 overflow-x-auto scrollbar-hide">
+      <div ref={containerRef} className="flex border-y border-border bg-muted/30 overflow-x-auto scrollbar-hide">
         {providers.map((provider, idx) => (
           <button
             key={provider.id}
-            onClick={(e) => handleClick(e, provider.id)}
+            onClick={(e) => handleClick(e, provider.id, idx)}
             className={cn(
               "px-3 py-2 text-[11px] whitespace-nowrap transition-colors shrink-0",
               idx === providers.length - 1 && "pr-6",
