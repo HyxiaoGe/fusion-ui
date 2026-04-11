@@ -16,6 +16,7 @@ import TextareaAutosize from 'react-textarea-autosize';
 import FileCard from './FileCard';
 import ReasoningContent from './ReasoningContent';
 import SearchStatus from './SearchStatus';
+import ThinkingIndicator from './ThinkingIndicator';
 import SourcesPanel from './SourcesPanel';
 import SourcesSidebar from './SourcesSidebar';
 import MarkdownRenderer from './MarkdownRenderer';
@@ -101,9 +102,9 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, files, isLastMessage
   // 从 blocks 提取文本和推理内容
   const displayText = useMemo(() => extractTextFromBlocks(blocksToRender), [blocksToRender]);
   const displayThinking = useMemo(() => extractThinkingFromBlocks(blocksToRender), [blocksToRender]);
-  // thinking pending 阶段：正在推理但内容为空（第一轮缓冲中），后续可能转为搜索
-  // 已有 thinking 内容时不算 pending（如 DeepSeek R1 直接流式输出 thinking）
-  const isThinkingPending = isCurrentlyStreaming && isStreamingReasoning && !streamSearchQuery && displayThinking.length === 0;
+  // thinking pending 阶段：正在流式但尚无任何可见内容（后端可能在缓冲第一轮 thinking）
+  // 已有 thinking/text 内容时不算 pending
+  const isThinkingPending = isCurrentlyStreaming && !streamSearchQuery && displayThinking.length === 0 && !displayText;
   // 仅流式阶段的搜索场景抑制 ReasoningContent（避免 tool_call 推理噪音）
   // 历史消息中的 ThinkingBlock 是第二轮有效推理，正常展示
   const suppressThinking = isCurrentlyStreaming && (showSearching || isThinkingPending);
@@ -392,9 +393,9 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, files, isLastMessage
                   </div>
                 )}
 
-                {/* 搜索场景：思考中 → 搜索中过渡动画 */}
+                {/* 思考中 → 搜索中/回答中过渡 */}
                 {isThinkingPending && (
-                  <SearchStatus isThinking />
+                  <ThinkingIndicator />
                 )}
                 {showSearching && searchQuery && (
                   <SearchStatus query={searchQuery} />
@@ -411,7 +412,7 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, files, isLastMessage
                   sources={searchSources}
                 />
 
-                {isStreaming && isLastMessage && (
+                {isStreaming && isLastMessage && !isThinkingPending && !showSearching && (
                   <span className="animate-pulse">▌</span>
                 )}
 
