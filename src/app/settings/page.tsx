@@ -10,6 +10,7 @@ import { motion } from "framer-motion";
 import { Database, Globe, Server, Settings } from "lucide-react";
 import AvatarSelector from "./AvatarSelector";
 import DataManagement from "./DataManagement";
+import MemoryManagement from "./MemoryManagement";
 import { useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 
@@ -112,6 +113,7 @@ export default function SettingsPage() {
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.3, delay: 0.2 }}
             >
+              <MemoryManagement />
             </motion.div>
           </TabsContent>
 
