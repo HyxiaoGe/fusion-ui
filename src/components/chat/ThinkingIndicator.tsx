@@ -8,7 +8,7 @@ const ThinkingIndicator: React.FC = () => {
       {[0, 1, 2].map(i => (
         <span
           key={i}
-          className="h-2 w-2 rounded-full bg-muted-foreground/50 animate-dot-pulse"
+          className="h-2 w-2 rounded-full bg-gray-400 dark:bg-gray-500 animate-dot-pulse"
           style={{ animationDelay: `${i * 0.2}s` }}
         />
       ))}

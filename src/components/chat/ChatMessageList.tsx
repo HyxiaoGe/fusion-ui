@@ -154,7 +154,7 @@ const ChatMessageList: React.FC<ChatMessageListProps> = ({
     }
 
     if (isStreaming) {
-      return 'AI 正在回复...';
+      return null;
     }
 
     if (isLoadingQuestions || suggestedQuestions.length > 0) {
