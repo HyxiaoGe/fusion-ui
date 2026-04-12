@@ -41,6 +41,8 @@ export interface StreamCallbacks {
   onThinkingDelta: (delta: string, blockId: string, meta: { messageId: string; conversationId: string }) => void;
   onSearchStart?: (query: string, meta: { messageId: string; conversationId: string }) => void;
   onSearchComplete?: (sources: SearchSource[], meta: { messageId: string; conversationId: string }) => void;
+  onUrlReadStart?: (url: string, source: string) => void;
+  onUrlReadComplete?: (result: { url: string; title?: string; favicon?: string; status: string }) => void;
   onDone: (messageId: string, conversationId: string, usage: Usage | null) => void;
   onError: (message: string) => void;
 }
@@ -139,6 +141,19 @@ export async function sendMessageStream(
                 callbacks.onSearchStart(searchBlock.query, { messageId, conversationId });
               } else if (searchBlock.search_event === 'complete' && callbacks.onSearchComplete) {
                 callbacks.onSearchComplete(searchBlock.sources ?? [], { messageId, conversationId });
+              }
+            } else if (block.type === 'url_read') {
+              // URL 读取事件处理
+              const urlReadBlock = block as { url_read_event: string; url: string; source: string; title?: string; favicon?: string; status?: string };
+              if (urlReadBlock.url_read_event === 'start' && callbacks.onUrlReadStart) {
+                callbacks.onUrlReadStart(urlReadBlock.url, urlReadBlock.source);
+              } else if (urlReadBlock.url_read_event === 'complete' && callbacks.onUrlReadComplete) {
+                callbacks.onUrlReadComplete({
+                  url: urlReadBlock.url,
+                  title: urlReadBlock.title,
+                  favicon: urlReadBlock.favicon,
+                  status: urlReadBlock.status ?? 'success',
+                });
               }
             }
           }

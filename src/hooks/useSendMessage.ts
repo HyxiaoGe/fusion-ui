@@ -21,12 +21,14 @@ import {
   appendThinkingDelta,
   completeSearch,
   completeThinkingPhase,
+  completeUrlRead,
   endStream,
   migrateStreamConversation,
   selectFullStreamContentBlocks,
   selectStreamContentBlocks,
   startSearch,
   startStream,
+  startUrlRead,
 } from '@/redux/slices/streamSlice';
 import { sendMessageStream } from '@/lib/api/chat';
 import { generateChatTitle } from '@/lib/api/title';
@@ -326,6 +328,16 @@ export function useSendMessage() {
             onSearchComplete: (sources) => {
               if (!activeConvIdRef.current) return;
               dispatch(completeSearch({ sources }));
+            },
+
+            onUrlReadStart: (url: string) => {
+              if (!activeConvIdRef.current) return;
+              dispatch(startUrlRead({ url }));
+            },
+
+            onUrlReadComplete: (result: { url: string; title?: string; favicon?: string; status: string }) => {
+              if (!activeConvIdRef.current) return;
+              dispatch(completeUrlRead(result));
             },
 
             onDone: (_messageId, incomingConvId, usage) => {
