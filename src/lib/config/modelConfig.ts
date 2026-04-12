@@ -7,8 +7,7 @@ export interface ModelCapability {
   imageGen?: boolean; // 图像生成
   deepThinking?: boolean; // 深度思考
   fileSupport?: boolean; // 文件处理
-  functionCalling?: boolean; // 工具调用
-  webSearch?: boolean; // 网络搜索
+  functionCalling?: boolean; // 工具调用（含联网搜索）
   vision?: boolean; // 图片理解
 }
 

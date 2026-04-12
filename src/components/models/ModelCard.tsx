@@ -56,12 +56,6 @@ const ModelCard: React.FC<ModelCardProps> = ({ model }) => {
                 工具调用
               </Badge>
             )}
-            {model.capabilities.webSearch && (
-              <Badge variant="secondary" className="gap-1">
-                <CapabilityIcon type="webSearch" showTooltip={false} />
-                网络搜索
-              </Badge>
-            )}
           </div>
         </div>
       </CardContent>

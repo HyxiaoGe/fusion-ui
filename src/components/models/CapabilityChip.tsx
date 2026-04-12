@@ -3,14 +3,13 @@ import { cn } from '@/lib/utils';
 
 const CHIP_CONFIG: Record<string, { label: string; className: string }> = {
   deepThinking: { label: '思考', className: 'bg-orange-50 text-orange-600 dark:bg-orange-950/30 dark:text-orange-400' },
-  webSearch: { label: '联网', className: 'bg-blue-50 text-blue-600 dark:bg-blue-950/30 dark:text-blue-400' },
   fileSupport: { label: '文件', className: 'bg-green-50 text-green-600 dark:bg-green-950/30 dark:text-green-400' },
   functionCalling: { label: '工具', className: 'bg-purple-50 text-purple-600 dark:bg-purple-950/30 dark:text-purple-400' },
   imageGen: { label: '画图', className: 'bg-pink-50 text-pink-600 dark:bg-pink-950/30 dark:text-pink-400' },
 };
 
-// 优先级顺序：思考 > 联网 > 文件 > 工具 > 画图
-const PRIORITY_ORDER = ['deepThinking', 'webSearch', 'fileSupport', 'functionCalling', 'imageGen'];
+// 优先级顺序：思考 > 工具 > 文件 > 画图
+const PRIORITY_ORDER = ['deepThinking', 'functionCalling', 'fileSupport', 'imageGen'];
 
 interface CapabilityChipProps {
   type: string;
