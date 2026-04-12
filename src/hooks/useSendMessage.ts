@@ -30,9 +30,10 @@ import {
 } from '@/redux/slices/streamSlice';
 import { sendMessageStream } from '@/lib/api/chat';
 import { generateChatTitle } from '@/lib/api/title';
-import type { Message, ContentBlock, FileBlock, Usage } from '@/types/conversation';
+import type { Message, ContentBlock, Usage } from '@/types/conversation';
 import type { FileAttachment } from '@/lib/utils/fileHelpers';
 import { useTypewriter } from './useTypewriter';
+import { useRetryMessage } from './useRetryMessage';
 
 type SendMessageOptions = {
   conversationId: string | null;
@@ -395,71 +396,7 @@ export function useSendMessage() {
     [dispatch, models, reasoningEnabled, selectedModelId, stopStreaming, store]
   );
 
-  const retryMessage = useCallback(
-    async (messageId: string, conversationId: string) => {
-      const state = store.getState() as { conversation: { byId: Record<string, import('@/types/conversation').Conversation> } };
-      const conversation = state.conversation.byId[conversationId];
-      if (!conversation) return;
-
-      const messages = conversation.messages;
-      const targetIndex = messages.findIndex((m) => m.id === messageId);
-      if (targetIndex === -1) return;
-
-      const targetMsg = messages[targetIndex];
-
-      // 从用户消息中提取文本和文件附件
-      const extractMessageContent = (msg: import('@/types/conversation').Message) => {
-        const text = msg.content
-          .filter((b): b is import('@/types/conversation').TextBlock => b.type === 'text')
-          .map(b => b.text)
-          .join('');
-        const attachments: FileAttachment[] = msg.content
-          .filter((b): b is FileBlock => b.type === 'file')
-          .map(b => ({
-            fileId: b.file_id,
-            filename: b.filename,
-            mimeType: b.mime_type,
-            previewUrl: b.thumbnail_url,
-          }));
-        return { text, attachments };
-      };
-
-      if (targetMsg.role === 'assistant') {
-        // 重新生成：向上找 user 消息，删除 assistant + user，然后 sendMessage 会重建两条
-        let userMessage: import('@/types/conversation').Message | null = null;
-        for (let i = targetIndex - 1; i >= 0; i--) {
-          if (messages[i].role === 'user') {
-            userMessage = messages[i];
-            break;
-          }
-        }
-        if (!userMessage) return;
-
-        const { text: userText, attachments } = extractMessageContent(userMessage);
-
-        dispatch(removeMessage({ conversationId, messageId }));
-        dispatch(removeMessage({ conversationId, messageId: userMessage.id }));
-
-        if (userText || attachments.length > 0) {
-          await sendMessage(userText, { conversationId }, attachments.length > 0 ? attachments : undefined);
-        }
-      } else if (targetMsg.role === 'user') {
-        // 重新发送用户消息：删除该 user 消息及其后面紧跟的 assistant 消息，然后重发
-        const nextMsg = messages[targetIndex + 1];
-        if (nextMsg && nextMsg.role === 'assistant') {
-          dispatch(removeMessage({ conversationId, messageId: nextMsg.id }));
-        }
-        dispatch(removeMessage({ conversationId, messageId }));
-
-        const { text: userText, attachments } = extractMessageContent(targetMsg);
-
-        if (userText || attachments.length > 0) {
-          await sendMessage(userText, { conversationId }, attachments.length > 0 ? attachments : undefined);
-        }
-      }
-    },
-    [dispatch, sendMessage, store]
-  );
+  const retryMessage = useRetryMessage(sendMessage);
 
   return { sendMessage, stopStreaming, retryMessage };
 }
