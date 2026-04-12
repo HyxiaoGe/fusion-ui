@@ -249,6 +249,16 @@ export function selectFullStreamContentBlocks(state: StreamState): ContentBlock[
     }
   }
 
+  if (state.urlReadResult) {
+    blocks.push({
+      type: 'url_read' as const,
+      id: 'blk_stream_url_read',
+      url: state.urlReadResult.url,
+      title: state.urlReadResult.title,
+      favicon: state.urlReadResult.favicon,
+    });
+  }
+
   if (state.searchSources.length > 0 && state.searchQuery) {
     blocks.push({
       type: 'search' as const,
