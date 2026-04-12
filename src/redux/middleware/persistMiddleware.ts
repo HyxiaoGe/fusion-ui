@@ -6,10 +6,6 @@ import {
   updateConversationTitle,
 } from '@/redux/slices/conversationSlice';
 import {
-  setAssistantAvatar,
-  setUserAvatar
-} from '@/redux/slices/settingsSlice';
-import {
   setThemeMode
 } from '@/redux/slices/themeSlice';
 import { Middleware } from '@reduxjs/toolkit';
@@ -49,12 +45,6 @@ export const persistMiddleware: Middleware = store => next => action => {
       // 处理设置相关action
       else if (setThemeMode.match(action)) {
         await settingsStore.saveSetting('themeMode', payload);
-      }
-      else if (setUserAvatar.match(action)) {
-        await settingsStore.saveSetting('userAvatar', payload);
-      }
-      else if (setAssistantAvatar.match(action)) {
-        await settingsStore.saveSetting('assistantAvatar', payload);
       }
     } catch (error) {
       console.error('持久化数据时出错:', error);

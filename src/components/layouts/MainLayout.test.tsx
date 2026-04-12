@@ -38,7 +38,7 @@ describe('MainLayout', () => {
     useAppSelectorMock.mockImplementation((selector: (state: any) => unknown) =>
       selector({
         theme: { mode: 'light' },
-        settings: { userAvatar: 'default' },
+        settings: {},
         auth: { isAuthenticated: false, user: null },
       }),
     );

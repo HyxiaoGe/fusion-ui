@@ -26,10 +26,7 @@ const selectorState = {
     reasoningStartTime: null,
     reasoningEndTime: null,
   },
-  settings: {
-    userAvatar: 'default',
-    assistantAvatar: 'default',
-  },
+  settings: {},
   auth: {
     isAuthenticated: false,
     user: null,

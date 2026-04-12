@@ -2,7 +2,6 @@ import db, { chatStore, settingsStore } from './chatStore';
 import { AppDispatch } from '@/redux/store';
 import { setAllConversations } from '@/redux/slices/conversationSlice';
 import { setThemeMode } from '@/redux/slices/themeSlice';
-import { setUserAvatar, setAssistantAvatar } from '@/redux/slices/settingsSlice';
 
 interface InitializeStoreOptions {
   includeChats?: boolean;
@@ -56,17 +55,6 @@ export async function initializeStoreFromDB(
       dispatch(setThemeMode(themeMode as 'light' | 'dark' | 'system'));
     }
 
-    // 加载头像设置
-    const userAvatar = await settingsStore.getSetting('userAvatar') as string | undefined;
-    if (userAvatar) {
-      dispatch(setUserAvatar(userAvatar));
-    }
-
-    const assistantAvatar = await settingsStore.getSetting('assistantAvatar') as string | undefined;
-    if (assistantAvatar) {
-      dispatch(setAssistantAvatar(assistantAvatar));
-    }
-    
   } catch (error) {
     console.error('从数据库加载数据失败:', error);
   }

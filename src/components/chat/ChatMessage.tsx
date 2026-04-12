@@ -9,7 +9,6 @@ import type { Message, ContentBlock, SearchSource, FileBlock as FileBlockType } 
 import { extractTextFromBlocks, extractThinkingFromBlocks, extractSearchBlock } from '@/types/conversation';
 import { toggleReasoningVisibility } from '@/redux/slices/conversationSlice';
 import { selectStreamContentBlocks } from '@/redux/slices/streamSlice';
-import { avatarOptions } from '@/redux/slices/settingsSlice';
 import { Edit2, FileIcon, RefreshCw, X, Check, Copy } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import React, { useState, useEffect, useRef, useMemo } from 'react';
@@ -65,7 +64,6 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, files, isLastMessage
   const isStreamingReasoning = useAppSelector(state => state.stream.isStreamingReasoning);
   const isThinkingPhaseComplete = useAppSelector(state => state.stream.isThinkingPhaseComplete);
 
-  const { assistantAvatar } = useAppSelector(state => state.settings);
   const { toast } = useToast();
 
   // 获取模型信息
@@ -108,10 +106,6 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, files, isLastMessage
   const suppressThinking = isCurrentlyStreaming && (showSearching || isThinkingPending);
   const hasThinking = !suppressThinking && displayThinking.length > 0;
 
-  const getAssistantEmoji = () => {
-    const avatar = avatarOptions.assistant.find(a => a.id === assistantAvatar);
-    return avatar ? avatar.emoji : '🤖';
-  };
 
   const formatTime = (timestamp?: number) => {
     if (!timestamp || isNaN(timestamp)) return '';
@@ -257,7 +251,7 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, files, isLastMessage
             {providerId ? (
               <ProviderIcon providerId={providerId} size={16} />
             ) : (
-              <span className="text-sm">{getAssistantEmoji()}</span>
+              <span className="text-sm">🤖</span>
             )}
             <span className="text-xs text-muted-foreground">
               {model ? model.name : 'AI助手'}

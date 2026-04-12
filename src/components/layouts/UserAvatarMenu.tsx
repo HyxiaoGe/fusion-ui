@@ -11,7 +11,6 @@ import {
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { openSettingsDialog } from "@/redux/slices/settingsSlice";
-import { avatarOptions } from "@/redux/slices/settingsSlice";
 import { logout } from "@/redux/slices/authSlice";
 import { resetConversationState } from "@/redux/slices/conversationSlice";
 import { resetFileUploadState } from "@/redux/slices/fileUploadSlice";
@@ -23,15 +22,8 @@ import { revokeAuthSession } from "@/lib/auth/authService";
 
 export function UserAvatarMenu() {
   const dispatch = useAppDispatch();
-  const { userAvatar } = useAppSelector((state) => state.settings);
   const { isAuthenticated, user } = useAppSelector((state) => state.auth);
   const [isLoginDialogOpen, setIsLoginDialogOpen] = useState(false);
-
-  // 获取当前用户头像的emoji（作为后备）
-  const getCurrentAvatarEmoji = () => {
-    const avatarOption = avatarOptions.user.find(option => option.id === userAvatar);
-    return avatarOption ? avatarOption.emoji : '👤';
-  };
 
   const getUserDisplayName = () => {
     if (isAuthenticated && user) {
@@ -47,7 +39,7 @@ export function UserAvatarMenu() {
         return displayName.slice(0, 1).toUpperCase();
       }
     }
-    return getCurrentAvatarEmoji();
+    return '👤';
   };
 
   // 获取用户状态描述
@@ -87,7 +79,7 @@ export function UserAvatarMenu() {
           <DropdownMenuTrigger asChild>
             <Button variant="ghost" className="relative h-9 w-9 rounded-full hover:scale-110 transition-all duration-300 shadow-sm hover:shadow-md">
               <Avatar 
-                key={`avatar-${isAuthenticated}-${user?.avatar || userAvatar}`}
+                key={`avatar-${isAuthenticated}-${user?.avatar}`}
                 className="h-8 w-8"
               >
                 {hasUserAvatar && user?.avatar ? (
