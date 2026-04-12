@@ -1,6 +1,7 @@
 'use client';
 
 import { useAppSelector } from "@/redux/hooks";
+import { selectSelectedModelName } from "@/redux/selectors";
 import { usePathname } from "next/navigation";
 import Link from "next/link";
 import { ChevronRightIcon } from "lucide-react";
@@ -15,18 +16,8 @@ const Header: React.FC<HeaderProps> = ({ title }) => {
   const pathname = usePathname();
   const routeConversationId = pathname.startsWith('/chat/') ? pathname.split('/chat/')[1] : null;
 
-  const { conversationsById } = useAppSelector((state) => ({
-    conversationsById: state.conversation.byId,
-  }));
-
-  const { models, selectedModelId } = useAppSelector((state) => state.models);
-
-  // 获取选择的模型名称
-  const getSelectedModelName = useCallback(() => {
-    if (!selectedModelId) return 'AI';
-    const selectedModel = models.find(model => model.id === selectedModelId);
-    return selectedModel ? selectedModel.name : 'AI';
-  }, [selectedModelId, models]);
+  const conversationsById = useAppSelector((state) => state.conversation.byId);
+  const selectedModelName = useAppSelector(selectSelectedModelName);
 
   // 获取当前页面显示的标题
   const getCurrentPageTitle = useCallback(() => {
@@ -41,11 +32,11 @@ const Header: React.FC<HeaderProps> = ({ title }) => {
       if (activeChat && activeChat.title) {
         return activeChat.title;
       }
-      return `与 ${getSelectedModelName()} 的对话`;
+      return `与 ${selectedModelName} 的对话`;
     }
-    
+
     return '';
-  }, [pathname, title, routeConversationId, conversationsById, getSelectedModelName]);
+  }, [pathname, title, routeConversationId, conversationsById, selectedModelName]);
   
   return (
     <header className="h-14 border-b flex items-center justify-between px-5 sticky top-0 z-10 shadow-sm bg-background">

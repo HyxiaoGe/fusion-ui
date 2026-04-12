@@ -6,6 +6,7 @@ import type { FileAttachment } from "@/lib/utils/fileHelpers";
 import { uploadFiles, deleteFile } from "@/lib/api/files";
 import { startPollingFileStatus, stopPollingFileStatus } from "@/lib/api/FileStatusPoller";
 import { useAppDispatch, useAppSelector } from "@/redux/hooks";
+import { selectChatModel, selectIsAuthenticated } from "@/redux/selectors";
 import { setReasoningEnabled } from "@/redux/slices/conversationSlice";
 import {
   addFileId,
@@ -88,9 +89,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const { models, selectedModelId } = useAppSelector((state) => state.models);
-  const chats = useAppSelector((state) => state.conversation.byId);
-  const { isAuthenticated } = useAppSelector((state) => state.auth);
+  const isAuthenticated = useAppSelector(selectIsAuthenticated);
   const processingFiles = useAppSelector((state) => state.fileUpload.processingFiles);
   const reasoningEnabled = useAppSelector((state) => state.conversation.reasoningEnabled);
   const isStreaming = useAppSelector((state) => state.stream.isStreaming);
@@ -99,13 +98,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
   const pendingChatIdRef = useRef<string>(uuidv4());
   const effectiveChatId = activeChatId;
   const chatId = effectiveChatId || pendingChatIdRef.current;
-  const activeChatModelId = effectiveChatId
-    ? chats[effectiveChatId]?.model_id
-    : undefined;
-  const selectedModel = useMemo(
-    () => models.find((model) => model.id === (activeChatModelId || selectedModelId)),
-    [activeChatModelId, models, selectedModelId]
-  );
+  const selectedModel = useAppSelector((state) => selectChatModel(state, effectiveChatId));
   const isCurrentModelUnavailable = Boolean(selectedModel?.enabled === false);
   const isComposerBlocked = disabled || isCurrentModelUnavailable;
 
