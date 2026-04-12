@@ -51,9 +51,6 @@ export interface ProviderInfo {
   order: number; // 排序顺序
 }
 
-// 提供商缓存（从 API 动态获取）
-let cachedProviders: ProviderInfo[] = [];
-
 // 将API模型数据转换为ModelInfo格式
 export const convertApiModelToModelInfo = (apiModel: ApiModelData): ModelInfo => {
   return {
@@ -68,70 +65,38 @@ export const convertApiModelToModelInfo = (apiModel: ApiModelData): ModelInfo =>
   };
 };
 
-// 仅作为当前会话内的请求缓存，不作为产品真源。
-let cachedModels: ModelInfo[] = [];
-
 // 获取结果类型
 export interface FetchModelsResult {
   models: ModelInfo[];
   providers: ProviderInfo[];
 }
 
-// 添加标志和Promise缓存
-let isModelsFetching = false;
-let modelsFetchPromise: Promise<FetchModelsResult> | null = null;
+// 请求去重：防止多个组件同时触发重复请求
+let activeFetchPromise: Promise<FetchModelsResult> | null = null;
 
-// 获取模型配置的函数
+// 获取模型配置，自动去重并发请求
 export const fetchModels = async (): Promise<FetchModelsResult> => {
-  // 如果已经有数据且不是在获取中，直接返回现有数据
-  if (cachedModels.length > 0 && !isModelsFetching) {
-    return { models: cachedModels, providers: cachedProviders };
+  // 如果已有请求在进行中，复用同一个 Promise
+  if (activeFetchPromise) {
+    return activeFetchPromise;
   }
 
-  // 如果已经在获取中，返回正在进行的Promise
-  if (isModelsFetching && modelsFetchPromise) {
-    return modelsFetchPromise;
-  }
+  activeFetchPromise = (async () => {
+    try {
+      const data = await apiRequest<ApiModelResponse>(`${API_BASE_URL}/api/models/`);
+      const models = (data.models || []).map(convertApiModelToModelInfo);
+      const providers = data.providers || [];
+      return { models, providers };
+    } finally {
+      activeFetchPromise = null;
+    }
+  })();
 
-  // 设置标志并创建Promise
-  isModelsFetching = true;
-
-  try {
-    modelsFetchPromise = (async () => {
-      try {
-        const data = await apiRequest<ApiModelResponse>(`${API_BASE_URL}/api/models/`);
-
-        // 将API返回的模型数据转换为ModelInfo格式并更新缓存
-        cachedModels = (data.models || []).map(convertApiModelToModelInfo);
-        cachedProviders = data.providers || [];
-        return { models: cachedModels, providers: cachedProviders };
-      } finally {
-        // 请求完成后重置标志
-        isModelsFetching = false;
-      }
-    })();
-
-    return await modelsFetchPromise;
-  } catch (error) {
-    console.error('获取模型配置时出错:', error);
-    isModelsFetching = false;
-    modelsFetchPromise = null;
-    return { models: cachedModels, providers: cachedProviders };
-  }
+  return activeFetchPromise;
 };
 
-// 初始化模型配置
-export const initializeModels = async (): Promise<FetchModelsResult> => {
-  if (cachedModels.length === 0) {
-    return await fetchModels();
-  }
-  return { models: cachedModels, providers: cachedProviders };
-};
+// 初始化模型配置（语义别名，与 fetchModels 行为一致）
+export const initializeModels = fetchModels;
 
-export const refreshModels = async (): Promise<FetchModelsResult> => {
-  cachedModels = [];
-  cachedProviders = [];
-  modelsFetchPromise = null;
-  isModelsFetching = false;
-  return fetchModels();
-};
+// 强制刷新（与 fetchModels 一致，去重由 activeFetchPromise 保证）
+export const refreshModels = fetchModels;
