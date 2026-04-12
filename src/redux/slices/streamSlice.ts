@@ -1,5 +1,5 @@
 import { createSlice, PayloadAction } from '@reduxjs/toolkit';
-import type { ContentBlock, SearchSource } from '@/types/conversation';
+import type { ContentBlock, SearchSourceSummary } from '@/types/conversation';
 
 export interface StreamState {
   conversationId: string | null;
@@ -20,7 +20,7 @@ export interface StreamState {
   reasoningEndTime: number | undefined;
   // 搜索状态
   searchQuery: string | null;
-  searchSources: SearchSource[];
+  searchSources: SearchSourceSummary[];
   isSearching: boolean;
   // 最后收到的 Redis Stream entry ID（断线重连起点）
   lastEntryId: string;
@@ -144,7 +144,7 @@ const streamSlice = createSlice({
       state.reasoningEndTime = undefined;
     },
 
-    completeSearch(state, action: PayloadAction<{ sources: SearchSource[] }>) {
+    completeSearch(state, action: PayloadAction<{ sources: SearchSourceSummary[] }>) {
       state.isSearching = false;
       state.searchSources = action.payload.sources;
     },

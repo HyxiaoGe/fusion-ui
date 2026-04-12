@@ -2,10 +2,10 @@
 
 import React, { useEffect } from 'react';
 import { X } from 'lucide-react';
-import type { SearchSource } from '@/types/conversation';
+import type { SearchSourceSummary } from '@/types/conversation';
 
 interface SourcesSidebarProps {
-  sources: SearchSource[];
+  sources: SearchSourceSummary[];
   isOpen: boolean;
   onClose: () => void;
 }
@@ -69,11 +69,6 @@ const SourcesSidebar: React.FC<SourcesSidebarProps> = ({ sources, isOpen, onClos
                   <p className="text-sm font-medium line-clamp-2 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
                     {source.title}
                   </p>
-                  {source.description && (
-                    <p className="text-xs text-muted-foreground mt-1 line-clamp-2">
-                      {source.description}
-                    </p>
-                  )}
                   <div className="flex items-center gap-1.5 mt-1.5">
                     {source.favicon && (
                       <img

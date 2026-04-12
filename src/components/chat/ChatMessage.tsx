@@ -5,7 +5,7 @@ import { cn } from '@/lib/utils';
 import { FileWithPreview } from '@/lib/utils/fileHelpers';
 import { useAppDispatch, useAppSelector } from '@/redux/hooks';
 import { selectChatModel } from '@/redux/selectors';
-import type { Message, ContentBlock, SearchSource, FileBlock as FileBlockType } from '@/types/conversation';
+import type { Message, ContentBlock, SearchSourceSummary, FileBlock as FileBlockType } from '@/types/conversation';
 import { extractTextFromBlocks, extractThinkingFromBlocks, extractSearchBlock } from '@/types/conversation';
 import { toggleReasoningVisibility } from '@/redux/slices/conversationSlice';
 import { selectStreamContentBlocks } from '@/redux/slices/streamSlice';
@@ -87,7 +87,7 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, files, isLastMessage
   const streamSearchSources = useAppSelector(state => state.stream.searchSources);
   const streamIsSearching = useAppSelector(state => state.stream.isSearching);
 
-  const searchSources: SearchSource[] = useMemo(() => {
+  const searchSources: SearchSourceSummary[] = useMemo(() => {
     if (isCurrentlyStreaming) return streamSearchSources;
     const searchBlock = extractSearchBlock(message.content);
     return searchBlock?.sources ?? [];

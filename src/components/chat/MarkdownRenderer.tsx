@@ -5,13 +5,13 @@ import ReactMarkdown from 'react-markdown';
 import rehypeRaw from 'rehype-raw';
 import remarkGfm from 'remark-gfm';
 import CodeBlock from './CodeBlock';
-import type { SearchSource } from '@/types/conversation';
+import type { SearchSourceSummary } from '@/types/conversation';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 
 interface MarkdownRendererProps {
   content: string;
   className?: string;
-  sources?: SearchSource[];
+  sources?: SearchSourceSummary[];
 }
 
 // 占位符字符对（Unicode 数学角括号，正文中不会出现）
@@ -29,7 +29,7 @@ function preprocessCitations(text: string): string {
 /**
  * 将 ⟦n⟧ 占位符渲染为可交互的引用圆圈。
  */
-function renderWithCitations(text: string, sources: SearchSource[]): React.ReactNode[] {
+function renderWithCitations(text: string, sources: SearchSourceSummary[]): React.ReactNode[] {
   const parts: React.ReactNode[] = [];
   let lastIndex = 0;
   let match: RegExpExecArray | null;
@@ -88,7 +88,7 @@ function renderWithCitations(text: string, sources: SearchSource[]): React.React
 /**
  * 通用的子节点引用处理：遍历 children，对字符串子节点做引用替换。
  */
-function processChildren(children: React.ReactNode, sources: SearchSource[]): React.ReactNode {
+function processChildren(children: React.ReactNode, sources: SearchSourceSummary[]): React.ReactNode {
   return React.Children.map(children, child => {
     if (typeof child === 'string') {
       return <>{renderWithCitations(child, sources)}</>;

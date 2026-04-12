@@ -1,11 +1,11 @@
 'use client';
 
 import React from 'react';
-import type { SearchSource } from '@/types/conversation';
+import type { SearchSourceSummary } from '@/types/conversation';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 
 interface SourcesPanelProps {
-  sources: SearchSource[];
+  sources: SearchSourceSummary[];
 }
 
 const SourcesPanel: React.FC<SourcesPanelProps> = ({ sources }) => {

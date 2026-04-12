@@ -33,11 +33,19 @@ export interface SearchSource {
   favicon?: string;
 }
 
+// 轻量版搜索来源，用于 SearchBlock 存储和 UI 展示
+export interface SearchSourceSummary {
+  title: string;
+  url: string;
+  favicon?: string;
+}
+
 export interface SearchBlock {
   type: 'search';
   id: string;
   query: string;
-  sources: SearchSource[];
+  tool_call_log_id?: string;
+  sources: SearchSourceSummary[];
 }
 
 export type ContentBlock = TextBlock | ThinkingBlock | FileBlock | SearchBlock;
