@@ -19,6 +19,8 @@ import SearchStatus from './SearchStatus';
 import ThinkingIndicator from './ThinkingIndicator';
 import SourcesPanel from './SourcesPanel';
 import SourcesSidebar from './SourcesSidebar';
+import UrlReadStatus from './UrlReadStatus';
+import UrlCard from './UrlCard';
 import MarkdownRenderer from './MarkdownRenderer';
 import ProviderIcon from '../models/ProviderIcon';
 import { ImageIcon } from 'lucide-react';
@@ -93,7 +95,13 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, files, isLastMessage
     return searchBlock?.sources ?? [];
   }, [isCurrentlyStreaming, streamSearchSources, message.content]);
 
+  // URL 读取状态：区分流式 vs 历史
+  const streamIsReadingUrl = useAppSelector(state => state.stream.isReadingUrl);
+  const streamUrlReadUrl = useAppSelector(state => state.stream.urlReadUrl);
+  const streamUrlReadResult = useAppSelector(state => state.stream.urlReadResult);
+
   const showSearching = isCurrentlyStreaming && streamIsSearching;
+  const showUrlReading = isCurrentlyStreaming && streamIsReadingUrl;
   const searchQuery = isCurrentlyStreaming ? streamSearchQuery : extractSearchBlock(message.content)?.query ?? null;
   // 从 blocks 提取文本和推理内容
   const displayText = useMemo(() => extractTextFromBlocks(blocksToRender), [blocksToRender]);
@@ -391,6 +399,31 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, files, isLastMessage
                 )}
                 {showSearching && searchQuery && (
                   <SearchStatus query={searchQuery} />
+                )}
+
+                {/* URL 读取状态（流式阶段） */}
+                {showUrlReading && streamUrlReadUrl && (
+                  <UrlReadStatus url={streamUrlReadUrl} />
+                )}
+                {/* URL 读取完成卡片（流式阶段，读取已结束） */}
+                {!showUrlReading && streamUrlReadResult && isCurrentlyStreaming && (
+                  <UrlCard
+                    url={streamUrlReadResult.url}
+                    title={streamUrlReadResult.title}
+                    favicon={streamUrlReadResult.favicon}
+                  />
+                )}
+
+                {/* 历史消息中的 URL 读取卡片 */}
+                {!isCurrentlyStreaming && message.content.map((block, idx) =>
+                  block.type === 'url_read' ? (
+                    <UrlCard
+                      key={idx}
+                      url={block.url}
+                      title={block.title}
+                      favicon={block.favicon}
+                    />
+                  ) : null
                 )}
 
                 {/* 搜索结果：来源卡片 */}
