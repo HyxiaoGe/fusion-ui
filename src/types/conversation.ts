@@ -48,7 +48,16 @@ export interface SearchBlock {
   sources: SearchSourceSummary[];
 }
 
-export type ContentBlock = TextBlock | ThinkingBlock | FileBlock | SearchBlock;
+export interface UrlBlock {
+  type: 'url_read';
+  id: string;
+  url: string;
+  title?: string;
+  favicon?: string;
+  tool_call_log_id?: string;
+}
+
+export type ContentBlock = TextBlock | ThinkingBlock | FileBlock | SearchBlock | UrlBlock;
 
 // ============================================================
 // Usage
@@ -126,4 +135,8 @@ export function extractThinkingFromBlocks(content: ContentBlock[]): string {
 
 export function extractSearchBlock(content: ContentBlock[]): SearchBlock | null {
   return (content.find((b): b is SearchBlock => b.type === 'search') ?? null);
+}
+
+export function extractUrlBlock(content: ContentBlock[]): UrlBlock | undefined {
+  return content.find((b): b is UrlBlock => b.type === 'url_read');
 }

@@ -22,6 +22,10 @@ export interface StreamState {
   searchQuery: string | null;
   searchSources: SearchSourceSummary[];
   isSearching: boolean;
+  // URL 读取状态
+  isReadingUrl: boolean;
+  urlReadUrl: string | null;
+  urlReadResult: { url: string; title?: string; favicon?: string } | null;
   // 最后收到的 Redis Stream entry ID（断线重连起点）
   lastEntryId: string;
   // 流状态枚举
@@ -45,6 +49,9 @@ const initialState: StreamState = {
   searchQuery: null,
   searchSources: [],
   isSearching: false,
+  isReadingUrl: false,
+  urlReadUrl: null,
+  urlReadResult: null,
   lastEntryId: '0',
   streamStatus: 'idle',
 };
@@ -73,6 +80,9 @@ const streamSlice = createSlice({
       state.searchQuery = null;
       state.searchSources = [];
       state.isSearching = false;
+      state.isReadingUrl = false;
+      state.urlReadUrl = null;
+      state.urlReadResult = null;
     },
 
     appendTextDelta(
@@ -147,6 +157,26 @@ const streamSlice = createSlice({
     completeSearch(state, action: PayloadAction<{ sources: SearchSourceSummary[] }>) {
       state.isSearching = false;
       state.searchSources = action.payload.sources;
+    },
+
+    startUrlRead(state, action: PayloadAction<{ url: string }>) {
+      state.isReadingUrl = true;
+      state.urlReadUrl = action.payload.url;
+      state.urlReadResult = null;
+    },
+
+    completeUrlRead(
+      state,
+      action: PayloadAction<{ url: string; title?: string; favicon?: string; status: string }>
+    ) {
+      state.isReadingUrl = false;
+      if (action.payload.status === 'success') {
+        state.urlReadResult = {
+          url: action.payload.url,
+          title: action.payload.title,
+          favicon: action.payload.favicon,
+        };
+      }
     },
 
     setStreamStatus(state, action: PayloadAction<StreamState['streamStatus']>) {
@@ -247,12 +277,14 @@ export const {
   appendThinkingDelta,
   completeSearch,
   completeThinkingPhase,
+  completeUrlRead,
   endStream,
   migrateStreamConversation,
   setLastEntryId,
   setStreamStatus,
   startSearch,
   startStream,
+  startUrlRead,
 } = streamSlice.actions;
 
 export default streamSlice.reducer;
