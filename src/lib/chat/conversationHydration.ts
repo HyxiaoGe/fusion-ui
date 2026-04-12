@@ -1,12 +1,12 @@
 import type {
   Conversation, Message, ContentBlock,
-  TextBlock, ThinkingBlock, FileBlock, SearchBlock, SearchSourceSummary,
+  TextBlock, ThinkingBlock, FileBlock, SearchBlock, SearchSourceSummary, UrlBlock,
 } from '@/types/conversation';
 import { parseTimestamp } from '@/lib/utils/parseTimestamp';
 
 // 服务端返回的原始类型（对齐后端 schema）
 interface ServerBlock {
-  type: 'text' | 'thinking' | 'file' | 'search';
+  type: 'text' | 'thinking' | 'file' | 'search' | 'url_read';
   id: string;
   text?: string;
   thinking?: string;
@@ -16,6 +16,9 @@ interface ServerBlock {
   query?: string;
   tool_call_log_id?: string;
   sources?: SearchSourceSummary[];
+  url?: string;
+  title?: string;
+  favicon?: string;
 }
 
 interface ServerUsage {
@@ -67,6 +70,15 @@ function buildContentBlocks(serverBlocks: ServerBlock[]): ContentBlock[] {
         tool_call_log_id: b.tool_call_log_id,
         sources: b.sources ?? [],
       } satisfies SearchBlock);
+    } else if (b.type === 'url_read' && b.url) {
+      blocks.push({
+        type: 'url_read',
+        id: b.id,
+        url: b.url,
+        title: b.title,
+        favicon: b.favicon,
+        tool_call_log_id: b.tool_call_log_id,
+      } satisfies UrlBlock);
     }
   }
   return blocks;
