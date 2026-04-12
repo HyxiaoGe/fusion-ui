@@ -1,6 +1,6 @@
 import type {
   Conversation, Message, ContentBlock,
-  TextBlock, ThinkingBlock, FileBlock, SearchBlock, SearchSource,
+  TextBlock, ThinkingBlock, FileBlock, SearchBlock, SearchSourceSummary,
 } from '@/types/conversation';
 import { parseTimestamp } from '@/lib/utils/parseTimestamp';
 
@@ -14,7 +14,8 @@ interface ServerBlock {
   filename?: string;
   mime_type?: string;
   query?: string;
-  sources?: SearchSource[];
+  tool_call_log_id?: string;
+  sources?: SearchSourceSummary[];
 }
 
 interface ServerUsage {
@@ -63,6 +64,7 @@ function buildContentBlocks(serverBlocks: ServerBlock[]): ContentBlock[] {
         type: 'search',
         id: b.id,
         query: b.query,
+        tool_call_log_id: b.tool_call_log_id,
         sources: b.sources ?? [],
       } satisfies SearchBlock);
     }
