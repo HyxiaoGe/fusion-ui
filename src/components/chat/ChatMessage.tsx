@@ -108,7 +108,7 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, files, isLastMessage
   const displayThinking = useMemo(() => extractThinkingFromBlocks(blocksToRender), [blocksToRender]);
   // thinking pending 阶段：正在流式但尚无任何可见内容（后端可能在缓冲第一轮 thinking）
   // 已有 thinking/text 内容时不算 pending
-  const isThinkingPending = isCurrentlyStreaming && !streamSearchQuery && displayThinking.length === 0 && !displayText;
+  const isThinkingPending = isCurrentlyStreaming && !streamSearchQuery && !showUrlReading && displayThinking.length === 0 && !displayText;
   // 仅流式阶段的搜索场景抑制 ReasoningContent（避免 tool_call 推理噪音）
   // 历史消息中的 ThinkingBlock 是第二轮有效推理，正常展示
   const suppressThinking = isCurrentlyStreaming && (showSearching || isThinkingPending);
