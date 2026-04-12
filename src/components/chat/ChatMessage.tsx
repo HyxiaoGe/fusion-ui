@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { FileWithPreview } from '@/lib/utils/fileHelpers';
 import { useAppDispatch, useAppSelector } from '@/redux/hooks';
+import { selectChatModel } from '@/redux/selectors';
 import type { Message, ContentBlock, SearchSource, FileBlock as FileBlockType } from '@/types/conversation';
 import { extractTextFromBlocks, extractThinkingFromBlocks, extractSearchBlock } from '@/types/conversation';
 import { toggleReasoningVisibility } from '@/redux/slices/conversationSlice';
@@ -68,11 +69,8 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, files, isLastMessage
   const { toast } = useToast();
 
   // 获取模型信息
-  const chats = useAppSelector(state => state.conversation.byId);
-  const models = useAppSelector(state => state.models.models);
-
-  const chat = (message.chatId ? chats[message.chatId] : undefined) || (activeChatId ? chats[activeChatId] : undefined);
-  const model = chat ? models.find(m => m.id === chat.model_id) : null;
+  const chatId = message.chatId || activeChatId;
+  const model = useAppSelector(state => selectChatModel(state, chatId));
   const providerId = model?.provider;
 
   // 流式时从 streamSlice 取 content blocks，历史时从 message.content 取

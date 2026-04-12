@@ -7,6 +7,7 @@ import { useDispatch } from "react-redux";
 import { updateModels, updateProviders } from "@/redux/slices/modelsSlice";
 import dynamic from 'next/dynamic';
 import { useAppDispatch, useAppSelector } from "@/redux/hooks";
+import { selectIsAuthenticated } from "@/redux/selectors";
 
 import { Toaster } from "react-hot-toast";
 import { setToken, checkUserState, fetchUserProfile } from "@/redux/slices/authSlice";
@@ -55,7 +56,8 @@ function ModelConfigInitializer() {
 
 const ClientLayout = ({ children }: { children: React.ReactNode }) => {
   const dispatch = useAppDispatch();
-  const { isAuthenticated, status } = useAppSelector((state) => state.auth);
+  const isAuthenticated = useAppSelector(selectIsAuthenticated);
+  const status = useAppSelector((state) => state.auth.status);
   const [isLoginDialogOpen, setIsLoginDialogOpen] = useState(false);
   const [hasShownInitialLogin, setHasShownInitialLogin] = useState(false);
   

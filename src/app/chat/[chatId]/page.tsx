@@ -8,6 +8,7 @@ import ChatInput from '@/components/chat/ChatInput';
 import type { FileAttachment } from '@/lib/utils/fileHelpers';
 import ConfirmDialog from '@/components/ui/confirm-dialog';
 import { useAppDispatch, useAppSelector } from '@/redux/hooks';
+import { selectIsAuthenticated } from '@/redux/selectors';
 import { useStore } from 'react-redux';
 import {
   appendMessage,
@@ -72,7 +73,7 @@ export default function ChatPage() {
   // 页面 mount / hydration 完成后检查是否有未完成的流 → 断线重连
   // TODO(遗漏1): 网络抖动自动重连需要独立实现，不能复用 checkAndReconnect，
   // 因为 reconnectAttemptedRef 在首次 mount 后已为 true，会阻止二次重连。
-  const isAuthenticated = useAppSelector((state) => state.auth.isAuthenticated);
+  const isAuthenticated = useAppSelector(selectIsAuthenticated);
   const hydrationDone = hydrationView === 'ready';
   const reconnectAttemptedRef = useRef(false);
   // chatId 变化时重置
