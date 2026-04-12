@@ -17,7 +17,6 @@ import {
   upsertConversation,
 } from '@/redux/slices/conversationSlice';
 import {
-  advanceTypewriter,
   appendTextDelta,
   appendThinkingDelta,
   completeSearch,
@@ -33,10 +32,7 @@ import { sendMessageStream } from '@/lib/api/chat';
 import { generateChatTitle } from '@/lib/api/title';
 import type { Message, ContentBlock, FileBlock, Usage } from '@/types/conversation';
 import type { FileAttachment } from '@/lib/utils/fileHelpers';
-
-// 打字机参数
-const TYPEWRITER_CHARS_PER_TICK = 4;
-const TYPEWRITER_TICK_MS = 30;
+import { useTypewriter } from './useTypewriter';
 
 type SendMessageOptions = {
   conversationId: string | null;
@@ -69,7 +65,7 @@ export function useSendMessage() {
   const userMessageIdRef = useRef<string | null>(null);
   const assistantMessageIdRef = useRef<string | null>(null);
   const assistantHasContentRef = useRef(false);
-  const typewriterIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const typewriter = useTypewriter();
 
   // 获取当前流式会话 ID：优先用 ref（sendMessage 设置），fallback 到 Redux（reconnect 设置）
   const getStreamingConvId = useCallback(() => {
@@ -82,10 +78,7 @@ export function useSendMessage() {
     const userMsgId = userMessageIdRef.current;
     const assistantMsgId = assistantMessageIdRef.current;
 
-    if (typewriterIntervalRef.current !== null) {
-      clearInterval(typewriterIntervalRef.current);
-      typewriterIntervalRef.current = null;
-    }
+    typewriter.stop();
 
     abortControllerRef.current?.abort();
     abortControllerRef.current = null;
@@ -214,7 +207,6 @@ export function useSendMessage() {
       const useReasoning = reasoningEnabled && supportsReasoning;
       let serverConvId: string | null = null;
       let materializedOnce = false;
-      let networkDone = false;
       let donePayload: { incomingConvId: string; usage: Usage | null } | null = null;
 
       const materializeIfNeeded = (incomingConvId?: string) => {
@@ -291,26 +283,6 @@ export function useSendMessage() {
         }
       };
 
-      // 打字机：通过 dispatch advanceTypewriter 推进 displayedTextLength，
-      // selectStreamContentBlocks 会按该长度截断 text blocks
-      const startTypewriter = () => {
-        if (typewriterIntervalRef.current !== null) return;
-
-        typewriterIntervalRef.current = setInterval(() => {
-          const streamState = (store.getState() as { stream: import('@/redux/slices/streamSlice').StreamState }).stream;
-          if (streamState.displayedTextLength < streamState.totalTextLength) {
-            dispatch(advanceTypewriter(TYPEWRITER_CHARS_PER_TICK));
-          }
-
-          const updatedState = (store.getState() as { stream: import('@/redux/slices/streamSlice').StreamState }).stream;
-          if (networkDone && updatedState.displayedTextLength >= updatedState.totalTextLength && donePayload) {
-            clearInterval(typewriterIntervalRef.current!);
-            typewriterIntervalRef.current = null;
-            doCompleteStream(donePayload);
-          }
-        }, TYPEWRITER_TICK_MS);
-      };
-
       try {
         await sendMessageStream(
           {
@@ -335,7 +307,9 @@ export function useSendMessage() {
               }
               assistantHasContentRef.current = true;
               dispatch(appendTextDelta({ blockId, delta }));
-              startTypewriter();
+              typewriter.start(() => {
+                if (donePayload) doCompleteStream(donePayload);
+              });
             },
 
             onThinkingDelta: (delta, blockId) => {
@@ -354,16 +328,12 @@ export function useSendMessage() {
             },
 
             onDone: (_messageId, incomingConvId, usage) => {
-              networkDone = true;
               donePayload = { incomingConvId, usage };
-
-              const streamState = (store.getState() as { stream: import('@/redux/slices/streamSlice').StreamState }).stream;
-              if (streamState.displayedTextLength >= streamState.totalTextLength) {
-                if (typewriterIntervalRef.current !== null) {
-                  clearInterval(typewriterIntervalRef.current);
-                  typewriterIntervalRef.current = null;
-                }
+              if (!assistantHasContentRef.current) {
+                // 没有文本内容，直接完成（打字机从未启动）
                 doCompleteStream(donePayload);
+              } else {
+                typewriter.markNetworkDone();
               }
             },
 
@@ -376,10 +346,7 @@ export function useSendMessage() {
           controller.signal
         );
       } catch (error) {
-        if (typewriterIntervalRef.current !== null) {
-          clearInterval(typewriterIntervalRef.current);
-          typewriterIntervalRef.current = null;
-        }
+        typewriter.stop();
         if (controller.signal.aborted) return;
 
         const effectiveConvIdOnError = activeConvIdRef.current ?? tempConvId;
