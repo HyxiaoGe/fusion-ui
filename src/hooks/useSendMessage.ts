@@ -35,7 +35,7 @@ import {
   startStream,
   startUrlRead,
 } from '@/redux/slices/streamSlice';
-import { sendMessageStream } from '@/lib/api/chat';
+import { sendMessageStream, getConversation } from '@/lib/api/chat';
 import { generateChatTitle } from '@/lib/api/title';
 import type { Message, ContentBlock, Usage } from '@/types/conversation';
 import type { FileAttachment } from '@/lib/utils/fileHelpers';
@@ -254,6 +254,7 @@ export function useSendMessage() {
 
         // 从 streamSlice 组装最终 content blocks
         const streamState = (store.getState() as { stream: import('@/redux/slices/streamSlice').StreamState }).stream;
+        const isAgentMode = streamState.agentSteps.length > 0;
         const finalBlocks = selectFullStreamContentBlocks(streamState);
         const hasThinking = finalBlocks.some(b => b.type === 'thinking');
 
@@ -288,6 +289,30 @@ export function useSendMessage() {
           void postStreamActions(finalConvId, dispatch);
         } else {
           dispatch(requestConversationListRefresh());
+        }
+
+        // Agent 模式：streamSlice 无法完整跟踪多步数据，从 DB 重新拉取完整消息内容
+        if (isAgentMode) {
+          void getConversation(finalConvId).then((conv: any) => {
+            const messages = conv?.messages;
+            if (!messages) return;
+            const assistantMsg = messages.find((m: any) => m.id === assistantMessageId);
+            if (assistantMsg?.content) {
+              dispatch(
+                updateMessage({
+                  conversationId: finalConvId,
+                  messageId: assistantMessageId,
+                  patch: {
+                    content: assistantMsg.content,
+                    usage: assistantMsg.usage ?? undefined,
+                    isReasoningVisible: assistantMsg.content.some((b: any) => b.type === 'thinking') ? false : undefined,
+                  },
+                })
+              );
+            }
+          }).catch(() => {
+            // 静默处理，刷新页面也能看到正确数据
+          });
         }
       };
 
