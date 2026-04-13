@@ -35,7 +35,7 @@ import {
   startStream,
   startUrlRead,
 } from '@/redux/slices/streamSlice';
-import { sendMessageStream, getConversation } from '@/lib/api/chat';
+import { sendMessageStream, getConversation, fetchSuggestedQuestions as fetchSuggestApi } from '@/lib/api/chat';
 import { generateChatTitle } from '@/lib/api/title';
 import type { Message, ContentBlock, Usage } from '@/types/conversation';
 import type { FileAttachment } from '@/lib/utils/fileHelpers';
@@ -292,27 +292,47 @@ export function useSendMessage() {
         }
 
         // Agent 模式：streamSlice 无法完整跟踪多步数据，从 DB 重新拉取完整消息内容
+        // 同时直接调 API 生成推荐问题（绕过 onStreamEnd 的闭包过期问题）
         if (isAgentMode) {
-          void getConversation(finalConvId).then((conv: any) => {
-            const messages = conv?.messages;
-            if (!messages) return;
-            const assistantMsg = messages.find((m: any) => m.id === assistantMessageId);
-            if (assistantMsg?.content) {
-              dispatch(
-                updateMessage({
-                  conversationId: finalConvId,
-                  messageId: assistantMessageId,
-                  patch: {
-                    content: assistantMsg.content,
-                    usage: assistantMsg.usage ?? undefined,
-                    isReasoningVisible: assistantMsg.content.some((b: any) => b.type === 'thinking') ? false : undefined,
-                  },
-                })
-              );
+          void (async () => {
+            try {
+              const conv = await getConversation(finalConvId) as any;
+              const dbMessages = conv?.messages;
+              if (!dbMessages) return;
+
+              // 用最后一条 assistant 消息（前后端 ID 不同，不能用 assistantMessageId 匹配）
+              const lastAssistant = dbMessages
+                .filter((m: any) => m.role === 'assistant' && m.content?.length > 0)
+                .at(-1);
+              if (lastAssistant?.content) {
+                dispatch(
+                  updateMessage({
+                    conversationId: finalConvId,
+                    messageId: assistantMessageId,
+                    patch: {
+                      content: lastAssistant.content,
+                      usage: lastAssistant.usage ?? undefined,
+                      isReasoningVisible: lastAssistant.content.some((b: any) => b.type === 'thinking') ? false : undefined,
+                    },
+                  })
+                );
+              }
+
+              // 直接调 API 生成推荐问题
+              const { questions } = await fetchSuggestApi(finalConvId, {});
+              if (questions?.length > 0 && lastAssistant) {
+                dispatch(
+                  updateMessage({
+                    conversationId: finalConvId,
+                    messageId: assistantMessageId,
+                    patch: { suggestedQuestions: questions },
+                  })
+                );
+              }
+            } catch {
+              // 静默处理，刷新页面也能看到正确数据
             }
-          }).catch(() => {
-            // 静默处理，刷新页面也能看到正确数据
-          });
+          })();
         }
       };
 
