@@ -1,6 +1,19 @@
 import { createSlice, PayloadAction } from '@reduxjs/toolkit';
 import type { ContentBlock, SearchSourceSummary } from '@/types/conversation';
 
+export interface AgentToolCall {
+  toolCallId: string;
+  toolName: string;
+  query: string;
+  status: 'running' | 'completed' | 'failed';
+}
+
+export interface AgentStep {
+  step: number;
+  status: 'running' | 'completed';
+  toolCalls: AgentToolCall[];
+}
+
 export interface StreamState {
   conversationId: string | null;
   messageId: string | null;
@@ -30,6 +43,10 @@ export interface StreamState {
   lastEntryId: string;
   // 流状态枚举
   streamStatus: 'idle' | 'streaming' | 'reconnecting' | 'completed' | 'error';
+  // Agent 步骤状态
+  agentSteps: AgentStep[];
+  agentMaxSteps: number;
+  agentLimitReached: boolean;
 }
 
 const initialState: StreamState = {
@@ -54,6 +71,9 @@ const initialState: StreamState = {
   urlReadResult: null,
   lastEntryId: '0',
   streamStatus: 'idle',
+  agentSteps: [],
+  agentMaxSteps: 0,
+  agentLimitReached: false,
 };
 
 const streamSlice = createSlice({
@@ -83,6 +103,9 @@ const streamSlice = createSlice({
       state.isReadingUrl = false;
       state.urlReadUrl = null;
       state.urlReadResult = null;
+      state.agentSteps = [];
+      state.agentMaxSteps = 0;
+      state.agentLimitReached = false;
     },
 
     appendTextDelta(
@@ -139,19 +162,21 @@ const streamSlice = createSlice({
     startSearch(state, action: PayloadAction<{ query: string }>) {
       state.isSearching = true;
       state.searchQuery = action.payload.query;
-      // 清掉第一轮 thinking（tool_call 推理噪音），第二轮会用新 block ID 重新写入
-      for (const blockId of [...state.blockOrder]) {
-        if (state.blockTypes[blockId] === 'thinking') {
-          delete state.thinkingBlocks[blockId];
-          delete state.blockTypes[blockId];
-          state.blockOrder = state.blockOrder.filter(id => id !== blockId);
+      // Agent 模式下不清理 thinking（多步骤，每步 thinking 都有价值）
+      // 仅在非 agent 模式（无 agentSteps）时清理第一轮 tool_call 推理噪音
+      if (state.agentSteps.length === 0) {
+        for (const blockId of [...state.blockOrder]) {
+          if (state.blockTypes[blockId] === 'thinking') {
+            delete state.thinkingBlocks[blockId];
+            delete state.blockTypes[blockId];
+            state.blockOrder = state.blockOrder.filter(id => id !== blockId);
+          }
         }
+        state.isStreamingReasoning = false;
+        state.isThinkingPhaseComplete = false;
+        state.reasoningStartTime = null;
+        state.reasoningEndTime = undefined;
       }
-      state.isStreamingReasoning = false;
-      state.isThinkingPhaseComplete = false;
-      // 重置计时，第二轮 thinking 会设置新的 startTime/endTime
-      state.reasoningStartTime = null;
-      state.reasoningEndTime = undefined;
     },
 
     completeSearch(state, action: PayloadAction<{ sources: SearchSourceSummary[] }>) {
@@ -177,6 +202,60 @@ const streamSlice = createSlice({
           favicon: action.payload.favicon,
         };
       }
+    },
+
+    // ── Agent 步骤 ──
+    agentStepStart(
+      state,
+      action: PayloadAction<{ step: number; maxSteps: number; toolCount: number }>
+    ) {
+      const { step, maxSteps } = action.payload;
+      state.agentMaxSteps = maxSteps;
+      state.agentSteps.push({
+        step,
+        status: 'running',
+        toolCalls: [],
+      });
+    },
+
+    agentStepEnd(state, action: PayloadAction<{ step: number }>) {
+      const agentStep = state.agentSteps.find(s => s.step === action.payload.step);
+      if (agentStep) {
+        agentStep.status = 'completed';
+        for (const tc of agentStep.toolCalls) {
+          if (tc.status === 'running') tc.status = 'completed';
+        }
+      }
+    },
+
+    agentToolCallStart(
+      state,
+      action: PayloadAction<{ toolCallId: string; toolName: string; query: string }>
+    ) {
+      const currentStep = state.agentSteps[state.agentSteps.length - 1];
+      if (currentStep) {
+        currentStep.toolCalls.push({
+          ...action.payload,
+          status: 'running',
+        });
+      }
+    },
+
+    agentToolCallComplete(
+      state,
+      action: PayloadAction<{ toolCallId: string; status: 'completed' | 'failed' }>
+    ) {
+      for (const agentStep of state.agentSteps) {
+        const tc = agentStep.toolCalls.find(t => t.toolCallId === action.payload.toolCallId);
+        if (tc) {
+          tc.status = action.payload.status;
+          break;
+        }
+      }
+    },
+
+    agentLimitReached(state) {
+      state.agentLimitReached = true;
     },
 
     setStreamStatus(state, action: PayloadAction<StreamState['streamStatus']>) {
@@ -283,6 +362,11 @@ export function selectFullStreamContentBlocks(state: StreamState): ContentBlock[
 
 export const {
   advanceTypewriter,
+  agentLimitReached,
+  agentStepEnd,
+  agentStepStart,
+  agentToolCallComplete,
+  agentToolCallStart,
   appendTextDelta,
   appendThinkingDelta,
   completeSearch,
