@@ -9,6 +9,7 @@ import type { Message, ContentBlock, SearchSourceSummary, FileBlock as FileBlock
 import { extractTextFromBlocks, extractThinkingFromBlocks, extractSearchBlock } from '@/types/conversation';
 import { toggleReasoningVisibility } from '@/redux/slices/conversationSlice';
 import { selectStreamContentBlocks } from '@/redux/slices/streamSlice';
+import type { AgentStep } from '@/redux/slices/streamSlice';
 import { Bot, Edit2, FileIcon, RefreshCw, X, Check, Copy } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import React, { useState, useEffect, useRef, useMemo } from 'react';
@@ -21,6 +22,7 @@ import SourcesPanel from './SourcesPanel';
 import SourcesSidebar from './SourcesSidebar';
 import UrlReadStatus from './UrlReadStatus';
 import UrlCard from './UrlCard';
+import AgentStepCard from './AgentStepCard';
 import MarkdownRenderer from './MarkdownRenderer';
 import ProviderIcon from '../models/ProviderIcon';
 import { ImageIcon } from 'lucide-react';
@@ -99,6 +101,11 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, files, isLastMessage
   const streamIsReadingUrl = useAppSelector(state => state.stream.isReadingUrl);
   const streamUrlReadUrl = useAppSelector(state => state.stream.urlReadUrl);
   const streamUrlReadResult = useAppSelector(state => state.stream.urlReadResult);
+
+  // Agent 步骤状态
+  const agentSteps = useAppSelector(state => state.stream.agentSteps);
+  const agentMaxSteps = useAppSelector(state => state.stream.agentMaxSteps);
+  const agentLimitReached = useAppSelector(state => state.stream.agentLimitReached);
 
   const showSearching = isCurrentlyStreaming && streamIsSearching;
   const showUrlReading = isCurrentlyStreaming && streamIsReadingUrl;
@@ -393,16 +400,26 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, files, isLastMessage
                   </div>
                 )}
 
+                {/* Agent 步骤卡片（流式阶段） */}
+                {isCurrentlyStreaming && agentSteps.length > 0 && (
+                  <AgentStepCard
+                    steps={agentSteps}
+                    maxSteps={agentMaxSteps}
+                    isStreaming={isCurrentlyStreaming}
+                    limitReached={agentLimitReached}
+                  />
+                )}
+
                 {/* 思考中 → 搜索中/回答中过渡 */}
                 {isThinkingPending && (
                   <ThinkingIndicator />
                 )}
-                {showSearching && searchQuery && (
+                {showSearching && agentSteps.length === 0 && searchQuery && (
                   <SearchStatus query={searchQuery} />
                 )}
 
                 {/* URL 读取状态（流式阶段） */}
-                {showUrlReading && streamUrlReadUrl && (
+                {showUrlReading && agentSteps.length === 0 && streamUrlReadUrl && (
                   <UrlReadStatus url={streamUrlReadUrl} />
                 )}
                 {/* URL 读取完成卡片（流式阶段，读取已结束） */}
@@ -425,6 +442,34 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, files, isLastMessage
                     />
                   ) : null
                 )}
+
+                {/* 历史消息中的 Agent 步骤卡片（多步骤时展示） */}
+                {!isCurrentlyStreaming && (() => {
+                  const toolBlocks = (message.content || []).filter(
+                    (b: any) => b.type === 'search' || b.type === 'url_read'
+                  );
+                  if (toolBlocks.length <= 1) return null;
+                  let stepNum = 0;
+                  const historySteps: AgentStep[] = [];
+                  for (const block of toolBlocks) {
+                    stepNum++;
+                    const tc = {
+                      toolCallId: (block as any).id ?? `step-${stepNum}`,
+                      toolName: block.type === 'search' ? 'web_search' : 'url_read',
+                      query: block.type === 'search' ? (block as any).query : (block as any).url,
+                      status: 'completed' as const,
+                    };
+                    historySteps.push({ step: stepNum, status: 'completed', toolCalls: [tc] });
+                  }
+                  return (
+                    <AgentStepCard
+                      steps={historySteps}
+                      maxSteps={historySteps.length}
+                      isStreaming={false}
+                      limitReached={false}
+                    />
+                  );
+                })()}
 
                 {/* 搜索结果：来源卡片 */}
                 {!showSearching && searchSources.length > 0 && (
