@@ -130,7 +130,7 @@ const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({ content, className,
             }
 
             return (
-              <code className="bg-slate-100 dark:bg-slate-800 px-1 py-0.5 rounded text-sm font-mono" {...props}>
+              <code className="bg-muted px-1 py-0.5 rounded text-sm font-mono" {...props}>
                 {children}
               </code>
             );
@@ -170,10 +170,10 @@ const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({ content, className,
             </div>
           ),
           th: ({ node, ...props }) => (
-            <th className="border border-slate-300 dark:border-slate-700 px-4 py-2 text-left" {...props} />
+            <th className="border border-border px-4 py-2 text-left" {...props} />
           ),
           td: ({ node, ...props }) => (
-            <td className="border border-slate-300 dark:border-slate-700 px-4 py-2" {...props} />
+            <td className="border border-border px-4 py-2" {...props} />
           ),
         }}
       >

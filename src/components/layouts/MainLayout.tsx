@@ -101,7 +101,7 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children, sidebar, title, heade
               aria-label="关闭对话侧栏"
               onClick={() => setIsMobileSidebarOpen(false)}
             />
-            <aside className="absolute inset-y-0 left-0 w-[min(85vw,320px)] border-r bg-slate-50 shadow-xl dark:bg-slate-900">
+            <aside className="absolute inset-y-0 left-0 w-[min(85vw,320px)] border-r bg-sidebar shadow-xl">
               <div className="absolute right-3 top-3 z-10">
                 <Button
                   type="button"

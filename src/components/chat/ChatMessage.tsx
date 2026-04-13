@@ -9,7 +9,7 @@ import type { Message, ContentBlock, SearchSourceSummary, FileBlock as FileBlock
 import { extractTextFromBlocks, extractThinkingFromBlocks, extractSearchBlock } from '@/types/conversation';
 import { toggleReasoningVisibility } from '@/redux/slices/conversationSlice';
 import { selectStreamContentBlocks } from '@/redux/slices/streamSlice';
-import { Edit2, FileIcon, RefreshCw, X, Check, Copy } from 'lucide-react';
+import { Bot, Edit2, FileIcon, RefreshCw, X, Check, Copy } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import TextareaAutosize from 'react-textarea-autosize';
@@ -259,7 +259,7 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, files, isLastMessage
             {providerId ? (
               <ProviderIcon providerId={providerId} size={16} />
             ) : (
-              <span className="text-sm">🤖</span>
+              <Bot className="h-4 w-4 text-muted-foreground" />
             )}
             <span className="text-xs text-muted-foreground">
               {model ? model.name : 'AI助手'}
@@ -314,7 +314,7 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, files, isLastMessage
         <div>
           <div className={cn(
             isUser
-              ? 'rounded-2xl px-4 py-2 bg-black/5 dark:bg-white/10 text-foreground'
+              ? 'rounded-2xl px-4 py-2 bg-primary/[0.06] dark:bg-primary/[0.12] text-foreground'
               : '',
             isEditing && 'w-full'
           )}>
@@ -455,7 +455,7 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, files, isLastMessage
 
             {/* AI 消息操作栏 */}
             {!isUser && !isStreaming && (
-              <div className="flex items-center gap-1 h-6 mt-1 opacity-0 group-hover:opacity-100 transition-opacity duration-150 pointer-events-none group-hover:pointer-events-auto">
+              <div className="flex items-center gap-1 h-6 mt-1 lg:opacity-0 lg:group-hover:opacity-100 transition-opacity duration-150 lg:pointer-events-none lg:group-hover:pointer-events-auto">
                 <span className="text-[10px] text-muted-foreground/50 mr-1">
                   {formatTime(message.timestamp)}
                 </span>
@@ -502,7 +502,7 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, files, isLastMessage
 
         {/* 用户消息操作 */}
         {isUser && !isEditing && (
-          <div className="flex items-center gap-0.5 h-6 mt-0.5 opacity-0 group-hover:opacity-100 transition-opacity duration-150 pointer-events-none group-hover:pointer-events-auto">
+          <div className="flex items-center gap-0.5 h-6 mt-0.5 lg:opacity-0 lg:group-hover:opacity-100 transition-opacity duration-150 lg:pointer-events-none lg:group-hover:pointer-events-auto">
             <span className="text-[10px] text-muted-foreground/50 mr-1">
               {formatTime(message.timestamp)}
             </span>
