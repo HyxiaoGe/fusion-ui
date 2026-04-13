@@ -39,10 +39,13 @@ export interface StreamCallbacks {
   onReady: (meta: { messageId: string; conversationId: string }) => void;
   onTextDelta: (delta: string, blockId: string, meta: { messageId: string; conversationId: string }) => void;
   onThinkingDelta: (delta: string, blockId: string, meta: { messageId: string; conversationId: string }) => void;
-  onSearchStart?: (query: string, meta: { messageId: string; conversationId: string }) => void;
-  onSearchComplete?: (sources: SearchSource[], meta: { messageId: string; conversationId: string }) => void;
-  onUrlReadStart?: (url: string, source: string) => void;
-  onUrlReadComplete?: (result: { url: string; title?: string; favicon?: string; status: string }) => void;
+  onSearchStart?: (query: string, meta: { messageId: string; conversationId: string }, toolCallId?: string) => void;
+  onSearchComplete?: (sources: SearchSource[], meta: { messageId: string; conversationId: string }, toolCallId?: string) => void;
+  onUrlReadStart?: (url: string, source: string, toolCallId?: string) => void;
+  onUrlReadComplete?: (result: { url: string; title?: string; favicon?: string; status: string }, toolCallId?: string) => void;
+  onAgentStepStart?: (step: number, maxSteps: number, toolCount: number) => void;
+  onAgentStepEnd?: (step: number) => void;
+  onAgentLimitReached?: (reason: string) => void;
   onDone: (messageId: string, conversationId: string, usage: Usage | null) => void;
   onError: (message: string) => void;
 }
@@ -136,24 +139,37 @@ export async function sendMessageStream(
             } else if (block.type === 'thinking') {
               callbacks.onThinkingDelta((block as { thinking: string }).thinking, block.id, { messageId, conversationId });
             } else if (block.type === 'search') {
-              const searchBlock = block as { search_event: string; query: string; sources?: SearchSource[] };
+              // 搜索事件处理，携带 tool_call_id 以关联 agent 步骤
+              const searchBlock = (block as unknown) as { search_event: string; query: string; sources?: SearchSource[]; tool_call_id?: string };
               if (searchBlock.search_event === 'start' && callbacks.onSearchStart) {
-                callbacks.onSearchStart(searchBlock.query, { messageId, conversationId });
+                callbacks.onSearchStart(searchBlock.query, { messageId, conversationId }, searchBlock.tool_call_id);
               } else if (searchBlock.search_event === 'complete' && callbacks.onSearchComplete) {
-                callbacks.onSearchComplete(searchBlock.sources ?? [], { messageId, conversationId });
+                callbacks.onSearchComplete(searchBlock.sources ?? [], { messageId, conversationId }, searchBlock.tool_call_id);
               }
             } else if (block.type === 'url_read') {
-              // URL 读取事件处理
-              const urlReadBlock = block as { url_read_event: string; url: string; source: string; title?: string; favicon?: string; status?: string };
+              // URL 读取事件处理，携带 tool_call_id 以关联 agent 步骤
+              const urlReadBlock = (block as unknown) as { url_read_event: string; url: string; source: string; title?: string; favicon?: string; status?: string; tool_call_id?: string };
               if (urlReadBlock.url_read_event === 'start' && callbacks.onUrlReadStart) {
-                callbacks.onUrlReadStart(urlReadBlock.url, urlReadBlock.source);
+                callbacks.onUrlReadStart(urlReadBlock.url, urlReadBlock.source, urlReadBlock.tool_call_id);
               } else if (urlReadBlock.url_read_event === 'complete' && callbacks.onUrlReadComplete) {
                 callbacks.onUrlReadComplete({
                   url: urlReadBlock.url,
                   title: urlReadBlock.title,
                   favicon: urlReadBlock.favicon,
                   status: urlReadBlock.status ?? 'success',
-                });
+                }, urlReadBlock.tool_call_id);
+              }
+            } else {
+              // agent 步骤事件处理（block.type 不在静态联合类型中，运行时动态扩展）
+              const rawBlock = (block as unknown) as { type: string; agent_event?: string; step?: number; max_steps?: number; tool_count?: number; total_tool_calls?: number; reason?: string };
+              if (rawBlock.type === 'agent_step') {
+                if (rawBlock.agent_event === 'step_start' && callbacks.onAgentStepStart) {
+                  callbacks.onAgentStepStart(rawBlock.step ?? 0, rawBlock.max_steps ?? 0, rawBlock.tool_count ?? 0);
+                } else if (rawBlock.agent_event === 'step_end' && callbacks.onAgentStepEnd) {
+                  callbacks.onAgentStepEnd(rawBlock.step ?? 0);
+                } else if (rawBlock.agent_event === 'limit_reached' && callbacks.onAgentLimitReached) {
+                  callbacks.onAgentLimitReached(rawBlock.reason ?? '');
+                }
               }
             }
           }

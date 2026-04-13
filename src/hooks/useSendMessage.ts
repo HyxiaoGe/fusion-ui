@@ -17,6 +17,11 @@ import {
   upsertConversation,
 } from '@/redux/slices/conversationSlice';
 import {
+  agentLimitReached,
+  agentStepEnd,
+  agentStepStart,
+  agentToolCallComplete,
+  agentToolCallStart,
   appendTextDelta,
   appendThinkingDelta,
   completeSearch,
@@ -320,24 +325,51 @@ export function useSendMessage() {
               dispatch(appendThinkingDelta({ blockId, delta }));
             },
 
-            onSearchStart: (query) => {
+            onSearchStart: (query, _meta, toolCallId) => {
               if (!activeConvIdRef.current) return;
               dispatch(startSearch({ query }));
+              if (toolCallId) {
+                dispatch(agentToolCallStart({ toolCallId, toolName: 'web_search', query }));
+              }
             },
 
-            onSearchComplete: (sources) => {
+            onSearchComplete: (sources, _meta, toolCallId) => {
               if (!activeConvIdRef.current) return;
               dispatch(completeSearch({ sources }));
+              if (toolCallId) {
+                dispatch(agentToolCallComplete({ toolCallId, status: 'completed' }));
+              }
             },
 
-            onUrlReadStart: (url: string) => {
+            onUrlReadStart: (url: string, _source: string, toolCallId?: string) => {
               if (!activeConvIdRef.current) return;
               dispatch(startUrlRead({ url }));
+              if (toolCallId) {
+                dispatch(agentToolCallStart({ toolCallId, toolName: 'url_read', query: url }));
+              }
             },
 
-            onUrlReadComplete: (result: { url: string; title?: string; favicon?: string; status: string }) => {
+            onUrlReadComplete: (result: { url: string; title?: string; favicon?: string; status: string }, toolCallId?: string) => {
               if (!activeConvIdRef.current) return;
               dispatch(completeUrlRead(result));
+              if (toolCallId) {
+                dispatch(agentToolCallComplete({ toolCallId, status: result.status === 'success' ? 'completed' : 'failed' }));
+              }
+            },
+
+            onAgentStepStart: (step, maxSteps, toolCount) => {
+              if (!activeConvIdRef.current) return;
+              dispatch(agentStepStart({ step, maxSteps, toolCount }));
+            },
+
+            onAgentStepEnd: (step) => {
+              if (!activeConvIdRef.current) return;
+              dispatch(agentStepEnd({ step }));
+            },
+
+            onAgentLimitReached: () => {
+              if (!activeConvIdRef.current) return;
+              dispatch(agentLimitReached());
             },
 
             onDone: (_messageId, incomingConvId, usage) => {
