@@ -45,6 +45,7 @@ export default function ChatPage() {
   const [inputKey, setInputKey] = useState(Date.now());
   const [confirmDialogOpen, setConfirmDialogOpen] = useState(false);
   const chatInputRef = useRef<HTMLDivElement>(null);
+  const fetchQuestionsRef = useRef<(force?: boolean) => Promise<void>>();
   const { conversation, hydrationView, hydrationError, retryHydration } = useConversation(chatId);
   const { sendMessage, stopStreaming, retryMessage } = useSendMessage();
   const {
@@ -53,6 +54,7 @@ export default function ChatPage() {
     fetchQuestions,
     clearQuestions,
   } = useSuggestedQuestions(chatId);
+  fetchQuestionsRef.current = fetchQuestions;
   const { models, conversationError, isStreaming, streamConversationId } =
     useAppSelector((state) => ({
       models: state.models.models,
@@ -198,7 +200,8 @@ export default function ChatPage() {
         conversationId: chatId,
         onStreamEnd: (conversationId) => {
           if (conversationId === chatId) {
-            fetchQuestions(true);
+            // 用 ref 避免闭包过期（长时间 agent 流结束后 fetchQuestions 可能已更新）
+            fetchQuestionsRef.current?.(true);
           }
         },
       },
