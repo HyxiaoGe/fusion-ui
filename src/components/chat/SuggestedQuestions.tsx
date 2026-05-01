@@ -76,17 +76,17 @@ const SuggestedQuestions: React.FC<SuggestedQuestionsProps> = ({
   return (
     <div className={cn("mt-6 w-full max-w-full", className)}>
       <div className="flex items-center justify-between mb-2">
-        <div className="flex items-center text-xs text-muted-foreground">
-          <HelpCircle className="h-3.5 w-3.5 mr-1.5 text-primary/70" />
-          <p>你可能想问：</p>
-        </div>
+        <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+          <HelpCircle className="w-3 h-3 text-info" />
+          你可能想问：
+        </span>
         
         {/* 换一批按钮 */}
         {onRefresh && questions.length > 0 && (
           <Button
             variant="ghost"
             size="sm"
-            className="h-6 px-2 text-xs text-muted-foreground hover:text-primary flex items-center gap-1"
+            className="text-xs text-muted-foreground hover:text-foreground inline-flex items-center gap-1 transition-colors duration-fast"
             onClick={handleRefresh}
             disabled={isBusy}
           >
@@ -109,18 +109,9 @@ const SuggestedQuestions: React.FC<SuggestedQuestionsProps> = ({
             variant="outline"
             size="sm"
             className={cn(
-              "w-full text-left justify-start h-auto py-2.5 px-3",
-              "text-sm font-normal hover:bg-primary/5 hover:text-primary",
-              "border-muted transition-all duration-200",
-              "flex items-center gap-2",
-              hoveredIndex === index ? [
-                "border-primary/50",
-                "bg-primary/5",
-                "shadow-md",
-                "translate-y-[-1px]",
-                "scale-[1.01]"
-              ] : "",
-              pendingQuestion === question && "border-primary bg-primary/5 text-primary"
+              "flex items-center gap-2 w-full text-left px-3 py-2.5 rounded-lg border border-border bg-bg-subtle hover:bg-muted hover:border-border-strong text-sm text-foreground transition-colors duration-fast",
+              "h-auto justify-start font-normal",
+              pendingQuestion === question && "bg-muted border-border-strong"
             )}
             onClick={() => handleQuestionSelect(question)}
             onMouseEnter={() => setHoveredIndex(index)}
@@ -128,8 +119,8 @@ const SuggestedQuestions: React.FC<SuggestedQuestionsProps> = ({
             disabled={isBusy}
           >
             <MessageSquare className={cn(
-              "h-3.5 w-3.5 flex-shrink-0", 
-              hoveredIndex === index || pendingQuestion === question ? "text-primary" : "text-muted-foreground"
+              "h-3.5 w-3.5 flex-shrink-0",
+              hoveredIndex === index || pendingQuestion === question ? "text-foreground" : "text-muted-foreground"
             )} />
             <span>{pendingQuestion === question ? '发送中...' : question}</span>
           </Button>
