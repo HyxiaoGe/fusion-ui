@@ -77,7 +77,7 @@ export default function AgentStepCard({ steps, maxSteps, isStreaming, limitReach
                   步骤 {agentStep.step}
                 </div>
                 {agentStep.toolCalls.map((tc) => (
-                  <div key={tc.toolCallId} className="flex items-center gap-1.5 text-gray-600 dark:text-gray-300 truncate">
+                  <div key={tc.toolCallId} className="flex items-center gap-1.5 text-foreground/80 truncate">
                     {tc.toolName === 'web_search' ? (
                       <Search className="w-3 h-3 flex-shrink-0 text-info" />
                     ) : (
