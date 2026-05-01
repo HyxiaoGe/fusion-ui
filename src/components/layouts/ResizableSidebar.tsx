@@ -14,7 +14,7 @@ interface ResizableSidebarProps {
 const ResizableSidebar: React.FC<ResizableSidebarProps> = ({
   children,
   className,
-  defaultWidth = 240,
+  defaultWidth = 320,
   minWidth = 180,
   maxWidth = 400,
 }) => {
@@ -59,7 +59,7 @@ const ResizableSidebar: React.FC<ResizableSidebarProps> = ({
   return (
     <div 
       ref={sidebarRef} 
-      className={cn("relative border-r bg-slate-50 dark:bg-slate-900 overflow-y-auto w-[360px] shadow-md", className)}
+      className={cn("relative border-r border-border bg-bg-subtle overflow-y-auto", className)}
       style={{ width: `${width}px` }}
     >
       {children}
