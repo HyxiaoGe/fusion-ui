@@ -126,7 +126,9 @@
   --space-16: 64px;
 
   /* Shadow ladder (restrained, no glow) */
-  --shadow-xs: 0 1px 0 0 oklch(0 0 0 / 0.04);
+  /* 注意：shadow-xs 已被 shadcn UI（button/input/textarea/radio/select）用作 className，
+     Tailwind 默认未定义它所以现状是 no-op；用 -fdv2 前缀避免桥接后激活成真 shadow 引发回归 */
+  --shadow-fdv2-xs: 0 1px 0 0 oklch(0 0 0 / 0.04);
   --shadow-fdv2-sm: 0 1px 2px 0 oklch(0 0 0 / 0.05);
   --shadow-fdv2-md: 0 2px 8px 0 oklch(0 0 0 / 0.08);
   --shadow-fdv2-lg: 0 8px 24px -4px oklch(0 0 0 / 0.10);

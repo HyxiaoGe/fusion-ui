@@ -49,7 +49,11 @@ module.exports = {
           bg: 'var(--danger-bg)',
           border: 'var(--danger-border)',
         },
-        teal: 'var(--teal)',
+        // teal 用 object 形式保留 Tailwind 默认 teal-50..teal-950 数字色阶
+        // 不写成 'var(--teal)' 因为字符串形式会整个替换默认 teal 调色板
+        teal: {
+          DEFAULT: 'var(--teal)',
+        },
         fg: {
           secondary: 'var(--fg-secondary)',
           subtle: 'var(--fg-subtle)',
@@ -84,7 +88,9 @@ module.exports = {
         'fdv2-out': 'var(--ease-fdv2-out)',
       },
       boxShadow: {
-        xs: 'var(--shadow-xs)',
+        // shadow-xs 已被 shadcn UI 用作 className（Tailwind 默认未定义所以现状是 no-op），
+        // 桥接成有效 shadow 会让 button/input/textarea 等组件突然多出阴影 → 用 fdv2-xs 避免
+        'fdv2-xs': 'var(--shadow-fdv2-xs)',
         'fdv2-sm': 'var(--shadow-fdv2-sm)',
         'fdv2-md': 'var(--shadow-fdv2-md)',
         'fdv2-lg': 'var(--shadow-fdv2-lg)',
