@@ -64,7 +64,7 @@ const ReasoningContent: React.FC<ReasoningContentProps> = ({
     <div className={cn(
       "rounded-xl border mb-3 overflow-hidden transition-all duration-300",
       isStreaming
-        ? "border-blue-400/30 bg-blue-500/5"
+        ? "border-info-border bg-info-bg"
         : "border-border/50 bg-muted/30"
     )}>
       {/* Header */}
@@ -74,7 +74,7 @@ const ReasoningContent: React.FC<ReasoningContentProps> = ({
       >
         <div className="flex items-center gap-2 text-muted-foreground">
           {isStreaming ? (
-            <span className="h-1.5 w-1.5 rounded-full bg-blue-500 animate-pulse" />
+            <span className="h-1.5 w-1.5 rounded-full bg-info animate-pulse motion-reduce:animate-none" />
           ) : (
             <CheckCircle className="h-3.5 w-3.5" />
           )}
@@ -91,56 +91,59 @@ const ReasoningContent: React.FC<ReasoningContentProps> = ({
         )} />
       </button>
 
-      {/* 内容区（可折叠，带过渡动画） */}
-      <div className={cn(
-        "transition-all duration-300 ease-in-out overflow-hidden",
-        actuallyVisible ? "max-h-[200px] opacity-100" : "max-h-0 opacity-0"
-      )}>
-        <div className={cn(
-          "px-3 pb-3 border-t border-border/30 relative",
-          isStreaming && "border-l-2 border-l-blue-400/60 ml-0"
-        )}>
-          <div
-            ref={scrollRef}
-            className="pt-2 text-xs text-muted-foreground leading-relaxed max-h-[160px] overflow-y-auto"
-          >
-            {content && content.trim() ? (
-              <ReactMarkdown
-                remarkPlugins={[remarkGfm]}
-                rehypePlugins={[rehypeRaw]}
-                components={{
-                  pre: ({ children }) => <>{children}</>,
-                  code: ({ className, children, ...props }) => {
-                    const match = /language-(\w+)/.exec(className || '');
-                    const codeContent = String(children).replace(/\n$/, '');
-                    if (match && codeContent.includes('\n')) {
+      {/* 内容区（grid-rows 自适应展开，避免 200px 硬截断） */}
+      <div
+        className={cn(
+          "grid transition-[grid-template-rows,opacity] duration-300 ease-out",
+          actuallyVisible ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0"
+        )}
+      >
+        <div className="overflow-hidden">
+          <div className={cn(
+            "px-3 pb-3 border-t border-border/30 relative",
+            isStreaming && "border-l-2 border-l-info/60 ml-0"
+          )}>
+            <div
+              ref={scrollRef}
+              className="pt-2 text-xs text-muted-foreground leading-relaxed max-h-[280px] overflow-y-auto"
+            >
+              {content && content.trim() ? (
+                <ReactMarkdown
+                  remarkPlugins={[remarkGfm]}
+                  rehypePlugins={[rehypeRaw]}
+                  components={{
+                    pre: ({ children }) => <>{children}</>,
+                    code: ({ className, children, ...props }) => {
+                      const match = /language-(\w+)/.exec(className || '');
+                      const codeContent = String(children).replace(/\n$/, '');
+                      if (match && codeContent.includes('\n')) {
+                        return (
+                          <CodeBlock
+                            language={match[1]}
+                            value={codeContent}
+                            showLineNumbers={false}
+                            maxLines={10}
+                          />
+                        );
+                      }
                       return (
-                        <CodeBlock
-                          language={match[1]}
-                          value={codeContent}
-                          showLineNumbers={false}
-                          maxLines={10}
-                        />
+                        <code className="bg-muted px-1 py-0.5 rounded text-xs font-mono" {...props}>
+                          {children}
+                        </code>
                       );
-                    }
-                    return (
-                      <code className="bg-slate-100 dark:bg-slate-800 px-1 py-0.5 rounded text-xs font-mono" {...props}>
-                        {children}
-                      </code>
-                    );
-                  },
-                }}
-              >
-                {content.trim()}
-              </ReactMarkdown>
-            ) : (
-              <span className="text-muted-foreground animate-pulse">AI 正在组织思路...</span>
+                    },
+                  }}
+                >
+                  {content.trim()}
+                </ReactMarkdown>
+              ) : (
+                <span className="text-muted-foreground animate-pulse motion-reduce:animate-none">AI 正在组织思路...</span>
+              )}
+            </div>
+            {isOverflowing && (
+              <div className="absolute bottom-3 left-3 right-3 h-6 bg-gradient-to-t from-muted/80 to-transparent pointer-events-none rounded-b" />
             )}
           </div>
-          {/* 底部渐变提示可滚动 */}
-          {isOverflowing && (
-            <div className="absolute bottom-3 left-3 right-3 h-6 bg-gradient-to-t from-muted/80 to-transparent pointer-events-none rounded-b" />
-          )}
         </div>
       </div>
     </div>
