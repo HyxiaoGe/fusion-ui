@@ -33,7 +33,7 @@ const SourcesSidebar: React.FC<SourcesSidebarProps> = ({ sources, isOpen, onClos
       )}
 
       {/* 侧边栏 */}
-      <div className={`fixed top-0 right-0 h-full w-[360px] bg-background border-l border-border z-50 transform transition-transform duration-300 ease-in-out ${
+      <div className={`fixed top-0 right-0 h-full w-[400px] bg-background border-l border-border z-50 transform transition-transform duration-300 ease-in-out ${
         isOpen ? 'translate-x-0' : 'translate-x-full'
       }`}>
         {/* 头部 */}
@@ -63,10 +63,10 @@ const SourcesSidebar: React.FC<SourcesSidebarProps> = ({ sources, isOpen, onClos
                 href={source.url}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="flex gap-3 px-4 py-3 border-b border-border/50 hover:bg-muted/30 transition-colors group"
+                className="flex gap-3 px-4 py-3 border-b border-border/50 hover:bg-muted transition-colors group"
               >
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium line-clamp-2 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
+                  <p className="text-sm font-medium line-clamp-2 group-hover:text-info transition-colors">
                     {source.title}
                   </p>
                   <div className="flex items-center gap-1.5 mt-1.5">
