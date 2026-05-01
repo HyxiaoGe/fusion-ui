@@ -16,7 +16,6 @@ jobs:
     timeout-minutes: 30
     env:
       NPM_CONFIG_AUDIT: "false"
-      NPM_CONFIG_CACHE: "${{ runner.temp }}\\npm-cache"
       NPM_CONFIG_FUND: "false"
     defaults:
       run:
@@ -32,7 +31,7 @@ jobs:
           node-version: 20
 
       - name: Install dependencies
-        run: npm ci --no-audit --no-fund
+        run: npm ci --no-audit --no-fund --cache "%RUNNER_TEMP%\npm-cache"
 
       - name: Build
         run: npm run build
