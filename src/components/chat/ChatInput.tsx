@@ -642,7 +642,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
     <div className="flex flex-col space-y-2">
       {/* 外层卡片容器（支持拖拽上传） */}
       <div
-        className={`relative rounded-2xl border bg-background shadow-sm focus-within:ring-1 focus-within:ring-ring transition-all ${
+        className={`relative rounded-2xl border bg-background dark:bg-bg-elevated shadow-fdv2-xs focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-0 transition-colors duration-fast ${
           isDragOver
             ? "border-primary border-dashed bg-primary/5"
             : "border-border"
@@ -783,7 +783,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
               disabled={!supportsReasoning || isComposerBlocked}
               title={supportsReasoning ? (reasoningEnabled ? "AI思考过程已开启" : "AI思考过程已关闭") : "当前模型不支持思考过程"}
             >
-              <Lightbulb className={`h-4 w-4 ${reasoningEnabled && supportsReasoning ? "text-amber-400" : ""}`} />
+              <Lightbulb className={`h-4 w-4 ${reasoningEnabled && supportsReasoning ? "text-info" : ""}`} />
               <span className="text-xs">{reasoningEnabled && supportsReasoning ? "思考已开" : "思考"}</span>
             </Button>
 
