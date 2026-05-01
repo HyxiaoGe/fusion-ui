@@ -16,7 +16,7 @@ jobs:
     timeout-minutes: 30
     env:
       NPM_CONFIG_AUDIT: "false"
-      NPM_CONFIG_CACHE: ${{ runner.temp }}\npm-cache
+      NPM_CONFIG_CACHE: "${{ runner.temp }}\\npm-cache"
       NPM_CONFIG_FUND: "false"
     defaults:
       run:
