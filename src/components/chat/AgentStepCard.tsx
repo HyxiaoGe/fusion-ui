@@ -26,7 +26,7 @@ export default function AgentStepCard({ steps, maxSteps, isStreaming, limitReach
     return (
       <button
         onClick={() => setIsExpanded(true)}
-        className="flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 transition-colors mb-2"
+        className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors duration-fast mb-2"
       >
         <ChevronRight className="w-3 h-3" />
         <span>深度搜索完成（{completedSteps} 步，{totalToolCalls} 次工具调用）</span>
@@ -35,17 +35,17 @@ export default function AgentStepCard({ steps, maxSteps, isStreaming, limitReach
   }
 
   return (
-    <div className="mb-3 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50 overflow-hidden">
+    <div className="mb-3 rounded-lg border border-border bg-muted/30 overflow-hidden">
       {/* 头部 */}
       <button
         onClick={() => setIsExpanded(!isExpanded)}
-        className="w-full flex items-center justify-between px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700/50 transition-colors"
+        className="w-full flex items-center justify-between px-3 py-2 text-sm font-medium text-foreground hover:bg-muted transition-colors duration-fast"
       >
         <div className="flex items-center gap-2">
           {isRunning ? (
-            <Loader2 className="w-3.5 h-3.5 animate-spin text-blue-500" />
+            <Loader2 className="w-3.5 h-3.5 animate-spin text-info motion-reduce:animate-none" />
           ) : (
-            <CheckCircle2 className="w-3.5 h-3.5 text-green-500" />
+            <CheckCircle2 className="w-3.5 h-3.5 text-success" />
           )}
           <span>
             {isRunning
@@ -54,7 +54,7 @@ export default function AgentStepCard({ steps, maxSteps, isStreaming, limitReach
             }
           </span>
           {limitReached && (
-            <span className="text-xs text-amber-500 font-normal">已达上限</span>
+            <span className="text-xs text-warn font-normal">已达上限</span>
           )}
         </div>
         <ChevronDown className={`w-4 h-4 transition-transform ${isExpanded ? '' : '-rotate-90'}`} />
@@ -67,28 +67,28 @@ export default function AgentStepCard({ steps, maxSteps, isStreaming, limitReach
             <div key={agentStep.step} className="flex items-start gap-2 text-xs">
               <div className="mt-0.5 flex-shrink-0">
                 {agentStep.status === 'completed' ? (
-                  <CheckCircle2 className="w-3 h-3 text-green-500" />
+                  <CheckCircle2 className="w-3 h-3 text-success" />
                 ) : (
-                  <Loader2 className="w-3 h-3 animate-spin text-blue-500" />
+                  <Loader2 className="w-3 h-3 animate-spin text-info motion-reduce:animate-none" />
                 )}
               </div>
               <div className="flex-1 min-w-0">
-                <div className="text-gray-500 dark:text-gray-400 mb-0.5">
+                <div className="text-muted-foreground mb-0.5">
                   步骤 {agentStep.step}
                 </div>
                 {agentStep.toolCalls.map((tc) => (
                   <div key={tc.toolCallId} className="flex items-center gap-1.5 text-gray-600 dark:text-gray-300 truncate">
                     {tc.toolName === 'web_search' ? (
-                      <Search className="w-3 h-3 flex-shrink-0 text-blue-500" />
+                      <Search className="w-3 h-3 flex-shrink-0 text-info" />
                     ) : (
-                      <Globe className="w-3 h-3 flex-shrink-0 text-emerald-500" />
+                      <Globe className="w-3 h-3 flex-shrink-0 text-teal" />
                     )}
                     <span className="truncate">{tc.query}</span>
                     {tc.status === 'running' && (
-                      <Loader2 className="w-3 h-3 animate-spin text-gray-400 flex-shrink-0" />
+                      <Loader2 className="w-3 h-3 animate-spin motion-reduce:animate-none text-muted-foreground flex-shrink-0" />
                     )}
                     {tc.status === 'failed' && (
-                      <span className="text-red-500 flex-shrink-0">失败</span>
+                      <span className="text-danger flex-shrink-0">失败</span>
                     )}
                   </div>
                 ))}
