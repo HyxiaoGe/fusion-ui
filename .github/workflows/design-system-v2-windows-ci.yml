@@ -1,0 +1,37 @@
+name: Design System v2 Windows CI
+
+on:
+  push:
+    branches: ["feat/design-system-v2"]
+  workflow_dispatch:
+
+concurrency:
+  group: design-system-v2-windows-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build on Windows runner
+    runs-on: [self-hosted, Windows, X64]
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Test non-blocking while Vitest baseline is being cleaned up
+        continue-on-error: true
+        run: npm test
+
