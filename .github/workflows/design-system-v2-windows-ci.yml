@@ -67,6 +67,12 @@ jobs:
         run: |
           docker push "%IMAGE_NAME%:%GITHUB_SHA%"
 
+      - name: Cleanup local Docker artifacts
+        if: always()
+        run: |
+          docker image rm "%IMAGE_NAME%:%GITHUB_SHA%" 2>NUL
+          docker builder prune --filter "until=72h" -f
+
   deploy-preview:
     name: Deploy preview on dev server
     if: github.ref == 'refs/heads/feat/design-system-v2'
@@ -106,6 +112,16 @@ jobs:
               external: true
           EOF
           docker compose -f docker-compose.design-system-v2.yml up -d
+
+      - name: Cleanup old preview images
+        if: always()
+        run: |
+          current="ghcr.io/hyxiaoge/fusion-ui:${{ github.sha }}"
+          docker images --format '{{.Repository}}:{{.Tag}} {{.ID}}' ghcr.io/hyxiaoge/fusion-ui \
+            | awk -v current="$current" '$1 != current {print $2}' \
+            | sort -u \
+            | xargs -r docker rmi || true
+          docker image prune -f
 
   deploy-dev:
     name: Deploy master on dev server
@@ -152,7 +168,13 @@ jobs:
 
       - name: Cleanup old images
         if: always()
-        run: docker image prune -f
+        run: |
+          current="ghcr.io/hyxiaoge/fusion-ui:${{ github.sha }}"
+          docker images --format '{{.Repository}}:{{.Tag}} {{.ID}}' ghcr.io/hyxiaoge/fusion-ui \
+            | awk -v current="$current" '$1 != current {print $2}' \
+            | sort -u \
+            | xargs -r docker rmi || true
+          docker image prune -f
 
       - name: Push deploy metrics
         if: always()
