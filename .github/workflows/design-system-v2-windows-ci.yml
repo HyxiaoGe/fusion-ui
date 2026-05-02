@@ -56,6 +56,12 @@ jobs:
       - name: Install dependencies
         run: npm ci --no-audit --no-fund --cache "%RUNNER_TEMP%\npm-cache"
 
+      - name: Configure branch-specific public env
+        run: |
+          if "%GITHUB_REF_NAME%"=="feat/design-system-v2" (
+            echo NEXT_PUBLIC_AUTH_CALLBACK_URL=http://fusion-ui-design-system-v2.dev.seanfield.org/auth/callback>>%GITHUB_ENV%
+          )
+
       - name: Build
         run: npm run build
 
