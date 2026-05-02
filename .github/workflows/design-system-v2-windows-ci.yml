@@ -121,7 +121,6 @@ jobs:
             | awk -v current="$current" '$1 != current {print $2}' \
             | sort -u \
             | xargs -r docker rmi || true
-          docker image prune -f
 
   deploy-dev:
     name: Deploy master on dev server
@@ -174,7 +173,6 @@ jobs:
             | awk -v current="$current" '$1 != current {print $2}' \
             | sort -u \
             | xargs -r docker rmi || true
-          docker image prune -f
 
       - name: Push deploy metrics
         if: always()
