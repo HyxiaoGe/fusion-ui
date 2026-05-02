@@ -17,6 +17,8 @@ jobs:
     name: Build on Windows runner
     runs-on: [self-hosted, Windows, X64]
     timeout-minutes: 30
+    outputs:
+      started_at: ${{ steps.pipeline_start.outputs.started_at }}
     env:
       ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
       IMAGE_NAME: ghcr.io/hyxiaoge/fusion-ui
@@ -31,6 +33,11 @@ jobs:
         shell: cmd
 
     steps:
+      - name: Record pipeline start
+        id: pipeline_start
+        run: |
+          for /f %%i in ('powershell -NoProfile -ExecutionPolicy Bypass -Command "[DateTimeOffset]::UtcNow.ToUnixTimeSeconds()"') do echo started_at=%%i>>%GITHUB_OUTPUT%
+
       - name: Checkout
         uses: actions/checkout@v6
 
@@ -81,6 +88,9 @@ jobs:
     timeout-minutes: 10
 
     steps:
+      - name: Record deploy start time
+        run: echo "DEPLOY_START=$(date +%s)" >> "$GITHUB_ENV"
+
       - name: Login to GHCR
         run: echo "${GITHUB_TOKEN}" | docker login ghcr.io -u "${GITHUB_ACTOR}" --password-stdin
         env:
@@ -122,6 +132,21 @@ jobs:
             | sort -u \
             | xargs -r docker rmi || true
 
+      - name: Push CI/CD metrics
+        if: always()
+        run: |
+          bash ~/scripts/push-cicd-metrics.sh \
+            fusion-ui \
+            "${{ github.ref_name }}" \
+            preview \
+            "${{ job.status }}" \
+            "${{ needs.build.outputs.started_at }}" \
+            "ghcr.io/hyxiaoge/fusion-ui:${{ github.sha }}" \
+            "${{ github.sha }}" \
+            "${{ runner.name }}" \
+            fusion-ui-design-system-v2 \
+            "${{ env.DEPLOY_START }}"
+
   deploy-dev:
     name: Deploy master on dev server
     if: github.ref == 'refs/heads/master'
@@ -130,8 +155,8 @@ jobs:
     timeout-minutes: 10
 
     steps:
-      - name: Record start time
-        run: echo "BUILD_START=$(date +%s)" >> "$GITHUB_ENV"
+      - name: Record deploy start time
+        run: echo "DEPLOY_START=$(date +%s)" >> "$GITHUB_ENV"
 
       - name: Login to GHCR
         run: echo "${GITHUB_TOKEN}" | docker login ghcr.io -u "${GITHUB_ACTOR}" --password-stdin
@@ -174,6 +199,17 @@ jobs:
             | sort -u \
             | xargs -r docker rmi || true
 
-      - name: Push deploy metrics
+      - name: Push CI/CD metrics
         if: always()
-        run: bash ~/scripts/push-deploy-metrics.sh fusion-ui master ${{ job.status }} ${{ env.BUILD_START }}
+        run: |
+          bash ~/scripts/push-cicd-metrics.sh \
+            fusion-ui \
+            "${{ github.ref_name }}" \
+            dev \
+            "${{ job.status }}" \
+            "${{ needs.build.outputs.started_at }}" \
+            "ghcr.io/hyxiaoge/fusion-ui:${{ github.sha }}" \
+            "${{ github.sha }}" \
+            "${{ runner.name }}" \
+            fusion-ui \
+            "${{ env.DEPLOY_START }}"
