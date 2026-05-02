@@ -56,10 +56,10 @@ jobs:
       - name: Install dependencies
         run: npm ci --no-audit --no-fund --cache "%RUNNER_TEMP%\npm-cache"
 
-      - name: Configure branch-specific public env
+      - name: Configure preview public env
         run: |
-          if "%GITHUB_REF_NAME%"=="feat/design-system-v2" (
-            echo NEXT_PUBLIC_AUTH_CALLBACK_URL=http://fusion-ui-design-system-v2.dev.seanfield.org/auth/callback>>%GITHUB_ENV%
+          if not "%GITHUB_REF_NAME%"=="master" (
+            echo NEXT_PUBLIC_AUTH_CALLBACK_URL=http://fusion-ui-preview.dev.seanfield.org/auth/callback>>%GITHUB_ENV%
           )
 
       - name: Build
@@ -90,7 +90,7 @@ jobs:
 
   deploy-preview:
     name: Deploy preview on dev server
-    if: github.ref == 'refs/heads/feat/design-system-v2'
+    if: github.ref != 'refs/heads/master'
     needs: build
     runs-on: [self-hosted, Linux, X64]
     timeout-minutes: 10
@@ -108,11 +108,11 @@ jobs:
         run: |
           cd ~/project/fusion
           docker pull ghcr.io/hyxiaoge/fusion-ui:${{ github.sha }}
-          cat > docker-compose.design-system-v2.yml <<'EOF'
+          cat > docker-compose.fusion-ui-preview.yml <<'EOF'
           services:
-            fusion-ui-design-system-v2:
+            fusion-ui-preview:
               image: ghcr.io/hyxiaoge/fusion-ui:${{ github.sha }}
-              container_name: fusion-ui-design-system-v2
+              container_name: fusion-ui-preview
               restart: always
               ports:
                 - "3005:3000"
@@ -129,7 +129,8 @@ jobs:
             postgres_default:
               external: true
           EOF
-          docker compose -f docker-compose.design-system-v2.yml up -d
+          docker rm -f fusion-ui-design-system-v2 2>/dev/null || true
+          docker compose -f docker-compose.fusion-ui-preview.yml up -d
 
       - name: Cleanup old preview images
         if: always()
@@ -152,7 +153,7 @@ jobs:
             "ghcr.io/hyxiaoge/fusion-ui:${{ github.sha }}" \
             "${{ github.sha }}" \
             "${{ needs.build.outputs.runner_name }}" \
-            fusion-ui-design-system-v2 \
+            fusion-ui-preview \
             "${{ env.DEPLOY_START }}"
 
   deploy-dev:
