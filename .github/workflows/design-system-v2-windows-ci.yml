@@ -40,6 +40,22 @@ jobs:
           for /f %%i in ('powershell -NoProfile -ExecutionPolicy Bypass -Command "[DateTimeOffset]::UtcNow.ToUnixTimeSeconds()"') do echo started_at=%%i>>%GITHUB_OUTPUT%
           echo runner_name=${{ runner.name }}>>%GITHUB_OUTPUT%
 
+      - name: Push CI/CD active metric
+        shell: powershell
+        run: |
+          $environment = if ($env:GITHUB_REF_NAME -eq "master") { "dev" } else { "preview" }
+          $branchKey = $env:GITHUB_REF_NAME -replace '[^A-Za-z0-9_.-]', '_'
+          $now = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
+          $metrics = @"
+          # HELP cicd_pipeline_active Whether a CI/CD pipeline is currently active (1=true, 0=false).
+          # TYPE cicd_pipeline_active gauge
+          cicd_pipeline_active{project="fusion-ui",branch="$env:GITHUB_REF_NAME",environment="$environment",runner="${{ runner.name }}"} 1
+          # HELP cicd_pipeline_active_timestamp_seconds Timestamp of the latest CI/CD active-state update.
+          # TYPE cicd_pipeline_active_timestamp_seconds gauge
+          cicd_pipeline_active_timestamp_seconds{project="fusion-ui",branch="$env:GITHUB_REF_NAME",environment="$environment",runner="${{ runner.name }}"} $now
+          "@
+          Invoke-WebRequest -UseBasicParsing -Method Post -Uri "http://192.168.1.10:9092/metrics/job/cicd_active/project_key/fusion-ui/branch_key/$branchKey/environment_key/$environment" -Body $metrics
+
       - name: Checkout
         uses: actions/checkout@v6
 
