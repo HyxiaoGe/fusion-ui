@@ -41,7 +41,6 @@ jobs:
           node-version: 20
 
       - name: Verify Docker access
-        continue-on-error: true
         run: |
           docker version
           docker ps
@@ -69,3 +68,42 @@ jobs:
         run: |
           docker push "%IMAGE_NAME%:design-system-v2"
           docker push "%IMAGE_NAME%:%GITHUB_SHA%"
+
+  deploy-preview:
+    name: Deploy preview on dev server
+    needs: build
+    runs-on: [self-hosted, Linux, X64]
+    timeout-minutes: 10
+
+    steps:
+      - name: Login to GHCR
+        run: echo "${GITHUB_TOKEN}" | docker login ghcr.io -u "${GITHUB_ACTOR}" --password-stdin
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Pull and restart preview
+        run: |
+          cd ~/project/fusion
+          docker pull ghcr.io/hyxiaoge/fusion-ui:${{ github.sha }}
+          cat > docker-compose.design-system-v2.yml <<'EOF'
+          services:
+            fusion-ui-design-system-v2:
+              image: ghcr.io/hyxiaoge/fusion-ui:${{ github.sha }}
+              container_name: fusion-ui-design-system-v2
+              restart: always
+              ports:
+                - "3005:3000"
+              environment:
+                - NODE_ENV=production
+              deploy:
+                resources:
+                  limits:
+                    memory: 256m
+              networks:
+                - postgres_default
+
+          networks:
+            postgres_default:
+              external: true
+          EOF
+          docker compose -f docker-compose.design-system-v2.yml up -d
