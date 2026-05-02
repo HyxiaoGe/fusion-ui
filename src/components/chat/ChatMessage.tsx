@@ -59,6 +59,17 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, files, isLastMessage
 
   const [localReasoningVisible, setLocalReasoningVisible] = useState(message.isReasoningVisible || false);
   const [sourcesSidebarOpen, setSourcesSidebarOpen] = useState(false);
+  const [citationHighlight, setCitationHighlight] = useState<{ index: number; tick: number }>({ index: -1, tick: 0 });
+
+  const handleCitationClick = (index: number) => {
+    setSourcesSidebarOpen(true);
+    setCitationHighlight(prev => ({ index, tick: prev.tick + 1 }));
+  };
+
+  const handleSourcesClose = () => {
+    setSourcesSidebarOpen(false);
+    setCitationHighlight({ index: -1, tick: 0 });
+  };
   const [viewingImage, setViewingImage] = useState<FileBlockType | null>(null);
   const activeChatId = useAppSelector(state => state.stream.conversationId);
 
@@ -257,7 +268,7 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, files, isLastMessage
     >
       <div className={cn(
         'flex flex-col space-y-1',
-        isEditing ? 'w-full max-w-2xl' : isUser ? 'max-w-[70%]' : 'max-w-[85%]',
+        isEditing ? 'w-full max-w-2xl' : isUser ? 'max-w-[75%]' : 'max-w-[85%]',
         isUser ? 'items-end' : 'items-start'
       )}>
         {/* AI 消息头部 */}
@@ -296,22 +307,33 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, files, isLastMessage
                     />
                   </div>
                 ) : (
-                  <div key={block.id} className="flex items-center space-x-2 rounded-md border border-border p-2 bg-background shadow-sm">
-                    <div className="shrink-0">
-                      <div className="w-10 h-10 flex items-center justify-center bg-muted/20 rounded-md border">
-                        {isImage ? (
-                          <ImageIcon className="h-8 w-8 text-blue-500" />
-                        ) : block.mime_type.includes('pdf') ? (
-                          <FileIcon className="h-8 w-8 text-red-500" />
-                        ) : (
-                          <FileIcon className="h-8 w-8 text-muted-foreground" />
-                        )}
+                  (() => {
+                    const ext = (block.filename.split('.').pop() || '').toUpperCase();
+                    const labelText = block.mime_type.includes('pdf')
+                      ? 'PDF'
+                      : (ext && ext.length > 0 && ext.length <= 4 ? ext : 'FILE');
+                    return (
+                      <div key={block.id} className="flex items-center space-x-2 rounded-md border border-border p-2 bg-background shadow-sm">
+                        <div className="shrink-0">
+                          <div className="relative w-10 h-10 flex items-center justify-center bg-muted/20 rounded-md border">
+                            {isImage ? (
+                              <ImageIcon className="h-8 w-8 text-blue-500" />
+                            ) : block.mime_type.includes('pdf') ? (
+                              <FileIcon className="h-8 w-8 text-red-500" />
+                            ) : (
+                              <FileIcon className="h-8 w-8 text-muted-foreground" />
+                            )}
+                            <span className="absolute -bottom-1 -right-1 px-1 py-0 text-[8px] font-bold leading-tight text-primary-foreground bg-primary rounded">
+                              {labelText}
+                            </span>
+                          </div>
+                        </div>
+                        <div className="min-w-0">
+                          <p className="text-xs font-medium truncate max-w-[180px]">{block.filename}</p>
+                        </div>
                       </div>
-                    </div>
-                    <div className="min-w-0">
-                      <p className="text-xs font-medium truncate max-w-[180px]">{block.filename}</p>
-                    </div>
-                  </div>
+                    );
+                  })()
                 );
               })}
             </div>
@@ -321,7 +343,7 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, files, isLastMessage
         <div>
           <div className={cn(
             isUser
-              ? 'rounded-2xl px-4 py-2 bg-primary/[0.06] dark:bg-primary/[0.12] text-foreground'
+              ? 'rounded-2xl px-4 py-2.5 bg-primary/10 dark:bg-primary/15 text-foreground'
               : '',
             isEditing && 'w-full'
           )}>
@@ -480,10 +502,11 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, files, isLastMessage
                   content={displayText || ''}
                   className="prose-headings:border-0 prose-hr:border-border/30"
                   sources={searchSources}
+                  onCitationClick={searchSources.length > 0 ? handleCitationClick : undefined}
                 />
 
                 {isStreaming && isLastMessage && !isThinkingPending && !showSearching && (
-                  <span className="animate-pulse">▌</span>
+                  <span className="animate-pulse motion-reduce:animate-none">▌</span>
                 )}
 
                 {/* 参考资料入口 */}
@@ -500,23 +523,23 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, files, isLastMessage
 
             {/* AI 消息操作栏 */}
             {!isUser && !isStreaming && (
-              <div className="flex items-center gap-1 h-6 mt-1 lg:opacity-0 lg:group-hover:opacity-100 transition-opacity duration-150 lg:pointer-events-none lg:group-hover:pointer-events-auto">
-                <span className="text-[10px] text-muted-foreground/50 mr-1">
+              <div className="flex items-center gap-1 h-8 mt-1 lg:opacity-0 lg:group-hover:opacity-100 transition-opacity duration-150 lg:pointer-events-none lg:group-hover:pointer-events-auto">
+                <span className="text-xs text-muted-foreground/70 mr-1">
                   {formatTime(message.timestamp)}
                 </span>
                 <TooltipProvider delayDuration={300}>
                   <Tooltip>
                     <TooltipTrigger asChild>
-                      <Button variant="ghost" size="icon" className="h-6 w-6 text-muted-foreground hover:text-foreground" onClick={handleCopyMessage}>
-                        {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+                      <Button variant="ghost" size="icon" className="h-8 w-8 rounded-md text-muted-foreground hover:bg-muted hover:text-foreground transition-colors duration-fast" onClick={handleCopyMessage}>
+                        {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
                       </Button>
                     </TooltipTrigger>
                     <TooltipContent side="bottom"><p>{copied ? '已复制' : '复制'}</p></TooltipContent>
                   </Tooltip>
                   <Tooltip>
                     <TooltipTrigger asChild>
-                      <Button variant="ghost" size="icon" className="h-6 w-6 text-muted-foreground hover:text-foreground" onClick={() => onRetry && onRetry(message.id)}>
-                        <RefreshCw className="h-3.5 w-3.5" />
+                      <Button variant="ghost" size="icon" className="h-8 w-8 rounded-md text-muted-foreground hover:bg-muted hover:text-foreground transition-colors duration-fast" onClick={() => onRetry && onRetry(message.id)}>
+                        <RefreshCw className="h-4 w-4" />
                       </Button>
                     </TooltipTrigger>
                     <TooltipContent side="bottom"><p>重新生成</p></TooltipContent>
@@ -547,15 +570,15 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, files, isLastMessage
 
         {/* 用户消息操作 */}
         {isUser && !isEditing && (
-          <div className="flex items-center gap-0.5 h-6 mt-0.5 lg:opacity-0 lg:group-hover:opacity-100 transition-opacity duration-150 lg:pointer-events-none lg:group-hover:pointer-events-auto">
-            <span className="text-[10px] text-muted-foreground/50 mr-1">
+          <div className="flex items-center gap-0.5 h-8 mt-0.5 lg:opacity-0 lg:group-hover:opacity-100 transition-opacity duration-150 lg:pointer-events-none lg:group-hover:pointer-events-auto">
+            <span className="text-xs text-muted-foreground/70 mr-1">
               {formatTime(message.timestamp)}
             </span>
             <TooltipProvider delayDuration={300}>
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <Button variant="ghost" size="icon" className="h-6 w-6 text-muted-foreground hover:text-foreground" onClick={() => setIsEditing(true)}>
-                    <Edit2 className="h-3.5 w-3.5" />
+                  <Button variant="ghost" size="icon" className="h-8 w-8 rounded-md text-muted-foreground hover:bg-muted hover:text-foreground transition-colors duration-fast" onClick={() => setIsEditing(true)}>
+                    <Edit2 className="h-4 w-4" />
                   </Button>
                 </TooltipTrigger>
                 <TooltipContent side="bottom"><p>编辑</p></TooltipContent>
@@ -563,8 +586,8 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, files, isLastMessage
               {onRetry && (
                 <Tooltip>
                   <TooltipTrigger asChild>
-                    <Button variant="ghost" size="icon" className="h-6 w-6 text-muted-foreground hover:text-foreground" onClick={() => onRetry(message.id)}>
-                      <RefreshCw className="h-3.5 w-3.5" />
+                    <Button variant="ghost" size="icon" className="h-8 w-8 rounded-md text-muted-foreground hover:bg-muted hover:text-foreground transition-colors duration-fast" onClick={() => onRetry(message.id)}>
+                      <RefreshCw className="h-4 w-4" />
                     </Button>
                   </TooltipTrigger>
                   <TooltipContent side="bottom"><p>重新发送</p></TooltipContent>
@@ -589,7 +612,9 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, files, isLastMessage
         <SourcesSidebar
           sources={searchSources}
           isOpen={sourcesSidebarOpen}
-          onClose={() => setSourcesSidebarOpen(false)}
+          onClose={handleSourcesClose}
+          highlightIndex={citationHighlight.index}
+          highlightTick={citationHighlight.tick}
         />
       )}
 

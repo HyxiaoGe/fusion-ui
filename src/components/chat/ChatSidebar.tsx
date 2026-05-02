@@ -2,7 +2,7 @@
 
 import React, { useRef, useState, useEffect, useCallback, useMemo } from "react";
 import { usePathname } from "next/navigation";
-import { RefreshCwIcon, Search, X } from "lucide-react";
+import { RefreshCwIcon, Search, X, Sun, Moon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { UserAvatarMenu } from "@/components/layouts/UserAvatarMenu";
 import { Button } from "@/components/ui/button";
@@ -12,7 +12,9 @@ import ChatSidebarHeader from "./sidebar/ChatSidebarHeader";
 import ChatList from "./sidebar/ChatList";
 import { useConversationList } from "@/hooks/useConversationList";
 import { useSidebarActions } from "@/hooks/useSidebarActions";
-import { useAppSelector } from "@/redux/hooks";
+import { useAppSelector, useAppDispatch } from "@/redux/hooks";
+import { setThemeMode } from "@/redux/slices/themeSlice";
+import { useResolvedTheme } from "@/lib/hooks/useResolvedTheme";
 import type { Conversation } from "@/types/conversation";
 import { formatInTimeZone } from 'date-fns-tz';
 
@@ -39,6 +41,17 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ onNewChat, activeChatIdOverri
     setRenameValue,
   } = useSidebarActions();
   const { models } = useAppSelector((state) => state.models);
+  const dispatch = useAppDispatch();
+  const themeMode = useAppSelector((state) => state.theme.mode);
+  const resolvedTheme = useResolvedTheme(themeMode);
+  const isDark = resolvedTheme === 'dark';
+
+  const toggleTheme = useCallback(() => {
+    // 快捷切换：light/dark 互换。System 模式由 SettingsDialog 管理。
+    // 在 system 模式下点此按钮会"逃出"system 切到反向具体值。
+    dispatch(setThemeMode(isDark ? 'light' : 'dark'));
+  }, [dispatch, isDark]);
+
   const routeConversationId = pathname?.startsWith('/chat/') ? pathname.split('/chat/')[1] : null;
   const activeChatId = activeChatIdOverride === undefined ? routeConversationId : activeChatIdOverride;
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -221,8 +234,17 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ onNewChat, activeChatIdOverri
       )}
 
       {/* 底部用户区（固定不随列表滚动） */}
-      <div className="mt-auto border-t pt-2 px-2 pb-3">
+      <div className="flex items-center justify-between gap-2 mt-auto border-t pt-2 px-2 pb-3">
         <UserAvatarMenu />
+        <button
+          type="button"
+          onClick={toggleTheme}
+          className="h-8 w-8 grid place-items-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground transition-colors duration-fast"
+          aria-label={isDark ? '切换到亮色模式' : '切换到暗色模式'}
+          title={isDark ? '切换到亮色模式' : '切换到暗色模式'}
+        >
+          {isDark ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+        </button>
       </div>
 
       <DeleteChatDialog

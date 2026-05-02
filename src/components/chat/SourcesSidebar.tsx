@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { X } from 'lucide-react';
 import type { SearchSourceSummary } from '@/types/conversation';
 
@@ -8,9 +8,20 @@ interface SourcesSidebarProps {
   sources: SearchSourceSummary[];
   isOpen: boolean;
   onClose: () => void;
+  highlightIndex?: number;
+  // 每次"请求高亮"都不同，用于在 highlightIndex 不变时仍能触发滚动
+  highlightTick?: number;
 }
 
-const SourcesSidebar: React.FC<SourcesSidebarProps> = ({ sources, isOpen, onClose }) => {
+const SourcesSidebar: React.FC<SourcesSidebarProps> = ({
+  sources,
+  isOpen,
+  onClose,
+  highlightIndex,
+  highlightTick,
+}) => {
+  const itemRefs = useRef<Array<HTMLAnchorElement | null>>([]);
+
   // ESC 关闭
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -21,6 +32,19 @@ const SourcesSidebar: React.FC<SourcesSidebarProps> = ({ sources, isOpen, onClos
       return () => document.removeEventListener('keydown', handleKeyDown);
     }
   }, [isOpen, onClose]);
+
+  // 高亮请求触发：滚动到对应卡片
+  useEffect(() => {
+    if (!isOpen) return;
+    if (typeof highlightIndex !== 'number' || highlightIndex < 0) return;
+    const el = itemRefs.current[highlightIndex];
+    if (!el) return;
+    // 等 sidebar 滑入再滚动，避免 transform 期间定位偏移
+    const t = setTimeout(() => {
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }, 100);
+    return () => clearTimeout(t);
+  }, [isOpen, highlightIndex, highlightTick]);
 
   return (
     <>
@@ -33,7 +57,7 @@ const SourcesSidebar: React.FC<SourcesSidebarProps> = ({ sources, isOpen, onClos
       )}
 
       {/* 侧边栏 */}
-      <div className={`fixed top-0 right-0 h-full w-[360px] bg-background border-l border-border z-50 transform transition-transform duration-300 ease-in-out ${
+      <div className={`fixed top-0 right-0 h-full w-[400px] bg-background border-l border-border z-50 transform transition-transform duration-300 ease-in-out ${
         isOpen ? 'translate-x-0' : 'translate-x-full'
       }`}>
         {/* 头部 */}
@@ -57,16 +81,24 @@ const SourcesSidebar: React.FC<SourcesSidebarProps> = ({ sources, isOpen, onClos
               domain = source.url;
             }
 
+            const isHighlighted = index === highlightIndex;
             return (
               <a
                 key={index}
+                ref={(el) => { itemRefs.current[index] = el; }}
                 href={source.url}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="flex gap-3 px-4 py-3 border-b border-border/50 hover:bg-muted/30 transition-colors group"
+                className={`flex gap-3 px-4 py-3 border-b border-border/50 hover:bg-muted transition-colors group ${
+                  isHighlighted
+                    ? 'bg-info-bg border-l-2 border-l-info pl-[14px]'
+                    : 'border-l-2 border-l-transparent'
+                }`}
               >
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium line-clamp-2 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
+                  <p className={`text-sm font-medium line-clamp-2 transition-colors ${
+                    isHighlighted ? 'text-info' : 'group-hover:text-info'
+                  }`}>
                     {source.title}
                   </p>
                   <div className="flex items-center gap-1.5 mt-1.5">
@@ -81,7 +113,9 @@ const SourcesSidebar: React.FC<SourcesSidebarProps> = ({ sources, isOpen, onClos
                     <span className="text-[10px] text-muted-foreground">{domain}</span>
                   </div>
                 </div>
-                <span className="text-xs text-muted-foreground/50 shrink-0 mt-0.5">{index + 1}</span>
+                <span className={`text-xs shrink-0 mt-0.5 ${
+                  isHighlighted ? 'text-info font-medium' : 'text-muted-foreground/50'
+                }`}>{index + 1}</span>
               </a>
             );
           })}

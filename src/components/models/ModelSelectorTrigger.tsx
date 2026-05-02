@@ -23,30 +23,27 @@ const ModelSelectorTrigger = forwardRef<HTMLButtonElement, ModelSelectorTriggerP
         ref={ref}
         disabled={disabled}
         className={cn(
-          "inline-flex items-center gap-2 pl-1.5 pr-3 py-1 rounded-lg border text-xs transition-colors duration-150",
-          "text-foreground",
-          disabled
-            ? "cursor-default opacity-60"
-            : "cursor-pointer hover:bg-accent",
-          isOpen ? "bg-accent border-primary/30" : "border-border",
+          "inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border border-border bg-bg-elevated hover:bg-muted text-sm text-foreground transition-colors duration-fast",
+          disabled && "cursor-default opacity-60",
+          !disabled && "cursor-pointer",
+          isOpen && "bg-muted",
         )}
         {...props}
       >
         {model ? (
           <>
-            <ProviderIcon providerId={model.provider} size={22} className="rounded-md" />
+            <ProviderIcon providerId={model.provider} size={16} className="rounded-md" />
             <div className="flex flex-col items-start leading-tight">
-              <span className="font-semibold text-xs truncate max-w-[140px]">{model.name}</span>
+              <span className="font-semibold text-sm truncate max-w-[140px]">{model.name}</span>
               <span className="text-[9px] text-muted-foreground">{providerName}</span>
             </div>
           </>
         ) : (
-          <span className="px-1">选择模型</span>
+          <span className="px-1 text-sm">选择模型</span>
         )}
         <ChevronUp
-          size={12}
           className={cn(
-            "transition-transform duration-150 shrink-0 text-muted-foreground",
+            "w-3 h-3 text-muted-foreground transition-transform duration-fast shrink-0",
             isOpen ? "rotate-0" : "rotate-180",
           )}
         />

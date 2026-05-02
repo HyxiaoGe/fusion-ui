@@ -13,7 +13,6 @@ const SourcesPanel: React.FC<SourcesPanelProps> = ({ sources }) => {
 
   return (
     <div className="flex items-center gap-1.5 flex-wrap mb-3">
-      <span className="text-[10px] text-muted-foreground/60 mr-0.5">来源</span>
       {sources.map((source, index) => {
         let domain = '';
         try {
@@ -30,23 +29,23 @@ const SourcesPanel: React.FC<SourcesPanelProps> = ({ sources }) => {
                   href={source.url}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1.5 px-2 py-1 rounded-full border border-border/40 bg-muted/20 hover:bg-muted/40 transition-colors text-[11px] text-muted-foreground hover:text-foreground"
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-border/40 bg-bg-subtle hover:bg-muted text-xs text-muted-foreground hover:text-foreground transition-colors duration-fast"
                 >
                   {source.favicon ? (
                     <img
                       src={source.favicon}
                       alt=""
-                      className="h-3.5 w-3.5 rounded-sm object-contain shrink-0"
+                      className="w-3 h-3 rounded-sm object-contain shrink-0"
                       onError={(e) => {
                         e.currentTarget.style.display = 'none';
                       }}
                     />
                   ) : (
-                    <span className="flex items-center justify-center h-3.5 w-3.5 rounded-full bg-blue-500/10 text-blue-600 dark:text-blue-400 text-[9px] font-medium shrink-0">
+                    <span className="flex items-center justify-center h-3.5 w-3.5 rounded-full bg-info/10 text-[9px] font-bold text-info shrink-0">
                       {index + 1}
                     </span>
                   )}
-                  <span className="truncate max-w-[100px]">{domain}</span>
+                  <span className="truncate max-w-[100px] text-fg-secondary">{domain}</span>
                 </a>
               </TooltipTrigger>
               <TooltipContent side="top" className="max-w-[280px]">

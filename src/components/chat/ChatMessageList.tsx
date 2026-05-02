@@ -116,9 +116,9 @@ const ChatMessageList: React.FC<ChatMessageListProps> = ({
     };
   }, [sortedMessages.length]);
 
-  // 流式内容长度，用于触发流式期间的自动滚动
-  const streamContentLength = useAppSelector(
-    state => isStreaming ? state.stream.blockOrder.length : 0
+  // 流式内容信号：打字机推进字符数 + 块数量，覆盖 token 追加和新块出现两种情况
+  const streamScrollSignal = useAppSelector(
+    state => isStreaming ? state.stream.displayedTextLength + state.stream.blockOrder.length : 0
   );
 
   useEffect(() => {
@@ -131,10 +131,10 @@ const ChatMessageList: React.FC<ChatMessageListProps> = ({
     }
   }, [messages.length, isStreaming]);
 
-  // 流式期间：content 增长时自动滚动（节流，避免过于频繁）
+  // 流式期间：内容增长时自动滚动（节流，避免过于频繁）
   const lastScrollTimeRef = useRef(0);
   useEffect(() => {
-    if (!isStreaming || streamContentLength === 0) return;
+    if (!isStreaming || streamScrollSignal === 0) return;
     if (!shouldStickToBottomRef.current) return;
 
     const now = Date.now();
@@ -142,7 +142,7 @@ const ChatMessageList: React.FC<ChatMessageListProps> = ({
     lastScrollTimeRef.current = now;
 
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [isStreaming, streamContentLength]);
+  }, [isStreaming, streamScrollSignal]);
 
   const statusText = useMemo(() => {
     if (sortedMessages.length === 0) return null;

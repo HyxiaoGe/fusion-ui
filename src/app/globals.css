@@ -95,6 +95,81 @@
   --color-sidebar-ring: var(--sidebar-ring);
   --select-content-width: 280px;
   --select-dropdown-max-height: 400px;
+
+  /* === Fusion Design System v2 — 新增 token (additive, 不影响现有) === */
+
+  /* Type scale (desktop-density) */
+  --text-2xs: 10px;
+  --text-fdv2-xs: 11px;
+  --text-fdv2-sm: 12px;
+  --text-fdv2-base: 13px;
+  --text-md: 14px;
+  --text-fdv2-lg: 16px;
+  --text-fdv2-xl: 20px;
+  --text-fdv2-2xl: 24px;
+  --text-fdv2-3xl: 32px;
+  --leading-tight: 1.2;
+  --leading-snug: 1.35;
+  --leading-normal: 1.55;
+  --leading-relaxed: 1.7;
+
+  /* Spacing scale (4px base) */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
+  --space-16: 64px;
+
+  /* Shadow ladder (restrained, no glow) */
+  /* 注意：shadow-xs 已被 shadcn UI（button/input/textarea/radio/select）用作 className，
+     Tailwind 默认未定义它所以现状是 no-op；用 -fdv2 前缀避免桥接后激活成真 shadow 引发回归 */
+  --shadow-fdv2-xs: 0 1px 0 0 oklch(0 0 0 / 0.04);
+  --shadow-fdv2-sm: 0 1px 2px 0 oklch(0 0 0 / 0.05);
+  --shadow-fdv2-md: 0 2px 8px 0 oklch(0 0 0 / 0.08);
+  --shadow-fdv2-lg: 0 8px 24px -4px oklch(0 0 0 / 0.10);
+  --shadow-popover: 0 10px 32px -6px oklch(0 0 0 / 0.18);
+
+  /* Motion */
+  --ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-fdv2-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --duration-fast: 120ms;
+  --duration-base: 200ms;
+  --duration-slow: 300ms;
+
+  /* 语义色 — info (engineer blue) */
+  --info: oklch(0.55 0.18 260);
+  --info-bg: oklch(0.97 0.015 260);
+  --info-border: oklch(0.92 0.025 260);
+
+  /* 语义色 — success (green) */
+  --success: oklch(0.62 0.16 152);
+  --success-bg: oklch(0.97 0.025 152);
+  --success-border: oklch(0.9 0.04 152);
+
+  /* 语义色 — warn (amber) */
+  --warn: oklch(0.72 0.155 70);
+  --warn-bg: oklch(0.97 0.04 85);
+  --warn-border: oklch(0.91 0.06 85);
+
+  /* 语义色 — danger (red) */
+  --danger: oklch(0.577 0.245 27);
+  --danger-bg: oklch(0.96 0.03 27);
+  --danger-border: oklch(0.9 0.06 27);
+
+  /* 语义色 — teal */
+  --teal: oklch(0.65 0.12 180);
+
+  /* bg/fg 细分 */
+  --bg-subtle: oklch(0.985 0 0);
+  --bg-elevated: oklch(1 0 0);
+  --fg-secondary: oklch(0.35 0 0);
+  --fg-subtle: oklch(0.7 0 0);
+  --border-strong: oklch(0.85 0 0);
 }
 
 .dark {
@@ -108,13 +183,13 @@
   --primary-foreground: oklch(0.985 0 0);
   --secondary: oklch(0.269 0 0);
   --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
+  --muted: oklch(0.225 0 0);
+  --muted-foreground: oklch(0.74 0 0);
   --accent: oklch(0.275 0.018 260);
   --accent-foreground: oklch(0.985 0 0);
   --destructive: oklch(0.396 0.141 25.723);
   --destructive-foreground: oklch(0.637 0.237 25.331);
-  --border: oklch(0.269 0 0);
+  --border: oklch(0.32 0 0);
   --input: oklch(0.269 0 0);
   --ring: oklch(0.5 0.1 260);
   --chart-1: oklch(0.488 0.243 264.376);
@@ -130,6 +205,31 @@
   --sidebar-accent-foreground: oklch(0.985 0 0);
   --sidebar-border: oklch(0.269 0 0);
   --sidebar-ring: oklch(0.439 0 0);
+
+  /* === Fusion Design System v2 — dark mode 新增 token === */
+  --info: oklch(0.7 0.16 260);
+  --info-bg: oklch(0.245 0.04 260);
+  --info-border: oklch(0.36 0.06 260);
+
+  --success: oklch(0.74 0.16 152);
+  --success-bg: oklch(0.245 0.05 152);
+  --success-border: oklch(0.36 0.07 152);
+
+  --warn: oklch(0.8 0.16 80);
+  --warn-bg: oklch(0.27 0.06 80);
+  --warn-border: oklch(0.4 0.1 80);
+
+  --danger: oklch(0.7 0.2 27);
+  --danger-bg: oklch(0.27 0.07 27);
+  --danger-border: oklch(0.4 0.13 27);
+
+  --teal: oklch(0.74 0.13 180);
+
+  --bg-subtle: oklch(0.185 0.012 260);
+  --bg-elevated: oklch(0.18 0 0);
+  --fg-secondary: oklch(0.86 0 0);
+  --fg-subtle: oklch(0.58 0 0);
+  --border-strong: oklch(0.42 0 0);
 }
 
 .typing::after {

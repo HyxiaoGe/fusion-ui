@@ -1,13 +1,11 @@
 name: Deploy to Dev Server
 on:
-  push:
-    branches: ["master"]
   workflow_dispatch:
 jobs:
   deploy:
-    runs-on: self-hosted
+    runs-on: [self-hosted, Linux, X64]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Record start time
         run: echo "BUILD_START=$(date +%s)" >> $GITHUB_ENV
@@ -29,7 +27,6 @@ jobs:
           exit 1
       - name: Cleanup
         run: |
-          docker image prune -f
           docker builder prune --filter "until=72h" -f
 
       - name: Push deploy metrics
