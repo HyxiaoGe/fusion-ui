@@ -69,7 +69,7 @@ export default function AgentStepCard({ steps, maxSteps, isStreaming, limitReach
                 {agentStep.status === 'completed' ? (
                   <CheckCircle2 className="w-3 h-3 text-success" />
                 ) : (
-                  <Loader2 className="w-3 h-3 animate-spin text-info motion-reduce:animate-none" />
+                  <span className="block w-2 h-2 rounded-full bg-info/70" />
                 )}
               </div>
               <div className="flex-1 min-w-0">
@@ -83,10 +83,9 @@ export default function AgentStepCard({ steps, maxSteps, isStreaming, limitReach
                     ) : (
                       <Globe className="w-3 h-3 flex-shrink-0 text-teal" />
                     )}
-                    <span className="truncate">{tc.query}</span>
-                    {tc.status === 'running' && (
-                      <Loader2 className="w-3 h-3 animate-spin motion-reduce:animate-none text-muted-foreground flex-shrink-0" />
-                    )}
+                    <span className={`truncate${tc.status === 'running' ? ' text-muted-foreground' : ''}`}>
+                      {tc.query}
+                    </span>
                     {tc.status === 'failed' && (
                       <span className="text-danger flex-shrink-0">失败</span>
                     )}
