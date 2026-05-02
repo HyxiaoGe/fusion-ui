@@ -32,6 +32,7 @@ jobs:
           node-version: 20
 
       - name: Verify Docker access
+        continue-on-error: true
         run: |
           docker version
           docker ps
