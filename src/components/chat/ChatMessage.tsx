@@ -59,6 +59,17 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, files, isLastMessage
 
   const [localReasoningVisible, setLocalReasoningVisible] = useState(message.isReasoningVisible || false);
   const [sourcesSidebarOpen, setSourcesSidebarOpen] = useState(false);
+  const [citationHighlight, setCitationHighlight] = useState<{ index: number; tick: number }>({ index: -1, tick: 0 });
+
+  const handleCitationClick = (index: number) => {
+    setSourcesSidebarOpen(true);
+    setCitationHighlight(prev => ({ index, tick: prev.tick + 1 }));
+  };
+
+  const handleSourcesClose = () => {
+    setSourcesSidebarOpen(false);
+    setCitationHighlight({ index: -1, tick: 0 });
+  };
   const [viewingImage, setViewingImage] = useState<FileBlockType | null>(null);
   const activeChatId = useAppSelector(state => state.stream.conversationId);
 
@@ -491,6 +502,7 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, files, isLastMessage
                   content={displayText || ''}
                   className="prose-headings:border-0 prose-hr:border-border/30"
                   sources={searchSources}
+                  onCitationClick={searchSources.length > 0 ? handleCitationClick : undefined}
                 />
 
                 {isStreaming && isLastMessage && !isThinkingPending && !showSearching && (
@@ -600,7 +612,9 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, files, isLastMessage
         <SourcesSidebar
           sources={searchSources}
           isOpen={sourcesSidebarOpen}
-          onClose={() => setSourcesSidebarOpen(false)}
+          onClose={handleSourcesClose}
+          highlightIndex={citationHighlight.index}
+          highlightTick={citationHighlight.tick}
         />
       )}
 
