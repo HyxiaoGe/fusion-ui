@@ -1,4 +1,4 @@
-name: Fusion UI Windows CI
+name: Fusion UI Build & Deploy
 
 on:
   push:
@@ -9,7 +9,7 @@ permissions:
   packages: write
 
 concurrency:
-  group: fusion-ui-windows-ci-${{ github.ref }}
+  group: fusion-ui-build-deploy-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -216,6 +216,8 @@ jobs:
             postgres_default:
               external: true
           EOF
+          # 兜底：清掉旧 compose project 持有的同名容器，避免首次切换 GHCR 时容器名冲突
+          docker rm -f fusion-ui 2>/dev/null || true
           docker compose -f docker-compose.fusion-ui-ghcr.yml up -d
 
       - name: Cleanup old images
