@@ -72,6 +72,67 @@ describe('conversationSlice', () => {
     ]);
   });
 
+  it('preserves previously loaded pages when refreshing the first page', () => {
+    // 模拟：用户点了"显示更多"加载到第 2 页，listIds 里有 15 条
+    const initialState = {
+      byId: Object.fromEntries(
+        Array.from({ length: 15 }, (_, i) => {
+          const id = `conv-${i + 1}`;
+          return [id, createConversation({ id, title: `Old ${id}`, updatedAt: i + 1 })];
+        })
+      ),
+      listIds: Array.from({ length: 15 }, (_, i) => `conv-${i + 1}`),
+      pagination: {
+        currentPage: 2,
+        pageSize: 10,
+        totalPages: 2,
+        totalCount: 15,
+        hasNext: false,
+        hasPrev: true,
+      },
+      isLoadingList: false,
+      isLoadingMore: false,
+      listError: null,
+      conversationListVersion: 1,
+      hydrationStatus: {},
+      hydrationError: {},
+      pendingConversationId: null,
+      animatingTitleId: null,
+      reasoningEnabled: true,
+      globalError: null,
+    };
+
+    // requestConversationListRefresh 后触发 fetchList(1, 10) 只拉第 1 页
+    const nextState = reducer(
+      initialState as ReturnType<typeof reducer>,
+      setConversationList({
+        conversations: Array.from({ length: 10 }, (_, i) => {
+          const id = `conv-${i + 1}`;
+          return createConversation({ id, title: `Updated ${id}`, updatedAt: 100 + i });
+        }),
+        pagination: {
+          currentPage: 1,
+          pageSize: 10,
+          totalPages: 2,
+          totalCount: 15,
+          hasNext: true,
+          hasPrev: false,
+        },
+      })
+    );
+
+    // 第 2 页加载的 ID（11~15）必须保留
+    expect(nextState.listIds).toContain('conv-11');
+    expect(nextState.listIds).toContain('conv-15');
+    expect(nextState.listIds).toHaveLength(15);
+    // 第 1 页的元数据被更新
+    expect(nextState.byId['conv-1'].title).toBe('Updated conv-1');
+    // pagination：currentPage 保留之前的（不退回到 1）
+    expect(nextState.pagination?.currentPage).toBe(2);
+    // hasNext 按已加载 vs total 重算（15 条已加载 = totalCount → false）
+    expect(nextState.pagination?.hasNext).toBe(false);
+  });
+
   it('materializes a pending conversation and moves it to the top', () => {
     const initialState = {
       byId: {

@@ -47,7 +47,11 @@ const conversationSlice = createSlice({
       action: PayloadAction<{ conversations: Conversation[]; pagination: Pagination }>
     ) {
       const { conversations, pagination } = action.payload;
-      state.listIds = conversations.map((conversation) => conversation.id);
+      // 合并模式：新拉的第 1 页 ID 放前，保留之前 loadMore 加载的后续页 ID（去重）
+      // 否则 refresh（如发完消息）会把已加载的第 2/3 页全丢掉，列表"瞬间收起"
+      const newIds = conversations.map((conversation) => conversation.id);
+      const preservedTail = state.listIds.filter((id) => !newIds.includes(id));
+      state.listIds = [...newIds, ...preservedTail];
       conversations.forEach((conversation) => {
         const existing = state.byId[conversation.id];
         if (existing) {
@@ -64,7 +68,16 @@ const conversationSlice = createSlice({
           state.byId[conversation.id] = conversation;
         }
       });
-      state.pagination = pagination;
+      // pagination：如果已存在，保留之前的 currentPage（可能是 loadMore 后的第 2/3 页），
+      // 只更新 totalCount/totalPages，hasNext 按当前已加载条数与总数对比
+      state.pagination = state.pagination
+        ? {
+            ...state.pagination,
+            totalCount: pagination.totalCount,
+            totalPages: pagination.totalPages,
+            hasNext: state.listIds.length < pagination.totalCount,
+          }
+        : pagination;
       state.isLoadingList = false;
       state.listError = null;
     },
