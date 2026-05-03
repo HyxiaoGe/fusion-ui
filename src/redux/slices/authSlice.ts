@@ -1,6 +1,6 @@
 import { createSlice, PayloadAction, createAsyncThunk } from "@reduxjs/toolkit";
 import { jwtDecode } from "jwt-decode";
-import { fetchUserProfileAPI, UserProfile } from '../../lib/api/user';
+import { fetchUserProfileAPI, updateUserSettingsAPI, UserProfile } from '../../lib/api/user';
 import { clearAuthStorage, getStoredAccessToken } from '@/lib/auth/authService';
 
 interface AuthState {
@@ -31,6 +31,7 @@ function buildTokenUser(decoded: DecodedToken): UserProfile {
     email,
     nickname: null,
     mobile: null,
+    system_prompt: '',
   };
 }
 
@@ -63,15 +64,11 @@ const getInitialAuthState = (): AuthState => {
     
     if (token) {
       const decoded: DecodedToken = jwtDecode(token);
-      
+
       // 检查token是否还有效
       if (decoded.exp * 1000 > Date.now()) {
-        const user: UserProfile = userProfile
-          ? JSON.parse(userProfile)
-          : buildTokenUser(decoded);
-
         const parsedUser: UserProfile = userProfile
-          ? JSON.parse(userProfile)
+          ? { system_prompt: '', ...JSON.parse(userProfile) }
           : buildTokenUser(decoded);
 
         return {
@@ -101,6 +98,18 @@ export const fetchUserProfile = createAsyncThunk(
     try {
       const userProfile = await fetchUserProfileAPI();
       return userProfile;
+    } catch (error: any) {
+      return rejectWithValue(error.message);
+    }
+  }
+);
+
+export const updateUserSystemPrompt = createAsyncThunk(
+  'auth/updateUserSystemPrompt',
+  async (systemPrompt: string, { rejectWithValue }) => {
+    try {
+      const result = await updateUserSettingsAPI(systemPrompt);
+      return result.system_prompt;
     } catch (error: any) {
       return rejectWithValue(error.message);
     }
@@ -201,6 +210,15 @@ const authSlice = createSlice({
       .addCase(fetchUserProfile.rejected, (state, action) => {
         state.status = 'failed';
         state.error = action.payload as string;
+      })
+      .addCase(updateUserSystemPrompt.fulfilled, (state, action: PayloadAction<string>) => {
+        if (state.user) {
+          state.user.system_prompt = action.payload;
+          if (typeof window !== "undefined") {
+            localStorage.setItem("user_profile", JSON.stringify(state.user));
+            localStorage.setItem("user_profile_timestamp", Date.now().toString());
+          }
+        }
       });
   },
 });

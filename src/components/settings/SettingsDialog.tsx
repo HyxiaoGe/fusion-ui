@@ -9,7 +9,7 @@ import { setThemeMode } from "@/redux/slices/themeSlice";
 import { motion } from "framer-motion";
 import { Database, Settings, Sun, Moon, Laptop } from "lucide-react";
 import DataManagement from "@/app/settings/DataManagement";
-import MemoryManagement from "@/app/settings/MemoryManagement";
+import SystemPrompt from "@/app/settings/SystemPrompt";
 
 export const SettingsDialog = () => {
   const dispatch = useAppDispatch();
@@ -128,7 +128,7 @@ export const SettingsDialog = () => {
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.3, delay: 0.1 }}
               >
-                <MemoryManagement />
+                <SystemPrompt />
               </motion.div>
             </TabsContent>
 
