@@ -68,13 +68,17 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ onNewChat, activeChatIdOverri
   const searchInputRef = useRef<HTMLInputElement>(null);
   const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // activeChatId 变化或退出搜索时，滚动到当前激活对话（让用户始终看到自己在哪一条）
+  // active 对话 updatedAt：当 metadata refresh 把它推到顶部时（如刚发完消息），
+  // 自动滚到顶部让用户看到位置变化
+  const activeUpdatedAt = conversations.find((c) => c.id === activeChatId)?.updatedAt ?? null;
+
+  // activeChatId 变化、退出搜索、或 active 被推到新位置时，滚到当前激活对话
   // 不在搜索模式下生效，避免搜索期间乱跳
   useEffect(() => {
     if (!activeChatId) return;
     if (searchQuery.trim()) return;
     if (!containerRef.current) return;
-    // 等下一个渲染帧再 scroll，确保 ChatItem 已渲染
+    // 等下一个渲染帧再 scroll，确保 ChatItem 已渲染（updatedAt 变化触发 sortedAndGroupedChats 重排）
     const timer = setTimeout(() => {
       const target = containerRef.current?.querySelector(
         `[data-conversation-id="${activeChatId}"]`
@@ -84,7 +88,7 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ onNewChat, activeChatIdOverri
       }
     }, 50);
     return () => clearTimeout(timer);
-  }, [activeChatId, searchQuery]);
+  }, [activeChatId, searchQuery, activeUpdatedAt]);
 
   // sentinel 进视口时自动触发 loadMore，搜索模式下禁用分页加载
   useEffect(() => {
