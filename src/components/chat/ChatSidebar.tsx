@@ -1,11 +1,10 @@
 "use client";
 
-import React, { useRef, useState, useEffect, useCallback, useMemo } from "react";
+import React, { useRef, useState, useEffect, useCallback } from "react";
 import { usePathname } from "next/navigation";
-import { RefreshCwIcon, Search, X, Sun, Moon } from "lucide-react";
+import { Search, X, Sun, Moon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { UserAvatarMenu } from "@/components/layouts/UserAvatarMenu";
-import { Button } from "@/components/ui/button";
 import DeleteChatDialog from "./sidebar/DeleteChatDialog";
 import RenameChatDialog from "./sidebar/RenameChatDialog";
 import ChatSidebarHeader from "./sidebar/ChatSidebarHeader";
@@ -25,7 +24,17 @@ interface ChatSidebarProps {
 
 const ChatSidebar: React.FC<ChatSidebarProps> = ({ onNewChat, activeChatIdOverride }) => {
   const pathname = usePathname();
-  const { conversations, isLoadingList, isLoadingMore, loadMore, pagination } = useConversationList();
+  const {
+    conversations,
+    isLoadingList,
+    isLoadingMore,
+    loadMore,
+    pagination,
+    searchConversations,
+    searchResults,
+    isSearching,
+    searchError,
+  } = useConversationList();
   const {
     closeDeleteDialog,
     closeRenameDialog,
@@ -47,40 +56,35 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ onNewChat, activeChatIdOverri
   const isDark = resolvedTheme === 'dark';
 
   const toggleTheme = useCallback(() => {
-    // 快捷切换：light/dark 互换。System 模式由 SettingsDialog 管理。
-    // 在 system 模式下点此按钮会"逃出"system 切到反向具体值。
     dispatch(setThemeMode(isDark ? 'light' : 'dark'));
   }, [dispatch, isDark]);
 
   const routeConversationId = pathname?.startsWith('/chat/') ? pathname.split('/chat/')[1] : null;
   const activeChatId = activeChatIdOverride === undefined ? routeConversationId : activeChatIdOverride;
   const containerRef = useRef<HTMLDivElement | null>(null);
-  const [showLoadMoreButton, setShowLoadMoreButton] = useState(false);
+  const sentinelRef = useRef<HTMLDivElement | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [isSearchFocused, setIsSearchFocused] = useState(false);
   const searchInputRef = useRef<HTMLInputElement>(null);
+  const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const checkScrollbar = useCallback(() => {
-    if (!containerRef.current) return;
-    const element = containerRef.current;
-    const hasScroll = element.scrollHeight > element.clientHeight;
-    const canLoadMore = Boolean(pagination?.hasNext) && !isLoadingMore;
-    setShowLoadMoreButton(!hasScroll && canLoadMore);
-  }, [isLoadingMore, pagination?.hasNext]);
-
+  // sentinel 进视口时自动触发 loadMore，搜索模式下禁用分页加载
   useEffect(() => {
-    checkScrollbar();
-    const resizeObserver = new ResizeObserver(checkScrollbar);
-    if (containerRef.current) {
-      resizeObserver.observe(containerRef.current);
-    }
-    return () => {
-      if (containerRef.current) {
-        resizeObserver.unobserve(containerRef.current);
-      }
-      resizeObserver.disconnect();
-    };
-  }, [checkScrollbar, conversations.length, pagination]);
+    if (!sentinelRef.current) return;
+    if (!pagination?.hasNext) return;
+    if (searchQuery.trim()) return;
+
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting && !isLoadingMore) {
+          void loadMore();
+        }
+      },
+      { rootMargin: '100px' }
+    );
+    observer.observe(sentinelRef.current);
+    return () => observer.disconnect();
+  }, [pagination?.hasNext, isLoadingMore, loadMore, searchQuery]);
 
   const formatDate = (timestamp: number) => {
     const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
@@ -117,15 +121,6 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ onNewChat, activeChatIdOverri
       .filter((group) => group.groupChats.length > 0);
   }, [conversations]);
 
-  // 搜索过滤
-  const filteredConversations = useMemo(() => {
-    if (!searchQuery.trim()) return conversations;
-    const query = searchQuery.trim().toLowerCase();
-    return conversations.filter(conv =>
-      conv.title?.toLowerCase().includes(query)
-    );
-  }, [conversations, searchQuery]);
-
   // Cmd/Ctrl+K 聚焦搜索框
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -138,13 +133,34 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ onNewChat, activeChatIdOverri
     return () => document.removeEventListener('keydown', handleKeyDown);
   }, []);
 
-  const handleScroll = () => {
-    if (!containerRef.current || isLoadingMore) return;
-    const { scrollTop, scrollHeight, clientHeight } = containerRef.current;
-    if (scrollTop + clientHeight >= scrollHeight - 5) {
-      void loadMore();
-    }
-  };
+  // 搜索框 debounce 调后端 API；空 query 立即清空
+  const handleSearchChange = useCallback(
+    (value: string) => {
+      setSearchQuery(value);
+      if (searchDebounceRef.current) {
+        clearTimeout(searchDebounceRef.current);
+      }
+      if (!value.trim()) {
+        void searchConversations('');
+        return;
+      }
+      searchDebounceRef.current = setTimeout(() => {
+        void searchConversations(value);
+      }, 300);
+    },
+    [searchConversations]
+  );
+
+  useEffect(() => {
+    return () => {
+      if (searchDebounceRef.current) {
+        clearTimeout(searchDebounceRef.current);
+      }
+    };
+  }, []);
+
+  const isSearchMode = searchQuery.trim().length > 0;
+  const displayChats = isSearchMode ? (searchResults ?? []) : conversations;
 
   return (
     <div className="flex flex-col h-full py-2">
@@ -164,12 +180,12 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ onNewChat, activeChatIdOverri
             type="text"
             placeholder="搜索对话..."
             value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
+            onChange={(e) => handleSearchChange(e.target.value)}
             onFocus={() => setIsSearchFocused(true)}
             onBlur={() => setIsSearchFocused(false)}
             onKeyDown={(e) => {
               if (e.key === 'Escape') {
-                setSearchQuery('');
+                handleSearchChange('');
                 searchInputRef.current?.blur();
               }
             }}
@@ -177,7 +193,7 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ onNewChat, activeChatIdOverri
           />
           {searchQuery && (
             <button
-              onClick={() => setSearchQuery('')}
+              onClick={() => handleSearchChange('')}
               className="text-muted-foreground hover:text-foreground"
             >
               <X className="h-3 w-3" />
@@ -186,17 +202,25 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ onNewChat, activeChatIdOverri
         </div>
       </div>
 
+      {/* 搜索状态提示行 */}
+      {isSearchMode && isSearching && (
+        <div className="px-4 py-1 text-xs text-muted-foreground">搜索中...</div>
+      )}
+      {isSearchMode && searchError && (
+        <div className="px-4 py-1 text-xs text-danger">搜索失败：{searchError}</div>
+      )}
+
       <ChatList
-        chats={searchQuery.trim() ? filteredConversations : conversations}
+        chats={displayChats}
         sortedAndGroupedChats={sortedAndGroupedChats}
         activeChatId={activeChatId}
         models={models}
         isLoadingServerList={isLoadingList}
         isLoadingMoreServer={isLoadingMore}
         containerRef={containerRef}
-        handleScroll={handleScroll}
         handleSelectChat={selectConversation}
         searchQuery={searchQuery.trim() || undefined}
+        sentinelRef={sentinelRef}
         handleStartEditing={(e, chatId, currentTitle) => {
           e.stopPropagation();
           openRenameDialog(chatId, currentTitle);
@@ -211,27 +235,6 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ onNewChat, activeChatIdOverri
         }}
         formatDate={formatDate}
       />
-
-      {showLoadMoreButton && (
-        <div className="px-4 py-2 flex justify-center">
-          <Button
-            onClick={() => void loadMore()}
-            disabled={isLoadingMore}
-            variant="outline"
-            size="sm"
-            className="text-xs rounded-full px-4"
-          >
-            {isLoadingMore ? (
-              <>
-                <RefreshCwIcon size={14} className="mr-1.5 animate-spin" />
-                加载中...
-              </>
-            ) : (
-              '显示更多'
-            )}
-          </Button>
-        </div>
-      )}
 
       {/* 底部用户区（固定不随列表滚动） */}
       <div className="flex items-center justify-between gap-2 mt-auto border-t pt-2 px-2 pb-3">
