@@ -68,6 +68,24 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ onNewChat, activeChatIdOverri
   const searchInputRef = useRef<HTMLInputElement>(null);
   const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // activeChatId 变化或退出搜索时，滚动到当前激活对话（让用户始终看到自己在哪一条）
+  // 不在搜索模式下生效，避免搜索期间乱跳
+  useEffect(() => {
+    if (!activeChatId) return;
+    if (searchQuery.trim()) return;
+    if (!containerRef.current) return;
+    // 等下一个渲染帧再 scroll，确保 ChatItem 已渲染
+    const timer = setTimeout(() => {
+      const target = containerRef.current?.querySelector(
+        `[data-conversation-id="${activeChatId}"]`
+      ) as HTMLElement | null;
+      if (target) {
+        target.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+      }
+    }, 50);
+    return () => clearTimeout(timer);
+  }, [activeChatId, searchQuery]);
+
   // sentinel 进视口时自动触发 loadMore，搜索模式下禁用分页加载
   useEffect(() => {
     if (!sentinelRef.current) return;
