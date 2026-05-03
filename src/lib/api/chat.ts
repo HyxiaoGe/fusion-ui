@@ -292,6 +292,51 @@ export async function getConversations(page: number = 1, pageSize: number = 10):
   return apiRequest<ConversationListData>(`${API_BASE_URL}/api/chat/conversations?page=${page}&page_size=${pageSize}`);
 }
 
+/**
+ * 按 ID 列表拉取对话元数据（不含 messages）
+ * 用于发完消息后只刷新已显示对话的标题等，避免重拉整个分页
+ */
+export async function getConversationsMetadata(ids: string[]): Promise<Array<{
+  id: string;
+  title: string;
+  model_id: string;
+  created_at: string;
+  updated_at: string;
+}>> {
+  if (ids.length === 0) return [];
+  const idsParam = encodeURIComponent(ids.join(','));
+  const data = await apiRequest<{ items: Array<{
+    id: string;
+    title: string;
+    model_id: string;
+    created_at: string;
+    updated_at: string;
+  }> }>(`${API_BASE_URL}/api/chat/conversations/metadata?ids=${idsParam}`);
+  return data.items || [];
+}
+
+/**
+ * 按标题模糊搜索当前用户对话
+ */
+export async function searchConversations(query: string, limit = 50, signal?: AbortSignal): Promise<Array<{
+  id: string;
+  title: string;
+  model_id: string;
+  created_at: string;
+  updated_at: string;
+}>> {
+  if (!query.trim()) return [];
+  const params = new URLSearchParams({ q: query.trim(), limit: String(limit) });
+  const data = await apiRequest<{ items: Array<{
+    id: string;
+    title: string;
+    model_id: string;
+    created_at: string;
+    updated_at: string;
+  }> }>(`${API_BASE_URL}/api/chat/conversations/search?${params.toString()}`, { signal });
+  return data.items || [];
+}
+
 export async function getConversation(conversationId: string) {
   return apiRequest(`${API_BASE_URL}/api/chat/conversations/${conversationId}`);
 }

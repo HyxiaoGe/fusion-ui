@@ -58,6 +58,7 @@ const ChatItem: React.FC<ChatItemProps> = ({
 
   return (
     <div
+      data-conversation-id={chat.id}
       className={`flex items-center group rounded-lg p-3 text-sm cursor-pointer transition-all duration-200 ${
         isActive
           ? "relative pl-4 bg-muted/50 before:absolute before:left-0 before:top-2 before:bottom-2 before:w-0.5 before:rounded-full before:bg-primary"

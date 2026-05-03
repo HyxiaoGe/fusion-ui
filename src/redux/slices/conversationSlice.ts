@@ -20,6 +20,9 @@ export interface ConversationState {
   animatingTitleId: string | null;
   reasoningEnabled: boolean;
   globalError: string | null;
+  searchResults: Conversation[] | null;  // null = 未搜索；[] = 搜了但无结果
+  isSearching: boolean;
+  searchError: string | null;
 }
 
 const initialState: ConversationState = {
@@ -36,6 +39,9 @@ const initialState: ConversationState = {
   animatingTitleId: null,
   reasoningEnabled: true,
   globalError: null,
+  searchResults: null,
+  isSearching: false,
+  searchError: null,
 };
 
 const conversationSlice = createSlice({
@@ -47,16 +53,11 @@ const conversationSlice = createSlice({
       action: PayloadAction<{ conversations: Conversation[]; pagination: Pagination }>
     ) {
       const { conversations, pagination } = action.payload;
-      // 合并模式：新拉的第 1 页 ID 放前，保留之前 loadMore 加载的后续页 ID（去重）
-      // 否则 refresh（如发完消息）会把已加载的第 2/3 页全丢掉，列表"瞬间收起"
-      const newIds = conversations.map((conversation) => conversation.id);
-      const preservedTail = state.listIds.filter((id) => !newIds.includes(id));
-      state.listIds = [...newIds, ...preservedTail];
+      state.listIds = conversations.map((conversation) => conversation.id);
       conversations.forEach((conversation) => {
         const existing = state.byId[conversation.id];
         if (existing) {
-          // 只更新元数据，永远不覆盖已有消息
-          // 服务端列表接口返回 messages: []，覆盖会丢失本地已 append 的消息
+          // 只更新元数据，永远不覆盖已有消息（保留 hydrated messages）
           state.byId[conversation.id] = {
             ...existing,
             title: conversation.title,
@@ -68,16 +69,7 @@ const conversationSlice = createSlice({
           state.byId[conversation.id] = conversation;
         }
       });
-      // pagination：如果已存在，保留之前的 currentPage（可能是 loadMore 后的第 2/3 页），
-      // 只更新 totalCount/totalPages，hasNext 按当前已加载条数与总数对比
-      state.pagination = state.pagination
-        ? {
-            ...state.pagination,
-            totalCount: pagination.totalCount,
-            totalPages: pagination.totalPages,
-            hasNext: state.listIds.length < pagination.totalCount,
-          }
-        : pagination;
+      state.pagination = pagination;
       state.isLoadingList = false;
       state.listError = null;
     },
@@ -109,6 +101,47 @@ const conversationSlice = createSlice({
     },
     requestConversationListRefresh(state) {
       state.conversationListVersion += 1;
+    },
+    updateConversationsMetadata(
+      state,
+      action: PayloadAction<Array<{
+        id: string;
+        title: string;
+        model_id: string;
+        updatedAt: number;
+      }>>
+    ) {
+      // 仅更新 byId 中已存在的对话的元数据，不动 listIds / pagination / messages
+      action.payload.forEach((item) => {
+        const existing = state.byId[item.id];
+        if (!existing) return;  // 不存在的 ID 直接忽略
+        state.byId[item.id] = {
+          ...existing,
+          title: item.title,
+          model_id: item.model_id,
+          updatedAt: item.updatedAt,
+        };
+      });
+    },
+    setSearchLoading(state, action: PayloadAction<boolean>) {
+      state.isSearching = action.payload;
+      if (action.payload) {
+        state.searchError = null;
+      }
+    },
+    setSearchResults(state, action: PayloadAction<Conversation[] | null>) {
+      state.searchResults = action.payload;
+      state.isSearching = false;
+      state.searchError = null;
+    },
+    setSearchError(state, action: PayloadAction<string | null>) {
+      state.searchError = action.payload;
+      state.isSearching = false;
+    },
+    clearSearch(state) {
+      state.searchResults = null;
+      state.isSearching = false;
+      state.searchError = null;
     },
     setLoadingList(state, action: PayloadAction<boolean>) {
       state.isLoadingList = action.payload;
@@ -281,6 +314,7 @@ export const {
   appendConversationList,
   appendMessage,
   clearConversationMessages,
+  clearSearch,
   materializeConversation,
   removeConversation,
   removeMessage,
@@ -296,9 +330,13 @@ export const {
   setLoadingMore,
   setPendingConversationId,
   setReasoningEnabled,
+  setSearchError,
+  setSearchLoading,
+  setSearchResults,
   toggleReasoningVisibility,
   updateConversationModel,
   updateConversationTitle,
+  updateConversationsMetadata,
   updateMessage,
   upsertConversation,
 } = conversationSlice.actions;

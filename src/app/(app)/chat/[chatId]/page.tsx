@@ -2,8 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { ChatMessageListLazy, ChatSidebarLazy } from '@/components/lazy/LazyComponents';
-import MainLayout from '@/components/layouts/MainLayout';
+import { ChatMessageListLazy } from '@/components/lazy/LazyComponents';
 import ChatInput from '@/components/chat/ChatInput';
 import type { FileAttachment } from '@/lib/utils/fileHelpers';
 import ConfirmDialog from '@/components/ui/confirm-dialog';
@@ -33,7 +32,6 @@ import { useSendMessage } from '@/hooks/useSendMessage';
 import { useSuggestedQuestions } from '@/hooks/useSuggestedQuestions';
 import { useSuggestedQuestionContinuation } from '@/hooks/useSuggestedQuestionContinuation';
 import { useTransientCompletionState } from '@/hooks/useTransientCompletionState';
-import { getFirstEnabledModelId } from '@/lib/models/modelPreference';
 import { shouldAutoFetchSuggestedQuestions } from '@/lib/chat/suggestedQuestionTiming';
 
 export default function ChatPage() {
@@ -55,10 +53,8 @@ export default function ChatPage() {
     clearQuestions,
   } = useSuggestedQuestions(chatId);
   fetchQuestionsRef.current = fetchQuestions;
-  const { models, conversationError, isStreaming, streamConversationId } =
+  const { conversationError, isStreaming, streamConversationId } =
     useAppSelector((state) => ({
-      models: state.models.models,
-
       conversationError: state.conversation.globalError,
       isStreaming: state.stream.isStreaming,
       streamConversationId: state.stream.conversationId,
@@ -209,11 +205,6 @@ export default function ChatPage() {
     );
   }, [chatId, clearQuestions, fetchQuestions, sendMessage]);
 
-  const handleNewChat = useCallback(() => {
-    const modelToUse = getFirstEnabledModelId(models);
-    router.push(modelToUse ? `/?new=true&model=${modelToUse}` : '/?new=true');
-  }, [models, router]);
-
   const handleSelectQuestion = useSuggestedQuestionContinuation({
     canContinue: Boolean(chatId),
     clearQuestions,
@@ -246,24 +237,17 @@ export default function ChatPage() {
 
   if (hydrationView === 'loading') {
     return (
-      <MainLayout
-        sidebar={<ChatSidebarLazy onNewChat={handleNewChat} activeChatIdOverride={chatId} />}
-      >
-        <div className="h-full flex flex-col relative">
-          <div className="flex-1 overflow-y-auto px-4 pt-4" data-chat-scroll-container="true">
-            <ChatMessageListLazy messages={[]} loadingState="history-hydration" />
-          </div>
+      <div className="h-full flex flex-col relative">
+        <div className="flex-1 overflow-y-auto px-4 pt-4" data-chat-scroll-container="true">
+          <ChatMessageListLazy messages={[]} loadingState="history-hydration" />
         </div>
-      </MainLayout>
+      </div>
     );
   }
 
   if (!conversation || hydrationView === 'error') {
     return (
-      <MainLayout
-        sidebar={<ChatSidebarLazy onNewChat={handleNewChat} activeChatIdOverride={chatId} />}
-      >
-        <div className="h-full flex items-center justify-center">
+      <div className="h-full flex items-center justify-center">
           <div className="text-center space-y-4">
             <div className="text-red-500 text-2xl">⚠️</div>
             <p className="text-muted-foreground">{hydrationError || conversationError || '对话不存在或已被删除'}</p>
@@ -284,15 +268,12 @@ export default function ChatPage() {
               </button>
             </div>
           </div>
-        </div>
-      </MainLayout>
+      </div>
     );
   }
 
   return (
-    <MainLayout
-      sidebar={<ChatSidebarLazy onNewChat={handleNewChat} activeChatIdOverride={chatId} />}
-    >
+    <>
       <div className="h-full flex flex-col relative">
         <div className="flex-1 overflow-y-auto px-4 pt-4" data-chat-scroll-container="true">
           <ChatMessageListLazy
@@ -333,6 +314,6 @@ export default function ChatPage() {
         cancelLabel="取消"
         variant="destructive"
       />
-    </MainLayout>
+    </>
   );
 }

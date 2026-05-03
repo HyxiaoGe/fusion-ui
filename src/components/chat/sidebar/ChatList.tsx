@@ -11,13 +11,14 @@ interface ChatListProps {
   isLoadingServerList: boolean;
   isLoadingMoreServer: boolean;
   containerRef: React.RefObject<HTMLDivElement | null>;
-  handleScroll: () => void;
+  handleScroll?: () => void;
   handleSelectChat: (chatId: string) => void;
   handleStartEditing: (e: React.MouseEvent, chatId: string, currentTitle: string) => void;
   handleDeleteChat: (e: React.MouseEvent, chatId: string) => void;
   handleGenerateTitle: (e: React.MouseEvent, chatId: string) => void;
   formatDate: (timestamp: number) => string;
   searchQuery?: string;
+  sentinelRef?: React.RefObject<HTMLDivElement | null>;
 }
 
 const ChatList: React.FC<ChatListProps> = ({
@@ -35,6 +36,7 @@ const ChatList: React.FC<ChatListProps> = ({
   handleGenerateTitle,
   formatDate,
   searchQuery,
+  sentinelRef,
 }) => {
   return (
     <div className="px-2 flex-1 overflow-y-auto" ref={containerRef} onScroll={handleScroll}>
@@ -91,7 +93,11 @@ const ChatList: React.FC<ChatListProps> = ({
           加载更多...
         </div>
       )}
-      
+
+      {sentinelRef && (
+        <div ref={sentinelRef} className="h-4" aria-hidden="true" />
+      )}
+
       {isLoadingServerList && chats.length === 0 && (
         <div className="p-4 text-center text-muted-foreground text-sm">
           加载中...
