@@ -1,10 +1,9 @@
 'use client';
 
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import ChatInput from '@/components/chat/ChatInput';
-import { ChatSidebarLazy, HomePageLazy } from '@/components/lazy/LazyComponents';
-import MainLayout from '@/components/layouts/MainLayout';
+import { HomePageLazy } from '@/components/lazy/LazyComponents';
 
 import { useAppSelector } from '@/redux/hooks';
 import { useSendMessage } from '@/hooks/useSendMessage';
@@ -17,6 +16,14 @@ export default function Home() {
   const [inputKey, setInputKey] = useState(() => Date.now());
   const models = useAppSelector((state) => state.models.models);
   const { sendMessage } = useSendMessage();
+
+  // 监听 ?new=true 触发 ChatInput reset
+  // 来源：(app)/layout 的 sidebar "新对话" 按钮 push('/?new=true&model=...')
+  useEffect(() => {
+    if (searchParams?.get('new') === 'true') {
+      setInputKey(Date.now());
+    }
+  }, [searchParams]);
 
   const handleSendMessage = useCallback((content: string, attachments?: FileAttachment[], pendingConversationId?: string) => {
     return sendMessage(
@@ -40,21 +47,17 @@ export default function Home() {
   }, [models, router, searchParams]);
 
   return (
-    <MainLayout
-      sidebar={<ChatSidebarLazy onNewChat={handleNewChat} />}
-    >
-      <div className="h-full flex flex-col relative">
-        <div className="flex-1 overflow-y-auto">
-          <HomePageLazy onSendMessage={handleSendMessage} onNewChat={handleNewChat} />
-        </div>
-        <div className="flex-shrink-0 p-4">
-          <ChatInput
-            key={inputKey}
-            onSendMessage={handleSendMessage}
-            activeChatId={null}
-          />
-        </div>
+    <div className="h-full flex flex-col relative">
+      <div className="flex-1 overflow-y-auto">
+        <HomePageLazy onSendMessage={handleSendMessage} onNewChat={handleNewChat} />
       </div>
-    </MainLayout>
+      <div className="flex-shrink-0 p-4">
+        <ChatInput
+          key={inputKey}
+          onSendMessage={handleSendMessage}
+          activeChatId={null}
+        />
+      </div>
+    </div>
   );
 }
