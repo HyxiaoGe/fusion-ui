@@ -2,9 +2,11 @@
 
 import type { Message } from '@/types/conversation';
 import React, { useEffect, useMemo, useRef } from 'react';
-import { useAppSelector } from '@/redux/hooks';
+import { useAppDispatch, useAppSelector } from '@/redux/hooks';
+import { clearStreamError } from '@/redux/slices/streamSlice';
 import LoadingIndicator from '../ui/loading-indicator';
 import ChatMessage from './ChatMessage';
+import StreamErrorCard from './StreamErrorCard';
 import { isNearBottom } from '@/lib/chat/scrollBehavior';
 
 interface ChatMessageListProps {
@@ -117,6 +119,8 @@ const ChatMessageList: React.FC<ChatMessageListProps> = ({
   }, [sortedMessages.length]);
 
   // 流式内容信号：打字机推进字符数 + 块数量，覆盖 token 追加和新块出现两种情况
+  const dispatch = useAppDispatch();
+  const streamError = useAppSelector(state => state.stream.lastError);
   const streamScrollSignal = useAppSelector(
     state => isStreaming ? state.stream.displayedTextLength + state.stream.blockOrder.length : 0
   );
@@ -228,6 +232,15 @@ const ChatMessageList: React.FC<ChatMessageListProps> = ({
       })}
       
       {loading && !isStreaming && <LoadingIndicator />}
+
+      {streamError && (
+        <StreamErrorCard
+          message={streamError.message}
+          code={streamError.code}
+          data={streamError.data}
+          onDismiss={() => dispatch(clearStreamError())}
+        />
+      )}
 
       {statusText ? (
         <div className="px-4 pb-2 text-xs text-muted-foreground">

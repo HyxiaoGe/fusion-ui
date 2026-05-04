@@ -193,9 +193,10 @@ export async function sendMessageStream(
           const err = chunk.error;
           if (err) {
             callbacks.onError(err.message || '模型调用失败', { code: err.code, data: err.data });
-          } else {
-            callbacks.onError('模型调用失败');
+            throw new Error(err.message || '模型调用失败');
           }
+          callbacks.onError('模型调用失败');
+          throw new Error('模型调用失败');
         }
       }
     }
@@ -272,8 +273,12 @@ export async function reconnectStream(
         if (choice?.finish_reason === 'stop') callbacks.onDone(messageId, conversationId, chunk.usage ?? null);
         else if (choice?.finish_reason === 'error') {
           const err = chunk.error;
-          if (err) callbacks.onError(err.message || '模型调用失败', { code: err.code, data: err.data });
-          else callbacks.onError('模型调用失败');
+          if (err) {
+            callbacks.onError(err.message || '模型调用失败', { code: err.code, data: err.data });
+            throw new Error(err.message || '模型调用失败');
+          }
+          callbacks.onError('模型调用失败');
+          throw new Error('模型调用失败');
         }
       }
     }
