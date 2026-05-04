@@ -49,6 +49,11 @@ export interface ProviderInfo {
   id: string; // 提供商ID
   name: string; // 显示名称
   order: number; // 排序顺序
+  // 健康状态（来自 /api/models 后端 ProviderBasicInfo schema 扩展）
+  status?: 'ok' | 'offline';
+  offline_reason?: string | null;
+  offline_message?: string | null;
+  last_failure_at?: string | null;
 }
 
 // 将API模型数据转换为ModelInfo格式
