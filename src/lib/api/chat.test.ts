@@ -2,12 +2,15 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const {
   fetchWithAuthMock,
+  apiRequestMock,
 } = vi.hoisted(() => ({
   fetchWithAuthMock: vi.fn(),
+  apiRequestMock: vi.fn(),
 }));
 
 vi.mock('./fetchWithAuth', () => ({
   default: fetchWithAuthMock,
+  apiRequest: apiRequestMock,
 }));
 
 import { getConversation, sendMessageStream } from './chat';
@@ -29,221 +32,422 @@ function createStreamResponse(chunks: string[]) {
   });
 }
 
-describe('sendMessageStream', () => {
+function envelope(chunk_type: string, data: unknown): string {
+  return `data: ${JSON.stringify({ chunk_type, data })}\n\n`;
+}
+
+function agentEvent(
+  type: string,
+  fields: Record<string, unknown>,
+  seq: number,
+  runId = 'r1',
+): string {
+  return envelope('agent_event', {
+    type,
+    run_id: runId,
+    parent_run_id: null,
+    step_id: fields.step_id ?? null,
+    parent_step_id: null,
+    tool_call_id: fields.tool_call_id ?? null,
+    sequence: seq,
+    trace_id: runId,
+    ts: 0,
+    ...fields,
+  });
+}
+
+describe('sendMessageStream — 新 envelope 协议', () => {
   beforeEach(() => {
     fetchWithAuthMock.mockReset();
   });
 
-  it('parses content deltas and completes on done marker', async () => {
+  it('run_started 触发 onReady 并携带 messageId / conversationId', async () => {
     fetchWithAuthMock.mockResolvedValue(
       createStreamResponse([
-        'data: {"id":"assistant-1","conversation_id":"conv-1","choices":[{"delta":{"content":[{"type":"text","id":"blk_1","text":"hel"}]},"finish_reason":null}]}\n\n',
-        'data: {"id":"assistant-1","conversation_id":"conv-1","choices":[{"delta":{"content":[{"type":"text","id":"blk_1","text":"lo"}]},"finish_reason":null}]}\n\n',
-        'data: {"id":"assistant-1","conversation_id":"conv-1","choices":[{"delta":{},"finish_reason":"stop"}],"usage":{"input_tokens":10,"output_tokens":5}}\n\n',
+        envelope('preparing', {}),
+        agentEvent(
+          'run_started',
+          {
+            conversation_id: 'conv-1',
+            message_id: 'msg-1',
+            model: 'gpt',
+            tools: ['web_search'],
+            config: { max_steps: 8 },
+          },
+          0,
+        ),
+        envelope('done', {}),
         'data: [DONE]\n\n',
-      ])
+      ]),
     );
-    const callbacks = {
-      onReady: vi.fn(),
-      onTextDelta: vi.fn(),
-      onThinkingDelta: vi.fn(),
-      onDone: vi.fn(),
-      onError: vi.fn(),
-    };
-
+    const onReady = vi.fn();
+    const onRunStarted = vi.fn();
+    const onPreparing = vi.fn();
+    const onDone = vi.fn();
     await sendMessageStream(
+      { model_id: 'gpt', message: 'hi', conversation_id: 'conv-1' },
       {
-        model_id: 'qwen-max-latest',
-        message: 'hello',
-        conversation_id: 'conv-1',
+        onReady,
+        onPreparing,
+        onRunStarted,
+        onReasoning: vi.fn(),
+        onAnswering: vi.fn(),
+        onDone,
+        onError: vi.fn(),
       },
-      callbacks
     );
-
-    expect(callbacks.onReady).toHaveBeenCalledWith({
-      messageId: 'assistant-1',
+    expect(onPreparing).toHaveBeenCalledTimes(1);
+    expect(onReady).toHaveBeenCalledWith({
+      messageId: 'msg-1',
       conversationId: 'conv-1',
     });
-    expect(callbacks.onTextDelta).toHaveBeenNthCalledWith(1, 'hel', 'blk_1', {
-      messageId: 'assistant-1',
+    expect(onRunStarted).toHaveBeenCalledTimes(1);
+    expect(onDone).toHaveBeenCalledWith({
+      messageId: 'msg-1',
       conversationId: 'conv-1',
     });
-    expect(callbacks.onTextDelta).toHaveBeenNthCalledWith(2, 'lo', 'blk_1', {
-      messageId: 'assistant-1',
-      conversationId: 'conv-1',
-    });
-    expect(callbacks.onDone).toHaveBeenCalledWith('assistant-1', 'conv-1', { input_tokens: 10, output_tokens: 5 });
-    expect(callbacks.onError).not.toHaveBeenCalled();
   });
 
-  it('parses thinking deltas before text deltas', async () => {
+  it('reasoning / answering 透传 run_id / step_id', async () => {
     fetchWithAuthMock.mockResolvedValue(
       createStreamResponse([
-        'data: {"id":"assistant-2","conversation_id":"conv-2","choices":[{"delta":{"content":[{"type":"thinking","id":"blk_t1","thinking":"think "}]},"finish_reason":null}]}\n\n',
-        'data: {"id":"assistant-2","conversation_id":"conv-2","choices":[{"delta":{"content":[{"type":"text","id":"blk_c1","text":"answer"}]},"finish_reason":null}]}\n\n',
-        'data: {"id":"assistant-2","conversation_id":"conv-2","choices":[{"delta":{},"finish_reason":"stop"}],"usage":null}\n\n',
+        agentEvent(
+          'run_started',
+          {
+            conversation_id: 'c',
+            message_id: 'm',
+            model: 'g',
+            tools: [],
+            config: {},
+          },
+          0,
+        ),
+        envelope('reasoning', {
+          block_id: 'b1',
+          delta: '思考',
+          run_id: 'r1',
+          step_id: 's1',
+        }),
+        envelope('answering', {
+          block_id: 'b2',
+          delta: '回答',
+          run_id: 'r1',
+          step_id: 's1',
+        }),
+        envelope('done', {}),
         'data: [DONE]\n\n',
-      ])
+      ]),
     );
-    const callbacks = {
-      onReady: vi.fn(),
-      onTextDelta: vi.fn(),
-      onThinkingDelta: vi.fn(),
-      onDone: vi.fn(),
-      onError: vi.fn(),
-    };
-
+    const onReasoning = vi.fn();
+    const onAnswering = vi.fn();
     await sendMessageStream(
+      { model_id: 'g', message: 'q' },
       {
-        model_id: 'qwen-max-latest',
-        message: 'hello',
-        conversation_id: 'conv-2',
+        onReady: vi.fn(),
+        onReasoning,
+        onAnswering,
+        onDone: vi.fn(),
+        onError: vi.fn(),
       },
-      callbacks
     );
-
-    expect(callbacks.onReady).toHaveBeenCalledWith({
-      messageId: 'assistant-2',
-      conversationId: 'conv-2',
+    expect(onReasoning).toHaveBeenCalledWith({
+      block_id: 'b1',
+      delta: '思考',
+      run_id: 'r1',
+      step_id: 's1',
     });
-    expect(callbacks.onThinkingDelta).toHaveBeenCalledBefore(callbacks.onTextDelta);
-    expect(callbacks.onDone).toHaveBeenCalledWith('assistant-2', 'conv-2', null);
-  });
-
-  it('raises on backend error chunks and does not complete on trailing done markers', async () => {
-    fetchWithAuthMock.mockResolvedValue(
-      createStreamResponse([
-        'data: {"id":"assistant-3","conversation_id":"conv-3","choices":[{"delta":{"content":[{"type":"text","id":"blk_1","text":"partial"}]},"finish_reason":null}]}\n\n',
-        'data: {"id":"assistant-3","conversation_id":"conv-3","choices":[{"delta":{},"finish_reason":"error"}]}\n\n',
-        'data: [DONE]\n\n',
-      ])
-    );
-    const callbacks = {
-      onReady: vi.fn(),
-      onTextDelta: vi.fn(),
-      onThinkingDelta: vi.fn(),
-      onDone: vi.fn(),
-      onError: vi.fn(),
-    };
-
-    await sendMessageStream(
-      {
-        model_id: 'qwen-max-latest',
-        message: 'hello',
-        conversation_id: 'conv-3',
-      },
-      callbacks
-    );
-
-    expect(callbacks.onError).toHaveBeenCalledWith('模型调用失败');
-    expect(callbacks.onDone).not.toHaveBeenCalled();
-  });
-
-  it('supports partial SSE chunks with buffered parsing', async () => {
-    fetchWithAuthMock.mockResolvedValue(
-      createStreamResponse([
-        'data: {"id":"assistant-4","conversation_id":"conv-4","choices":[{"delta":{"content":[{"type":"text","id":"blk_1","text":"hel',
-        'lo"}]},"finish_reason":null}]}\n\n',
-        'data: {"id":"assistant-4","conversation_id":"conv-4","choices":[{"delta":{},"finish_reason":"stop"}]}\n\n',
-        'data: [DONE]\n\n',
-      ])
-    );
-    const callbacks = {
-      onReady: vi.fn(),
-      onTextDelta: vi.fn(),
-      onThinkingDelta: vi.fn(),
-      onDone: vi.fn(),
-      onError: vi.fn(),
-    };
-
-    await sendMessageStream(
-      {
-        model_id: 'qwen-max-latest',
-        message: 'hello',
-        conversation_id: 'conv-4',
-      },
-      callbacks
-    );
-
-    expect(callbacks.onTextDelta).toHaveBeenCalledWith('hello', 'blk_1', {
-      messageId: 'assistant-4',
-      conversationId: 'conv-4',
+    expect(onAnswering).toHaveBeenCalledWith({
+      block_id: 'b2',
+      delta: '回答',
+      run_id: 'r1',
+      step_id: 's1',
     });
-    expect(callbacks.onDone).toHaveBeenCalledWith('assistant-4', 'conv-4', null);
   });
 
-  it('skips invalid json lines and continues processing later chunks', async () => {
+  it('agent_event 二级 dispatch 全 10 type', async () => {
     fetchWithAuthMock.mockResolvedValue(
       createStreamResponse([
-        'data: {"id":"assistant-5","conversation_id":"conv-5","choices":[{"delta":{"content":[{"type":"text","id":"blk_1","text":"ok"}]},"finish_reason":null}]}\n\n',
-        'data: {"broken-json"\n\n',
-        'data: {"id":"assistant-5","conversation_id":"conv-5","choices":[{"delta":{},"finish_reason":"stop"}]}\n\n',
+        agentEvent(
+          'run_started',
+          {
+            conversation_id: 'c',
+            message_id: 'm',
+            model: 'g',
+            tools: [],
+            config: {},
+          },
+          0,
+        ),
+        agentEvent('step_started', { step_number: 1, step_id: 's1' }, 1),
+        agentEvent(
+          'tool_call_started',
+          {
+            tool_call_id: 't1',
+            step_id: 's1',
+            tool_name: 'web_search',
+            arguments: { q: 'x' },
+          },
+          2,
+        ),
+        agentEvent(
+          'tool_call_delta',
+          {
+            tool_call_id: 't1',
+            step_id: 's1',
+            tool_name: 'web_search',
+            delta: { partial: true },
+          },
+          3,
+        ),
+        agentEvent(
+          'tool_call_completed',
+          {
+            tool_call_id: 't1',
+            step_id: 's1',
+            tool_name: 'web_search',
+            status: 'success',
+            duration_ms: 10,
+            result_summary: { kind: 'search', truncated: false },
+          },
+          4,
+        ),
+        agentEvent(
+          'step_completed',
+          {
+            step_id: 's1',
+            step_number: 1,
+            tool_call_count: 1,
+            duration_ms: 20,
+          },
+          5,
+        ),
+        agentEvent('run_limit_reached', { reason: 'timeout' }, 6),
+        agentEvent('run_interrupted', { reason: 'user_cancelled' }, 7),
+        agentEvent('run_failed', { error_code: 'X', message: 'boom' }, 8),
+        agentEvent(
+          'run_completed',
+          { total_steps: 1, total_tool_calls: 1, finish_reason: 'stop' },
+          9,
+        ),
+        envelope('done', {}),
         'data: [DONE]\n\n',
-      ])
+      ]),
     );
-    const callbacks = {
+    const cbs = {
       onReady: vi.fn(),
-      onTextDelta: vi.fn(),
-      onThinkingDelta: vi.fn(),
+      onReasoning: vi.fn(),
+      onAnswering: vi.fn(),
+      onRunStarted: vi.fn(),
+      onStepStarted: vi.fn(),
+      onToolCallStarted: vi.fn(),
+      onToolCallDelta: vi.fn(),
+      onToolCallCompleted: vi.fn(),
+      onStepCompleted: vi.fn(),
+      onRunLimitReached: vi.fn(),
+      onRunInterrupted: vi.fn(),
+      onRunFailed: vi.fn(),
+      onRunCompleted: vi.fn(),
       onDone: vi.fn(),
       onError: vi.fn(),
     };
-
-    await sendMessageStream(
-      {
-        model_id: 'qwen-max-latest',
-        message: 'hello',
-        conversation_id: 'conv-5',
-      },
-      callbacks
-    );
-
-    expect(callbacks.onTextDelta).toHaveBeenCalledWith('ok', 'blk_1', {
-      messageId: 'assistant-5',
-      conversationId: 'conv-5',
-    });
-    expect(callbacks.onDone).toHaveBeenCalledWith('assistant-5', 'conv-5', null);
+    await sendMessageStream({ model_id: 'g', message: 'q' }, cbs);
+    expect(cbs.onRunStarted).toHaveBeenCalledTimes(1);
+    expect(cbs.onStepStarted).toHaveBeenCalledTimes(1);
+    expect(cbs.onToolCallStarted).toHaveBeenCalledTimes(1);
+    expect(cbs.onToolCallDelta).toHaveBeenCalledTimes(1);
+    expect(cbs.onToolCallCompleted).toHaveBeenCalledTimes(1);
+    expect(cbs.onStepCompleted).toHaveBeenCalledTimes(1);
+    expect(cbs.onRunLimitReached).toHaveBeenCalledTimes(1);
+    expect(cbs.onRunInterrupted).toHaveBeenCalledTimes(1);
+    expect(cbs.onRunFailed).toHaveBeenCalledTimes(1);
+    expect(cbs.onRunCompleted).toHaveBeenCalledTimes(1);
   });
 
-  it('treats eof without done marker as an error', async () => {
+  it('未知 chunk_type warn 不抛', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     fetchWithAuthMock.mockResolvedValue(
       createStreamResponse([
-        'data: {"id":"assistant-6","conversation_id":"conv-6","choices":[{"delta":{"content":[{"type":"text","id":"blk_1","text":"partial"}]},"finish_reason":null}]}\n\n',
-      ])
+        envelope('totally_new_type', { foo: 1 }),
+        envelope('done', {}),
+        'data: [DONE]\n\n',
+      ]),
     );
-    const callbacks = {
-      onReady: vi.fn(),
-      onTextDelta: vi.fn(),
-      onThinkingDelta: vi.fn(),
-      onDone: vi.fn(),
-      onError: vi.fn(),
-    };
+    await sendMessageStream(
+      { model_id: 'g', message: 'q' },
+      {
+        onReady: vi.fn(),
+        onReasoning: vi.fn(),
+        onAnswering: vi.fn(),
+        onDone: vi.fn(),
+        onError: vi.fn(),
+      },
+    );
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining('未知 chunk_type'),
+      'totally_new_type',
+    );
+    warn.mockRestore();
+  });
 
+  it('agent_event sequence 倒退被丢弃 + warn', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    fetchWithAuthMock.mockResolvedValue(
+      createStreamResponse([
+        agentEvent(
+          'run_started',
+          {
+            conversation_id: 'c',
+            message_id: 'm',
+            model: 'g',
+            tools: [],
+            config: {},
+          },
+          5,
+        ),
+        agentEvent('step_started', { step_number: 1, step_id: 's1' }, 3), // OOO
+        envelope('done', {}),
+        'data: [DONE]\n\n',
+      ]),
+    );
+    const onStepStarted = vi.fn();
+    await sendMessageStream(
+      { model_id: 'g', message: 'q' },
+      {
+        onReady: vi.fn(),
+        onReasoning: vi.fn(),
+        onAnswering: vi.fn(),
+        onStepStarted,
+        onDone: vi.fn(),
+        onError: vi.fn(),
+      },
+    );
+    expect(onStepStarted).not.toHaveBeenCalled();
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining('sequence 倒退'),
+      expect.objectContaining({ sequence: 3 }),
+    );
+    warn.mockRestore();
+  });
+
+  it('error chunk 调 onError 抛 + 携带 code/message', async () => {
+    fetchWithAuthMock.mockResolvedValue(
+      createStreamResponse([
+        agentEvent(
+          'run_started',
+          {
+            conversation_id: 'c',
+            message_id: 'm',
+            model: 'g',
+            tools: [],
+            config: {},
+          },
+          0,
+        ),
+        envelope('error', {
+          code: 'PROVIDER_OFFLINE',
+          message: 'Provider 离线',
+          data: { provider_id: 'p1' },
+        }),
+      ]),
+    );
+    const onError = vi.fn();
     await expect(
       sendMessageStream(
+        { model_id: 'g', message: 'q' },
         {
-          model_id: 'qwen-max-latest',
-          message: 'hello',
-          conversation_id: 'conv-6',
+          onReady: vi.fn(),
+          onReasoning: vi.fn(),
+          onAnswering: vi.fn(),
+          onDone: vi.fn(),
+          onError,
         },
-        callbacks
-      )
-    ).rejects.toThrow('流异常结束');
+      ),
+    ).rejects.toThrow('Provider 离线');
+    expect(onError).toHaveBeenCalledWith(
+      'Provider 离线',
+      expect.objectContaining({
+        code: 'PROVIDER_OFFLINE',
+        data: { provider_id: 'p1' },
+      }),
+    );
+  });
 
-    expect(callbacks.onError).toHaveBeenCalledWith('流异常结束');
-    expect(callbacks.onDone).not.toHaveBeenCalled();
+  it('error chunk 字符串 fallback（{code:stream_error, message:用户中止}）', async () => {
+    fetchWithAuthMock.mockResolvedValue(
+      createStreamResponse([
+        agentEvent(
+          'run_started',
+          {
+            conversation_id: 'c',
+            message_id: 'm',
+            model: 'g',
+            tools: [],
+            config: {},
+          },
+          0,
+        ),
+        envelope('error', { code: 'stream_error', message: '用户中止' }),
+      ]),
+    );
+    const onError = vi.fn();
+    await expect(
+      sendMessageStream(
+        { model_id: 'g', message: 'q' },
+        {
+          onReady: vi.fn(),
+          onReasoning: vi.fn(),
+          onAnswering: vi.fn(),
+          onDone: vi.fn(),
+          onError,
+        },
+      ),
+    ).rejects.toThrow('用户中止');
+  });
+
+  it('eof 无 [DONE] 视为流异常结束', async () => {
+    fetchWithAuthMock.mockResolvedValue(
+      createStreamResponse([
+        agentEvent(
+          'run_started',
+          {
+            conversation_id: 'c',
+            message_id: 'm',
+            model: 'g',
+            tools: [],
+            config: {},
+          },
+          0,
+        ),
+      ]),
+    );
+    const onError = vi.fn();
+    await expect(
+      sendMessageStream(
+        { model_id: 'g', message: 'q' },
+        {
+          onReady: vi.fn(),
+          onReasoning: vi.fn(),
+          onAnswering: vi.fn(),
+          onDone: vi.fn(),
+          onError,
+        },
+      ),
+    ).rejects.toThrow('流异常结束');
+    expect(onError).toHaveBeenCalledWith('流异常结束');
+  });
+});
+
+describe('getConversation', () => {
+  beforeEach(() => {
+    fetchWithAuthMock.mockReset();
+    apiRequestMock.mockReset();
   });
 
   it('surfaces backend detail when fetching a conversation fails', async () => {
-    fetchWithAuthMock.mockResolvedValue(
-      new Response(JSON.stringify({ detail: '对话不存在或无权访问' }), {
-        status: 404,
-        headers: {
-          'Content-Type': 'application/json',
-        },
-      })
-    );
+    apiRequestMock.mockRejectedValue(new Error('对话不存在或无权访问'));
 
-    await expect(getConversation('missing-chat')).rejects.toThrow('对话不存在或无权访问');
+    await expect(getConversation('missing-chat')).rejects.toThrow(
+      '对话不存在或无权访问',
+    );
   });
 });
