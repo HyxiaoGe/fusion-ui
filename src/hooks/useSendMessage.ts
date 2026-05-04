@@ -263,7 +263,12 @@ export function useSendMessage() {
 
         // 从 streamSlice 组装最终 content blocks
         const streamState = (store.getState() as { stream: import('@/redux/slices/streamSlice').StreamState }).stream;
-        const isAgentMode = !!streamState.currentRun;
+        // 方案 A 后 endStream 保留 currentRun，仅靠 !!currentRun 判断会误把
+        // 任何走过 onRunStarted 的简单问答当 agent 模式触发 GET /conversations/{id}，
+        // 可能覆盖流式内容。精确判断当前 message 的 currentRun 且确实调过工具。
+        const isAgentMode =
+          streamState.currentRun?.messageId === assistantMessageId &&
+          (streamState.currentRun?.totalToolCalls ?? 0) > 0;
         const finalBlocks = selectFullStreamContentBlocks(streamState);
         const hasThinking = finalBlocks.some(b => b.type === 'thinking');
 

@@ -14,16 +14,22 @@ import type { StreamCallbacks } from '@/lib/api/chat';
 
 const {
   sendMessageStreamMock,
+  getConversationMock,
   generateChatTitleMock,
   uuidMock,
 } = vi.hoisted(() => ({
   sendMessageStreamMock: vi.fn(),
+  getConversationMock: vi.fn(),
   generateChatTitleMock: vi.fn(),
   uuidMock: vi.fn(),
 }));
 
 vi.mock('@/lib/api/chat', () => ({
   sendMessageStream: sendMessageStreamMock,
+  getConversation: getConversationMock,
+  // useSendMessage 内部 dynamic import('@/lib/api/chat') 取 stopStream，
+  // 必须在 mock 里也提供 stub，避免「No "stopStream" export」错误
+  stopStream: vi.fn().mockResolvedValue(undefined),
 }));
 
 vi.mock('@/lib/api/title', () => ({
@@ -95,6 +101,7 @@ function tickIntervals(times = 1) {
 describe('useSendMessage', () => {
   beforeEach(() => {
     sendMessageStreamMock.mockReset();
+    getConversationMock.mockReset();
     generateChatTitleMock.mockReset();
     generateChatTitleMock.mockResolvedValue('Generated Title');
     uuidMock.mockReset();
@@ -463,6 +470,239 @@ describe('useSendMessage', () => {
     expect(tc?.resultSummary).toEqual({ kind: 'web_search', count: 3, truncated: false });
 
     await act(async () => { releaseStream?.(); });
+  });
+
+  it('普通无工具问答：endStream 保留 currentRun，不触发 agent DB refresh', async () => {
+    // 场景：走过 onRunStarted 但 totalToolCalls=0（如 stop 即结束），
+    // 修复后 isAgentMode 应为 false，不触发 getConversation
+    const store = createStore();
+    store.dispatch(
+      upsertConversation({
+        id: 'existing-conv',
+        title: 'Existing',
+        model_id: 'model-1',
+        messages: [],
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      })
+    );
+
+    sendMessageStreamMock.mockImplementationOnce(async (_payload: any, callbacks: StreamCallbacks) => {
+      callbacks.onReady({ messageId: 'assistant-1', conversationId: 'existing-conv' });
+      callbacks.onRunStarted?.({
+        type: 'run_started',
+        run_id: 'run-1',
+        parent_run_id: null,
+        step_id: null,
+        parent_step_id: null,
+        tool_call_id: null,
+        sequence: 1,
+        trace_id: 'trace-1',
+        ts: Date.now(),
+        conversation_id: 'existing-conv',
+        message_id: 'assistant-1',
+        model: 'model-1',
+        tools: [],
+        config: { max_steps: 5, max_tool_calls: 10, timeout_s: 60 },
+      });
+      callbacks.onStepStarted?.({
+        type: 'step_started',
+        run_id: 'run-1',
+        parent_run_id: null,
+        step_id: 'step-1',
+        parent_step_id: null,
+        tool_call_id: null,
+        sequence: 2,
+        trace_id: 'trace-1',
+        ts: Date.now(),
+        step_number: 1,
+      });
+      callbacks.onAnswering({ block_id: 'blk_c', delta: 'plain answer' });
+      callbacks.onStepCompleted?.({
+        type: 'step_completed',
+        run_id: 'run-1',
+        parent_run_id: null,
+        step_id: 'step-1',
+        parent_step_id: null,
+        tool_call_id: null,
+        sequence: 3,
+        trace_id: 'trace-1',
+        ts: Date.now(),
+        step_number: 1,
+        tool_call_count: 0,
+        duration_ms: 10,
+      });
+      callbacks.onRunCompleted?.({
+        type: 'run_completed',
+        run_id: 'run-1',
+        parent_run_id: null,
+        step_id: null,
+        parent_step_id: null,
+        tool_call_id: null,
+        sequence: 4,
+        trace_id: 'trace-1',
+        ts: Date.now(),
+        total_steps: 1,
+        total_tool_calls: 0,
+        finish_reason: 'stop',
+      });
+      callbacks.onDone({ messageId: 'assistant-1', conversationId: 'existing-conv' });
+    });
+
+    const { result } = renderHook(() => useSendMessage(), {
+      wrapper: createWrapper(store),
+    });
+
+    await act(async () => {
+      await result.current.sendMessage('hello', { conversationId: 'existing-conv' });
+    });
+
+    await act(async () => {
+      tickIntervals(5);
+    });
+
+    await waitFor(() => {
+      expect(store.getState().stream.isStreaming).toBe(false);
+    });
+
+    // 关键断言：currentRun 仍保留（方案 A），但因 totalToolCalls=0 不应触发 getConversation
+    expect(store.getState().stream.currentRun).not.toBeNull();
+    expect(store.getState().stream.currentRun?.totalToolCalls).toBe(0);
+    expect(getConversationMock).not.toHaveBeenCalled();
+  });
+
+  it('agent run 含 tool_call：仍触发 agent DB refresh', async () => {
+    const store = createStore();
+    store.dispatch(
+      upsertConversation({
+        id: 'existing-conv',
+        title: 'Existing',
+        model_id: 'model-1',
+        messages: [],
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      })
+    );
+
+    getConversationMock.mockResolvedValue({
+      id: 'existing-conv',
+      messages: [
+        {
+          id: 'srv-asst-1',
+          role: 'assistant',
+          content: [{ type: 'text', text: 'final from db' }],
+          usage: { input_tokens: 10, output_tokens: 20 },
+        },
+      ],
+    });
+
+    sendMessageStreamMock.mockImplementationOnce(async (_payload: any, callbacks: StreamCallbacks) => {
+      callbacks.onReady({ messageId: 'assistant-1', conversationId: 'existing-conv' });
+      callbacks.onRunStarted?.({
+        type: 'run_started',
+        run_id: 'run-1',
+        parent_run_id: null,
+        step_id: null,
+        parent_step_id: null,
+        tool_call_id: null,
+        sequence: 1,
+        trace_id: 'trace-1',
+        ts: Date.now(),
+        conversation_id: 'existing-conv',
+        message_id: 'assistant-1',
+        model: 'model-1',
+        tools: ['web_search'],
+        config: { max_steps: 5, max_tool_calls: 10, timeout_s: 60 },
+      });
+      callbacks.onStepStarted?.({
+        type: 'step_started',
+        run_id: 'run-1',
+        parent_run_id: null,
+        step_id: 'step-1',
+        parent_step_id: null,
+        tool_call_id: null,
+        sequence: 2,
+        trace_id: 'trace-1',
+        ts: Date.now(),
+        step_number: 1,
+      });
+      callbacks.onToolCallStarted?.({
+        type: 'tool_call_started',
+        run_id: 'run-1',
+        parent_run_id: null,
+        step_id: 'step-1',
+        parent_step_id: null,
+        tool_call_id: 'tc-1',
+        sequence: 3,
+        trace_id: 'trace-1',
+        ts: Date.now(),
+        tool_name: 'web_search',
+        arguments: { query: 'hello' },
+      });
+      callbacks.onToolCallCompleted?.({
+        type: 'tool_call_completed',
+        run_id: 'run-1',
+        parent_run_id: null,
+        step_id: 'step-1',
+        parent_step_id: null,
+        tool_call_id: 'tc-1',
+        sequence: 4,
+        trace_id: 'trace-1',
+        ts: Date.now(),
+        tool_name: 'web_search',
+        status: 'success',
+        duration_ms: 50,
+        result_summary: { kind: 'web_search', count: 2, truncated: false },
+        error: null,
+      });
+      callbacks.onAnswering({ block_id: 'blk_c', delta: 'agent answer' });
+      callbacks.onStepCompleted?.({
+        type: 'step_completed',
+        run_id: 'run-1',
+        parent_run_id: null,
+        step_id: 'step-1',
+        parent_step_id: null,
+        tool_call_id: null,
+        sequence: 5,
+        trace_id: 'trace-1',
+        ts: Date.now(),
+        step_number: 1,
+        tool_call_count: 1,
+        duration_ms: 60,
+      });
+      callbacks.onRunCompleted?.({
+        type: 'run_completed',
+        run_id: 'run-1',
+        parent_run_id: null,
+        step_id: null,
+        parent_step_id: null,
+        tool_call_id: null,
+        sequence: 6,
+        trace_id: 'trace-1',
+        ts: Date.now(),
+        total_steps: 1,
+        total_tool_calls: 1,
+        finish_reason: 'stop',
+      });
+      callbacks.onDone({ messageId: 'assistant-1', conversationId: 'existing-conv' });
+    });
+
+    const { result } = renderHook(() => useSendMessage(), {
+      wrapper: createWrapper(store),
+    });
+
+    await act(async () => {
+      await result.current.sendMessage('hello', { conversationId: 'existing-conv' });
+    });
+
+    await act(async () => {
+      tickIntervals(5);
+    });
+
+    await waitFor(() => {
+      expect(getConversationMock).toHaveBeenCalledWith('existing-conv');
+    });
+    expect(store.getState().stream.currentRun?.totalToolCalls).toBe(1);
   });
 
   it('completes immediately when onDone arrives without any content', async () => {
