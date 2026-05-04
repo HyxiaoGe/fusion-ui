@@ -155,6 +155,9 @@ export default function ChatPage() {
             if (cancelled) return;
             dispatch(initRun({
               runId: ev.run_id,
+              // reconnect 路径：messageId 来自 stream-status（已是 server 真实 ID）
+              messageId: messageId,
+              serverMessageId: ev.message_id,
               config: {
                 maxSteps: (ev.config.max_steps as number) ?? 0,
                 maxToolCalls: (ev.config.max_tool_calls as number) ?? 0,

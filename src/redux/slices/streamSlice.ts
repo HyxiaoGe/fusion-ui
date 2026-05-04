@@ -154,11 +154,13 @@ const streamSlice = createSlice({
       state,
       action: PayloadAction<{
         runId: string;
+        messageId: string;
+        serverMessageId?: string;
         config: { maxSteps: number; maxToolCalls: number; timeoutS: number };
         sequence: number;
       }>
     ) {
-      const { runId, config, sequence } = action.payload;
+      const { runId, messageId, serverMessageId, config, sequence } = action.payload;
       // 跨重连幂等：同 runId 且 sequence 已应用 → noop（防重放清空已建 timeline）
       // 不同 runId 仍允许重建（新 run 覆盖旧 run timeline，spec §6.2 单 currentRun 设计）
       if (
@@ -170,6 +172,8 @@ const streamSlice = createSlice({
       }
       state.currentRun = {
         runId,
+        messageId,
+        serverMessageId,
         status: 'running',
         config,
         totalSteps: 0,
@@ -358,9 +362,14 @@ const streamSlice = createSlice({
     endStream(state) {
       // 保留 lastError 跨流生命周期：错误卡片需要在 endStream 后继续显示，
       // 由 startStream（新一轮发送）或 clearStreamError（用户手动 dismiss）清掉
+      // 保留 currentRun 跨流生命周期：AgentStepCard 在流结束后显示折叠摘要
+      //   （由 startStream 新一轮发送清掉，或由 ChatMessage 用 messageId 过滤
+      //    确保不挂错对话）
       const preservedError = state.lastError;
+      const preservedRun = state.currentRun;
       Object.assign(state, initialState);
       state.lastError = preservedError;
+      state.currentRun = preservedRun;
     },
   },
 });

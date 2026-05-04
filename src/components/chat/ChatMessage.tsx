@@ -424,8 +424,11 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, files, isLastMessage
                   </div>
                 )}
 
-                {/* Agent 步骤卡片（流式阶段；AgentStepCard 内部 useSelector currentRun，不需 props） */}
-                {isCurrentlyStreaming && currentRun && currentRun.steps.length > 0 && (
+                {/* Agent 步骤卡片：用 messageId 归属过滤，让流结束后 currentRun 仍挂在
+                    当前消息上（折叠摘要持续显示），新轮发送由 startStream 清空避免错挂 */}
+                {currentRun
+                  && currentRun.messageId === message.id
+                  && currentRun.steps.length > 0 && (
                   <AgentStepCard />
                 )}
 

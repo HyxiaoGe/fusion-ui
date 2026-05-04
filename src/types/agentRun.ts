@@ -56,6 +56,13 @@ export interface AgentRunConfig {
 
 export interface AgentRunState {
   runId: string;
+  /** FE 当前渲染期 message.id；useSendMessage 路径是本地 placeholder，
+   * reconnect 路径是 stream-status 拿到的 server messageId。
+   * AgentStepCard 渲染过滤用此字段。 */
+  messageId: string;
+  /** BE run_started 事件携带的真实 server message_id；预留供后续场景用，
+   * 当前 stop 流程已通过 serverMessageIdRef 处理。 */
+  serverMessageId?: string;
   status: AgentRunStatus;
   config: AgentRunConfig;
   totalSteps: number;

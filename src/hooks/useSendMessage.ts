@@ -384,6 +384,10 @@ export function useSendMessage() {
               if (!activeConvIdRef.current) return;
               dispatch(initRun({
                 runId: ev.run_id,
+                // 优先本地 placeholder（streaming 期 message.id 是它），
+                // ref 为 null 兜底用 ev.message_id（极少触发）
+                messageId: assistantMessageIdRef.current ?? ev.message_id,
+                serverMessageId: ev.message_id,
                 config: {
                   maxSteps: (ev.config.max_steps as number) ?? 0,
                   maxToolCalls: (ev.config.max_tool_calls as number) ?? 0,

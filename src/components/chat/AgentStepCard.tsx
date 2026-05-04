@@ -16,7 +16,9 @@ import type { AgentStepStatus } from '@/types/agentRun';
  * 旧消息（无 currentRun）→ 不渲染（spec §6.9 不反推）。
  */
 export default function AgentStepCard() {
-  const [isExpanded, setIsExpanded] = useState(true);
+  // 默认展开/折叠跟随 run.status：streaming 展开、结束折叠成摘要按钮；
+  // 用户点击后用 override 覆盖默认（streaming 期可手动折叠、结束后可手动展开）
+  const [overrideExpanded, setOverrideExpanded] = useState<boolean | null>(null);
   const run = useAppSelector((s) => s.stream.currentRun);
 
   if (!run || run.steps.length === 0) return null;
@@ -25,6 +27,8 @@ export default function AgentStepCard() {
   const maxSteps = run.config.maxSteps;
   const isStreaming = run.status === 'running';
   const limitReached = !!run.limitReachedReason;
+  const isExpanded = overrideExpanded ?? isStreaming;
+  const setIsExpanded = (v: boolean) => setOverrideExpanded(v);
 
   const currentStep = steps[steps.length - 1];
   const isRunning = isStreaming && currentStep?.status === 'running';

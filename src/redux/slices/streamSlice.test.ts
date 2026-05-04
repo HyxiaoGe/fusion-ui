@@ -11,6 +11,7 @@ import streamSliceReducer, {
   finalizeRun,
   appendTextDelta,
   appendThinkingDelta,
+  endStream,
 } from './streamSlice';
 
 const reducer = streamSliceReducer;
@@ -24,7 +25,7 @@ const baseConfig = { maxSteps: 8, maxToolCalls: 20, timeoutS: 300 };
 describe('streamSlice — agent run timeline', () => {
   it('initRun 创建 currentRun (status=running, lastSequence=0)', () => {
     const state = reducer(initial(), initRun({
-      runId: 'r1', config: baseConfig, sequence: 0,
+      runId: 'r1', messageId: 'm1', config: baseConfig, sequence: 0,
     }));
     expect(state.currentRun?.runId).toBe('r1');
     expect(state.currentRun?.status).toBe('running');
@@ -33,7 +34,7 @@ describe('streamSlice — agent run timeline', () => {
   });
 
   it('pushStep 添加 running step + 更新 totalSteps', () => {
-    let s = reducer(initial(), initRun({ runId: 'r1', config: baseConfig, sequence: 0 }));
+    let s = reducer(initial(), initRun({ runId: 'r1', messageId: 'm1', config: baseConfig, sequence: 0 }));
     s = reducer(s, pushStep({ runId: 'r1', stepId: 's1', stepNumber: 1, sequence: 1 }));
     expect(s.currentRun?.steps).toHaveLength(1);
     expect(s.currentRun?.steps[0].status).toBe('running');
@@ -41,7 +42,7 @@ describe('streamSlice — agent run timeline', () => {
   });
 
   it('pushToolCall 挂到对应 step + 累加 totalToolCalls', () => {
-    let s = reducer(initial(), initRun({ runId: 'r1', config: baseConfig, sequence: 0 }));
+    let s = reducer(initial(), initRun({ runId: 'r1', messageId: 'm1', config: baseConfig, sequence: 0 }));
     s = reducer(s, pushStep({ runId: 'r1', stepId: 's1', stepNumber: 1, sequence: 1 }));
     s = reducer(s, pushToolCall({
       runId: 'r1', stepId: 's1', toolCallId: 't1',
@@ -53,7 +54,7 @@ describe('streamSlice — agent run timeline', () => {
   });
 
   it('mergeToolCallDelta 浅合并字段不覆盖 status', () => {
-    let s = reducer(initial(), initRun({ runId: 'r1', config: baseConfig, sequence: 0 }));
+    let s = reducer(initial(), initRun({ runId: 'r1', messageId: 'm1', config: baseConfig, sequence: 0 }));
     s = reducer(s, pushStep({ runId: 'r1', stepId: 's1', stepNumber: 1, sequence: 1 }));
     s = reducer(s, pushToolCall({
       runId: 'r1', stepId: 's1', toolCallId: 't1',
@@ -69,7 +70,7 @@ describe('streamSlice — agent run timeline', () => {
   });
 
   it('finalizeToolCall 把 running → success + 写 resultSummary', () => {
-    let s = reducer(initial(), initRun({ runId: 'r1', config: baseConfig, sequence: 0 }));
+    let s = reducer(initial(), initRun({ runId: 'r1', messageId: 'm1', config: baseConfig, sequence: 0 }));
     s = reducer(s, pushStep({ runId: 'r1', stepId: 's1', stepNumber: 1, sequence: 1 }));
     s = reducer(s, pushToolCall({
       runId: 'r1', stepId: 's1', toolCallId: 't1',
@@ -86,7 +87,7 @@ describe('streamSlice — agent run timeline', () => {
   });
 
   it('finalizeStep 把 step → completed + completedAt', () => {
-    let s = reducer(initial(), initRun({ runId: 'r1', config: baseConfig, sequence: 0 }));
+    let s = reducer(initial(), initRun({ runId: 'r1', messageId: 'm1', config: baseConfig, sequence: 0 }));
     s = reducer(s, pushStep({ runId: 'r1', stepId: 's1', stepNumber: 1, sequence: 1 }));
     s = reducer(s, finalizeStep({ runId: 'r1', stepId: 's1', sequence: 2 }));
     expect(s.currentRun?.steps[0].status).toBe('completed');
@@ -94,20 +95,20 @@ describe('streamSlice — agent run timeline', () => {
   });
 
   it('markLimitReached 写 reason 不改 run.status', () => {
-    let s = reducer(initial(), initRun({ runId: 'r1', config: baseConfig, sequence: 0 }));
+    let s = reducer(initial(), initRun({ runId: 'r1', messageId: 'm1', config: baseConfig, sequence: 0 }));
     s = reducer(s, markLimitReached({ runId: 'r1', reason: 'max_steps', sequence: 5 }));
     expect(s.currentRun?.status).toBe('running');
     expect(s.currentRun?.limitReachedReason).toBe('max_steps');
   });
 
   it('finalizeRun completed', () => {
-    let s = reducer(initial(), initRun({ runId: 'r1', config: baseConfig, sequence: 0 }));
+    let s = reducer(initial(), initRun({ runId: 'r1', messageId: 'm1', config: baseConfig, sequence: 0 }));
     s = reducer(s, finalizeRun({ runId: 'r1', status: 'completed', sequence: 99 }));
     expect(s.currentRun?.status).toBe('completed');
   });
 
   it('finalizeRun limit_reached', () => {
-    let s = reducer(initial(), initRun({ runId: 'r1', config: baseConfig, sequence: 0 }));
+    let s = reducer(initial(), initRun({ runId: 'r1', messageId: 'm1', config: baseConfig, sequence: 0 }));
     s = reducer(s, markLimitReached({ runId: 'r1', reason: 'timeout', sequence: 5 }));
     s = reducer(s, finalizeRun({ runId: 'r1', status: 'limit_reached', sequence: 6 }));
     expect(s.currentRun?.status).toBe('limit_reached');
@@ -115,7 +116,7 @@ describe('streamSlice — agent run timeline', () => {
   });
 
   it('finalizeRun failed 把当前 running step 标 failed', () => {
-    let s = reducer(initial(), initRun({ runId: 'r1', config: baseConfig, sequence: 0 }));
+    let s = reducer(initial(), initRun({ runId: 'r1', messageId: 'm1', config: baseConfig, sequence: 0 }));
     s = reducer(s, pushStep({ runId: 'r1', stepId: 's1', stepNumber: 1, sequence: 1 }));
     s = reducer(s, finalizeRun({
       runId: 'r1', status: 'failed',
@@ -128,14 +129,14 @@ describe('streamSlice — agent run timeline', () => {
   });
 
   it('finalizeRun interrupted 把当前 running step 标 interrupted', () => {
-    let s = reducer(initial(), initRun({ runId: 'r1', config: baseConfig, sequence: 0 }));
+    let s = reducer(initial(), initRun({ runId: 'r1', messageId: 'm1', config: baseConfig, sequence: 0 }));
     s = reducer(s, pushStep({ runId: 'r1', stepId: 's1', stepNumber: 1, sequence: 1 }));
     s = reducer(s, finalizeRun({ runId: 'r1', status: 'interrupted', sequence: 2 }));
     expect(s.currentRun?.steps[0].status).toBe('interrupted');
   });
 
   it('幂等：sequence ≤ lastSequence 时 noop', () => {
-    let s = reducer(initial(), initRun({ runId: 'r1', config: baseConfig, sequence: 0 }));
+    let s = reducer(initial(), initRun({ runId: 'r1', messageId: 'm1', config: baseConfig, sequence: 0 }));
     s = reducer(s, pushStep({ runId: 'r1', stepId: 's1', stepNumber: 1, sequence: 5 }));
     const before = s;
     s = reducer(s, pushStep({ runId: 'r1', stepId: 's2', stepNumber: 2, sequence: 5 }));
@@ -143,7 +144,7 @@ describe('streamSlice — agent run timeline', () => {
   });
 
   it('reasoning 带 stepId 时挂到 step.contentBlockIds', () => {
-    let s = reducer(initial(), initRun({ runId: 'r1', config: baseConfig, sequence: 0 }));
+    let s = reducer(initial(), initRun({ runId: 'r1', messageId: 'm1', config: baseConfig, sequence: 0 }));
     s = reducer(s, pushStep({ runId: 'r1', stepId: 's1', stepNumber: 1, sequence: 1 }));
     s = reducer(s, appendThinkingDelta({
       blockId: 'b1', delta: '思考中', runId: 'r1', stepId: 's1',
@@ -152,7 +153,7 @@ describe('streamSlice — agent run timeline', () => {
   });
 
   it('reasoning 缺失 stepId 时只入 textBlocks 不挂 step (defensive no-op)', () => {
-    let s = reducer(initial(), initRun({ runId: 'r1', config: baseConfig, sequence: 0 }));
+    let s = reducer(initial(), initRun({ runId: 'r1', messageId: 'm1', config: baseConfig, sequence: 0 }));
     s = reducer(s, pushStep({ runId: 'r1', stepId: 's1', stepNumber: 1, sequence: 1 }));
     s = reducer(s, appendThinkingDelta({ blockId: 'b1', delta: '裸 thinking' }));
     expect(s.currentRun?.steps[0].contentBlockIds).toHaveLength(0);
@@ -160,14 +161,14 @@ describe('streamSlice — agent run timeline', () => {
   });
 
   it('startStream 清空 currentRun', () => {
-    let s = reducer(initial(), initRun({ runId: 'r1', config: baseConfig, sequence: 0 }));
+    let s = reducer(initial(), initRun({ runId: 'r1', messageId: 'm1', config: baseConfig, sequence: 0 }));
     s = reducer(s, pushStep({ runId: 'r1', stepId: 's1', stepNumber: 1, sequence: 1 }));
     s = reducer(s, startStream({ conversationId: 'c2', messageId: 'm2' }));
     expect(s.currentRun).toBeNull();
   });
 
   it('appendTextDelta 带 stepId 时挂到 step.contentBlockIds', () => {
-    let s = reducer(initial(), initRun({ runId: 'r1', config: baseConfig, sequence: 0 }));
+    let s = reducer(initial(), initRun({ runId: 'r1', messageId: 'm1', config: baseConfig, sequence: 0 }));
     s = reducer(s, pushStep({ runId: 'r1', stepId: 's1', stepNumber: 1, sequence: 1 }));
     s = reducer(s, appendTextDelta({
       blockId: 'b_text', delta: 'answer', runId: 'r1', stepId: 's1',
@@ -177,7 +178,7 @@ describe('streamSlice — agent run timeline', () => {
   });
 
   it('mergeToolCallDelta 不允许 BE delta 覆盖 status / toolCallId / toolName', () => {
-    let s = reducer(initial(), initRun({ runId: 'r1', config: baseConfig, sequence: 0 }));
+    let s = reducer(initial(), initRun({ runId: 'r1', messageId: 'm1', config: baseConfig, sequence: 0 }));
     s = reducer(s, pushStep({ runId: 'r1', stepId: 's1', stepNumber: 1, sequence: 1 }));
     s = reducer(s, pushToolCall({
       runId: 'r1', stepId: 's1', toolCallId: 't1',
@@ -201,7 +202,7 @@ describe('streamSlice — agent run timeline', () => {
   });
 
   it('mergeToolCallDelta 允许 resultSummary / arguments 被 delta 覆盖', () => {
-    let s = reducer(initial(), initRun({ runId: 'r1', config: baseConfig, sequence: 0 }));
+    let s = reducer(initial(), initRun({ runId: 'r1', messageId: 'm1', config: baseConfig, sequence: 0 }));
     s = reducer(s, pushStep({ runId: 'r1', stepId: 's1', stepNumber: 1, sequence: 1 }));
     s = reducer(s, pushToolCall({
       runId: 'r1', stepId: 's1', toolCallId: 't1',
@@ -221,43 +222,43 @@ describe('streamSlice — agent run timeline', () => {
   });
 
   it('pushStep runId 不匹配时 noop（防 guard 被简化）', () => {
-    let s = reducer(initial(), initRun({ runId: 'r1', config: baseConfig, sequence: 0 }));
+    let s = reducer(initial(), initRun({ runId: 'r1', messageId: 'm1', config: baseConfig, sequence: 0 }));
     s = reducer(s, pushStep({ runId: 'r2', stepId: 's1', stepNumber: 1, sequence: 1 }));
     expect(s.currentRun?.steps).toHaveLength(0);
     expect(s.currentRun?.runId).toBe('r1');  // 仍是原 run
   });
 
   it('finalizeRun runId 不匹配时 noop', () => {
-    let s = reducer(initial(), initRun({ runId: 'r1', config: baseConfig, sequence: 0 }));
+    let s = reducer(initial(), initRun({ runId: 'r1', messageId: 'm1', config: baseConfig, sequence: 0 }));
     s = reducer(s, finalizeRun({ runId: 'r2', status: 'completed', sequence: 99 }));
     expect(s.currentRun?.status).toBe('running');  // 状态不变
   });
 
   it('initRun 同 runId 重放幂等：sequence ≤ lastSequence 时不清空 timeline', () => {
-    let s = reducer(initial(), initRun({ runId: 'r1', config: baseConfig, sequence: 0 }));
+    let s = reducer(initial(), initRun({ runId: 'r1', messageId: 'm1', config: baseConfig, sequence: 0 }));
     s = reducer(s, pushStep({ runId: 'r1', stepId: 's1', stepNumber: 1, sequence: 1 }));
     s = reducer(s, pushToolCall({
       runId: 'r1', stepId: 's1', toolCallId: 't1',
       toolName: 'web_search', arguments: {}, sequence: 2,
     }));
     // 模拟重连重放 run_started(sequence=0)
-    s = reducer(s, initRun({ runId: 'r1', config: baseConfig, sequence: 0 }));
+    s = reducer(s, initRun({ runId: 'r1', messageId: 'm1', config: baseConfig, sequence: 0 }));
     // 已建 timeline 不被清空
     expect(s.currentRun?.steps).toHaveLength(1);
     expect(s.currentRun?.steps[0].toolCalls).toHaveLength(1);
   });
 
   it('initRun 不同 runId 时允许重建（新 run 覆盖旧）', () => {
-    let s = reducer(initial(), initRun({ runId: 'r1', config: baseConfig, sequence: 0 }));
+    let s = reducer(initial(), initRun({ runId: 'r1', messageId: 'm1', config: baseConfig, sequence: 0 }));
     s = reducer(s, pushStep({ runId: 'r1', stepId: 's1', stepNumber: 1, sequence: 1 }));
     // 新 run 启动
-    s = reducer(s, initRun({ runId: 'r2', config: baseConfig, sequence: 0 }));
+    s = reducer(s, initRun({ runId: 'r2', messageId: 'm2', config: baseConfig, sequence: 0 }));
     expect(s.currentRun?.runId).toBe('r2');
     expect(s.currentRun?.steps).toHaveLength(0);
   });
 
   it('totalToolCalls 跨多 step 累加（不绑定单 step.toolCalls.length）', () => {
-    let s = reducer(initial(), initRun({ runId: 'r1', config: baseConfig, sequence: 0 }));
+    let s = reducer(initial(), initRun({ runId: 'r1', messageId: 'm1', config: baseConfig, sequence: 0 }));
     s = reducer(s, pushStep({ runId: 'r1', stepId: 's1', stepNumber: 1, sequence: 1 }));
     s = reducer(s, pushToolCall({
       runId: 'r1', stepId: 's1', toolCallId: 't1',
@@ -276,5 +277,40 @@ describe('streamSlice — agent run timeline', () => {
     expect(s.currentRun?.totalToolCalls).toBe(3);
     expect(s.currentRun?.steps[0].toolCalls).toHaveLength(2);
     expect(s.currentRun?.steps[1].toolCalls).toHaveLength(1);
+  });
+
+  it('initRun 写入 messageId 和 serverMessageId', () => {
+    const s = reducer(initial(), initRun({
+      runId: 'r1',
+      messageId: 'local-placeholder-1',
+      serverMessageId: 'server-msg-uuid',
+      config: baseConfig,
+      sequence: 0,
+    }));
+    expect(s.currentRun?.messageId).toBe('local-placeholder-1');
+    expect(s.currentRun?.serverMessageId).toBe('server-msg-uuid');
+  });
+
+  it('endStream 保留 currentRun（跨流生命周期）', () => {
+    let s = reducer(initial(), initRun({
+      runId: 'r1', messageId: 'm1', config: baseConfig, sequence: 0,
+    }));
+    s = reducer(s, pushStep({ runId: 'r1', stepId: 's1', stepNumber: 1, sequence: 1 }));
+    s = reducer(s, endStream());
+    expect(s.currentRun).not.toBeNull();
+    expect(s.currentRun?.runId).toBe('r1');
+    expect(s.currentRun?.steps).toHaveLength(1);
+    // 但其它 streaming-only 字段应清空
+    expect(s.isStreaming).toBe(false);
+    expect(s.textBlocks).toEqual({});
+  });
+
+  it('startStream 清空 currentRun（新轮发送不复用旧 timeline）', () => {
+    let s = reducer(initial(), initRun({
+      runId: 'r1', messageId: 'm1', config: baseConfig, sequence: 0,
+    }));
+    s = reducer(s, pushStep({ runId: 'r1', stepId: 's1', stepNumber: 1, sequence: 1 }));
+    s = reducer(s, startStream({ conversationId: 'c2', messageId: 'm2' }));
+    expect(s.currentRun).toBeNull();
   });
 });
