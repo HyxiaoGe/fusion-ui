@@ -9,10 +9,8 @@ import conversationReducer from '@/redux/slices/conversationSlice';
 import modelsReducer from '@/redux/slices/modelsSlice';
 import streamReducer from '@/redux/slices/streamSlice';
 import { upsertConversation } from '@/redux/slices/conversationSlice';
-import { endStream } from '@/redux/slices/streamSlice';
 import { useSendMessage } from './useSendMessage';
 import type { StreamCallbacks } from '@/lib/api/chat';
-import type { Usage } from '@/types/conversation';
 
 const {
   sendMessageStreamMock,
@@ -137,11 +135,11 @@ describe('useSendMessage', () => {
     sendMessageStreamMock.mockImplementation(
       async (_payload: any, callbacks: StreamCallbacks) => {
         callbacks.onReady({ messageId: 'assistant-1', conversationId: 'server-conv' });
-        callbacks.onThinkingDelta('think', 'blk_t', { messageId: 'assistant-1', conversationId: 'server-conv' });
-        callbacks.onThinkingDelta('ing', 'blk_t', { messageId: 'assistant-1', conversationId: 'server-conv' });
-        callbacks.onTextDelta('ans', 'blk_c', { messageId: 'assistant-1', conversationId: 'server-conv' });
-        callbacks.onTextDelta('wer', 'blk_c', { messageId: 'assistant-1', conversationId: 'server-conv' });
-        callbacks.onDone('assistant-1', 'server-conv', null);
+        callbacks.onReasoning({ block_id: 'blk_t', delta: 'think' });
+        callbacks.onReasoning({ block_id: 'blk_t', delta: 'ing' });
+        callbacks.onAnswering({ block_id: 'blk_c', delta: 'ans' });
+        callbacks.onAnswering({ block_id: 'blk_c', delta: 'wer' });
+        callbacks.onDone({ messageId: 'assistant-1', conversationId: 'server-conv' });
       }
     );
 
@@ -197,8 +195,8 @@ describe('useSendMessage', () => {
       )
       .mockImplementationOnce(async (_payload: any, callbacks: StreamCallbacks) => {
         callbacks.onReady({ messageId: 'assistant-2', conversationId: 'server-conv-2' });
-        callbacks.onTextDelta('second answer', 'blk_c', { messageId: 'assistant-2', conversationId: 'server-conv-2' });
-        callbacks.onDone('assistant-2', 'server-conv-2', null);
+        callbacks.onAnswering({ block_id: 'blk_c', delta: 'second answer' });
+        callbacks.onDone({ messageId: 'assistant-2', conversationId: 'server-conv-2' });
       });
 
     const { result } = renderHook(() => useSendMessage(), {
@@ -245,8 +243,8 @@ describe('useSendMessage', () => {
 
     sendMessageStreamMock.mockImplementationOnce(async (_payload: any, callbacks: StreamCallbacks) => {
       callbacks.onReady({ messageId: 'assistant-1', conversationId: 'existing-conv' });
-      callbacks.onThinkingDelta('thinking', 'blk_t', { messageId: 'assistant-1', conversationId: 'existing-conv' });
-      callbacks.onTextDelta('hello world!', 'blk_c', { messageId: 'assistant-1', conversationId: 'existing-conv' });
+      callbacks.onReasoning({ block_id: 'blk_t', delta: 'thinking' });
+      callbacks.onAnswering({ block_id: 'blk_c', delta: 'hello world!' });
       tickIntervals(2);
       callbacks.onError('模型调用超时');
       throw new Error('模型调用超时');
@@ -278,9 +276,9 @@ describe('useSendMessage', () => {
     sendMessageStreamMock.mockImplementationOnce(
       async (_payload: any, callbacks: StreamCallbacks) => {
         callbacks.onReady({ messageId: 'server-assistant-id', conversationId: 'server-conv' });
-        callbacks.onTextDelta('part', 'blk_c', { messageId: 'server-assistant-id', conversationId: 'server-conv' });
+        callbacks.onAnswering({ block_id: 'blk_c', delta: 'part' });
         await new Promise<void>((resolve) => { releaseStream = resolve; });
-        callbacks.onDone('server-assistant-id', 'server-conv', null);
+        callbacks.onDone({ messageId: 'server-assistant-id', conversationId: 'server-conv' });
       }
     );
 
@@ -310,6 +308,163 @@ describe('useSendMessage', () => {
     });
   });
 
+  it('dispatches initRun when onRunStarted fires', async () => {
+    const store = createStore();
+    store.dispatch(
+      upsertConversation({
+        id: 'existing-conv',
+        title: 'Existing',
+        model_id: 'model-1',
+        messages: [],
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      })
+    );
+
+    let releaseStream: (() => void) | undefined;
+    let runSnapshot: ReturnType<typeof store.getState>['stream']['currentRun'] = null;
+
+    sendMessageStreamMock.mockImplementationOnce(async (_payload: any, callbacks: StreamCallbacks) => {
+      callbacks.onReady({ messageId: 'assistant-1', conversationId: 'existing-conv' });
+      callbacks.onRunStarted?.({
+        type: 'run_started',
+        run_id: 'run-1',
+        parent_run_id: null,
+        step_id: null,
+        parent_step_id: null,
+        tool_call_id: null,
+        sequence: 1,
+        trace_id: 'trace-1',
+        ts: Date.now(),
+        conversation_id: 'existing-conv',
+        message_id: 'assistant-1',
+        model: 'model-1',
+        tools: ['web_search'],
+        config: { max_steps: 5, max_tool_calls: 10, timeout_s: 60 },
+      });
+      // 在流结束前快照 currentRun（doCompleteStream 会 endStream 清空）
+      runSnapshot = store.getState().stream.currentRun;
+      await new Promise<void>((resolve) => { releaseStream = resolve; });
+      callbacks.onDone({ messageId: 'assistant-1', conversationId: 'existing-conv' });
+    });
+
+    const { result } = renderHook(() => useSendMessage(), {
+      wrapper: createWrapper(store),
+    });
+
+    await act(async () => {
+      void result.current.sendMessage('hello', { conversationId: 'existing-conv' });
+    });
+
+    await waitFor(() => {
+      expect(runSnapshot).not.toBeNull();
+    });
+
+    expect(runSnapshot?.runId).toBe('run-1');
+    expect(runSnapshot?.config).toEqual({ maxSteps: 5, maxToolCalls: 10, timeoutS: 60 });
+
+    await act(async () => { releaseStream?.(); });
+  });
+
+  it('dispatches finalizeToolCall when onToolCallCompleted fires', async () => {
+    const store = createStore();
+    store.dispatch(
+      upsertConversation({
+        id: 'existing-conv',
+        title: 'Existing',
+        model_id: 'model-1',
+        messages: [],
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      })
+    );
+
+    let releaseStream: (() => void) | undefined;
+    let runSnapshot: ReturnType<typeof store.getState>['stream']['currentRun'] = null;
+
+    sendMessageStreamMock.mockImplementationOnce(async (_payload: any, callbacks: StreamCallbacks) => {
+      callbacks.onReady({ messageId: 'assistant-1', conversationId: 'existing-conv' });
+      callbacks.onRunStarted?.({
+        type: 'run_started',
+        run_id: 'run-1',
+        parent_run_id: null,
+        step_id: null,
+        parent_step_id: null,
+        tool_call_id: null,
+        sequence: 1,
+        trace_id: 'trace-1',
+        ts: Date.now(),
+        conversation_id: 'existing-conv',
+        message_id: 'assistant-1',
+        model: 'model-1',
+        tools: ['web_search'],
+        config: { max_steps: 5, max_tool_calls: 10, timeout_s: 60 },
+      });
+      callbacks.onStepStarted?.({
+        type: 'step_started',
+        run_id: 'run-1',
+        parent_run_id: null,
+        step_id: 'step-1',
+        parent_step_id: null,
+        tool_call_id: null,
+        sequence: 2,
+        trace_id: 'trace-1',
+        ts: Date.now(),
+        step_number: 1,
+      });
+      callbacks.onToolCallStarted?.({
+        type: 'tool_call_started',
+        run_id: 'run-1',
+        parent_run_id: null,
+        step_id: 'step-1',
+        parent_step_id: null,
+        tool_call_id: 'tc-1',
+        sequence: 3,
+        trace_id: 'trace-1',
+        ts: Date.now(),
+        tool_name: 'web_search',
+        arguments: { query: 'hello' },
+      });
+      callbacks.onToolCallCompleted?.({
+        type: 'tool_call_completed',
+        run_id: 'run-1',
+        parent_run_id: null,
+        step_id: 'step-1',
+        parent_step_id: null,
+        tool_call_id: 'tc-1',
+        sequence: 4,
+        trace_id: 'trace-1',
+        ts: Date.now(),
+        tool_name: 'web_search',
+        status: 'success',
+        duration_ms: 123,
+        result_summary: { kind: 'web_search', count: 3, truncated: false },
+        error: null,
+      });
+      runSnapshot = store.getState().stream.currentRun;
+      await new Promise<void>((resolve) => { releaseStream = resolve; });
+      callbacks.onDone({ messageId: 'assistant-1', conversationId: 'existing-conv' });
+    });
+
+    const { result } = renderHook(() => useSendMessage(), {
+      wrapper: createWrapper(store),
+    });
+
+    await act(async () => {
+      void result.current.sendMessage('hello', { conversationId: 'existing-conv' });
+    });
+
+    await waitFor(() => {
+      expect(runSnapshot).not.toBeNull();
+    });
+
+    const tc = runSnapshot?.steps[0]?.toolCalls[0];
+    expect(tc?.status).toBe('success');
+    expect(tc?.resultSummary).toEqual({ kind: 'web_search', count: 3, truncated: false });
+
+    await act(async () => { releaseStream?.(); });
+  });
+
   it('completes immediately when onDone arrives without any content', async () => {
     const store = createStore();
 
@@ -326,8 +481,8 @@ describe('useSendMessage', () => {
 
     sendMessageStreamMock.mockImplementationOnce(async (_payload: any, callbacks: StreamCallbacks) => {
       callbacks.onReady({ messageId: 'assistant-1', conversationId: 'existing-conv' });
-      callbacks.onThinkingDelta('thinking', 'blk_t', { messageId: 'assistant-1', conversationId: 'existing-conv' });
-      callbacks.onDone('assistant-1', 'existing-conv', null);
+      callbacks.onReasoning({ block_id: 'blk_t', delta: 'thinking' });
+      callbacks.onDone({ messageId: 'assistant-1', conversationId: 'existing-conv' });
     });
 
     const { result } = renderHook(() => useSendMessage(), {

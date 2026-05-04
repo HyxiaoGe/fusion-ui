@@ -17,28 +17,28 @@ import {
   upsertConversation,
 } from '@/redux/slices/conversationSlice';
 import {
-  agentLimitReached,
-  agentStepEnd,
-  agentStepStart,
-  agentToolCallComplete,
-  agentToolCallStart,
   appendTextDelta,
   appendThinkingDelta,
-  completeSearch,
   completeThinkingPhase,
-  completeUrlRead,
   endStream,
+  finalizeRun,
+  finalizeStep,
+  finalizeToolCall,
+  initRun,
+  markLimitReached,
+  mergeToolCallDelta,
   migrateStreamConversation,
+  pushStep,
+  pushToolCall,
   selectFullStreamContentBlocks,
   selectStreamContentBlocks,
   setStreamError,
-  startSearch,
   startStream,
-  startUrlRead,
 } from '@/redux/slices/streamSlice';
+import type { LimitReachedReason, ToolCallResultSummary } from '@/types/agentRun';
 import { sendMessageStream, getConversation } from '@/lib/api/chat';
 import { generateChatTitle } from '@/lib/api/title';
-import type { Message, ContentBlock, Usage } from '@/types/conversation';
+import type { Message, ContentBlock } from '@/types/conversation';
 import type { FileAttachment } from '@/lib/utils/fileHelpers';
 import { useTypewriter } from './useTypewriter';
 import { useRetryMessage } from './useRetryMessage';
@@ -216,7 +216,9 @@ export function useSendMessage() {
       const useReasoning = reasoningEnabled && supportsReasoning;
       let serverConvId: string | null = null;
       let materializedOnce = false;
-      let donePayload: { incomingConvId: string; usage: Usage | null } | null = null;
+      // usage 不再随 done 事件下发（spec 缺口，未来可能扩 RunCompleted.usage）；
+      // 当前路径：agent 模式从 GET conversation 拉，普通模式暂留 undefined
+      let donePayload: { incomingConvId: string } | null = null;
 
       const materializeIfNeeded = (incomingConvId?: string) => {
         if (!isDraft || !incomingConvId || materializedOnce) return;
@@ -246,7 +248,7 @@ export function useSendMessage() {
       };
 
       const doCompleteStream = (payload: NonNullable<typeof donePayload>) => {
-        const { incomingConvId, usage } = payload;
+        const { incomingConvId } = payload;
         materializeIfNeeded(incomingConvId);
 
         const effectiveConvId = activeConvIdRef.current;
@@ -255,7 +257,7 @@ export function useSendMessage() {
 
         // 从 streamSlice 组装最终 content blocks
         const streamState = (store.getState() as { stream: import('@/redux/slices/streamSlice').StreamState }).stream;
-        const isAgentMode = streamState.agentSteps.length > 0;
+        const isAgentMode = !!streamState.currentRun;
         const finalBlocks = selectFullStreamContentBlocks(streamState);
         const hasThinking = finalBlocks.some(b => b.type === 'thinking');
 
@@ -266,7 +268,7 @@ export function useSendMessage() {
             patch: {
               content: finalBlocks,
               model_id: enabledModel.id,
-              usage: usage ?? undefined,
+              // usage：当前 done 事件不再携带；agent 模式由后续 GET conversation 拉取覆盖
               isReasoningVisible: hasThinking ? false : undefined,
             },
           })
@@ -339,7 +341,7 @@ export function useSendMessage() {
               materializeIfNeeded(incomingConvId);
             },
 
-            onTextDelta: (delta, blockId) => {
+            onAnswering: (payload) => {
               if (!activeConvIdRef.current) return;
               // 收到第一个 text delta 且还在推理阶段 → 标记推理结束
               const streamState = (store.getState() as { stream: import('@/redux/slices/streamSlice').StreamState }).stream;
@@ -347,66 +349,134 @@ export function useSendMessage() {
                 dispatch(completeThinkingPhase());
               }
               assistantHasContentRef.current = true;
-              dispatch(appendTextDelta({ blockId, delta }));
+              dispatch(appendTextDelta({
+                blockId: payload.block_id,
+                delta: payload.delta,
+                runId: payload.run_id,
+                stepId: payload.step_id,
+              }));
               typewriter.start(() => {
                 if (donePayload) doCompleteStream(donePayload);
               });
             },
 
-            onThinkingDelta: (delta, blockId) => {
+            onReasoning: (payload) => {
               if (!activeConvIdRef.current) return;
-              dispatch(appendThinkingDelta({ blockId, delta }));
+              dispatch(appendThinkingDelta({
+                blockId: payload.block_id,
+                delta: payload.delta,
+                runId: payload.run_id,
+                stepId: payload.step_id,
+              }));
             },
 
-            onSearchStart: (query, _meta, toolCallId) => {
+            onRunStarted: (ev) => {
               if (!activeConvIdRef.current) return;
-              dispatch(startSearch({ query }));
-              if (toolCallId) {
-                dispatch(agentToolCallStart({ toolCallId, toolName: 'web_search', query }));
-              }
+              dispatch(initRun({
+                runId: ev.run_id,
+                config: {
+                  maxSteps: (ev.config.max_steps as number) ?? 0,
+                  maxToolCalls: (ev.config.max_tool_calls as number) ?? 0,
+                  timeoutS: (ev.config.timeout_s as number) ?? 0,
+                },
+                sequence: ev.sequence,
+              }));
             },
 
-            onSearchComplete: (sources, _meta, toolCallId) => {
-              if (!activeConvIdRef.current) return;
-              dispatch(completeSearch({ sources }));
-              if (toolCallId) {
-                dispatch(agentToolCallComplete({ toolCallId, status: 'completed' }));
-              }
+            onStepStarted: (ev) => {
+              if (!activeConvIdRef.current || !ev.step_id) return;
+              dispatch(pushStep({
+                runId: ev.run_id,
+                stepId: ev.step_id,
+                stepNumber: ev.step_number,
+                sequence: ev.sequence,
+              }));
             },
 
-            onUrlReadStart: (url: string, _source: string, toolCallId?: string) => {
-              if (!activeConvIdRef.current) return;
-              dispatch(startUrlRead({ url }));
-              if (toolCallId) {
-                dispatch(agentToolCallStart({ toolCallId, toolName: 'url_read', query: url }));
-              }
+            onToolCallStarted: (ev) => {
+              if (!activeConvIdRef.current || !ev.step_id || !ev.tool_call_id) return;
+              dispatch(pushToolCall({
+                runId: ev.run_id,
+                stepId: ev.step_id,
+                toolCallId: ev.tool_call_id,
+                toolName: ev.tool_name,
+                arguments: ev.arguments,
+                sequence: ev.sequence,
+              }));
             },
 
-            onUrlReadComplete: (result: { url: string; title?: string; favicon?: string; status: string }, toolCallId?: string) => {
-              if (!activeConvIdRef.current) return;
-              dispatch(completeUrlRead(result));
-              if (toolCallId) {
-                dispatch(agentToolCallComplete({ toolCallId, status: result.status === 'success' ? 'completed' : 'failed' }));
-              }
+            onToolCallDelta: (ev) => {
+              if (!activeConvIdRef.current || !ev.tool_call_id) return;
+              dispatch(mergeToolCallDelta({
+                runId: ev.run_id,
+                toolCallId: ev.tool_call_id,
+                delta: ev.delta,
+                sequence: ev.sequence,
+              }));
             },
 
-            onAgentStepStart: (step, maxSteps, toolCount) => {
-              if (!activeConvIdRef.current) return;
-              dispatch(agentStepStart({ step, maxSteps, toolCount }));
+            onToolCallCompleted: (ev) => {
+              if (!activeConvIdRef.current || !ev.tool_call_id) return;
+              dispatch(finalizeToolCall({
+                runId: ev.run_id,
+                toolCallId: ev.tool_call_id,
+                status: ev.status as 'success' | 'failed' | 'degraded',
+                durationMs: ev.duration_ms,
+                resultSummary: ev.result_summary as unknown as ToolCallResultSummary | undefined,
+                error: ev.error ?? null,
+                sequence: ev.sequence,
+              }));
             },
 
-            onAgentStepEnd: (step) => {
-              if (!activeConvIdRef.current) return;
-              dispatch(agentStepEnd({ step }));
+            onStepCompleted: (ev) => {
+              if (!activeConvIdRef.current || !ev.step_id) return;
+              dispatch(finalizeStep({
+                runId: ev.run_id,
+                stepId: ev.step_id,
+                sequence: ev.sequence,
+              }));
             },
 
-            onAgentLimitReached: () => {
+            onRunLimitReached: (ev) => {
               if (!activeConvIdRef.current) return;
-              dispatch(agentLimitReached());
+              dispatch(markLimitReached({
+                runId: ev.run_id,
+                reason: ev.reason as LimitReachedReason,
+                sequence: ev.sequence,
+              }));
             },
 
-            onDone: (_messageId, incomingConvId, usage) => {
-              donePayload = { incomingConvId, usage };
+            onRunInterrupted: (ev) => {
+              if (!activeConvIdRef.current) return;
+              dispatch(finalizeRun({
+                runId: ev.run_id,
+                status: 'interrupted',
+                reason: ev.reason,
+                sequence: ev.sequence,
+              }));
+            },
+
+            onRunFailed: (ev) => {
+              if (!activeConvIdRef.current) return;
+              dispatch(finalizeRun({
+                runId: ev.run_id,
+                status: 'failed',
+                failure: { code: ev.error_code, message: ev.message },
+                sequence: ev.sequence,
+              }));
+            },
+
+            onRunCompleted: (ev) => {
+              if (!activeConvIdRef.current) return;
+              dispatch(finalizeRun({
+                runId: ev.run_id,
+                status: ev.finish_reason === 'limit_reached' ? 'limit_reached' : 'completed',
+                sequence: ev.sequence,
+              }));
+            },
+
+            onDone: ({ conversationId: incomingConvId }) => {
+              donePayload = { incomingConvId };
               if (!assistantHasContentRef.current) {
                 // 没有文本内容，直接完成（打字机从未启动）
                 doCompleteStream(donePayload);
