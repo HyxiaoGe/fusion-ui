@@ -13,7 +13,7 @@ vi.mock('./fetchWithAuth', () => ({
   apiRequest: apiRequestMock,
 }));
 
-import { getConversation, sendMessageStream } from './chat';
+import { getConversation, reconnectStream, sendMessageStream } from './chat';
 
 function createStreamResponse(chunks: string[]) {
   const encoder = new TextEncoder();
@@ -434,6 +434,110 @@ describe('sendMessageStream — 新 envelope 协议', () => {
       ),
     ).rejects.toThrow('流异常结束');
     expect(onError).toHaveBeenCalledWith('流异常结束');
+  });
+
+  it('done chunk 在 run_started 之前到达 → onDone 收到空 messageId（容错路径）', async () => {
+    fetchWithAuthMock.mockResolvedValue(
+      createStreamResponse([
+        envelope('done', {}),
+        'data: [DONE]\n\n',
+      ]),
+    );
+    const onDone = vi.fn();
+    await sendMessageStream(
+      { model_id: 'g', message: 'q', conversation_id: 'conv-1' },
+      {
+        onReady: vi.fn(),
+        onReasoning: vi.fn(),
+        onAnswering: vi.fn(),
+        onDone,
+        onError: vi.fn(),
+      },
+    );
+    // 当前契约：messageId 空（run_started 没到），conversationId fallback 为 request.conversation_id
+    expect(onDone).toHaveBeenCalledWith({ messageId: '', conversationId: 'conv-1' });
+  });
+});
+
+describe('reconnectStream — 新 envelope 协议', () => {
+  beforeEach(() => {
+    fetchWithAuthMock.mockReset();
+  });
+
+  it('重连场景下 onReady 仍触发（每次 new function 重置 readyFired）', async () => {
+    fetchWithAuthMock.mockResolvedValue(
+      createStreamResponse([
+        'id: 1234-5\n',
+        agentEvent(
+          'run_started',
+          {
+            conversation_id: 'conv-2',
+            message_id: 'msg-resumed',
+            model: 'g',
+            tools: [],
+            config: {},
+          },
+          5,
+          'r-resume',
+        ),
+        envelope('done', {}),
+        'data: [DONE]\n\n',
+      ]),
+    );
+    const onReady = vi.fn();
+    const onRunStarted = vi.fn();
+    const result = await reconnectStream('conv-2', '1234-0', {
+      onReady,
+      onRunStarted,
+      onReasoning: vi.fn(),
+      onAnswering: vi.fn(),
+      onDone: vi.fn(),
+      onError: vi.fn(),
+    });
+    expect(onReady).toHaveBeenCalledWith({
+      messageId: 'msg-resumed',
+      conversationId: 'conv-2',
+    });
+    expect(onRunStarted).toHaveBeenCalledTimes(1);
+    expect(result.entryId).toBe('1234-5');
+  });
+
+  it('reconnectStream 也做 sequence dedup（每次调用 new Map）', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    fetchWithAuthMock.mockResolvedValue(
+      createStreamResponse([
+        agentEvent(
+          'run_started',
+          {
+            conversation_id: 'c',
+            message_id: 'm',
+            model: 'g',
+            tools: [],
+            config: {},
+          },
+          10,
+          'r1',
+        ),
+        agentEvent('step_started', { step_number: 1, step_id: 's1' }, 8, 'r1'), // 倒退
+        envelope('done', {}),
+        'data: [DONE]\n\n',
+      ]),
+    );
+    const onStepStarted = vi.fn();
+    await reconnectStream('c', '0', {
+      onReady: vi.fn(),
+      onStepStarted,
+      onReasoning: vi.fn(),
+      onAnswering: vi.fn(),
+      onDone: vi.fn(),
+      onError: vi.fn(),
+    });
+    expect(onStepStarted).not.toHaveBeenCalled();
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining('sequence 倒退'),
+      expect.any(Object),
+    );
+    warn.mockRestore();
   });
 });
 
