@@ -1,53 +1,38 @@
 import { createSlice, PayloadAction } from '@reduxjs/toolkit';
 import type { ContentBlock, SearchSourceSummary } from '@/types/conversation';
-
-export interface AgentToolCall {
-  toolCallId: string;
-  toolName: string;
-  query: string;
-  status: 'running' | 'completed' | 'failed';
-}
-
-export interface AgentStep {
-  step: number;
-  status: 'running' | 'completed';
-  toolCalls: AgentToolCall[];
-}
+import type {
+  AgentRunState,
+  LimitReachedReason,
+  ToolCallResultSummary,
+} from '@/types/agentRun';
 
 export interface StreamState {
+  // ── 流元信息 ──
   conversationId: string | null;
   messageId: string | null;
-  // 按 block id 维护增量
+  // ── block 增量（保留：reasoning/answering 仍走这里）──
   textBlocks: Record<string, string>;
   thinkingBlocks: Record<string, string>;
-  // 保持 block 顺序（按首次出现排列）
   blockOrder: string[];
   blockTypes: Record<string, 'text' | 'thinking'>;
-  // 打字机控制：text block 总字符数 vs 已显示字符数
   totalTextLength: number;
   displayedTextLength: number;
+  // ── 流状态枚举 ──
   isStreaming: boolean;
   isStreamingReasoning: boolean;
   isThinkingPhaseComplete: boolean;
   reasoningStartTime: number | null;
   reasoningEndTime: number | undefined;
-  // 搜索状态
-  searchQuery: string | null;
+  // ── 来源（保留：SourcesSidebar 仍读）──
+  // 注：Phase 1 cut over 后 streaming 期 searchSources 不再被 reducer 主动填充；
+  // 由 ChatMessage (Task 13b) 在 stream 结束后从消息 ContentBlock 提取
   searchSources: SearchSourceSummary[];
-  isSearching: boolean;
-  // URL 读取状态
-  isReadingUrl: boolean;
-  urlReadUrl: string | null;
-  urlReadResult: { url: string; title?: string; favicon?: string } | null;
-  // 最后收到的 Redis Stream entry ID（断线重连起点）
+  // ── 断线重连 ──
   lastEntryId: string;
-  // 流状态枚举
   streamStatus: 'idle' | 'streaming' | 'reconnecting' | 'completed' | 'error';
-  // Agent 步骤状态
-  agentSteps: AgentStep[];
-  agentMaxSteps: number;
-  agentLimitReached: boolean;
-  // 最后一次流错误（用于消息底部错误卡片 + CTA）
+  // ── Agent run timeline（Task 12 新增）──
+  currentRun: AgentRunState | null;
+  // ── 错误卡片 ──
   lastError: { message: string; code?: string; data?: Record<string, unknown> } | null;
 }
 
@@ -65,17 +50,10 @@ const initialState: StreamState = {
   isThinkingPhaseComplete: false,
   reasoningStartTime: null,
   reasoningEndTime: undefined,
-  searchQuery: null,
   searchSources: [],
-  isSearching: false,
-  isReadingUrl: false,
-  urlReadUrl: null,
-  urlReadResult: null,
   lastEntryId: '0',
   streamStatus: 'idle',
-  agentSteps: [],
-  agentMaxSteps: 0,
-  agentLimitReached: false,
+  currentRun: null,
   lastError: null,
 };
 
@@ -100,27 +78,27 @@ const streamSlice = createSlice({
       state.isThinkingPhaseComplete = false;
       state.reasoningStartTime = null;
       state.reasoningEndTime = undefined;
-      state.searchQuery = null;
       state.searchSources = [];
-      state.isSearching = false;
-      state.isReadingUrl = false;
-      state.urlReadUrl = null;
-      state.urlReadResult = null;
-      state.agentSteps = [];
-      state.agentMaxSteps = 0;
-      state.agentLimitReached = false;
+      state.currentRun = null;
       // 新一轮发送清空上一次的错误卡片
       state.lastError = null;
     },
 
     appendTextDelta(
       state,
-      action: PayloadAction<{ blockId: string; delta: string }>
+      action: PayloadAction<{ blockId: string; delta: string; runId?: string; stepId?: string }>
     ) {
-      const { blockId, delta } = action.payload;
+      const { blockId, delta, runId, stepId } = action.payload;
       if (!state.blockTypes[blockId]) {
         state.blockTypes[blockId] = 'text';
         state.blockOrder.push(blockId);
+        // 关联 step（spec §6.5 defensive no-op：runId 不匹配或 stepId 缺失则不挂）
+        if (runId && stepId && state.currentRun?.runId === runId) {
+          const step = state.currentRun.steps.find(s => s.stepId === stepId);
+          if (step && !step.contentBlockIds.includes(blockId)) {
+            step.contentBlockIds.push(blockId);
+          }
+        }
       }
       state.textBlocks[blockId] = (state.textBlocks[blockId] ?? '') + delta;
       state.totalTextLength += delta.length;
@@ -128,15 +106,21 @@ const streamSlice = createSlice({
 
     appendThinkingDelta(
       state,
-      action: PayloadAction<{ blockId: string; delta: string }>
+      action: PayloadAction<{ blockId: string; delta: string; runId?: string; stepId?: string }>
     ) {
-      const { blockId, delta } = action.payload;
+      const { blockId, delta, runId, stepId } = action.payload;
       if (!state.blockTypes[blockId]) {
         state.blockTypes[blockId] = 'thinking';
         state.blockOrder.push(blockId);
         if (!state.isStreamingReasoning) {
           state.isStreamingReasoning = true;
           state.reasoningStartTime = Date.now();
+        }
+        if (runId && stepId && state.currentRun?.runId === runId) {
+          const step = state.currentRun.steps.find(s => s.stepId === stepId);
+          if (step && !step.contentBlockIds.includes(blockId)) {
+            step.contentBlockIds.push(blockId);
+          }
         }
       }
       state.thinkingBlocks[blockId] = (state.thinkingBlocks[blockId] ?? '') + delta;
@@ -164,103 +148,179 @@ const streamSlice = createSlice({
       state.lastEntryId = action.payload;
     },
 
-    startSearch(state, action: PayloadAction<{ query: string }>) {
-      state.isSearching = true;
-      state.searchQuery = action.payload.query;
-      // Agent 模式下不清理 thinking（多步骤，每步 thinking 都有价值）
-      // 仅在非 agent 模式（无 agentSteps）时清理第一轮 tool_call 推理噪音
-      if (state.agentSteps.length === 0) {
-        for (const blockId of [...state.blockOrder]) {
-          if (state.blockTypes[blockId] === 'thinking') {
-            delete state.thinkingBlocks[blockId];
-            delete state.blockTypes[blockId];
-            state.blockOrder = state.blockOrder.filter(id => id !== blockId);
-          }
-        }
-        state.isStreamingReasoning = false;
-        state.isThinkingPhaseComplete = false;
-        state.reasoningStartTime = null;
-        state.reasoningEndTime = undefined;
-      }
-    },
+    // ── Agent run timeline reducers (Task 12 / spec §6.4) ──
 
-    completeSearch(state, action: PayloadAction<{ sources: SearchSourceSummary[] }>) {
-      state.isSearching = false;
-      state.searchSources = action.payload.sources;
-    },
-
-    startUrlRead(state, action: PayloadAction<{ url: string }>) {
-      state.isReadingUrl = true;
-      state.urlReadUrl = action.payload.url;
-      state.urlReadResult = null;
-    },
-
-    completeUrlRead(
+    initRun(
       state,
-      action: PayloadAction<{ url: string; title?: string; favicon?: string; status: string }>
+      action: PayloadAction<{
+        runId: string;
+        config: { maxSteps: number; maxToolCalls: number; timeoutS: number };
+        sequence: number;
+      }>
     ) {
-      state.isReadingUrl = false;
-      if (action.payload.status === 'success') {
-        state.urlReadResult = {
-          url: action.payload.url,
-          title: action.payload.title,
-          favicon: action.payload.favicon,
-        };
-      }
+      const { runId, config, sequence } = action.payload;
+      state.currentRun = {
+        runId,
+        status: 'running',
+        config,
+        totalSteps: 0,
+        totalToolCalls: 0,
+        steps: [],
+        lastSequence: sequence,
+      };
     },
 
-    // ── Agent 步骤 ──
-    agentStepStart(
+    pushStep(
       state,
-      action: PayloadAction<{ step: number; maxSteps: number; toolCount: number }>
+      action: PayloadAction<{ runId: string; stepId: string; stepNumber: number; sequence: number }>
     ) {
-      const { step, maxSteps } = action.payload;
-      state.agentMaxSteps = maxSteps;
-      state.agentSteps.push({
-        step,
+      const run = state.currentRun;
+      const { runId, stepId, stepNumber, sequence } = action.payload;
+      if (!run || run.runId !== runId || sequence <= run.lastSequence) return;
+      run.lastSequence = sequence;
+      run.steps.push({
+        stepId,
+        stepNumber,
         status: 'running',
         toolCalls: [],
+        contentBlockIds: [],
+        startedAt: Date.now(),
       });
+      run.totalSteps = Math.max(run.totalSteps, stepNumber);
     },
 
-    agentStepEnd(state, action: PayloadAction<{ step: number }>) {
-      const agentStep = state.agentSteps.find(s => s.step === action.payload.step);
-      if (agentStep) {
-        agentStep.status = 'completed';
-        for (const tc of agentStep.toolCalls) {
-          if (tc.status === 'running') tc.status = 'completed';
-        }
-      }
-    },
-
-    agentToolCallStart(
+    pushToolCall(
       state,
-      action: PayloadAction<{ toolCallId: string; toolName: string; query: string }>
+      action: PayloadAction<{
+        runId: string;
+        stepId: string;
+        toolCallId: string;
+        toolName: string;
+        arguments: Record<string, unknown>;
+        sequence: number;
+      }>
     ) {
-      const currentStep = state.agentSteps[state.agentSteps.length - 1];
-      if (currentStep) {
-        currentStep.toolCalls.push({
-          ...action.payload,
-          status: 'running',
-        });
-      }
+      const run = state.currentRun;
+      const { runId, stepId, toolCallId, toolName, arguments: args, sequence } = action.payload;
+      if (!run || run.runId !== runId || sequence <= run.lastSequence) return;
+      run.lastSequence = sequence;
+      const step = run.steps.find(s => s.stepId === stepId);
+      if (!step) return; // defensive: step 应该已存在
+      step.toolCalls.push({
+        toolCallId,
+        toolName,
+        arguments: args,
+        status: 'running',
+        startedAt: Date.now(),
+      });
+      run.totalToolCalls += 1;
     },
 
-    agentToolCallComplete(
+    mergeToolCallDelta(
       state,
-      action: PayloadAction<{ toolCallId: string; status: 'completed' | 'failed' }>
+      action: PayloadAction<{
+        runId: string;
+        toolCallId: string;
+        delta: Record<string, unknown>;
+        sequence: number;
+      }>
     ) {
-      for (const agentStep of state.agentSteps) {
-        const tc = agentStep.toolCalls.find(t => t.toolCallId === action.payload.toolCallId);
+      const run = state.currentRun;
+      const { runId, toolCallId, delta, sequence } = action.payload;
+      if (!run || run.runId !== runId || sequence <= run.lastSequence) return;
+      run.lastSequence = sequence;
+      for (const step of run.steps) {
+        const tc = step.toolCalls.find(t => t.toolCallId === toolCallId);
         if (tc) {
-          tc.status = action.payload.status;
-          break;
+          // 浅合并 delta 到 tc（保留 status/duration/etc 不被覆盖）
+          Object.assign(tc, delta);
+          return;
         }
       }
     },
 
-    agentLimitReached(state) {
-      state.agentLimitReached = true;
+    finalizeToolCall(
+      state,
+      action: PayloadAction<{
+        runId: string;
+        toolCallId: string;
+        status: 'success' | 'failed' | 'degraded';
+        durationMs: number;
+        resultSummary?: ToolCallResultSummary;
+        error?: string | null;
+        sequence: number;
+      }>
+    ) {
+      const run = state.currentRun;
+      const { runId, toolCallId, status, durationMs, resultSummary, error, sequence } =
+        action.payload;
+      if (!run || run.runId !== runId || sequence <= run.lastSequence) return;
+      run.lastSequence = sequence;
+      for (const step of run.steps) {
+        const tc = step.toolCalls.find(t => t.toolCallId === toolCallId);
+        if (tc) {
+          tc.status = status;
+          tc.completedAt = Date.now();
+          if (resultSummary) tc.resultSummary = resultSummary;
+          if (error) tc.error = error;
+          // duration_ms 暂不映射到 ToolCallState（信息可由 startedAt/completedAt 推算）
+          void durationMs;
+          return;
+        }
+      }
+    },
+
+    finalizeStep(
+      state,
+      action: PayloadAction<{ runId: string; stepId: string; sequence: number }>
+    ) {
+      const run = state.currentRun;
+      const { runId, stepId, sequence } = action.payload;
+      if (!run || run.runId !== runId || sequence <= run.lastSequence) return;
+      run.lastSequence = sequence;
+      const step = run.steps.find(s => s.stepId === stepId);
+      if (step) {
+        step.status = 'completed';
+        step.completedAt = Date.now();
+      }
+    },
+
+    markLimitReached(
+      state,
+      action: PayloadAction<{ runId: string; reason: LimitReachedReason; sequence: number }>
+    ) {
+      const run = state.currentRun;
+      const { runId, reason, sequence } = action.payload;
+      if (!run || run.runId !== runId || sequence <= run.lastSequence) return;
+      run.lastSequence = sequence;
+      run.limitReachedReason = reason;
+      // 不改 run.status —— spec §4.3，run_limit_reached 是信号事件，仅 run_completed 才写终态
+    },
+
+    finalizeRun(
+      state,
+      action: PayloadAction<{
+        runId: string;
+        status: 'completed' | 'limit_reached' | 'interrupted' | 'failed';
+        failure?: { code: string; message: string };
+        reason?: string;
+        sequence: number;
+      }>
+    ) {
+      const run = state.currentRun;
+      const { runId, status, failure, sequence } = action.payload;
+      if (!run || run.runId !== runId || sequence <= run.lastSequence) return;
+      run.lastSequence = sequence;
+      run.status = status;
+      if (failure) run.failure = failure;
+      // run-level 终结：把还在 running 的最后一个 step 标记为对应终态
+      if (status === 'interrupted' || status === 'failed') {
+        const lastStep = run.steps[run.steps.length - 1];
+        if (lastStep && lastStep.status === 'running') {
+          lastStep.status = status;
+          lastStep.completedAt = Date.now();
+        }
+      }
     },
 
     setStreamStatus(state, action: PayloadAction<StreamState['streamStatus']>) {
@@ -290,7 +350,6 @@ const streamSlice = createSlice({
 
 // Selector：从 streamSlice 组装出当前流式 content blocks 数组
 // thinking blocks 全量返回（实时显示），text blocks 按 displayedTextLength 截断（打字机效果）
-// search block 在 thinking 和 text 之间插入
 export function selectStreamContentBlocks(state: StreamState): ContentBlock[] {
   let remainingChars = state.displayedTextLength;
   const blocks: ContentBlock[] = [];
@@ -304,16 +363,6 @@ export function selectStreamContentBlocks(state: StreamState): ContentBlock[] {
         thinking: state.thinkingBlocks[blockId] ?? '',
       });
     }
-  }
-
-  // 插入 search block（如果有搜索结果）
-  if (state.searchSources.length > 0 && state.searchQuery) {
-    blocks.push({
-      type: 'search' as const,
-      id: 'blk_stream_search',
-      query: state.searchQuery,
-      sources: state.searchSources,
-    });
   }
 
   // 再输出 text blocks（带打字机截断）
@@ -348,25 +397,6 @@ export function selectFullStreamContentBlocks(state: StreamState): ContentBlock[
     }
   }
 
-  if (state.urlReadResult) {
-    blocks.push({
-      type: 'url_read' as const,
-      id: 'blk_stream_url_read',
-      url: state.urlReadResult.url,
-      title: state.urlReadResult.title,
-      favicon: state.urlReadResult.favicon,
-    });
-  }
-
-  if (state.searchSources.length > 0 && state.searchQuery) {
-    blocks.push({
-      type: 'search' as const,
-      id: 'blk_stream_search',
-      query: state.searchQuery,
-      sources: state.searchSources,
-    });
-  }
-
   for (const blockId of state.blockOrder) {
     if (state.blockTypes[blockId] === 'text') {
       blocks.push({
@@ -382,25 +412,24 @@ export function selectFullStreamContentBlocks(state: StreamState): ContentBlock[
 
 export const {
   advanceTypewriter,
-  agentLimitReached,
-  agentStepEnd,
-  agentStepStart,
-  agentToolCallComplete,
-  agentToolCallStart,
   appendTextDelta,
   appendThinkingDelta,
   clearStreamError,
-  completeSearch,
   completeThinkingPhase,
-  completeUrlRead,
   endStream,
+  finalizeRun,
+  finalizeStep,
+  finalizeToolCall,
+  initRun,
+  markLimitReached,
+  mergeToolCallDelta,
   migrateStreamConversation,
+  pushStep,
+  pushToolCall,
   setLastEntryId,
   setStreamError,
   setStreamStatus,
-  startSearch,
   startStream,
-  startUrlRead,
 } = streamSlice.actions;
 
 export default streamSlice.reducer;

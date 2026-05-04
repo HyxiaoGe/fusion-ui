@@ -1,84 +1,178 @@
-import { describe, expect, it } from 'vitest';
-
-import reducer, {
-  advanceTypewriter,
+import { describe, it, expect } from 'vitest';
+import streamSliceReducer, {
+  startStream,
+  initRun,
+  pushStep,
+  pushToolCall,
+  mergeToolCallDelta,
+  finalizeToolCall,
+  finalizeStep,
+  markLimitReached,
+  finalizeRun,
   appendTextDelta,
   appendThinkingDelta,
-  endStream,
-  migrateStreamConversation,
-  selectFullStreamContentBlocks,
-  selectStreamContentBlocks,
-  setStreamStatus,
-  startStream,
 } from './streamSlice';
 
-describe('streamSlice', () => {
-  it('migrates stream ownership without resetting active stream state', () => {
-    let state = reducer(
-      undefined,
-      startStream({ conversationId: 'temp-conv', messageId: 'assistant-1' })
-    );
-    state = reducer(state, appendThinkingDelta({ blockId: 'blk_think', delta: 'thinking' }));
-    state = reducer(state, appendTextDelta({ blockId: 'blk_text', delta: 'answer' }));
+const reducer = streamSliceReducer;
 
-    const nextState = reducer(state, migrateStreamConversation('server-conv'));
+function initial() {
+  return reducer(undefined, { type: '@@INIT' });
+}
 
-    expect(nextState.conversationId).toBe('server-conv');
-    expect(nextState.messageId).toBe('assistant-1');
-    expect(nextState.isStreaming).toBe(true);
-    expect(nextState.thinkingBlocks['blk_think']).toBe('thinking');
-    expect(nextState.textBlocks['blk_text']).toBe('answer');
+const baseConfig = { maxSteps: 8, maxToolCalls: 20, timeoutS: 300 };
+
+describe('streamSlice — agent run timeline', () => {
+  it('initRun 创建 currentRun (status=running, lastSequence=0)', () => {
+    const state = reducer(initial(), initRun({
+      runId: 'r1', config: baseConfig, sequence: 0,
+    }));
+    expect(state.currentRun?.runId).toBe('r1');
+    expect(state.currentRun?.status).toBe('running');
+    expect(state.currentRun?.lastSequence).toBe(0);
+    expect(state.currentRun?.steps).toHaveLength(0);
   });
 
-  it('assembles full content blocks via selectFullStreamContentBlocks', () => {
-    let state = reducer(
-      undefined,
-      startStream({ conversationId: 'conv-1', messageId: 'msg-1' })
-    );
-    state = reducer(state, appendThinkingDelta({ blockId: 'blk_think', delta: 'let me ' }));
-    state = reducer(state, appendThinkingDelta({ blockId: 'blk_think', delta: 'think' }));
-    state = reducer(state, appendTextDelta({ blockId: 'blk_text', delta: 'hello' }));
-
-    const blocks = selectFullStreamContentBlocks(state);
-
-    expect(blocks).toHaveLength(2);
-    expect(blocks[0]).toEqual({ type: 'thinking', id: 'blk_think', thinking: 'let me think' });
-    expect(blocks[1]).toEqual({ type: 'text', id: 'blk_text', text: 'hello' });
+  it('pushStep 添加 running step + 更新 totalSteps', () => {
+    let s = reducer(initial(), initRun({ runId: 'r1', config: baseConfig, sequence: 0 }));
+    s = reducer(s, pushStep({ runId: 'r1', stepId: 's1', stepNumber: 1, sequence: 1 }));
+    expect(s.currentRun?.steps).toHaveLength(1);
+    expect(s.currentRun?.steps[0].status).toBe('running');
+    expect(s.currentRun?.totalSteps).toBe(1);
   });
 
-  it('truncates text blocks by displayedTextLength in selectStreamContentBlocks', () => {
-    let state = reducer(
-      undefined,
-      startStream({ conversationId: 'conv-1', messageId: 'msg-1' })
-    );
-    state = reducer(state, appendTextDelta({ blockId: 'blk_text', delta: 'hello world' }));
-
-    // 未推进显示进度 → 文本被截断为空
-    expect(selectStreamContentBlocks(state)[0]).toEqual(
-      expect.objectContaining({ type: 'text', text: '' })
-    );
-
-    // 推进 5 字符
-    state = reducer(state, advanceTypewriter(5));
-    expect(selectStreamContentBlocks(state)[0]).toEqual(
-      expect.objectContaining({ type: 'text', text: 'hello' })
-    );
-
-    // 推进到完整长度
-    state = reducer(state, advanceTypewriter(100));
-    expect(selectStreamContentBlocks(state)[0]).toEqual(
-      expect.objectContaining({ type: 'text', text: 'hello world' })
-    );
+  it('pushToolCall 挂到对应 step + 累加 totalToolCalls', () => {
+    let s = reducer(initial(), initRun({ runId: 'r1', config: baseConfig, sequence: 0 }));
+    s = reducer(s, pushStep({ runId: 'r1', stepId: 's1', stepNumber: 1, sequence: 1 }));
+    s = reducer(s, pushToolCall({
+      runId: 'r1', stepId: 's1', toolCallId: 't1',
+      toolName: 'web_search', arguments: { q: 'x' }, sequence: 2,
+    }));
+    expect(s.currentRun?.steps[0].toolCalls).toHaveLength(1);
+    expect(s.currentRun?.steps[0].toolCalls[0].status).toBe('running');
+    expect(s.currentRun?.totalToolCalls).toBe(1);
   });
 
-  it('streamStatus defaults to idle and resets on endStream', () => {
-    const initial = reducer(undefined, { type: '@@INIT' });
-    expect(initial.streamStatus).toBe('idle');
+  it('mergeToolCallDelta 浅合并字段不覆盖 status', () => {
+    let s = reducer(initial(), initRun({ runId: 'r1', config: baseConfig, sequence: 0 }));
+    s = reducer(s, pushStep({ runId: 'r1', stepId: 's1', stepNumber: 1, sequence: 1 }));
+    s = reducer(s, pushToolCall({
+      runId: 'r1', stepId: 's1', toolCallId: 't1',
+      toolName: 'web_search', arguments: {}, sequence: 2,
+    }));
+    s = reducer(s, mergeToolCallDelta({
+      runId: 'r1', toolCallId: 't1',
+      delta: { resultSummary: { kind: 'search', truncated: false } } as Record<string, unknown>,
+      sequence: 3,
+    }));
+    expect(s.currentRun?.steps[0].toolCalls[0].status).toBe('running');
+    expect((s.currentRun?.steps[0].toolCalls[0] as unknown as Record<string, unknown>).resultSummary).toEqual({ kind: 'search', truncated: false });
+  });
 
-    let state = reducer(initial, setStreamStatus('reconnecting'));
-    expect(state.streamStatus).toBe('reconnecting');
+  it('finalizeToolCall 把 running → success + 写 resultSummary', () => {
+    let s = reducer(initial(), initRun({ runId: 'r1', config: baseConfig, sequence: 0 }));
+    s = reducer(s, pushStep({ runId: 'r1', stepId: 's1', stepNumber: 1, sequence: 1 }));
+    s = reducer(s, pushToolCall({
+      runId: 'r1', stepId: 's1', toolCallId: 't1',
+      toolName: 'web_search', arguments: {}, sequence: 2,
+    }));
+    s = reducer(s, finalizeToolCall({
+      runId: 'r1', toolCallId: 't1',
+      status: 'success', durationMs: 42,
+      resultSummary: { kind: 'search', count: 5, truncated: false },
+      sequence: 3,
+    }));
+    expect(s.currentRun?.steps[0].toolCalls[0].status).toBe('success');
+    expect(s.currentRun?.steps[0].toolCalls[0].resultSummary?.count).toBe(5);
+  });
 
-    state = reducer(state, endStream());
-    expect(state.streamStatus).toBe('idle');
+  it('finalizeStep 把 step → completed + completedAt', () => {
+    let s = reducer(initial(), initRun({ runId: 'r1', config: baseConfig, sequence: 0 }));
+    s = reducer(s, pushStep({ runId: 'r1', stepId: 's1', stepNumber: 1, sequence: 1 }));
+    s = reducer(s, finalizeStep({ runId: 'r1', stepId: 's1', sequence: 2 }));
+    expect(s.currentRun?.steps[0].status).toBe('completed');
+    expect(s.currentRun?.steps[0].completedAt).toBeDefined();
+  });
+
+  it('markLimitReached 写 reason 不改 run.status', () => {
+    let s = reducer(initial(), initRun({ runId: 'r1', config: baseConfig, sequence: 0 }));
+    s = reducer(s, markLimitReached({ runId: 'r1', reason: 'max_steps', sequence: 5 }));
+    expect(s.currentRun?.status).toBe('running');
+    expect(s.currentRun?.limitReachedReason).toBe('max_steps');
+  });
+
+  it('finalizeRun completed', () => {
+    let s = reducer(initial(), initRun({ runId: 'r1', config: baseConfig, sequence: 0 }));
+    s = reducer(s, finalizeRun({ runId: 'r1', status: 'completed', sequence: 99 }));
+    expect(s.currentRun?.status).toBe('completed');
+  });
+
+  it('finalizeRun limit_reached', () => {
+    let s = reducer(initial(), initRun({ runId: 'r1', config: baseConfig, sequence: 0 }));
+    s = reducer(s, markLimitReached({ runId: 'r1', reason: 'timeout', sequence: 5 }));
+    s = reducer(s, finalizeRun({ runId: 'r1', status: 'limit_reached', sequence: 6 }));
+    expect(s.currentRun?.status).toBe('limit_reached');
+    expect(s.currentRun?.limitReachedReason).toBe('timeout');
+  });
+
+  it('finalizeRun failed 把当前 running step 标 failed', () => {
+    let s = reducer(initial(), initRun({ runId: 'r1', config: baseConfig, sequence: 0 }));
+    s = reducer(s, pushStep({ runId: 'r1', stepId: 's1', stepNumber: 1, sequence: 1 }));
+    s = reducer(s, finalizeRun({
+      runId: 'r1', status: 'failed',
+      failure: { code: 'X', message: 'boom' },
+      sequence: 2,
+    }));
+    expect(s.currentRun?.status).toBe('failed');
+    expect(s.currentRun?.failure?.code).toBe('X');
+    expect(s.currentRun?.steps[0].status).toBe('failed');
+  });
+
+  it('finalizeRun interrupted 把当前 running step 标 interrupted', () => {
+    let s = reducer(initial(), initRun({ runId: 'r1', config: baseConfig, sequence: 0 }));
+    s = reducer(s, pushStep({ runId: 'r1', stepId: 's1', stepNumber: 1, sequence: 1 }));
+    s = reducer(s, finalizeRun({ runId: 'r1', status: 'interrupted', sequence: 2 }));
+    expect(s.currentRun?.steps[0].status).toBe('interrupted');
+  });
+
+  it('幂等：sequence ≤ lastSequence 时 noop', () => {
+    let s = reducer(initial(), initRun({ runId: 'r1', config: baseConfig, sequence: 0 }));
+    s = reducer(s, pushStep({ runId: 'r1', stepId: 's1', stepNumber: 1, sequence: 5 }));
+    const before = s;
+    s = reducer(s, pushStep({ runId: 'r1', stepId: 's2', stepNumber: 2, sequence: 5 }));
+    expect(s).toEqual(before);
+  });
+
+  it('reasoning 带 stepId 时挂到 step.contentBlockIds', () => {
+    let s = reducer(initial(), initRun({ runId: 'r1', config: baseConfig, sequence: 0 }));
+    s = reducer(s, pushStep({ runId: 'r1', stepId: 's1', stepNumber: 1, sequence: 1 }));
+    s = reducer(s, appendThinkingDelta({
+      blockId: 'b1', delta: '思考中', runId: 'r1', stepId: 's1',
+    }));
+    expect(s.currentRun?.steps[0].contentBlockIds).toContain('b1');
+  });
+
+  it('reasoning 缺失 stepId 时只入 textBlocks 不挂 step (defensive no-op)', () => {
+    let s = reducer(initial(), initRun({ runId: 'r1', config: baseConfig, sequence: 0 }));
+    s = reducer(s, pushStep({ runId: 'r1', stepId: 's1', stepNumber: 1, sequence: 1 }));
+    s = reducer(s, appendThinkingDelta({ blockId: 'b1', delta: '裸 thinking' }));
+    expect(s.currentRun?.steps[0].contentBlockIds).toHaveLength(0);
+    expect(s.thinkingBlocks['b1']).toBe('裸 thinking');
+  });
+
+  it('startStream 清空 currentRun', () => {
+    let s = reducer(initial(), initRun({ runId: 'r1', config: baseConfig, sequence: 0 }));
+    s = reducer(s, pushStep({ runId: 'r1', stepId: 's1', stepNumber: 1, sequence: 1 }));
+    s = reducer(s, startStream({ conversationId: 'c2', messageId: 'm2' }));
+    expect(s.currentRun).toBeNull();
+  });
+
+  it('appendTextDelta 带 stepId 时挂到 step.contentBlockIds', () => {
+    let s = reducer(initial(), initRun({ runId: 'r1', config: baseConfig, sequence: 0 }));
+    s = reducer(s, pushStep({ runId: 'r1', stepId: 's1', stepNumber: 1, sequence: 1 }));
+    s = reducer(s, appendTextDelta({
+      blockId: 'b_text', delta: 'answer', runId: 'r1', stepId: 's1',
+    }));
+    expect(s.currentRun?.steps[0].contentBlockIds).toContain('b_text');
+    expect(s.textBlocks['b_text']).toBe('answer');
   });
 });
