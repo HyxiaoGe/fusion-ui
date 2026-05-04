@@ -232,8 +232,16 @@ const streamSlice = createSlice({
       for (const step of run.steps) {
         const tc = step.toolCalls.find(t => t.toolCallId === toolCallId);
         if (tc) {
-          // 浅合并 delta 到 tc（保留 status/duration/etc 不被覆盖）
-          Object.assign(tc, delta);
+          // 显式 allowlist：仅 resultSummary / arguments 可被 delta 覆盖。
+          // 不允许 status / toolCallId / toolName / startedAt / completedAt 被 delta 改，
+          // 它们由 finalizeToolCall / pushToolCall 等专用 reducer 控制。
+          const tcRecord = tc as unknown as Record<string, unknown>;
+          if ('resultSummary' in delta) {
+            tcRecord.resultSummary = delta.resultSummary;
+          }
+          if ('arguments' in delta) {
+            tcRecord.arguments = delta.arguments;
+          }
           return;
         }
       }

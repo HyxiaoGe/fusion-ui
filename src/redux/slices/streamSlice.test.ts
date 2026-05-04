@@ -175,4 +175,83 @@ describe('streamSlice — agent run timeline', () => {
     expect(s.currentRun?.steps[0].contentBlockIds).toContain('b_text');
     expect(s.textBlocks['b_text']).toBe('answer');
   });
+
+  it('mergeToolCallDelta 不允许 BE delta 覆盖 status / toolCallId / toolName', () => {
+    let s = reducer(initial(), initRun({ runId: 'r1', config: baseConfig, sequence: 0 }));
+    s = reducer(s, pushStep({ runId: 'r1', stepId: 's1', stepNumber: 1, sequence: 1 }));
+    s = reducer(s, pushToolCall({
+      runId: 'r1', stepId: 's1', toolCallId: 't1',
+      toolName: 'web_search', arguments: { q: 'x' }, sequence: 2,
+    }));
+    // 恶意 / 未来 BE 误发 delta 包含 status/toolCallId/toolName
+    s = reducer(s, mergeToolCallDelta({
+      runId: 'r1', toolCallId: 't1',
+      delta: {
+        status: 'failed',           // 应被忽略
+        toolCallId: 'EVIL_ID',      // 应被忽略
+        toolName: 'rogue_tool',     // 应被忽略
+        startedAt: 0,               // 应被忽略
+      } as Record<string, unknown>,
+      sequence: 3,
+    }));
+    const tc = s.currentRun?.steps[0].toolCalls[0];
+    expect(tc?.status).toBe('running');
+    expect(tc?.toolCallId).toBe('t1');
+    expect(tc?.toolName).toBe('web_search');
+  });
+
+  it('mergeToolCallDelta 允许 resultSummary / arguments 被 delta 覆盖', () => {
+    let s = reducer(initial(), initRun({ runId: 'r1', config: baseConfig, sequence: 0 }));
+    s = reducer(s, pushStep({ runId: 'r1', stepId: 's1', stepNumber: 1, sequence: 1 }));
+    s = reducer(s, pushToolCall({
+      runId: 'r1', stepId: 's1', toolCallId: 't1',
+      toolName: 'web_search', arguments: { q: 'x' }, sequence: 2,
+    }));
+    s = reducer(s, mergeToolCallDelta({
+      runId: 'r1', toolCallId: 't1',
+      delta: {
+        resultSummary: { kind: 'search', count: 3, truncated: false },
+        arguments: { q: 'updated' },
+      } as Record<string, unknown>,
+      sequence: 3,
+    }));
+    const tc = s.currentRun?.steps[0].toolCalls[0];
+    expect(tc?.resultSummary?.count).toBe(3);
+    expect(tc?.arguments).toEqual({ q: 'updated' });
+  });
+
+  it('pushStep runId 不匹配时 noop（防 guard 被简化）', () => {
+    let s = reducer(initial(), initRun({ runId: 'r1', config: baseConfig, sequence: 0 }));
+    s = reducer(s, pushStep({ runId: 'r2', stepId: 's1', stepNumber: 1, sequence: 1 }));
+    expect(s.currentRun?.steps).toHaveLength(0);
+    expect(s.currentRun?.runId).toBe('r1');  // 仍是原 run
+  });
+
+  it('finalizeRun runId 不匹配时 noop', () => {
+    let s = reducer(initial(), initRun({ runId: 'r1', config: baseConfig, sequence: 0 }));
+    s = reducer(s, finalizeRun({ runId: 'r2', status: 'completed', sequence: 99 }));
+    expect(s.currentRun?.status).toBe('running');  // 状态不变
+  });
+
+  it('totalToolCalls 跨多 step 累加（不绑定单 step.toolCalls.length）', () => {
+    let s = reducer(initial(), initRun({ runId: 'r1', config: baseConfig, sequence: 0 }));
+    s = reducer(s, pushStep({ runId: 'r1', stepId: 's1', stepNumber: 1, sequence: 1 }));
+    s = reducer(s, pushToolCall({
+      runId: 'r1', stepId: 's1', toolCallId: 't1',
+      toolName: 'web_search', arguments: {}, sequence: 2,
+    }));
+    s = reducer(s, pushToolCall({
+      runId: 'r1', stepId: 's1', toolCallId: 't2',
+      toolName: 'url_read', arguments: {}, sequence: 3,
+    }));
+    s = reducer(s, finalizeStep({ runId: 'r1', stepId: 's1', sequence: 4 }));
+    s = reducer(s, pushStep({ runId: 'r1', stepId: 's2', stepNumber: 2, sequence: 5 }));
+    s = reducer(s, pushToolCall({
+      runId: 'r1', stepId: 's2', toolCallId: 't3',
+      toolName: 'web_search', arguments: {}, sequence: 6,
+    }));
+    expect(s.currentRun?.totalToolCalls).toBe(3);
+    expect(s.currentRun?.steps[0].toolCalls).toHaveLength(2);
+    expect(s.currentRun?.steps[1].toolCalls).toHaveLength(1);
+  });
 });
