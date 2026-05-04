@@ -33,6 +33,17 @@ interface StreamChunkPayload {
     finish_reason?: 'stop' | 'error' | null;
   }>;
   usage?: Usage | null;
+  // BYOK 协议扩展：finalize_stream(error_code='PROVIDER_OFFLINE', error_data=...) 时挂这里
+  error?: {
+    code: string;
+    message: string;
+    data: Record<string, unknown>;
+  };
+}
+
+export interface StreamErrorPayload {
+  code?: string;
+  data?: Record<string, unknown>;
 }
 
 export interface StreamCallbacks {
@@ -47,7 +58,7 @@ export interface StreamCallbacks {
   onAgentStepEnd?: (step: number) => void;
   onAgentLimitReached?: (reason: string) => void;
   onDone: (messageId: string, conversationId: string, usage: Usage | null) => void;
-  onError: (message: string) => void;
+  onError: (message: string, payload?: StreamErrorPayload) => void;
 }
 
 // ============================================================
@@ -179,7 +190,12 @@ export async function sendMessageStream(
         if (choice?.finish_reason === 'stop') {
           callbacks.onDone(messageId, conversationId, chunk.usage ?? null);
         } else if (choice?.finish_reason === 'error') {
-          callbacks.onError('模型调用失败');
+          const err = chunk.error;
+          if (err) {
+            callbacks.onError(err.message || '模型调用失败', { code: err.code, data: err.data });
+          } else {
+            callbacks.onError('模型调用失败');
+          }
         }
       }
     }
@@ -254,7 +270,11 @@ export async function reconnectStream(
         }
 
         if (choice?.finish_reason === 'stop') callbacks.onDone(messageId, conversationId, chunk.usage ?? null);
-        else if (choice?.finish_reason === 'error') callbacks.onError('模型调用失败');
+        else if (choice?.finish_reason === 'error') {
+          const err = chunk.error;
+          if (err) callbacks.onError(err.message || '模型调用失败', { code: err.code, data: err.data });
+          else callbacks.onError('模型调用失败');
+        }
       }
     }
   } finally {

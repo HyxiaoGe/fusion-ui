@@ -32,6 +32,7 @@ function buildTokenUser(decoded: DecodedToken): UserProfile {
     nickname: null,
     mobile: null,
     system_prompt: '',
+    is_superuser: false,
   };
 }
 
@@ -68,7 +69,7 @@ const getInitialAuthState = (): AuthState => {
       // 检查token是否还有效
       if (decoded.exp * 1000 > Date.now()) {
         const parsedUser: UserProfile = userProfile
-          ? { system_prompt: '', ...JSON.parse(userProfile) }
+          ? { system_prompt: '', is_superuser: false, ...JSON.parse(userProfile) }
           : buildTokenUser(decoded);
 
         return {

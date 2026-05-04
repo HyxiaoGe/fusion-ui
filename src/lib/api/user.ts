@@ -10,6 +10,7 @@ export interface UserProfile {
   mobile: string | null;
   loginProvider?: 'github' | 'google' | null;
   system_prompt: string;
+  is_superuser: boolean;
 }
 
 export const fetchUserProfileAPI = async (): Promise<UserProfile> => {
