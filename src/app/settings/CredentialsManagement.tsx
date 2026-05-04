@@ -1,7 +1,14 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Key, Save, Trash2, RotateCw, Loader2 } from "lucide-react";
+import { Key, Save, Trash2, RotateCw, Loader2, AlertTriangle } from "lucide-react";
+
+const OFFLINE_REASON_LABEL: Record<string, string> = {
+  key_invalid: "密钥无效",
+  quota_exceeded: "余额耗尽 / 配额用完",
+  tos_blocked: "服务条款限制",
+  other: "上游连接失败",
+};
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useAppDispatch, useAppSelector } from "@/redux/hooks";
@@ -124,7 +131,33 @@ export default function CredentialsManagement() {
                 </span>
               </CardTitle>
             </CardHeader>
-            <CardContent className="pt-0 space-y-2">
+            <CardContent className="pt-0 space-y-2.5">
+              {/* 离线状态条 — 醒目区域，独立于 key 输入 */}
+              {isOffline && (
+                <div className="flex items-start gap-2 rounded-md border border-destructive/40 bg-destructive/10 px-2.5 py-2 text-xs">
+                  <AlertTriangle className="h-3.5 w-3.5 text-destructive mt-0.5 flex-shrink-0" />
+                  <div className="flex-1 space-y-1.5">
+                    <p className="text-destructive font-medium leading-tight">
+                      {OFFLINE_REASON_LABEL[provider.offline_reason ?? ""] ?? provider.offline_reason ?? "未知原因"}
+                    </p>
+                    {provider.offline_message && (
+                      <p className="text-muted-foreground leading-tight">{provider.offline_message}</p>
+                    )}
+                    {isAdmin && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-7 mt-1"
+                        onClick={() => handleRecover(provider.id)}
+                      >
+                        <RotateCw className="h-3 w-3 mr-1" /> 重新启用
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* key 输入 + 操作按钮 */}
               <div className="flex gap-2">
                 <input
                   type="password"
@@ -160,29 +193,16 @@ export default function CredentialsManagement() {
                   </Button>
                 )}
               </div>
+
+              {/* 验证 / 保存的反馈 */}
               {fb && (
                 <p className={`text-xs ${fb.ok ? "text-emerald-600" : "text-destructive"}`}>
                   {fb.message}
                 </p>
               )}
-              {isOffline && (
-                <div className="text-xs text-muted-foreground space-y-1">
-                  <p>
-                    原因：{provider.offline_reason ?? "未知"}
-                    {provider.offline_message ? ` · ${provider.offline_message}` : null}
-                  </p>
-                  {isAdmin && (
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => handleRecover(provider.id)}
-                    >
-                      <RotateCw className="h-3 w-3 mr-1" /> 重新启用
-                    </Button>
-                  )}
-                </div>
-              )}
-              {!cred && !isEditingThis && (
+
+              {/* 仅在线 + 没 key + 非编辑时提示 fallback 行为 */}
+              {!isOffline && !cred && !isEditingThis && (
                 <p className="text-xs text-muted-foreground">未设置则使用系统默认 key</p>
               )}
             </CardContent>
