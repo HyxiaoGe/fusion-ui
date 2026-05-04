@@ -200,11 +200,6 @@ export default function CredentialsManagement() {
                   {fb.message}
                 </p>
               )}
-
-              {/* 仅在线 + 没 key + 非编辑时提示 fallback 行为 */}
-              {!isOffline && !cred && !isEditingThis && (
-                <p className="text-xs text-muted-foreground">未设置则使用系统默认 key</p>
-              )}
             </CardContent>
           </Card>
         );
