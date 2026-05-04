@@ -109,6 +109,8 @@ const streamSlice = createSlice({
       state.agentSteps = [];
       state.agentMaxSteps = 0;
       state.agentLimitReached = false;
+      // 新一轮发送清空上一次的错误卡片
+      state.lastError = null;
     },
 
     appendTextDelta(
@@ -276,8 +278,12 @@ const streamSlice = createSlice({
       state.lastError = null;
     },
 
-    endStream() {
-      return initialState;
+    endStream(state) {
+      // 保留 lastError 跨流生命周期：错误卡片需要在 endStream 后继续显示，
+      // 由 startStream（新一轮发送）或 clearStreamError（用户手动 dismiss）清掉
+      const preservedError = state.lastError;
+      Object.assign(state, initialState);
+      state.lastError = preservedError;
     },
   },
 });
