@@ -47,6 +47,8 @@ export interface StreamState {
   agentSteps: AgentStep[];
   agentMaxSteps: number;
   agentLimitReached: boolean;
+  // 最后一次流错误（用于消息底部错误卡片 + CTA）
+  lastError: { message: string; code?: string; data?: Record<string, unknown> } | null;
 }
 
 const initialState: StreamState = {
@@ -74,6 +76,7 @@ const initialState: StreamState = {
   agentSteps: [],
   agentMaxSteps: 0,
   agentLimitReached: false,
+  lastError: null,
 };
 
 const streamSlice = createSlice({
@@ -262,6 +265,17 @@ const streamSlice = createSlice({
       state.streamStatus = action.payload;
     },
 
+    setStreamError(
+      state,
+      action: PayloadAction<{ message: string; code?: string; data?: Record<string, unknown> }>,
+    ) {
+      state.lastError = action.payload;
+    },
+
+    clearStreamError(state) {
+      state.lastError = null;
+    },
+
     endStream() {
       return initialState;
     },
@@ -369,12 +383,14 @@ export const {
   agentToolCallStart,
   appendTextDelta,
   appendThinkingDelta,
+  clearStreamError,
   completeSearch,
   completeThinkingPhase,
   completeUrlRead,
   endStream,
   migrateStreamConversation,
   setLastEntryId,
+  setStreamError,
   setStreamStatus,
   startSearch,
   startStream,
