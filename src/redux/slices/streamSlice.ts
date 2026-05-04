@@ -159,6 +159,15 @@ const streamSlice = createSlice({
       }>
     ) {
       const { runId, config, sequence } = action.payload;
+      // 跨重连幂等：同 runId 且 sequence 已应用 → noop（防重放清空已建 timeline）
+      // 不同 runId 仍允许重建（新 run 覆盖旧 run timeline，spec §6.2 单 currentRun 设计）
+      if (
+        state.currentRun &&
+        state.currentRun.runId === runId &&
+        sequence <= state.currentRun.lastSequence
+      ) {
+        return;
+      }
       state.currentRun = {
         runId,
         status: 'running',

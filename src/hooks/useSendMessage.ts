@@ -73,6 +73,9 @@ export function useSendMessage() {
   const activeConvIdRef = useRef<string | null>(null);
   const userMessageIdRef = useRef<string | null>(null);
   const assistantMessageIdRef = useRef<string | null>(null);
+  // BE 在 run_started/onReady 给的真实 assistant message_id，stop 时校验用。
+  // 不复用 assistantMessageIdRef（那是 placeholder，streaming 期渲染匹配仍要用）
+  const serverMessageIdRef = useRef<string | null>(null);
   const assistantHasContentRef = useRef(false);
   const typewriter = useTypewriter();
 
@@ -115,17 +118,18 @@ export function useSendMessage() {
       }
     }
 
-    // 通知后端取消后台任务，传 messageId 防止误杀新一轮的流
+    // 通知后端取消后台任务：优先用 BE 在 run_started 给的真实 message_id；
+    // fallback 到本地 placeholder（极少触发，仅在 run_started 还没到就被 stop 时）
     if (convId) {
-      const streamState = (store.getState() as { stream: { messageId: string | null } }).stream;
       const { stopStream } = await import('@/lib/api/chat');
-      await stopStream(convId, streamState.messageId || assistantMsgId || undefined);
+      await stopStream(convId, serverMessageIdRef.current || assistantMsgId || undefined);
     }
 
     dispatch(endStream());
     activeConvIdRef.current = null;
     userMessageIdRef.current = null;
     assistantMessageIdRef.current = null;
+    serverMessageIdRef.current = null;
     assistantHasContentRef.current = false;
   }, [dispatch, store, getStreamingConvId]);
 
@@ -170,6 +174,8 @@ export function useSendMessage() {
       const assistantMessageId = uuidv4();
       userMessageIdRef.current = userMessageId;
       assistantMessageIdRef.current = assistantMessageId;
+      // 清理上一轮残留的 server message id，等本轮 onReady 重新写入
+      serverMessageIdRef.current = null;
 
       // 构建用户消息 content blocks（文本 + 文件）
       const contentBlocks: ContentBlock[] = [
@@ -285,6 +291,7 @@ export function useSendMessage() {
         activeConvIdRef.current = null;
         userMessageIdRef.current = null;
         assistantMessageIdRef.current = null;
+        serverMessageIdRef.current = null;
         assistantHasContentRef.current = false;
         options.onStreamEnd?.(finalConvId);
         // 仅新对话的第一轮生成标题，后续轮次不再更新
@@ -337,7 +344,10 @@ export function useSendMessage() {
             file_ids: fileIds,
           },
           {
-            onReady: ({ conversationId: incomingConvId }) => {
+            onReady: ({ messageId: incomingMessageId, conversationId: incomingConvId }) => {
+              // 记录 BE 真实 message_id 供 stop 用（不污染 assistantMessageIdRef，
+              // streaming 期渲染匹配仍然依赖本地 placeholder）
+              serverMessageIdRef.current = incomingMessageId;
               materializeIfNeeded(incomingConvId);
             },
 
@@ -536,6 +546,7 @@ export function useSendMessage() {
         activeConvIdRef.current = null;
         userMessageIdRef.current = null;
         assistantMessageIdRef.current = null;
+        serverMessageIdRef.current = null;
         assistantHasContentRef.current = false;
         const message = error instanceof Error ? error.message : '发送失败，请重试';
         dispatch(setGlobalError(message));

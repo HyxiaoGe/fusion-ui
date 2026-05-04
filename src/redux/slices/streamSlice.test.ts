@@ -233,6 +233,29 @@ describe('streamSlice — agent run timeline', () => {
     expect(s.currentRun?.status).toBe('running');  // 状态不变
   });
 
+  it('initRun 同 runId 重放幂等：sequence ≤ lastSequence 时不清空 timeline', () => {
+    let s = reducer(initial(), initRun({ runId: 'r1', config: baseConfig, sequence: 0 }));
+    s = reducer(s, pushStep({ runId: 'r1', stepId: 's1', stepNumber: 1, sequence: 1 }));
+    s = reducer(s, pushToolCall({
+      runId: 'r1', stepId: 's1', toolCallId: 't1',
+      toolName: 'web_search', arguments: {}, sequence: 2,
+    }));
+    // 模拟重连重放 run_started(sequence=0)
+    s = reducer(s, initRun({ runId: 'r1', config: baseConfig, sequence: 0 }));
+    // 已建 timeline 不被清空
+    expect(s.currentRun?.steps).toHaveLength(1);
+    expect(s.currentRun?.steps[0].toolCalls).toHaveLength(1);
+  });
+
+  it('initRun 不同 runId 时允许重建（新 run 覆盖旧）', () => {
+    let s = reducer(initial(), initRun({ runId: 'r1', config: baseConfig, sequence: 0 }));
+    s = reducer(s, pushStep({ runId: 'r1', stepId: 's1', stepNumber: 1, sequence: 1 }));
+    // 新 run 启动
+    s = reducer(s, initRun({ runId: 'r2', config: baseConfig, sequence: 0 }));
+    expect(s.currentRun?.runId).toBe('r2');
+    expect(s.currentRun?.steps).toHaveLength(0);
+  });
+
   it('totalToolCalls 跨多 step 累加（不绑定单 step.toolCalls.length）', () => {
     let s = reducer(initial(), initRun({ runId: 'r1', config: baseConfig, sequence: 0 }));
     s = reducer(s, pushStep({ runId: 'r1', stepId: 's1', stepNumber: 1, sequence: 1 }));
