@@ -31,6 +31,7 @@ import {
   migrateStreamConversation,
   selectFullStreamContentBlocks,
   selectStreamContentBlocks,
+  setStreamError,
   startSearch,
   startStream,
   startUrlRead,
@@ -416,8 +417,9 @@ export function useSendMessage() {
 
             // TODO: 遗漏1 — 网络抖动自动重连。当前网络断开直接报错，
             // 后续加 retry 计数器，失败 N 次内自动调 reconnectStream，超出则报错
-            onError: (message) => {
+            onError: (message, payload) => {
               dispatch(setGlobalError(message));
+              dispatch(setStreamError({ message, code: payload?.code, data: payload?.data }));
             },
           },
           controller.signal
