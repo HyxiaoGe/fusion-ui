@@ -12,7 +12,7 @@ import { ToolCallDetail } from './ToolCallDetail';
 
 /**
  * 工具步骤卡片（toolCalls.length > 0）。
- * 默认行为：running 自动展开，其余折叠为单行摘要。
+ * 默认行为：所有步骤折叠为单行摘要（chip + summary + 状态），用户点击展开详情。
  * contract §13 + §4 (retry heuristic)。
  */
 export function AgentStepCard({ step, _isLast }: { step: AgentStepState; _isLast: boolean }) {
@@ -23,9 +23,11 @@ export function AgentStepCard({ step, _isLast }: { step: AgentStepState; _isLast
   // _isLast 预留给后续 connector / timeline 末尾视觉差异化，本期未用
   void _isLast;
 
-  const isRunning = step.status === 'running';
+  // 所有工具步骤默认折叠为单行摘要（chip + summary + 状态），用户点击展开详情。
+  // 不再 running auto-expand —— 参数 JSON 是 debug 信息不该 streaming 抢焦点，
+  // 且 streaming → done 视觉跳变破坏阅读体验。
   const [overrideExpanded, setOverrideExpanded] = useState<boolean | null>(null);
-  const expanded = overrideExpanded ?? isRunning;
+  const expanded = overrideExpanded ?? false;
 
   return (
     <div className="rounded-lg border border-border/50 bg-muted/10">

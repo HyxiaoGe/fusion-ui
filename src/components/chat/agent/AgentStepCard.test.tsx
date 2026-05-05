@@ -33,11 +33,15 @@ describe('AgentStepCard', () => {
     // 所以只断言工具徽章
   });
 
-  it('running 步骤默认展开（auto-expand）', () => {
+  it('running 步骤默认折叠，点击后显示参数', () => {
     render(<AgentStepCard step={step({
       toolCalls: [tc({ status: 'running' })],
       status: 'running',
     })} _isLast={true} />);
+    // 默认折叠，找不到「参数」详情
+    expect(screen.queryByText(/参数/)).not.toBeInTheDocument();
+    // 点击头部展开
+    fireEvent.click(screen.getByRole('button'));
     expect(screen.getByText(/参数/)).toBeInTheDocument();
   });
 
