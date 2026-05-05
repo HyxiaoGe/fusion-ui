@@ -48,6 +48,31 @@ describe('timelineDerive — retry heuristic', () => {
     ];
     expect(isRetryAttempt(tcs[1], tcs)).toBe(false);
   });
+
+  it('三连 fail / fail / success → 最后 success 仍识别为 retry', () => {
+    const tcs: ToolCallState[] = [
+      tc({ toolCallId: 't1', toolName: 'web_search', arguments: { query: 'x' }, status: 'failed' }),
+      tc({ toolCallId: 't2', toolName: 'web_search', arguments: { query: 'x' }, status: 'failed' }),
+      tc({ toolCallId: 't3', toolName: 'web_search', arguments: { query: 'x' }, status: 'success' }),
+    ];
+    expect(isRetryAttempt(tcs[2], tcs)).toBe(true);
+  });
+
+  it('同 step 不同工具不算 retry', () => {
+    const tcs: ToolCallState[] = [
+      tc({ toolCallId: 't1', toolName: 'web_search', arguments: { query: 'x' }, status: 'failed' }),
+      tc({ toolCallId: 't2', toolName: 'url_read', arguments: { url: 'https://x' }, status: 'success' }),
+    ];
+    expect(isRetryAttempt(tcs[1], tcs)).toBe(false);
+  });
+
+  it('tc 不在 allInStep（idx === -1）时返回 false', () => {
+    const tcs: ToolCallState[] = [
+      tc({ toolCallId: 't1', toolName: 'web_search', arguments: { query: 'x' }, status: 'failed' }),
+    ];
+    const orphan = tc({ toolCallId: 't_orphan', toolName: 'web_search', arguments: { query: 'x' }, status: 'success' });
+    expect(isRetryAttempt(orphan, tcs)).toBe(false);
+  });
 });
 
 describe('timelineDerive — isSummaryStep', () => {

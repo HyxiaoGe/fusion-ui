@@ -53,7 +53,7 @@ function getTarget(tc: ToolCallState): string | null {
  * 的强制总结 round，或正常路径最后一轮 LLM 只产出文本不调工具。
  */
 export function isSummaryStep(step: AgentStepState): boolean {
-  return (step.toolCalls?.length ?? 0) === 0;
+  return step.toolCalls.length === 0;
 }
 
 /**
