@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { ChevronDown, Loader2, CheckCircle2, AlertCircle, Square, RotateCw } from 'lucide-react';
 import type { AgentStepState } from '@/types/agentRun';
 import { STEP_STATUS_TREATMENT } from '@/lib/agent/statusTreatment';
-import type { SemanticColor } from '@/lib/agent/toolRegistry';
+import { STEP_NUMBER_COLOR_CLASSES } from '@/lib/agent/colorClasses';
 import { isRetryAttempt } from '@/lib/agent/timelineDerive';
 import { ToolCallChip } from './ToolCallChip';
 import { ToolCallSummary } from './ToolCallSummary';
@@ -78,16 +78,6 @@ export function AgentStepCard({ step, _isLast }: { step: AgentStepState; _isLast
     </div>
   );
 }
-
-// Tailwind JIT 需要 literal class string；Record 强制覆盖所有 SemanticColor
-const STEP_NUMBER_COLOR_CLASSES: Record<SemanticColor, string> = {
-  info:    'bg-info/10 text-info border-info/30',
-  success: 'bg-success/10 text-success border-success/30',
-  warn:    'bg-warn/10 text-warn border-warn/30',
-  danger:  'bg-danger/10 text-danger border-danger/30',
-  teal:    'bg-teal/10 text-teal border-teal/30',
-  neutral: 'bg-muted text-muted-foreground border-border',
-};
 
 function StepNumber({ n, status }: { n: number; status: AgentStepState['status'] }) {
   const treatment = STEP_STATUS_TREATMENT[status];

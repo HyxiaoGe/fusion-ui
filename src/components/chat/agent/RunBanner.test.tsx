@@ -40,6 +40,7 @@ describe('RunBanner', () => {
       stepId: 's1', stepNumber: 1, status: 'interrupted', toolCalls: [], contentBlockIds: [], startedAt: 0,
     }] })} onRetry={vi.fn()} />);
     expect(screen.getByText(/已中断/)).toBeInTheDocument();
+    expect(screen.getByText(/已完成 1 步/)).toBeInTheDocument();
     // contract §7: 恢复 step 不做按钮
     expect(screen.queryByText(/^恢复$/)).not.toBeInTheDocument();
   });

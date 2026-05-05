@@ -1,0 +1,76 @@
+import { describe, it, expect, vi } from 'vitest';
+import { render, screen, act } from '@testing-library/react';
+import { RunHeader } from './RunHeader';
+import type { AgentRunState } from '@/types/agentRun';
+
+const baseConfig = { maxSteps: 8, maxToolCalls: 20, timeoutS: 300 };
+
+const run = (over: Partial<AgentRunState>): AgentRunState => ({
+  runId: 'r1',
+  messageId: 'm1',
+  status: 'running',
+  config: baseConfig,
+  totalSteps: 0,
+  totalToolCalls: 0,
+  steps: [],
+  lastSequence: 0,
+  ...over,
+});
+
+describe('RunHeader', () => {
+  it('显示 已用 N / maxSteps 步 + status 标签', () => {
+    render(<RunHeader run={run({ status: 'completed', steps: [
+      { stepId: 's1', stepNumber: 1, status: 'completed', toolCalls: [], contentBlockIds: [], startedAt: 1_000_000 },
+      { stepId: 's2', stepNumber: 2, status: 'completed', toolCalls: [], contentBlockIds: [], startedAt: 1_002_000 },
+    ] })} />);
+    expect(screen.getByText(/已用/)).toBeInTheDocument();
+    expect(screen.getByText('2')).toBeInTheDocument();
+    expect(screen.getByText(/已完成/)).toBeInTheDocument();
+  });
+
+  it('running 状态秒数实时跳（fake timer 1s 后秒数 +1）', () => {
+    vi.useFakeTimers();
+    const startTime = 1_000_000;
+    vi.setSystemTime(startTime);
+
+    const runningRun = run({
+      status: 'running',
+      steps: [{ stepId: 's1', stepNumber: 1, status: 'running', toolCalls: [], contentBlockIds: [], startedAt: startTime }],
+    });
+    render(<RunHeader run={runningRun} />);
+
+    // 初始秒数 0.0s …
+    expect(screen.getByText(/0\.0s …/)).toBeInTheDocument();
+
+    // 推进 1500ms：interval 在 1000ms 时触发，setNow(Date.now()) 取到 startTime+1000
+    act(() => {
+      vi.advanceTimersByTime(1500);
+    });
+
+    // interval 触发一次，秒数跳到 1.0s（Date.now() 在 1000ms 时刻 = startTime+1000）
+    expect(screen.getByText(/1\.0s …/)).toBeInTheDocument();
+
+    vi.useRealTimers();
+  });
+
+  it('non-running 状态不开 timer，秒数固定（用 lastStep.completedAt）', () => {
+    const finishedRun = run({
+      status: 'completed',
+      steps: [{
+        stepId: 's1', stepNumber: 1, status: 'completed',
+        toolCalls: [], contentBlockIds: [],
+        startedAt: 1_000_000, completedAt: 1_003_500,
+      }],
+    });
+    render(<RunHeader run={finishedRun} />);
+    // 应该显示 3.5s（不带 …）
+    expect(screen.getByText(/3\.5s/)).toBeInTheDocument();
+  });
+
+  it('无 startedAt 时不渲染 RunDuration', () => {
+    render(<RunHeader run={run({ status: 'running', steps: [] })} />);
+    // 不应找到秒数文本
+    expect(screen.queryByText(/s …/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/\d+\.\ds$/)).not.toBeInTheDocument();
+  });
+});

@@ -3,7 +3,7 @@
 import { Loader2 } from 'lucide-react';
 import type { ToolCallState } from '@/types/agentRun';
 import { getToolMeta } from '@/lib/agent/toolRegistry';
-import type { SemanticColor } from '@/lib/agent/toolRegistry';
+import { CHIP_COLOR_CLASSES } from '@/lib/agent/colorClasses';
 
 /**
  * 工具徽章——显示在 step 头部，标识 tool 类型 + status。
@@ -11,17 +11,6 @@ import type { SemanticColor } from '@/lib/agent/toolRegistry';
  *
  * icon 直接从 toolRegistry 拿 LucideIcon component，无字符串映射。
  */
-
-// Tailwind JIT 需要 literal class string；Record 强制覆盖所有 SemanticColor，
-// 加新色时 TS 立刻报错，不会出现"加新工具但 chip 渲染成灰色"的隐性 bug
-const CHIP_COLOR_CLASSES: Record<SemanticColor, string> = {
-  info:    'text-info border-info/30 bg-info/10',
-  success: 'text-success border-success/30 bg-success/10',
-  warn:    'text-warn border-warn/30 bg-warn/10',
-  danger:  'text-danger border-danger/30 bg-danger/10',
-  teal:    'text-teal border-teal/30 bg-teal/10',
-  neutral: 'text-muted-foreground border-border bg-muted/30',
-};
 
 export function ToolCallChip({ call }: { call: ToolCallState }) {
   const meta = getToolMeta(call.toolName);

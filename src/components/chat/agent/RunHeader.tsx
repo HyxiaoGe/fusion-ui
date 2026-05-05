@@ -1,14 +1,28 @@
 'use client';
 
+import { useState, useEffect } from 'react';
 import type { AgentRunState } from '@/types/agentRun';
 import { RUN_STATUS_TREATMENT } from '@/lib/agent/statusTreatment';
-import type { SemanticColor } from '@/lib/agent/toolRegistry';
+import { STATUS_TAG_COLOR_CLASSES } from '@/lib/agent/colorClasses';
 
 /**
  * Run 头部：已用 N/maxSteps 步 · X.Ys · status 标签。
  * contract §13。
  */
-export function RunHeader({ run }: { run: AgentRunState }) {
+
+interface RunHeaderProps {
+  run: AgentRunState;
+}
+
+interface RunDurationProps {
+  run: AgentRunState;
+}
+
+interface StatusTagProps {
+  run: AgentRunState;
+}
+
+export function RunHeader({ run }: RunHeaderProps) {
   const usedSteps = run.steps?.length ?? 0;
   const maxSteps = run.config?.maxSteps;
 
@@ -26,30 +40,31 @@ export function RunHeader({ run }: { run: AgentRunState }) {
   );
 }
 
-function RunDuration({ run }: { run: AgentRunState }) {
+function RunDuration({ run }: RunDurationProps) {
   const startedAt = run.steps?.[0]?.startedAt;
-  if (!startedAt) return null;
+  const isRunning = run.status === 'running';
   const lastStep = run.steps[run.steps.length - 1];
-  const endedAt = lastStep?.completedAt ?? Date.now();
+  const finalEndedAt = lastStep?.completedAt;
+
+  // 只有 running + 有 startedAt 时跑 timer 让秒数实时跳
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!isRunning || !startedAt) return;
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, [isRunning, startedAt]);
+
+  if (!startedAt) return null;
+  const endedAt = finalEndedAt ?? now;
   const sec = ((endedAt - startedAt) / 1000).toFixed(1);
   return (
     <span>
-      {run.status === 'running' ? `${sec}s …` : `${sec}s`}
+      {isRunning ? `${sec}s …` : `${sec}s`}
     </span>
   );
 }
 
-// Tailwind JIT 需要 literal class string；Record 强制覆盖 6 种 SemanticColor
-const STATUS_TAG_COLOR_CLASSES: Record<SemanticColor, string> = {
-  info:    'text-info bg-info/10 border-info/30',
-  success: 'text-success bg-success/10 border-success/30',
-  warn:    'text-warn bg-warn/10 border-warn/30',
-  danger:  'text-danger bg-danger/10 border-danger/30',
-  teal:    'text-teal bg-teal/10 border-teal/30',
-  neutral: 'text-muted-foreground bg-muted/30 border-border',
-};
-
-function StatusTag({ run }: { run: AgentRunState }) {
+function StatusTag({ run }: StatusTagProps) {
   const treatment = RUN_STATUS_TREATMENT[run.status];
   const Icon = treatment.icon;
   const colorClass = STATUS_TAG_COLOR_CLASSES[treatment.color];

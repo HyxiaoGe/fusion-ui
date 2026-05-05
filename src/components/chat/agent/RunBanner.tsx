@@ -46,7 +46,7 @@ export function RunBanner({ run, onRetry }: RunBannerProps) {
       <div className="rounded-lg border border-border bg-muted/20 p-3 flex items-start gap-2 mb-2">
         <Square className="w-4 h-4 text-muted-foreground shrink-0 mt-0.5" />
         <div className="flex-1 min-w-0">
-          <div className="text-sm font-medium">已中断 — 用户停止了 step {lastStepN}</div>
+          <div className="text-sm font-medium">已中断 — 已完成 {lastStepN} 步</div>
           <div className="text-xs text-muted-foreground mt-0.5">已完成的步骤结果保留，可重新提问。</div>
         </div>
       </div>
