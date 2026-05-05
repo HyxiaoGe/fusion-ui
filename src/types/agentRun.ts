@@ -15,7 +15,8 @@ export type ToolCallStatus =
   | 'running'
   | 'success'
   | 'failed'
-  | 'degraded';
+  | 'degraded'
+  | 'interrupted';
 
 export type LimitReachedReason = 'max_steps' | 'max_tool_calls' | 'timeout';
 

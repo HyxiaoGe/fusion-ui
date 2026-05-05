@@ -314,3 +314,49 @@ describe('streamSlice — agent run timeline', () => {
     expect(s.currentRun).toBeNull();
   });
 });
+
+describe('streamSlice — interrupted 派生（contract §3）', () => {
+  it('finalizeRun(status=interrupted) 把 running step 派生为 interrupted', () => {
+    let s = reducer(initial(), initRun({ runId: 'r1', messageId: 'm1', config: baseConfig, sequence: 0 }));
+    s = reducer(s, pushStep({ runId: 'r1', stepId: 's1', stepNumber: 1, sequence: 1 }));
+    s = reducer(s, finalizeRun({ runId: 'r1', status: 'interrupted', sequence: 2 }));
+    expect(s.currentRun?.status).toBe('interrupted');
+    expect(s.currentRun?.steps[0].status).toBe('interrupted');
+    expect(s.currentRun?.steps[0].completedAt).toBeGreaterThan(0);
+  });
+
+  it('finalizeRun(status=interrupted) 把 running tool call 派生为 interrupted', () => {
+    let s = reducer(initial(), initRun({ runId: 'r1', messageId: 'm1', config: baseConfig, sequence: 0 }));
+    s = reducer(s, pushStep({ runId: 'r1', stepId: 's1', stepNumber: 1, sequence: 1 }));
+    s = reducer(s, pushToolCall({
+      runId: 'r1', stepId: 's1', toolCallId: 't1',
+      toolName: 'web_search', arguments: { q: 'x' }, sequence: 2,
+    }));
+    s = reducer(s, pushToolCall({
+      runId: 'r1', stepId: 's1', toolCallId: 't2',
+      toolName: 'url_read', arguments: { url: 'https://x' }, sequence: 3,
+    }));
+    s = reducer(s, finalizeRun({ runId: 'r1', status: 'interrupted', sequence: 4 }));
+    expect(s.currentRun?.steps[0].toolCalls[0].status).toBe('interrupted');
+    expect(s.currentRun?.steps[0].toolCalls[1].status).toBe('interrupted');
+    expect(s.currentRun?.steps[0].toolCalls[0].completedAt).toBeGreaterThan(0);
+  });
+
+  it('finalizeRun(status=interrupted) 不影响已完成的 step / tool call', () => {
+    let s = reducer(initial(), initRun({ runId: 'r1', messageId: 'm1', config: baseConfig, sequence: 0 }));
+    s = reducer(s, pushStep({ runId: 'r1', stepId: 's1', stepNumber: 1, sequence: 1 }));
+    s = reducer(s, pushToolCall({
+      runId: 'r1', stepId: 's1', toolCallId: 't1',
+      toolName: 'web_search', arguments: { q: 'x' }, sequence: 2,
+    }));
+    s = reducer(s, finalizeToolCall({
+      runId: 'r1', stepId: 's1', toolCallId: 't1', status: 'success', sequence: 3,
+    }));
+    s = reducer(s, finalizeStep({ runId: 'r1', stepId: 's1', sequence: 4 }));
+    s = reducer(s, pushStep({ runId: 'r1', stepId: 's2', stepNumber: 2, sequence: 5 }));
+    s = reducer(s, finalizeRun({ runId: 'r1', status: 'interrupted', sequence: 6 }));
+    expect(s.currentRun?.steps[0].status).toBe('completed');
+    expect(s.currentRun?.steps[0].toolCalls[0].status).toBe('success');
+    expect(s.currentRun?.steps[1].status).toBe('interrupted');
+  });
+});

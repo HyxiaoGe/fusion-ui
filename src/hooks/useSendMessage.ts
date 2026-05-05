@@ -35,7 +35,7 @@ import {
   setStreamError,
   startStream,
 } from '@/redux/slices/streamSlice';
-import type { LimitReachedReason, ToolCallResultSummary } from '@/types/agentRun';
+import type { LimitReachedReason, ToolCallResultSummary, ToolCallStatus } from '@/types/agentRun';
 import { sendMessageStream, getConversation } from '@/lib/api/chat';
 import { generateChatTitle } from '@/lib/api/title';
 import type { Message, ContentBlock } from '@/types/conversation';
@@ -439,7 +439,7 @@ export function useSendMessage() {
               dispatch(finalizeToolCall({
                 runId: ev.run_id,
                 toolCallId: ev.tool_call_id,
-                status: ev.status as 'success' | 'failed' | 'degraded',
+                status: ev.status as ToolCallStatus,
                 durationMs: ev.duration_ms,
                 resultSummary: ev.result_summary as unknown as ToolCallResultSummary | undefined,
                 error: ev.error ?? null,

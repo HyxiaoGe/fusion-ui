@@ -342,6 +342,23 @@ const streamSlice = createSlice({
           lastStep.completedAt = Date.now();
         }
       }
+      // contract §3：run-level 中断时，扫所有 running step 和 tool call 派生为 interrupted
+      // 注意：只改 running 的，不动已 completed/failed/degraded 的历史 tool call
+      if (status === 'interrupted') {
+        const now = Date.now();
+        run.steps.forEach(step => {
+          if (step.status === 'running') {
+            step.status = 'interrupted';
+            step.completedAt = now;
+          }
+          step.toolCalls?.forEach(tc => {
+            if (tc.status === 'running') {
+              tc.status = 'interrupted';
+              tc.completedAt = now;
+            }
+          });
+        });
+      }
     },
 
     setStreamStatus(state, action: PayloadAction<StreamState['streamStatus']>) {
