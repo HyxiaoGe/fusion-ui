@@ -8,7 +8,7 @@
 
 import { Loader2, CheckCircle2, AlertTriangle, Square, AlertCircle, XCircle } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
-import type { AgentRunStatus, AgentStepStatus, ToolCallStatus } from '@/types/agentRun';
+import type { AgentRunStatus, AgentStepStatus } from '@/types/agentRun';
 import type { SemanticColor } from './toolRegistry';
 
 export interface StatusTreatment {
@@ -30,13 +30,5 @@ export const STEP_STATUS_TREATMENT: Record<AgentStepStatus, StatusTreatment> = {
   running:     { color: 'info',    icon: Loader2,       label: '进行中' },
   completed:   { color: 'success', icon: CheckCircle2,  label: '完成' },
   failed:      { color: 'danger',  icon: XCircle,       label: '失败' },
-  interrupted: { color: 'neutral', icon: Square,        label: '中断' },
-};
-
-export const TOOL_CALL_STATUS_TREATMENT: Record<ToolCallStatus, StatusTreatment> = {
-  running:     { color: 'info',    icon: Loader2,       label: '调用中' },
-  success:     { color: 'success', icon: CheckCircle2,  label: '成功' },
-  failed:      { color: 'danger',  icon: AlertCircle,   label: '失败' },
-  degraded:    { color: 'warn',    icon: AlertTriangle, label: '部分降级' },
   interrupted: { color: 'neutral', icon: Square,        label: '中断' },
 };
