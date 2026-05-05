@@ -33,7 +33,7 @@ import {
   startStream,
 } from '@/redux/slices/streamSlice';
 import type { StreamState } from '@/redux/slices/streamSlice';
-import type { LimitReachedReason, ToolCallResultSummary, ToolCallStatus } from '@/types/agentRun';
+import type { LimitReachedReason, ToolCallResultSummary, ToolCallStatus, FinalizeToolCallStatus } from '@/types/agentRun';
 import { fetchStreamStatus } from '@/lib/api/streamStatus';
 import { reconnectStream } from '@/lib/api/chat';
 import { useConversation } from '@/hooks/useConversation';
@@ -200,7 +200,7 @@ export default function ChatPage() {
             dispatch(finalizeToolCall({
               runId: ev.run_id,
               toolCallId: ev.tool_call_id,
-              status: ev.status as ToolCallStatus,
+              status: ev.status as FinalizeToolCallStatus,
               durationMs: ev.duration_ms,
               resultSummary: ev.result_summary as unknown as ToolCallResultSummary | undefined,
               error: ev.error ?? null,

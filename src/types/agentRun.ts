@@ -18,6 +18,15 @@ export type ToolCallStatus =
   | 'degraded'
   | 'interrupted';
 
+/**
+ * BE tool_call_completed 事件 payload 里 status 的合法值。
+ *
+ * 注意：跟 ToolCallStatus 不同——'running' 是 in-flight 状态、
+ * 'interrupted' 是 FE 在 run-level 中断时派生的（contract §3），
+ * 都不可能由 BE 在 tool_call_completed 事件里发出。
+ */
+export type FinalizeToolCallStatus = Exclude<ToolCallStatus, 'running' | 'interrupted'>;
+
 export type LimitReachedReason = 'max_steps' | 'max_tool_calls' | 'timeout';
 
 export interface ToolCallResultSummary {

@@ -359,4 +359,19 @@ describe('streamSlice — interrupted 派生（contract §3）', () => {
     expect(s.currentRun?.steps[0].toolCalls[0].status).toBe('success');
     expect(s.currentRun?.steps[1].status).toBe('interrupted');
   });
+
+  it('finalizeRun(status=completed) 不派生 interrupted（防御性回归测试）', () => {
+    let s = reducer(initial(), initRun({ runId: 'r1', messageId: 'm1', config: baseConfig, sequence: 0 }));
+    s = reducer(s, pushStep({ runId: 'r1', stepId: 's1', stepNumber: 1, sequence: 1 }));
+    s = reducer(s, pushToolCall({
+      runId: 'r1', stepId: 's1', toolCallId: 't1',
+      toolName: 'web_search', arguments: { q: 'x' }, sequence: 2,
+    }));
+    // 此时 step + tool call 都是 running，run 直接 completed（不太合理但要防御）
+    s = reducer(s, finalizeRun({ runId: 'r1', status: 'completed', sequence: 3 }));
+    expect(s.currentRun?.status).toBe('completed');
+    // step / tool call 应保持 running 不被派生为 interrupted
+    expect(s.currentRun?.steps[0].status).toBe('running');
+    expect(s.currentRun?.steps[0].toolCalls[0].status).toBe('running');
+  });
 });
