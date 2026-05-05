@@ -270,7 +270,7 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, files, isLastMessage
     >
       <div className={cn(
         'flex flex-col space-y-1',
-        isEditing ? 'w-full max-w-2xl' : isUser ? 'max-w-[75%]' : 'max-w-[85%]',
+        isEditing ? 'w-full max-w-2xl' : isUser ? 'max-w-[75%]' : 'w-full max-w-[85%]',
         isUser ? 'items-end' : 'items-start'
       )}>
         {/* AI 消息头部 */}

@@ -23,6 +23,27 @@ const step = (over: Partial<AgentStepState>): AgentStepState => ({
 });
 
 describe('AgentStepCard', () => {
+  it('running + 0 toolCalls 渲染 pending 形态「正在思考下一步」', () => {
+    render(<AgentStepCard step={step({
+      toolCalls: [],
+      status: 'running',
+    })} _isLast={true} />);
+    expect(screen.getByText(/正在思考下一步/)).toBeInTheDocument();
+    // pending 形态不应显示参数 detail
+    expect(screen.queryByText(/参数/)).not.toBeInTheDocument();
+  });
+
+  it('pending 形态按钮 disabled，点击不展开', () => {
+    render(<AgentStepCard step={step({
+      toolCalls: [],
+      status: 'running',
+    })} _isLast={true} />);
+    const button = screen.getByRole('button');
+    expect(button).toBeDisabled();
+    fireEvent.click(button);
+    expect(screen.queryByText(/参数/)).not.toBeInTheDocument();
+  });
+
   it('completed 步骤默认折叠头部，显示 step 编号 + 工具徽章', () => {
     render(<AgentStepCard step={step({
       toolCalls: [tc({})],

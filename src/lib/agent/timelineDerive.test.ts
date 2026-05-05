@@ -86,16 +86,24 @@ describe('timelineDerive — isSummaryStep', () => {
     ...over,
   });
 
-  it('toolCalls.length === 0 + 有 contentBlockIds → 是 summary', () => {
-    expect(isSummaryStep(step({ toolCalls: [], contentBlockIds: ['blk_1'] }))).toBe(true);
+  it('completed + 0 toolCalls + 有 contentBlockIds → 是 summary', () => {
+    expect(isSummaryStep(step({ status: 'completed', toolCalls: [], contentBlockIds: ['blk_1'] }))).toBe(true);
   });
 
-  it('toolCalls.length > 0 → 不是 summary', () => {
-    expect(isSummaryStep(step({ toolCalls: [tc({})], contentBlockIds: ['blk_1'] }))).toBe(false);
+  it('toolCalls.length > 0 → 不是 summary（即使其它条件满足）', () => {
+    expect(isSummaryStep(step({ status: 'completed', toolCalls: [tc({})], contentBlockIds: ['blk_1'] }))).toBe(false);
   });
 
-  it('toolCalls.length === 0 + status running → 也算 summary（正在整理答复）', () => {
-    expect(isSummaryStep(step({ toolCalls: [], contentBlockIds: [], status: 'running' }))).toBe(true);
+  it('running + 0 toolCalls 不是 summary（LLM 还在决定要不要调工具）', () => {
+    expect(isSummaryStep(step({ status: 'running', toolCalls: [], contentBlockIds: [] }))).toBe(false);
+  });
+
+  it('completed + 0 toolCalls + 0 contentBlockIds 不是 summary（异常 case）', () => {
+    expect(isSummaryStep(step({ status: 'completed', toolCalls: [], contentBlockIds: [] }))).toBe(false);
+  });
+
+  it('failed + 0 toolCalls 不是 summary（异常终态没产出）', () => {
+    expect(isSummaryStep(step({ status: 'failed', toolCalls: [], contentBlockIds: [] }))).toBe(false);
   });
 });
 

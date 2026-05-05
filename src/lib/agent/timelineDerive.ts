@@ -49,11 +49,16 @@ function getTarget(tc: ToolCallState): string | null {
 /**
  * Summary step 判定（contract §5）。
  *
- * 0 tool call 的 step 视为总结步骤——典型场景是 limit_reached 触顶后
- * 的强制总结 round，或正常路径最后一轮 LLM 只产出文本不调工具。
+ * 只把"已结束 + 0 工具 + 有内容产出"的 step 视为 summary。
+ *
+ * running + 0 toolCalls 不是 summary（LLM 还在决定要不要调工具），应走 AgentStepCard pending 形态。
+ * completed + 0 toolCalls + 0 content 是异常 case，按工具步骤渲染（防御性，BE 不应触发）。
+ * failed/interrupted + 0 toolCalls 也不是 summary（异常终态没产出），按工具步骤渲染。
  */
 export function isSummaryStep(step: AgentStepState): boolean {
-  return step.toolCalls.length === 0;
+  return step.status !== 'running'
+    && step.toolCalls.length === 0
+    && step.contentBlockIds.length > 0;
 }
 
 /**
