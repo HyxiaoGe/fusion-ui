@@ -342,11 +342,11 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, files, isLastMessage
           </div>
         )}
 
-        <div>
+        <div className={cn(!isUser && 'w-full min-w-0')}>
           <div className={cn(
             isUser
               ? 'rounded-2xl px-4 py-2.5 bg-primary/10 dark:bg-primary/15 text-foreground'
-              : '',
+              : 'w-full min-w-0',
             isEditing && 'w-full'
           )}>
             {isUser ? (
