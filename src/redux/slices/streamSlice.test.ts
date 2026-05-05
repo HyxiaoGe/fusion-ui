@@ -314,3 +314,145 @@ describe('streamSlice — agent run timeline', () => {
     expect(s.currentRun).toBeNull();
   });
 });
+
+describe('streamSlice — interrupted 派生（contract §3）', () => {
+  it('finalizeRun(status=interrupted) 把 running step 派生为 interrupted', () => {
+    let s = reducer(initial(), initRun({ runId: 'r1', messageId: 'm1', config: baseConfig, sequence: 0 }));
+    s = reducer(s, pushStep({ runId: 'r1', stepId: 's1', stepNumber: 1, sequence: 1 }));
+    s = reducer(s, finalizeRun({ runId: 'r1', status: 'interrupted', sequence: 2 }));
+    expect(s.currentRun?.status).toBe('interrupted');
+    expect(s.currentRun?.steps[0].status).toBe('interrupted');
+    expect(s.currentRun?.steps[0].completedAt).toBeGreaterThan(0);
+  });
+
+  it('finalizeRun(status=interrupted) 把 running tool call 派生为 interrupted', () => {
+    let s = reducer(initial(), initRun({ runId: 'r1', messageId: 'm1', config: baseConfig, sequence: 0 }));
+    s = reducer(s, pushStep({ runId: 'r1', stepId: 's1', stepNumber: 1, sequence: 1 }));
+    s = reducer(s, pushToolCall({
+      runId: 'r1', stepId: 's1', toolCallId: 't1',
+      toolName: 'web_search', arguments: { q: 'x' }, sequence: 2,
+    }));
+    s = reducer(s, pushToolCall({
+      runId: 'r1', stepId: 's1', toolCallId: 't2',
+      toolName: 'url_read', arguments: { url: 'https://x' }, sequence: 3,
+    }));
+    s = reducer(s, finalizeRun({ runId: 'r1', status: 'interrupted', sequence: 4 }));
+    expect(s.currentRun?.steps[0].toolCalls[0].status).toBe('interrupted');
+    expect(s.currentRun?.steps[0].toolCalls[1].status).toBe('interrupted');
+    expect(s.currentRun?.steps[0].toolCalls[0].completedAt).toBeGreaterThan(0);
+  });
+
+  it('finalizeRun(status=interrupted) 不影响已完成的 step / tool call', () => {
+    let s = reducer(initial(), initRun({ runId: 'r1', messageId: 'm1', config: baseConfig, sequence: 0 }));
+    s = reducer(s, pushStep({ runId: 'r1', stepId: 's1', stepNumber: 1, sequence: 1 }));
+    s = reducer(s, pushToolCall({
+      runId: 'r1', stepId: 's1', toolCallId: 't1',
+      toolName: 'web_search', arguments: { q: 'x' }, sequence: 2,
+    }));
+    s = reducer(s, finalizeToolCall({
+      runId: 'r1', toolCallId: 't1', status: 'success', durationMs: 10, sequence: 3,
+    }));
+    s = reducer(s, finalizeStep({ runId: 'r1', stepId: 's1', sequence: 4 }));
+    s = reducer(s, pushStep({ runId: 'r1', stepId: 's2', stepNumber: 2, sequence: 5 }));
+    s = reducer(s, finalizeRun({ runId: 'r1', status: 'interrupted', sequence: 6 }));
+    expect(s.currentRun?.steps[0].status).toBe('completed');
+    expect(s.currentRun?.steps[0].toolCalls[0].status).toBe('success');
+    expect(s.currentRun?.steps[1].status).toBe('interrupted');
+  });
+
+  it('finalizeRun(status=completed) 不派生 interrupted（防御性回归测试）', () => {
+    let s = reducer(initial(), initRun({ runId: 'r1', messageId: 'm1', config: baseConfig, sequence: 0 }));
+    s = reducer(s, pushStep({ runId: 'r1', stepId: 's1', stepNumber: 1, sequence: 1 }));
+    s = reducer(s, pushToolCall({
+      runId: 'r1', stepId: 's1', toolCallId: 't1',
+      toolName: 'web_search', arguments: { q: 'x' }, sequence: 2,
+    }));
+    // 此时 step + tool call 都是 running，run 直接 completed（不太合理但要防御）
+    s = reducer(s, finalizeRun({ runId: 'r1', status: 'completed', sequence: 3 }));
+    expect(s.currentRun?.status).toBe('completed');
+    // step / tool call 应保持 running 不被派生为 interrupted
+    expect(s.currentRun?.steps[0].status).toBe('running');
+    expect(s.currentRun?.steps[0].toolCalls[0].status).toBe('running');
+  });
+
+  // codex review: failed 路径之前只标 lastStep，不扫 running tool call，
+  // tool 在 started 之后失败时 chip 会一直转。回归测：finalizeRun(failed) 后
+  // 所有 running tool call 必须被标为 failed + completedAt 写入。
+  it('finalizeRun(status=failed) 把 running step 和 running tool call 都派生为 failed', () => {
+    let s = reducer(initial(), initRun({ runId: 'r1', messageId: 'm1', config: baseConfig, sequence: 0 }));
+    s = reducer(s, pushStep({ runId: 'r1', stepId: 's1', stepNumber: 1, sequence: 1 }));
+    s = reducer(s, pushToolCall({
+      runId: 'r1', stepId: 's1', toolCallId: 't1',
+      toolName: 'web_search', arguments: { q: 'x' }, sequence: 2,
+    }));
+    s = reducer(s, pushToolCall({
+      runId: 'r1', stepId: 's1', toolCallId: 't2',
+      toolName: 'url_read', arguments: { url: 'https://x' }, sequence: 3,
+    }));
+    s = reducer(s, finalizeRun({ runId: 'r1', status: 'failed', sequence: 4 }));
+    expect(s.currentRun?.status).toBe('failed');
+    expect(s.currentRun?.steps[0].status).toBe('failed');
+    expect(s.currentRun?.steps[0].toolCalls[0].status).toBe('failed');
+    expect(s.currentRun?.steps[0].toolCalls[1].status).toBe('failed');
+    expect(s.currentRun?.steps[0].toolCalls[0].completedAt).toBeGreaterThan(0);
+  });
+
+  it('finalizeRun(status=failed) 不影响已完成的 tool call（只改 running 的）', () => {
+    let s = reducer(initial(), initRun({ runId: 'r1', messageId: 'm1', config: baseConfig, sequence: 0 }));
+    s = reducer(s, pushStep({ runId: 'r1', stepId: 's1', stepNumber: 1, sequence: 1 }));
+    s = reducer(s, pushToolCall({
+      runId: 'r1', stepId: 's1', toolCallId: 't1',
+      toolName: 'web_search', arguments: { q: 'x' }, sequence: 2,
+    }));
+    s = reducer(s, finalizeToolCall({
+      runId: 'r1', toolCallId: 't1', status: 'success', durationMs: 10, sequence: 3,
+    }));
+    s = reducer(s, pushToolCall({
+      runId: 'r1', stepId: 's1', toolCallId: 't2',
+      toolName: 'url_read', arguments: { url: 'https://x' }, sequence: 4,
+    }));
+    s = reducer(s, finalizeRun({ runId: 'r1', status: 'failed', sequence: 5 }));
+    // t1 已 success，不应被改成 failed
+    expect(s.currentRun?.steps[0].toolCalls[0].status).toBe('success');
+    // t2 还在 running，应被派生为 failed
+    expect(s.currentRun?.steps[0].toolCalls[1].status).toBe('failed');
+  });
+});
+
+describe('streamSlice — contentBlockIds 关联（contract §6.5 defensive）', () => {
+  it('appendTextDelta 首次 delta 带 stepId 时挂 contentBlockIds', () => {
+    let s = reducer(initial(), initRun({ runId: 'r1', messageId: 'm1', config: baseConfig, sequence: 0 }));
+    s = reducer(s, pushStep({ runId: 'r1', stepId: 's1', stepNumber: 1, sequence: 1 }));
+    s = reducer(s, appendTextDelta({ blockId: 'blk_1', delta: 'hello', runId: 'r1', stepId: 's1' }));
+    expect(s.currentRun?.steps[0].contentBlockIds).toEqual(['blk_1']);
+  });
+
+  it('appendTextDelta 首次 delta 不带 stepId，后续 delta 带 stepId 也能挂 contentBlockIds（关键 bug 修复）', () => {
+    let s = reducer(initial(), initRun({ runId: 'r1', messageId: 'm1', config: baseConfig, sequence: 0 }));
+    s = reducer(s, pushStep({ runId: 'r1', stepId: 's1', stepNumber: 1, sequence: 1 }));
+    // 第一次 delta 不带 stepId
+    s = reducer(s, appendTextDelta({ blockId: 'blk_1', delta: 'hello', runId: 'r1' }));
+    expect(s.currentRun?.steps[0].contentBlockIds).toEqual([]);
+    // 第二次 delta 带 stepId
+    s = reducer(s, appendTextDelta({ blockId: 'blk_1', delta: ' world', runId: 'r1', stepId: 's1' }));
+    expect(s.currentRun?.steps[0].contentBlockIds).toEqual(['blk_1']);
+  });
+
+  it('appendTextDelta 多次带 stepId 不会重复挂 contentBlockIds', () => {
+    let s = reducer(initial(), initRun({ runId: 'r1', messageId: 'm1', config: baseConfig, sequence: 0 }));
+    s = reducer(s, pushStep({ runId: 'r1', stepId: 's1', stepNumber: 1, sequence: 1 }));
+    s = reducer(s, appendTextDelta({ blockId: 'blk_1', delta: 'a', runId: 'r1', stepId: 's1' }));
+    s = reducer(s, appendTextDelta({ blockId: 'blk_1', delta: 'b', runId: 'r1', stepId: 's1' }));
+    s = reducer(s, appendTextDelta({ blockId: 'blk_1', delta: 'c', runId: 'r1', stepId: 's1' }));
+    expect(s.currentRun?.steps[0].contentBlockIds).toEqual(['blk_1']);
+  });
+
+  it('appendThinkingDelta 首次 delta 不带 stepId，后续带 stepId 也能挂 contentBlockIds', () => {
+    let s = reducer(initial(), initRun({ runId: 'r1', messageId: 'm1', config: baseConfig, sequence: 0 }));
+    s = reducer(s, pushStep({ runId: 'r1', stepId: 's1', stepNumber: 1, sequence: 1 }));
+    s = reducer(s, appendThinkingDelta({ blockId: 'blk_t', delta: '...', runId: 'r1' }));
+    expect(s.currentRun?.steps[0].contentBlockIds).toEqual([]);
+    s = reducer(s, appendThinkingDelta({ blockId: 'blk_t', delta: '...', runId: 'r1', stepId: 's1' }));
+    expect(s.currentRun?.steps[0].contentBlockIds).toEqual(['blk_t']);
+  });
+});

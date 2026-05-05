@@ -22,9 +22,19 @@ const CITE_REGEX = /\u27E6(\d+)\u27E7/g;
 
 /**
  * 预处理：将 [n] 替换为 ⟦n⟧ 占位符，避免被 Markdown 解析为链接引用。
+ * 用 backtick 切段：偶数 index 是普通文本（替换 [n] 为占位符），奇数 index 是 inline code
+ * （跳过替换，避免用户写 `[1]` 时被误转成 `⟦1⟧`）。
+ * 对未闭合 backtick / 多行 fenced code 都安全：split 自动按出现次数分段。
  */
 function preprocessCitations(text: string): string {
-  return text.replace(/\[(\d+)\]/g, `${CITE_OPEN}$1${CITE_CLOSE}`);
+  const segments = text.split('`');
+  return segments
+    .map((seg, i) =>
+      i % 2 === 0
+        ? seg.replace(/\[(\d+)\]/g, `${CITE_OPEN}$1${CITE_CLOSE}`)
+        : seg
+    )
+    .join('`');
 }
 
 /**

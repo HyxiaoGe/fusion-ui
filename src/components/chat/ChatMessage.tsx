@@ -21,7 +21,7 @@ import SourcesPanel from './SourcesPanel';
 import SourcesSidebar from './SourcesSidebar';
 import UrlReadStatus from './UrlReadStatus';
 import UrlCard from './UrlCard';
-import AgentStepCard from './AgentStepCard';
+import { AgentRunTimeline } from './agent';
 import MarkdownRenderer from './MarkdownRenderer';
 import ProviderIcon from '../models/ProviderIcon';
 import { ImageIcon } from 'lucide-react';
@@ -270,7 +270,7 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, files, isLastMessage
     >
       <div className={cn(
         'flex flex-col space-y-1',
-        isEditing ? 'w-full max-w-2xl' : isUser ? 'max-w-[75%]' : 'max-w-[85%]',
+        isEditing ? 'w-full max-w-2xl' : isUser ? 'max-w-[75%]' : 'w-full max-w-[85%] min-w-0',
         isUser ? 'items-end' : 'items-start'
       )}>
         {/* AI 消息头部 */}
@@ -342,11 +342,11 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, files, isLastMessage
           </div>
         )}
 
-        <div>
+        <div className={cn(!isUser && 'w-full min-w-0')}>
           <div className={cn(
             isUser
               ? 'rounded-2xl px-4 py-2.5 bg-primary/10 dark:bg-primary/15 text-foreground'
-              : '',
+              : 'w-full min-w-0',
             isEditing && 'w-full'
           )}>
             {isUser ? (
@@ -404,7 +404,7 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, files, isLastMessage
               )
             ) : (
               // AI 消息：渲染 content blocks
-              <div>
+              <div className="w-full min-w-0">
                 {/* 推理折叠区 */}
                 {!suppressThinking && (hasThinking || (isStreaming && isLastMessage && isStreamingReasoning)) && (
                   <ReasoningContent
@@ -424,13 +424,12 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, files, isLastMessage
                   </div>
                 )}
 
-                {/* Agent 步骤卡片：用 messageId 归属过滤，让流结束后 currentRun 仍挂在
+                {/* Agent run timeline：用 messageId 归属过滤，让流结束后 currentRun 仍挂在
                     当前消息上（折叠摘要持续显示），新轮发送由 startStream 清空避免错挂 */}
-                {currentRun
-                  && currentRun.messageId === message.id
-                  && currentRun.steps.length > 0 && (
-                  <AgentStepCard />
-                )}
+                <AgentRunTimeline
+                  assistantMessageId={message.id}
+                  onRetry={onRetry ? () => onRetry(message.id) : undefined}
+                />
 
                 {/* 思考中 → 搜索中/回答中过渡 */}
                 {isThinkingPending && (
