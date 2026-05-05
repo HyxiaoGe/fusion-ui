@@ -47,6 +47,23 @@ function getTarget(tc: ToolCallState): string | null {
 }
 
 /**
+ * 工具调用是否值得展开详情。
+ *
+ * 普通 success + 非截断的 tool call 详情区跟 ToolCallSummary 完全冗余
+ * （都是 query → result title），不应让用户点开看一遍 JSON。
+ * 只有以下 case 详情区有非冗余信息：
+ *   - failed / interrupted：错误详情
+ *   - degraded：降级提示
+ *   - resultSummary.truncated：截断提示 + 完整结果存于附件
+ */
+export function hasToolCallDetail(call: ToolCallState): boolean {
+  return call.status === 'failed'
+    || call.status === 'interrupted'
+    || call.status === 'degraded'
+    || call.resultSummary?.truncated === true;
+}
+
+/**
  * Summary step 判定（contract §5）。
  *
  * 只把"已结束 + 0 工具 + 有内容产出"的 step 视为 summary。

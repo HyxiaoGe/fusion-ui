@@ -24,13 +24,13 @@ interface StatusTagProps {
 
 export function RunHeader({ run }: RunHeaderProps) {
   const usedSteps = run.steps?.length ?? 0;
-  const maxSteps = run.config?.maxSteps;
 
+  // maxSteps 不在常驻 header 里展示——触顶时由 RunBanner（limit_reached）单独提示，
+  // 避免普通运行下「N / 8」对用户没信息量。
   return (
     <div className="flex items-center gap-2 text-xs text-muted-foreground py-1.5">
       <span>
-        已用 <strong className="text-foreground">{usedSteps}</strong>
-        {maxSteps != null && <span> / {maxSteps}</span>} 步
+        已用 <strong className="text-foreground">{usedSteps}</strong> 步
       </span>
       <span>·</span>
       <RunDuration run={run} />

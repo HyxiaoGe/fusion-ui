@@ -5,7 +5,7 @@ import { ChevronDown, Loader2, CheckCircle2, AlertCircle, Square, RotateCw } fro
 import type { AgentStepState } from '@/types/agentRun';
 import { STEP_STATUS_TREATMENT } from '@/lib/agent/statusTreatment';
 import { STEP_NUMBER_COLOR_CLASSES } from '@/lib/agent/colorClasses';
-import { isRetryAttempt } from '@/lib/agent/timelineDerive';
+import { isRetryAttempt, hasToolCallDetail } from '@/lib/agent/timelineDerive';
 import { ToolCallChip } from './ToolCallChip';
 import { ToolCallSummary } from './ToolCallSummary';
 import { ToolCallDetail } from './ToolCallDetail';
@@ -35,18 +35,22 @@ export function AgentStepCard({ step, _isLast }: { step: AgentStepState; _isLast
     && step.toolCalls.length === 0
     && !hasContent;
 
-  // 所有工具步骤默认折叠为单行摘要（chip + summary + 状态），用户点击展开详情。
+  // 仅在「有非冗余 detail」时才允许展开（错误 / 截断 / 降级）；普通 success path
+  // 详情区跟 ToolCallSummary 完全冗余，按 sean 优化：不显示 chevron、按钮 disabled、
+  // 点击不触发——避免用户点开看到空白或重复信息。
+  const stepHasDetails = step.toolCalls.some(hasToolCallDetail);
   const [overrideExpanded, setOverrideExpanded] = useState<boolean | null>(null);
   const expanded = overrideExpanded ?? false;
+  const canExpand = !isPending && stepHasDetails;
 
   return (
     <div className="rounded-lg border border-border/50 bg-muted/10 w-full min-w-0">
       <button
         type="button"
-        onClick={() => !isPending && setOverrideExpanded(!expanded)}
-        className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-muted/30 transition-colors duration-fast"
-        aria-expanded={!isPending && expanded}
-        disabled={isPending}
+        onClick={() => canExpand && setOverrideExpanded(!expanded)}
+        className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-muted/30 transition-colors duration-fast disabled:cursor-default disabled:hover:bg-transparent"
+        aria-expanded={canExpand && expanded}
+        disabled={!canExpand}
       >
         <StepNumber n={step.stepNumber} status={step.status} hasToolCalls={step.toolCalls.length > 0} />
         <div className="flex-1 min-w-0 flex flex-col gap-1">
@@ -90,14 +94,14 @@ export function AgentStepCard({ step, _isLast }: { step: AgentStepState; _isLast
             </>
           )}
         </div>
-        {!isPending && (
+        {canExpand && (
           <ChevronDown className={`w-4 h-4 text-muted-foreground transition-transform shrink-0 ${expanded ? '' : '-rotate-90'}`} />
         )}
       </button>
 
-      {!isPending && expanded && (
+      {canExpand && expanded && (
         <div className="px-3 pb-2 pt-1 space-y-2">
-          {step.toolCalls.map(tc => (
+          {step.toolCalls.filter(hasToolCallDetail).map(tc => (
             <ToolCallDetail key={tc.toolCallId} call={tc} />
           ))}
         </div>

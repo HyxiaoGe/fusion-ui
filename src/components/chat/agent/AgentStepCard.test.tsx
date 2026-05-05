@@ -29,19 +29,17 @@ describe('AgentStepCard', () => {
       status: 'running',
     })} _isLast={true} />);
     expect(screen.getByText(/正在思考下一步/)).toBeInTheDocument();
-    // pending 形态不应显示参数 detail
-    expect(screen.queryByText(/参数/)).not.toBeInTheDocument();
   });
 
-  it('pending 形态按钮 disabled，点击不展开', () => {
-    render(<AgentStepCard step={step({
+  it('pending 形态按钮 disabled，无 chevron', () => {
+    const { container } = render(<AgentStepCard step={step({
       toolCalls: [],
       status: 'running',
     })} _isLast={true} />);
     const button = screen.getByRole('button');
     expect(button).toBeDisabled();
-    fireEvent.click(button);
-    expect(screen.queryByText(/参数/)).not.toBeInTheDocument();
+    // pending 没有 chevron
+    expect(container.querySelector('svg.lucide-chevron-down')).toBeNull();
   });
 
   it('completed 步骤默认折叠头部，显示 step 编号 + 工具徽章', () => {
@@ -50,40 +48,72 @@ describe('AgentStepCard', () => {
       status: 'completed',
     })} _isLast={false} />);
     expect(screen.getByText(/搜索/)).toBeInTheDocument();
-    // step 编号通过 StepNumber 显示——但 completed 时 StepNumber 显示 check icon 不是数字
-    // 所以只断言工具徽章
   });
 
-  it('running 步骤默认折叠，点击后显示参数', () => {
-    render(<AgentStepCard step={step({
-      toolCalls: [tc({ status: 'running' })],
-      status: 'running',
-    })} _isLast={true} />);
-    // 默认折叠，找不到「参数」详情
-    expect(screen.queryByText(/参数/)).not.toBeInTheDocument();
-    // 点击头部展开
-    fireEvent.click(screen.getByRole('button'));
-    expect(screen.getByText(/参数/)).toBeInTheDocument();
-  });
-
-  it('failed 步骤显示警示色 + 错误信息', () => {
-    render(<AgentStepCard step={step({
-      toolCalls: [tc({ status: 'failed', error: 'TIMEOUT: fetch 超时' })],
-      status: 'failed',
-    })} _isLast={false} />);
-    const head = screen.getByRole('button');
-    fireEvent.click(head);
-    expect(screen.getByText(/TIMEOUT/)).toBeInTheDocument();
-  });
-
-  it('点击头部切换展开 / 折叠', () => {
-    render(<AgentStepCard step={step({
+  it('普通 success tool call：无 chevron、按钮 disabled、点击不展开', () => {
+    const { container } = render(<AgentStepCard step={step({
       toolCalls: [tc({})],
       status: 'completed',
     })} _isLast={false} />);
-    expect(screen.queryByText(/参数/)).not.toBeInTheDocument();
+    // success + 非截断 = 无非冗余 detail，不应渲染 chevron
+    expect(container.querySelector('svg.lucide-chevron-down')).toBeNull();
+    const button = screen.getByRole('button');
+    expect(button).toBeDisabled();
+    // 点击不应触发展开（即便强行点也无渲染变化）
+    fireEvent.click(button);
+    expect(container.querySelector('svg.lucide-chevron-down')).toBeNull();
+  });
+
+  it('failed 步骤：有 chevron + 展开后显示错误信息', () => {
+    const { container } = render(<AgentStepCard step={step({
+      toolCalls: [tc({ status: 'failed', error: 'TIMEOUT: fetch 超时' })],
+      status: 'failed',
+    })} _isLast={false} />);
+    // 失败 = 有 detail，应有 chevron
+    expect(container.querySelector('svg.lucide-chevron-down')).toBeInTheDocument();
+    const button = screen.getByRole('button');
+    expect(button).not.toBeDisabled();
+    fireEvent.click(button);
+    expect(screen.getByText(/TIMEOUT/)).toBeInTheDocument();
+  });
+
+  it('truncated tool call：有 chevron + 展开后显示「已截断」提示', () => {
+    const { container } = render(<AgentStepCard step={step({
+      toolCalls: [tc({
+        status: 'success',
+        resultSummary: { kind: 'web_search', title: 'a', count: 10, truncated: true },
+      })],
+      status: 'completed',
+    })} _isLast={false} />);
+    expect(container.querySelector('svg.lucide-chevron-down')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button'));
-    expect(screen.getByText(/参数/)).toBeInTheDocument();
+    expect(screen.getByText(/已截断/)).toBeInTheDocument();
+  });
+
+  it('degraded tool call：有 chevron + 展开后显示降级提示', () => {
+    const { container } = render(<AgentStepCard step={step({
+      toolCalls: [tc({ status: 'degraded' })],
+      status: 'completed',
+    })} _isLast={false} />);
+    expect(container.querySelector('svg.lucide-chevron-down')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button'));
+    // 用 detail 独有的「降级回退」匹配，避免跟折叠态 NoResultLabel 「部分结果不可用」撞车
+    expect(screen.getByText(/降级回退/)).toBeInTheDocument();
+  });
+
+  it('展开后只渲染有 detail 的 tool call（success 不出现）', () => {
+    render(<AgentStepCard step={step({
+      toolCalls: [
+        tc({ toolCallId: 't1', toolName: 'web_search', status: 'success' }),
+        tc({ toolCallId: 't2', toolName: 'url_read', arguments: { url: 'https://x' }, status: 'failed', error: 'CONN_REFUSED' }),
+      ],
+      status: 'completed',
+    })} _isLast={false} />);
+    fireEvent.click(screen.getByRole('button'));
+    // 展开后应有 failed 的 error 文案
+    expect(screen.getByText(/CONN_REFUSED/)).toBeInTheDocument();
+    // 不应有第二个 detail（success 的）— 通过验证 ToolCallDetail border-l 容器只有 1 个
+    expect(document.querySelectorAll('.border-l').length).toBe(1);
   });
 
   it('多 tool call 并行 running 全部显示徽章', () => {

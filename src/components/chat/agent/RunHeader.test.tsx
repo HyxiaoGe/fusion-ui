@@ -18,7 +18,7 @@ const run = (over: Partial<AgentRunState>): AgentRunState => ({
 });
 
 describe('RunHeader', () => {
-  it('显示 已用 N / maxSteps 步 + status 标签', () => {
+  it('显示 已用 N 步 + status 标签（不再常驻 maxSteps）', () => {
     render(<RunHeader run={run({ status: 'completed', steps: [
       { stepId: 's1', stepNumber: 1, status: 'completed', toolCalls: [], contentBlockIds: [], startedAt: 1_000_000 },
       { stepId: 's2', stepNumber: 2, status: 'completed', toolCalls: [], contentBlockIds: [], startedAt: 1_002_000 },
@@ -26,6 +26,8 @@ describe('RunHeader', () => {
     expect(screen.getByText(/已用/)).toBeInTheDocument();
     expect(screen.getByText('2')).toBeInTheDocument();
     expect(screen.getByText(/已完成/)).toBeInTheDocument();
+    // maxSteps（baseConfig.maxSteps=8）不应出现在 header 里——只在 limit_reached banner 展示
+    expect(screen.queryByText(/\/ 8/)).not.toBeInTheDocument();
   });
 
   it('running 状态秒数实时跳（fake timer 1s 后秒数 +1）', () => {
