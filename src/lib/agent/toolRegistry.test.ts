@@ -94,4 +94,46 @@ describe('getDisplayArgs — args 脱敏', () => {
     expect(out.query).toBe('q');
     expect(out.apiKey).toBe('[REDACTED]');
   });
+
+  it('嵌套 dict 的敏感字段被遮（headers.Authorization）', () => {
+    const out = getDisplayArgs('future_tool', {
+      url: 'https://api.example.com',
+      headers: { Authorization: 'Bearer xxx', 'Content-Type': 'application/json' },
+    });
+    expect(out.url).toBe('https://api.example.com');
+    expect((out.headers as Record<string, unknown>).Authorization).toBe('[REDACTED]');
+    expect((out.headers as Record<string, unknown>)['Content-Type']).toBe('application/json');
+  });
+
+  it('深层嵌套的敏感字段被遮（config.auth.apiKey）', () => {
+    const out = getDisplayArgs('future_tool', {
+      config: { auth: { apiKey: 'sk-secret' }, retries: 3 },
+    });
+    const config = out.config as Record<string, unknown>;
+    const auth = config.auth as Record<string, unknown>;
+    expect(auth.apiKey).toBe('[REDACTED]');
+    expect(config.retries).toBe(3);
+  });
+
+  it('array 内对象的 token 被遮', () => {
+    const out = getDisplayArgs('future_tool', {
+      requests: [
+        { url: 'https://a', token: 't1' },
+        { url: 'https://b', token: 't2' },
+      ],
+    });
+    const requests = out.requests as Array<Record<string, unknown>>;
+    expect(requests[0].url).toBe('https://a');
+    expect(requests[0].token).toBe('[REDACTED]');
+    expect(requests[1].token).toBe('[REDACTED]');
+  });
+
+  it('原始 args 不被 mutate', () => {
+    const original = { apiKey: 'sk-secret', headers: { Authorization: 'Bearer x' } };
+    const snapshot = JSON.parse(JSON.stringify(original));
+    getDisplayArgs('future_tool', original);
+    expect(original).toEqual(snapshot);
+    expect(original.apiKey).toBe('sk-secret');
+    expect(original.headers.Authorization).toBe('Bearer x');
+  });
 });

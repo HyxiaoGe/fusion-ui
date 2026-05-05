@@ -47,4 +47,22 @@ describe('ToolCallSummary', () => {
     })} />);
     expect(screen.getByText(/example.com/)).toBeInTheDocument();
   });
+
+  it('degraded 且无 result 时显示「部分结果不可用」', () => {
+    render(<ToolCallSummary call={tc({ status: 'degraded', resultSummary: undefined })} />);
+    expect(screen.getByText(/部分结果不可用/)).toBeInTheDocument();
+  });
+
+  it('interrupted 且无 result 时显示「已中断」', () => {
+    render(<ToolCallSummary call={tc({ status: 'interrupted', resultSummary: undefined })} />);
+    expect(screen.getByText(/已中断/)).toBeInTheDocument();
+  });
+
+  it('success 但无 result 时不显示状态文案（罕见 edge case）', () => {
+    const { container } = render(<ToolCallSummary call={tc({ status: 'success', resultSummary: undefined })} />);
+    // 不应出现 "未完成" / "已中断" / "部分结果不可用" / "…" 这些状态文案
+    expect(container.textContent).not.toMatch(/未完成|已中断|部分结果不可用|…/);
+    // 但 input (query 'GPT 5.5') 仍应显示
+    expect(screen.getByText(/GPT 5.5/)).toBeInTheDocument();
+  });
 });

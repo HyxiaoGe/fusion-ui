@@ -53,22 +53,32 @@ export function getToolMeta(toolName: string): ToolMeta {
   return { ...FALLBACK, label: toolName };
 }
 
-/**
- * 通用 sensitive key 模式——key 名命中时 value 替换为 '[REDACTED]'。
- * 不区分大小写、容忍 camel/snake/kebab 三种命名风格变体。
- */
 const SENSITIVE_KEY_PATTERN = /(api[_-]?key|token|secret|password|connection[_-]?string|authorization)/i;
 
-function genericRedact(args: Record<string, unknown>): Record<string, unknown> {
+/**
+ * 递归遮敏感字段。
+ *   - dict：遍历 entries；key 命中 sensitive pattern → value='[REDACTED]'；否则递归 value
+ *   - array：遍历元素递归
+ *   - primitive / null：原样返回
+ *
+ * 不 mutate 原对象，全部返回新对象 / 新数组。
+ */
+function redactValue(value: unknown): unknown {
+  if (value === null || typeof value !== 'object') return value;
+  if (Array.isArray(value)) return value.map(redactValue);
+  return redactDict(value as Record<string, unknown>);
+}
+
+function redactDict(args: Record<string, unknown>): Record<string, unknown> {
   const out: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(args)) {
-    out[k] = SENSITIVE_KEY_PATTERN.test(k) ? '[REDACTED]' : v;
+    out[k] = SENSITIVE_KEY_PATTERN.test(k) ? '[REDACTED]' : redactValue(v);
   }
   return out;
 }
 
 /**
- * 获取展示用 args——优先走 ToolMeta.redactArgs，否则走通用 sensitive key 兜底。
+ * 获取展示用 args——优先走 ToolMeta.redactArgs，否则走通用 sensitive key 兜底（递归）。
  * ToolCallDetail 必须调用此函数，不得直接 JSON.stringify(call.arguments)。
  */
 export function getDisplayArgs(
@@ -77,5 +87,5 @@ export function getDisplayArgs(
 ): Record<string, unknown> {
   const meta = getToolMeta(toolName);
   if (meta.redactArgs) return meta.redactArgs(args);
-  return genericRedact(args);
+  return redactDict(args);
 }
