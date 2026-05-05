@@ -14,21 +14,33 @@ import { ToolCallDetail } from './ToolCallDetail';
  * 工具步骤卡片。
  * 0 toolCalls + running = pending 形态（LLM 在决定下一步），同组件内渲染避免组件类型切换。
  * 0 toolCalls + 终态 = 异常 case，仍渲染（不 return null，避免 timeline 突然少一行）。
+ * running + 0 toolCalls + contentBlockIds > 0 → return null，让正文区接管 streaming 显示。
  * contract §13 + §4 (retry heuristic)。
  */
 export function AgentStepCard({ step, _isLast }: { step: AgentStepState; _isLast: boolean }) {
   void _isLast;
 
-  // 0 toolCalls + running = pending 形态（LLM 在决定下一步），同组件内渲染避免组件类型切换
-  // 0 toolCalls + 终态 = 异常 case，仍渲染（不 return null，避免 timeline 突然少一行）
-  const isPending = step.toolCalls.length === 0;
+  // running + 0 toolCalls + 已开始流答复（contentBlockIds > 0）→ 不渲染整张 pending card
+  // 让正文区接管 streaming 显示，timeline 不重复显示"正在生成答复"占位
+  if (step.status === 'running'
+      && step.toolCalls.length === 0
+      && step.contentBlockIds.length > 0) {
+    return null;
+  }
+
+  // running + 0 toolCalls + 0 contentBlockIds = pending 形态（LLM 在决定下一步）
+  // 终态 + 0 toolCalls = 异常 case，仍渲染避免 timeline 突然少一行
+  const hasContent = step.contentBlockIds.length > 0;
+  const isPending = step.status === 'running'
+    && step.toolCalls.length === 0
+    && !hasContent;
 
   // 所有工具步骤默认折叠为单行摘要（chip + summary + 状态），用户点击展开详情。
   const [overrideExpanded, setOverrideExpanded] = useState<boolean | null>(null);
   const expanded = overrideExpanded ?? false;
 
   return (
-    <div className="rounded-lg border border-border/50 bg-muted/10 w-full">
+    <div className="rounded-lg border border-border/50 bg-muted/10 w-full min-w-0">
       <button
         type="button"
         onClick={() => !isPending && setOverrideExpanded(!expanded)}

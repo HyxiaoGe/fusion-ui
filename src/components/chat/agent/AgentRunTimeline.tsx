@@ -36,7 +36,7 @@ export function AgentRunTimeline({ assistantMessageId, onRetry }: AgentRunTimeli
   if (!run.steps?.length && (run.status === 'running' || run.status === 'completed')) return null;
 
   return (
-    <div className="mb-3 w-full max-w-full">
+    <div className="mb-3 w-full max-w-full min-w-0 self-stretch">
       <RunHeader run={run} />
       <RunBanner run={run} onRetry={onRetry} />
       <StepTimeline run={run} />

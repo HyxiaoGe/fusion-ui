@@ -13,7 +13,7 @@ export function StepTimeline({ run }: { run: AgentRunState }) {
   if (!run.steps?.length) return null;
 
   return (
-    <div className="space-y-2">
+    <div className="space-y-2 w-full min-w-0">
       {run.steps.map((step, i) => (
         <StepRenderer key={step.stepId} step={step} _isLast={i === run.steps.length - 1} />
       ))}

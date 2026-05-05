@@ -114,4 +114,22 @@ describe('AgentStepCard', () => {
     })} _isLast={false} />);
     expect(screen.getByText(/部分降级/)).toBeInTheDocument();
   });
+
+  it('running + 0 toolCalls + 0 contentBlockIds 显示 pending（LLM 在思考下一步）', () => {
+    render(<AgentStepCard step={step({
+      toolCalls: [],
+      status: 'running',
+      contentBlockIds: [],
+    })} _isLast={true} />);
+    expect(screen.getByText(/正在思考下一步/)).toBeInTheDocument();
+  });
+
+  it('running + 0 toolCalls + contentBlockIds > 0 不渲染（让正文接管 streaming）', () => {
+    const { container } = render(<AgentStepCard step={step({
+      toolCalls: [],
+      status: 'running',
+      contentBlockIds: ['blk_1', 'blk_2'],
+    })} _isLast={true} />);
+    expect(container.firstChild).toBeNull();
+  });
 });

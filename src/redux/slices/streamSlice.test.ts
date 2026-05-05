@@ -375,3 +375,41 @@ describe('streamSlice — interrupted 派生（contract §3）', () => {
     expect(s.currentRun?.steps[0].toolCalls[0].status).toBe('running');
   });
 });
+
+describe('streamSlice — contentBlockIds 关联（contract §6.5 defensive）', () => {
+  it('appendTextDelta 首次 delta 带 stepId 时挂 contentBlockIds', () => {
+    let s = reducer(initial(), initRun({ runId: 'r1', messageId: 'm1', config: baseConfig, sequence: 0 }));
+    s = reducer(s, pushStep({ runId: 'r1', stepId: 's1', stepNumber: 1, sequence: 1 }));
+    s = reducer(s, appendTextDelta({ blockId: 'blk_1', delta: 'hello', runId: 'r1', stepId: 's1' }));
+    expect(s.currentRun?.steps[0].contentBlockIds).toEqual(['blk_1']);
+  });
+
+  it('appendTextDelta 首次 delta 不带 stepId，后续 delta 带 stepId 也能挂 contentBlockIds（关键 bug 修复）', () => {
+    let s = reducer(initial(), initRun({ runId: 'r1', messageId: 'm1', config: baseConfig, sequence: 0 }));
+    s = reducer(s, pushStep({ runId: 'r1', stepId: 's1', stepNumber: 1, sequence: 1 }));
+    // 第一次 delta 不带 stepId
+    s = reducer(s, appendTextDelta({ blockId: 'blk_1', delta: 'hello', runId: 'r1' }));
+    expect(s.currentRun?.steps[0].contentBlockIds).toEqual([]);
+    // 第二次 delta 带 stepId
+    s = reducer(s, appendTextDelta({ blockId: 'blk_1', delta: ' world', runId: 'r1', stepId: 's1' }));
+    expect(s.currentRun?.steps[0].contentBlockIds).toEqual(['blk_1']);
+  });
+
+  it('appendTextDelta 多次带 stepId 不会重复挂 contentBlockIds', () => {
+    let s = reducer(initial(), initRun({ runId: 'r1', messageId: 'm1', config: baseConfig, sequence: 0 }));
+    s = reducer(s, pushStep({ runId: 'r1', stepId: 's1', stepNumber: 1, sequence: 1 }));
+    s = reducer(s, appendTextDelta({ blockId: 'blk_1', delta: 'a', runId: 'r1', stepId: 's1' }));
+    s = reducer(s, appendTextDelta({ blockId: 'blk_1', delta: 'b', runId: 'r1', stepId: 's1' }));
+    s = reducer(s, appendTextDelta({ blockId: 'blk_1', delta: 'c', runId: 'r1', stepId: 's1' }));
+    expect(s.currentRun?.steps[0].contentBlockIds).toEqual(['blk_1']);
+  });
+
+  it('appendThinkingDelta 首次 delta 不带 stepId，后续带 stepId 也能挂 contentBlockIds', () => {
+    let s = reducer(initial(), initRun({ runId: 'r1', messageId: 'm1', config: baseConfig, sequence: 0 }));
+    s = reducer(s, pushStep({ runId: 'r1', stepId: 's1', stepNumber: 1, sequence: 1 }));
+    s = reducer(s, appendThinkingDelta({ blockId: 'blk_t', delta: '...', runId: 'r1' }));
+    expect(s.currentRun?.steps[0].contentBlockIds).toEqual([]);
+    s = reducer(s, appendThinkingDelta({ blockId: 'blk_t', delta: '...', runId: 'r1', stepId: 's1' }));
+    expect(s.currentRun?.steps[0].contentBlockIds).toEqual(['blk_t']);
+  });
+});

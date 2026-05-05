@@ -19,7 +19,7 @@ export function SummaryStep({ step, _isLast }: { step: AgentStepState; _isLast: 
   const blockCount = step.contentBlockIds?.length ?? 0;
 
   return (
-    <div className="rounded-lg border border-border/30 bg-muted/5 px-3 py-2 flex items-center gap-2 text-xs w-full">
+    <div className="rounded-lg border border-border/30 bg-muted/5 px-3 py-2 flex items-center gap-2 text-xs w-full min-w-0">
       <div className="shrink-0 w-6 h-6 rounded-full bg-muted/50 text-muted-foreground border border-border/50 flex items-center justify-center">
         {isRunning ? (
           <span className="w-1.5 h-1.5 rounded-full bg-info/60 animate-pulse motion-reduce:animate-none" aria-hidden />

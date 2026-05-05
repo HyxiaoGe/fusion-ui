@@ -89,15 +89,17 @@ const streamSlice = createSlice({
       action: PayloadAction<{ blockId: string; delta: string; runId?: string; stepId?: string }>
     ) {
       const { blockId, delta, runId, stepId } = action.payload;
+      // 首次创建：注册 block type + order
       if (!state.blockTypes[blockId]) {
         state.blockTypes[blockId] = 'text';
         state.blockOrder.push(blockId);
-        // 关联 step（spec §6.5 defensive no-op：runId 不匹配或 stepId 缺失则不挂）
-        if (runId && stepId && state.currentRun?.runId === runId) {
-          const step = state.currentRun.steps.find(s => s.stepId === stepId);
-          if (step && !step.contentBlockIds.includes(blockId)) {
-            step.contentBlockIds.push(blockId);
-          }
+      }
+      // 每次 delta 都尝试关联 step（runId/stepId 是 optional，可能首次 delta 没带后续 delta 带了）
+      // includes 防重复挂，spec §6.5 defensive no-op
+      if (runId && stepId && state.currentRun?.runId === runId) {
+        const step = state.currentRun.steps.find(s => s.stepId === stepId);
+        if (step && !step.contentBlockIds.includes(blockId)) {
+          step.contentBlockIds.push(blockId);
         }
       }
       state.textBlocks[blockId] = (state.textBlocks[blockId] ?? '') + delta;
@@ -116,11 +118,13 @@ const streamSlice = createSlice({
           state.isStreamingReasoning = true;
           state.reasoningStartTime = Date.now();
         }
-        if (runId && stepId && state.currentRun?.runId === runId) {
-          const step = state.currentRun.steps.find(s => s.stepId === stepId);
-          if (step && !step.contentBlockIds.includes(blockId)) {
-            step.contentBlockIds.push(blockId);
-          }
+      }
+      // 每次 delta 都尝试关联 step（runId/stepId 是 optional，可能首次 delta 没带后续 delta 带了）
+      // includes 防重复挂，spec §6.5 defensive no-op
+      if (runId && stepId && state.currentRun?.runId === runId) {
+        const step = state.currentRun.steps.find(s => s.stepId === stepId);
+        if (step && !step.contentBlockIds.includes(blockId)) {
+          step.contentBlockIds.push(blockId);
         }
       }
       state.thinkingBlocks[blockId] = (state.thinkingBlocks[blockId] ?? '') + delta;
