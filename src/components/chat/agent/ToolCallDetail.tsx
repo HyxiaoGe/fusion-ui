@@ -2,7 +2,7 @@
 
 import { AlertCircle } from 'lucide-react';
 import type { ToolCallState } from '@/types/agentRun';
-import { getToolMeta } from '@/lib/agent/toolRegistry';
+import { getToolMeta, getDisplayArgs } from '@/lib/agent/toolRegistry';
 import type { SemanticColor } from '@/lib/agent/toolRegistry';
 
 /**
@@ -10,7 +10,6 @@ import type { SemanticColor } from '@/lib/agent/toolRegistry';
  * contract §13。
  */
 
-// Tailwind JIT 需要 literal class string；不能写 `text-${color}` 动态字符串
 const COLOR_DOT_CLASS: Record<SemanticColor, string> = {
   info: 'text-info',
   success: 'text-success',
@@ -22,14 +21,15 @@ const COLOR_DOT_CLASS: Record<SemanticColor, string> = {
 
 export function ToolCallDetail({ call }: { call: ToolCallState }) {
   const meta = getToolMeta(call.toolName);
+  const displayArgs = getDisplayArgs(call.toolName, call.arguments);
 
   return (
     <div className="space-y-2 pl-2 border-l border-border/50">
-      {/* 参数 */}
+      {/* 参数（已脱敏） */}
       <div className="text-xs">
         <div className="text-muted-foreground mb-0.5">参数</div>
         <pre className="bg-muted/30 rounded px-2 py-1 text-xs overflow-x-auto font-mono">
-          {JSON.stringify(call.arguments, null, 2)}
+          {JSON.stringify(displayArgs, null, 2)}
         </pre>
       </div>
 

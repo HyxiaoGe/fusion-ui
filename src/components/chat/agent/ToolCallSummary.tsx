@@ -1,6 +1,6 @@
 'use client';
 
-import type { ToolCallState } from '@/types/agentRun';
+import type { ToolCallState, ToolCallStatus } from '@/types/agentRun';
 import { getToolMeta } from '@/lib/agent/toolRegistry';
 
 /**
@@ -26,9 +26,29 @@ export function ToolCallSummary({ call }: { call: ToolCallState }) {
           </span>
         </>
       )}
-      {!result && call.status === 'running' && <span className="ml-1">…</span>}
-      {!result && call.status === 'failed' && <span className="ml-1 text-danger">未完成</span>}
-      {!result && call.status === 'interrupted' && <span className="ml-1 text-muted-foreground">已中断</span>}
+      {!result && <NoResultLabel status={call.status} />}
     </div>
   );
+}
+
+/** 无 resultSummary 时按 status 显示文案；exhaustive switch 强制覆盖所有 ToolCallStatus */
+function NoResultLabel({ status }: { status: ToolCallStatus }) {
+  switch (status) {
+    case 'running':
+      return <span className="ml-1">…</span>;
+    case 'failed':
+      return <span className="ml-1 text-danger">未完成</span>;
+    case 'interrupted':
+      return <span className="ml-1 text-muted-foreground">已中断</span>;
+    case 'degraded':
+      return <span className="ml-1 text-warn">部分结果不可用</span>;
+    case 'success':
+      // success 但没 resultSummary（罕见 edge case，BE 协议允许 result_summary 为 null）
+      return null;
+    default: {
+      // exhaustive 兜底——加新 ToolCallStatus 时这里 TS 报错强制处理
+      void (status as never);
+      return null;
+    }
+  }
 }
