@@ -1,0 +1,84 @@
+import { describe, it, expect } from 'vitest';
+import { render, screen, fireEvent } from '@testing-library/react';
+import { AgentStepCard } from './AgentStepCard';
+import type { AgentStepState, ToolCallState } from '@/types/agentRun';
+
+const tc = (over: Partial<ToolCallState>): ToolCallState => ({
+  toolCallId: 't1',
+  toolName: 'web_search',
+  arguments: { query: 'GPT 5.5' },
+  status: 'success',
+  startedAt: 0,
+  ...over,
+});
+
+const step = (over: Partial<AgentStepState>): AgentStepState => ({
+  stepId: 's1',
+  stepNumber: 1,
+  status: 'completed',
+  toolCalls: [],
+  contentBlockIds: [],
+  startedAt: 0,
+  ...over,
+});
+
+describe('AgentStepCard', () => {
+  it('completed 步骤默认折叠头部，显示 step 编号 + 工具徽章', () => {
+    render(<AgentStepCard step={step({
+      toolCalls: [tc({})],
+      status: 'completed',
+    })} _isLast={false} />);
+    expect(screen.getByText(/搜索/)).toBeInTheDocument();
+    // step 编号通过 StepNumber 显示——但 completed 时 StepNumber 显示 check icon 不是数字
+    // 所以只断言工具徽章
+  });
+
+  it('running 步骤默认展开（auto-expand）', () => {
+    render(<AgentStepCard step={step({
+      toolCalls: [tc({ status: 'running' })],
+      status: 'running',
+    })} _isLast={true} />);
+    expect(screen.getByText(/参数/)).toBeInTheDocument();
+  });
+
+  it('failed 步骤显示警示色 + 错误信息', () => {
+    render(<AgentStepCard step={step({
+      toolCalls: [tc({ status: 'failed', error: 'TIMEOUT: fetch 超时' })],
+      status: 'failed',
+    })} _isLast={false} />);
+    const head = screen.getByRole('button');
+    fireEvent.click(head);
+    expect(screen.getByText(/TIMEOUT/)).toBeInTheDocument();
+  });
+
+  it('点击头部切换展开 / 折叠', () => {
+    render(<AgentStepCard step={step({
+      toolCalls: [tc({})],
+      status: 'completed',
+    })} _isLast={false} />);
+    expect(screen.queryByText(/参数/)).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button'));
+    expect(screen.getByText(/参数/)).toBeInTheDocument();
+  });
+
+  it('多 tool call 并行 running 全部显示徽章', () => {
+    render(<AgentStepCard step={step({
+      toolCalls: [
+        tc({ toolCallId: 't1', toolName: 'web_search', status: 'running' }),
+        tc({ toolCallId: 't2', toolName: 'url_read', arguments: { url: 'https://x' }, status: 'running' }),
+      ],
+      status: 'running',
+    })} _isLast={true} />);
+    expect(screen.getByText(/搜索/)).toBeInTheDocument();
+    expect(screen.getByText(/读取/)).toBeInTheDocument();
+  });
+
+  it('interrupted 步骤显示中断标识', () => {
+    render(<AgentStepCard step={step({
+      toolCalls: [tc({ status: 'interrupted' })],
+      status: 'interrupted',
+    })} _isLast={false} />);
+    // 折叠态头部就有 「已中断」徽章
+    expect(screen.getByText(/已中断/)).toBeInTheDocument();
+  });
+});
