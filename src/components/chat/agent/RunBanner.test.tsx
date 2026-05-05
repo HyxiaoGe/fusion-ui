@@ -80,4 +80,15 @@ describe('RunBanner', () => {
     })} />);
     expect(screen.queryByText(/重试运行/)).not.toBeInTheDocument();
   });
+
+  it('limit_reached + timeout 但 onRetry 未传时不显示「重新提问」按钮（contract §7 不做 fake CTA）', () => {
+    render(<RunBanner run={run({
+      status: 'limit_reached',
+      limitReachedReason: 'timeout',
+    })} />);
+    // 文案应该显示
+    expect(screen.getByText(/超时/)).toBeInTheDocument();
+    // 按钮不应该显示
+    expect(screen.queryByText(/重新提问/)).not.toBeInTheDocument();
+  });
 });

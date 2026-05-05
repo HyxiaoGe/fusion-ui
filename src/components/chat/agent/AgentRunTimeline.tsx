@@ -30,8 +30,10 @@ export function AgentRunTimeline({ assistantMessageId, onRetry }: AgentRunTimeli
   if (run.messageId !== assistantMessageId && run.serverMessageId !== assistantMessageId) {
     return null;
   }
-  // 没有任何 step 不渲染（避免空容器）
-  if (!run.steps?.length && run.status === 'running') return null;
+  // 空 steps 守卫（contract §1）：
+  //   - running / completed：空 steps 没有可展示信息，避免空容器
+  //   - failed / interrupted / limit_reached：banner 仍有用户价值（如 ProviderOffline 0 step），保留渲染
+  if (!run.steps?.length && (run.status === 'running' || run.status === 'completed')) return null;
 
   return (
     <div className="mb-3">
