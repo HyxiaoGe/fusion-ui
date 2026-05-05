@@ -404,7 +404,7 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, files, isLastMessage
               )
             ) : (
               // AI 消息：渲染 content blocks
-              <div>
+              <div className="w-full min-w-0">
                 {/* 推理折叠区 */}
                 {!suppressThinking && (hasThinking || (isStreaming && isLastMessage && isStreamingReasoning)) && (
                   <ReasoningContent

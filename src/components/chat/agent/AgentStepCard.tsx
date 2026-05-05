@@ -75,7 +75,7 @@ export function AgentStepCard({ step, _isLast }: { step: AgentStepState; _isLast
                 {step.toolCalls.map(tc => {
                   const isRetry = isRetryAttempt(tc, step.toolCalls);
                   return (
-                    <div key={tc.toolCallId} className="flex items-center gap-1">
+                    <div key={tc.toolCallId} className="flex items-center gap-1 min-w-0">
                       <ToolCallSummary call={tc} />
                       {isRetry && (
                         <span className="text-fg-subtle text-xs inline-flex items-center gap-0.5 ml-1">

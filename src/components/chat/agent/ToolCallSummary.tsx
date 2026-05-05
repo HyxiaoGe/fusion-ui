@@ -14,11 +14,11 @@ export function ToolCallSummary({ call }: { call: ToolCallState }) {
 
   return (
     <div className="flex items-center gap-1 text-xs text-muted-foreground truncate min-w-0">
-      <span className="truncate text-foreground/80">{input}</span>
+      <span className="truncate text-foreground/80 min-w-0">{input}</span>
       {result && (
         <>
           <span className="mx-1 shrink-0">→</span>
-          <span className="truncate">
+          <span className="truncate min-w-0">
             {result.count != null && <strong className="text-foreground">{result.count} 条</strong>}
             {result.count != null && result.title && <span className="mx-1">·</span>}
             {result.title}

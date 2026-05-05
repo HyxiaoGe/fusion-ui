@@ -65,4 +65,19 @@ describe('ToolCallSummary', () => {
     // 但 input (query 'GPT 5.5') 仍应显示
     expect(screen.getByText(/GPT 5.5/)).toBeInTheDocument();
   });
+
+  // 锁 truncate 链路 className：超长 query 时 input/result span 必须有 min-w-0，
+  // 否则 flex 子项默认 min-width: auto 会撑破父容器导致 truncate 失效。
+  it('input/result span 携带 truncate + min-w-0 锁 truncate 链路', () => {
+    const longQuery = '一段非常非常非常长的搜索关键词'.repeat(20);
+    const { container } = render(<ToolCallSummary call={tc({
+      arguments: { query: longQuery },
+      resultSummary: { kind: 'web_search', title: '一段非常长的标题文本'.repeat(10), count: 12, truncated: false },
+    })} />);
+    const truncateSpans = container.querySelectorAll('span.truncate');
+    expect(truncateSpans.length).toBeGreaterThanOrEqual(2);
+    truncateSpans.forEach(el => {
+      expect(el.className).toMatch(/min-w-0/);
+    });
+  });
 });
