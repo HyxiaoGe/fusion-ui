@@ -65,12 +65,24 @@ function RunDuration({ run }: RunDurationProps) {
 }
 
 function StatusTag({ run }: StatusTagProps) {
+  // running 态降权：用 pulse dot + 文字 muted，不要 button-like 边框 / spinner
+  // run-level running 只是背景状态，不该抢正文和 tool chip 焦点
+  if (run.status === 'running') {
+    return (
+      <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+        <span className="w-1.5 h-1.5 rounded-full bg-info/60 animate-pulse motion-reduce:animate-none" aria-hidden />
+        <span>运行中</span>
+      </span>
+    );
+  }
+
+  // 终态（completed/limit_reached/interrupted/failed）保持原视觉——button-like 标签 + 状态图标
   const treatment = RUN_STATUS_TREATMENT[run.status];
   const Icon = treatment.icon;
   const colorClass = STATUS_TAG_COLOR_CLASSES[treatment.color];
   return (
     <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded border text-xs ${colorClass}`}>
-      <Icon className={`w-3 h-3 ${run.status === 'running' ? 'animate-spin motion-reduce:animate-none' : ''}`} />
+      <Icon className="w-3 h-3" />
       <span>{treatment.label}</span>
     </span>
   );

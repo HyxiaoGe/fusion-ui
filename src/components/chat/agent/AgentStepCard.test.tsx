@@ -132,4 +132,28 @@ describe('AgentStepCard', () => {
     })} _isLast={true} />);
     expect(container.firstChild).toBeNull();
   });
+
+  it('running + 0 toolCalls 时 StepNumber 显示 spinner（pending 思考）', () => {
+    const { container } = render(<AgentStepCard step={step({
+      toolCalls: [],
+      status: 'running',
+      contentBlockIds: [],
+    })} _isLast={true} />);
+    // StepNumber 圆圈内有 animate-spin
+    const spinner = container.querySelector('.animate-spin');
+    expect(spinner).toBeInTheDocument();
+  });
+
+  it('running + 有 toolCalls 时 StepNumber 不显示 spinner（让位 ToolCallChip）', () => {
+    render(<AgentStepCard step={step({
+      toolCalls: [tc({ status: 'running' })],
+      status: 'running',
+    })} _isLast={true} />);
+    // StepNumber 圆圈内应该是 step number "1" 不是 spinner
+    expect(screen.getByText('1')).toBeInTheDocument();
+    // ToolCallChip 仍可以有 spinner（chip 内 Loader2），但 StepNumber 圆圈内不该有
+    // 通过 dom 结构验证：找 w-6 h-6 rounded-full 那个 div 内不含 animate-spin
+    const stepNumberDiv = document.querySelector('.w-6.h-6.rounded-full');
+    expect(stepNumberDiv?.querySelector('.animate-spin')).toBeNull();
+  });
 });

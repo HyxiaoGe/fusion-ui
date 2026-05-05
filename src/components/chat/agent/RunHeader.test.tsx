@@ -73,4 +73,28 @@ describe('RunHeader', () => {
     expect(screen.queryByText(/s …/)).not.toBeInTheDocument();
     expect(screen.queryByText(/\d+\.\ds$/)).not.toBeInTheDocument();
   });
+
+  it('running 状态显示 pulse dot 不显示 button-like spinner', () => {
+    render(<RunHeader run={run({
+      status: 'running',
+      steps: [{ stepId: 's1', stepNumber: 1, status: 'running', toolCalls: [], contentBlockIds: [], startedAt: 1_000_000 }],
+    })} />);
+    expect(screen.getByText(/运行中/)).toBeInTheDocument();
+    // 不应有 button-like border + bg（找外层 inline-flex 容器）
+    const tag = screen.getByText(/运行中/).closest('span.inline-flex');
+    expect(tag?.className).not.toMatch(/border/);
+    expect(tag?.className).not.toMatch(/bg-info\/10/);
+  });
+
+  it('completed 状态保留 button-like 标签 + check icon', () => {
+    render(<RunHeader run={run({
+      status: 'completed',
+      steps: [{ stepId: 's1', stepNumber: 1, status: 'completed', toolCalls: [], contentBlockIds: [], startedAt: 1_000_000, completedAt: 1_005_000 }],
+    })} />);
+    expect(screen.getByText(/已完成/)).toBeInTheDocument();
+    // 「已完成」文字在内层 <span>，需要找外层容器（inline-flex span）
+    const tag = screen.getByText(/已完成/).closest('span.inline-flex');
+    expect(tag?.className).toMatch(/border/);
+    expect(tag?.className).toMatch(/bg-success\/10/);
+  });
 });

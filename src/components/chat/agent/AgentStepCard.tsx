@@ -48,7 +48,7 @@ export function AgentStepCard({ step, _isLast }: { step: AgentStepState; _isLast
         aria-expanded={!isPending && expanded}
         disabled={isPending}
       >
-        <StepNumber n={step.stepNumber} status={step.status} />
+        <StepNumber n={step.stepNumber} status={step.status} hasToolCalls={step.toolCalls.length > 0} />
         <div className="flex-1 min-w-0 flex flex-col gap-1">
           {isPending ? (
             // pending 形态：单行 "正在思考下一步…"
@@ -106,12 +106,15 @@ export function AgentStepCard({ step, _isLast }: { step: AgentStepState; _isLast
   );
 }
 
-function StepNumber({ n, status }: { n: number; status: AgentStepState['status'] }) {
+function StepNumber({ n, status, hasToolCalls }: { n: number; status: AgentStepState['status']; hasToolCalls: boolean }) {
   const treatment = STEP_STATUS_TREATMENT[status];
   const colorClass = STEP_NUMBER_COLOR_CLASSES[treatment.color];
+  // running + 0 toolCalls (pending 阶段) → spin 表达"思考中"
+  // running + 有 toolCalls → 不 spin，显示 step number 数字，让位给 ToolCallChip 的精准 tool spinner
+  const showSpinner = status === 'running' && !hasToolCalls;
   return (
     <div className={`shrink-0 w-6 h-6 rounded-full border flex items-center justify-center text-xs ${colorClass}`}>
-      {status === 'running' ? <Loader2 className="w-3 h-3 animate-spin motion-reduce:animate-none" />
+      {showSpinner ? <Loader2 className="w-3 h-3 animate-spin motion-reduce:animate-none" />
         : status === 'completed' ? <CheckCircle2 className="w-3 h-3" />
         : status === 'failed' ? <AlertCircle className="w-3 h-3" />
         : status === 'interrupted' ? <Square className="w-3 h-3" />
