@@ -42,4 +42,10 @@ describe('SummaryStep', () => {
     render(<SummaryStep step={summaryStep({ status: 'failed', contentBlockIds: [] })} _isLast={true} />);
     expect(screen.getByText(/整理失败/)).toBeInTheDocument();
   });
+
+  it('completed + contentBlockIds=[] 时不显示「个内容块」', () => {
+    render(<SummaryStep step={summaryStep({ contentBlockIds: [] })} _isLast={true} />);
+    expect(screen.getByText(/整理答复/)).toBeInTheDocument();
+    expect(screen.queryByText(/个内容块/)).not.toBeInTheDocument();
+  });
 });

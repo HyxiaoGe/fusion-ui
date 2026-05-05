@@ -81,4 +81,12 @@ describe('AgentStepCard', () => {
     // 折叠态头部就有 「已中断」徽章
     expect(screen.getByText(/已中断/)).toBeInTheDocument();
   });
+
+  it('degraded tool call 显示「部分降级」徽章', () => {
+    render(<AgentStepCard step={step({
+      toolCalls: [tc({ status: 'degraded' })],
+      status: 'completed',
+    })} _isLast={false} />);
+    expect(screen.getByText(/部分降级/)).toBeInTheDocument();
+  });
 });

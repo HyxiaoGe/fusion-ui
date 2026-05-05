@@ -15,7 +15,14 @@ import { ToolCallDetail } from './ToolCallDetail';
  * 默认行为：running 自动展开，其余折叠为单行摘要。
  * contract §13 + §4 (retry heuristic)。
  */
-export function AgentStepCard({ step, _isLast: _ }: { step: AgentStepState; _isLast: boolean }) {
+export function AgentStepCard({ step, _isLast }: { step: AgentStepState; _isLast: boolean }) {
+  // 防御：StepTimeline 已用 isSummaryStep 分发，但 AgentStepCard 是 export 组件，
+  // 单独误用时不应渲染空工具卡（避免显示空 chip 行 + 空 summary 行）
+  if (step.toolCalls.length === 0) return null;
+
+  // _isLast 预留给后续 connector / timeline 末尾视觉差异化，本期未用
+  void _isLast;
+
   const isRunning = step.status === 'running';
   const [overrideExpanded, setOverrideExpanded] = useState<boolean | null>(null);
   const expanded = overrideExpanded ?? isRunning;

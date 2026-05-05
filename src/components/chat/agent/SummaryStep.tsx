@@ -12,7 +12,9 @@ import type { AgentStepState } from '@/types/agentRun';
  *   - completed + contentBlockIds.length > 0 → 「整理答复」+ 内容块计数
  *   - failed/interrupted → 简化中断/失败提示
  */
-export function SummaryStep({ step, _isLast: _ }: { step: AgentStepState; _isLast: boolean }) {
+export function SummaryStep({ step, _isLast }: { step: AgentStepState; _isLast: boolean }) {
+  // _isLast 预留给后续 connector / timeline 末尾视觉差异化，本期未用
+  void _isLast;
   const isRunning = step.status === 'running';
   const blockCount = step.contentBlockIds?.length ?? 0;
 
