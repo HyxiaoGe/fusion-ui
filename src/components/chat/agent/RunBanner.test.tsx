@@ -72,4 +72,12 @@ describe('RunBanner', () => {
     fireEvent.click(screen.getByText(/重新提问/));
     expect(onRetry).toHaveBeenCalled();
   });
+
+  it('failed 但 onRetry 未传时不显示重试按钮（contract §7 不做 fake CTA）', () => {
+    render(<RunBanner run={run({
+      status: 'failed',
+      failure: { code: 'X', message: 'fail' },
+    })} />);
+    expect(screen.queryByText(/重试运行/)).not.toBeInTheDocument();
+  });
 });

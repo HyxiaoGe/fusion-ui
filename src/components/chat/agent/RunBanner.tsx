@@ -6,8 +6,9 @@ import { getLimitReachedBannerText } from '@/lib/agent/timelineDerive';
 
 interface RunBannerProps {
   run: AgentRunState;
-  /** 用户点「重试运行」/「重新提问」时调用 */
-  onRetry: () => void;
+  /** 用户点「重试运行」/「重新提问」时调用。
+   * undefined 时按钮不渲染（避免 fake CTA，contract §7）。 */
+  onRetry?: () => void;
 }
 
 /**
@@ -28,14 +29,16 @@ export function RunBanner({ run, onRetry }: RunBannerProps) {
             <div className="text-xs text-muted-foreground mt-0.5">code: <code className="bg-muted/30 px-1 rounded">{run.failure.code}</code></div>
           )}
         </div>
-        <button
-          type="button"
-          onClick={onRetry}
-          className="shrink-0 inline-flex items-center gap-1 px-2 py-1 rounded border border-danger/30 text-xs text-danger hover:bg-danger/10 transition-colors duration-fast"
-        >
-          <RotateCw className="w-3 h-3" />
-          重试运行
-        </button>
+        {onRetry && (
+          <button
+            type="button"
+            onClick={onRetry}
+            className="shrink-0 inline-flex items-center gap-1 px-2 py-1 rounded border border-danger/30 text-xs text-danger hover:bg-danger/10 transition-colors duration-fast"
+          >
+            <RotateCw className="w-3 h-3" />
+            重试运行
+          </button>
+        )}
       </div>
     );
   }
@@ -66,7 +69,7 @@ export function RunBanner({ run, onRetry }: RunBannerProps) {
           <div className="text-sm font-medium text-warn">{text.title}</div>
           <div className="text-xs text-muted-foreground mt-0.5">{text.sub}</div>
         </div>
-        {run.limitReachedReason === 'timeout' && (
+        {run.limitReachedReason === 'timeout' && onRetry && (
           <button
             type="button"
             onClick={onRetry}
