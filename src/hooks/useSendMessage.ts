@@ -35,7 +35,7 @@ import {
   setStreamError,
   startStream,
 } from '@/redux/slices/streamSlice';
-import type { LimitReachedReason, ToolCallResultSummary, ToolCallStatus, FinalizeToolCallStatus } from '@/types/agentRun';
+import type { LimitReachedReason, ToolCallResultSummary, FinalizeToolCallStatus } from '@/types/agentRun';
 import { sendMessageStream, getConversation } from '@/lib/api/chat';
 import { generateChatTitle } from '@/lib/api/title';
 import type { Message, ContentBlock } from '@/types/conversation';

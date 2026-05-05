@@ -33,7 +33,7 @@ import {
   startStream,
 } from '@/redux/slices/streamSlice';
 import type { StreamState } from '@/redux/slices/streamSlice';
-import type { LimitReachedReason, ToolCallResultSummary, ToolCallStatus, FinalizeToolCallStatus } from '@/types/agentRun';
+import type { LimitReachedReason, ToolCallResultSummary, FinalizeToolCallStatus } from '@/types/agentRun';
 import { fetchStreamStatus } from '@/lib/api/streamStatus';
 import { reconnectStream } from '@/lib/api/chat';
 import { useConversation } from '@/hooks/useConversation';
