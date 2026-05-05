@@ -338,26 +338,21 @@ const streamSlice = createSlice({
       run.lastSequence = sequence;
       run.status = status;
       if (failure) run.failure = failure;
-      // run-level 终结：把还在 running 的最后一个 step 标记为对应终态
+      // contract §3：run-level 终态（interrupted/failed）派生——
+      //   扫所有 running step 和 tool call，把它们标为对应终态，避免 UI 残留 spinner。
+      //   只改 running 的，不动已 completed/failed/degraded 的历史 tool call。
+      //   失败发生在 tool_call_started 之后、tool_call_completed 之前时，BE 不会再
+      //   补 tool_call_completed，FE 必须在这里收尾，否则 chip 会一直转。
       if (status === 'interrupted' || status === 'failed') {
-        const lastStep = run.steps[run.steps.length - 1];
-        if (lastStep && lastStep.status === 'running') {
-          lastStep.status = status;
-          lastStep.completedAt = Date.now();
-        }
-      }
-      // contract §3：run-level 中断时，扫所有 running step 和 tool call 派生为 interrupted
-      // 注意：只改 running 的，不动已 completed/failed/degraded 的历史 tool call
-      if (status === 'interrupted') {
         const now = Date.now();
         run.steps.forEach(step => {
           if (step.status === 'running') {
-            step.status = 'interrupted';
+            step.status = status;
             step.completedAt = now;
           }
           step.toolCalls?.forEach(tc => {
             if (tc.status === 'running') {
-              tc.status = 'interrupted';
+              tc.status = status;
               tc.completedAt = now;
             }
           });
