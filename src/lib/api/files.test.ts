@@ -1,12 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-
-const { fetchWithAuthMock } = vi.hoisted(() => ({
-  fetchWithAuthMock: vi.fn(),
-}));
-
-vi.mock('./fetchWithAuth', () => ({
-  default: fetchWithAuthMock,
-}));
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
   deleteFile,
@@ -15,7 +7,28 @@ import {
   uploadFiles,
 } from './files';
 
-function createJsonResponse(body: unknown, ok = true, status = 200): Response {
+const fetchMock = vi.fn();
+const originalFetch = globalThis.fetch;
+
+beforeEach(() => {
+  fetchMock.mockReset();
+  globalThis.fetch = fetchMock as unknown as typeof fetch;
+});
+
+afterEach(() => {
+  globalThis.fetch = originalFetch;
+});
+
+function createEnvelopeResponse(
+  data: unknown,
+  { code = 'SUCCESS', message = '', status = 200 }: { code?: string; message?: string; status?: number } = {}
+): Response {
+  const body = {
+    code,
+    message,
+    data,
+    request_id: 'test-request',
+  };
   return new Response(JSON.stringify(body), {
     status,
     headers: {
@@ -25,26 +38,22 @@ function createJsonResponse(body: unknown, ok = true, status = 200): Response {
 }
 
 describe('files api client', () => {
-  beforeEach(() => {
-    fetchWithAuthMock.mockReset();
-  });
-
   it('deduplicates same-name files during upload and posts form data', async () => {
-    fetchWithAuthMock.mockResolvedValue(
-      createJsonResponse({
-        file_ids: ['file-1'],
+    fetchMock.mockResolvedValue(
+      createEnvelopeResponse({
+        files: [{ file_id: 'file-1' }],
       })
     );
 
     const duplicateA = new File(['hello'], 'same-name.txt', { type: 'text/plain' });
     const duplicateB = new File(['world'], 'same-name.txt', { type: 'text/plain' });
 
-    const fileIds = await uploadFiles('qwen', 'qwen-max', 'chat-1', [duplicateA, duplicateB]);
+    const uploaded = await uploadFiles('qwen', 'qwen-max', 'chat-1', [duplicateA, duplicateB]);
 
-    expect(fileIds).toEqual(['file-1']);
-    expect(fetchWithAuthMock).toHaveBeenCalledTimes(1);
+    expect(uploaded).toEqual([{ file_id: 'file-1' }]);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
 
-    const [url, options] = fetchWithAuthMock.mock.calls[0];
+    const [url, options] = fetchMock.mock.calls[0];
     expect(url).toContain('/api/files/upload');
     expect(options.method).toBe('POST');
     expect(options.body).toBeInstanceOf(FormData);
@@ -62,15 +71,15 @@ describe('files api client', () => {
   });
 
   it('retries upload once when the first request fails and retryCount is set', async () => {
-    fetchWithAuthMock
+    fetchMock
       .mockRejectedValueOnce(new Error('temporary failure'))
       .mockResolvedValueOnce(
-        createJsonResponse({
-          file_ids: ['file-2'],
+        createEnvelopeResponse({
+          files: [{ file_id: 'file-2' }],
         })
       );
 
-    const fileIds = await uploadFiles(
+    const uploaded = await uploadFiles(
       'qwen',
       'qwen-max',
       'chat-2',
@@ -79,13 +88,13 @@ describe('files api client', () => {
       1
     );
 
-    expect(fileIds).toEqual(['file-2']);
-    expect(fetchWithAuthMock).toHaveBeenCalledTimes(2);
+    expect(uploaded).toEqual([{ file_id: 'file-2' }]);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
   it('returns conversation files from the authenticated endpoint', async () => {
-    fetchWithAuthMock.mockResolvedValue(
-      createJsonResponse({
+    fetchMock.mockResolvedValue(
+      createEnvelopeResponse({
         files: [
           {
             id: 'file-1',
@@ -102,33 +111,32 @@ describe('files api client', () => {
 
     const files = await getConversationFiles('chat-3');
 
-    expect(fetchWithAuthMock).toHaveBeenCalledWith(
-      expect.stringContaining('/api/files/conversation/chat-3')
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining('/api/files/conversation/chat-3'),
+      expect.anything()
     );
     expect(files).toHaveLength(1);
     expect(files[0].filename).toBe('demo.txt');
   });
 
   it('surfaces backend detail when file status lookup fails', async () => {
-    fetchWithAuthMock.mockResolvedValue(
-      createJsonResponse(
-        {
-          detail: 'not found',
-        },
-        false,
-        404
-      )
+    fetchMock.mockResolvedValue(
+      createEnvelopeResponse(null, {
+        code: 'NOT_FOUND',
+        message: 'not found',
+        status: 404,
+      })
     );
 
     await expect(getFileStatus('missing-file')).rejects.toThrow('not found');
   });
 
   it('sends delete requests through the authenticated client', async () => {
-    fetchWithAuthMock.mockResolvedValue(new Response(null, { status: 204 }));
+    fetchMock.mockResolvedValue(createEnvelopeResponse(null));
 
     await deleteFile('file-9');
 
-    expect(fetchWithAuthMock).toHaveBeenCalledWith(
+    expect(fetchMock).toHaveBeenCalledWith(
       expect.stringContaining('/api/files/file-9'),
       expect.objectContaining({
         method: 'DELETE',

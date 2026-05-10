@@ -3,6 +3,7 @@ import { fireEvent, render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('@/redux/hooks', () => ({
+  useAppDispatch: () => vi.fn(),
   useAppSelector: (selector: (state: any) => unknown) =>
     selector({
       stream: {
@@ -12,6 +13,7 @@ vi.mock('@/redux/hooks', () => ({
         blockTypes: {},
         totalTextLength: 0,
         displayedTextLength: 0,
+        lastError: null,
       },
     }),
 }));

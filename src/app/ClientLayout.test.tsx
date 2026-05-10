@@ -10,6 +10,7 @@ const {
   useAppSelectorMock,
   initializeModelsMock,
   updateModelsMock,
+  updateProvidersMock,
   checkUserStateMock,
   fetchUserProfileMock,
   setGlobalToastMock,
@@ -24,6 +25,7 @@ const {
   useAppSelectorMock: vi.fn(),
   initializeModelsMock: vi.fn(),
   updateModelsMock: vi.fn((models: unknown) => ({ type: 'models/updateModels', payload: models })),
+  updateProvidersMock: vi.fn((providers: unknown) => ({ type: 'models/updateProviders', payload: providers })),
   checkUserStateMock: vi.fn(() => ({ type: 'auth/checkUserState' })),
   fetchUserProfileMock: vi.fn(() => ({ type: 'auth/fetchUserProfile' })),
   setGlobalToastMock: vi.fn(),
@@ -52,6 +54,7 @@ vi.mock('@/lib/config/modelConfig', () => ({
 
 vi.mock('@/redux/slices/modelsSlice', () => ({
   updateModels: updateModelsMock,
+  updateProviders: updateProvidersMock,
 }));
 
 vi.mock('@/redux/slices/authSlice', () => ({
@@ -97,8 +100,12 @@ describe('ClientLayout', () => {
     useAppDispatchMock.mockReturnValue(appDispatchMock);
     useAppSelectorMock.mockImplementation(selector => selector({ auth: currentAuthState }));
     initializeModelsMock.mockReset();
-    initializeModelsMock.mockResolvedValue([{ id: 'model-1' }]);
+    initializeModelsMock.mockResolvedValue({
+      models: [{ id: 'model-1' }],
+      providers: [{ id: 'qwen', name: '通义千问', order: 1 }],
+    });
     updateModelsMock.mockClear();
+    updateProvidersMock.mockClear();
     checkUserStateMock.mockClear();
     fetchUserProfileMock.mockClear();
     setGlobalToastMock.mockClear();

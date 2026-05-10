@@ -1,7 +1,7 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { currentState, useAppSelectorMock, toastMock } = vi.hoisted(() => ({
+const { currentState, useAppSelectorMock, toastMock, fetchPromptExamplesMock } = vi.hoisted(() => ({
   currentState: {
     auth: {
       isAuthenticated: true,
@@ -9,6 +9,7 @@ const { currentState, useAppSelectorMock, toastMock } = vi.hoisted(() => ({
   } as any,
   useAppSelectorMock: vi.fn(),
   toastMock: vi.fn(),
+  fetchPromptExamplesMock: vi.fn(),
 }));
 
 vi.mock('@/redux/hooks', () => ({
@@ -21,6 +22,10 @@ vi.mock('@/components/ui/toast', () => ({
   }),
 }));
 
+vi.mock('@/lib/api/prompts', () => ({
+  fetchPromptExamples: fetchPromptExamplesMock,
+}));
+
 import HomePage from './HomePage';
 
 describe('HomePage', () => {
@@ -28,6 +33,14 @@ describe('HomePage', () => {
     currentState.auth.isAuthenticated = true;
     useAppSelectorMock.mockImplementation((selector) => selector(currentState));
     toastMock.mockReset();
+    fetchPromptExamplesMock.mockReset();
+    fetchPromptExamplesMock.mockResolvedValue({
+      examples: [
+        { question: '示例问题 1' },
+        { question: '示例问题 2' },
+        { question: '示例问题 3' },
+      ],
+    });
   });
 
   it('sends message when clicking an example', async () => {
@@ -35,7 +48,8 @@ describe('HomePage', () => {
 
     render(<HomePage onNewChat={vi.fn()} onSendMessage={onSendMessage} />);
 
-    const exampleButtons = screen.getAllByRole('button');
+    // loading=true 时只渲染骨架，等 fetchPromptExamples resolve 后按钮才出现
+    const exampleButtons = await screen.findAllByRole('button');
     fireEvent.click(exampleButtons[0]);
 
     expect(onSendMessage).toHaveBeenCalledTimes(1);
