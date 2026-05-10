@@ -101,6 +101,7 @@ vi.mock('@/redux/slices/fileUploadSlice', () => ({
 
 vi.mock('@/lib/api/files', () => ({
   uploadFiles: uploadFilesMock,
+  deleteFile: vi.fn(() => Promise.resolve()),
 }));
 
 vi.mock('@/lib/api/FileStatusPoller', () => ({
@@ -170,9 +171,19 @@ describe('ChatInput', () => {
   });
 
   it('blocks file upload button for unauthenticated users', () => {
+    // 即使有可用模型，未登录用户点击上传按钮也应当被拦截并提示登录
+    currentState.models.selectedModelId = 'model-1';
+    currentState.models.models = [
+      {
+        id: 'model-1',
+        provider: 'qwen',
+        capabilities: { vision: true, deepThinking: true },
+      },
+    ];
+
     render(<ChatInput onSendMessage={vi.fn()} />);
 
-    fireEvent.click(screen.getByTitle('上传文件'));
+    fireEvent.click(screen.getByLabelText('上传文件'));
 
     expect(toastMock).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -191,12 +202,12 @@ describe('ChatInput', () => {
         id: 'model-1',
         provider: 'qwen',
         capabilities: {
-          fileSupport: true,
+          vision: true,
           deepThinking: true,
         },
       },
     ];
-    uploadFilesMock.mockResolvedValue(['file-1']);
+    uploadFilesMock.mockResolvedValue([{ file_id: 'file-1' }]);
 
     const { container } = render(<ChatInput onSendMessage={vi.fn()} activeChatId="chat-1" />);
     const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement;
@@ -237,7 +248,7 @@ describe('ChatInput', () => {
         id: 'model-unsupported',
         provider: 'qwen',
         capabilities: {
-          fileSupport: false,
+          vision: false,
           deepThinking: false,
         },
       },
@@ -245,7 +256,7 @@ describe('ChatInput', () => {
         id: 'model-supported',
         provider: 'openai',
         capabilities: {
-          fileSupport: true,
+          vision: true,
           deepThinking: false,
         },
       },
@@ -256,7 +267,7 @@ describe('ChatInput', () => {
         model_id: 'model-supported',
       },
     };
-    uploadFilesMock.mockResolvedValue(['file-1']);
+    uploadFilesMock.mockResolvedValue([{ file_id: 'file-1' }]);
 
     const { container } = render(<ChatInput onSendMessage={vi.fn()} activeChatId="chat-1" />);
     const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement;
@@ -287,7 +298,7 @@ describe('ChatInput', () => {
         id: 'legacy-model',
         provider: 'qwen',
         capabilities: {
-          fileSupport: false,
+          vision: false,
           deepThinking: false,
         },
       },
@@ -295,7 +306,7 @@ describe('ChatInput', () => {
         id: 'model-supported',
         provider: 'openai',
         capabilities: {
-          fileSupport: true,
+          vision: true,
           deepThinking: false,
         },
       },
@@ -306,7 +317,7 @@ describe('ChatInput', () => {
         model_id: 'legacy-model',
       },
     };
-    uploadFilesMock.mockResolvedValue(['file-1']);
+    uploadFilesMock.mockResolvedValue([{ file_id: 'file-1' }]);
 
     const { container } = render(<ChatInput onSendMessage={vi.fn()} activeChatId={null} />);
     const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement;
@@ -319,7 +330,8 @@ describe('ChatInput', () => {
     });
 
     await waitFor(() => {
-      expect(uploadFilesMock).toHaveBeenCalledWith('openai', 'model-supported', 'default-chat', [file]);
+      // 无 activeChatId 时回退到 pendingChatIdRef.current（由 uuidMock 生成）
+      expect(uploadFilesMock).toHaveBeenCalledWith('openai', 'model-supported', expect.stringMatching(/^uuid-/), [file]);
     });
   });
 
@@ -332,7 +344,7 @@ describe('ChatInput', () => {
         provider: 'qwen',
         enabled: false,
         capabilities: {
-          fileSupport: false,
+          vision: false,
           deepThinking: false,
         },
       },
@@ -352,12 +364,12 @@ describe('ChatInput', () => {
         id: 'model-1',
         provider: 'qwen',
         capabilities: {
-          fileSupport: true,
+          vision: true,
           deepThinking: true,
         },
       },
     ];
-    uploadFilesMock.mockResolvedValue(['file-1']);
+    uploadFilesMock.mockResolvedValue([{ file_id: 'file-1' }]);
 
     const { container } = render(<ChatInput onSendMessage={vi.fn()} activeChatId="chat-1" />);
     const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement;
@@ -390,12 +402,12 @@ describe('ChatInput', () => {
         id: 'model-1',
         provider: 'qwen',
         capabilities: {
-          fileSupport: true,
+          vision: true,
           deepThinking: true,
         },
       },
     ];
-    uploadFilesMock.mockResolvedValue(['file-1']);
+    uploadFilesMock.mockResolvedValue([{ file_id: 'file-1' }]);
 
     const { container } = render(<ChatInput onSendMessage={vi.fn()} activeChatId="chat-1" />);
     const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement;
@@ -436,12 +448,12 @@ describe('ChatInput', () => {
         id: 'model-1',
         provider: 'qwen',
         capabilities: {
-          fileSupport: true,
+          vision: true,
           deepThinking: true,
         },
       },
     ];
-    uploadFilesMock.mockResolvedValue(['file-1']);
+    uploadFilesMock.mockResolvedValue([{ file_id: 'file-1' }]);
 
     const { container } = render(<ChatInput onSendMessage={vi.fn()} activeChatId="chat-1" />);
     const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement;
@@ -482,14 +494,14 @@ describe('ChatInput', () => {
         id: 'model-1',
         provider: 'qwen',
         capabilities: {
-          fileSupport: true,
+          vision: true,
           deepThinking: true,
         },
       },
     ];
     uploadFilesMock
-      .mockResolvedValueOnce(['file-1'])
-      .mockResolvedValueOnce(['file-2']);
+      .mockResolvedValueOnce([{ file_id: 'file-1' }])
+      .mockResolvedValueOnce([{ file_id: 'file-2' }]);
 
     const { container } = render(<ChatInput onSendMessage={vi.fn()} activeChatId="chat-1" />);
     const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement;
@@ -538,12 +550,12 @@ describe('ChatInput', () => {
         id: 'model-1',
         provider: 'qwen',
         capabilities: {
-          fileSupport: true,
+          vision: true,
           deepThinking: true,
         },
       },
     ];
-    uploadFilesMock.mockResolvedValue(['file-1']);
+    uploadFilesMock.mockResolvedValue([{ file_id: 'file-1' }]);
     const onSendMessage = vi.fn();
 
     const { container } = render(<ChatInput onSendMessage={onSendMessage} activeChatId="chat-1" />);

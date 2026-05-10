@@ -34,6 +34,8 @@ describe('authSlice', () => {
       email: 'fusion-user@example.com',
       nickname: null,
       mobile: null,
+      is_superuser: false,
+      system_prompt: '',
     });
     expect(localStorage.getItem('auth_token')).toBe('valid-token');
   });

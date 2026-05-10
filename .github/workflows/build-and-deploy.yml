@@ -84,8 +84,7 @@ jobs:
       - name: Build
         run: npm run build
 
-      - name: Test non-blocking while Vitest baseline is being cleaned up
-        continue-on-error: true
+      - name: Run tests
         run: npm test
 
       - name: Login to GHCR
