@@ -3,14 +3,18 @@ FROM node:20-alpine AS builder
 
 WORKDIR /app
 
-# NEXT_PUBLIC_* 是 build-time 注入的浏览器侧 env（会被 Next.js 烤进 bundle）
-# API_BACKEND_URL 是 runtime env（Next.js rewrites 服务端读，不进 bundle），由 docker-compose 注入
+# NEXT_PUBLIC_* 烤进浏览器 bundle
 ARG NEXT_PUBLIC_AUTH_SERVICE_BASE_URL
 ARG NEXT_PUBLIC_AUTH_SERVICE_CLIENT_ID
 ARG NEXT_PUBLIC_AUTH_CALLBACK_URL
 ENV NEXT_PUBLIC_AUTH_SERVICE_BASE_URL=${NEXT_PUBLIC_AUTH_SERVICE_BASE_URL}
 ENV NEXT_PUBLIC_AUTH_SERVICE_CLIENT_ID=${NEXT_PUBLIC_AUTH_SERVICE_CLIENT_ID}
 ENV NEXT_PUBLIC_AUTH_CALLBACK_URL=${NEXT_PUBLIC_AUTH_CALLBACK_URL}
+
+# API_BACKEND_URL 必须 build-time 注入：Next.js rewrites() destination 在 build 时
+# 被烤进 routes-manifest，不读运行时 env
+ARG API_BACKEND_URL=http://fusion-api:8000
+ENV API_BACKEND_URL=${API_BACKEND_URL}
 
 # 复制依赖文件
 COPY package*.json ./

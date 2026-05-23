@@ -7,18 +7,18 @@ services:
     build:
       context: .
       args:
-        # NEXT_PUBLIC_* 在 build 时注入 bundle（浏览器可见）
+        # NEXT_PUBLIC_* 烤进浏览器 bundle
         - NEXT_PUBLIC_AUTH_SERVICE_BASE_URL=${NEXT_PUBLIC_AUTH_SERVICE_BASE_URL}
         - NEXT_PUBLIC_AUTH_SERVICE_CLIENT_ID=${NEXT_PUBLIC_AUTH_SERVICE_CLIENT_ID}
         - NEXT_PUBLIC_AUTH_CALLBACK_URL=${NEXT_PUBLIC_AUTH_CALLBACK_URL}
+        # Next.js rewrites() 在 build 时把 destination 烤进 routes-manifest
+        - API_BACKEND_URL=${API_BACKEND_URL:-http://fusion-api:8000}
     ports:
       - "3000:3000"
     restart: unless-stopped
     mem_limit: 256m
     environment:
       - NODE_ENV=production
-      # 同源代理目标：Next.js 服务端 rewrites 把 /api/* 转给后端容器
-      - API_BACKEND_URL=${API_BACKEND_URL:-http://fusion-api:8000}
     # 生产环境不需要挂载源代码，因为已在Dockerfile中复制了src目录
     # volumes:
     #  - ./src:/app/src 
