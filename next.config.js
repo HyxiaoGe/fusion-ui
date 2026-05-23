@@ -100,12 +100,13 @@ const nextConfig = {
   // 生成源映射（开发环境）
   productionBrowserSourceMaps: false,
 
-  // 在开发环境中将API请求代理到后端
+  // 同源代理：浏览器请求 /api/* → Next.js 服务端转发到后端
+  // API_BACKEND_URL 是 server-only 运行时 env，不暴露给浏览器
   async rewrites() {
     return [
       {
         source: '/api/:path*',
-        destination: `${process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000'}/api/:path*`,
+        destination: `${process.env.API_BACKEND_URL || 'http://localhost:8000'}/api/:path*`,
       },
     ]
   },

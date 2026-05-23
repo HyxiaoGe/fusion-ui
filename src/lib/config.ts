@@ -1,12 +1,8 @@
 // API配置
+// Plan A 同源代理：BASE_URL 留空，所有 fetch 走相对路径 /api/*，由 Next.js rewrites 服务端转发
 export const API_CONFIG = {
-    // 基础URL
-    BASE_URL: process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000',
-    
-    // 超时时间（毫秒）
+    BASE_URL: '',
     TIMEOUT: 30000,
-    
-    // 重试次数
     RETRY_COUNT: 3,
   };
 
