@@ -100,8 +100,12 @@ const nextConfig = {
   // 生成源映射（开发环境）
   productionBrowserSourceMaps: false,
 
+  // 不要 strip /api/* 末尾斜杠，否则 FastAPI 会 307 redirect 到 docker 内部 URL
+  // 导致浏览器 Mixed Content 拦截
+  skipTrailingSlashRedirect: true,
+
   // 同源代理：浏览器请求 /api/* → Next.js 服务端转发到后端
-  // API_BACKEND_URL 是 server-only 运行时 env，不暴露给浏览器
+  // API_BACKEND_URL 在 build 时烤进 routes-manifest（rewrites destination 是 static 的）
   async rewrites() {
     return [
       {
