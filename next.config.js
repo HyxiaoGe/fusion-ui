@@ -100,17 +100,23 @@ const nextConfig = {
   // 生成源映射（开发环境）
   productionBrowserSourceMaps: false,
 
-  // 不要 strip /api/* 末尾斜杠，否则 FastAPI 会 307 redirect 到 docker 内部 URL
-  // 导致浏览器 Mixed Content 拦截
+  // skip Next.js 默认对 page 路径的 trailing-slash 308 strip
   skipTrailingSlashRedirect: true,
 
-  // 同源代理：浏览器请求 /api/* → Next.js 服务端转发到后端
+  // 同源代理：/api/* → fusion-api。注意 :path* 捕获不含末尾斜杠，
+  // 所以必须用两条规则分别匹配有/无斜杠，否则代理出去的 URL 会丢掉斜杠，
+  // 触发 FastAPI 307 → Location 头泄漏 docker 内部 hostname → 浏览器 Mixed Content
   // API_BACKEND_URL 在 build 时烤进 routes-manifest（rewrites destination 是 static 的）
   async rewrites() {
+    const backend = process.env.API_BACKEND_URL || 'http://localhost:8000'
     return [
       {
+        source: '/api/:path*/',
+        destination: `${backend}/api/:path*/`,
+      },
+      {
         source: '/api/:path*',
-        destination: `${process.env.API_BACKEND_URL || 'http://localhost:8000'}/api/:path*`,
+        destination: `${backend}/api/:path*`,
       },
     ]
   },
