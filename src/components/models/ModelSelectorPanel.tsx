@@ -28,18 +28,13 @@ const RecentModels = memo(
     modelIds,
     allModels,
     selectedModelId,
-    providers,
     onSelect,
   }: {
     modelIds: string[];
     allModels: ModelInfo[];
     selectedModelId: string | null;
-    providers: ProviderGroup[];
     onSelect: (id: string) => void;
   }) => {
-    const offlineProviderIds = new Set(
-      providers.filter((p) => p.status === "offline").map((p) => p.id),
-    );
     const recentModels = modelIds
       .map((id) => allModels.find((m) => m.id === id))
       .filter((m): m is ModelInfo => m != null && m.enabled !== false);
@@ -52,34 +47,21 @@ const RecentModels = memo(
           最近使用
         </div>
         <div className="flex gap-1.5 flex-wrap">
-          {recentModels.map((model) => {
-            const isOffline = offlineProviderIds.has(model.provider);
-            const offlineProvider = providers.find((p) => p.id === model.provider);
-            return (
-              <button
-                key={model.id}
-                onClick={isOffline ? undefined : () => onSelect(model.id)}
-                disabled={isOffline}
-                title={
-                  isOffline
-                    ? `${offlineProvider?.name ?? model.provider} 当前不可用：${offlineProvider?.offline_reason ?? "未知"}`
-                    : undefined
-                }
-                className={cn(
-                  "inline-flex items-center gap-1.5 pl-1 pr-2.5 py-1 rounded-md border text-[11px] transition-colors",
-                  model.id === selectedModelId
-                    ? "bg-primary/10 border-primary/30 text-foreground"
-                    : "bg-muted/50 border-border text-muted-foreground hover:bg-accent hover:text-foreground",
-                  isOffline &&
-                    "opacity-50 cursor-not-allowed hover:bg-muted/50 hover:text-muted-foreground",
-                )}
-              >
-                <ProviderIcon providerId={model.provider} size={18} className="rounded" />
-                {isOffline && <span className="text-muted-foreground">⊘</span>}
-                {model.name}
-              </button>
-            );
-          })}
+          {recentModels.map((model) => (
+            <button
+              key={model.id}
+              onClick={() => onSelect(model.id)}
+              className={cn(
+                "inline-flex items-center gap-1.5 pl-1 pr-2.5 py-1 rounded-md border text-[11px] transition-colors",
+                model.id === selectedModelId
+                  ? "bg-primary/10 border-primary/30 text-foreground"
+                  : "bg-muted/50 border-border text-muted-foreground hover:bg-accent hover:text-foreground",
+              )}
+            >
+              <ProviderIcon providerId={model.provider} size={18} className="rounded" />
+              {model.name}
+            </button>
+          ))}
         </div>
       </div>
     );
@@ -124,31 +106,21 @@ const ProviderTabs = memo(
 
     return (
       <div ref={containerRef} className="flex border-y border-border bg-muted/30 overflow-x-auto scrollbar-hide">
-        {providers.map((provider, idx) => {
-          const isOffline = provider.status === "offline";
-          return (
-            <button
-              key={provider.id}
-              onClick={(e) => handleClick(e, provider.id, idx)}
-              title={
-                isOffline
-                  ? `${provider.name} 当前不可用：${provider.offline_reason ?? "未知原因"}`
-                  : undefined
-              }
-              className={cn(
-                "px-3 py-2 text-[11px] whitespace-nowrap transition-colors shrink-0",
-                idx === providers.length - 1 && "pr-6",
-                provider.id === activeProvider
-                  ? "text-primary font-semibold border-b-2 border-primary bg-popover -mb-px"
-                  : "text-muted-foreground hover:text-foreground",
-                isOffline && "opacity-50",
-              )}
-            >
-              {isOffline && <span className="mr-1">⊘</span>}
-              {provider.name}
-            </button>
-          );
-        })}
+        {providers.map((provider, idx) => (
+          <button
+            key={provider.id}
+            onClick={(e) => handleClick(e, provider.id, idx)}
+            className={cn(
+              "px-3 py-2 text-[11px] whitespace-nowrap transition-colors shrink-0",
+              idx === providers.length - 1 && "pr-6",
+              provider.id === activeProvider
+                ? "text-primary font-semibold border-b-2 border-primary bg-popover -mb-px"
+                : "text-muted-foreground hover:text-foreground",
+            )}
+          >
+            {provider.name}
+          </button>
+        ))}
       </div>
     );
   },
@@ -162,30 +134,22 @@ const ModelCard = memo(
     model,
     isSelected,
     onSelect,
-    disabled,
-    disabledReason,
   }: {
     model: ModelInfo;
     isSelected: boolean;
     onSelect: () => void;
-    disabled?: boolean;
-    disabledReason?: string;
   }) => (
     <button
-      onClick={disabled ? undefined : onSelect}
-      disabled={disabled}
-      title={disabled ? disabledReason : undefined}
+      onClick={onSelect}
       className={cn(
         "text-left p-2.5 rounded-lg border transition-colors duration-100 w-full",
         isSelected
           ? "bg-primary/5 border-primary/40"
           : "border-border/60 hover:bg-accent hover:border-border",
-        disabled && "opacity-50 cursor-not-allowed hover:bg-transparent hover:border-border/60",
       )}
     >
       <div className="flex items-center justify-between gap-1">
         <span className={cn("text-sm truncate", isSelected ? "font-semibold" : "font-medium")}>
-          {disabled && <span className="mr-1 text-muted-foreground">⊘</span>}
           {model.name}
         </span>
         {isSelected && <Check size={14} className="shrink-0 text-primary" />}
@@ -210,10 +174,6 @@ const ModelSelectorPanel = memo(
   }: ModelSelectorPanelProps) => {
     const activeGroup = modelsByProvider.find((g) => g.id === activeProvider);
     const filteredModels = activeGroup?.models || [];
-    const groupOffline = activeGroup?.status === "offline";
-    const groupDisabledReason = groupOffline
-      ? `${activeGroup?.name} 当前不可用：${activeGroup?.offline_reason ?? "未知原因"}`
-      : undefined;
 
     return (
       <div>
@@ -221,7 +181,6 @@ const ModelSelectorPanel = memo(
           modelIds={recentModelIds}
           allModels={allModels}
           selectedModelId={selectedModelId}
-          providers={modelsByProvider}
           onSelect={onSelect}
         />
         <ProviderTabs
@@ -236,8 +195,6 @@ const ModelSelectorPanel = memo(
               model={model}
               isSelected={model.id === selectedModelId}
               onSelect={() => onSelect(model.id)}
-              disabled={groupOffline}
-              disabledReason={groupDisabledReason}
             />
           ))}
         </div>

@@ -7,8 +7,7 @@ import { useAppDispatch, useAppSelector } from "@/redux/hooks";
 import { closeSettingsDialog, setActiveSettingsTab } from "@/redux/slices/settingsSlice";
 import { setThemeMode } from "@/redux/slices/themeSlice";
 import { motion } from "framer-motion";
-import { Database, Key, Settings, Sun, Moon, Laptop } from "lucide-react";
-import CredentialsManagement from "@/app/settings/CredentialsManagement";
+import { Database, Settings, Sun, Moon, Laptop } from "lucide-react";
 import DataManagement from "@/app/settings/DataManagement";
 import SystemPrompt from "@/app/settings/SystemPrompt";
 
@@ -42,16 +41,11 @@ export const SettingsDialog = () => {
         <div className="flex-1 overflow-hidden">
           <Tabs value={activeSettingsTab} onValueChange={handleTabChange} className="h-full flex flex-col">
             <div className="bg-card/50 backdrop-blur-sm border rounded-lg shadow-sm p-1 flex-shrink-0">
-              <TabsList className="w-full grid grid-cols-3 gap-1 bg-transparent">
+              <TabsList className="w-full grid grid-cols-2 gap-1 bg-transparent">
                 <TabsTrigger value="general" className="flex gap-2 items-center justify-center">
                   <Settings className="h-4 w-4" />
                   <span className="hidden md:inline">常规设置</span>
                   <span className="md:hidden">常规</span>
-                </TabsTrigger>
-                <TabsTrigger value="credentials" className="flex gap-2 items-center justify-center">
-                  <Key className="h-4 w-4" />
-                  <span className="hidden md:inline">模型与 Key</span>
-                  <span className="md:hidden">Key</span>
                 </TabsTrigger>
                 <TabsTrigger value="data" className="flex gap-2 items-center justify-center">
                   <Database className="h-4 w-4" />
@@ -135,17 +129,6 @@ export const SettingsDialog = () => {
                 transition={{ duration: 0.3, delay: 0.1 }}
               >
                 <SystemPrompt />
-              </motion.div>
-            </TabsContent>
-
-            {/* 模型与 Key 标签页 */}
-            <TabsContent value="credentials" className="flex-1 overflow-auto mt-4">
-              <motion.div
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.3 }}
-              >
-                <CredentialsManagement />
               </motion.div>
             </TabsContent>
 
