@@ -11,6 +11,18 @@ export interface ModelCapability {
   vision?: boolean; // 图片理解
 }
 
+// 模型健康状态（后台轮询 LiteLLM /health 得来）：
+// - healthy: 最近一次探测成功，可正常调用
+// - unhealthy: 最近一次探测失败（缺 key / 401 / 模型不存在等），FE 灰显
+// - unknown: 服务刚启动还没探测出来，或这个别名没出现在 /health 结果里，FE 按可用处理
+export type ModelHealthStatus = 'healthy' | 'unhealthy' | 'unknown';
+
+export interface ModelHealth {
+  status: ModelHealthStatus;
+  error?: string | null;
+  checked_at?: number | null;
+}
+
 // API返回的模型数据接口
 export interface ApiModelData {
   name: string;
@@ -24,6 +36,7 @@ export interface ApiModelData {
     unit: string;
   };
   enabled: boolean;
+  health?: ModelHealth;
   description?: string;
 }
 
@@ -41,7 +54,8 @@ export interface ModelInfo {
   knowledgeCutoff?: string; // 知识库截取时间
   temperature: number; // 默认温度
   capabilities: ModelCapability; // 能力标识
-  enabled: boolean; // 模型是否可用 - true: 模型已接入且可用; false: 模型未接入或暂时不可用
+  enabled: boolean; // 是否在 LiteLLM 注册（true）；false 通常意味着已下架
+  health?: ModelHealth; // 健康探测结果，unhealthy 时选择器灰显
   description?: string; // 模型简要描述，用于悬停提示
 }
 
@@ -61,6 +75,7 @@ export const convertApiModelToModelInfo = (apiModel: ApiModelData): ModelInfo =>
     temperature: 0.7, // 默认值，可以根据需求调整
     capabilities: apiModel.capabilities,
     enabled: apiModel.enabled,
+    health: apiModel.health,
     description: apiModel.description
   };
 };
