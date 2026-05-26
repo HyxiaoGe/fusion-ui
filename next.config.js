@@ -81,22 +81,34 @@ const nextConfig = {
           }
         ],
       },
-      // API缓存策略
+      // API缓存策略：只给只读列表类端点用边缘缓存。
+      // 排除 chat 等流式/写入端点 — 之前用 `/api/:path*` 一刀切，会把 SSE 也标成
+      // 可缓存（s-maxage=60），CF 会顺手缓存+缓冲。
       {
-        source: '/api/:path*',
+        source: '/api/models/:path*',
         headers: [
           {
             key: 'Cache-Control',
             value: 'public, s-maxage=60, stale-while-revalidate=300'
           }
         ],
+      },
+      // SSE / 长连接端点显式禁缓存禁中转压缩，避免任何中间环节缓冲。
+      {
+        source: '/api/chat/:path*',
+        headers: [
+          { key: 'Cache-Control', value: 'no-cache, no-transform' },
+          { key: 'X-Accel-Buffering', value: 'no' },
+        ],
       }
     ]
   },
   // 输出配置 - Railway 暂时不使用 standalone 模式
   // output: 'standalone',
-  // 压缩配置
-  compress: true,
+  // 关闭 Next.js 自带 gzip：SSE (`/api/chat/send`) 走 rewrites 代理 fusion-api，
+  // 一旦命中 compressible MIME，Next 会用 gzip stream 包一层 → 必须填满压缩块才 flush，
+  // reasoning_content 增量被攒成一坨在末尾抵达。CF 在前面会重新做压缩，这里关掉无损耗。
+  compress: false,
   // 生成源映射（开发环境）
   productionBrowserSourceMaps: false,
 
