@@ -9,10 +9,8 @@ import type { ModelInfo, ProviderInfo } from "@/lib/config/modelConfig";
 // 模型 health.status === 'unhealthy' 时 FE 灰显并禁用点击。
 // 'unknown'（后台第一次还没探完）按健康处理，避免冷启动期间全列表灰掉。
 const isUnhealthy = (model: ModelInfo) => model.health?.status === "unhealthy";
-const healthTooltip = (model: ModelInfo) =>
-  model.health?.error
-    ? `当前不可用：${model.health.error}`
-    : "当前不可用（探测失败）";
+// 后端已经把 raw error 翻成中文友好句（litellm_health._classify_error），FE 直接展示。
+const healthTooltip = (model: ModelInfo) => model.health?.error || "服务商暂时不可用";
 
 /* ---------- types ---------- */
 
