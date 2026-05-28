@@ -433,8 +433,9 @@ export async function searchConversations(query: string, limit = 50, signal?: Ab
   return data.items || [];
 }
 
-export async function getConversation(conversationId: string) {
-  return apiRequest(`${API_BASE_URL}/api/chat/conversations/${conversationId}`);
+export async function getConversation(conversationId: string, signal?: AbortSignal) {
+  const url = `${API_BASE_URL}/api/chat/conversations/${conversationId}`;
+  return signal ? apiRequest(url, { signal }) : apiRequest(url);
 }
 
 export async function renameConversation(conversationId: string, title: string) {

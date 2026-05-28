@@ -1,4 +1,4 @@
-import { useCallback, useEffect } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import { useAppDispatch, useAppSelector } from '@/redux/hooks';
 import { upsertConversation, setHydrationStatus } from '@/redux/slices/conversationSlice';
 import { getConversation } from '@/lib/api/chat';
@@ -7,8 +7,21 @@ import { store } from '@/redux/store';
 
 export type ConversationHydrationView = 'loading' | 'error' | 'ready';
 
+function isAbortError(error: unknown): boolean {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    (error as { name?: string }).name === 'AbortError'
+  );
+}
+
 export function useConversation(conversationId: string | null | undefined) {
   const dispatch = useAppDispatch();
+  const hydrationRequestRef = useRef<{
+    id: string;
+    controller: AbortController;
+    settled: boolean;
+  } | null>(null);
 
   const conversation = useAppSelector((state) =>
     conversationId ? state.conversation.byId[conversationId] : undefined
@@ -28,10 +41,14 @@ export function useConversation(conversationId: string | null | undefined) {
   useEffect(() => {
     if (!conversationId || !needsHydration || hydrationStatus !== 'idle') return;
 
+    const controller = new AbortController();
+    const request = { id: conversationId, controller, settled: false };
+    hydrationRequestRef.current = request;
     dispatch(setHydrationStatus({ id: conversationId, status: 'loading' }));
 
-    void getConversation(conversationId)
+    void getConversation(conversationId, controller.signal)
       .then((data) => {
+        if (controller.signal.aborted) return;
         const serverChat = buildChatFromServerConversation(data);
         // 合并：保留本地已有但服务端还没落库的消息（如刚 append 的用户消息）
         const existing = store.getState().conversation.byId[conversationId];
@@ -45,12 +62,31 @@ export function useConversation(conversationId: string | null | undefined) {
         }
         dispatch(upsertConversation(serverChat));
         dispatch(setHydrationStatus({ id: conversationId, status: 'done' }));
+        request.settled = true;
+        if (hydrationRequestRef.current === request) {
+          hydrationRequestRef.current = null;
+        }
       })
       .catch((error) => {
+        if (isAbortError(error)) return;
         const message = error instanceof Error ? error.message : '加载对话失败';
         dispatch(setHydrationStatus({ id: conversationId, status: 'error', error: message }));
+        request.settled = true;
+        if (hydrationRequestRef.current === request) {
+          hydrationRequestRef.current = null;
+        }
       });
   }, [conversationId, dispatch, hydrationStatus, needsHydration]);
+
+  useEffect(() => {
+    return () => {
+      const request = hydrationRequestRef.current;
+      if (!request || request.id !== conversationId || request.settled) return;
+      request.controller.abort();
+      hydrationRequestRef.current = null;
+      dispatch(setHydrationStatus({ id: request.id, status: 'idle' }));
+    };
+  }, [conversationId, dispatch]);
 
   const retryHydration = useCallback(() => {
     if (!conversationId) return;

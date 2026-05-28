@@ -547,6 +547,18 @@ describe('getConversation', () => {
     apiRequestMock.mockReset();
   });
 
+  it('passes abort signal when fetching a conversation', async () => {
+    const controller = new AbortController();
+    apiRequestMock.mockResolvedValue({ id: 'chat-1' });
+
+    await getConversation('chat-1', controller.signal);
+
+    expect(apiRequestMock).toHaveBeenCalledWith(
+      expect.stringContaining('/api/chat/conversations/chat-1'),
+      { signal: controller.signal },
+    );
+  });
+
   it('surfaces backend detail when fetching a conversation fails', async () => {
     apiRequestMock.mockRejectedValue(new Error('对话不存在或无权访问'));
 

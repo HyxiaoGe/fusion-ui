@@ -54,14 +54,25 @@ export interface StreamStatusData {
   message_id?: string;
 }
 
+function isAbortError(error: unknown): boolean {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    (error as { name?: string }).name === 'AbortError'
+  );
+}
+
 export async function fetchStreamStatus(
-  conversationId: string
+  conversationId: string,
+  signal?: AbortSignal,
 ): Promise<StreamStatusData> {
   try {
-    return await apiRequest<StreamStatusData>(
-      `${API_BASE_URL}/api/chat/stream-status/${conversationId}`,
-    );
-  } catch {
+    const url = `${API_BASE_URL}/api/chat/stream-status/${conversationId}`;
+    return await (signal
+      ? apiRequest<StreamStatusData>(url, { signal })
+      : apiRequest<StreamStatusData>(url));
+  } catch (error) {
+    if (isAbortError(error)) throw error;
     return { status: 'not_found' };
   }
 }

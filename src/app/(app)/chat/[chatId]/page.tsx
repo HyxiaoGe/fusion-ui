@@ -92,12 +92,13 @@ export default function ChatPage() {
     reconnectAttemptedRef.current = true;
 
     let cancelled = false;
+    const controller = new AbortController();
     const checkAndReconnect = async () => {
       try {
         // 直接查后端流状态，由后端 meta 决定是否重连
         // 用户点停止 → 后端 cancel_stream 设 meta=cancelled → 这里不会返回 streaming
         // 用户切换对话再切回来 → 后台任务仍在跑 → meta=streaming → 自动重连
-        const status = await fetchStreamStatus(chatId);
+        const status = await fetchStreamStatus(chatId, controller.signal);
         if (cancelled || status.status !== 'streaming') return;
 
         const messageId = status.message_id || '';
@@ -271,8 +272,9 @@ export default function ChatPage() {
             dispatch(endStream());
             dispatch(setStreamStatus('error'));
           },
-        });
-      } catch {
+        }, controller.signal);
+      } catch (error) {
+        if ((error as { name?: string })?.name === 'AbortError') return;
         if (!cancelled) {
           dispatch(endStream());
         }
@@ -282,6 +284,7 @@ export default function ChatPage() {
     checkAndReconnect();
     return () => {
       cancelled = true;
+      controller.abort();
       // 切换对话时清理流状态，否则 isStreaming 残留为 true 阻止重连
       dispatch(endStream());
     };
