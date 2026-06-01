@@ -7,6 +7,7 @@ import {
   getStoredAccessToken,
   revokeSsoSession,
 } from '@/lib/auth/authService';
+import { isSafeReturnPath, markSsoProbed, takeSsoReturnPath } from '@/lib/auth/sso-probe';
 
 interface AuthState {
   isAuthenticated: boolean;
@@ -239,6 +240,12 @@ export const completeLogin = createAsyncThunk<
   void,
   { rejectValue: string }
 >('auth/completeLogin', async (_, { dispatch, rejectWithValue }) => {
+  // 若本次回调源自加载时的静默探测，取回并清除探测前记下的原始路径（HIT/MISS 都回此处）。
+  // 交互式登录无此项（登录前已 clearSsoReturn），silentReturn 为 null 时回退到 SDK 解析的路径。
+  // 一次性读取，所有分支共用；并在消费端（router.replace 的入口）再校验一次开放重定向，
+  // 不安全路径直接丢弃回退——与探测落库端的校验形成纵深防御。
+  const rawReturn = takeSsoReturnPath();
+  const silentReturn = rawReturn && isSafeReturnPath(rawReturn) ? rawReturn : null;
   try {
     const result = await completeSsoCallback();
     if (result.status === 'authenticated') {
@@ -247,9 +254,10 @@ export const completeLogin = createAsyncThunk<
         dispatch(setToken(token));
         await dispatch(fetchUserProfile());
       }
-      return { redirectPath: result.redirectPath || '/' };
+      return { redirectPath: silentReturn || result.redirectPath || '/' };
     }
-    return { redirectPath: '/' };
+    // 静默探测未命中（login_required）等：软回原页（fusion 是软门禁，未登录也可浏览）。
+    return { redirectPath: silentReturn || '/' };
   } catch (error: any) {
     // SDK 在 token 落库之后才拉 auth-service /userinfo（fusion 用不到它，自己拉 /api/auth/me）；
     // 那一步若抖动会抛错，但换码其实已成功。若本地确有 token，则按登录成功兜底，
@@ -258,7 +266,7 @@ export const completeLogin = createAsyncThunk<
     if (token) {
       dispatch(setToken(token));
       await dispatch(fetchUserProfile());
-      return { redirectPath: '/' };
+      return { redirectPath: silentReturn || '/' };
     }
     return rejectWithValue(error?.message || 'callback failed');
   }
@@ -266,6 +274,9 @@ export const completeLogin = createAsyncThunk<
 
 // 退出登录：先尽力撤销 SSO 会话（失败也不阻塞），再无条件清掉本地 Redux + 存储。
 export const logoutWithSso = createAsyncThunk('auth/logoutWithSso', async (_, { dispatch }) => {
+  // 先落探测守卫：即便随后撤销抛错，也保证登出后本标签页不被加载时静默探测重新登入
+  //（IdP 会话可能仍在，无守卫会被立刻 SSO 回去）。
+  markSsoProbed();
   try {
     await revokeSsoSession();
   } catch {

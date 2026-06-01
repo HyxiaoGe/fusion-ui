@@ -1,6 +1,6 @@
 import React from 'react';
 import { render, screen, waitFor } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const {
   currentAuthState,
@@ -14,6 +14,7 @@ const {
   checkUserStateMock,
   fetchUserProfileMock,
   setGlobalToastMock,
+  maybeSilentLoginMock,
 } = vi.hoisted(() => ({
   currentAuthState: {
     isAuthenticated: false,
@@ -29,6 +30,7 @@ const {
   checkUserStateMock: vi.fn(() => ({ type: 'auth/checkUserState' })),
   fetchUserProfileMock: vi.fn(() => ({ type: 'auth/fetchUserProfile' })),
   setGlobalToastMock: vi.fn(),
+  maybeSilentLoginMock: vi.fn(() => false),
 }));
 
 vi.mock('next/dynamic', () => ({
@@ -61,6 +63,10 @@ vi.mock('@/redux/slices/authSlice', () => ({
   checkUserState: checkUserStateMock,
   fetchUserProfile: fetchUserProfileMock,
   setToken: vi.fn(),
+}));
+
+vi.mock('@/lib/auth/sso-probe', () => ({
+  maybeSilentLogin: maybeSilentLoginMock,
 }));
 
 vi.mock('@/components/ui/toast', () => ({
@@ -109,6 +115,8 @@ describe('ClientLayout', () => {
     checkUserStateMock.mockClear();
     fetchUserProfileMock.mockClear();
     setGlobalToastMock.mockClear();
+    maybeSilentLoginMock.mockReset();
+    maybeSilentLoginMock.mockReturnValue(false);
   });
 
   afterEach(() => {
@@ -160,5 +168,29 @@ describe('ClientLayout', () => {
     await waitFor(() => {
       expect(screen.getByTestId('login-dialog').getAttribute('data-open')).toBe('true');
     });
+  });
+
+  it('does NOT open the login dialog when the silent SSO probe fires (page is navigating away)', async () => {
+    maybeSilentLoginMock.mockReturnValue(true);
+
+    render(
+      React.createElement(
+        ClientLayout,
+        null,
+        React.createElement('div', null, 'child')
+      )
+    );
+
+    const expectedPath = window.location.pathname + window.location.search;
+    await waitFor(() => {
+      expect(maybeSilentLoginMock).toHaveBeenCalledTimes(1);
+    });
+    // Pin the captured origin argument (a regression passing '' or the wrong value must fail).
+    expect(maybeSilentLoginMock).toHaveBeenCalledWith(expectedPath);
+
+    // Wait past the 1500ms dialog timer to prove it was never armed (probe redirected away).
+    await new Promise(resolve => setTimeout(resolve, 1700));
+
+    expect(screen.getByTestId('login-dialog').getAttribute('data-open')).toBe('false');
   });
 });

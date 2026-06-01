@@ -10,7 +10,8 @@ import { useAppDispatch, useAppSelector } from "@/redux/hooks";
 import { selectIsAuthenticated } from "@/redux/selectors";
 
 import { Toaster } from "react-hot-toast";
-import { setToken, checkUserState, fetchUserProfile } from "@/redux/slices/authSlice";
+import { checkUserState, fetchUserProfile } from "@/redux/slices/authSlice";
+import { maybeSilentLogin } from "@/lib/auth/sso-probe";
 import { LoginDialog } from "@/components/auth/LoginDialog";
 import { SettingsDialog } from "@/components/settings/SettingsDialog";
 
@@ -89,6 +90,12 @@ const ClientLayout = ({ children }: { children: React.ReactNode }) => {
       const hasStoredToken = typeof window !== 'undefined' && Boolean(localStorage.getItem('auth_token'));
       if (hasStoredToken) {
         // token 存在但 Redux 还没 hydrate，等一下再判断
+        return;
+      }
+      // 无本地 token：先做一次性静默 SSO 探测（跨应用免登）。命中则页面正在跳走，
+      // 不再弹登录框；未命中/已探测过/无 sessionStorage 时回落到原弹框逻辑。
+      const path = window.location.pathname + window.location.search;
+      if (maybeSilentLogin(path)) {
         return;
       }
       const timer = setTimeout(() => {
