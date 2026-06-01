@@ -16,6 +16,7 @@ import {
   type CallbackResult,
 } from 'auth-client-web';
 import { configureAuth } from './auth-sdk';
+import { clearSsoReturn } from './sso-probe';
 
 const ACCESS_TOKEN_KEY = 'auth_token';
 const REFRESH_TOKEN_KEY = 'auth_refresh_token';
@@ -32,6 +33,8 @@ export async function startSsoLogin(
   redirectPath?: string
 ): Promise<void> {
   configureAuth();
+  // 交互式登录前清掉残留的静默探测原始路径，避免被放弃的探测劫持本次登录的重定向目标。
+  clearSsoReturn();
   await sdkLogin(provider, redirectPath ? { redirectPath } : undefined);
 }
 

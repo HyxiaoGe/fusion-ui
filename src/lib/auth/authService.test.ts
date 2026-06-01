@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const {
   configureAuthMock,
   isAuthConfiguredMock,
+  clearSsoReturnMock,
   loginMock,
   handleCallbackMock,
   getAccessTokenMock,
@@ -11,6 +12,7 @@ const {
 } = vi.hoisted(() => ({
   configureAuthMock: vi.fn(),
   isAuthConfiguredMock: vi.fn(() => true),
+  clearSsoReturnMock: vi.fn(),
   loginMock: vi.fn(async () => undefined),
   handleCallbackMock: vi.fn(),
   getAccessTokenMock: vi.fn(),
@@ -21,6 +23,10 @@ const {
 vi.mock('./auth-sdk', () => ({
   configureAuth: configureAuthMock,
   isAuthConfigured: isAuthConfiguredMock,
+}));
+
+vi.mock('./sso-probe', () => ({
+  clearSsoReturn: clearSsoReturnMock,
 }));
 
 vi.mock('auth-client-web', () => ({
@@ -59,6 +65,12 @@ describe('authService SDK adapter', () => {
     await startSsoLogin('google');
 
     expect(loginMock).toHaveBeenCalledWith('google', undefined);
+  });
+
+  it('startSsoLogin clears any stale silent-probe return path before redirecting (no hijacked redirect)', async () => {
+    await startSsoLogin('github', '/chat/abc');
+
+    expect(clearSsoReturnMock).toHaveBeenCalledTimes(1);
   });
 
   it('completeSsoCallback configures then returns the SDK callback result', async () => {
