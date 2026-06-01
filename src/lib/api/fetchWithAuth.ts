@@ -1,21 +1,31 @@
-import { clearAuthStorage, getStoredAccessToken, refreshAccessToken } from '@/lib/auth/authService';
+import {
+  clearAuthStorage,
+  forceRefreshAccessToken,
+  getStoredAccessToken,
+  getValidAccessToken,
+} from '@/lib/auth/authService';
 import { ApiError } from '@/types/api';
 import type { ApiResponse } from '@/types/api';
 
-// 防止多个并发请求同时触发 refresh
-let refreshPromise: Promise<boolean> | null = null;
-
-async function tryRefresh(): Promise<boolean> {
-  if (!refreshPromise) {
-    refreshPromise = refreshAccessToken()
-      .then((tokens) => !!tokens)
-      .finally(() => { refreshPromise = null; });
+// 取一个可用的 access token：优先走 SDK 的按需刷新（过期临界会自动续期）。
+// 续期途中遇到瞬时网络错误时，退回到本地已存 token，把真正的过期交给 401 分支处理——
+// 这里绝不清会话，避免一次网络抖动把用户登出。
+// 返回 null = SDK 已确定性失败并清掉自身 token；此时同步清掉 fusion 侧 profile 等键，
+// 与 401 分支对称，避免请求落到公共接口（200，不触发 401 清理）时残留 user_profile。
+async function resolveToken(): Promise<string | null> {
+  try {
+    const token = await getValidAccessToken();
+    if (token === null) {
+      clearAuthStorage();
+    }
+    return token;
+  } catch {
+    return getStoredAccessToken();
   }
-  return refreshPromise;
 }
 
 async function fetchWithAuth(url: string, options: RequestInit = {}): Promise<Response> {
-  const token = getStoredAccessToken();
+  const token = await resolveToken();
 
   const headers = new Headers(options.headers || {});
   if (token) {
@@ -27,19 +37,23 @@ async function fetchWithAuth(url: string, options: RequestInit = {}): Promise<Re
     headers,
   });
 
-  // 401 时尝试用 refresh token 换新 access token，成功则重试原请求
+  // 401 时强制刷新（SDK 内部会合并并发刷新），成功则用新 token 重试原请求
   if (response.status === 401) {
-    const refreshed = await tryRefresh();
-    if (refreshed) {
-      const newToken = getStoredAccessToken();
+    let newToken: string | null;
+    try {
+      newToken = await forceRefreshAccessToken();
+    } catch {
+      // 刷新途中的瞬时网络错误：保留会话，仅把本次请求当作鉴权失败抛出
+      throw new Error('Unauthorized');
+    }
+
+    if (newToken) {
       const retryHeaders = new Headers(options.headers || {});
-      if (newToken) {
-        retryHeaders.set('Authorization', `Bearer ${newToken}`);
-      }
+      retryHeaders.set('Authorization', `Bearer ${newToken}`);
       return fetch(url, { ...options, headers: retryHeaders });
     }
 
-    // refresh 也失败，清空登录状态
+    // 刷新被服务端确定性拒绝：SDK 已清掉自身 token，这里再清掉 fusion 侧 profile 等键
     clearAuthStorage();
     throw new Error('Unauthorized');
   }

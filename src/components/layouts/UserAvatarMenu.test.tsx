@@ -17,7 +17,8 @@ vi.mock('@/components/auth/LoginDialog', () => ({
 }));
 
 vi.mock('@/lib/auth/authService', () => ({
-  revokeAuthSession: vi.fn(),
+  completeSsoCallback: vi.fn(),
+  revokeSsoSession: vi.fn(),
   getStoredAccessToken: vi.fn(() => null),
   clearAuthStorage: vi.fn(),
 }));

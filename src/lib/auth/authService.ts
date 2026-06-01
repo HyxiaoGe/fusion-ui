@@ -1,136 +1,69 @@
-import { AUTH_SERVICE_CONFIG, getAuthCallbackUrl } from '@/lib/config';
+/**
+ * Auth helpers for fusion-ui — thin adapter over the shared SSO SDK (auth-client-web).
+ *
+ * The token lifecycle (PKCE login, callback exchange, on-demand refresh, revoke) lives in
+ * the SDK; this module only wires fusion's call sites to it and keeps the localStorage
+ * helpers that fusion's Redux slice + fetch layer already depend on. fusion keeps fetching
+ * its own richer profile from fusion-api (`/api/auth/me`); the SDK only owns the tokens.
+ */
+
+import {
+  getAccessToken as sdkGetAccessToken,
+  handleCallback as sdkHandleCallback,
+  login as sdkLogin,
+  logout as sdkLogout,
+  refresh as sdkRefresh,
+  type CallbackResult,
+} from 'auth-client-web';
+import { configureAuth } from './auth-sdk';
 
 const ACCESS_TOKEN_KEY = 'auth_token';
 const REFRESH_TOKEN_KEY = 'auth_refresh_token';
+const EXPIRES_AT_KEY = 'auth_token_expiry';
+const SDK_USER_KEY = 'auth_user_info';
 const USER_PROFILE_KEY = 'user_profile';
 const USER_PROFILE_TIMESTAMP_KEY = 'user_profile_timestamp';
 
-export interface AuthServiceTokenResponse {
-  access_token: string;
-  refresh_token: string;
-  token_type: string;
-  expires_in: number;
-}
-
 type OAuthProvider = 'github' | 'google';
 
-function getAuthServiceBaseUrl(): string {
-  return AUTH_SERVICE_CONFIG.BASE_URL.replace(/\/$/, '');
-}
-
-function getClientId(): string {
-  return AUTH_SERVICE_CONFIG.CLIENT_ID;
-}
-
-function getAuthServiceConfigError(): string | null {
-  if (!getAuthServiceBaseUrl()) {
-    return '认证服务地址未配置';
-  }
-
-  if (!getClientId()) {
-    return '认证服务 client_id 未配置';
-  }
-
-  return null;
-}
-
-export function buildOAuthLoginUrl(provider: OAuthProvider): string | null {
-  const configError = getAuthServiceConfigError();
-  if (configError) {
-    return null;
-  }
-
-  const params = new URLSearchParams({
-    client_id: getClientId(),
-    redirect_uri: getAuthCallbackUrl(),
-  });
-
-  return `${getAuthServiceBaseUrl()}/auth/oauth/${provider}?${params.toString()}`;
-}
-
-export async function exchangeAuthCode(
-  code: string
-): Promise<AuthServiceTokenResponse> {
-  const configError = getAuthServiceConfigError();
-  if (configError) {
-    throw new Error(configError);
-  }
-
-  const response = await fetch(`${getAuthServiceBaseUrl()}/auth/oauth/token`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      code,
-      client_id: getClientId(),
-    }),
-  });
-
-  if (!response.ok) {
-    const detail = await response
-      .json()
-      .then((payload) => payload?.detail)
-      .catch(() => null);
-    throw new Error(detail || '授权码兑换失败');
-  }
-
-  return response.json();
-}
-
-export async function revokeAuthSession(
-  refreshToken = getStoredRefreshToken()
+/** Interactive login: top-level redirect to /auth/authorize (PKCE + state). */
+export async function startSsoLogin(
+  provider: OAuthProvider,
+  redirectPath?: string
 ): Promise<void> {
-  if (!refreshToken || !getAuthServiceBaseUrl()) {
-    return;
-  }
-
-  try {
-    await fetch(`${getAuthServiceBaseUrl()}/auth/token/revoke`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ refresh_token: refreshToken }),
-    });
-  } catch {
-    // Ignore revoke failures and clear local state anyway.
-  }
+  configureAuth();
+  await sdkLogin(provider, redirectPath ? { redirectPath } : undefined);
 }
 
-export async function refreshAccessToken(): Promise<AuthServiceTokenResponse | null> {
-  const refreshToken = getStoredRefreshToken();
-  if (!refreshToken || !getAuthServiceBaseUrl()) {
-    return null;
-  }
-
-  try {
-    const response = await fetch(`${getAuthServiceBaseUrl()}/auth/token/refresh`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ refresh_token: refreshToken }),
-    });
-
-    if (!response.ok) {
-      return null;
-    }
-
-    const tokens: AuthServiceTokenResponse = await response.json();
-    storeAuthSession(tokens);
-    return tokens;
-  } catch {
-    return null;
-  }
+/** Complete the auth-service callback on the redirect_uri page (CSRF + PKCE enforced). */
+export async function completeSsoCallback(): Promise<CallbackResult> {
+  configureAuth();
+  return sdkHandleCallback();
 }
 
-export function storeAuthSession(tokens: AuthServiceTokenResponse): void {
-  localStorage.setItem(ACCESS_TOKEN_KEY, tokens.access_token);
-  localStorage.setItem(REFRESH_TOKEN_KEY, tokens.refresh_token);
+/** Valid access token, auto-refreshing if within the expiry skew. May throw on transient network errors. */
+export async function getValidAccessToken(): Promise<string | null> {
+  configureAuth();
+  return sdkGetAccessToken();
+}
+
+/** Force a token refresh (coalesced). Returns null only on a definitive refresh failure. */
+export function forceRefreshAccessToken(): Promise<string | null> {
+  configureAuth();
+  return sdkRefresh();
+}
+
+/** Best-effort revoke of this app's refresh token + clear of the SDK-managed session. */
+export async function revokeSsoSession(): Promise<void> {
+  configureAuth();
+  await sdkLogout();
 }
 
 export function clearAuthStorage(): void {
   localStorage.removeItem(ACCESS_TOKEN_KEY);
   localStorage.removeItem(REFRESH_TOKEN_KEY);
+  localStorage.removeItem(EXPIRES_AT_KEY);
+  localStorage.removeItem(SDK_USER_KEY);
   localStorage.removeItem(USER_PROFILE_KEY);
   localStorage.removeItem(USER_PROFILE_TIMESTAMP_KEY);
 }

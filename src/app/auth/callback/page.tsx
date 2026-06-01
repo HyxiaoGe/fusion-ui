@@ -1,64 +1,34 @@
 "use client";
 
-import { useEffect } from "react";
-import { useSearchParams, useRouter } from "next/navigation";
+import { useEffect, useRef } from "react";
+import { useRouter } from "next/navigation";
 import { Loader2 } from "lucide-react";
 import { useAppDispatch } from "@/redux/hooks";
-import { setToken, fetchUserProfile } from "@/redux/slices/authSlice";
-import { exchangeAuthCode, storeAuthSession } from "@/lib/auth/authService";
+import { completeLogin } from "@/redux/slices/authSlice";
 import { useToast } from "@/components/ui/toast";
 
 export default function AuthCallbackPage() {
-  const searchParams = useSearchParams();
   const router = useRouter();
   const dispatch = useAppDispatch();
   const { toast } = useToast();
+  const processed = useRef(false);
 
   useEffect(() => {
-    let cancelled = false;
+    if (processed.current) return;
+    processed.current = true;
 
-    const completeAuth = async () => {
-      const code = searchParams?.get("code");
-      const legacyToken = searchParams?.get("token");
-
-      try {
-        if (code) {
-          const tokens = await exchangeAuthCode(code);
-          if (cancelled) {
-            return;
-          }
-
-          storeAuthSession(tokens);
-          dispatch(setToken(tokens.access_token));
-          await dispatch(fetchUserProfile());
-          router.replace("/");
-          return;
-        }
-
-        if (legacyToken) {
-          dispatch(setToken(legacyToken));
-          await dispatch(fetchUserProfile());
-        }
-      } catch {
-        if (!cancelled) {
-          toast({
-            message: "登录失败，请重试",
-            type: "error",
-          });
-        }
-      }
-
-      if (!cancelled) {
+    // completeLogin 内部：SDK 从 window.location 读 code/state 并校验 state、PKCE 换 token，
+    // 成功后拉取 fusion profile；解析出的 redirectPath 已含静默/交互两种回跳路径。
+    void dispatch(completeLogin())
+      .unwrap()
+      .then(({ redirectPath }) => {
+        router.replace(redirectPath || "/");
+      })
+      .catch(() => {
+        toast({ message: "登录失败，请重试", type: "error" });
         router.replace("/");
-      }
-    };
-
-    void completeAuth();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [searchParams, router, dispatch, toast]);
+      });
+  }, [dispatch, router, toast]);
 
   return (
     <div className="flex items-center justify-center h-screen w-full">
@@ -68,4 +38,4 @@ export default function AuthCallbackPage() {
       </div>
     </div>
   );
-} 
+}

@@ -10,19 +10,16 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
-import { logout } from "@/redux/slices/authSlice";
+import { logoutWithSso } from "@/redux/slices/authSlice";
 import { openSettingsDialog } from "@/redux/slices/settingsSlice";
-import { LogIn, LogOut, Settings } from "lucide-react";
-import { LoginDialog } from "../auth/LoginDialog";
-import { revokeAuthSession } from "@/lib/auth/authService";
+import { LogOut, Settings } from "lucide-react";
 
 export function UserMenu() {
   const dispatch = useAppDispatch();
   const { isAuthenticated, user } = useAppSelector((state) => state.auth);
 
   const handleLogout = () => {
-    void revokeAuthSession();
-    dispatch(logout());
+    void dispatch(logoutWithSso());
   };
 
   const handleOpenSettings = () => {

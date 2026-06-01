@@ -1,7 +1,12 @@
 import { createSlice, PayloadAction, createAsyncThunk } from "@reduxjs/toolkit";
 import { jwtDecode } from "jwt-decode";
 import { fetchUserProfileAPI, updateUserSettingsAPI, UserProfile } from '../../lib/api/user';
-import { clearAuthStorage, getStoredAccessToken } from '@/lib/auth/authService';
+import {
+  clearAuthStorage,
+  completeSsoCallback,
+  getStoredAccessToken,
+  revokeSsoSession,
+} from '@/lib/auth/authService';
 
 interface AuthState {
   isAuthenticated: boolean;
@@ -226,4 +231,47 @@ const authSlice = createSlice({
 
 export const { setToken, logout, checkUserState } = authSlice.actions;
 
-export default authSlice.reducer; 
+// 在 /auth/callback 页消费 auth-service 回调：SDK 内部完成 state 校验 + PKCE 换 token + 落库，
+// 这里只负责把 access token 灌进 Redux 占位并拉取 fusion 自己的完整 profile。
+// status 非 authenticated（静默探测的 login_required / 非回调）时软回首页，不报错。
+export const completeLogin = createAsyncThunk<
+  { redirectPath: string },
+  void,
+  { rejectValue: string }
+>('auth/completeLogin', async (_, { dispatch, rejectWithValue }) => {
+  try {
+    const result = await completeSsoCallback();
+    if (result.status === 'authenticated') {
+      const token = getStoredAccessToken();
+      if (token) {
+        dispatch(setToken(token));
+        await dispatch(fetchUserProfile());
+      }
+      return { redirectPath: result.redirectPath || '/' };
+    }
+    return { redirectPath: '/' };
+  } catch (error: any) {
+    // SDK 在 token 落库之后才拉 auth-service /userinfo（fusion 用不到它，自己拉 /api/auth/me）；
+    // 那一步若抖动会抛错，但换码其实已成功。若本地确有 token，则按登录成功兜底，
+    // 用 JWT 灌 Redux 并拉 fusion profile，避免「已拿到有效会话却提示登录失败」的割裂。
+    const token = getStoredAccessToken();
+    if (token) {
+      dispatch(setToken(token));
+      await dispatch(fetchUserProfile());
+      return { redirectPath: '/' };
+    }
+    return rejectWithValue(error?.message || 'callback failed');
+  }
+});
+
+// 退出登录：先尽力撤销 SSO 会话（失败也不阻塞），再无条件清掉本地 Redux + 存储。
+export const logoutWithSso = createAsyncThunk('auth/logoutWithSso', async (_, { dispatch }) => {
+  try {
+    await revokeSsoSession();
+  } catch {
+    // best-effort：撤销失败绝不能把用户卡在「本地已登录」
+  }
+  dispatch(logout());
+});
+
+export default authSlice.reducer;

@@ -11,14 +11,13 @@ import {
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { openSettingsDialog } from "@/redux/slices/settingsSlice";
-import { logout } from "@/redux/slices/authSlice";
+import { logoutWithSso } from "@/redux/slices/authSlice";
 import { resetConversationState } from "@/redux/slices/conversationSlice";
 import { resetFileUploadState } from "@/redux/slices/fileUploadSlice";
 import { endStream } from "@/redux/slices/streamSlice";
 import { Settings, LogOut, LogIn } from "lucide-react";
 import { useState } from "react";
 import { LoginDialog } from "@/components/auth/LoginDialog";
-import { revokeAuthSession } from "@/lib/auth/authService";
 
 export function UserAvatarMenu() {
   const dispatch = useAppDispatch();
@@ -61,8 +60,7 @@ export function UserAvatarMenu() {
   };
 
   const handleLogout = () => {
-    void revokeAuthSession();
-    dispatch(logout());
+    void dispatch(logoutWithSso());
     dispatch(resetConversationState());
     dispatch(endStream());
     dispatch(resetFileUploadState());

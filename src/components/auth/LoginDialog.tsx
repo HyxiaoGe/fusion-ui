@@ -12,7 +12,8 @@ import { Button } from "@/components/ui/button";
 import { Github, Mail, Loader2 } from "lucide-react";
 import { useState } from "react";
 import { useToast } from "@/components/ui/toast";
-import { buildOAuthLoginUrl } from "@/lib/auth/authService";
+import { startSsoLogin } from "@/lib/auth/authService";
+import { isAuthConfigured } from "@/lib/auth/auth-sdk";
 
 export function LoginDialog({
   open,
@@ -28,8 +29,7 @@ export function LoginDialog({
   const { toast } = useToast();
 
   const startOAuthLogin = (provider: "github" | "google") => {
-    const loginUrl = buildOAuthLoginUrl(provider);
-    if (!loginUrl) {
+    if (!isAuthConfigured()) {
       toast({
         message: "登录配置缺失，请稍后再试",
         type: "error",
@@ -39,7 +39,15 @@ export function LoginDialog({
       return;
     }
 
-    window.location.href = loginUrl;
+    // SDK 生成 PKCE + state 后顶层跳转到 /auth/authorize；成功即离开本页。
+    void startSsoLogin(provider).catch(() => {
+      toast({
+        message: "登录失败，请重试",
+        type: "error",
+      });
+      setIsGitHubLoading(false);
+      setIsGoogleLoading(false);
+    });
   };
 
   const handleGitHubLogin = () => {
