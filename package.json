@@ -36,7 +36,7 @@
     "@radix-ui/react-tooltip": "^1.1.8",
     "@reduxjs/toolkit": "^2.6.0",
     "@types/uuid": "^10.0.0",
-    "auth-client-web": "git+https://github.com/HyxiaoGe/auth-client-web.git#2686968",
+    "auth-client-web": "git+https://github.com/HyxiaoGe/auth-client-web.git#e415304",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "concurrently": "^9.1.2",

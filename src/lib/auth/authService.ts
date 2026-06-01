@@ -56,10 +56,15 @@ export function forceRefreshAccessToken(): Promise<string | null> {
   return sdkRefresh();
 }
 
-/** Best-effort revoke of this app's refresh token + clear of the SDK-managed session. */
+/**
+ * Best-effort GLOBAL single-logout: revoke this app's refresh token + clear the SDK session,
+ * then top-level POST-form to /auth/logout to destroy the shared IdP session — so logging out
+ * of fusion logs the user out of every SSO app（一处登出、处处登出）, not just fusion. Without
+ * `{ global: true }` the IdP session would survive and silently re-log-in the user on next load.
+ */
 export async function revokeSsoSession(): Promise<void> {
   configureAuth();
-  await sdkLogout();
+  await sdkLogout({ global: true });
 }
 
 export function clearAuthStorage(): void {

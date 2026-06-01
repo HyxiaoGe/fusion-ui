@@ -95,11 +95,14 @@ describe('authService SDK adapter', () => {
     await expect(forceRefreshAccessToken()).resolves.toBe('rotated-token');
   });
 
-  it('revokeSsoSession performs a best-effort SDK logout', async () => {
+  it('revokeSsoSession performs a best-effort GLOBAL SDK logout (Single Logout, not just this app)', async () => {
     await revokeSsoSession();
 
     expect(configureAuthMock).toHaveBeenCalledTimes(1);
-    expect(logoutMock).toHaveBeenCalledTimes(1);
+    // { global: true } drives the SDK's top-level POST-form to /auth/logout, destroying the
+    // shared IdP session so logging out of fusion logs the user out of every SSO app
+    // (「一处登出、处处登出」). A bare logout() would only revoke this app's token.
+    expect(logoutMock).toHaveBeenCalledWith({ global: true });
   });
 
   it('storage helpers read fusion keys and clearAuthStorage wipes every auth key', () => {
