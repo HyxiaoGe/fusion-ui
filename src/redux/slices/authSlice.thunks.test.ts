@@ -163,6 +163,22 @@ describe('completeLogin thunk (SDK callback)', () => {
     expect(action.payload).toEqual({ redirectPath: '/chat/7' });
   });
 
+  it('post-logout bounce (no_callback): soft-lands to "/" with no error and no profile fetch (Single Logout return)', async () => {
+    // Global Single Logout 302s the browser back to fusion's registered redirect_uri
+    // (/auth/callback) with NO ?code=. The SDK returns { status: 'no_callback' } — it does NOT
+    // throw — so fusion's soft gate collapses it to a clean "/" landing like any other
+    // non-authenticated result. This is why fusion (unlike audio) needs no callback-page change:
+    // the error path only fires when the SDK THROWS with no stored token, never on no_callback.
+    completeSsoCallbackMock.mockResolvedValue({ status: 'no_callback' });
+
+    const store = makeStore();
+    const action = await store.dispatch(completeLogin());
+
+    expect(completeLogin.fulfilled.match(action)).toBe(true);
+    expect(action.payload).toEqual({ redirectPath: '/' });
+    expect(fetchUserProfileAPIMock).not.toHaveBeenCalled();
+  });
+
   it('drops an unsafe off-origin silent return path and falls back to the SDK redirect (open-redirect guard)', async () => {
     // Even if a protocol-relative path reaches the return slot, completeLogin must not echo it as
     // a redirect target (defense-in-depth at the router.replace sink).
