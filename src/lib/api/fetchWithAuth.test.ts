@@ -1,43 +1,108 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+const {
+  getValidAccessTokenMock,
+  forceRefreshAccessTokenMock,
+  getStoredAccessTokenMock,
+  clearAuthStorageMock,
+} = vi.hoisted(() => ({
+  getValidAccessTokenMock: vi.fn(),
+  forceRefreshAccessTokenMock: vi.fn(),
+  getStoredAccessTokenMock: vi.fn(),
+  clearAuthStorageMock: vi.fn(),
+}));
+
+vi.mock('@/lib/auth/authService', () => ({
+  getValidAccessToken: getValidAccessTokenMock,
+  forceRefreshAccessToken: forceRefreshAccessTokenMock,
+  getStoredAccessToken: getStoredAccessTokenMock,
+  clearAuthStorage: clearAuthStorageMock,
+}));
+
 import fetchWithAuth from './fetchWithAuth';
 
-describe('fetchWithAuth', () => {
+const res = (status: number) => new Response('{}', { status });
+
+describe('fetchWithAuth (shared-SDK token lifecycle)', () => {
+  let fetchMock: ReturnType<typeof vi.fn>;
+
   beforeEach(() => {
-    localStorage.clear();
-    vi.restoreAllMocks();
+    vi.clearAllMocks();
+    fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
   });
 
-  it('adds bearer token when auth_token exists', async () => {
-    localStorage.setItem('auth_token', 'token-123');
-    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
-      new Response('{}', { status: 200 })
-    );
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
 
-    await fetchWithAuth('/api/test', {
-      method: 'POST',
-      headers: {
-        'X-Test': 'yes',
-      },
-    });
+  it('attaches the SDK-provided access token as a bearer header and preserves caller headers', async () => {
+    getValidAccessTokenMock.mockResolvedValue('valid-token');
+    fetchMock.mockResolvedValue(res(200));
 
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-    const [, options] = fetchMock.mock.calls[0];
-    const headers = new Headers(options?.headers);
-    expect(headers.get('Authorization')).toBe('Bearer token-123');
+    await fetchWithAuth('/api/test', { method: 'POST', headers: { 'X-Test': 'yes' } });
+
+    const init = fetchMock.mock.calls[0][1];
+    const headers = new Headers(init.headers);
+    expect(headers.get('Authorization')).toBe('Bearer valid-token');
     expect(headers.get('X-Test')).toBe('yes');
   });
 
-  it('clears local auth data and throws on 401', async () => {
-    localStorage.setItem('auth_token', 'token-123');
-    localStorage.setItem('auth_refresh_token', 'refresh-123');
-    localStorage.setItem('user_profile', '{"id":"user-1"}');
-    localStorage.setItem('user_profile_timestamp', '123');
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('{}', { status: 401 }));
+  it('force-refreshes and retries once with the rotated token on 401', async () => {
+    getValidAccessTokenMock.mockResolvedValue('stale-token');
+    forceRefreshAccessTokenMock.mockResolvedValue('rotated-token');
+    fetchMock.mockResolvedValueOnce(res(401)).mockResolvedValueOnce(res(200));
+
+    const out = await fetchWithAuth('/api/test');
+
+    expect(out.status).toBe(200);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(new Headers(fetchMock.mock.calls[1][1].headers).get('Authorization')).toBe(
+      'Bearer rotated-token'
+    );
+    expect(clearAuthStorageMock).not.toHaveBeenCalled();
+  });
+
+  it('clears storage and throws when a 401 refresh fails definitively', async () => {
+    getValidAccessTokenMock.mockResolvedValue('stale-token');
+    forceRefreshAccessTokenMock.mockResolvedValue(null);
+    fetchMock.mockResolvedValueOnce(res(401));
 
     await expect(fetchWithAuth('/api/test')).rejects.toThrow('Unauthorized');
+    expect(clearAuthStorageMock).toHaveBeenCalledTimes(1);
+  });
 
-    expect(localStorage.getItem('auth_token')).toBeNull();
-    expect(localStorage.getItem('auth_refresh_token')).toBeNull();
-    expect(localStorage.getItem('user_profile')).toBeNull();
-    expect(localStorage.getItem('user_profile_timestamp')).toBeNull();
+  it('keeps the session (no clear) when the 401 refresh fails on a TRANSIENT network error', async () => {
+    getValidAccessTokenMock.mockResolvedValue('stale-token');
+    forceRefreshAccessTokenMock.mockRejectedValue(new TypeError('network down'));
+    fetchMock.mockResolvedValueOnce(res(401));
+
+    await expect(fetchWithAuth('/api/test')).rejects.toThrow('Unauthorized');
+    expect(clearAuthStorageMock).not.toHaveBeenCalled();
+  });
+
+  it('falls back to the stored token when proactive refresh throws transiently', async () => {
+    getValidAccessTokenMock.mockRejectedValue(new TypeError('network blip'));
+    getStoredAccessTokenMock.mockReturnValue('stored-token');
+    fetchMock.mockResolvedValue(res(200));
+
+    await fetchWithAuth('/api/test');
+
+    expect(new Headers(fetchMock.mock.calls[0][1].headers).get('Authorization')).toBe(
+      'Bearer stored-token'
+    );
+  });
+
+  it('clears fusion storage when proactive resolution yields null (definitive SDK teardown), even without a 401', async () => {
+    // SDK refresh failed definitively and already wiped its own keys; getValidAccessToken returns null.
+    // The request still goes out (unauthenticated). For a PUBLIC endpoint it returns 200, so the 401
+    // cleanup never runs — fusion's profile keys must be cleared here to stay symmetric with the 401 path.
+    getValidAccessTokenMock.mockResolvedValue(null);
+    fetchMock.mockResolvedValue(res(200));
+
+    await fetchWithAuth('/api/models/');
+
+    expect(clearAuthStorageMock).toHaveBeenCalledTimes(1);
+    expect(new Headers(fetchMock.mock.calls[0][1].headers).get('Authorization')).toBeNull();
   });
 });

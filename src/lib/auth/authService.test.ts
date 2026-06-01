@@ -1,0 +1,117 @@
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+const {
+  configureAuthMock,
+  isAuthConfiguredMock,
+  loginMock,
+  handleCallbackMock,
+  getAccessTokenMock,
+  refreshMock,
+  logoutMock,
+} = vi.hoisted(() => ({
+  configureAuthMock: vi.fn(),
+  isAuthConfiguredMock: vi.fn(() => true),
+  loginMock: vi.fn(async () => undefined),
+  handleCallbackMock: vi.fn(),
+  getAccessTokenMock: vi.fn(),
+  refreshMock: vi.fn(),
+  logoutMock: vi.fn(async () => undefined),
+}));
+
+vi.mock('./auth-sdk', () => ({
+  configureAuth: configureAuthMock,
+  isAuthConfigured: isAuthConfiguredMock,
+}));
+
+vi.mock('auth-client-web', () => ({
+  login: loginMock,
+  handleCallback: handleCallbackMock,
+  getAccessToken: getAccessTokenMock,
+  refresh: refreshMock,
+  logout: logoutMock,
+}));
+
+import {
+  clearAuthStorage,
+  completeSsoCallback,
+  forceRefreshAccessToken,
+  getStoredAccessToken,
+  getStoredRefreshToken,
+  getValidAccessToken,
+  revokeSsoSession,
+  startSsoLogin,
+} from './authService';
+
+describe('authService SDK adapter', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    localStorage.clear();
+  });
+
+  it('startSsoLogin configures the SDK then delegates with provider + redirect path', async () => {
+    await startSsoLogin('github', '/chat/abc');
+
+    expect(configureAuthMock).toHaveBeenCalledTimes(1);
+    expect(loginMock).toHaveBeenCalledWith('github', { redirectPath: '/chat/abc' });
+  });
+
+  it('startSsoLogin omits redirectPath option when none is given', async () => {
+    await startSsoLogin('google');
+
+    expect(loginMock).toHaveBeenCalledWith('google', undefined);
+  });
+
+  it('completeSsoCallback configures then returns the SDK callback result', async () => {
+    handleCallbackMock.mockResolvedValue({ status: 'authenticated', user: { id: 'u1' }, redirectPath: '/' });
+
+    const result = await completeSsoCallback();
+
+    expect(configureAuthMock).toHaveBeenCalledTimes(1);
+    expect(result).toEqual({ status: 'authenticated', user: { id: 'u1' }, redirectPath: '/' });
+  });
+
+  it('getValidAccessToken delegates to the SDK token accessor', async () => {
+    getAccessTokenMock.mockResolvedValue('fresh-token');
+
+    await expect(getValidAccessToken()).resolves.toBe('fresh-token');
+    expect(configureAuthMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('forceRefreshAccessToken delegates to the SDK refresh', async () => {
+    refreshMock.mockResolvedValue('rotated-token');
+
+    await expect(forceRefreshAccessToken()).resolves.toBe('rotated-token');
+  });
+
+  it('revokeSsoSession performs a best-effort SDK logout', async () => {
+    await revokeSsoSession();
+
+    expect(configureAuthMock).toHaveBeenCalledTimes(1);
+    expect(logoutMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('storage helpers read fusion keys and clearAuthStorage wipes every auth key', () => {
+    localStorage.setItem('auth_token', 'a');
+    localStorage.setItem('auth_refresh_token', 'r');
+    localStorage.setItem('auth_token_expiry', '123');
+    localStorage.setItem('auth_user_info', '{}');
+    localStorage.setItem('user_profile', '{}');
+    localStorage.setItem('user_profile_timestamp', '123');
+
+    expect(getStoredAccessToken()).toBe('a');
+    expect(getStoredRefreshToken()).toBe('r');
+
+    clearAuthStorage();
+
+    for (const key of [
+      'auth_token',
+      'auth_refresh_token',
+      'auth_token_expiry',
+      'auth_user_info',
+      'user_profile',
+      'user_profile_timestamp',
+    ]) {
+      expect(localStorage.getItem(key)).toBeNull();
+    }
+  });
+});
