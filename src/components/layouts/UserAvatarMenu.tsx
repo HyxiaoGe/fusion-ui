@@ -19,11 +19,15 @@ import { Settings, LogOut, LogIn } from "lucide-react";
 import { useState } from "react";
 import { LoginDialog } from "@/components/auth/LoginDialog";
 import { proxiedAvatar } from "@/lib/auth/avatar";
+import { useHasMounted } from "@/hooks/useHasMounted";
 
 export function UserAvatarMenu() {
   const dispatch = useAppDispatch();
   const { isAuthenticated, user } = useAppSelector((state) => state.auth);
   const [isLoginDialogOpen, setIsLoginDialogOpen] = useState(false);
+  // 登录态来自 localStorage，SSR 与首个 hydration 帧都无从得知 → getInitialAuthState 返回未登录，
+  // 会先画死「登录」按钮再翻成头像（闪一帧）。hydration 完成前不渲染任何终态，只占同尺寸中性位。
+  const hasMounted = useHasMounted();
 
   const getUserDisplayName = () => {
     if (isAuthenticated && user) {
@@ -70,6 +74,17 @@ export function UserAvatarMenu() {
   const handleOpenLogin = () => {
     setIsLoginDialogOpen(true);
   };
+
+  // hydration 完成前：渲染同尺寸中性占位，避免 SSR 的未登录默认态闪出「登录」按钮（终态留给客户端定夺）。
+  if (!hasMounted) {
+    return (
+      <div
+        data-testid="avatar-menu-placeholder"
+        aria-hidden="true"
+        className="h-9 w-9 rounded-full bg-muted/40"
+      />
+    );
+  }
 
   return (
     <>

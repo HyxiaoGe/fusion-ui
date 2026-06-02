@@ -49,6 +49,21 @@ export function markSsoProbed(): void {
   }
 }
 
+/**
+ * 探测前记下的原始路径是否还在（peek，不消费）。
+ *
+ * 回调页据此区分落到 /auth/callback 的来源：有 RETURN ⇒ 静默探测中转（用户没主动登录）⇒
+ * 渲染中性态，不显示「正在完成授权」误导文案；无 RETURN ⇒ 用户主动发起的交互式登录。
+ * 消费仍由 takeSsoReturnPath 负责（本函数只读不删）。
+ */
+export function hasPendingSsoReturn(): boolean {
+  try {
+    return session()?.getItem(RETURN_KEY) != null;
+  } catch {
+    return false;
+  }
+}
+
 /** 读取并清除探测前记下的原始路径（HIT/MISS 均据此回到原页）。 */
 export function takeSsoReturnPath(): string | null {
   const s = session();
