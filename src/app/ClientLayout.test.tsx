@@ -13,6 +13,7 @@ const {
   updateProvidersMock,
   checkUserStateMock,
   fetchUserProfileMock,
+  revalidateTokenMock,
   setGlobalToastMock,
   maybeSilentLoginMock,
 } = vi.hoisted(() => ({
@@ -29,6 +30,7 @@ const {
   updateProvidersMock: vi.fn((providers: unknown) => ({ type: 'models/updateProviders', payload: providers })),
   checkUserStateMock: vi.fn(() => ({ type: 'auth/checkUserState' })),
   fetchUserProfileMock: vi.fn(() => ({ type: 'auth/fetchUserProfile' })),
+  revalidateTokenMock: vi.fn(() => ({ type: 'auth/revalidateToken' })),
   setGlobalToastMock: vi.fn(),
   maybeSilentLoginMock: vi.fn(() => false),
 }));
@@ -62,6 +64,7 @@ vi.mock('@/redux/slices/modelsSlice', () => ({
 vi.mock('@/redux/slices/authSlice', () => ({
   checkUserState: checkUserStateMock,
   fetchUserProfile: fetchUserProfileMock,
+  revalidateToken: revalidateTokenMock,
   setToken: vi.fn(),
 }));
 
@@ -114,6 +117,7 @@ describe('ClientLayout', () => {
     updateProvidersMock.mockClear();
     checkUserStateMock.mockClear();
     fetchUserProfileMock.mockClear();
+    revalidateTokenMock.mockClear();
     setGlobalToastMock.mockClear();
     maybeSilentLoginMock.mockReset();
     maybeSilentLoginMock.mockReturnValue(false);
@@ -168,6 +172,39 @@ describe('ClientLayout', () => {
     await waitFor(() => {
       expect(screen.getByTestId('login-dialog').getAttribute('data-open')).toBe('true');
     });
+  });
+
+  it('revalidates the token on window focus when authenticated (SLO probe)', async () => {
+    // 跨应用单点登出：别处登出后本标签页令牌仍密码学有效，重新聚焦时强制校验一次。
+    currentAuthState.isAuthenticated = true;
+    currentAuthState.status = 'succeeded';
+
+    render(
+      React.createElement(ClientLayout, null, React.createElement('div', null, 'child'))
+    );
+
+    await waitFor(() => expect(checkUserStateMock).toHaveBeenCalled());
+    appDispatchMock.mockClear(); // 隔离 focus 触发的派发
+
+    window.dispatchEvent(new Event('focus'));
+
+    await waitFor(() => {
+      expect(appDispatchMock).toHaveBeenCalledWith({ type: 'auth/revalidateToken' });
+    });
+  });
+
+  it('does NOT revalidate on focus when unauthenticated (no token to verify)', async () => {
+    currentAuthState.isAuthenticated = false;
+
+    render(
+      React.createElement(ClientLayout, null, React.createElement('div', null, 'child'))
+    );
+    appDispatchMock.mockClear();
+
+    window.dispatchEvent(new Event('focus'));
+    await new Promise(resolve => setTimeout(resolve, 50));
+
+    expect(appDispatchMock).not.toHaveBeenCalledWith({ type: 'auth/revalidateToken' });
   });
 
   it('does NOT open the login dialog when the silent SSO probe fires (page is navigating away)', async () => {
