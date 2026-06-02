@@ -12,7 +12,14 @@ vi.mock('@/lib/auth/auth-sdk', () => ({
 import { silentLogin } from 'auth-client-web';
 import { configureAuth } from '@/lib/auth/auth-sdk';
 
-import { clearSsoReturn, isSafeReturnPath, markSsoProbed, maybeSilentLogin, takeSsoReturnPath } from './sso-probe';
+import {
+  clearSsoReturn,
+  hasPendingSsoReturn,
+  isSafeReturnPath,
+  markSsoProbed,
+  maybeSilentLogin,
+  takeSsoReturnPath,
+} from './sso-probe';
 
 const mockedSilentLogin = vi.mocked(silentLogin);
 const mockedConfigureAuth = vi.mocked(configureAuth);
@@ -114,6 +121,20 @@ describe('sso-probe: one-shot silent SSO on app load', () => {
     expect(mockedSilentLogin).not.toHaveBeenCalled();
 
     spy.mockRestore();
+  });
+
+  // hasPendingSsoReturn lets the callback page tell a SILENT-probe transit (RETURN captured
+  // before the probe) apart from a user-initiated login, so it never shows "正在完成授权" for a
+  // probe/logout bounce the user never initiated. PEEK only — takeSsoReturnPath stays the consumer.
+  it('hasPendingSsoReturn: true while a return is pending, and does NOT consume it', () => {
+    sessionStorage.setItem(RETURN_KEY, '/chat/7');
+    expect(hasPendingSsoReturn()).toBe(true);
+    expect(sessionStorage.getItem(RETURN_KEY)).toBe('/chat/7'); // peek, not take
+    expect(takeSsoReturnPath()).toBe('/chat/7');
+  });
+
+  it('hasPendingSsoReturn: false when no probe is in flight (a genuine interactive login)', () => {
+    expect(hasPendingSsoReturn()).toBe(false);
   });
 
   it('isSafeReturnPath accepts same-origin relative paths and rejects off-origin vectors', () => {
