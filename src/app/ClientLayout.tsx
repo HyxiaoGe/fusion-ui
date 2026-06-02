@@ -10,7 +10,7 @@ import { useAppDispatch, useAppSelector } from "@/redux/hooks";
 import { selectIsAuthenticated } from "@/redux/selectors";
 
 import { Toaster } from "react-hot-toast";
-import { checkUserState, fetchUserProfile } from "@/redux/slices/authSlice";
+import { checkUserState, fetchUserProfile, revalidateToken } from "@/redux/slices/authSlice";
 import { maybeSilentLogin } from "@/lib/auth/sso-probe";
 import { LoginDialog } from "@/components/auth/LoginDialog";
 import { SettingsDialog } from "@/components/settings/SettingsDialog";
@@ -77,6 +77,30 @@ const ClientLayout = ({ children }: { children: React.ReactNode }) => {
     }
   }, [dispatch, isAuthenticated, status]);
   
+  useEffect(() => {
+    // 跨应用单点登出（SLO）落地窗口：别处登出后，本标签页手里的 access token 签名仍然有效、
+    // 本地无从察觉，直到它过期。标签页重新聚焦 / 重新变为可见时，强制校验一次令牌
+    // （revalidateToken 走 SDK refresh 做服务端往返，refresh token 被吊销则翻转为未登录）。
+    // 仅在已登录态挂监听；切回标签页常同时触发 focus + visibilitychange，用最小间隔去抖成一次。
+    if (!isAuthenticated) return;
+    let lastAt = 0;
+    const revalidate = () => {
+      const now = Date.now();
+      if (now - lastAt < 3000) return;
+      lastAt = now;
+      dispatch(revalidateToken());
+    };
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") revalidate();
+    };
+    window.addEventListener("focus", revalidate);
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      window.removeEventListener("focus", revalidate);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, [dispatch, isAuthenticated]);
+
   useEffect(() => {
     // 如果用户已登录，关闭登录弹窗
     if (isAuthenticated) {

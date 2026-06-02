@@ -4,6 +4,7 @@ import { fetchUserProfileAPI, updateUserSettingsAPI, UserProfile } from '../../l
 import {
   clearAuthStorage,
   completeSsoCallback,
+  forceRefreshAccessToken,
   getStoredAccessToken,
   revokeSsoSession,
 } from '@/lib/auth/authService';
@@ -269,6 +270,23 @@ export const completeLogin = createAsyncThunk<
       return { redirectPath: silentReturn || '/' };
     }
     return rejectWithValue(error?.message || 'callback failed');
+  }
+});
+
+// 跨应用单点登出（SLO）的前端探测：别处登出后，本标签页手里的 access token 签名仍然有效、
+// 本地无从察觉。标签页重新聚焦/可见或接口 401 时强制走一次服务端刷新（forceRefreshAccessToken →
+// SDK refresh）：refresh token 已被吊销 → 定论失败返回 null → 翻转为未登录；会话仍在 → SDK 已
+// 轮转令牌（此处不 dispatch setToken，否则 buildTokenUser 会用最小信息覆盖完整 profile）；瞬时
+// 网络故障 → throw，绝不登出（与 getValidAccessToken 同一套语义）。
+export const revalidateToken = createAsyncThunk('auth/revalidateToken', async (_, { dispatch }) => {
+  try {
+    const token = await forceRefreshAccessToken();
+    if (token === null) {
+      dispatch(logout());
+    }
+    return token;
+  } catch {
+    return null;
   }
 });
 
