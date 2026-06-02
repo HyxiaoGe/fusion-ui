@@ -18,6 +18,7 @@ import { endStream } from "@/redux/slices/streamSlice";
 import { Settings, LogOut, LogIn } from "lucide-react";
 import { useState } from "react";
 import { LoginDialog } from "@/components/auth/LoginDialog";
+import { proxiedAvatar } from "@/lib/auth/avatar";
 
 export function UserAvatarMenu() {
   const dispatch = useAppDispatch();
@@ -82,7 +83,7 @@ export function UserAvatarMenu() {
               >
                 {hasUserAvatar && user?.avatar ? (
                   <>
-                    <AvatarImage src={user.avatar} alt={getUserDisplayName()} />
+                    <AvatarImage src={proxiedAvatar(user.avatar)} alt={getUserDisplayName()} />
                     <AvatarFallback className="text-sm bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-blue-900/20 dark:to-indigo-900/20 text-foreground border">
                       <div className="w-full h-full flex items-center justify-center">
                         <span className="block text-center leading-none">{fallbackText}</span>
@@ -109,7 +110,7 @@ export function UserAvatarMenu() {
                     key={`menu-avatar-${isAuthenticated}-${user?.avatar}`}
                     className="h-8 w-8"
                   >
-                    <AvatarImage src={user.avatar} alt={getUserDisplayName()} />
+                    <AvatarImage src={proxiedAvatar(user.avatar)} alt={getUserDisplayName()} />
                     <AvatarFallback className="text-sm">
                       <div className="w-full h-full flex items-center justify-center">
                         <span className="block text-center leading-none">{fallbackText}</span>
