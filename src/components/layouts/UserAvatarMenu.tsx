@@ -23,7 +23,7 @@ import { useHasMounted } from "@/hooks/useHasMounted";
 
 export function UserAvatarMenu() {
   const dispatch = useAppDispatch();
-  const { isAuthenticated, user } = useAppSelector((state) => state.auth);
+  const { isAuthenticated, user, sessionResolved } = useAppSelector((state) => state.auth);
   const [isLoginDialogOpen, setIsLoginDialogOpen] = useState(false);
   // 登录态来自 localStorage，SSR 与首个 hydration 帧都无从得知 → getInitialAuthState 返回未登录，
   // 会先画死「登录」按钮再翻成头像（闪一帧）。hydration 完成前不渲染任何终态，只占同尺寸中性位。
@@ -75,8 +75,11 @@ export function UserAvatarMenu() {
     setIsLoginDialogOpen(true);
   };
 
-  // hydration 完成前：渲染同尺寸中性占位，避免 SSR 的未登录默认态闪出「登录」按钮（终态留给客户端定夺）。
-  if (!hasMounted) {
+  // 中性占位（同尺寸）出现在两种「尚不能下登出终态」的情形，避免闪出「登录」按钮：
+  //  1) hydration 未完成：SSR/首帧读不到 localStorage 登录态（终态留给客户端定夺）。
+  //  2) 已挂载但会话未定论且未登录：加载时本地无 token，正由静默 SSO / 刷新恢复会话——
+  //     此窗口本质不是「登出」，若此刻画「登录」按钮，恢复完成翻成头像就成了「登录成功还闪一下登录按钮」。
+  if (!hasMounted || (!isAuthenticated && !sessionResolved)) {
     return (
       <div
         data-testid="avatar-menu-placeholder"

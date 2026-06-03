@@ -8,7 +8,7 @@ vi.mock('jwt-decode', () => ({
   jwtDecode: jwtDecodeMock,
 }));
 
-import authReducer, { checkUserState, logout, setToken } from './authSlice';
+import authReducer, { checkUserState, logout, resolveSession, setToken } from './authSlice';
 
 describe('authSlice', () => {
   beforeEach(() => {
@@ -116,9 +116,26 @@ describe('authSlice', () => {
       token: null,
       status: 'idle',
       error: null,
+      sessionResolved: true,
     });
     expect(localStorage.getItem('auth_token')).toBeNull();
     expect(localStorage.getItem('user_profile')).toBeNull();
     expect(localStorage.getItem('user_profile_timestamp')).toBeNull();
+  });
+
+  // 会话定论标记：未登录态下，只有「已定论登出」才允许头像菜单露出「登录」按钮；
+  // 加载时静默 SSO 恢复在途期间保持未定论 → 头像菜单显示中性占位，杜绝登录按钮闪烁。
+  it('resolveSession marks the session as definitively resolved', () => {
+    const state = authReducer(undefined, resolveSession());
+    expect(state.sessionResolved).toBe(true);
+  });
+
+  it('setToken resolves the session (a definitive auth verdict)', () => {
+    jwtDecodeMock.mockReturnValue({
+      sub: 'user-1',
+      exp: Math.floor(Date.now() / 1000) + 3600,
+    });
+    const state = authReducer(undefined, setToken('valid-token'));
+    expect(state.sessionResolved).toBe(true);
   });
 });
