@@ -74,13 +74,33 @@ describe('UserAvatarMenu', () => {
     expect(screen.queryByRole('button')).toBeNull();
   });
 
-  it('shows a clear login button when unauthenticated', () => {
+  // Regression (cross-app SSO / token-refresh window): on a fresh load where the user is signed
+  // in at the IdP but fusion has no local token yet, isAuthenticated is false WHILE a silent SSO
+  // recovery is in flight (sessionResolved=false). Even after mounting, the avatar must stay on
+  // the neutral placeholder — showing the 登录 button here flashes it for a frame before the
+  // silent login completes and swaps in the avatar. Only a DEFINITIVE logged-out verdict reveals 登录.
+  it('while the session is unresolved (silent SSO recovery in flight): placeholder, not 登录', () => {
     renderMenu({
       isAuthenticated: false,
       token: null,
       status: 'idle',
       error: null,
       user: null,
+      sessionResolved: false,
+    });
+
+    expect(screen.getByTestId('avatar-menu-placeholder')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: '登录' })).toBeNull();
+  });
+
+  it('shows a clear login button when unauthenticated AND the session is resolved (logged-out)', () => {
+    renderMenu({
+      isAuthenticated: false,
+      token: null,
+      status: 'idle',
+      error: null,
+      user: null,
+      sessionResolved: true,
     });
 
     expect(screen.getByRole('button', { name: '登录' })).toBeTruthy();

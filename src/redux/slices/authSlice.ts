@@ -16,6 +16,10 @@ interface AuthState {
   token: string | null;
   status: 'idle' | 'loading' | 'succeeded' | 'failed';
   error: string | null;
+  // 会话是否已「定论」：true = 我们确知用户登入或确知登出；false = 尚不确定（加载时本地无 token，
+  // 可能正由静默 SSO / 刷新恢复会话）。未定论期间 UI 不画登出终态（「登录」按钮），只占中性位，
+  // 避免「登录成功却先闪一下登录按钮」——恢复在途的窗口本就不是登出。
+  sessionResolved: boolean;
 }
 
 interface DecodedToken {
@@ -59,6 +63,9 @@ const getInitialAuthState = (): AuthState => {
     token: null,
     status: 'idle',
     error: null,
+    // 客户端首帧若本地无有效 token：会话尚未定论（可能正静默恢复），先不暴露登出终态。
+    // 服务端渲染同样走这里（无 window），与客户端首帧一致，避免水合不一致。
+    sessionResolved: false,
   };
 
   // 服务端渲染时直接返回默认状态
@@ -85,6 +92,8 @@ const getInitialAuthState = (): AuthState => {
           token: token,
           status: needsProfileRefresh(parsedUser) ? 'idle' : 'succeeded',
           error: null,
+          // 本地有未过期 token：会话已定论为「登入」。
+          sessionResolved: true,
         };
       } else {
         clearAuthStorage();
@@ -129,6 +138,8 @@ const authSlice = createSlice({
   initialState,
   reducers: {
     setToken: (state, action: PayloadAction<string | null>) => {
+      // setToken 的每条分支都得出一个确定的登入/登出结论，故无条件标记会话已定论。
+      state.sessionResolved = true;
       if (action.payload) {
         try {
           const decoded: DecodedToken = jwtDecode(action.payload);
@@ -199,6 +210,13 @@ const authSlice = createSlice({
       state.token = null;
       state.status = 'idle';
       state.error = null;
+      // 显式登出 = 已定论为登出，应露出「登录」终态。
+      state.sessionResolved = true;
+    },
+    // 把会话标记为「已定论」（不改登入/登出本身）。加载侧确认「未发起静默恢复、就是登出」后派发，
+    // 用以解锁头像菜单的登出终态；静默恢复在途时绝不派发，以维持中性占位、杜绝登录按钮闪烁。
+    resolveSession: (state) => {
+      state.sessionResolved = true;
     },
   },
   extraReducers: (builder) => {
@@ -231,7 +249,7 @@ const authSlice = createSlice({
   },
 });
 
-export const { setToken, logout, checkUserState } = authSlice.actions;
+export const { setToken, logout, checkUserState, resolveSession } = authSlice.actions;
 
 // 在 /auth/callback 页消费 auth-service 回调：SDK 内部完成 state 校验 + PKCE 换 token + 落库，
 // 这里只负责把 access token 灌进 Redux 占位并拉取 fusion 自己的完整 profile。

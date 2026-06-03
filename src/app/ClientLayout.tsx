@@ -10,7 +10,7 @@ import { useAppDispatch, useAppSelector } from "@/redux/hooks";
 import { selectIsAuthenticated } from "@/redux/selectors";
 
 import { Toaster } from "react-hot-toast";
-import { checkUserState, fetchUserProfile, revalidateToken } from "@/redux/slices/authSlice";
+import { checkUserState, fetchUserProfile, resolveSession, revalidateToken } from "@/redux/slices/authSlice";
 import { maybeSilentLogin } from "@/lib/auth/sso-probe";
 import { LoginDialog } from "@/components/auth/LoginDialog";
 import { SettingsDialog } from "@/components/settings/SettingsDialog";
@@ -120,8 +120,13 @@ const ClientLayout = ({ children }: { children: React.ReactNode }) => {
       // 不再弹登录框；未命中/已探测过/无 sessionStorage 时回落到原弹框逻辑。
       const path = window.location.pathname + window.location.search;
       if (maybeSilentLogin(path)) {
+        // 静默 SSO 恢复已发起（页面正跳走换码）：会话尚未定论，保持未定论 → 头像菜单显示中性占位，
+        // 绝不在此刻露出「登录」按钮，否则恢复成功翻头像就成了「登录成功还闪一下登录按钮」。
         return;
       }
+      // 没有发起静默恢复（本标签页已探测过 / 无 sessionStorage 等）：会话已定论为登出，
+      // 解锁头像菜单的「登录」终态（在此之前一直是中性占位）。
+      dispatch(resolveSession());
       const timer = setTimeout(() => {
         setIsLoginDialogOpen(true);
         setHasShownInitialLogin(true);

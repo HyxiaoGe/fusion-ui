@@ -14,6 +14,7 @@ const {
   checkUserStateMock,
   fetchUserProfileMock,
   revalidateTokenMock,
+  resolveSessionMock,
   setGlobalToastMock,
   maybeSilentLoginMock,
 } = vi.hoisted(() => ({
@@ -31,6 +32,7 @@ const {
   checkUserStateMock: vi.fn(() => ({ type: 'auth/checkUserState' })),
   fetchUserProfileMock: vi.fn(() => ({ type: 'auth/fetchUserProfile' })),
   revalidateTokenMock: vi.fn(() => ({ type: 'auth/revalidateToken' })),
+  resolveSessionMock: vi.fn(() => ({ type: 'auth/resolveSession' })),
   setGlobalToastMock: vi.fn(),
   maybeSilentLoginMock: vi.fn(() => false),
 }));
@@ -65,6 +67,7 @@ vi.mock('@/redux/slices/authSlice', () => ({
   checkUserState: checkUserStateMock,
   fetchUserProfile: fetchUserProfileMock,
   revalidateToken: revalidateTokenMock,
+  resolveSession: resolveSessionMock,
   setToken: vi.fn(),
 }));
 
@@ -118,6 +121,7 @@ describe('ClientLayout', () => {
     checkUserStateMock.mockClear();
     fetchUserProfileMock.mockClear();
     revalidateTokenMock.mockClear();
+    resolveSessionMock.mockClear();
     setGlobalToastMock.mockClear();
     maybeSilentLoginMock.mockReset();
     maybeSilentLoginMock.mockReturnValue(false);
@@ -229,5 +233,32 @@ describe('ClientLayout', () => {
     await new Promise(resolve => setTimeout(resolve, 1700));
 
     expect(screen.getByTestId('login-dialog').getAttribute('data-open')).toBe('false');
+  });
+
+  it('resolves the session (reveals the login terminal) when staying logged-out — no silent probe', async () => {
+    // 未登录、没有发起静默 SSO 跳转：会话已定论为登出，派发 resolveSession 解锁头像菜单的「登录」终态。
+    maybeSilentLoginMock.mockReturnValue(false);
+
+    render(
+      React.createElement(ClientLayout, null, React.createElement('div', null, 'child'))
+    );
+
+    await waitFor(() => {
+      expect(appDispatchMock).toHaveBeenCalledWith({ type: 'auth/resolveSession' });
+    });
+  });
+
+  it('does NOT resolve the session while a silent SSO recovery is in flight (avoids the login-button flash)', async () => {
+    // 静默恢复在途（页面正跳走换码）：会话尚未定论，绝不 resolveSession，否则头像会先闪「登录」再翻头像。
+    maybeSilentLoginMock.mockReturnValue(true);
+
+    render(
+      React.createElement(ClientLayout, null, React.createElement('div', null, 'child'))
+    );
+
+    await waitFor(() => expect(maybeSilentLoginMock).toHaveBeenCalled());
+    await new Promise(resolve => setTimeout(resolve, 50));
+
+    expect(appDispatchMock).not.toHaveBeenCalledWith({ type: 'auth/resolveSession' });
   });
 });
