@@ -44,6 +44,7 @@ import {
   getStoredAccessToken,
   getStoredRefreshToken,
   getValidAccessToken,
+  probeSessionLiveness,
   revokeSsoSession,
   startSsoLogin,
 } from './authService';
@@ -103,6 +104,53 @@ describe('authService SDK adapter', () => {
     // shared IdP session so logging out of fusion logs the user out of every SSO app
     // (「一处登出、处处登出」). A bare logout() would only revoke this app's token.
     expect(logoutMock).toHaveBeenCalledWith({ global: true });
+  });
+
+  it('probeSessionLiveness GETs the denylist-protected /api/auth/me with the bearer token and resolves on 2xx', async () => {
+    // 同源相对路径（API_CONFIG.BASE_URL=''），绕开 fetchWithAuth 的 401-force-refresh：只读、不轮换。
+    const fetchMock = vi.fn(async () => ({ ok: true, status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(probeSessionLiveness('tok-123')).resolves.toBeUndefined();
+    expect(fetchMock).toHaveBeenCalledWith('/api/auth/me', {
+      headers: { Authorization: 'Bearer tok-123' },
+    });
+
+    vi.unstubAllGlobals();
+  });
+
+  it('probeSessionLiveness throws with the HTTP status in the message on 401 (logged out elsewhere)', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: false, status: 401 })));
+
+    await expect(probeSessionLiveness('tok')).rejects.toThrow(/401/);
+
+    vi.unstubAllGlobals();
+  });
+
+  it('probeSessionLiveness throws with 403 in the message (isAuthRejection treats it as logged-out)', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: false, status: 403 })));
+
+    await expect(probeSessionLiveness('tok')).rejects.toThrow(/403/);
+
+    vi.unstubAllGlobals();
+  });
+
+  it('probeSessionLiveness throws with 5xx in the message (isAuthRejection keeps the session — transient)', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: false, status: 502 })));
+
+    await expect(probeSessionLiveness('tok')).rejects.toThrow(/502/);
+
+    vi.unstubAllGlobals();
+  });
+
+  it('probeSessionLiveness propagates a network error (caller treats it as transient → keep session)', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => {
+      throw new TypeError('Failed to fetch');
+    }));
+
+    await expect(probeSessionLiveness('tok')).rejects.toThrow('Failed to fetch');
+
+    vi.unstubAllGlobals();
   });
 
   it('storage helpers read fusion keys and clearAuthStorage wipes every auth key', () => {

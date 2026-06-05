@@ -17,6 +17,7 @@ import {
 } from 'auth-client-web';
 import { configureAuth } from './auth-sdk';
 import { clearSsoReturn } from './sso-probe';
+import { API_CONFIG } from '../config';
 
 const ACCESS_TOKEN_KEY = 'auth_token';
 const REFRESH_TOKEN_KEY = 'auth_refresh_token';
@@ -54,6 +55,25 @@ export async function getValidAccessToken(): Promise<string | null> {
 export function forceRefreshAccessToken(): Promise<string | null> {
   configureAuth();
   return sdkRefresh();
+}
+
+/**
+ * Read-only single-logout liveness probe. Hits a denylist-protected fusion-api endpoint
+ * (`/api/auth/me` → `get_current_user`, which consults the shared-Redis SLO revocation marker)
+ * with the supplied access token, DELIBERATELY using a raw fetch instead of fetchWithAuth — the
+ * latter force-refreshes on 401, which is exactly the rotation churn we are removing from the
+ * focus path. A token revoked by a logout in another app still has a valid RS256 signature but is
+ * rejected here with 401. Throws an Error whose message carries the HTTP status on any non-2xx, so
+ * the caller can tell a definitive auth rejection (401/403 → logged out elsewhere) apart from a
+ * transient failure (5xx / network throw → keep the session). This performs NO token rotation.
+ */
+export async function probeSessionLiveness(token: string): Promise<void> {
+  const response = await fetch(`${API_CONFIG.BASE_URL}/api/auth/me`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!response.ok) {
+    throw new Error(`liveness probe failed (${response.status})`);
+  }
 }
 
 /**

@@ -10,7 +10,7 @@ import { useAppDispatch, useAppSelector } from "@/redux/hooks";
 import { selectIsAuthenticated } from "@/redux/selectors";
 
 import { Toaster } from "react-hot-toast";
-import { checkUserState, fetchUserProfile, resolveSession, revalidateToken } from "@/redux/slices/authSlice";
+import { checkUserState, checkLiveness, fetchUserProfile, resolveSession } from "@/redux/slices/authSlice";
 import { maybeSilentLogin } from "@/lib/auth/sso-probe";
 import { LoginDialog } from "@/components/auth/LoginDialog";
 import { SettingsDialog } from "@/components/settings/SettingsDialog";
@@ -79,25 +79,29 @@ const ClientLayout = ({ children }: { children: React.ReactNode }) => {
   
   useEffect(() => {
     // 跨应用单点登出（SLO）落地窗口：别处登出后，本标签页手里的 access token 签名仍然有效、
-    // 本地无从察觉，直到它过期。标签页重新聚焦 / 重新变为可见时，强制校验一次令牌
-    // （revalidateToken 走 SDK refresh 做服务端往返，refresh token 被吊销则翻转为未登录）。
+    // 本地无从察觉，直到它过期。标签页重新聚焦 / 重新变为可见时做一次【只读】存活探测
+    // （checkLiveness：取本地 token + 打查 denylist 的 /api/auth/me，被吊销则翻转未登录；
+    // 绝不强制轮换 refresh token——强制轮换在慢隧道下会引发失同步被动登出）。另挂一个低频
+    // 定时器兜底「长时间聚焦却空闲、不切标签也不发受保护请求」的页面（纯 SSE/阅读态）的盲区。
     // 仅在已登录态挂监听；切回标签页常同时触发 focus + visibilitychange，用最小间隔去抖成一次。
     if (!isAuthenticated) return;
     let lastAt = 0;
-    const revalidate = () => {
+    const runLivenessProbe = () => {
       const now = Date.now();
       if (now - lastAt < 3000) return;
       lastAt = now;
-      dispatch(revalidateToken());
+      dispatch(checkLiveness());
     };
     const onVisibility = () => {
-      if (document.visibilityState === "visible") revalidate();
+      if (document.visibilityState === "visible") runLivenessProbe();
     };
-    window.addEventListener("focus", revalidate);
+    window.addEventListener("focus", runLivenessProbe);
     document.addEventListener("visibilitychange", onVisibility);
+    const interval = window.setInterval(runLivenessProbe, 5 * 60 * 1000);
     return () => {
-      window.removeEventListener("focus", revalidate);
+      window.removeEventListener("focus", runLivenessProbe);
       document.removeEventListener("visibilitychange", onVisibility);
+      window.clearInterval(interval);
     };
   }, [dispatch, isAuthenticated]);
 
