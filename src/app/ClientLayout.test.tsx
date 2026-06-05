@@ -13,7 +13,7 @@ const {
   updateProvidersMock,
   checkUserStateMock,
   fetchUserProfileMock,
-  revalidateTokenMock,
+  checkLivenessMock,
   resolveSessionMock,
   setGlobalToastMock,
   maybeSilentLoginMock,
@@ -31,7 +31,7 @@ const {
   updateProvidersMock: vi.fn((providers: unknown) => ({ type: 'models/updateProviders', payload: providers })),
   checkUserStateMock: vi.fn(() => ({ type: 'auth/checkUserState' })),
   fetchUserProfileMock: vi.fn(() => ({ type: 'auth/fetchUserProfile' })),
-  revalidateTokenMock: vi.fn(() => ({ type: 'auth/revalidateToken' })),
+  checkLivenessMock: vi.fn(() => ({ type: 'auth/checkLiveness' })),
   resolveSessionMock: vi.fn(() => ({ type: 'auth/resolveSession' })),
   setGlobalToastMock: vi.fn(),
   maybeSilentLoginMock: vi.fn(() => false),
@@ -66,7 +66,7 @@ vi.mock('@/redux/slices/modelsSlice', () => ({
 vi.mock('@/redux/slices/authSlice', () => ({
   checkUserState: checkUserStateMock,
   fetchUserProfile: fetchUserProfileMock,
-  revalidateToken: revalidateTokenMock,
+  checkLiveness: checkLivenessMock,
   resolveSession: resolveSessionMock,
   setToken: vi.fn(),
 }));
@@ -120,7 +120,7 @@ describe('ClientLayout', () => {
     updateProvidersMock.mockClear();
     checkUserStateMock.mockClear();
     fetchUserProfileMock.mockClear();
-    revalidateTokenMock.mockClear();
+    checkLivenessMock.mockClear();
     resolveSessionMock.mockClear();
     setGlobalToastMock.mockClear();
     maybeSilentLoginMock.mockReset();
@@ -178,8 +178,8 @@ describe('ClientLayout', () => {
     });
   });
 
-  it('revalidates the token on window focus when authenticated (SLO probe)', async () => {
-    // 跨应用单点登出：别处登出后本标签页令牌仍密码学有效，重新聚焦时强制校验一次。
+  it('runs a read-only liveness probe on window focus when authenticated (SLO)', async () => {
+    // 跨应用单点登出：别处登出后本标签页令牌仍密码学有效，重新聚焦时做一次【只读】存活探测。
     currentAuthState.isAuthenticated = true;
     currentAuthState.status = 'succeeded';
 
@@ -193,11 +193,55 @@ describe('ClientLayout', () => {
     window.dispatchEvent(new Event('focus'));
 
     await waitFor(() => {
-      expect(appDispatchMock).toHaveBeenCalledWith({ type: 'auth/revalidateToken' });
+      expect(appDispatchMock).toHaveBeenCalledWith({ type: 'auth/checkLiveness' });
     });
   });
 
-  it('does NOT revalidate on focus when unauthenticated (no token to verify)', async () => {
+  it('runs the liveness probe when the tab becomes visible again (visibilitychange → visible)', async () => {
+    currentAuthState.isAuthenticated = true;
+    currentAuthState.status = 'succeeded';
+
+    render(
+      React.createElement(ClientLayout, null, React.createElement('div', null, 'child'))
+    );
+
+    await waitFor(() => expect(checkUserStateMock).toHaveBeenCalled());
+    appDispatchMock.mockClear();
+
+    Object.defineProperty(document, 'visibilityState', { value: 'visible', configurable: true });
+    document.dispatchEvent(new Event('visibilitychange'));
+
+    await waitFor(() => {
+      expect(appDispatchMock).toHaveBeenCalledWith({ type: 'auth/checkLiveness' });
+    });
+  });
+
+  it('coalesces focus + visibilitychange within the 3s debounce into a single probe', async () => {
+    // 切回标签页常同时触发 focus + visibilitychange；去抖刻意把它们合并成一次探测，避免双打 /api/auth/me。
+    currentAuthState.isAuthenticated = true;
+    currentAuthState.status = 'succeeded';
+
+    render(
+      React.createElement(ClientLayout, null, React.createElement('div', null, 'child'))
+    );
+
+    await waitFor(() => expect(checkUserStateMock).toHaveBeenCalled());
+    appDispatchMock.mockClear();
+
+    window.dispatchEvent(new Event('focus'));
+    Object.defineProperty(document, 'visibilityState', { value: 'visible', configurable: true });
+    document.dispatchEvent(new Event('visibilitychange'));
+
+    await waitFor(() => {
+      expect(appDispatchMock).toHaveBeenCalledWith({ type: 'auth/checkLiveness' });
+    });
+    const probeDispatches = appDispatchMock.mock.calls.filter(
+      (c) => c[0] && c[0].type === 'auth/checkLiveness'
+    );
+    expect(probeDispatches).toHaveLength(1);
+  });
+
+  it('does NOT probe on focus when unauthenticated (no token to verify)', async () => {
     currentAuthState.isAuthenticated = false;
 
     render(
@@ -208,7 +252,27 @@ describe('ClientLayout', () => {
     window.dispatchEvent(new Event('focus'));
     await new Promise(resolve => setTimeout(resolve, 50));
 
-    expect(appDispatchMock).not.toHaveBeenCalledWith({ type: 'auth/revalidateToken' });
+    expect(appDispatchMock).not.toHaveBeenCalledWith({ type: 'auth/checkLiveness' });
+  });
+
+  it('runs the low-frequency liveness probe on the 5-minute backstop timer when authenticated', async () => {
+    // 兜底盲区：长时间聚焦却空闲、不切标签也不发受保护请求（纯 SSE / 阅读态）的页面，
+    // 靠定时只读探测感知别处登出。用假定时器推进 5 分钟，断言 checkLiveness 被派发。
+    vi.useFakeTimers();
+    currentAuthState.isAuthenticated = true;
+    currentAuthState.status = 'succeeded';
+
+    render(
+      React.createElement(ClientLayout, null, React.createElement('div', null, 'child'))
+    );
+
+    // 清掉挂载期（checkUserState 等）的派发，只观察定时器触发的那一次。
+    await vi.advanceTimersByTimeAsync(0);
+    appDispatchMock.mockClear();
+
+    await vi.advanceTimersByTimeAsync(5 * 60 * 1000);
+
+    expect(appDispatchMock).toHaveBeenCalledWith({ type: 'auth/checkLiveness' });
   });
 
   it('does NOT open the login dialog when the silent SSO probe fires (page is navigating away)', async () => {

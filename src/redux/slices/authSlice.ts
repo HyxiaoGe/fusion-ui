@@ -4,8 +4,9 @@ import { fetchUserProfileAPI, updateUserSettingsAPI, UserProfile } from '../../l
 import {
   clearAuthStorage,
   completeSsoCallback,
-  forceRefreshAccessToken,
   getStoredAccessToken,
+  getValidAccessToken,
+  probeSessionLiveness,
   revokeSsoSession,
 } from '@/lib/auth/authService';
 import { isSafeReturnPath, markSsoProbed, takeSsoReturnPath } from '@/lib/auth/sso-probe';
@@ -291,21 +292,48 @@ export const completeLogin = createAsyncThunk<
   }
 });
 
-// 跨应用单点登出（SLO）的前端探测：别处登出后，本标签页手里的 access token 签名仍然有效、
-// 本地无从察觉。标签页重新聚焦/可见或接口 401 时强制走一次服务端刷新（forceRefreshAccessToken →
-// SDK refresh）：refresh token 已被吊销 → 定论失败返回 null → 翻转为未登录；会话仍在 → SDK 已
-// 轮转令牌（此处不 dispatch setToken，否则 buildTokenUser 会用最小信息覆盖完整 profile）；瞬时
-// 网络故障 → throw，绝不登出（与 getValidAccessToken 同一套语义）。
-export const revalidateToken = createAsyncThunk('auth/revalidateToken', async (_, { dispatch }) => {
+// userinfo / 存活探测失败是否为「服务端明确拒绝」（401 未授权 / 403 禁止）——即别处已登出 / 令牌
+// 被吊销，应登出。raw fetch 的探测抛出形如 "liveness probe failed (401)" 的 Error；仅当能确凿识别
+// 出 401/403 时返回 true。任何含糊（网络中断 / 5xx / 解析异常）一律返回 false → 保持登录，把误登出
+// 风险压到零（漏判由下一次正常 API 请求的 401 或 token 过期兜底）。
+function isAuthRejection(err: unknown): boolean {
+  const message = err instanceof Error ? err.message : String(err);
+  return /\b40[13]\b/.test(message);
+}
+
+// 跨应用单点登出（SLO）的前端存活探测：别处登出后，本标签页手里的 access token 在过期前签名仍然
+// 有效、本地无从察觉。标签页重新聚焦/可见或低频定时器触发时调用——【绝不强制轮换 refresh token】
+// （旧版 revalidateToken 调 forceRefreshAccessToken 每次切标签都轮换一张一次性 refresh token，慢隧道
+// 下丢响应即触发复用检测 → 失同步被动登出，这正是本次要根除的 churn）。注意区分 churn 与正常续期：
+// getValidAccessToken 在 token 未过期时直接返回缓存票、【零轮换】（绝大多数 focus 场景）；仅当 token
+// 临界过期才按需刷新一次——这是必要续期、且不再是旧版「每次 focus 都轮换」的 churn。【不能】改用纯读
+// 的 getStoredAccessToken：过期票直接拿去探测会被 /api/auth/me 拒 401，误判成「别处登出」而误登出。
+// 流程：取本地 access token，再打一次查 denylist 的受保护端点 /api/auth/me——别处登出后这张票被吊销
+// 标记拒为 401 → 翻转未登录。
+//   - getValidAccessToken 返回 null（刷新被定论拒绝 / 无票，SDK 已清自身会话）→ logout；
+//   - getValidAccessToken 抛错（瞬时网络故障）→ 保持现状，绝不登出；
+//   - 探测 401/403（别处登出）→ logout；探测 5xx / 网络抖动 / 解析失败 → 保持登录。
+// 401 重试仍走 fetchWithAuth 的 forceRefreshAccessToken（那里必须强制刷新拿服务端轮换后的新票重试）。
+export const checkLiveness = createAsyncThunk('auth/checkLiveness', async (_, { dispatch }) => {
+  let token: string | null;
   try {
-    const token = await forceRefreshAccessToken();
-    if (token === null) {
-      dispatch(logout());
-    }
-    return token;
+    token = await getValidAccessToken();
   } catch {
+    return null; // 瞬时网络故障：保持现状，不登出
+  }
+  if (token === null) {
+    dispatch(logout()); // 定论失败（刷新被拒 / 无票），SDK 已清自身会话
     return null;
   }
+  try {
+    await probeSessionLiveness(token);
+  } catch (err) {
+    if (isAuthRejection(err)) {
+      dispatch(logout()); // 401/403：别处已登出 / 令牌被吊销
+    }
+    // 否则瞬时 / 5xx：保持登录
+  }
+  return token;
 });
 
 // 退出登录：先尽力撤销 SSO 会话（失败也不阻塞），再无条件清掉本地 Redux + 存储。
