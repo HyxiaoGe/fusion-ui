@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 // The probe redirects via the SDK's silentLogin (prompt=none). Fake that boundary + configureAuth
 // so the test asserts the guard/capture logic, not the SDK redirect itself.
@@ -28,11 +28,25 @@ const PROBED_KEY = 'fusion_sso_probed';
 const RETURN_KEY = 'fusion_sso_return';
 const ACCESS_TOKEN_KEY = 'auth_token';
 
+const realGetEntriesByType = performance.getEntriesByType?.bind(performance);
+function setNavigationType(type: 'navigate' | 'reload' | null): void {
+  const entries = (type === null ? [] : [{ type }]) as unknown as PerformanceEntryList;
+  performance.getEntriesByType = (() => entries) as Performance['getEntriesByType'];
+}
+
 describe('sso-probe: one-shot silent SSO on app load', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     localStorage.clear();
     sessionStorage.clear();
+    setNavigationType('navigate');
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    if (realGetEntriesByType) {
+      performance.getEntriesByType = realGetEntriesByType as Performance['getEntriesByType'];
+    }
   });
 
   it('fires once when there is no token, captures the origin path and sets the loop guard', () => {
@@ -69,9 +83,18 @@ describe('sso-probe: one-shot silent SSO on app load', () => {
 
   it('does NOT fire a second time once the guard is set (no redirect loop)', () => {
     sessionStorage.setItem(PROBED_KEY, '1');
+    setNavigationType('navigate');
 
     expect(maybeSilentLogin('/chat')).toBe(false);
     expect(mockedSilentLogin).not.toHaveBeenCalled();
+  });
+
+  it('RE-fires on a genuine manual reload even though the per-tab guard is set (picks up a cross-app login)', () => {
+    sessionStorage.setItem(PROBED_KEY, '1');
+    setNavigationType('reload');
+
+    expect(maybeSilentLogin('/chat')).toBe(true);
+    expect(mockedSilentLogin).toHaveBeenCalledTimes(1);
   });
 
   it('does NOT fire while on the callback path (mid token-exchange)', () => {
@@ -82,6 +105,14 @@ describe('sso-probe: one-shot silent SSO on app load', () => {
   it('markSsoProbed suppresses any later probe (used by logout to block silent re-login)', () => {
     markSsoProbed();
     expect(sessionStorage.getItem(PROBED_KEY)).toBe('1');
+    expect(maybeSilentLogin('/chat')).toBe(false);
+    expect(mockedSilentLogin).not.toHaveBeenCalled();
+  });
+
+  it('markSsoProbed blocks silent re-login even on a manual reload', () => {
+    markSsoProbed();
+    setNavigationType('reload');
+
     expect(maybeSilentLogin('/chat')).toBe(false);
     expect(mockedSilentLogin).not.toHaveBeenCalled();
   });

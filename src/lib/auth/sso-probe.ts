@@ -6,11 +6,12 @@
  * fusion 是软门禁，未登录也可浏览/由 LoginDialog 兜底）。
  *
  * 关键不变量（与 audio P3.2b 对称）：
- *  - 每个标签页至多探测一次（PROBED 守卫在跳转前同步落库，回来后阻止再探，杜绝重定向死循环）。
+ *  - 每标签页默认只探一次；用户真·手动刷新时允许再探一次，以拾取别处刚建立的 IdP 会话。
+ *    自动跳转返回那一圈是 navigate，不会触发 reload 放行，故不会重新引入重定向死循环。
  *  - 探测前记下原始路径（RETURN），HIT/MISS 都据此回到用户本来要去的页面。
  *  - 回调换码期间（/auth/callback）绝不探测，避免冲掉正在进行的换码。
  *  - sessionStorage 不可用时直接放弃探测（失败保守，绝不冒死循环风险）。
- *  - 登出调用 markSsoProbed() 落守卫，防止登出后被静默重新登入。
+ *  - 登出调用 markSsoProbed() 落显式登出守卫，刷新也不能绕过，防止登出后被静默重新登入。
  */
 
 import { silentLogin as sdkSilentLogin } from 'auth-client-web';
@@ -18,9 +19,19 @@ import { silentLogin as sdkSilentLogin } from 'auth-client-web';
 import { configureAuth } from '@/lib/auth/auth-sdk';
 
 const PROBED_KEY = 'fusion_sso_probed';
+const LOGGED_OUT_KEY = 'fusion_sso_logged_out';
 const RETURN_KEY = 'fusion_sso_return';
 const ACCESS_TOKEN_KEY = 'auth_token';
 const CALLBACK_PATH = '/auth/callback';
+
+function isReload(): boolean {
+  try {
+    const nav = performance.getEntriesByType('navigation')[0] as PerformanceNavigationTiming | undefined;
+    return nav?.type === 'reload';
+  } catch {
+    return false;
+  }
+}
 
 /**
  * 仅接受「单个前导斜杠的同源相对路径」，拒绝协议相对(//host)与反斜杠(/\host)等开放重定向向量。
@@ -40,10 +51,12 @@ function session(): Storage | null {
   }
 }
 
-/** 落「已探测/勿探测」守卫——登出时调用以阻止登出后被静默重新登入。 */
+/** 落「已登出/勿自动重登」守卫——登出时调用以阻止登出后被静默重新登入。 */
 export function markSsoProbed(): void {
   try {
-    session()?.setItem(PROBED_KEY, '1');
+    const s = session();
+    s?.setItem(PROBED_KEY, '1');
+    s?.setItem(LOGGED_OUT_KEY, '1');
   } catch {
     // ignore
   }
@@ -99,16 +112,19 @@ export function maybeSilentLogin(currentPath: string): boolean {
   if (!s) return false; // 无 sessionStorage → 保守放弃，绝不死循环
   if (currentPath.startsWith(CALLBACK_PATH)) return false; // 换码进行中，勿探测
 
+  let loggedOut: string | null;
   let probed: string | null;
   let token: string | null;
   try {
+    loggedOut = s.getItem(LOGGED_OUT_KEY);
     probed = s.getItem(PROBED_KEY);
     token = window.localStorage.getItem(ACCESS_TOKEN_KEY);
   } catch {
     return false;
   }
-  if (probed) return false; // 本标签页已探测过
   if (token) return false; // 已有本地会话
+  if (loggedOut) return false; // 显式登出过：绝不自动重登（刷新也不绕过）
+  if (probed && !isReload()) return false; // 本标签页已探测过；仅真·手动刷新放行重探
 
   // 跳转前同步落守卫 + 原始路径（sessionStorage 同步写入，跨这次顶层跳转存活）。
   // 原始路径先过开放重定向校验：不安全（协议相对/反斜杠站外）则回退到首页，绝不把站外目标带回。
