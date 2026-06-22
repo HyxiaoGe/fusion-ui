@@ -2,6 +2,7 @@ export type AgentRunStatus =
   | 'running'
   | 'completed'
   | 'limit_reached'
+  | 'incomplete'
   | 'interrupted'
   | 'failed';
 

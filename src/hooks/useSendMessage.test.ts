@@ -571,6 +571,100 @@ describe('useSendMessage', () => {
     expect(getConversationMock).not.toHaveBeenCalled();
   });
 
+  it('run_completed finish_reason=incomplete 时保留 incomplete 状态', async () => {
+    const store = createStore();
+    store.dispatch(
+      upsertConversation({
+        id: 'existing-conv',
+        title: 'Existing',
+        model_id: 'model-1',
+        messages: [],
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      })
+    );
+
+    sendMessageStreamMock.mockImplementationOnce(async (_payload: any, callbacks: StreamCallbacks) => {
+      callbacks.onReady({ messageId: 'assistant-1', conversationId: 'existing-conv' });
+      callbacks.onRunStarted?.({
+        type: 'run_started',
+        run_id: 'run-1',
+        parent_run_id: null,
+        step_id: null,
+        parent_step_id: null,
+        tool_call_id: null,
+        sequence: 1,
+        trace_id: 'trace-1',
+        ts: Date.now(),
+        conversation_id: 'existing-conv',
+        message_id: 'assistant-1',
+        model: 'model-1',
+        tools: [],
+        config: { max_steps: 5, max_tool_calls: 10, timeout_s: 60 },
+      });
+      callbacks.onStepStarted?.({
+        type: 'step_started',
+        run_id: 'run-1',
+        parent_run_id: null,
+        step_id: 'step-1',
+        parent_step_id: null,
+        tool_call_id: null,
+        sequence: 2,
+        trace_id: 'trace-1',
+        ts: Date.now(),
+        step_number: 1,
+      });
+      callbacks.onAnswering({ block_id: 'blk_c', delta: 'partial answer' });
+      callbacks.onStepCompleted?.({
+        type: 'step_completed',
+        run_id: 'run-1',
+        parent_run_id: null,
+        step_id: 'step-1',
+        parent_step_id: null,
+        tool_call_id: null,
+        sequence: 3,
+        trace_id: 'trace-1',
+        ts: Date.now(),
+        step_number: 1,
+        tool_call_count: 0,
+        duration_ms: 10,
+      });
+      callbacks.onRunCompleted?.({
+        type: 'run_completed',
+        run_id: 'run-1',
+        parent_run_id: null,
+        step_id: null,
+        parent_step_id: null,
+        tool_call_id: null,
+        sequence: 4,
+        trace_id: 'trace-1',
+        ts: Date.now(),
+        total_steps: 1,
+        total_tool_calls: 0,
+        finish_reason: 'incomplete',
+      });
+      callbacks.onDone({ messageId: 'assistant-1', conversationId: 'existing-conv' });
+    });
+
+    const { result } = renderHook(() => useSendMessage(), {
+      wrapper: createWrapper(store),
+    });
+
+    await act(async () => {
+      await result.current.sendMessage('hello', { conversationId: 'existing-conv' });
+    });
+
+    await act(async () => {
+      tickIntervals(5);
+    });
+
+    await waitFor(() => {
+      expect(store.getState().stream.isStreaming).toBe(false);
+    });
+
+    expect(store.getState().stream.currentRun?.status).toBe('incomplete');
+  });
+
   it('agent run 含 tool_call：仍触发 agent DB refresh', async () => {
     const store = createStore();
     store.dispatch(

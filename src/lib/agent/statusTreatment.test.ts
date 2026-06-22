@@ -5,17 +5,17 @@ import {
 } from './statusTreatment';
 
 describe('statusTreatment', () => {
-  it('RUN_STATUS_TREATMENT 覆盖所有 5 种 run 状态', () => {
-    const required: ('running' | 'completed' | 'limit_reached' | 'interrupted' | 'failed')[] =
-      ['running', 'completed', 'limit_reached', 'interrupted', 'failed'];
+  it('RUN_STATUS_TREATMENT 覆盖所有 6 种 run 状态', () => {
+    const required = ['running', 'completed', 'limit_reached', 'incomplete', 'interrupted', 'failed'] as const;
     required.forEach(s => {
       expect(RUN_STATUS_TREATMENT[s]).toBeDefined();
       expect(RUN_STATUS_TREATMENT[s].label).toBeTruthy();
     });
   });
 
-  it('limit_reached 视为 completed 子类（color 是 warn 不是 danger）', () => {
+  it('limit_reached / incomplete 都是 warn，不当作 danger 失败', () => {
     expect(RUN_STATUS_TREATMENT.limit_reached.color).toBe('warn');
+    expect(RUN_STATUS_TREATMENT.incomplete.color).toBe('warn');
     expect(RUN_STATUS_TREATMENT.failed.color).toBe('danger');
   });
 

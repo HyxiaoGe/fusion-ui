@@ -73,6 +73,14 @@ describe('RunBanner', () => {
     expect(onRetry).toHaveBeenCalled();
   });
 
+  it('incomplete 显示部分完成 banner + 重试按钮', () => {
+    const onRetry = vi.fn();
+    render(<RunBanner run={run({ status: 'incomplete' })} onRetry={onRetry} />);
+    expect(screen.getByText(/回答可能不完整/)).toBeInTheDocument();
+    fireEvent.click(screen.getByText(/重新提问/));
+    expect(onRetry).toHaveBeenCalledTimes(1);
+  });
+
   it('failed 但 onRetry 未传时不显示重试按钮（contract §7 不做 fake CTA）', () => {
     render(<RunBanner run={run({
       status: 'failed',

@@ -22,6 +22,7 @@ export const RUN_STATUS_TREATMENT: Record<AgentRunStatus, StatusTreatment> = {
   completed:     { color: 'success', icon: CheckCircle2,   label: '已完成' },
   // contract §2：limit_reached 视为 "completed 的特殊子类"——成功基底 + warn 警示
   limit_reached: { color: 'warn',    icon: AlertTriangle,  label: '已达上限' },
+  incomplete:    { color: 'warn',    icon: AlertTriangle,  label: '部分完成' },
   interrupted:   { color: 'neutral', icon: Square,         label: '已中断' },
   failed:        { color: 'danger',  icon: AlertCircle,    label: '失败' },
 };

@@ -41,6 +41,7 @@ import { useSendMessage } from '@/hooks/useSendMessage';
 import { useSuggestedQuestions } from '@/hooks/useSuggestedQuestions';
 import { useSuggestedQuestionContinuation } from '@/hooks/useSuggestedQuestionContinuation';
 import { useTransientCompletionState } from '@/hooks/useTransientCompletionState';
+import { getRunStatusFromFinishReason } from '@/lib/agent/finishReason';
 import { shouldAutoFetchSuggestedQuestions } from '@/lib/chat/suggestedQuestionTiming';
 
 export default function ChatPage() {
@@ -246,7 +247,7 @@ export default function ChatPage() {
             if (cancelled) return;
             dispatch(finalizeRun({
               runId: ev.run_id,
-              status: ev.finish_reason === 'limit_reached' ? 'limit_reached' : 'completed',
+              status: getRunStatusFromFinishReason(ev.finish_reason),
               sequence: ev.sequence,
             }));
           },

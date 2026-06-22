@@ -83,5 +83,27 @@ export function RunBanner({ run, onRetry }: RunBannerProps) {
     );
   }
 
+  if (run.status === 'incomplete') {
+    return (
+      <div className="rounded-lg border border-warn/30 bg-warn/5 p-3 flex items-start gap-2 mb-2">
+        <AlertTriangle className="w-4 h-4 text-warn shrink-0 mt-0.5" />
+        <div className="flex-1 min-w-0">
+          <div className="text-sm font-medium text-warn">回答可能不完整</div>
+          <div className="text-xs text-muted-foreground mt-0.5">模型提前结束，已保留当前已生成的内容。</div>
+        </div>
+        {onRetry && (
+          <button
+            type="button"
+            onClick={onRetry}
+            className="shrink-0 inline-flex items-center gap-1 px-2 py-1 rounded border border-warn/30 text-xs text-warn hover:bg-warn/10 transition-colors duration-fast"
+          >
+            <RotateCw className="w-3 h-3" />
+            重新提问
+          </button>
+        )}
+      </div>
+    );
+  }
+
   return null;
 }

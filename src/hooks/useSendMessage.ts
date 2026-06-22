@@ -38,6 +38,7 @@ import {
 import type { LimitReachedReason, ToolCallResultSummary, FinalizeToolCallStatus } from '@/types/agentRun';
 import { sendMessageStream, getConversation } from '@/lib/api/chat';
 import { generateChatTitle } from '@/lib/api/title';
+import { getRunStatusFromFinishReason } from '@/lib/agent/finishReason';
 import type { Message, ContentBlock } from '@/types/conversation';
 import type { FileAttachment } from '@/lib/utils/fileHelpers';
 import { useTypewriter } from './useTypewriter';
@@ -489,7 +490,7 @@ export function useSendMessage() {
               if (!activeConvIdRef.current) return;
               dispatch(finalizeRun({
                 runId: ev.run_id,
-                status: ev.finish_reason === 'limit_reached' ? 'limit_reached' : 'completed',
+                status: getRunStatusFromFinishReason(ev.finish_reason),
                 sequence: ev.sequence,
               }));
             },

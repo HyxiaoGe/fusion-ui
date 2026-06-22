@@ -2,6 +2,7 @@ import { createSlice, PayloadAction } from '@reduxjs/toolkit';
 import type { ContentBlock, SearchSourceSummary } from '@/types/conversation';
 import type {
   AgentRunState,
+  AgentRunStatus,
   LimitReachedReason,
   ToolCallResultSummary,
 } from '@/types/agentRun';
@@ -326,7 +327,7 @@ const streamSlice = createSlice({
       state,
       action: PayloadAction<{
         runId: string;
-        status: 'completed' | 'limit_reached' | 'interrupted' | 'failed';
+        status: Exclude<AgentRunStatus, 'running'>;
         failure?: { code: string; message: string };
         reason?: string;
         sequence: number;

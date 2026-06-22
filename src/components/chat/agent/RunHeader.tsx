@@ -76,7 +76,7 @@ function StatusTag({ run }: StatusTagProps) {
     );
   }
 
-  // 终态（completed/limit_reached/interrupted/failed）保持原视觉——button-like 标签 + 状态图标
+  // 终态（completed/limit_reached/incomplete/interrupted/failed）保持原视觉——button-like 标签 + 状态图标
   const treatment = RUN_STATUS_TREATMENT[run.status];
   const Icon = treatment.icon;
   const colorClass = STATUS_TAG_COLOR_CLASSES[treatment.color];
