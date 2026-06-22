@@ -6,7 +6,7 @@ import { FileWithPreview } from '@/lib/utils/fileHelpers';
 import { useAppDispatch, useAppSelector } from '@/redux/hooks';
 import { selectChatModel } from '@/redux/selectors';
 import type { Message, ContentBlock, SearchSourceSummary, FileBlock as FileBlockType } from '@/types/conversation';
-import { extractTextFromBlocks, extractThinkingFromBlocks, extractSearchBlock } from '@/types/conversation';
+import { extractTextFromBlocks, extractThinkingFromBlocks } from '@/types/conversation';
 import { toggleReasoningVisibility } from '@/redux/slices/conversationSlice';
 import { selectStreamContentBlocks } from '@/redux/slices/streamSlice';
 import { Bot, Edit2, FileIcon, RefreshCw, X, Check, Copy } from 'lucide-react';
@@ -15,11 +15,10 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import TextareaAutosize from 'react-textarea-autosize';
 import FileCard from './FileCard';
 import ReasoningContent from './ReasoningContent';
-import SearchStatus from './SearchStatus';
-import ThinkingIndicator from './ThinkingIndicator';
+import AssistantActivityStatus from './AssistantActivityStatus';
+import { deriveAssistantActivity } from './assistantActivity';
 import SourcesPanel from './SourcesPanel';
 import SourcesSidebar from './SourcesSidebar';
-import UrlReadStatus from './UrlReadStatus';
 import UrlCard from './UrlCard';
 import { AgentRunTimeline } from './agent';
 import MarkdownRenderer from './MarkdownRenderer';
@@ -98,40 +97,44 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, files, isLastMessage
   // 搜索状态：区分流式 vs 历史
   const isCurrentlyStreaming = isStreaming && isLastMessage && streamBlocks !== null;
 
-  // 流式期 in-flight 工具状态从 currentRun.steps 末尾的 running tool_call 派生
-  // （Task 13b cut over：streamSlice 不再单独维护 isSearching/isReadingUrl 等扁平字段）
+  // 状态主线只消费归属当前消息的 run，避免全局 stream run 污染历史消息。
   const currentRun = useAppSelector(state => state.stream.currentRun);
   const streamSearchSources = useAppSelector(state => state.stream.searchSources);
+  const ownedRun = currentRun?.messageId === message.id || currentRun?.serverMessageId === message.id
+    ? currentRun
+    : null;
 
-  const lastStep = currentRun?.steps[currentRun.steps.length - 1];
-  const lastRunningToolCall = lastStep?.toolCalls.find(t => t.status === 'running');
-  const streamIsSearching = lastRunningToolCall?.toolName === 'web_search';
-  const streamSearchQuery = streamIsSearching && lastRunningToolCall
-    ? (lastRunningToolCall.arguments.query as string | undefined) ?? null
-    : null;
-  const streamIsReadingUrl = lastRunningToolCall?.toolName === 'url_read';
-  const streamUrlReadUrl = streamIsReadingUrl && lastRunningToolCall
-    ? (lastRunningToolCall.arguments.url as string | undefined) ?? null
-    : null;
+  const activity = useMemo(
+    () => deriveAssistantActivity({
+      isStreaming,
+      isCurrentlyStreaming,
+      contentBlocks: blocksToRender,
+      currentRun: ownedRun,
+      messageStatus: message.status ?? null,
+      isLoadingSuggestedQuestions: isLoadingQuestions,
+      suggestedQuestionsCount: suggestedQuestions.length,
+    }),
+    [
+      isStreaming,
+      isCurrentlyStreaming,
+      blocksToRender,
+      ownedRun,
+      message.status,
+      isLoadingQuestions,
+      suggestedQuestions.length,
+    ],
+  );
 
   const searchSources: SearchSourceSummary[] = useMemo(() => {
     if (isCurrentlyStreaming) return streamSearchSources;
-    const searchBlock = extractSearchBlock(message.content);
-    return searchBlock?.sources ?? [];
-  }, [isCurrentlyStreaming, streamSearchSources, message.content]);
+    return activity.searchBlock?.sources ?? [];
+  }, [isCurrentlyStreaming, streamSearchSources, activity.searchBlock]);
 
-  const showSearching = isCurrentlyStreaming && streamIsSearching;
-  const showUrlReading = isCurrentlyStreaming && streamIsReadingUrl;
-  const searchQuery = isCurrentlyStreaming ? streamSearchQuery : extractSearchBlock(message.content)?.query ?? null;
-  // 从 blocks 提取文本和推理内容
   const displayText = useMemo(() => extractTextFromBlocks(blocksToRender), [blocksToRender]);
   const displayThinking = useMemo(() => extractThinkingFromBlocks(blocksToRender), [blocksToRender]);
-  // thinking pending 阶段：正在流式但尚无任何可见内容（后端可能在缓冲第一轮 thinking）
-  // 已有 thinking/text 内容时不算 pending
-  const isThinkingPending = isCurrentlyStreaming && !streamSearchQuery && !showUrlReading && displayThinking.length === 0 && !displayText;
-  // 仅流式阶段的搜索场景抑制 ReasoningContent（避免 tool_call 推理噪音）
-  // 历史消息中的 ThinkingBlock 是第二轮有效推理，正常展示
-  const suppressThinking = isCurrentlyStreaming && (showSearching || isThinkingPending);
+  const suppressThinking = isCurrentlyStreaming && (
+    activity.kind === 'tool_running' || activity.kind === 'waiting'
+  );
   const hasThinking = !suppressThinking && displayThinking.length > 0;
 
 
@@ -417,12 +420,7 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, files, isLastMessage
                   />
                 )}
 
-                {message.status === 'failed' && (
-                  <div className="mt-2 flex items-center gap-2 text-xs text-red-500">
-                    <X className="h-3 w-3" />
-                    <span>生成失败，请重试</span>
-                  </div>
-                )}
+                <AssistantActivityStatus activity={activity} />
 
                 {/* Agent run timeline：用 messageId 归属过滤，让流结束后 currentRun 仍挂在
                     当前消息上（折叠摘要持续显示），新轮发送由 startStream 清空避免错挂 */}
@@ -431,35 +429,20 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, files, isLastMessage
                   onRetry={onRetry ? () => onRetry(message.id) : undefined}
                 />
 
-                {/* 思考中 → 搜索中/回答中过渡 */}
-                {isThinkingPending && (
-                  <ThinkingIndicator />
-                )}
-                {showSearching && (!currentRun || currentRun.steps.length === 0) && searchQuery && (
-                  <SearchStatus query={searchQuery} />
-                )}
-
-                {/* URL 读取状态（流式阶段） */}
-                {showUrlReading && (!currentRun || currentRun.steps.length === 0) && streamUrlReadUrl && (
-                  <UrlReadStatus url={streamUrlReadUrl} />
-                )}
-
                 {/* 历史消息中的 URL 读取卡片 */}
-                {!isCurrentlyStreaming && message.content.map((block, idx) =>
-                  block.type === 'url_read' ? (
-                    <UrlCard
-                      key={idx}
-                      url={block.url}
-                      title={block.title}
-                      favicon={block.favicon}
-                    />
-                  ) : null
-                )}
+                {!isCurrentlyStreaming && activity.urlBlocks.map((block) => (
+                  <UrlCard
+                    key={block.id}
+                    url={block.url}
+                    title={block.title}
+                    favicon={block.favicon}
+                  />
+                ))}
 
                 {/* 历史消息的 Agent 步骤卡片：spec §6.9 不反推，旧消息无 currentRun → 不渲染 */}
 
                 {/* 搜索结果：来源卡片 */}
-                {!showSearching && searchSources.length > 0 && (
+                {searchSources.length > 0 && (
                   <SourcesPanel sources={searchSources} />
                 )}
 
@@ -470,7 +453,7 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, files, isLastMessage
                   onCitationClick={searchSources.length > 0 ? handleCitationClick : undefined}
                 />
 
-                {isStreaming && isLastMessage && !isThinkingPending && !showSearching && (
+                {isStreaming && isLastMessage && activity.kind === 'answering' && (
                   <span className="animate-pulse motion-reduce:animate-none">▌</span>
                 )}
 

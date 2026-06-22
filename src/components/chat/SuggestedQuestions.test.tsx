@@ -120,4 +120,36 @@ describe('SuggestedQuestions', () => {
 
     expect(container.innerHTML).toBe('');
   });
+
+  it('shows completion-state loading copy while generating suggestions', () => {
+    render(
+      <SuggestedQuestions
+        questions={[]}
+        isLoading={true}
+        onSelectQuestion={vi.fn()}
+        onRefresh={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText('正在生成可继续追问的问题...')).toBeTruthy();
+  });
+
+  it('uses stronger pending affordance after selecting a question', () => {
+    const onSelectQuestion = vi.fn();
+
+    render(
+      <SuggestedQuestions
+        questions={['继续解释搜索结果']}
+        isLoading={false}
+        onSelectQuestion={onSelectQuestion}
+      />,
+    );
+
+    const question = screen.getByRole('button', { name: /继续解释搜索结果/ });
+    fireEvent.click(question);
+
+    const pending = screen.getByRole('button', { name: /发送中/ });
+    expect(pending.className).toContain('border-info-border');
+    expect(pending.className).toContain('bg-info-bg');
+  });
 });

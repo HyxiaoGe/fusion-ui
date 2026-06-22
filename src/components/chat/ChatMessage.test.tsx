@@ -2,6 +2,7 @@ import React from 'react';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { act } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { AgentRunState } from '@/types/agentRun';
 
 const dispatchMock = vi.fn();
 const toastMock = vi.fn();
@@ -26,7 +27,7 @@ const selectorState = {
     reasoningStartTime: null,
     reasoningEndTime: null,
     // Task 13b cut over：streamSlice 用 currentRun + searchSources 替换旧扁平字段
-    currentRun: null,
+    currentRun: null as AgentRunState | null,
     searchSources: [] as unknown[],
   },
   settings: {},
@@ -38,6 +39,36 @@ const selectorState = {
     models: [{ id: 'model-1', provider: 'qwen', name: 'Qwen Max' }],
   },
 };
+
+function resetSelectorState() {
+  Object.assign(selectorState.conversation, {
+    byId: {
+      'chat-1': { id: 'chat-1', model_id: 'model-1', messages: [] },
+    },
+    animatingTitleId: null,
+  });
+  Object.assign(selectorState.stream, {
+    conversationId: 'chat-1',
+    messageId: null,
+    textBlocks: {},
+    thinkingBlocks: {},
+    blockOrder: [],
+    blockTypes: {},
+    totalTextLength: 0,
+    displayedTextLength: 0,
+    isStreamingReasoning: false,
+    isThinkingPhaseComplete: false,
+    reasoningStartTime: null,
+    reasoningEndTime: null,
+    currentRun: null,
+    searchSources: [],
+  });
+  Object.assign(selectorState.auth, {
+    isAuthenticated: false,
+    user: null,
+  });
+  selectorState.models.models = [{ id: 'model-1', provider: 'qwen', name: 'Qwen Max' }];
+}
 
 vi.mock('@/redux/hooks', () => ({
   useAppDispatch: () => dispatchMock,
@@ -53,7 +84,9 @@ vi.mock('@/components/ui/toast', () => ({
 }));
 
 vi.mock('./ReasoningContent', () => ({
-  default: () => null,
+  default: ({ content }: { content: string }) => (
+    <div data-testid="reasoning-content">{content}</div>
+  ),
 }));
 
 vi.mock('./SuggestedQuestions', () => ({
@@ -76,6 +109,7 @@ import ChatMessage from './ChatMessage';
 
 describe('ChatMessage', () => {
   beforeEach(() => {
+    resetSelectorState();
     vi.useFakeTimers();
     toastMock.mockReset();
     Object.assign(navigator, {
@@ -186,5 +220,244 @@ describe('ChatMessage', () => {
     selectorState.stream.blockTypes = {};
     selectorState.stream.totalTextLength = 0;
     selectorState.stream.displayedTextLength = 0;
+  });
+
+  it('does not render search UI when thinking only mentions search', () => {
+    selectorState.stream.messageId = 'assistant-1';
+    selectorState.stream.textBlocks = {};
+    selectorState.stream.thinkingBlocks = { 'blk_t1': '让我搜索一下，但没有真实工具调用。' };
+    selectorState.stream.blockOrder = ['blk_t1'];
+    selectorState.stream.blockTypes = { 'blk_t1': 'thinking' };
+    selectorState.stream.currentRun = null;
+
+    render(
+      <ChatMessage
+        message={{
+          id: 'assistant-1',
+          role: 'assistant',
+          content: [],
+          timestamp: 1,
+          chatId: 'chat-1',
+        }}
+        isStreaming
+        isLastMessage
+      />,
+    );
+
+    expect(screen.queryByText(/正在搜索/)).toBeNull();
+
+    selectorState.stream.messageId = null;
+    selectorState.stream.thinkingBlocks = {};
+    selectorState.stream.blockOrder = [];
+    selectorState.stream.blockTypes = {};
+  });
+
+  it('renders real running web_search as the main activity', () => {
+    selectorState.stream.messageId = 'assistant-1';
+    selectorState.stream.textBlocks = {};
+    selectorState.stream.thinkingBlocks = { 'blk_t1': '准备调用搜索。' };
+    selectorState.stream.blockOrder = ['blk_t1'];
+    selectorState.stream.blockTypes = { 'blk_t1': 'thinking' };
+    selectorState.stream.currentRun = {
+      runId: 'run-1',
+      messageId: 'assistant-1',
+      status: 'running',
+      config: { maxSteps: 8, maxToolCalls: 20, timeoutS: 300 },
+      totalSteps: 1,
+      totalToolCalls: 1,
+      lastSequence: 2,
+      steps: [
+        {
+          stepId: 'step-1',
+          stepNumber: 1,
+          status: 'running',
+          startedAt: 1,
+          contentBlockIds: [],
+          toolCalls: [
+            {
+              toolCallId: 'tool-1',
+              toolName: 'web_search',
+              arguments: { query: 'AI 异常检测' },
+              status: 'running',
+              startedAt: 1,
+            },
+          ],
+        },
+      ],
+    };
+
+    render(
+      <ChatMessage
+        message={{
+          id: 'assistant-1',
+          role: 'assistant',
+          content: [],
+          timestamp: 1,
+          chatId: 'chat-1',
+        }}
+        isStreaming
+        isLastMessage
+      />,
+    );
+
+    expect(screen.getByText('正在搜索：AI 异常检测')).toBeTruthy();
+
+    selectorState.stream.messageId = null;
+    selectorState.stream.thinkingBlocks = {};
+    selectorState.stream.blockOrder = [];
+    selectorState.stream.blockTypes = {};
+    selectorState.stream.currentRun = null;
+  });
+
+  it('renders degraded web_search notice without rendering an empty sources panel', () => {
+    selectorState.stream.currentRun = {
+      runId: 'run-1',
+      messageId: 'assistant-1',
+      status: 'completed',
+      config: { maxSteps: 8, maxToolCalls: 20, timeoutS: 300 },
+      totalSteps: 1,
+      totalToolCalls: 1,
+      lastSequence: 3,
+      steps: [
+        {
+          stepId: 'step-1',
+          stepNumber: 1,
+          status: 'completed',
+          startedAt: 1,
+          completedAt: 2,
+          contentBlockIds: [],
+          toolCalls: [
+            {
+              toolCallId: 'tool-1',
+              toolName: 'web_search',
+              arguments: { query: 'AI 新闻' },
+              status: 'degraded',
+              error: 'timeout',
+              startedAt: 1,
+              completedAt: 2,
+            },
+          ],
+        },
+      ],
+    };
+
+    render(
+      <ChatMessage
+        message={{
+          id: 'assistant-1',
+          role: 'assistant',
+          content: [{ type: 'text', id: 'text-1', text: '基于已有信息回答。' }],
+          timestamp: 1,
+          chatId: 'chat-1',
+        }}
+      />,
+    );
+
+    expect(screen.getByText('搜索暂不可用')).toBeTruthy();
+    expect(screen.getByText('已基于现有信息回答')).toBeTruthy();
+    expect(screen.queryByText(/参考 \d+ 篇资料/)).toBeNull();
+
+    selectorState.stream.currentRun = null;
+  });
+
+  it('ignores activity issues from a run owned by another assistant message', () => {
+    selectorState.stream.currentRun = {
+      runId: 'run-1',
+      messageId: 'assistant-other',
+      status: 'completed',
+      config: { maxSteps: 8, maxToolCalls: 20, timeoutS: 300 },
+      totalSteps: 1,
+      totalToolCalls: 1,
+      lastSequence: 3,
+      steps: [
+        {
+          stepId: 'step-1',
+          stepNumber: 1,
+          status: 'completed',
+          startedAt: 1,
+          completedAt: 2,
+          contentBlockIds: [],
+          toolCalls: [
+            {
+              toolCallId: 'tool-1',
+              toolName: 'web_search',
+              arguments: { query: 'AI 新闻' },
+              status: 'degraded',
+              error: 'timeout',
+              startedAt: 1,
+              completedAt: 2,
+            },
+          ],
+        },
+      ],
+    };
+
+    const { rerender } = render(
+      <ChatMessage
+        message={{
+          id: 'assistant-1',
+          role: 'assistant',
+          content: [{ type: 'text', id: 'text-1', text: '这条消息正常回答。' }],
+          timestamp: 1,
+          chatId: 'chat-1',
+        }}
+      />,
+    );
+
+    expect(screen.queryByText('搜索暂不可用')).toBeNull();
+    expect(screen.queryByText('已基于现有信息回答')).toBeNull();
+
+    selectorState.stream.currentRun = {
+      runId: 'run-2',
+      messageId: 'assistant-other',
+      status: 'failed',
+      config: { maxSteps: 8, maxToolCalls: 20, timeoutS: 300 },
+      totalSteps: 0,
+      totalToolCalls: 0,
+      lastSequence: 1,
+      steps: [],
+      failure: { code: 'provider_error', message: 'failed' },
+    };
+
+    rerender(
+      <ChatMessage
+        message={{
+          id: 'assistant-1',
+          role: 'assistant',
+          content: [{ type: 'text', id: 'text-1', text: '这条消息正常回答。' }],
+          timestamp: 1,
+          chatId: 'chat-1',
+        }}
+      />,
+    );
+
+    expect(screen.queryByText('生成失败，请重试')).toBeNull();
+  });
+
+  it('keeps reasoning visible while streaming text answer', () => {
+    selectorState.stream.messageId = 'assistant-1';
+    selectorState.stream.textBlocks = { 'blk_s1': '正在输出正文' };
+    selectorState.stream.thinkingBlocks = { 'blk_t1': '先分析上下文' };
+    selectorState.stream.blockOrder = ['blk_t1', 'blk_s1'];
+    selectorState.stream.blockTypes = { 'blk_t1': 'thinking', 'blk_s1': 'text' };
+    selectorState.stream.totalTextLength = 6;
+    selectorState.stream.displayedTextLength = 6;
+
+    render(
+      <ChatMessage
+        message={{
+          id: 'assistant-1',
+          role: 'assistant',
+          content: [],
+          timestamp: 1,
+          chatId: 'chat-1',
+        }}
+        isStreaming
+        isLastMessage
+      />,
+    );
+
+    expect(screen.getByTestId('reasoning-content')).toHaveTextContent('先分析上下文');
+    expect(screen.getByText('正在输出正文')).toBeTruthy();
   });
 });

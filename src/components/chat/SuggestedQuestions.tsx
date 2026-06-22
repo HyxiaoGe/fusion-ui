@@ -111,7 +111,7 @@ const SuggestedQuestions: React.FC<SuggestedQuestionsProps> = ({
             className={cn(
               "flex items-center gap-2 w-full text-left px-3 py-2.5 rounded-lg border border-border bg-bg-subtle hover:bg-muted hover:border-border-strong text-sm text-foreground transition-colors duration-fast",
               "h-auto justify-start font-normal",
-              pendingQuestion === question && "bg-muted border-border-strong"
+              pendingQuestion === question && "border-info-border bg-info-bg text-info"
             )}
             onClick={() => handleQuestionSelect(question)}
             onMouseEnter={() => setHoveredIndex(index)}
@@ -134,7 +134,7 @@ const SuggestedQuestions: React.FC<SuggestedQuestionsProps> = ({
               <div className="h-1.5 w-1.5 bg-primary/40 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></div>
               <div className="h-1.5 w-1.5 bg-primary/40 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></div>
             </div>
-            <span>加载推荐问题中...</span>
+            <span>正在生成可继续追问的问题...</span>
           </div>
         )}
       </div>
