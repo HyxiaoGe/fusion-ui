@@ -1,79 +1,99 @@
-import { describe, it, expect } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { ToolCallSummary } from './ToolCallSummary';
-import type { ToolCallState } from '@/types/agentRun';
+import type { ToolCallGroup } from '@/lib/agent/toolCallGroups';
 
-const tc = (over: Partial<ToolCallState>): ToolCallState => ({
-  toolCallId: 't1',
+const group = (over: Partial<ToolCallGroup>): ToolCallGroup => ({
+  id: 'web_search',
+  kind: 'web_search',
   toolName: 'web_search',
-  arguments: { query: 'GPT 5.5' },
+  label: '搜索',
+  count: 2,
+  resultCount: 10,
   status: 'success',
-  startedAt: 0,
+  summary: '搜索 2 次 · 共 10 条结果',
+  details: [
+    { id: 's1', primary: 'Global AI Standards Forum', secondary: '5 条结果', status: 'success', truncated: false, fullValue: 'Global AI Standards Forum' },
+    { id: 's2', primary: 'AI CEOs G7', secondary: '5 条结果', status: 'success', truncated: false, fullValue: 'AI CEOs G7' },
+  ],
+  hasExpandableDetails: true,
+  shouldShowDetailsByDefault: false,
   ...over,
 });
 
 describe('ToolCallSummary', () => {
-  it('显示 query → 5 条 结果', () => {
-    render(<ToolCallSummary call={tc({
-      resultSummary: { kind: 'web_search', title: '5 篇高质量记录', count: 5, truncated: false },
-    })} />);
-    expect(screen.getByText(/GPT 5.5/)).toBeInTheDocument();
-    expect(screen.getByText(/5 条/)).toBeInTheDocument();
-    expect(screen.getByText(/5 篇高质量记录/)).toBeInTheDocument();
+  it('summary 模式显示聚合文案，不逐个重复工具名', () => {
+    render(<ToolCallSummary group={group({})} mode="summary" />);
+    expect(screen.getByText('搜索 2 次 · 共 10 条结果')).toBeInTheDocument();
+    expect(screen.queryByText('Global AI Standards Forum')).not.toBeInTheDocument();
   });
 
-  it('truncated 时显示「截断」标记', () => {
-    render(<ToolCallSummary call={tc({
-      resultSummary: { kind: 'web_search', title: '部分内容', count: 3, truncated: true },
-    })} />);
+  it('details 模式显示 query 和结果摘要', () => {
+    render(<ToolCallSummary group={group({})} mode="details" />);
+    expect(screen.getByText('Global AI Standards Forum')).toBeInTheDocument();
+    expect(screen.getByText('AI CEOs G7')).toBeInTheDocument();
+    expect(screen.getAllByText('5 条结果')).toHaveLength(2);
+  });
+
+  it('url_read details 展示 hostname 和标题', () => {
+    render(<ToolCallSummary group={group({
+      id: 'url_read',
+      kind: 'url_read',
+      toolName: 'url_read',
+      label: '读取',
+      summary: '读取 2 个网页',
+      details: [
+        { id: 'u1', primary: 'www.semafor.com', secondary: 'AI CEOs pitch G7 leaders', status: 'success', truncated: false, fullValue: 'https://www.semafor.com/article/06/17/2026/ai-ceos-talk-global-standards-at-g7' },
+        { id: 'u2', primary: 'letsdatascience.com', secondary: 'AI CEOs Attend G7', status: 'success', truncated: false, fullValue: 'https://letsdatascience.com/news/ai-ceos-attend-g7-pitch-global-standards-f3bc1bca' },
+      ],
+    })} mode="details" />);
+
+    expect(screen.getByText('www.semafor.com')).toBeInTheDocument();
+    expect(screen.getByText('letsdatascience.com')).toBeInTheDocument();
+    expect(screen.getByText('AI CEOs pitch G7 leaders')).toBeInTheDocument();
+  });
+
+  it('failed details 显示失败目标和失败详情', () => {
+    render(<ToolCallSummary group={group({
+      status: 'failed',
+      summary: '搜索失败 · 2 个查询',
+      details: [
+        { id: 's1', primary: 'Global AI Standards Forum', secondary: 'TIMEOUT', status: 'failed', truncated: false, fullValue: 'Global AI Standards Forum' },
+      ],
+    })} mode="details" />);
+
+    expect(screen.getByText('Global AI Standards Forum')).toBeInTheDocument();
+    expect(screen.getByText('TIMEOUT')).toBeInTheDocument();
+  });
+
+  it('running summary 显示 spinner 和运行中文案', () => {
+    const { container } = render(<ToolCallSummary group={group({
+      status: 'running',
+      summary: '正在搜索 · 2 个查询',
+    })} mode="summary" />);
+
+    expect(screen.getByText('正在搜索 · 2 个查询')).toBeInTheDocument();
+    expect(container.querySelector('.animate-spin')).toBeInTheDocument();
+  });
+
+  it('truncated detail 显示截断提示', () => {
+    render(<ToolCallSummary group={group({
+      details: [
+        { id: 's1', primary: 'Global AI Standards Forum', secondary: '部分结果', status: 'success', truncated: true, fullValue: 'Global AI Standards Forum' },
+      ],
+    })} mode="details" />);
+
     expect(screen.getByText(/截断/)).toBeInTheDocument();
   });
 
-  it('failed 时显示「未完成」', () => {
-    render(<ToolCallSummary call={tc({ status: 'failed' })} />);
-    expect(screen.getByText(/未完成/)).toBeInTheDocument();
-  });
+  it('长文本节点保留 truncate 和 min-w-0 class', () => {
+    const longText = '一段非常非常非常长的搜索关键词'.repeat(20);
+    const { container } = render(<ToolCallSummary group={group({
+      details: [
+        { id: 's1', primary: longText, secondary: longText, status: 'success', truncated: false, fullValue: longText },
+      ],
+    })} mode="details" />);
 
-  it('running 时显示 …', () => {
-    render(<ToolCallSummary call={tc({ status: 'running', resultSummary: undefined })} />);
-    expect(screen.getByText(/…/)).toBeInTheDocument();
-  });
-
-  it('url_read 显示 url 文本', () => {
-    render(<ToolCallSummary call={tc({
-      toolName: 'url_read',
-      arguments: { url: 'https://example.com/post' },
-      resultSummary: { kind: 'url_read', title: '官方文档', truncated: false },
-    })} />);
-    expect(screen.getByText(/example.com/)).toBeInTheDocument();
-  });
-
-  it('degraded 且无 result 时显示「部分结果不可用」', () => {
-    render(<ToolCallSummary call={tc({ status: 'degraded', resultSummary: undefined })} />);
-    expect(screen.getByText(/部分结果不可用/)).toBeInTheDocument();
-  });
-
-  it('interrupted 且无 result 时显示「已中断」', () => {
-    render(<ToolCallSummary call={tc({ status: 'interrupted', resultSummary: undefined })} />);
-    expect(screen.getByText(/已中断/)).toBeInTheDocument();
-  });
-
-  it('success 但无 result 时不显示状态文案（罕见 edge case）', () => {
-    const { container } = render(<ToolCallSummary call={tc({ status: 'success', resultSummary: undefined })} />);
-    // 不应出现 "未完成" / "已中断" / "部分结果不可用" / "…" 这些状态文案
-    expect(container.textContent).not.toMatch(/未完成|已中断|部分结果不可用|…/);
-    // 但 input (query 'GPT 5.5') 仍应显示
-    expect(screen.getByText(/GPT 5.5/)).toBeInTheDocument();
-  });
-
-  // 锁 truncate 链路 className：超长 query 时 input/result span 必须有 min-w-0，
-  // 否则 flex 子项默认 min-width: auto 会撑破父容器导致 truncate 失效。
-  it('input/result span 携带 truncate + min-w-0 锁 truncate 链路', () => {
-    const longQuery = '一段非常非常非常长的搜索关键词'.repeat(20);
-    const { container } = render(<ToolCallSummary call={tc({
-      arguments: { query: longQuery },
-      resultSummary: { kind: 'web_search', title: '一段非常长的标题文本'.repeat(10), count: 12, truncated: false },
-    })} />);
     const truncateSpans = container.querySelectorAll('span.truncate');
     expect(truncateSpans.length).toBeGreaterThanOrEqual(2);
     truncateSpans.forEach(el => {
