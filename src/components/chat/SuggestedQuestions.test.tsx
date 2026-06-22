@@ -39,6 +39,40 @@ describe('SuggestedQuestions', () => {
     vi.stubGlobal('triggerLoginDialog', triggerLoginDialogMock);
   });
 
+  it('将推荐问题展示为完成态后的轻量 follow-up 区域', () => {
+    const { container } = render(
+      <SuggestedQuestions
+        questions={['问题一']}
+        isLoading={false}
+        onSelectQuestion={vi.fn()}
+        className="custom-follow-up"
+      />
+    );
+
+    const root = container.firstElementChild;
+    expect(root?.className).toContain('border-t');
+    expect(root?.className).toContain('border-border/40');
+    expect(root?.className).toContain('pt-3');
+    expect(root?.className).toContain('custom-follow-up');
+  });
+
+  it('使用紧凑低权重的推荐问题按钮样式', () => {
+    render(
+      <SuggestedQuestions
+        questions={['问题一']}
+        isLoading={false}
+        onSelectQuestion={vi.fn()}
+      />
+    );
+
+    const question = screen.getByRole('button', { name: /问题一/ });
+    expect(question.className).not.toContain('py-2.5');
+    expect(question.className).toContain('rounded-md');
+    expect(question.className).toContain('py-1.5');
+    expect(question.className).toContain('border-border/50');
+    expect(question.className).toContain('bg-transparent');
+  });
+
   it('disables repeated selection after a question is chosen', () => {
     const onSelectQuestion = vi.fn();
 

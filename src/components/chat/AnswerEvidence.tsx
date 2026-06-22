@@ -24,7 +24,7 @@ export default function AnswerEvidence({
   const showHiddenUrls = evidence.hiddenUrlCount > 0;
 
   return (
-    <section className="mb-3 rounded-lg border border-border/50 bg-muted/20 px-3 py-2.5 text-xs text-muted-foreground">
+    <section className="mb-2 rounded-md border border-border/30 bg-transparent px-2.5 py-2 text-xs text-muted-foreground">
       <div className="mb-2 flex min-w-0 items-center gap-2">
         <FileSearch className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
         <span className="min-w-0 flex-1 truncate font-medium text-muted-foreground">
@@ -81,7 +81,7 @@ function EvidenceItem({
         onClick={() => {
           onSourceClick(item.sourceIndex);
         }}
-        className="inline-flex min-w-0 max-w-full items-center gap-2 rounded-md border border-border/50 bg-background/70 px-2 py-1.5 text-left transition-colors hover:bg-muted"
+        className="inline-flex min-w-0 max-w-full items-center gap-1.5 rounded-md border border-border/30 bg-muted/10 px-2 py-1 text-left transition-colors hover:bg-muted/30"
       >
         {content}
       </button>
@@ -94,7 +94,7 @@ function EvidenceItem({
       target="_blank"
       rel="noopener noreferrer"
       aria-label={`打开网页：${item.title}`}
-      className="inline-flex min-w-0 max-w-full items-center gap-2 rounded-md border border-border/50 bg-background/70 px-2 py-1.5 text-left no-underline transition-colors hover:bg-muted"
+      className="inline-flex min-w-0 max-w-full items-center gap-1.5 rounded-md border border-border/30 bg-muted/10 px-2 py-1 text-left no-underline transition-colors hover:bg-muted/30"
     >
       {content}
       <ExternalLink className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />

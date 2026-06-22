@@ -74,7 +74,7 @@ const SuggestedQuestions: React.FC<SuggestedQuestionsProps> = ({
   };
   
   return (
-    <div className={cn("mt-6 w-full max-w-full", className)}>
+    <div className={cn("mt-4 w-full max-w-full border-t border-border/40 pt-3", className)}>
       <div className="flex items-center justify-between mb-2">
         <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
           <HelpCircle className="w-3 h-3 text-info" />
@@ -109,7 +109,7 @@ const SuggestedQuestions: React.FC<SuggestedQuestionsProps> = ({
             variant="outline"
             size="sm"
             className={cn(
-              "flex items-center gap-2 w-full text-left px-3 py-2.5 rounded-lg border border-border bg-bg-subtle hover:bg-muted hover:border-border-strong text-sm text-foreground transition-colors duration-fast",
+              "flex items-center gap-2 w-full text-left rounded-md border border-border/50 bg-transparent px-2.5 py-1.5 text-sm text-foreground transition-colors duration-fast hover:bg-muted/30 hover:border-border",
               "h-auto justify-start font-normal",
               pendingQuestion === question && "border-info-border bg-info-bg text-info"
             )}

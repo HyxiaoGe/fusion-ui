@@ -27,21 +27,7 @@ const ReasoningContent: React.FC<ReasoningContentProps> = ({
   startTime,
   endTime,
 }) => {
-  if (!isStreaming && (!content || !content.trim())) {
-    return null;
-  }
-
   const actuallyVisible = isStreaming || isVisible;
-
-  const durationText = (() => {
-    if (duration) return `${duration} 秒`;
-    if (startTime && endTime) {
-      const diff = ((endTime - startTime) / 1000);
-      if (diff < 0) return null;
-      return `${diff.toFixed(1)} 秒`;
-    }
-    return null;
-  })();
 
   // 检测内容是否溢出（需要滚动）
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -60,12 +46,26 @@ const ReasoningContent: React.FC<ReasoningContentProps> = ({
     }
   }, [content, isStreaming, actuallyVisible]);
 
+  if (!isStreaming && (!content || !content.trim())) {
+    return null;
+  }
+
+  const durationText = (() => {
+    if (duration) return `${duration} 秒`;
+    if (startTime && endTime) {
+      const diff = ((endTime - startTime) / 1000);
+      if (diff < 0) return null;
+      return `${diff.toFixed(1)} 秒`;
+    }
+    return null;
+  })();
+
   return (
     <div className={cn(
-      "rounded-xl border mb-3 overflow-hidden transition-all duration-300",
+      "rounded-lg border mb-2 overflow-hidden transition-all duration-300",
       isStreaming
         ? "border-info-border bg-info-bg"
-        : "border-border/50 bg-muted/30"
+        : "border-border/40 bg-transparent"
     )}>
       {/* Header */}
       <button

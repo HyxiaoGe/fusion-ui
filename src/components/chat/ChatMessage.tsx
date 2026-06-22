@@ -14,14 +14,10 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/comp
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import TextareaAutosize from 'react-textarea-autosize';
 import FileCard from './FileCard';
-import ReasoningContent from './ReasoningContent';
-import AssistantActivityStatus from './AssistantActivityStatus';
+import AssistantResponseStack from './AssistantResponseStack';
 import { deriveAssistantActivity } from './assistantActivity';
 import SourcesSidebar from './SourcesSidebar';
-import AnswerEvidence from './AnswerEvidence';
 import { deriveAnswerEvidence } from './answerEvidenceModel';
-import { AgentRunTimeline } from './agent';
-import MarkdownRenderer from './MarkdownRenderer';
 import ProviderIcon from '../models/ProviderIcon';
 import { ImageIcon } from 'lucide-react';
 import { chatStore } from '@/lib/db/chatStore';
@@ -415,47 +411,29 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, files, isLastMessage
               )
             ) : (
               // AI 消息：渲染 content blocks
-              <div className="w-full min-w-0">
-                {/* 推理折叠区 */}
-                {!suppressThinking && (hasThinking || (isStreaming && isLastMessage && isStreamingReasoning)) && (
-                  <ReasoningContent
-                    content={displayThinking}
-                    isVisible={message.isReasoningVisible || localReasoningVisible || (isStreaming && isLastMessage)}
-                    onToggle={handleToggleReasoning}
-                    isStreaming={isStreamingReasoning && isLastMessage && !isThinkingPhaseComplete}
-                    startTime={(isLastMessage ? streamingStartTime : undefined) ?? undefined}
-                    endTime={isLastMessage ? streamingEndTime : undefined}
-                  />
-                )}
-
-                <AssistantActivityStatus activity={activity} />
-
-                {/* Agent run timeline：用 messageId 归属过滤，让流结束后 currentRun 仍挂在
-                    当前消息上（折叠摘要持续显示），新轮发送由 startStream 清空避免错挂 */}
-                <AgentRunTimeline
-                  assistantMessageId={message.id}
-                  onRetry={onRetry ? () => onRetry(message.id) : undefined}
-                />
-
-                {/* 历史消息的 Agent 步骤卡片：spec §6.9 不反推，旧消息无 currentRun → 不渲染 */}
-
-                <AnswerEvidence
-                  evidence={answerEvidence}
-                  onSourceClick={handleCitationClick}
-                  onOpenSources={() => setSourcesSidebarOpen(true)}
-                />
-
-                <MarkdownRenderer
-                  content={displayText || ''}
-                  className="prose-headings:border-0 prose-hr:border-border/30"
-                  sources={searchSources}
-                  onCitationClick={searchSources.length > 0 ? handleCitationClick : undefined}
-                />
-
-                {isStreaming && isLastMessage && activity.kind === 'answering' && (
-                  <span className="animate-pulse motion-reduce:animate-none">▌</span>
-                )}
-              </div>
+              <AssistantResponseStack
+                assistantMessageId={message.id}
+                reasoning={{
+                  shouldRender: !suppressThinking && (hasThinking || (isStreaming && isLastMessage && isStreamingReasoning)),
+                  content: displayThinking,
+                  isVisible: message.isReasoningVisible || localReasoningVisible || (isStreaming && isLastMessage),
+                  onToggle: handleToggleReasoning,
+                  isStreaming: isStreamingReasoning && isLastMessage && !isThinkingPhaseComplete,
+                  startTime: (isLastMessage ? streamingStartTime : undefined) ?? undefined,
+                  endTime: (isLastMessage ? streamingEndTime : undefined) ?? undefined,
+                }}
+                activity={activity}
+                onRetry={onRetry ? () => onRetry(message.id) : undefined}
+                answerEvidence={answerEvidence}
+                onSourceClick={handleCitationClick}
+                onOpenSources={() => setSourcesSidebarOpen(true)}
+                markdown={{
+                  content: displayText || '',
+                  sources: searchSources,
+                  onCitationClick: searchSources.length > 0 ? handleCitationClick : undefined,
+                }}
+                showStreamingCursor={isStreaming && isLastMessage && activity.kind === 'answering'}
+              />
             )}
 
             {/* AI 消息操作栏 */}

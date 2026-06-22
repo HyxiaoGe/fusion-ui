@@ -55,6 +55,97 @@ describe('AnswerEvidence', () => {
     expect(onSourceClick).toHaveBeenCalledWith(0);
   });
 
+  it('使用低权重 metadata strip 和轻量依据项样式', () => {
+    const { container } = render(
+      <AnswerEvidence
+        evidence={evidence({
+          items: [
+            {
+              id: 'search-0',
+              kind: 'search_source',
+              title: '搜索标题',
+              url: 'https://search.example.com',
+              domain: 'search.example.com',
+              sourceIndex: 0,
+            },
+            {
+              id: 'url-url-1',
+              kind: 'url_read',
+              title: '网页标题',
+              url: 'https://example.com/article',
+              domain: 'example.com',
+            },
+          ],
+          previewItems: [
+            {
+              id: 'search-0',
+              kind: 'search_source',
+              title: '搜索标题',
+              url: 'https://search.example.com',
+              domain: 'search.example.com',
+              sourceIndex: 0,
+            },
+            {
+              id: 'url-url-1',
+              kind: 'url_read',
+              title: '网页标题',
+              url: 'https://example.com/article',
+              domain: 'example.com',
+            },
+          ],
+          searchCount: 1,
+          urlCount: 1,
+          totalCount: 2,
+          summary: '回答依据 · 搜索 1 条 · 读取 1 个网页',
+          hasSearchSources: true,
+        })}
+        onSourceClick={vi.fn()}
+        onOpenSources={vi.fn()}
+      />,
+    );
+
+    expect(container.querySelector('section')).toHaveClass(
+      'mb-2',
+      'rounded-md',
+      'border',
+      'border-border/30',
+      'bg-transparent',
+      'px-2.5',
+      'py-2',
+      'text-xs',
+      'text-muted-foreground',
+    );
+
+    const sourceButton = screen.getByRole('button', { name: '查看来源：搜索标题' });
+    expect(sourceButton).toHaveClass(
+      'inline-flex',
+      'min-w-0',
+      'max-w-full',
+      'items-center',
+      'gap-1.5',
+      'rounded-md',
+      'border',
+      'border-border/30',
+      'bg-muted/10',
+      'px-2',
+      'py-1',
+      'text-left',
+      'transition-colors',
+      'hover:bg-muted/30',
+    );
+
+    const urlLink = screen.getByRole('link', { name: '打开网页：网页标题' });
+    expect(urlLink).toHaveClass(
+      'inline-flex',
+      'gap-1.5',
+      'border-border/30',
+      'bg-muted/10',
+      'py-1',
+      'hover:bg-muted/30',
+      'no-underline',
+    );
+  });
+
   it('显示 URL 读取摘要并渲染外部链接', () => {
     render(
       <AnswerEvidence

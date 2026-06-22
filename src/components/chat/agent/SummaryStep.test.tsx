@@ -20,6 +20,25 @@ describe('SummaryStep', () => {
     expect(screen.getByText(/整理答复/)).toBeInTheDocument();
   });
 
+  it('summary step 使用低权重透明辅助条样式', () => {
+    const { container } = render(<SummaryStep step={summaryStep({})} _isLast={true} />);
+
+    expect(container.firstElementChild).toHaveClass(
+      'rounded-md',
+      'border',
+      'border-border/20',
+      'bg-transparent',
+      'px-2.5',
+      'py-1.5',
+      'flex',
+      'items-center',
+      'gap-2',
+      'text-xs',
+      'w-full',
+      'min-w-0',
+    );
+  });
+
   it('running summary step 显示「正在整理答复」（无工具 spinner）', () => {
     render(<SummaryStep step={summaryStep({ status: 'running', contentBlockIds: [] })} _isLast={true} />);
     expect(screen.getByText(/正在整理答复/)).toBeInTheDocument();

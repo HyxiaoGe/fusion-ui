@@ -62,6 +62,36 @@ describe('AgentStepCard', () => {
     expect(container.querySelector('svg.lucide-chevron-down')).toBeNull();
   });
 
+  it('成功工具步骤使用低权重容器和紧凑按钮样式', () => {
+    const { container } = render(<AgentStepCard step={step({
+      toolCalls: [tc({})],
+      status: 'completed',
+    })} _isLast={false} />);
+
+    expect(container.firstElementChild).toHaveClass(
+      'rounded-md',
+      'border',
+      'border-border/30',
+      'bg-transparent',
+      'w-full',
+      'min-w-0',
+    );
+    expect(screen.getByRole('button')).toHaveClass(
+      'w-full',
+      'flex',
+      'items-start',
+      'gap-2',
+      'px-2.5',
+      'py-1.5',
+      'text-left',
+      'hover:bg-muted/20',
+      'transition-colors',
+      'duration-fast',
+      'disabled:cursor-default',
+      'disabled:hover:bg-transparent',
+    );
+  });
+
   it('两个 web_search 只渲染一条聚合搜索摘要', () => {
     render(<AgentStepCard step={step({
       toolCalls: [

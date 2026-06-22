@@ -59,6 +59,45 @@ describe('AssistantActivityStatus', () => {
     expect(status).toHaveAttribute('aria-atomic', 'true');
   });
 
+  it('running 状态使用紧凑辅助条基础样式', () => {
+    render(
+      <AssistantActivityStatus
+        activity={baseActivity({
+          kind: 'tool_running',
+          tool: {
+            kind: 'web_search',
+            toolName: 'web_search',
+            label: '正在搜索',
+            target: 'AI 异常检测',
+            call: {
+              toolCallId: 'tool-1',
+              toolName: 'web_search',
+              arguments: { query: 'AI 异常检测' },
+              status: 'running',
+              startedAt: 1,
+            },
+          },
+        })}
+      />,
+    );
+
+    expect(screen.getByRole('status')).toHaveClass(
+      'mb-2',
+      'flex',
+      'min-w-0',
+      'items-center',
+      'gap-2',
+      'rounded-lg',
+      'border',
+      'px-2.5',
+      'py-1.5',
+      'text-xs',
+      'border-info-border',
+      'bg-info-bg',
+      'text-info',
+    );
+  });
+
   it('renders running url read with hostname', () => {
     render(
       <AssistantActivityStatus
@@ -92,6 +131,7 @@ describe('AssistantActivityStatus', () => {
     const alert = screen.getByRole('alert');
     expect(alert).toHaveAttribute('aria-live', 'assertive');
     expect(alert).toHaveAttribute('aria-atomic', 'true');
+    expect(alert).toHaveClass('border-danger/30', 'bg-danger/10', 'text-danger');
   });
 
   it('renders interrupted state', () => {

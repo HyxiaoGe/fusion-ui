@@ -11,6 +11,8 @@ import { ToolCallSummary } from './ToolCallSummary';
 export function AgentStepCard({ step, _isLast }: { step: AgentStepState; _isLast: boolean }) {
   void _isLast;
 
+  const [overrideExpanded, setOverrideExpanded] = useState<boolean | null>(null);
+
   if (step.status === 'running'
       && step.toolCalls.length === 0
       && step.contentBlockIds.length > 0) {
@@ -24,16 +26,15 @@ export function AgentStepCard({ step, _isLast }: { step: AgentStepState; _isLast
   const groups = groupToolCalls(step.toolCalls);
   const groupHasDetails = groups.some(group => group.hasExpandableDetails);
   const defaultExpanded = groups.some(group => group.shouldShowDetailsByDefault);
-  const [overrideExpanded, setOverrideExpanded] = useState<boolean | null>(null);
   const expanded = overrideExpanded ?? defaultExpanded;
   const canExpand = !isPending && groupHasDetails;
 
   return (
-    <div className="rounded-lg border border-border/50 bg-muted/10 w-full min-w-0">
+    <div className="rounded-md border border-border/30 bg-transparent w-full min-w-0">
       <button
         type="button"
         onClick={() => canExpand && setOverrideExpanded(!expanded)}
-        className="w-full flex items-start gap-2 px-3 py-2 text-left hover:bg-muted/30 transition-colors duration-fast disabled:cursor-default disabled:hover:bg-transparent"
+        className="w-full flex items-start gap-2 px-2.5 py-1.5 text-left hover:bg-muted/20 transition-colors duration-fast disabled:cursor-default disabled:hover:bg-transparent"
         aria-expanded={canExpand ? expanded : undefined}
         aria-label={canExpand ? (expanded ? '收起工具详情' : '查看工具详情') : undefined}
         disabled={!canExpand}

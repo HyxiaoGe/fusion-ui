@@ -1,5 +1,5 @@
 import React from 'react';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import { act } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AgentRunState } from '@/types/agentRun';
@@ -509,6 +509,46 @@ describe('ChatMessage', () => {
     expect(screen.getByText('回答依据 · 读取 1 个网页')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: '打开网页：Example Article' })).toHaveAttribute('href', 'https://example.com/article');
     expect(screen.queryByTestId('old-url-card')).toBeNull();
+  });
+
+  it('assistant 回复通过 AssistantResponseStack 渲染正文和辅助层', () => {
+    render(
+      <ChatMessage
+        message={{
+          id: 'assistant-1',
+          role: 'assistant',
+          content: [
+            {
+              type: 'search',
+              id: 'search-1',
+              query: 'AI standards source',
+              sources: [
+                {
+                  title: 'AI Standards Source',
+                  url: 'https://standards.example.com/source',
+                },
+              ],
+            },
+            {
+              type: 'url_read',
+              id: 'url-1',
+              title: 'AI Standards Report',
+              url: 'https://standards.example.com/report',
+            },
+            { type: 'text', id: 'text-1', text: 'AI 标准需要透明的评估流程。[1]' },
+          ],
+          timestamp: 1,
+          chatId: 'chat-1',
+        }}
+      />,
+    );
+
+    const stack = screen.getByTestId('assistant-response-stack');
+
+    expect(stack).toBeInTheDocument();
+    expect(within(stack).getByText('AI 标准需要透明的评估流程。')).toBeInTheDocument();
+    expect(within(stack).getByText('回答依据 · 搜索 1 条 · 读取 1 个网页')).toBeInTheDocument();
+    expect(within(stack).getByRole('button', { name: '查看参考资料 1：AI Standards Source' })).toBeInTheDocument();
   });
 
   it('正文 Markdown 引用仍能打开来源侧栏', () => {
