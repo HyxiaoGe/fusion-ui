@@ -197,6 +197,30 @@ describe('AnswerEvidence', () => {
     expect(screen.getByText('查看全部搜索来源')).toBeInTheDocument();
   });
 
+  it('5 条搜索来源默认预览 3 条时提示隐藏搜索来源并保留侧栏入口', () => {
+    const onOpenSources = vi.fn();
+
+    render(
+      <AnswerEvidence
+        evidence={deriveAnswerEvidence({
+          searchSources: Array.from({ length: 5 }, (_, index) => ({
+            title: `搜索 ${index + 1}`,
+            url: `https://search-${index + 1}.example.com`,
+          })),
+          urlBlocks: [],
+          previewLimit: 3,
+        })}
+        onSourceClick={vi.fn()}
+        onOpenSources={onOpenSources}
+      />,
+    );
+
+    expect(screen.getByText('回答依据 · 搜索 5 条')).toBeInTheDocument();
+    expect(screen.getByText('另有 2 条搜索来源')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '查看全部搜索来源' }));
+    expect(onOpenSources).toHaveBeenCalledTimes(1);
+  });
+
   it('只有 URL 超过预览上限时显示隐藏网页数量', () => {
     render(
       <AnswerEvidence
@@ -292,6 +316,32 @@ describe('AnswerEvidence', () => {
     fireEvent.click(screen.getByRole('button', { name: '查看全部搜索来源' }));
     expect(onOpenSources).toHaveBeenCalledTimes(1);
     expect(screen.getByText('另有 1 个网页')).toBeInTheDocument();
+  });
+
+  it('同时隐藏搜索来源和 URL 时两个提示都显示', () => {
+    render(
+      <AnswerEvidence
+        evidence={deriveAnswerEvidence({
+          searchSources: [
+            { title: '搜索 1', url: 'https://search-one.example.com' },
+            { title: '搜索 2', url: 'https://search-two.example.com' },
+            { title: '搜索 3', url: 'https://search-three.example.com' },
+            { title: '搜索 4', url: 'https://search-four.example.com' },
+          ],
+          urlBlocks: [
+            { type: 'url_read', id: 'url-1', title: '网页 1', url: 'https://one.example.com' },
+            { type: 'url_read', id: 'url-2', title: '网页 2', url: 'https://two.example.com' },
+            { type: 'url_read', id: 'url-3', title: '网页 3', url: 'https://three.example.com' },
+          ],
+          previewLimit: 3,
+        })}
+        onSourceClick={vi.fn()}
+        onOpenSources={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText('另有 2 条搜索来源')).toBeInTheDocument();
+    expect(screen.getByText('另有 2 个网页')).toBeInTheDocument();
   });
 
   it('长标题文本节点保留 title 属性和 truncate class', () => {

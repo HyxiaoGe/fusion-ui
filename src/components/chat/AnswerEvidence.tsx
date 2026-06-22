@@ -19,7 +19,8 @@ export default function AnswerEvidence({
     return null;
   }
 
-  const showOpenAll = evidence.hasSearchSources && evidence.hiddenSearchCount > 0;
+  const showHiddenSearch = evidence.hiddenSearchCount > 0;
+  const showOpenAll = evidence.hasSearchSources && showHiddenSearch;
   const showHiddenUrls = evidence.hiddenUrlCount > 0;
 
   return (
@@ -29,6 +30,11 @@ export default function AnswerEvidence({
         <span className="min-w-0 flex-1 truncate font-medium text-muted-foreground">
           {evidence.summary}
         </span>
+        {showHiddenSearch ? (
+          <span className="shrink-0 text-[11px] text-muted-foreground">
+            另有 {evidence.hiddenSearchCount} 条搜索来源
+          </span>
+        ) : null}
         {showOpenAll ? (
           <button
             type="button"

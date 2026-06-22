@@ -1,6 +1,7 @@
 'use client';
 
 import { useAppSelector } from '@/redux/hooks';
+import type { AgentRunState } from '@/types/agentRun';
 import { RunHeader } from './RunHeader';
 import { RunBanner } from './RunBanner';
 import { StepTimeline } from './StepTimeline';
@@ -30,10 +31,11 @@ export function AgentRunTimeline({ assistantMessageId, onRetry }: AgentRunTimeli
   if (run.messageId !== assistantMessageId && run.serverMessageId !== assistantMessageId) {
     return null;
   }
+  if (shouldHideCompletedRun(run)) return null;
   // 空 steps 守卫（contract §1）：
   //   - running / completed：空 steps 没有可展示信息，避免空容器
   //   - failed / interrupted / limit_reached：banner 仍有用户价值（如 ProviderOffline 0 step），保留渲染
-  if (!run.steps?.length && (run.status === 'running' || run.status === 'completed')) return null;
+  if (!run.steps?.length && (run.status === 'running' || (run.status === 'completed' && !run.limitReachedReason))) return null;
 
   return (
     <div className="mb-3 w-full max-w-full min-w-0 self-stretch">
@@ -42,4 +44,19 @@ export function AgentRunTimeline({ assistantMessageId, onRetry }: AgentRunTimeli
       <StepTimeline run={run} />
     </div>
   );
+}
+
+function shouldHideCompletedRun(run: AgentRunState): boolean {
+  if (run.status !== 'completed') return false;
+  if (run.limitReachedReason) return false;
+
+  return !run.steps?.some(step => (
+    step.status === 'failed'
+    || step.status === 'interrupted'
+    || step.toolCalls.some(call => (
+      call.status === 'failed'
+      || call.status === 'degraded'
+      || call.status === 'interrupted'
+    ))
+  ));
 }
