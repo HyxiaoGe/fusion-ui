@@ -6,6 +6,8 @@ import type { AgentRunState } from '@/types/agentRun';
 
 const dispatchMock = vi.fn();
 const toastMock = vi.fn();
+const initialScrollIntoView = Element.prototype.scrollIntoView;
+let originalScrollIntoView: typeof Element.prototype.scrollIntoView | undefined;
 const selectorState = {
   conversation: {
     byId: {
@@ -101,6 +103,14 @@ vi.mock('./FileCard', () => ({
   default: () => null,
 }));
 
+vi.mock('./SourcesPanel', () => ({
+  default: () => <div data-testid="old-sources-panel">旧来源入口</div>,
+}));
+
+vi.mock('./UrlCard', () => ({
+  default: () => <div data-testid="old-url-card">旧 URL 卡片</div>,
+}));
+
 vi.mock('../models/ProviderIcon', () => ({
   default: () => <span>icon</span>,
 }));
@@ -117,11 +127,19 @@ describe('ChatMessage', () => {
         writeText: vi.fn().mockResolvedValue(undefined),
       },
     });
+    originalScrollIntoView = Element.prototype.scrollIntoView;
+    Element.prototype.scrollIntoView = vi.fn();
     Object.defineProperty(window, 'isSecureContext', { value: true, writable: true, configurable: true });
   });
 
   afterEach(() => {
     vi.runOnlyPendingTimers();
+    if (originalScrollIntoView) {
+      Element.prototype.scrollIntoView = originalScrollIntoView;
+    } else {
+      delete (Element.prototype as Partial<Pick<Element, 'scrollIntoView'>>).scrollIntoView;
+    }
+    originalScrollIntoView = undefined;
     vi.useRealTimers();
   });
 
@@ -245,6 +263,7 @@ describe('ChatMessage', () => {
     );
 
     expect(screen.queryByText(/正在搜索/)).toBeNull();
+    expect(screen.queryByText(/回答依据/)).toBeNull();
 
     selectorState.stream.messageId = null;
     selectorState.stream.thinkingBlocks = {};
@@ -434,6 +453,132 @@ describe('ChatMessage', () => {
     expect(screen.queryByText('生成失败，请重试')).toBeNull();
   });
 
+  it('通过 AnswerEvidence 展示搜索结果，不再渲染旧来源面板和底部参考入口', () => {
+    render(
+      <ChatMessage
+        message={{
+          id: 'assistant-1',
+          role: 'assistant',
+          content: [
+            {
+              type: 'search',
+              id: 'search-1',
+              query: 'AI standards governance',
+              sources: [
+                {
+                  title: 'Global AI Standards Forum G7 functions governance',
+                  url: 'https://standards.example.com/g7-governance',
+                },
+              ],
+            },
+            { type: 'text', id: 'text-1', text: '这是联网回答。[1]' },
+          ],
+          timestamp: 1,
+          chatId: 'chat-1',
+        }}
+      />,
+    );
+
+    expect(screen.getByText('回答依据 · 搜索 1 条')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '查看来源：Global AI Standards Forum G7 functions governance' })).toBeInTheDocument();
+    expect(screen.queryByTestId('old-sources-panel')).toBeNull();
+    expect(screen.queryByText(/参考 \d+ 篇资料/)).toBeNull();
+  });
+
+  it('通过 AnswerEvidence 展示 URL 读取结果，不再渲染旧 URL 卡片', () => {
+    render(
+      <ChatMessage
+        message={{
+          id: 'assistant-1',
+          role: 'assistant',
+          content: [
+            {
+              type: 'url_read',
+              id: 'url-1',
+              title: 'Example Article',
+              url: 'https://example.com/article',
+            },
+            { type: 'text', id: 'text-1', text: '已读取网页后回答。' },
+          ],
+          timestamp: 1,
+          chatId: 'chat-1',
+        }}
+      />,
+    );
+
+    expect(screen.getByText('回答依据 · 读取 1 个网页')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: '打开网页：Example Article' })).toHaveAttribute('href', 'https://example.com/article');
+    expect(screen.queryByTestId('old-url-card')).toBeNull();
+  });
+
+  it('正文 Markdown 引用仍能打开来源侧栏', () => {
+    render(
+      <ChatMessage
+        message={{
+          id: 'assistant-1',
+          role: 'assistant',
+          content: [
+            {
+              type: 'search',
+              id: 'search-1',
+              query: 'AI standards source',
+              sources: [
+                {
+                  title: 'AI Standards Source',
+                  url: 'https://standards.example.com/source',
+                },
+              ],
+            },
+            { type: 'text', id: 'text-1', text: '引用来源[1]。' },
+          ],
+          timestamp: 1,
+          chatId: 'chat-1',
+        }}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: '查看参考资料 1：AI Standards Source' }));
+
+    expect(screen.getByText('参考资料')).toBeInTheDocument();
+    expect(screen.getAllByText('AI Standards Source').length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('混合搜索和多个 URL 读取结果时展示统一回答依据预览', () => {
+    render(
+      <ChatMessage
+        message={{
+          id: 'assistant-1',
+          role: 'assistant',
+          content: [
+            {
+              type: 'search',
+              id: 'search-1',
+              query: 'mixed evidence',
+              sources: [
+                {
+                  title: 'Mixed Search Source',
+                  url: 'https://search.example.com/mixed',
+                },
+              ],
+            },
+            { type: 'url_read', id: 'url-1', title: '网页 1', url: 'https://one.example.com' },
+            { type: 'url_read', id: 'url-2', title: '网页 2', url: 'https://two.example.com' },
+            { type: 'url_read', id: 'url-3', title: '网页 3', url: 'https://three.example.com' },
+            { type: 'url_read', id: 'url-4', title: '网页 4', url: 'https://four.example.com' },
+            { type: 'text', id: 'text-1', text: '混合依据回答。[1]' },
+          ],
+          timestamp: 1,
+          chatId: 'chat-1',
+        }}
+      />,
+    );
+
+    expect(screen.getByText('回答依据 · 搜索 1 条 · 读取 4 个网页')).toBeInTheDocument();
+    expect(screen.getAllByRole('link', { name: /打开网页：/ })).toHaveLength(2);
+    expect(screen.getByText('另有 2 个网页')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '查看全部搜索来源' })).toBeNull();
+  });
+
   it('keeps reasoning visible while streaming text answer', () => {
     selectorState.stream.messageId = 'assistant-1';
     selectorState.stream.textBlocks = { 'blk_s1': '正在输出正文' };
@@ -459,5 +604,11 @@ describe('ChatMessage', () => {
 
     expect(screen.getByTestId('reasoning-content')).toHaveTextContent('先分析上下文');
     expect(screen.getByText('正在输出正文')).toBeTruthy();
+  });
+});
+
+describe('ChatMessage 测试环境', () => {
+  it('不会把 scrollIntoView 测试桩泄漏给后续测试', () => {
+    expect(Element.prototype.scrollIntoView).toBe(initialScrollIntoView);
   });
 });

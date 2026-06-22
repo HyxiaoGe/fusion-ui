@@ -17,9 +17,9 @@ import FileCard from './FileCard';
 import ReasoningContent from './ReasoningContent';
 import AssistantActivityStatus from './AssistantActivityStatus';
 import { deriveAssistantActivity } from './assistantActivity';
-import SourcesPanel from './SourcesPanel';
 import SourcesSidebar from './SourcesSidebar';
-import UrlCard from './UrlCard';
+import AnswerEvidence from './AnswerEvidence';
+import { deriveAnswerEvidence } from './answerEvidenceModel';
 import { AgentRunTimeline } from './agent';
 import MarkdownRenderer from './MarkdownRenderer';
 import ProviderIcon from '../models/ProviderIcon';
@@ -129,6 +129,14 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, files, isLastMessage
     if (isCurrentlyStreaming) return streamSearchSources;
     return activity.searchBlock?.sources ?? [];
   }, [isCurrentlyStreaming, streamSearchSources, activity.searchBlock]);
+
+  const answerEvidence = useMemo(
+    () => deriveAnswerEvidence({
+      searchSources,
+      urlBlocks: activity.urlBlocks,
+    }),
+    [searchSources, activity.urlBlocks],
+  );
 
   const displayText = useMemo(() => extractTextFromBlocks(blocksToRender), [blocksToRender]);
   const displayThinking = useMemo(() => extractThinkingFromBlocks(blocksToRender), [blocksToRender]);
@@ -429,22 +437,13 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, files, isLastMessage
                   onRetry={onRetry ? () => onRetry(message.id) : undefined}
                 />
 
-                {/* 历史消息中的 URL 读取卡片 */}
-                {!isCurrentlyStreaming && activity.urlBlocks.map((block) => (
-                  <UrlCard
-                    key={block.id}
-                    url={block.url}
-                    title={block.title}
-                    favicon={block.favicon}
-                  />
-                ))}
-
                 {/* 历史消息的 Agent 步骤卡片：spec §6.9 不反推，旧消息无 currentRun → 不渲染 */}
 
-                {/* 搜索结果：来源卡片 */}
-                {searchSources.length > 0 && (
-                  <SourcesPanel sources={searchSources} />
-                )}
+                <AnswerEvidence
+                  evidence={answerEvidence}
+                  onSourceClick={handleCitationClick}
+                  onOpenSources={() => setSourcesSidebarOpen(true)}
+                />
 
                 <MarkdownRenderer
                   content={displayText || ''}
@@ -455,16 +454,6 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, files, isLastMessage
 
                 {isStreaming && isLastMessage && activity.kind === 'answering' && (
                   <span className="animate-pulse motion-reduce:animate-none">▌</span>
-                )}
-
-                {/* 参考资料入口 */}
-                {!isStreaming && searchSources.length > 0 && (
-                  <button
-                    onClick={() => setSourcesSidebarOpen(true)}
-                    className="text-[11px] text-muted-foreground/60 hover:text-muted-foreground transition-colors mt-1"
-                  >
-                    参考 {searchSources.length} 篇资料
-                  </button>
                 )}
               </div>
             )}
