@@ -1,0 +1,167 @@
+import { renderHook } from '@testing-library/react';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import type { AgentRunState } from '@/types/agentRun';
+import type { Message, SearchSourceSummary } from '@/types/conversation';
+
+const selectorState = {
+  stream: {
+    messageId: null as string | null,
+    textBlocks: {} as Record<string, string>,
+    thinkingBlocks: {} as Record<string, string>,
+    blockOrder: [] as string[],
+    blockTypes: {} as Record<string, 'text' | 'thinking'>,
+    totalTextLength: 0,
+    displayedTextLength: 0,
+    isStreamingReasoning: false,
+    isThinkingPhaseComplete: false,
+    reasoningStartTime: null as number | null,
+    reasoningEndTime: undefined as number | undefined,
+    currentRun: null as AgentRunState | null,
+    searchSources: [] as SearchSourceSummary[],
+  },
+};
+
+vi.mock('@/redux/hooks', () => ({
+  useAppSelector: (selector: (state: typeof selectorState) => unknown) => selector(selectorState),
+}));
+
+import { useAssistantMessageViewModel } from './useAssistantMessageViewModel';
+
+function resetSelectorState() {
+  Object.assign(selectorState.stream, {
+    messageId: null,
+    textBlocks: {},
+    thinkingBlocks: {},
+    blockOrder: [],
+    blockTypes: {},
+    totalTextLength: 0,
+    displayedTextLength: 0,
+    isStreamingReasoning: false,
+    isThinkingPhaseComplete: false,
+    reasoningStartTime: null,
+    reasoningEndTime: undefined,
+    currentRun: null,
+    searchSources: [],
+  });
+}
+
+function renderViewModel(message: Message, overrides: Partial<Parameters<typeof useAssistantMessageViewModel>[0]> = {}) {
+  return renderHook(() => useAssistantMessageViewModel({
+    message,
+    isStreaming: false,
+    isLastMessage: false,
+    isLoadingQuestions: false,
+    suggestedQuestionsCount: 0,
+    ...overrides,
+  }));
+}
+
+describe('useAssistantMessageViewModel', () => {
+  beforeEach(() => {
+    resetSelectorState();
+  });
+
+  it('从历史 assistant 消息内容派生正文、搜索来源和回答依据', () => {
+    const source = {
+      title: 'AI 标准来源',
+      url: 'https://example.com/ai-standard',
+    };
+    const message: Message = {
+      id: 'assistant-1',
+      role: 'assistant',
+      content: [
+        { type: 'search', id: 'search-1', query: 'AI 标准', sources: [source] },
+        { type: 'text', id: 'text-1', text: '历史正文。[1]' },
+      ],
+      timestamp: 1,
+    };
+
+    const { result } = renderViewModel(message);
+
+    expect(result.current.blocksToRender).toBe(message.content);
+    expect(result.current.displayText).toBe('历史正文。[1]');
+    expect(result.current.searchSources).toEqual([source]);
+    expect(result.current.answerEvidence?.summary).toBe('回答依据 · 搜索 1 条');
+    expect(result.current.answerEvidence?.items[0]).toEqual(
+      expect.objectContaining({
+        kind: 'search_source',
+        title: 'AI 标准来源',
+        url: 'https://example.com/ai-standard',
+      }),
+    );
+  });
+
+  it('流式最后一条消息从 stream blocks 派生正文', () => {
+    selectorState.stream.messageId = 'assistant-1';
+    selectorState.stream.textBlocks = { 'stream-text-1': '流式正文' };
+    selectorState.stream.blockOrder = ['stream-text-1'];
+    selectorState.stream.blockTypes = { 'stream-text-1': 'text' };
+    selectorState.stream.totalTextLength = 4;
+    selectorState.stream.displayedTextLength = 4;
+
+    const { result } = renderViewModel(
+      {
+        id: 'assistant-1',
+        role: 'assistant',
+        content: [{ type: 'text', id: 'persisted-text-1', text: '历史正文' }],
+        timestamp: 1,
+      },
+      { isStreaming: true, isLastMessage: true },
+    );
+
+    expect(result.current.isCurrentlyStreaming).toBe(true);
+    expect(result.current.blocksToRender).toEqual([
+      { type: 'text', id: 'stream-text-1', text: '流式正文' },
+    ]);
+    expect(result.current.displayText).toBe('流式正文');
+  });
+
+  it('currentRun 不归属当前消息时不会污染 activity 状态', () => {
+    selectorState.stream.currentRun = {
+      runId: 'run-other',
+      messageId: 'assistant-other',
+      status: 'failed',
+      config: { maxSteps: 8, maxToolCalls: 20, timeoutS: 300 },
+      totalSteps: 0,
+      totalToolCalls: 0,
+      lastSequence: 1,
+      steps: [],
+      failure: { code: 'provider_error', message: 'failed' },
+    };
+
+    const { result } = renderViewModel({
+      id: 'assistant-1',
+      role: 'assistant',
+      content: [{ type: 'text', id: 'text-1', text: '当前消息正常回答。' }],
+      timestamp: 1,
+    });
+
+    expect(result.current.activity.kind).toBe('completed');
+    expect(result.current.activity.issue).toBeNull();
+  });
+
+  it('thinking 文本提到搜索但没有真实工具调用时不产生来源或回答依据', () => {
+    selectorState.stream.messageId = 'assistant-1';
+    selectorState.stream.thinkingBlocks = { 'thinking-1': '我需要搜索一下，但这里没有真实工具调用。' };
+    selectorState.stream.blockOrder = ['thinking-1'];
+    selectorState.stream.blockTypes = { 'thinking-1': 'thinking' };
+    selectorState.stream.isStreamingReasoning = true;
+    selectorState.stream.reasoningStartTime = 123;
+
+    const { result } = renderViewModel(
+      {
+        id: 'assistant-1',
+        role: 'assistant',
+        content: [],
+        timestamp: 1,
+      },
+      { isStreaming: true, isLastMessage: true },
+    );
+
+    expect(result.current.activity.kind).toBe('reasoning');
+    expect(result.current.displayThinking).toBe('我需要搜索一下，但这里没有真实工具调用。');
+    expect(result.current.hasThinking).toBe(true);
+    expect(result.current.searchSources).toEqual([]);
+    expect(result.current.answerEvidence).toBeNull();
+  });
+});
