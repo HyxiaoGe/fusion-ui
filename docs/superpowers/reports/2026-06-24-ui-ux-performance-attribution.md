@@ -44,7 +44,7 @@
 - 1500ms
 - 对发送类路径额外采样 3000ms、6000ms、10000ms、15000ms
 
-## 采集限制
+## 第一轮采集限制
 
 Chrome 插件的页面沙箱未暴露 `performance`，并且页面 `window` / `document.body` 是不可扩展对象，不能挂载临时 `PerformanceObserver`。本机 Chrome 也未发现可用 CDP 调试端口。
 
@@ -55,16 +55,85 @@ Chrome 插件的页面沙箱未暴露 `performance`，并且页面 `window` / `d
 - 精确资源请求 timing
 - React render 次数
 
-本报告中的“重复 render / 布局抖动”只能基于 DOM 节点数量、文本长度、滚动位置和可见状态变化做近似归因。若后续要验证精确 long task / CLS / render 次数，需要新增临时前端 instrumentation 或使用带 CDP tracing 的 Chrome 录制。
+因此先提交了一个默认关闭的生产调试探针：只有 URL 带 `?perfProbe=1` 或显式开启本地开关时才运行。探针在页面原生上下文中记录：
+
+- `PerformanceObserver` 的 `longtask`
+- `PerformanceObserver` 的 `layout-shift`
+- `resource` timing
+- `MutationObserver` 汇总
+- `AppLayout`、`HomePage`、`ChatInput`、`ChatMessageList` 的 render 计数
+
+探针部署后已用线上页面重新补采关键路径，下面“探针补采”部分是更强证据。
 
 ## 总体结论
 
-本轮没有发现旧会话正文闪现，也没有发现控制台 error。页面体感卡顿主要不再来自旧内容残留，而更像是以下两类：
+本轮没有发现旧会话正文闪现，也没有发现控制台 error。探针补采也没有捕获到 `longtask`。页面体感卡顿主要不再来自旧内容残留或主线程长任务，而更像是以下三类：
 
 1. **会话数据等待感**：切换到未缓存会话时，点击后约 1.5s 才进入目标路由并显示 skeleton，约 2.5s 消息稳定。
-2. **发送后流式增长导致的滚动位置波动**：普通发送和联网搜索期间，DOM 和文本持续增长，滚动容器 `bottomDelta` 在多次采样中波动，需要更精确定位消息滚动容器和自动滚动策略。
+2. **切换已有会话的布局偏移**：探针补采里，切换已有会话捕获到 `layoutShiftTotalDelta = 0.176492`，明显高于其它路径。
+3. **发送后流式增长导致的重复渲染和滚动位置波动**：普通发送 7 秒窗口内 `ChatMessageList` render 33 次，联网搜索 18 秒窗口内 render 74 次；DOM 和文本持续增长，滚动容器 `bottomDelta` 在多次采样中波动。
 
 新建对话路径表现最好：点击后首个采样已经进入新建页，首页标题、examples 和输入框焦点都立即正确。
+
+## 探针补采
+
+### 补采环境
+
+- 提交：`a09b63c chore: 增加前端性能录制探针`
+- CI：`Fusion UI Build & Deploy` run `28064223225` 成功
+- 开启方式：`https://fusion.seanfield.org/?new=true&model=deepseek-chat&perfProbe=1`
+- 本地验证：`npm test` 65 个测试文件 / 471 个用例通过，`npm run build` 通过
+
+### 补采摘要
+
+| 路径 | 采样窗口 | longtask | layout shift total | mutation events | render delta |
+| --- | ---: | ---: | ---: | ---: | --- |
+| 切换已有会话 | 3860ms | 0 | 0.176492 | 18 | AppLayout 1, ChatInput 4, ChatMessageList 3 |
+| 已有会话点新建 | 2144ms | 0 | 0.001172 | 13 | AppLayout 3, ChatInput 4, HomePage 4 |
+| 首页示例进入会话 | 7354ms | 0 | 0.021160 | 34 | AppLayout 1, ChatInput 6, ChatMessageList 7, HomePage 3 |
+| 普通发送 | 7107ms | 0 | 0.003027 | 88 | ChatInput 10, ChatMessageList 33 |
+| 联网搜索发送 | 18102ms | 0 | 0.015154 | 216 | ChatInput 12, ChatMessageList 74 |
+
+### 补采归因
+
+#### 长任务
+
+5 条关键路径的 `longtaskCountDelta` 均为 0。当前线上体感卡顿没有证据指向主线程单个长任务。
+
+#### 布局抖动
+
+布局偏移主要集中在“切换已有会话”：
+
+- 切换已有会话：`layoutShiftTotalDelta = 0.176492`
+- 已有会话点新建：`0.001172`
+- 首页示例进入会话：`0.021160`
+- 普通发送：`0.003027`
+- 联网搜索发送：`0.015154`
+
+结论：下一步若要继续改善“切换不够丝滑”，优先看已有会话进入时主区高度、skeleton 到真实消息的占位稳定性，而不是新建对话路径。
+
+#### 重复 render
+
+重复 render 主要出现在流式回答阶段：
+
+- 普通发送 7 秒窗口：`ChatMessageList` 33 次，`ChatInput` 10 次。
+- 联网搜索 18 秒窗口：`ChatMessageList` 74 次，`ChatInput` 12 次。
+
+这与流式 token、工具状态、资料层、推荐问题逐步出现一致。当前没有证据说明这些 render 是错误循环，但它们是后续优化的主要可量化目标。
+
+#### 网络与异步任务
+
+普通发送窗口里慢请求包括：
+
+- `/api/chat/send`：约 2204ms
+- `/api/chat/suggest-questions`：约 1737ms
+
+联网搜索窗口里慢请求包括：
+
+- `/api/chat/suggest-questions`：约 3157ms
+- `/api/chat/conversations/metadata?...`：约 525ms
+
+结论：发送链路的等待主要来自后端生成 / 推荐问题 / 元数据刷新，而不是前端主线程阻塞。
 
 ## 路径记录
 
@@ -324,4 +393,3 @@ Chrome 插件的页面沙箱未暴露 `performance`，并且页面 `window` / `d
 3. 思考过程展开后的锚点保持。
 
 不建议此时做大规模视觉重构。下一步更适合按 P1-A / P1-B / P1-C / P1-D 分别写 implementation plan，再小批次实施。
-
