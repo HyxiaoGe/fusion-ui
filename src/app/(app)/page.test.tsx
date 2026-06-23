@@ -6,14 +6,14 @@ const {
   routerPushMock,
   sendMessageMock,
   useAppSelectorMock,
-  homePageLazyMock,
+  homePageMock,
   chatInputMock,
 } = vi.hoisted(() => ({
   routerReplaceMock: vi.fn(),
   routerPushMock: vi.fn(),
   sendMessageMock: vi.fn(),
   useAppSelectorMock: vi.fn(),
-  homePageLazyMock: vi.fn(),
+  homePageMock: vi.fn(),
   chatInputMock: vi.fn(),
 }));
 
@@ -37,9 +37,9 @@ vi.mock('@/hooks/useSendMessage', () => ({
   }),
 }));
 
-vi.mock('@/components/lazy/LazyComponents', () => ({
-  HomePageLazy: (props: any) => {
-    homePageLazyMock(props);
+vi.mock('@/components/home/HomePage', () => ({
+  default: (props: any) => {
+    homePageMock(props);
     return (
       <button type="button" onClick={() => props.onSendMessage('示例问题')}>
         示例问题
@@ -62,7 +62,7 @@ describe('Home page 新对话发送体验', () => {
     routerReplaceMock.mockClear();
     routerPushMock.mockClear();
     sendMessageMock.mockReset();
-    homePageLazyMock.mockClear();
+    homePageMock.mockClear();
     chatInputMock.mockClear();
     useAppSelectorMock.mockImplementation((selector) =>
       selector({

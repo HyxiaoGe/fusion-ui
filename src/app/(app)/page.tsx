@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import ChatInput from '@/components/chat/ChatInput';
-import { HomePageLazy } from '@/components/lazy/LazyComponents';
+import HomePage from '@/components/home/HomePage';
 
 import { useAppSelector } from '@/redux/hooks';
 import { useSendMessage } from '@/hooks/useSendMessage';
@@ -52,7 +52,7 @@ export default function Home() {
   return (
     <div className="h-full flex flex-col relative">
       <div className="flex-1 overflow-y-auto">
-        <HomePageLazy onSendMessage={handleSendMessage} onNewChat={handleNewChat} />
+        <HomePage onSendMessage={handleSendMessage} onNewChat={handleNewChat} />
       </div>
       <div className="flex-shrink-0 p-4">
         <ChatInput

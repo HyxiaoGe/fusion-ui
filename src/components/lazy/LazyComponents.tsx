@@ -1,11 +1,17 @@
 import React, { Suspense, lazy } from 'react';
 import LoadingIndicator from '@/components/ui/loading-indicator';
+import {
+  preloadChatMessageList,
+  preloadChatSidebar,
+  preloadHomePage,
+  preloadModelSelector,
+} from './preloaders';
 
 // 懒加载组件定义
-export const LazyChatMessageList = lazy(() => import('@/components/chat/ChatMessageList'));
-export const LazyChatSidebar = lazy(() => import('@/components/chat/ChatSidebar'));
-export const LazyModelSelector = lazy(() => import('@/components/models/ModelSelector'));
-export const LazyHomePage = lazy(() => import('@/components/home/HomePage'));
+export const LazyChatMessageList = lazy(preloadChatMessageList);
+export const LazyChatSidebar = lazy(preloadChatSidebar);
+export const LazyModelSelector = lazy(preloadModelSelector);
+export const LazyHomePage = lazy(preloadHomePage);
 
 // 通用懒加载包装器组件
 interface LazyWrapperProps {

@@ -2,6 +2,7 @@ import { useCallback, memo, useState, useEffect, useRef } from "react";
 import { useAppSelector } from "@/redux/hooks";
 import { useToast } from "@/components/ui/toast";
 import { fetchPromptExamples } from "@/lib/api/prompts";
+import { preloadChatMessageList } from "@/components/lazy/preloaders";
 
 const FALLBACK_EXAMPLES = [
   '写一个 Python 快速排序函数',
@@ -35,7 +36,7 @@ interface HomePageProps {
 const HomePage: React.FC<HomePageProps> = ({ onSendMessage }) => {
   const { isAuthenticated } = useAppSelector((state) => state.auth);
   const { toast } = useToast();
-  const [loading, setLoading] = useState(true);
+  const [remoteExamplesReady, setRemoteExamplesReady] = useState(false);
   const [displayItems, setDisplayItems] = useState<string[]>(FALLBACK_EXAMPLES.slice(0, PAGE_SIZE));
   // 每张卡片的翻转状态：true = 翻到侧面（不可见）
   const [flippedCards, setFlippedCards] = useState<boolean[]>(new Array(PAGE_SIZE).fill(false));
@@ -58,6 +59,7 @@ const HomePage: React.FC<HomePageProps> = ({ onSendMessage }) => {
   // 首次加载
   useEffect(() => {
     let cancelled = false;
+    void preloadChatMessageList();
     (async () => {
       try {
         const data = await fetchPromptExamples(50);
@@ -72,7 +74,7 @@ const HomePage: React.FC<HomePageProps> = ({ onSendMessage }) => {
       } catch {
         // fallback
       } finally {
-        if (!cancelled) setLoading(false);
+        if (!cancelled) setRemoteExamplesReady(true);
       }
     })();
     return () => { cancelled = true; };
@@ -113,10 +115,10 @@ const HomePage: React.FC<HomePageProps> = ({ onSendMessage }) => {
 
   // 定时轮换
   useEffect(() => {
-    if (loading) return;
+    if (!remoteExamplesReady) return;
     const timer = setInterval(doWaveFlip, ROTATE_INTERVAL);
     return () => clearInterval(timer);
-  }, [loading, doWaveFlip]);
+  }, [remoteExamplesReady, doWaveFlip]);
 
   const handleExampleClick = useCallback((message: string) => {
     if (!isAuthenticated) {
@@ -141,33 +143,23 @@ const HomePage: React.FC<HomePageProps> = ({ onSendMessage }) => {
         </h1>
 
         <div className="flex flex-wrap gap-3.5 justify-center" style={{ perspective: '1000px' }}>
-          {loading ? (
-            Array.from({ length: 9 }).map((_, i) => (
-              <div
-                key={i}
-                className="h-10 rounded-[20px] bg-muted animate-pulse motion-reduce:animate-none"
-                style={{ width: `${140 + (i % 3) * 50}px` }}
-              />
-            ))
-          ) : (
-            displayItems.map((example, index) => (
-              <button
-                key={`slot-${index}`}
-                onClick={() => handleExampleClick(example)}
-                className="px-5 py-2.5 rounded-[20px] bg-bg-subtle text-md leading-5 text-fg-secondary whitespace-nowrap
+          {displayItems.map((example, index) => (
+            <button
+              key={`slot-${index}`}
+              onClick={() => handleExampleClick(example)}
+              className="px-5 py-2.5 rounded-[20px] bg-bg-subtle text-md leading-5 text-fg-secondary whitespace-nowrap
                            border border-border shadow-fdv2-xs
                            hover:bg-muted hover:text-foreground hover:border-border-strong hover:shadow-fdv2-sm
                            transition-all duration-fast cursor-pointer"
-                style={{
-                  transition: 'transform 0.3s ease, opacity 0.3s ease, background-color 0.15s, box-shadow 0.15s',
-                  transform: flippedCards[index] ? 'rotateY(90deg)' : 'rotateY(0deg)',
-                  opacity: flippedCards[index] ? 0 : 1,
-                }}
-              >
-                {example}
-              </button>
-            ))
-          )}
+              style={{
+                transition: 'transform 0.3s ease, opacity 0.3s ease, background-color 0.15s, box-shadow 0.15s',
+                transform: flippedCards[index] ? 'rotateY(90deg)' : 'rotateY(0deg)',
+                opacity: flippedCards[index] ? 0 : 1,
+              }}
+            >
+              {example}
+            </button>
+          ))}
         </div>
       </div>
     </div>
