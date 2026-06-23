@@ -240,6 +240,106 @@ describe('ChatInput', () => {
     });
   });
 
+  it('uses stable accessible actions for upload, reasoning, send and stop', () => {
+    currentState.auth.isAuthenticated = true;
+    currentState.models.selectedModelId = 'model-1';
+    currentState.models.models = [
+      {
+        id: 'model-1',
+        provider: 'qwen',
+        capabilities: {
+          vision: true,
+          deepThinking: true,
+        },
+      },
+    ];
+    const onSendMessage = vi.fn();
+    const onStopStreaming = vi.fn();
+
+    const { rerender } = render(
+      <ChatInput
+        onSendMessage={onSendMessage}
+        onStopStreaming={onStopStreaming}
+        activeChatId="chat-1"
+      />,
+    );
+
+    expect(screen.getByRole('button', { name: '上传文件' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: '思考模式' })).toHaveAttribute('aria-pressed', 'false');
+    expect(screen.getByRole('button', { name: '发送消息' })).toBeDisabled();
+
+    fireEvent.click(screen.getByRole('button', { name: '思考模式' }));
+    expect(setReasoningEnabledMock).toHaveBeenCalledWith(true);
+
+    fireEvent.change(screen.getByPlaceholderText('发消息给 Fusion AI（Enter 发送）'), {
+      target: {
+        value: '你好',
+      },
+    });
+
+    expect(screen.getByRole('button', { name: '发送消息' })).toBeEnabled();
+    fireEvent.click(screen.getByRole('button', { name: '发送消息' }));
+    expect(onSendMessage).toHaveBeenCalledWith('你好');
+
+    currentState.conversation.reasoningEnabled = true;
+    rerender(
+      <ChatInput
+        onSendMessage={onSendMessage}
+        onStopStreaming={onStopStreaming}
+        activeChatId="chat-1"
+      />,
+    );
+
+    expect(screen.getByRole('button', { name: '思考模式' })).toHaveAttribute('aria-pressed', 'true');
+
+    currentState.stream.isStreaming = true;
+    rerender(
+      <ChatInput
+        onSendMessage={onSendMessage}
+        onStopStreaming={onStopStreaming}
+        activeChatId="chat-1"
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: '停止生成' }));
+    expect(onStopStreaming).toHaveBeenCalledTimes(1);
+  });
+
+  it('renders composer as a structured input panel with toolbar and attachment status area', async () => {
+    currentState.auth.isAuthenticated = true;
+    currentState.models.selectedModelId = 'model-1';
+    currentState.models.models = [
+      {
+        id: 'model-1',
+        provider: 'qwen',
+        capabilities: {
+          vision: true,
+          deepThinking: true,
+        },
+      },
+    ];
+    uploadFilesMock.mockResolvedValue([{ file_id: 'file-1' }]);
+
+    const { container } = render(<ChatInput onSendMessage={vi.fn()} activeChatId="chat-1" />);
+    const panel = screen.getByRole('group', { name: '消息输入区' });
+    expect(panel.className).toContain('rounded-xl');
+    expect(screen.getByRole('toolbar', { name: '消息工具栏' })).toBeInTheDocument();
+
+    const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement;
+    const file = new File(['hello'], 'hello.txt', { type: 'text/plain' });
+
+    fireEvent.change(fileInput, {
+      target: {
+        files: [file],
+      },
+    });
+
+    await waitFor(() => {
+      expect(screen.getByRole('list', { name: '已添加文件' })).toBeInTheDocument();
+      expect(screen.getByText('hello.txt')).toBeInTheDocument();
+    });
+  });
+
   it('uses the active chat model capabilities instead of a stale global selection', async () => {
     currentState.auth.isAuthenticated = true;
     currentState.models.selectedModelId = 'model-unsupported';
@@ -589,7 +689,7 @@ describe('ChatInput', () => {
       },
     });
 
-    fireEvent.click(screen.getAllByRole('button').at(-1) as HTMLElement);
+    fireEvent.click(screen.getByRole('button', { name: '发送消息' }));
 
     expect(onSendMessage).not.toHaveBeenCalled();
     expect(toastMock).toHaveBeenCalledWith(
@@ -610,7 +710,7 @@ describe('ChatInput', () => {
       },
     });
 
-    fireEvent.click(screen.getAllByRole('button').at(-1) as HTMLElement);
+    fireEvent.click(screen.getByRole('button', { name: '发送消息' }));
 
     expect(onSendMessage).not.toHaveBeenCalled();
     expect(toastMock).toHaveBeenCalledWith(

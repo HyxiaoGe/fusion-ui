@@ -73,7 +73,6 @@ function formatFileErrorMessage(errorMessage?: string): string {
 
 const ChatInput: React.FC<ChatInputProps> = ({
   onSendMessage,
-  onClearMessage,
   onStopStreaming,
   onModelChange,
   disabled = false,
@@ -642,7 +641,9 @@ const ChatInput: React.FC<ChatInputProps> = ({
     <div className="flex flex-col space-y-2">
       {/* 外层卡片容器（支持拖拽上传） */}
       <div
-        className={`relative rounded-2xl border bg-background dark:bg-bg-elevated shadow-fdv2-xs focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-0 transition-colors duration-fast ${
+        role="group"
+        aria-label="消息输入区"
+        className={`relative rounded-xl border bg-background shadow-fdv2-xs focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-0 transition-colors duration-fast ${
           isDragOver
             ? "border-primary border-dashed bg-primary/5"
             : "border-border"
@@ -656,14 +657,22 @@ const ChatInput: React.FC<ChatInputProps> = ({
           const imageFiles = localFiles.filter((f) => f.file.type.startsWith('image/'));
           const otherFiles = localFiles.filter((f) => !f.file.type.startsWith('image/'));
           return (
-            <div className="p-3 border-b border-border/50 space-y-2">
+            <div
+              role="list"
+              aria-label="已添加文件"
+              className="p-2.5 border-b border-border/40 space-y-2"
+            >
               {/* 图片缩略图条：横排 + 水平滚动 */}
               {imageFiles.length > 0 && (
                 <div className="flex gap-3 overflow-x-auto pt-1 pr-1 pb-1">
                   {imageFiles.map((file) => {
                     const isUploading = file.status === "uploading" || file.status === "pending";
                     return (
-                      <div key={file.id} className="relative flex-shrink-0 w-[60px] h-[60px] mt-1 mr-1">
+                      <div
+                        key={file.id}
+                        role="listitem"
+                        className="relative flex-shrink-0 w-[60px] h-[60px] mt-1 mr-1"
+                      >
                         {/* 缩略图 */}
                         <div
                           className="w-full h-full rounded-lg overflow-hidden border border-border/50 bg-muted cursor-pointer"
@@ -697,7 +706,11 @@ const ChatInput: React.FC<ChatInputProps> = ({
               )}
               {/* 非图片文件列表 */}
               {otherFiles.map((file) => (
-                <div key={file.id} className="flex flex-col gap-1.5">
+                <div
+                  key={file.id}
+                  role="listitem"
+                  className="flex flex-col gap-1.5 rounded-md border border-border/50 bg-muted/20 p-2"
+                >
                   <div className="flex items-center justify-between">
                     <div className="flex items-center">
                       <div className="flex-shrink-0 w-8 h-8 bg-primary/10 rounded flex items-center justify-center mr-2">
@@ -757,7 +770,11 @@ const ChatInput: React.FC<ChatInputProps> = ({
         />
 
         {/* 工具栏 */}
-        <div className="flex items-center gap-1 px-2 py-1.5">
+        <div
+          role="toolbar"
+          aria-label="消息工具栏"
+          className="flex items-center gap-1 border-t border-border/40 px-2 py-1.5"
+        >
           {/* 左侧工具按钮组 */}
           <div className="flex items-center gap-1 flex-1">
             {/* 文件上传按钮 */}
@@ -783,6 +800,8 @@ const ChatInput: React.FC<ChatInputProps> = ({
                 dispatch(setReasoningEnabled(!reasoningEnabled));
               }}
               disabled={!supportsReasoning || isComposerBlocked}
+              aria-label="思考模式"
+              aria-pressed={reasoningEnabled && supportsReasoning}
               title={supportsReasoning ? (reasoningEnabled ? "AI思考过程已开启" : "AI思考过程已关闭") : "当前模型不支持思考过程"}
             >
               <Lightbulb className={`h-4 w-4 ${reasoningEnabled && supportsReasoning ? "text-info" : ""}`} />
@@ -795,17 +814,19 @@ const ChatInput: React.FC<ChatInputProps> = ({
           <div className="flex items-center gap-1.5">
             <ModelSelector onChange={onModelChange || (() => {})} />
             <Button
-            onClick={isStreaming && onStopStreaming ? onStopStreaming : handleSendMessage}
-            disabled={!canSend && !(isStreaming && onStopStreaming)}
-            size="sm"
-            className="h-8 w-8 p-0 rounded-lg"
-          >
-            {isStreaming && onStopStreaming ? (
-              <Square className="h-4 w-4" />
-            ) : (
-              <ArrowUp className="h-4 w-4" />
-            )}
-          </Button>
+              onClick={isStreaming && onStopStreaming ? onStopStreaming : handleSendMessage}
+              disabled={!canSend && !(isStreaming && onStopStreaming)}
+              variant={isStreaming && onStopStreaming ? "secondary" : "default"}
+              size="sm"
+              className="h-8 w-8 p-0 rounded-lg"
+              aria-label={isStreaming && onStopStreaming ? "停止生成" : "发送消息"}
+            >
+              {isStreaming && onStopStreaming ? (
+                <Square className="h-4 w-4" />
+              ) : (
+                <ArrowUp className="h-4 w-4" />
+              )}
+            </Button>
           </div>
         </div>
       </div>
