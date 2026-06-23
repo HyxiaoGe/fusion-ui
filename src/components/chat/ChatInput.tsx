@@ -19,7 +19,7 @@ import {
 import { ArrowUp, Lightbulb, Loader2, PaperclipIcon, Square, X } from "lucide-react";
 import ImageViewer from "./ImageViewer";
 import ModelSelector from "@/components/models/ModelSelector";
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useToast } from "../ui/toast";
 import { v4 as uuidv4 } from "uuid";
 
@@ -35,6 +35,7 @@ interface ChatInputProps {
   disabled?: boolean;
   placeholder?: string;
   activeChatId?: string | null;
+  resetSignal?: string | number | null;
 }
 
 interface LocalFileWithStatus {
@@ -78,6 +79,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
   disabled = false,
   placeholder,
   activeChatId,
+  resetSignal,
 }) => {
   const dispatch = useAppDispatch();
   const { toast } = useToast();
@@ -87,6 +89,9 @@ const ChatInput: React.FC<ChatInputProps> = ({
   const [viewingImageUrl, setViewingImageUrl] = useState<string | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const previousResetSignalRef = useRef(resetSignal);
+  const previousChatIdRef = useRef<string | null>(null);
+  const uploadGenerationRef = useRef(0);
 
   const isAuthenticated = useAppSelector(selectIsAuthenticated);
   const processingFiles = useAppSelector((state) => state.fileUpload.processingFiles);
@@ -97,12 +102,49 @@ const ChatInput: React.FC<ChatInputProps> = ({
   const pendingChatIdRef = useRef<string>(uuidv4());
   const effectiveChatId = activeChatId;
   const chatId = effectiveChatId || pendingChatIdRef.current;
+  const currentChatIdRef = useRef<string>(chatId);
   const selectedModel = useAppSelector((state) => selectChatModel(state, effectiveChatId));
   const isCurrentModelUnavailable = Boolean(selectedModel?.enabled === false);
   const isComposerBlocked = disabled || isCurrentModelUnavailable;
 
   const supportsReasoning = selectedModel?.capabilities?.deepThinking || false;
   const supportsFileUpload = selectedModel?.capabilities?.vision || false;
+
+  useLayoutEffect(() => {
+    currentChatIdRef.current = chatId;
+  }, [chatId]);
+
+  useEffect(() => {
+    const previousSignal = previousResetSignalRef.current;
+    const previousChatId = previousChatIdRef.current ?? chatId;
+    previousResetSignalRef.current = resetSignal;
+    previousChatIdRef.current = chatId;
+
+    if (resetSignal == null || previousSignal === resetSignal) {
+      return;
+    }
+
+    uploadGenerationRef.current += 1;
+    setMessage("");
+    setIsDragOver(false);
+    setViewingImageUrl(null);
+    setLocalFiles((prev) => {
+      prev.forEach((file) => {
+        if (file.fileId) {
+          stopPollingFileStatus(file.fileId);
+        }
+        if (file.previewUrl) {
+          URL.revokeObjectURL(file.previewUrl);
+        }
+      });
+      return [];
+    });
+    dispatch(clearFiles(previousChatId));
+
+    if (textareaRef.current) {
+      textareaRef.current.style.height = "auto";
+    }
+  }, [chatId, dispatch, resetSignal]);
 
   const selectChatFileIds = useMemo(makeSelectChatFileIds, []);
   const fileIds = useAppSelector((state) => selectChatFileIds(state, chatId));
@@ -191,6 +233,9 @@ const ChatInput: React.FC<ChatInputProps> = ({
       return;
     }
 
+    const uploadGeneration = uploadGenerationRef.current;
+    const uploadChatId = chatId;
+
     try {
       setLocalFiles((prev) =>
         prev.map((file) =>
@@ -203,9 +248,21 @@ const ChatInput: React.FC<ChatInputProps> = ({
       const uploadedFiles = await uploadFiles(
         selectedModel.provider,
         selectedModel.id,
-        chatId,
+        uploadChatId,
         filesToUpload.map((item) => item.file)
       );
+
+      if (
+        uploadGeneration !== uploadGenerationRef.current ||
+        uploadChatId !== currentChatIdRef.current
+      ) {
+        uploadedFiles.forEach((uploaded) => {
+          deleteFile(uploaded.file_id).catch((err) =>
+            console.warn("清理已失效上传文件失败:", err)
+          );
+        });
+        return;
+      }
 
       setLocalFiles((prev) =>
         prev.map((file) => {
@@ -229,17 +286,24 @@ const ChatInput: React.FC<ChatInputProps> = ({
       uploadedFiles.forEach((uploaded, index) => {
         const fileId = uploaded.file_id;
         const isImage = filesToUpload[index]?.file.type.startsWith('image/');
-        dispatch(addFileId({ chatId, fileId, fileIndex: index }));
+        dispatch(addFileId({ chatId: uploadChatId, fileId, fileIndex: index }));
 
         if (isImage) {
           // 图片上传后已处理完毕，直接标记 processed
-          dispatch(updateFileStatus({ fileId, chatId, status: "processed" }));
+          dispatch(updateFileStatus({ fileId, chatId: uploadChatId, status: "processed" }));
           return;
         }
 
-        dispatch(updateFileStatus({ fileId, chatId, status: "parsing" }));
+        dispatch(updateFileStatus({ fileId, chatId: uploadChatId, status: "parsing" }));
 
-        startPollingFileStatus(fileId, chatId, dispatch, ({ success, errorMessage }) => {
+        startPollingFileStatus(fileId, uploadChatId, dispatch, ({ success, errorMessage }) => {
+          if (
+            uploadGeneration !== uploadGenerationRef.current ||
+            uploadChatId !== currentChatIdRef.current
+          ) {
+            return;
+          }
+
           const readableError = success ? undefined : formatFileErrorMessage(errorMessage);
 
           setLocalFiles((prev) =>
@@ -678,6 +742,8 @@ const ChatInput: React.FC<ChatInputProps> = ({
                           className="w-full h-full rounded-lg overflow-hidden border border-border/50 bg-muted cursor-pointer"
                           onClick={() => setViewingImageUrl(file.previewUrl || file.thumbnailUrl || null)}
                         >
+                          {/* 本地 Blob 预览和后端临时缩略图需要直接交给浏览器渲染 */}
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
                           <img
                             src={file.previewUrl || file.thumbnailUrl}
                             alt={file.file.name}

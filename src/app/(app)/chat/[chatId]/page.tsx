@@ -43,6 +43,12 @@ import { useSuggestedQuestionContinuation } from '@/hooks/useSuggestedQuestionCo
 import { useTransientCompletionState } from '@/hooks/useTransientCompletionState';
 import { getRunStatusFromFinishReason } from '@/lib/agent/finishReason';
 import { shouldAutoFetchSuggestedQuestions } from '@/lib/chat/suggestedQuestionTiming';
+import type { Message } from '@/types/conversation';
+
+type ReadyConversationSnapshot = {
+  chatId: string;
+  messages: Message[];
+};
 
 export default function ChatPage() {
   const params = useParams();
@@ -50,10 +56,10 @@ export default function ChatPage() {
   const dispatch = useAppDispatch();
   const store = useStore();
   const chatId = params?.chatId as string;
-  const [inputKey, setInputKey] = useState(Date.now());
   const [confirmDialogOpen, setConfirmDialogOpen] = useState(false);
   const chatInputRef = useRef<HTMLDivElement>(null);
   const fetchQuestionsRef = useRef<(force?: boolean) => Promise<void>>();
+  const lastReadyConversationRef = useRef<ReadyConversationSnapshot | null>(null);
   const { conversation, hydrationView, hydrationError, retryHydration } = useConversation(chatId);
   const { sendMessage, stopStreaming, retryMessage } = useSendMessage();
   const {
@@ -71,12 +77,19 @@ export default function ChatPage() {
     }));
 
   useEffect(() => {
-    setInputKey(Date.now());
-  }, [chatId]);
-
-  useEffect(() => {
     clearQuestions();
   }, [chatId, clearQuestions]);
+
+  useEffect(() => {
+    if (hydrationView !== 'ready' || !conversation) {
+      return;
+    }
+
+    lastReadyConversationRef.current = {
+      chatId,
+      messages: conversation.messages || [],
+    };
+  }, [chatId, conversation, hydrationView]);
 
   // 页面 mount / hydration 完成后检查是否有未完成的流 → 断线重连
   // TODO(遗漏1): 网络抖动自动重连需要独立实现，不能复用 checkAndReconnect，
@@ -306,7 +319,7 @@ export default function ChatPage() {
   const showCompletionState = useTransientCompletionState({
     isStreaming,
     isLoadingQuestions,
-    messages: conversation?.messages || [],
+    messages: conversation?.messages || lastReadyConversationRef.current?.messages || [],
   });
 
   const handleSendMessage = useCallback((content: string, attachments?: FileAttachment[]) => {
@@ -356,7 +369,18 @@ export default function ChatPage() {
   }, [chatId, dispatch]);
 
 
-  if (hydrationView === 'loading') {
+  const lastReadyConversation = lastReadyConversationRef.current;
+  const shouldKeepPreviousContent =
+    hydrationView === 'loading' &&
+    Boolean(lastReadyConversation && lastReadyConversation.messages.length > 0);
+  const displayMessages = shouldKeepPreviousContent
+    ? lastReadyConversation?.messages || []
+    : conversation?.messages || [];
+  const displayConversationId = shouldKeepPreviousContent
+    ? lastReadyConversation?.chatId || null
+    : chatId;
+
+  if (hydrationView === 'loading' && !shouldKeepPreviousContent) {
     return (
       <div className="h-full flex flex-col relative">
         <div className="flex-1 overflow-y-auto px-4 pt-4" data-chat-scroll-container="true">
@@ -366,7 +390,7 @@ export default function ChatPage() {
     );
   }
 
-  if (!conversation || hydrationView === 'error') {
+  if ((!conversation && !shouldKeepPreviousContent) || hydrationView === 'error') {
     return (
       <div className="h-full flex items-center justify-center">
           <div className="text-center space-y-4">
@@ -398,15 +422,15 @@ export default function ChatPage() {
       <div className="h-full flex flex-col relative">
         <div className="flex-1 overflow-y-auto px-4 pt-4" data-chat-scroll-container="true">
           <ChatMessageListLazy
-            messages={conversation.messages || []}
-            conversationId={chatId}
-            isStreaming={isStreaming && streamConversationId === chatId}
-            onRetry={handleRetry}
-            suggestedQuestions={suggestedQuestions}
-            isLoadingQuestions={isLoadingQuestions}
-            onSelectQuestion={handleSelectQuestion}
-            onRefreshQuestions={handleRefreshQuestions}
-            completionStateVisible={showCompletionState}
+            messages={displayMessages}
+            conversationId={displayConversationId}
+            isStreaming={isStreaming && streamConversationId === displayConversationId}
+            onRetry={shouldKeepPreviousContent ? undefined : handleRetry}
+            suggestedQuestions={shouldKeepPreviousContent ? [] : suggestedQuestions}
+            isLoadingQuestions={shouldKeepPreviousContent ? false : isLoadingQuestions}
+            onSelectQuestion={shouldKeepPreviousContent ? undefined : handleSelectQuestion}
+            onRefreshQuestions={shouldKeepPreviousContent ? undefined : handleRefreshQuestions}
+            completionStateVisible={shouldKeepPreviousContent ? false : showCompletionState}
             emptyState={{
               title: '这个会话还没有消息',
               description: '发送第一条消息，继续这段会话。',
@@ -416,12 +440,12 @@ export default function ChatPage() {
 
         <div ref={chatInputRef} tabIndex={-1} className="flex-shrink-0 p-4">
           <ChatInput
-            key={inputKey}
             onSendMessage={handleSendMessage}
             onClearMessage={handleClearChat}
             onStopStreaming={stopStreaming}
             onModelChange={clearQuestions}
             activeChatId={chatId}
+            resetSignal={chatId}
           />
         </div>
       </div>

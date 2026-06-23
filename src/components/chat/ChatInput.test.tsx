@@ -129,7 +129,11 @@ vi.mock('next/navigation', () => ({
 }));
 
 vi.mock('next/image', () => ({
-  default: (props: any) => <img {...props} />,
+  default: function MockNextImage({ alt = '', ...props }: any) {
+    // 测试环境只需要普通 img 承载 next/image props
+    // eslint-disable-next-line @next/next/no-img-element
+    return <img alt={alt} {...props} />;
+  },
 }));
 
 vi.mock('./FilePreviewList', () => ({
@@ -238,6 +242,70 @@ describe('ChatInput', () => {
         expect.any(Function)
       );
     });
+  });
+
+  it('ignores an upload result when reset switches to another chat before it resolves', async () => {
+    currentState.auth.isAuthenticated = true;
+    currentState.models.selectedModelId = 'model-1';
+    currentState.models.models = [
+      {
+        id: 'model-1',
+        provider: 'qwen',
+        capabilities: {
+          vision: true,
+          deepThinking: true,
+        },
+      },
+    ];
+    let resolveUpload: (value: Array<{ file_id: string }>) => void = () => {};
+    uploadFilesMock.mockImplementation(
+      () =>
+        new Promise<Array<{ file_id: string }>>((resolve) => {
+          resolveUpload = resolve;
+        })
+    );
+
+    const { container, rerender } = render(
+      <ChatInput onSendMessage={vi.fn()} activeChatId="chat-a" resetSignal="chat-a" />
+    );
+    const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement;
+    const file = new File(['hello'], 'pending.txt', { type: 'text/plain' });
+
+    fireEvent.change(fileInput, {
+      target: {
+        files: [file],
+      },
+    });
+
+    await waitFor(() => {
+      expect(uploadFilesMock).toHaveBeenCalledWith('qwen', 'model-1', 'chat-a', [file]);
+    });
+
+    rerender(<ChatInput onSendMessage={vi.fn()} activeChatId="chat-b" resetSignal="chat-b" />);
+    addFileIdMock.mockClear();
+    updateFileStatusMock.mockClear();
+    startPollingFileStatusMock.mockClear();
+
+    await act(async () => {
+      resolveUpload([{ file_id: 'file-stale' }]);
+    });
+
+    expect(addFileIdMock).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        chatId: 'chat-a',
+      })
+    );
+    expect(updateFileStatusMock).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        chatId: 'chat-a',
+      })
+    );
+    expect(startPollingFileStatusMock).not.toHaveBeenCalledWith(
+      'file-stale',
+      'chat-a',
+      expect.anything(),
+      expect.anything()
+    );
   });
 
   it('uses stable accessible actions for upload, reasoning, send and stop', () => {
