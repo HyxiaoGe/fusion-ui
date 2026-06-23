@@ -52,6 +52,16 @@ describe('UserMessage', () => {
     expect(screen.getByRole('button', { name: '编辑' })).toBeInTheDocument();
   });
 
+  it('用户文本渲染为有边界的轻量气泡', () => {
+    renderUserMessage();
+
+    const bubble = screen.getByLabelText('用户消息内容');
+
+    expect(bubble.className).toContain('border');
+    expect(bubble.className).toContain('shadow');
+    expect(bubble.className).toContain('rounded-xl');
+  });
+
   it('渲染 failed 状态提示和重新发送操作', () => {
     const message = makeMessage({ status: 'failed' });
     const { onRetry } = renderUserMessage({ message });

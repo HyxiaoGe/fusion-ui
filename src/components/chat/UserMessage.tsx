@@ -118,9 +118,11 @@ function UserMessage({
       )}
 
       <div className={cn(
-        'rounded-2xl px-4 py-2.5 bg-primary/10 dark:bg-primary/15 text-foreground',
+        'rounded-xl border border-border/60 bg-primary/10 px-4 py-2.5 text-foreground shadow-sm shadow-black/5 dark:border-border/50 dark:bg-primary/15 dark:shadow-black/20',
         isEditing && 'w-full',
-      )}>
+      )}
+        aria-label="用户消息内容"
+      >
         {isEditing ? (
           <div className="w-full space-y-3 animate-in fade-in-50 duration-200">
             <div className="flex items-center gap-2 text-xs text-muted-foreground">
