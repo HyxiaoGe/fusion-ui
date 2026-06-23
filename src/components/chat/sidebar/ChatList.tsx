@@ -1,13 +1,12 @@
 import React from "react";
 import ChatItem from "./ChatItem";
-import type { Conversation } from "@/types/conversation";
-import type { Model } from "@/redux/slices/modelsSlice";
+import type { ConversationListItem } from "@/hooks/useConversationList";
 
 interface ChatListProps {
-  chats: Conversation[];
-  sortedAndGroupedChats: { groupLabel: string; groupChats: Conversation[] }[];
+  chats: ConversationListItem[];
+  sortedAndGroupedChats: { groupLabel: string; groupChats: ConversationListItem[] }[];
   activeChatId: string | null;
-  models: Model[];
+  modelNameById: Map<string, string>;
   isLoadingServerList: boolean;
   isLoadingMoreServer: boolean;
   containerRef: React.RefObject<HTMLDivElement | null>;
@@ -25,7 +24,7 @@ const ChatList: React.FC<ChatListProps> = ({
   chats,
   sortedAndGroupedChats,
   activeChatId,
-  models,
+  modelNameById,
   isLoadingServerList,
   isLoadingMoreServer,
   containerRef,
@@ -51,8 +50,8 @@ const ChatList: React.FC<ChatListProps> = ({
             <ChatItem
               key={chat.id}
               chat={chat}
-              activeChatId={activeChatId}
-              models={models}
+              isActive={chat.id === activeChatId}
+              modelNameById={modelNameById}
               onSelectChat={handleSelectChat}
               onStartEditing={handleStartEditing}
               onDeleteChat={handleDeleteChat}
@@ -73,8 +72,8 @@ const ChatList: React.FC<ChatListProps> = ({
                   <ChatItem
                     key={chat.id}
                     chat={chat}
-                    activeChatId={activeChatId}
-                    models={models}
+                    isActive={chat.id === activeChatId}
+                    modelNameById={modelNameById}
                     onSelectChat={handleSelectChat}
                     onStartEditing={handleStartEditing}
                     onDeleteChat={handleDeleteChat}

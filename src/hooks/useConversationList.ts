@@ -19,6 +19,21 @@ import {
 } from '@/lib/api/chat';
 import { parseTimestamp } from '@/lib/utils/parseTimestamp';
 import type { Conversation, Pagination } from '@/types/conversation';
+import type { RootState } from '@/redux/store';
+
+export type ConversationListItem = Omit<Conversation, 'messages'>;
+
+interface ConversationListView {
+  conversations: ConversationListItem[];
+  conversationListVersion: number;
+  isLoadingList: boolean;
+  isLoadingMore: boolean;
+  listIds: string[];
+  pagination: Pagination | null;
+  searchResults: ConversationListItem[] | null;
+  isSearching: boolean;
+  searchError: string | null;
+}
 
 function mapServerItem(item: any): Conversation {
   return {
@@ -29,6 +44,106 @@ function mapServerItem(item: any): Conversation {
     createdAt: parseTimestamp(item.created_at),
     updatedAt: parseTimestamp(item.updated_at),
   };
+}
+
+function toListItem(conversation: Conversation | undefined): ConversationListItem | null {
+  if (!conversation) return null;
+
+  return {
+    id: conversation.id,
+    title: conversation.title,
+    model_id: conversation.model_id,
+    createdAt: conversation.createdAt,
+    updatedAt: conversation.updatedAt,
+  };
+}
+
+function isSameListItem(a: ConversationListItem, b: ConversationListItem): boolean {
+  return (
+    a.id === b.id &&
+    a.title === b.title &&
+    a.model_id === b.model_id &&
+    a.createdAt === b.createdAt &&
+    a.updatedAt === b.updatedAt
+  );
+}
+
+function isSameListItems(a: ConversationListItem[], b: ConversationListItem[]): boolean {
+  if (a === b) return true;
+  if (a.length !== b.length) return false;
+
+  return a.every((item, index) => isSameListItem(item, b[index]));
+}
+
+function isSameStringList(a: string[], b: string[]): boolean {
+  if (a === b) return true;
+  if (a.length !== b.length) return false;
+
+  return a.every((item, index) => item === b[index]);
+}
+
+function isSamePagination(a: Pagination | null, b: Pagination | null): boolean {
+  if (a === b) return true;
+  if (!a || !b) return false;
+
+  return (
+    a.currentPage === b.currentPage &&
+    a.pageSize === b.pageSize &&
+    a.totalPages === b.totalPages &&
+    a.totalCount === b.totalCount &&
+    a.hasNext === b.hasNext &&
+    a.hasPrev === b.hasPrev
+  );
+}
+
+function isSameNullableList(
+  a: ConversationListItem[] | null,
+  b: ConversationListItem[] | null
+): boolean {
+  if (a === b) return true;
+  if (!a || !b) return false;
+
+  return isSameListItems(a, b);
+}
+
+function selectConversationListView(state: RootState): ConversationListView {
+  const {
+    byId,
+    conversationListVersion,
+    isLoadingList,
+    isLoadingMore,
+    listIds,
+    pagination,
+    searchResults,
+    isSearching,
+    searchError,
+  } = state.conversation;
+
+  return {
+    conversations: listIds.map((id) => toListItem(byId[id])).filter((item): item is ConversationListItem => Boolean(item)),
+    conversationListVersion,
+    isLoadingList,
+    isLoadingMore,
+    listIds,
+    pagination,
+    searchResults: searchResults?.map((item) => toListItem(item)).filter((item): item is ConversationListItem => Boolean(item)) ?? null,
+    isSearching,
+    searchError,
+  };
+}
+
+function isSameConversationListView(a: ConversationListView, b: ConversationListView): boolean {
+  return (
+    a.conversationListVersion === b.conversationListVersion &&
+    a.isLoadingList === b.isLoadingList &&
+    a.isLoadingMore === b.isLoadingMore &&
+    a.isSearching === b.isSearching &&
+    a.searchError === b.searchError &&
+    isSameStringList(a.listIds, b.listIds) &&
+    isSamePagination(a.pagination, b.pagination) &&
+    isSameListItems(a.conversations, b.conversations) &&
+    isSameNullableList(a.searchResults, b.searchResults)
+  );
 }
 
 function mapPagination(resp: any, page: number, pageSize: number): Pagination {
@@ -46,7 +161,6 @@ export function useConversationList() {
   const dispatch = useAppDispatch();
   const isAuthenticated = useAppSelector((state) => state.auth.isAuthenticated);
   const {
-    byId,
     conversationListVersion,
     isLoadingList,
     isLoadingMore,
@@ -55,7 +169,8 @@ export function useConversationList() {
     searchResults,
     isSearching,
     searchError,
-  } = useAppSelector((state) => state.conversation);
+    conversations,
+  } = useAppSelector(selectConversationListView, isSameConversationListView);
 
   const fetchList = useCallback(
     async (page = 1, pageSize = 10) => {
@@ -182,7 +297,7 @@ export function useConversationList() {
   }, [dispatch, isAuthenticated, isLoadingMore, pagination]);
 
   return {
-    conversations: listIds.map((id) => byId[id]).filter(Boolean),
+    conversations,
     pagination,
     isLoadingList,
     isLoadingMore,

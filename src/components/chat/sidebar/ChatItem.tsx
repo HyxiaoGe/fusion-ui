@@ -13,13 +13,12 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import type { Conversation } from "@/types/conversation";
-import type { Model } from "@/redux/slices/modelsSlice";
+import type { ConversationListItem } from "@/hooks/useConversationList";
 
 interface ChatItemProps {
-  chat: Conversation;
-  activeChatId: string | null;
-  models: Model[];
+  chat: ConversationListItem;
+  isActive: boolean;
+  modelNameById: Map<string, string>;
   onSelectChat: (chatId: string) => void;
   onStartEditing: (e: React.MouseEvent, chatId: string, currentTitle: string) => void;
   onDeleteChat: (e: React.MouseEvent, chatId: string) => void;
@@ -45,8 +44,8 @@ const HighlightedText: React.FC<{ text: string; query: string }> = ({ text, quer
 
 const ChatItem: React.FC<ChatItemProps> = ({
   chat,
-  activeChatId,
-  models,
+  isActive,
+  modelNameById,
   onSelectChat,
   onStartEditing,
   onDeleteChat,
@@ -54,7 +53,7 @@ const ChatItem: React.FC<ChatItemProps> = ({
   formatDate,
   searchQuery,
 }) => {
-  const isActive = chat.id === activeChatId;
+  const modelName = chat.model_id ? modelNameById.get(chat.model_id) : undefined;
 
   return (
     <div
@@ -79,9 +78,9 @@ const ChatItem: React.FC<ChatItemProps> = ({
             </div>
             <div className="text-[11px] text-muted-foreground truncate mt-0.5">
               {formatDate(chat.updatedAt || chat.createdAt)}
-              {chat.model_id && models.find(m => m.id === chat.model_id) && (
+              {modelName && (
                 <span className="ml-1">
-                  · {models.find(m => m.id === chat.model_id)?.name}
+                  · {modelName}
                 </span>
               )}
             </div>
@@ -120,4 +119,4 @@ const ChatItem: React.FC<ChatItemProps> = ({
   );
 };
 
-export default ChatItem; 
+export default React.memo(ChatItem);

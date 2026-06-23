@@ -14,7 +14,7 @@ import { useSidebarActions } from "@/hooks/useSidebarActions";
 import { useAppSelector, useAppDispatch } from "@/redux/hooks";
 import { setThemeMode } from "@/redux/slices/themeSlice";
 import { useResolvedTheme } from "@/lib/hooks/useResolvedTheme";
-import type { Conversation } from "@/types/conversation";
+import type { ConversationListItem } from "@/hooks/useConversationList";
 import { formatInTimeZone } from 'date-fns-tz';
 
 interface ChatSidebarProps {
@@ -54,6 +54,9 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ onNewChat, activeChatIdOverri
   const themeMode = useAppSelector((state) => state.theme.mode);
   const resolvedTheme = useResolvedTheme(themeMode);
   const isDark = resolvedTheme === 'dark';
+  const modelNameById = React.useMemo(() => {
+    return new Map(models.map((model) => [model.id, model.name]));
+  }, [models]);
 
   const toggleTheme = useCallback(() => {
     dispatch(setThemeMode(isDark ? 'light' : 'dark'));
@@ -108,10 +111,10 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ onNewChat, activeChatIdOverri
     return () => observer.disconnect();
   }, [pagination?.hasNext, isLoadingMore, loadMore, searchQuery]);
 
-  const formatDate = (timestamp: number) => {
+  const formatDate = useCallback((timestamp: number) => {
     const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
     return formatInTimeZone(new Date(timestamp), timeZone, 'MM/dd/yyyy');
-  };
+  }, []);
 
   const getDateGroupLabel = (timestamp: number) => {
     const now = new Date();
@@ -129,7 +132,7 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ onNewChat, activeChatIdOverri
 
   const sortedAndGroupedChats = React.useMemo(() => {
     const sortedChats = [...conversations].sort((a, b) => b.updatedAt - a.updatedAt);
-    const groups: Record<string, Conversation[]> = {};
+    const groups: Record<string, ConversationListItem[]> = {};
     sortedChats.forEach((chat) => {
       const groupLabel = getDateGroupLabel(chat.updatedAt);
       if (!groups[groupLabel]) {
@@ -183,6 +186,20 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ onNewChat, activeChatIdOverri
 
   const isSearchMode = searchQuery.trim().length > 0;
   const displayChats = isSearchMode ? (searchResults ?? []) : conversations;
+  const handleStartEditing = useCallback((e: React.MouseEvent, chatId: string, currentTitle: string) => {
+    e.stopPropagation();
+    openRenameDialog(chatId, currentTitle);
+  }, [openRenameDialog]);
+
+  const handleDeleteChat = useCallback((e: React.MouseEvent, chatId: string) => {
+    e.stopPropagation();
+    openDeleteDialog(chatId);
+  }, [openDeleteDialog]);
+
+  const handleGenerateTitle = useCallback((e: React.MouseEvent, chatId: string) => {
+    e.stopPropagation();
+    void generateTitle(chatId);
+  }, [generateTitle]);
 
   return (
     <div className="flex flex-col h-full py-2">
@@ -236,25 +253,16 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ onNewChat, activeChatIdOverri
         chats={displayChats}
         sortedAndGroupedChats={sortedAndGroupedChats}
         activeChatId={activeChatId}
-        models={models}
+        modelNameById={modelNameById}
         isLoadingServerList={isLoadingList}
         isLoadingMoreServer={isLoadingMore}
         containerRef={containerRef}
         handleSelectChat={selectConversation}
         searchQuery={searchQuery.trim() || undefined}
         sentinelRef={sentinelRef}
-        handleStartEditing={(e, chatId, currentTitle) => {
-          e.stopPropagation();
-          openRenameDialog(chatId, currentTitle);
-        }}
-        handleDeleteChat={(e, chatId) => {
-          e.stopPropagation();
-          openDeleteDialog(chatId);
-        }}
-        handleGenerateTitle={(e, chatId) => {
-          e.stopPropagation();
-          void generateTitle(chatId);
-        }}
+        handleStartEditing={handleStartEditing}
+        handleDeleteChat={handleDeleteChat}
+        handleGenerateTitle={handleGenerateTitle}
         formatDate={formatDate}
       />
 
