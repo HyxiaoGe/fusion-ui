@@ -22,6 +22,7 @@ import ModelSelector from "@/components/models/ModelSelector";
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useToast } from "../ui/toast";
 import { v4 as uuidv4 } from "uuid";
+import { useRenderProbe } from "@/lib/debug/perfProbe";
 
 interface ChatInputProps {
   onSendMessage: (
@@ -85,6 +86,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
   autoFocus = false,
   focusSignal = null,
 }) => {
+  useRenderProbe('ChatInput');
   const dispatch = useAppDispatch();
   const { toast } = useToast();
   const [message, setMessage] = useState("");

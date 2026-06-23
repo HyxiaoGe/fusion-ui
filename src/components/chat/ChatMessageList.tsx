@@ -10,6 +10,7 @@ import StreamErrorCard from './StreamErrorCard';
 import { isNearBottom } from '@/lib/chat/scrollBehavior';
 import type { AgentRunState } from '@/types/agentRun';
 import { selectChatModel } from '@/redux/selectors';
+import { useRenderProbe } from '@/lib/debug/perfProbe';
 
 interface ChatMessageListProps {
   messages: Message[];
@@ -145,6 +146,7 @@ const ChatMessageList: React.FC<ChatMessageListProps> = ({
   completionStateVisible = false,
   emptyState = DEFAULT_EMPTY_STATE,
 }) => {
+  useRenderProbe('ChatMessageList');
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const shouldStickToBottomRef = useRef(true);
   const previousConversationIdRef = useRef<string | null | undefined>(undefined);

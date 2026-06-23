@@ -7,8 +7,10 @@ import { ChatSidebarLazy } from '@/components/lazy/LazyComponents';
 import HomeChatSurface from '@/components/home/HomeChatSurface';
 import { useAppSelector } from '@/redux/hooks';
 import { getFirstEnabledModelId } from '@/lib/models/modelPreference';
+import { PerfProbe, useRenderProbe } from '@/lib/debug/perfProbe';
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
+  useRenderProbe('AppLayout');
   const router = useRouter();
   const pathname = usePathname();
   const models = useAppSelector((state) => state.models.models);
@@ -35,6 +37,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     <MainLayout
       sidebar={<ChatSidebarLazy onNewChat={handleNewChat} isNewChatActive={showNewChatSurface || pathname === '/'} />}
     >
+      <PerfProbe />
       {showNewChatSurface ? <HomeChatSurface /> : children}
     </MainLayout>
   );

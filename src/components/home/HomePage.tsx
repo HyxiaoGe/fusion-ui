@@ -3,6 +3,7 @@ import { useAppSelector } from "@/redux/hooks";
 import { useToast } from "@/components/ui/toast";
 import { fetchPromptExamples } from "@/lib/api/prompts";
 import { preloadChatMessageList } from "@/components/lazy/preloaders";
+import { useRenderProbe } from "@/lib/debug/perfProbe";
 
 const FALLBACK_EXAMPLES = [
   '写一个 Python 快速排序函数',
@@ -34,6 +35,7 @@ interface HomePageProps {
 }
 
 const HomePage: React.FC<HomePageProps> = ({ onSendMessage }) => {
+  useRenderProbe('HomePage');
   const { isAuthenticated } = useAppSelector((state) => state.auth);
   const { toast } = useToast();
   const [remoteExamplesReady, setRemoteExamplesReady] = useState(false);
