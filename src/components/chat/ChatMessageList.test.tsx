@@ -3,7 +3,7 @@ import { fireEvent, render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AgentRunState } from '@/types/agentRun';
 
-const { selectorState, chatMessageRenderMock } = vi.hoisted(() => ({
+const { selectorState, chatMessageRenderMock, isNearBottomMock } = vi.hoisted(() => ({
   selectorState: {
     stream: {
       conversationId: null,
@@ -27,12 +27,17 @@ const { selectorState, chatMessageRenderMock } = vi.hoisted(() => ({
     },
   },
   chatMessageRenderMock: vi.fn(),
+  isNearBottomMock: vi.fn(),
 }));
 
 vi.mock('@/redux/hooks', () => ({
   useAppDispatch: () => vi.fn(),
   useAppSelector: (selector: (state: any) => unknown) =>
     selector(selectorState),
+}));
+
+vi.mock('@/lib/chat/scrollBehavior', () => ({
+  isNearBottom: isNearBottomMock,
 }));
 
 vi.mock('./ChatMessage', () => ({
@@ -65,8 +70,40 @@ describe('ChatMessageList', () => {
     selectorState.stream.blockOrder = [];
     selectorState.stream.displayedTextLength = 0;
     selectorState.stream.lastError = null;
+    isNearBottomMock.mockReset();
+    isNearBottomMock.mockReturnValue(true);
     chatMessageRenderMock.mockClear();
     window.HTMLElement.prototype.scrollIntoView = vi.fn();
+  });
+
+  it('初次进入长历史会话时即使当前位置不在底部也会滚到最新回复', () => {
+    const scrollIntoView = vi.fn();
+    window.HTMLElement.prototype.scrollIntoView = scrollIntoView;
+    isNearBottomMock.mockReturnValue(false);
+
+    render(
+      <div data-chat-scroll-container="true">
+        <ChatMessageList
+          conversationId="chat-1"
+          messages={[
+            {
+              id: 'assistant-1',
+              role: 'assistant',
+              content: [{ type: 'text' as const, id: 'blk_1', text: '较早回复' }],
+              timestamp: 1,
+            },
+            {
+              id: 'assistant-2',
+              role: 'assistant',
+              content: [{ type: 'text' as const, id: 'blk_2', text: '最新回复' }],
+              timestamp: 2,
+            },
+          ]}
+        />
+      </div>
+    );
+
+    expect(scrollIntoView).toHaveBeenCalledWith({ behavior: 'smooth' });
   });
 
   it('does not force-scroll when the reader has moved away from the bottom', () => {
@@ -93,6 +130,7 @@ describe('ChatMessageList', () => {
     Object.defineProperty(scrollContainer, 'clientHeight', { configurable: true, value: 400 });
     Object.defineProperty(scrollContainer, 'scrollTop', { configurable: true, value: 600, writable: true });
 
+    isNearBottomMock.mockReturnValue(false);
     fireEvent.scroll(scrollContainer);
     scrollIntoView.mockClear();
 

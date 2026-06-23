@@ -147,6 +147,7 @@ const ChatMessageList: React.FC<ChatMessageListProps> = ({
 }) => {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const shouldStickToBottomRef = useRef(true);
+  const previousConversationIdRef = useRef<string | null | undefined>(undefined);
 
   // 按时间戳排序消息 - 确保使用完整毫秒精度
   const sortedMessages = useMemo(() => {
@@ -187,6 +188,13 @@ const ChatMessageList: React.FC<ChatMessageListProps> = ({
   };
 
   useEffect(() => {
+    if (previousConversationIdRef.current !== conversationId) {
+      previousConversationIdRef.current = conversationId;
+      shouldStickToBottomRef.current = true;
+    }
+  }, [conversationId]);
+
+  useEffect(() => {
     const scrollContainer = messagesEndRef.current?.closest('[data-chat-scroll-container="true"]') as HTMLElement | null;
 
     if (!scrollContainer) {
@@ -199,7 +207,6 @@ const ChatMessageList: React.FC<ChatMessageListProps> = ({
       shouldStickToBottomRef.current = nearBottom;
     };
 
-    updateStickiness();
     scrollContainer.addEventListener('scroll', updateStickiness, { passive: true });
 
     return () => {
