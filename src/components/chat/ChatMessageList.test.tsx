@@ -103,7 +103,7 @@ describe('ChatMessageList', () => {
       </div>
     );
 
-    expect(scrollIntoView).toHaveBeenCalledWith({ behavior: 'smooth' });
+    expect(scrollIntoView).toHaveBeenCalledWith({ behavior: 'auto' });
   });
 
   it('does not force-scroll when the reader has moved away from the bottom', () => {

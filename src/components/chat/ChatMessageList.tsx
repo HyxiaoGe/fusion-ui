@@ -148,6 +148,7 @@ const ChatMessageList: React.FC<ChatMessageListProps> = ({
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const shouldStickToBottomRef = useRef(true);
   const previousConversationIdRef = useRef<string | null | undefined>(undefined);
+  const shouldJumpToBottomRef = useRef(true);
 
   // 按时间戳排序消息 - 确保使用完整毫秒精度
   const sortedMessages = useMemo(() => {
@@ -183,14 +184,15 @@ const ChatMessageList: React.FC<ChatMessageListProps> = ({
   }, [sortedMessages]);
 
   // 滚动到底部
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  const scrollToBottom = (behavior: ScrollBehavior = 'smooth') => {
+    messagesEndRef.current?.scrollIntoView({ behavior });
   };
 
   useEffect(() => {
     if (previousConversationIdRef.current !== conversationId) {
       previousConversationIdRef.current = conversationId;
       shouldStickToBottomRef.current = true;
+      shouldJumpToBottomRef.current = true;
     }
   }, [conversationId]);
 
@@ -231,7 +233,9 @@ const ChatMessageList: React.FC<ChatMessageListProps> = ({
     }
 
     if (shouldStickToBottomRef.current) {
-      scrollToBottom();
+      const behavior = shouldJumpToBottomRef.current ? 'auto' : 'smooth';
+      scrollToBottom(behavior);
+      shouldJumpToBottomRef.current = false;
     }
   }, [messages.length, isStreaming]);
 
