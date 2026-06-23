@@ -296,7 +296,7 @@ describe('ChatPage 会话切换体验', () => {
     expect(chatInputMountMock).not.toHaveBeenCalled();
   });
 
-  it('从已有内容切到 loading 会话时继续渲染上一段 ready messages', async () => {
+  it('从已有内容切到未加载过的 loading 会话时不显示上一段 ready messages', async () => {
     conversationsById.set('chat-a', createConversation('chat-a', [textMessage('message-a')]));
     hydrationById.set('chat-a', { view: 'ready' });
     hydrationById.set('chat-b', { view: 'loading' });
@@ -306,20 +306,44 @@ describe('ChatPage 会话切换体验', () => {
     await waitFor(() => {
       expect(screen.getByTestId('message-list')).toHaveAttribute('data-message-ids', 'message-a');
     });
+    chatInputMountMock.mockClear();
+    chatInputUnmountMock.mockClear();
 
     currentRoute.chatId = 'chat-b';
     rerender(<ChatPage />);
 
     await waitFor(() => {
+      expect(screen.getByTestId('message-list')).toHaveAttribute('data-message-ids', '');
+    });
+    expect(screen.getByText('正在恢复这段对话')).toBeInTheDocument();
+    const lastMessageListProps = chatMessageListMock.mock.calls.at(-1)?.[0];
+    expect(lastMessageListProps?.messages).toEqual([]);
+    expect(lastMessageListProps?.loadingState).toBe('history-hydration');
+    expect(screen.getByTestId('chat-input')).toHaveAttribute('data-active-chat-id', 'chat-b');
+    expect(chatInputUnmountMock).not.toHaveBeenCalled();
+    expect(chatInputMountMock).not.toHaveBeenCalled();
+  });
+
+  it('同一会话重新进入 loading 时仍保留该会话 snapshot 内容', async () => {
+    conversationsById.set('chat-a', createConversation('chat-a', [textMessage('message-a')]));
+    hydrationById.set('chat-a', { view: 'ready' });
+
+    const { rerender } = render(<ChatPage />);
+
+    await waitFor(() => {
       expect(screen.getByTestId('message-list')).toHaveAttribute('data-message-ids', 'message-a');
     });
-    expect(screen.queryByText('正在恢复这段对话')).toBeNull();
+
+    conversationsById.delete('chat-a');
+    hydrationById.set('chat-a', { view: 'loading' });
+    rerender(<ChatPage />);
+
     const lastMessageListProps = chatMessageListMock.mock.calls.at(-1)?.[0];
     expect(lastMessageListProps?.messages).toEqual([expect.objectContaining({ id: 'message-a' })]);
     expect(lastMessageListProps?.loadingState).toBeUndefined();
   });
 
-  it('动态 page remount 后切到 loading 会话仍继续渲染上一段 ready messages', async () => {
+  it('动态 page remount 后切到未加载过的 loading 会话时不显示上一段 ready messages', async () => {
     conversationsById.set('chat-a', createConversation('chat-a', [textMessage('message-a')]));
     hydrationById.set('chat-a', { view: 'ready' });
     hydrationById.set('chat-b', { view: 'loading' });
@@ -335,9 +359,9 @@ describe('ChatPage 会话切换体验', () => {
     render(<ChatPage />);
 
     await waitFor(() => {
-      expect(screen.getByTestId('message-list')).toHaveAttribute('data-message-ids', 'message-a');
+      expect(screen.getByTestId('message-list')).toHaveAttribute('data-message-ids', '');
     });
-    expect(screen.queryByText('正在恢复这段对话')).toBeNull();
+    expect(screen.getByText('正在恢复这段对话')).toBeInTheDocument();
   });
 
   it('ready 会话只有元数据变化且 messages 引用不变时不重复写 snapshot', async () => {
@@ -377,7 +401,8 @@ describe('ChatPage 会话切换体验', () => {
     rerender(<ChatPage />);
 
     const lastMessageListProps = chatMessageListMock.mock.calls.at(-1)?.[0];
-    expect(lastMessageListProps?.messages).toEqual([expect.objectContaining({ id: 'message-a' })]);
+    expect(lastMessageListProps?.messages).toEqual([]);
+    expect(lastMessageListProps?.loadingState).toBe('history-hydration');
     expect(lastMessageListProps?.onRetry).toBeUndefined();
   });
 
@@ -401,7 +426,8 @@ describe('ChatPage 会话切换体验', () => {
     rerender(<ChatPage />);
 
     const lastMessageListProps = chatMessageListMock.mock.calls.at(-1)?.[0];
-    expect(lastMessageListProps?.messages).toEqual([expect.objectContaining({ id: 'message-a' })]);
+    expect(lastMessageListProps?.messages).toEqual([]);
+    expect(lastMessageListProps?.loadingState).toBe('history-hydration');
     expect(lastMessageListProps?.suggestedQuestions).toEqual([]);
     expect(lastMessageListProps?.isLoadingQuestions).toBe(false);
     expect(lastMessageListProps?.completionStateVisible).toBe(false);

@@ -372,6 +372,7 @@ export default function ChatPage() {
   const lastReadyConversation = lastReadyConversationSnapshot;
   const shouldKeepPreviousContent =
     hydrationView === 'loading' &&
+    lastReadyConversation?.chatId === chatId &&
     Boolean(lastReadyConversation && lastReadyConversation.messages.length > 0);
   const displayMessages = shouldKeepPreviousContent
     ? lastReadyConversation?.messages || []
@@ -379,18 +380,9 @@ export default function ChatPage() {
   const displayConversationId = shouldKeepPreviousContent
     ? lastReadyConversation?.chatId || null
     : chatId;
+  const isHydratingWithoutContent = hydrationView === 'loading' && !shouldKeepPreviousContent;
 
-  if (hydrationView === 'loading' && !shouldKeepPreviousContent) {
-    return (
-      <div className="h-full flex flex-col relative">
-        <div className="flex-1 overflow-y-auto px-4 pt-4" data-chat-scroll-container="true">
-          <ChatMessageListLazy messages={[]} loadingState="history-hydration" />
-        </div>
-      </div>
-    );
-  }
-
-  if ((!conversation && !shouldKeepPreviousContent) || hydrationView === 'error') {
+  if ((!conversation && !shouldKeepPreviousContent && !isHydratingWithoutContent) || hydrationView === 'error') {
     return (
       <div className="h-full flex items-center justify-center">
           <div className="text-center space-y-4">
@@ -422,15 +414,16 @@ export default function ChatPage() {
       <div className="h-full flex flex-col relative">
         <div className="flex-1 overflow-y-auto px-4 pt-4" data-chat-scroll-container="true">
           <ChatMessageListLazy
-            messages={displayMessages}
+            messages={isHydratingWithoutContent ? [] : displayMessages}
             conversationId={displayConversationId}
-            isStreaming={isStreaming && streamConversationId === displayConversationId}
-            onRetry={shouldKeepPreviousContent ? undefined : handleRetry}
-            suggestedQuestions={shouldKeepPreviousContent ? [] : suggestedQuestions}
-            isLoadingQuestions={shouldKeepPreviousContent ? false : isLoadingQuestions}
-            onSelectQuestion={shouldKeepPreviousContent ? undefined : handleSelectQuestion}
-            onRefreshQuestions={shouldKeepPreviousContent ? undefined : handleRefreshQuestions}
-            completionStateVisible={shouldKeepPreviousContent ? false : showCompletionState}
+            isStreaming={!isHydratingWithoutContent && isStreaming && streamConversationId === displayConversationId}
+            loadingState={isHydratingWithoutContent ? 'history-hydration' : undefined}
+            onRetry={shouldKeepPreviousContent || isHydratingWithoutContent ? undefined : handleRetry}
+            suggestedQuestions={shouldKeepPreviousContent || isHydratingWithoutContent ? [] : suggestedQuestions}
+            isLoadingQuestions={shouldKeepPreviousContent || isHydratingWithoutContent ? false : isLoadingQuestions}
+            onSelectQuestion={shouldKeepPreviousContent || isHydratingWithoutContent ? undefined : handleSelectQuestion}
+            onRefreshQuestions={shouldKeepPreviousContent || isHydratingWithoutContent ? undefined : handleRefreshQuestions}
+            completionStateVisible={shouldKeepPreviousContent || isHydratingWithoutContent ? false : showCompletionState}
             emptyState={CHAT_EMPTY_STATE}
           />
         </div>
