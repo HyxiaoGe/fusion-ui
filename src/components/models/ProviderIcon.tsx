@@ -1,6 +1,6 @@
 import { cn } from '@/lib/utils';
 import Image from 'next/image';
-import React from 'react';
+import React, { useState } from 'react';
 
 interface ProviderIconProps {
   providerId: string;
@@ -13,24 +13,68 @@ const ProviderIcon: React.FC<ProviderIconProps> = ({
   className,
   size = 20 
 }) => {
-  const iconPath = `/assets/providers/${providerId}.svg`;
+  const [imageFailed, setImageFailed] = useState(false);
+  const normalizedProviderId = providerId.trim().toLowerCase();
+  const iconKey = PROVIDER_ICON_ALIASES[normalizedProviderId] ?? normalizedProviderId;
+  const hasKnownIcon = KNOWN_PROVIDER_ICONS.has(iconKey);
+  const iconPath = `/assets/providers/${iconKey}.svg`;
+  const fallbackLabel = (normalizedProviderId[0] || '?').toUpperCase();
   
   return (
-    <div className={cn("relative flex-shrink-0", className)} style={{ width: size, height: size }}>
-      <Image 
-        src={iconPath}
-        alt={`${providerId} icon`}
-        width={size}
-        height={size}
-        className="object-contain"
-        onError={(e) => {
-          // 图标加载失败时的回退处理
-          console.warn(`Provider icon not found for: ${providerId}`);
-          (e.target as HTMLImageElement).style.display = 'none';
-        }}
-      />
+    <div
+      className={cn(
+        "relative flex-shrink-0 overflow-hidden rounded-full bg-muted text-muted-foreground",
+        className,
+      )}
+      style={{ width: size, height: size }}
+    >
+      {hasKnownIcon && !imageFailed ? (
+        <Image
+          src={iconPath}
+          alt={`${providerId} icon`}
+          width={size}
+          height={size}
+          className="object-contain"
+          onError={() => {
+            console.warn(`Provider icon not found for: ${providerId}`);
+            setImageFailed(true);
+          }}
+        />
+      ) : (
+        <span
+          className="flex h-full w-full items-center justify-center text-[10px] font-semibold leading-none"
+          aria-label={`${providerId} icon`}
+        >
+          {fallbackLabel}
+        </span>
+      )}
     </div>
   );
+};
+
+const KNOWN_PROVIDER_ICONS = new Set([
+  'anthropic',
+  'deepseek',
+  'google',
+  'minimax',
+  'moonshot',
+  'openai',
+  'qwen',
+  'volcengine',
+  'xai',
+  'xiaomi',
+]);
+
+const PROVIDER_ICON_ALIASES: Record<string, string> = {
+  alibaba: 'qwen',
+  aliqwen: 'qwen',
+  bytedance: 'volcengine',
+  dashscope: 'qwen',
+  doubao: 'volcengine',
+  gemini: 'google',
+  'google-ai': 'google',
+  grok: 'xai',
+  kimi: 'moonshot',
 };
 
 export default ProviderIcon;

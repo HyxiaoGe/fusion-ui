@@ -55,6 +55,7 @@ vi.mock('./AssistantResponseStack', () => ({
     return (
       <section data-testid="assistant-response-stack">
         <p>{markdown.content}</p>
+        <button type="button" onClick={props.reasoning.onToggle}>切换思考</button>
         <button type="button" onClick={() => markdown.onCitationClick?.(0)}>Markdown 引用</button>
         <button type="button" onClick={() => onSourceClick(0)}>依据来源</button>
         <button type="button" onClick={onOpenSources}>全部来源</button>
@@ -296,6 +297,40 @@ describe('AssistantMessage', () => {
 
     expect(screen.getByTestId('sources-sidebar')).toHaveAttribute('data-highlight-index', '0');
     expect(screen.getByText('来源一')).toBeInTheDocument();
+  });
+
+  it('用户手动展开思考过程后不会被自动折叠计时器关闭', () => {
+    vi.useFakeTimers();
+    deriveStaticAssistantMessageViewModelMock.mockReturnValue(defaultViewModel({
+      displayText: '最终回答',
+      displayThinking: '推理过程',
+      hasThinking: true,
+    }));
+    const expandedMessage = assistantMessage({ isReasoningVisible: true });
+
+    const { rerender } = renderAssistant();
+
+    fireEvent.click(screen.getByRole('button', { name: '切换思考' }));
+
+    rerender(
+      <AssistantMessage
+        message={expandedMessage}
+        isLastMessage={true}
+        isStreaming={false}
+        suggestedQuestions={['继续问什么？']}
+        isLoadingQuestions={false}
+        activeChatId="chat-1"
+        modelName="Qwen Max"
+      />,
+    );
+
+    vi.advanceTimersByTime(900);
+
+    expect(dispatchMock).toHaveBeenCalledTimes(1);
+    expect(dispatchMock).not.toHaveBeenCalledWith(expect.objectContaining({
+      payload: expect.objectContaining({ visible: false }),
+    }));
+    vi.useRealTimers();
   });
 
   it('最后一条非流式助手消息且可选择问题时显示推荐问题', () => {

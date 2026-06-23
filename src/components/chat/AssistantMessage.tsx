@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Bot } from 'lucide-react';
 
 import type { FileWithPreview } from '@/lib/utils/fileHelpers';
@@ -146,6 +146,7 @@ function AssistantMessageFrame({
   const [localReasoningVisible, setLocalReasoningVisible] = useState(message.isReasoningVisible || false);
   const [sourcesSidebarOpen, setSourcesSidebarOpen] = useState(false);
   const [citationHighlight, setCitationHighlight] = useState<{ index: number; tick: number }>({ index: -1, tick: 0 });
+  const userToggledReasoningRef = useRef(false);
 
   const {
     activity,
@@ -178,6 +179,7 @@ function AssistantMessageFrame({
   }, []);
 
   const handleToggleReasoning = useCallback(() => {
+    userToggledReasoningRef.current = true;
     if (activeChatId) {
       dispatch(toggleReasoningVisibility({
         conversationId: activeChatId,
@@ -193,6 +195,10 @@ function AssistantMessageFrame({
     () => onRetry ? () => onRetry(message.id) : undefined,
     [message.id, onRetry],
   );
+
+  useEffect(() => {
+    userToggledReasoningRef.current = false;
+  }, [message.id]);
 
   const reasoningProps = useMemo(() => ({
     shouldRender: !suppressThinking && (hasThinking || (isStreaming && isLastMessage && isStreamingReasoning)),
@@ -225,6 +231,7 @@ function AssistantMessageFrame({
 
   useEffect(() => {
     if (!isStreaming && hasThinking && displayText && message.isReasoningVisible) {
+      if (userToggledReasoningRef.current) return;
       const timer = setTimeout(() => {
         if (activeChatId) {
           dispatch(toggleReasoningVisibility({
