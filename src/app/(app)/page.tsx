@@ -31,6 +31,9 @@ export default function Home() {
       {
         conversationId: pendingConversationId || null,
         isDraft: true,
+        onDraftCreated: (draftConversationId) => {
+          router.replace(`/chat/${draftConversationId}`);
+        },
         onMaterialized: (serverConversationId) => {
           router.replace(`/chat/${serverConversationId}`);
           setInputKey(Date.now());

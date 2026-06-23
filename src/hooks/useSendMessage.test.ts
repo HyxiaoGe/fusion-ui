@@ -83,9 +83,9 @@ function createStore() {
 }
 
 function createWrapper(store: ReturnType<typeof createStore>) {
-  return ({ children }: { children: React.ReactNode }) => (
-    React.createElement(Provider, { store, children })
-  );
+  return function TestWrapper({ children }: { children: React.ReactNode }) {
+    return React.createElement(Provider, { store }, children);
+  };
 }
 
 let nextIntervalId = 0;
@@ -184,6 +184,42 @@ describe('useSendMessage', () => {
       );
       expect(state.stream.isStreaming).toBe(false);
     });
+  });
+
+  it('exposes the local draft conversation before waiting for the stream to be ready', async () => {
+    const store = createStore();
+    const onDraftCreated = vi.fn();
+    let releaseStream: (() => void) | undefined;
+
+    sendMessageStreamMock.mockImplementation(
+      async () => {
+        await new Promise<void>((resolve) => {
+          releaseStream = resolve;
+        });
+      }
+    );
+
+    const { result } = renderHook(() => useSendMessage(), {
+      wrapper: createWrapper(store),
+    });
+
+    await act(async () => {
+      void result.current.sendMessage('hello', {
+        conversationId: null,
+        onDraftCreated,
+      } as any);
+    });
+
+    await waitFor(() => {
+      expect(onDraftCreated).toHaveBeenCalledWith('temp-conv');
+    });
+
+    const state = store.getState();
+    expect(state.conversation.byId['temp-conv']?.messages).toHaveLength(2);
+    expect(state.stream.conversationId).toBe('temp-conv');
+    expect(sendMessageStreamMock).toHaveBeenCalledTimes(1);
+
+    releaseStream?.();
   });
 
   it('stops the previous stream before sending a new message', async () => {

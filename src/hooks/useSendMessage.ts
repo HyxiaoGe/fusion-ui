@@ -48,6 +48,8 @@ type SendMessageOptions = {
   conversationId: string | null;
   /** 标记为新对话（即使提供了 conversationId，也当作草稿处理）。用于首页上传文件后发送的场景 */
   isDraft?: boolean;
+  /** 本地草稿会话已创建，可用于先进入会话页，不必等待服务端 materialize */
+  onDraftCreated?: (draftConversationId: string) => void;
   onMaterialized?: (serverConversationId: string) => void;
   onStreamEnd?: (conversationId: string) => void;
 };
@@ -216,6 +218,9 @@ export function useSendMessage() {
       dispatch(appendMessage({ conversationId: tempConvId, message: userMessage }));
       dispatch(appendMessage({ conversationId: tempConvId, message: assistantPlaceholder }));
       dispatch(startStream({ conversationId: tempConvId, messageId: assistantMessageId }));
+      if (isDraft) {
+        options.onDraftCreated?.(tempConvId);
+      }
 
       const controller = new AbortController();
       abortControllerRef.current = controller;
