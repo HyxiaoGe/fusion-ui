@@ -47,6 +47,89 @@ const DEFAULT_EMPTY_STATE = {
 
 const EMPTY_SUGGESTED_QUESTIONS: string[] = [];
 
+interface ChatMessageRowProps {
+  message: Message;
+  previousRole: Message['role'] | null;
+  isFirstMessage: boolean;
+  isLastMessage: boolean;
+  isStreamingMessage: boolean;
+  onRetry?: (messageId: string) => void;
+  onEdit?: (messageId: string, content: string) => void;
+  conversationId: string | null;
+  providerId?: string;
+  modelName: string;
+  currentRun: AgentRunState | null;
+  suggestedQuestions: string[];
+  isLoadingQuestions: boolean;
+  onSelectQuestion?: (question: string) => void;
+  onRefreshQuestions?: () => void;
+}
+
+function getMessageRun(messageId: string, currentRun: AgentRunState | null): AgentRunState | null {
+  if (!currentRun) return null;
+  return currentRun.messageId === messageId || currentRun.serverMessageId === messageId
+    ? currentRun
+    : null;
+}
+
+const ChatMessageRow = React.memo(function ChatMessageRow({
+  message,
+  previousRole,
+  isFirstMessage,
+  isLastMessage,
+  isStreamingMessage,
+  onRetry,
+  onEdit,
+  conversationId,
+  providerId,
+  modelName,
+  currentRun,
+  suggestedQuestions,
+  isLoadingQuestions,
+  onSelectQuestion,
+  onRefreshQuestions,
+}: ChatMessageRowProps) {
+  const isSameRole = previousRole === message.role;
+
+  return (
+    <div className={isSameRole ? 'mt-2' : isFirstMessage ? '' : 'mt-6'}>
+      <ChatMessage
+        message={message}
+        isLastMessage={isLastMessage}
+        isStreaming={isStreamingMessage}
+        onRetry={onRetry}
+        onEdit={onEdit}
+        activeChatId={conversationId}
+        providerId={providerId}
+        modelName={modelName}
+        agentRun={getMessageRun(message.id, currentRun)}
+        suggestedQuestions={suggestedQuestions}
+        isLoadingQuestions={isLoadingQuestions}
+        onSelectQuestion={onSelectQuestion}
+        onRefreshQuestions={onRefreshQuestions}
+      />
+    </div>
+  );
+}, areChatMessageRowPropsEqual);
+
+function areChatMessageRowPropsEqual(prev: ChatMessageRowProps, next: ChatMessageRowProps): boolean {
+  return prev.message === next.message
+    && prev.previousRole === next.previousRole
+    && prev.isFirstMessage === next.isFirstMessage
+    && prev.isLastMessage === next.isLastMessage
+    && prev.isStreamingMessage === next.isStreamingMessage
+    && prev.onRetry === next.onRetry
+    && prev.onEdit === next.onEdit
+    && prev.conversationId === next.conversationId
+    && prev.providerId === next.providerId
+    && prev.modelName === next.modelName
+    && getMessageRun(prev.message.id, prev.currentRun) === getMessageRun(next.message.id, next.currentRun)
+    && prev.suggestedQuestions === next.suggestedQuestions
+    && prev.isLoadingQuestions === next.isLoadingQuestions
+    && prev.onSelectQuestion === next.onSelectQuestion
+    && prev.onRefreshQuestions === next.onRefreshQuestions;
+}
+
 const ChatMessageList: React.FC<ChatMessageListProps> = ({
   messages,
   conversationId = null,
@@ -55,7 +138,7 @@ const ChatMessageList: React.FC<ChatMessageListProps> = ({
   loadingState = 'default',
   onRetry,
   onEdit,
-  suggestedQuestions = [],
+  suggestedQuestions = EMPTY_SUGGESTED_QUESTIONS,
   isLoadingQuestions = false,
   onSelectQuestion,
   onRefreshQuestions,
@@ -182,13 +265,6 @@ const ChatMessageList: React.FC<ChatMessageListProps> = ({
     return null;
   }, [completionStateVisible, isLoadingQuestions, isStreaming, sortedMessages, suggestedQuestions.length]);
 
-  const getMessageRun = (messageId: string): AgentRunState | null => {
-    if (!currentRun) return null;
-    return currentRun.messageId === messageId || currentRun.serverMessageId === messageId
-      ? currentRun
-      : null;
-  };
-
   if (messages.length === 0 && loadingState === 'history-hydration') {
     return (
       <div className="mx-auto flex w-full max-w-3xl flex-col gap-6 px-4 py-8">
@@ -230,25 +306,25 @@ const ChatMessageList: React.FC<ChatMessageListProps> = ({
       <div className="flex-1" />
       {sortedMessages.map((message, index) => {
         const prevMessage = index > 0 ? sortedMessages[index - 1] : null;
-        const isSameRole = prevMessage?.role === message.role;
         return (
-          <div key={message.id} className={isSameRole ? 'mt-2' : index === 0 ? '' : 'mt-6'}>
-            <ChatMessage
-              message={message}
-              isLastMessage={index === sortedMessages.length - 1}
-              isStreaming={isStreaming && index === sortedMessages.length - 1 && message.role === 'assistant'}
-              onRetry={onRetry}
-              onEdit={onEdit}
-              activeChatId={conversationId}
-              providerId={providerId}
-              modelName={modelName}
-              agentRun={getMessageRun(message.id)}
-              suggestedQuestions={index === lastAssistantIndex ? suggestedQuestions : EMPTY_SUGGESTED_QUESTIONS}
-              isLoadingQuestions={index === lastAssistantIndex ? isLoadingQuestions : false}
-              onSelectQuestion={onSelectQuestion}
-              onRefreshQuestions={onRefreshQuestions}
-            />
-          </div>
+          <ChatMessageRow
+            key={message.id}
+            message={message}
+            previousRole={prevMessage?.role ?? null}
+            isFirstMessage={index === 0}
+            isLastMessage={index === sortedMessages.length - 1}
+            isStreamingMessage={isStreaming && index === sortedMessages.length - 1 && message.role === 'assistant'}
+            onRetry={onRetry}
+            onEdit={onEdit}
+            conversationId={conversationId}
+            providerId={providerId}
+            modelName={modelName}
+            currentRun={currentRun}
+            suggestedQuestions={index === lastAssistantIndex ? suggestedQuestions : EMPTY_SUGGESTED_QUESTIONS}
+            isLoadingQuestions={index === lastAssistantIndex ? isLoadingQuestions : false}
+            onSelectQuestion={onSelectQuestion}
+            onRefreshQuestions={onRefreshQuestions}
+          />
         );
       })}
       
