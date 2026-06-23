@@ -33,7 +33,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
   return (
     <MainLayout
-      sidebar={<ChatSidebarLazy onNewChat={handleNewChat} />}
+      sidebar={<ChatSidebarLazy onNewChat={handleNewChat} isNewChatActive={showNewChatSurface || pathname === '/'} />}
     >
       {showNewChatSurface ? <HomeChatSurface /> : children}
     </MainLayout>

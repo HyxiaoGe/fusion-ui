@@ -38,11 +38,28 @@ const HomePage: React.FC<HomePageProps> = ({ onSendMessage }) => {
   const { toast } = useToast();
   const [remoteExamplesReady, setRemoteExamplesReady] = useState(false);
   const [displayItems, setDisplayItems] = useState<string[]>(FALLBACK_EXAMPLES.slice(0, PAGE_SIZE));
+  const [isRotationPaused, setIsRotationPaused] = useState(false);
   // 每张卡片的翻转状态：true = 翻到侧面（不可见）
   const [flippedCards, setFlippedCards] = useState<boolean[]>(new Array(PAGE_SIZE).fill(false));
 
   const poolRef = useRef<string[]>([]);
   const cursorRef = useRef(0);
+  const waveTimeoutsRef = useRef<ReturnType<typeof setTimeout>[]>([]);
+  const isRotationPausedRef = useRef(false);
+
+  const clearWaveTimeouts = useCallback(() => {
+    waveTimeoutsRef.current.forEach((timer) => clearTimeout(timer));
+    waveTimeoutsRef.current = [];
+  }, []);
+
+  const updateRotationPaused = useCallback((paused: boolean) => {
+    isRotationPausedRef.current = paused;
+    setIsRotationPaused(paused);
+    if (paused) {
+      clearWaveTimeouts();
+      setFlippedCards(new Array(PAGE_SIZE).fill(false));
+    }
+  }, [clearWaveTimeouts]);
 
   const getNextBatch = useCallback((): string[] => {
     const pool = poolRef.current;
@@ -82,11 +99,21 @@ const HomePage: React.FC<HomePageProps> = ({ onSendMessage }) => {
 
   // 波浪翻牌：逐张翻出 → 换文字 → 逐张翻回
   const doWaveFlip = useCallback(() => {
+    if (isRotationPausedRef.current) return;
+
+    clearWaveTimeouts();
     const nextBatch = getNextBatch();
+    const schedule = (callback: () => void, delay: number) => {
+      const timer = setTimeout(() => {
+        if (isRotationPausedRef.current) return;
+        callback();
+      }, delay);
+      waveTimeoutsRef.current.push(timer);
+    };
 
     // 阶段1：从左到右逐张翻出（rotateY 90deg）
     for (let i = 0; i < PAGE_SIZE; i++) {
-      setTimeout(() => {
+      schedule(() => {
         setFlippedCards((prev) => {
           const next = [...prev];
           next[i] = true;
@@ -97,13 +124,13 @@ const HomePage: React.FC<HomePageProps> = ({ onSendMessage }) => {
 
     // 阶段2：全部翻出后换文字
     const allFlippedTime = PAGE_SIZE * 80 + 300;
-    setTimeout(() => {
+    schedule(() => {
       setDisplayItems(nextBatch);
     }, allFlippedTime);
 
     // 阶段3：从左到右逐张翻回
     for (let i = 0; i < PAGE_SIZE; i++) {
-      setTimeout(() => {
+      schedule(() => {
         setFlippedCards((prev) => {
           const next = [...prev];
           next[i] = false;
@@ -111,16 +138,19 @@ const HomePage: React.FC<HomePageProps> = ({ onSendMessage }) => {
         });
       }, allFlippedTime + 50 + i * 80);
     }
-  }, [getNextBatch]);
+  }, [clearWaveTimeouts, getNextBatch]);
 
   // 定时轮换
   useEffect(() => {
-    if (!remoteExamplesReady) return;
+    if (!remoteExamplesReady || isRotationPaused) return;
     const timer = setInterval(doWaveFlip, ROTATE_INTERVAL);
     return () => clearInterval(timer);
-  }, [remoteExamplesReady, doWaveFlip]);
+  }, [remoteExamplesReady, isRotationPaused, doWaveFlip]);
+
+  useEffect(() => clearWaveTimeouts, [clearWaveTimeouts]);
 
   const handleExampleClick = useCallback((message: string) => {
+    updateRotationPaused(true);
     if (!isAuthenticated) {
       toast({
         message: "请先登录后再使用聊天功能",
@@ -133,7 +163,7 @@ const HomePage: React.FC<HomePageProps> = ({ onSendMessage }) => {
       return;
     }
     void Promise.resolve(onSendMessage(message));
-  }, [isAuthenticated, onSendMessage, toast]);
+  }, [isAuthenticated, onSendMessage, toast, updateRotationPaused]);
 
   return (
     <div className="flex h-full items-center justify-center px-4 pb-32">
@@ -142,7 +172,19 @@ const HomePage: React.FC<HomePageProps> = ({ onSendMessage }) => {
           有什么我能帮你的吗？
         </h1>
 
-        <div className="flex flex-wrap gap-3.5 justify-center" style={{ perspective: '1000px' }}>
+        <div
+          data-testid="prompt-examples"
+          className="flex flex-wrap gap-3.5 justify-center"
+          style={{ perspective: '1000px' }}
+          onMouseEnter={() => updateRotationPaused(true)}
+          onMouseLeave={() => updateRotationPaused(false)}
+          onFocusCapture={() => updateRotationPaused(true)}
+          onBlurCapture={(event) => {
+            if (!event.currentTarget.contains(event.relatedTarget)) {
+              updateRotationPaused(false);
+            }
+          }}
+        >
           {displayItems.map((example, index) => (
             <button
               key={`slot-${index}`}

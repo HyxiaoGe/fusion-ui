@@ -139,7 +139,9 @@ describe('SuggestedQuestions', () => {
       />
     );
 
-    expect(screen.getByRole('button', { name: /更新中/ }).hasAttribute('disabled')).toBe(true);
+    const refreshButton = screen.getByRole('button', { name: /更新中/ });
+    expect(refreshButton.hasAttribute('disabled')).toBe(true);
+    expect(refreshButton).toHaveAttribute('aria-busy', 'true');
   });
 
   it('renders nothing when questions are empty and not loading', () => {
@@ -185,5 +187,19 @@ describe('SuggestedQuestions', () => {
     const pending = screen.getByRole('button', { name: /发送中/ });
     expect(pending.className).toContain('border-info-border');
     expect(pending.className).toContain('bg-info-bg');
+    expect(pending).toHaveAttribute('aria-busy', 'true');
+  });
+
+  it('uses a lightweight status region while generating suggestions', () => {
+    render(
+      <SuggestedQuestions
+        questions={[]}
+        isLoading={true}
+        onSelectQuestion={vi.fn()}
+        onRefresh={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByRole('status')).toHaveTextContent('正在生成可继续追问的问题...');
   });
 });

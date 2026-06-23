@@ -469,8 +469,8 @@ describe('ChatMessageList', () => {
       />
     );
 
-    expect(screen.getByText('正在加载这段对话')).toBeTruthy();
-    expect(screen.getByText('消息会在几秒内加载完成。')).toBeTruthy();
+    expect(screen.getByTestId('history-hydration-skeleton')).toBeTruthy();
+    expect(screen.queryByText('正在加载这段对话')).toBeNull();
     expect(screen.queryByText('开始一个新对话')).toBeNull();
   });
 

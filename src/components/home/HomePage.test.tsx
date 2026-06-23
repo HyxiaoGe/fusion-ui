@@ -1,5 +1,5 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const { currentState, useAppSelectorMock, toastMock, fetchPromptExamplesMock, preloadChatMessageListMock } = vi.hoisted(() => ({
   currentState: {
@@ -49,6 +49,10 @@ describe('HomePage', () => {
     });
   });
 
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it('sends message when clicking an example', async () => {
     const onSendMessage = vi.fn();
 
@@ -79,5 +83,32 @@ describe('HomePage', () => {
     await waitFor(() => {
       expect(preloadChatMessageListMock).toHaveBeenCalledTimes(1);
     });
+  });
+
+  it('pauses example rotation while the examples are hovered', async () => {
+    vi.useFakeTimers();
+    fetchPromptExamplesMock.mockResolvedValue({
+      examples: Array.from({ length: 24 }, (_, index) => ({
+        question: `远程示例 ${index + 1}`,
+      })),
+    });
+
+    render(<HomePage onNewChat={vi.fn()} onSendMessage={vi.fn()} />);
+
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(screen.getAllByRole('button', { name: /远程示例/ }).length).toBeGreaterThan(0);
+    const firstBeforeHover = screen.getAllByRole('button')[0].textContent;
+    const examples = screen.getByTestId('prompt-examples');
+
+    fireEvent.mouseEnter(examples);
+    await act(async () => {
+      vi.advanceTimersByTime(18000);
+    });
+
+    expect(screen.getAllByRole('button')[0].textContent).toBe(firstBeforeHover);
   });
 });

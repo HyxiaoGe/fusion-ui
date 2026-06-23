@@ -36,6 +36,8 @@ interface ChatInputProps {
   placeholder?: string;
   activeChatId?: string | null;
   resetSignal?: string | number | null;
+  autoFocus?: boolean;
+  focusSignal?: string | number | null;
 }
 
 interface LocalFileWithStatus {
@@ -80,6 +82,8 @@ const ChatInput: React.FC<ChatInputProps> = ({
   placeholder,
   activeChatId,
   resetSignal,
+  autoFocus = false,
+  focusSignal = null,
 }) => {
   const dispatch = useAppDispatch();
   const { toast } = useToast();
@@ -145,6 +149,14 @@ const ChatInput: React.FC<ChatInputProps> = ({
       textareaRef.current.style.height = "auto";
     }
   }, [chatId, dispatch, resetSignal]);
+
+  useEffect(() => {
+    if (!autoFocus || !textareaRef.current || isComposerBlocked) {
+      return;
+    }
+
+    textareaRef.current.focus({ preventScroll: true });
+  }, [autoFocus, focusSignal, isComposerBlocked]);
 
   const selectChatFileIds = useMemo(makeSelectChatFileIds, []);
   const fileIds = useAppSelector((state) => selectChatFileIds(state, chatId));

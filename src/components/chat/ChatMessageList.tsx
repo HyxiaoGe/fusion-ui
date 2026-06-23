@@ -278,20 +278,21 @@ const ChatMessageList: React.FC<ChatMessageListProps> = ({
 
   if (messages.length === 0 && loadingState === 'history-hydration') {
     return (
-      <div className="mx-auto flex w-full max-w-3xl flex-col gap-6 px-4 py-8">
-        <div className="space-y-2 text-center">
-          <h3 className="text-xl font-medium">正在加载这段对话</h3>
-          <p className="text-sm text-muted-foreground">消息会在几秒内加载完成。</p>
-        </div>
-        <div className="space-y-4">
-          <div className="ml-auto w-full max-w-xl space-y-3 rounded-3xl bg-primary/8 px-5 py-4">
-            <div className="h-4 w-3/4 rounded-full bg-primary/15" />
-            <div className="h-4 w-2/3 rounded-full bg-primary/10" />
+      <div
+        data-testid="history-hydration-skeleton"
+        role="status"
+        aria-label="正在加载会话消息"
+        className="mx-auto flex w-full max-w-3xl flex-col gap-5 px-4 py-8"
+      >
+        <div className="space-y-4" aria-hidden="true">
+          <div className="ml-auto w-full max-w-xl space-y-3 rounded-2xl bg-primary/8 px-5 py-4">
+            <div className="h-3.5 w-3/4 animate-pulse rounded-full bg-primary/15" />
+            <div className="h-3.5 w-2/3 animate-pulse rounded-full bg-primary/10" />
           </div>
-          <div className="w-full max-w-2xl space-y-3 rounded-3xl border border-border/60 bg-card px-5 py-4 shadow-sm">
-            <div className="h-4 w-5/6 rounded-full bg-muted" />
-            <div className="h-4 w-3/4 rounded-full bg-muted/80" />
-            <div className="h-4 w-2/3 rounded-full bg-muted/70" />
+          <div className="w-full max-w-2xl space-y-3 rounded-2xl border border-border/50 bg-card/80 px-5 py-4 shadow-fdv2-xs">
+            <div className="h-3.5 w-5/6 animate-pulse rounded-full bg-muted" />
+            <div className="h-3.5 w-3/4 animate-pulse rounded-full bg-muted/80" />
+            <div className="h-3.5 w-2/3 animate-pulse rounded-full bg-muted/70" />
           </div>
         </div>
       </div>

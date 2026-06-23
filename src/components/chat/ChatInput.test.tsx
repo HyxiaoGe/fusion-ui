@@ -198,6 +198,12 @@ describe('ChatInput', () => {
     expect(triggerLoginDialogMock).toHaveBeenCalledTimes(1);
   });
 
+  it('focuses the composer when autoFocus is enabled', () => {
+    render(<ChatInput onSendMessage={vi.fn()} autoFocus />);
+
+    expect(screen.getByPlaceholderText('发消息给 Fusion AI（Enter 发送）')).toHaveFocus();
+  });
+
   it('uploads selected files and starts polling when authenticated', async () => {
     currentState.auth.isAuthenticated = true;
     currentState.models.selectedModelId = 'model-1';

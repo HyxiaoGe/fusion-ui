@@ -86,9 +86,10 @@ const SuggestedQuestions: React.FC<SuggestedQuestionsProps> = ({
           <Button
             variant="ghost"
             size="sm"
-            className="text-xs text-muted-foreground hover:text-foreground inline-flex items-center gap-1 transition-colors duration-fast"
+            className="text-xs text-muted-foreground hover:text-foreground inline-flex items-center gap-1 transition-colors duration-fast disabled:opacity-60"
             onClick={handleRefresh}
             disabled={isBusy}
+            aria-busy={isRefreshing || isLoading}
           >
             <RefreshCw 
               className={cn(
@@ -110,13 +111,14 @@ const SuggestedQuestions: React.FC<SuggestedQuestionsProps> = ({
             size="sm"
             className={cn(
               "flex items-center gap-2 w-full text-left rounded-md border border-border/50 bg-transparent px-2.5 py-1.5 text-sm text-foreground transition-colors duration-fast hover:bg-muted/30 hover:border-border",
-              "h-auto justify-start font-normal",
+              "h-auto justify-start font-normal disabled:opacity-75",
               pendingQuestion === question && "border-info-border bg-info-bg text-info"
             )}
             onClick={() => handleQuestionSelect(question)}
             onMouseEnter={() => setHoveredIndex(index)}
             onMouseLeave={() => setHoveredIndex(null)}
             disabled={isBusy}
+            aria-busy={pendingQuestion === question}
           >
             <MessageSquare className={cn(
               "h-3.5 w-3.5 flex-shrink-0",
@@ -128,7 +130,7 @@ const SuggestedQuestions: React.FC<SuggestedQuestionsProps> = ({
         
         {/* 加载状态显示 */}
         {isLoading && (
-          <div className="text-xs text-muted-foreground flex items-center py-3">
+          <div role="status" className="text-xs text-muted-foreground flex items-center py-3">
             <div className="flex space-x-1 mr-2">
               <div className="h-1.5 w-1.5 bg-primary/40 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></div>
               <div className="h-1.5 w-1.5 bg-primary/40 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></div>

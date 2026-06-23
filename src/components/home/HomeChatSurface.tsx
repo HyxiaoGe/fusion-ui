@@ -56,6 +56,8 @@ export default function HomeChatSurface() {
           key={inputKey}
           onSendMessage={handleSendMessage}
           activeChatId={null}
+          autoFocus
+          focusSignal={inputKey}
         />
       </div>
     </div>

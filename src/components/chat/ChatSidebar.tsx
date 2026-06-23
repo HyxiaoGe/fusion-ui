@@ -20,12 +20,13 @@ import { formatInTimeZone } from 'date-fns-tz';
 interface ChatSidebarProps {
   onNewChat: () => void;
   activeChatIdOverride?: string | null;
+  isNewChatActive?: boolean;
 }
 
 const EMPTY_CONVERSATIONS: ConversationListItem[] = [];
 const EMPTY_GROUPED_CONVERSATIONS: { groupLabel: string; groupChats: ConversationListItem[] }[] = [];
 
-const ChatSidebar: React.FC<ChatSidebarProps> = ({ onNewChat, activeChatIdOverride }) => {
+const ChatSidebar: React.FC<ChatSidebarProps> = ({ onNewChat, activeChatIdOverride, isNewChatActive = false }) => {
   const pathname = usePathname();
   const {
     conversations,
@@ -215,7 +216,7 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ onNewChat, activeChatIdOverri
 
   return (
     <div className="flex flex-col h-full py-2">
-      <ChatSidebarHeader onNewChat={onNewChat} />
+      <ChatSidebarHeader onNewChat={onNewChat} isNewChatActive={isNewChatActive} />
 
       {/* 搜索框 */}
       <div className="px-3 pb-2">

@@ -55,8 +55,8 @@ vi.mock('./sidebar/RenameChatDialog', () => ({
 }));
 
 vi.mock('./sidebar/ChatSidebarHeader', () => ({
-  default: ({ onNewChat }: { onNewChat: () => void }) => (
-    <button type="button" onClick={onNewChat}>
+  default: ({ onNewChat, isNewChatActive }: { onNewChat: () => void; isNewChatActive?: boolean }) => (
+    <button type="button" onClick={onNewChat} aria-pressed={isNewChatActive}>
       新对话
     </button>
   ),
