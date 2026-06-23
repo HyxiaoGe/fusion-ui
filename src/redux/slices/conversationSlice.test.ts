@@ -1,11 +1,15 @@
 import { describe, expect, it } from 'vitest';
 
 import reducer, {
+  clearConversationMessages,
   materializeConversation,
+  removeConversation,
+  resetConversationState,
   setConversationList,
+  setLastReadyConversationSnapshot,
   updateConversationsMetadata,
 } from './conversationSlice';
-import type { Conversation } from '@/types/conversation';
+import type { Conversation, Message } from '@/types/conversation';
 
 function createConversation(overrides: Partial<Conversation> = {}): Conversation {
   return {
@@ -15,6 +19,15 @@ function createConversation(overrides: Partial<Conversation> = {}): Conversation
     messages: overrides.messages ?? [],
     createdAt: overrides.createdAt ?? 1,
     updatedAt: overrides.updatedAt ?? 1,
+  };
+}
+
+function textMessage(id: string): Message {
+  return {
+    id,
+    role: 'user',
+    content: [{ type: 'text', id: `${id}-block`, text: id }],
+    timestamp: 1,
   };
 }
 
@@ -29,6 +42,7 @@ describe('conversationSlice', () => {
           updatedAt: 1,
         }),
       },
+      lastReadyConversationSnapshot: null,
       listIds: ['conv-1'],
       pagination: null,
       isLoadingList: true,
@@ -41,6 +55,9 @@ describe('conversationSlice', () => {
       animatingTitleId: null,
       reasoningEnabled: true,
       globalError: null,
+      searchResults: null,
+      isSearching: false,
+      searchError: null,
     };
 
     const nextState = reducer(
@@ -79,6 +96,7 @@ describe('conversationSlice', () => {
         'conv-1': createConversation({ id: 'conv-1', title: 'Old 1', updatedAt: 1 }),
         'conv-2': createConversation({ id: 'conv-2', title: 'Old 2', updatedAt: 2 }),
       },
+      lastReadyConversationSnapshot: null,
       listIds: ['conv-1', 'conv-2'],
       pagination: {
         currentPage: 2, pageSize: 10, totalPages: 2, totalCount: 12, hasNext: false, hasPrev: true,
@@ -126,6 +144,7 @@ describe('conversationSlice', () => {
         temp: createConversation({ id: 'temp', title: 'Draft' }),
         older: createConversation({ id: 'older', title: 'Older' }),
       },
+      lastReadyConversationSnapshot: null,
       listIds: ['temp', 'older'],
       pagination: null,
       isLoadingList: false,
@@ -138,6 +157,9 @@ describe('conversationSlice', () => {
       animatingTitleId: null,
       reasoningEnabled: true,
       globalError: null,
+      searchResults: null,
+      isSearching: false,
+      searchError: null,
     };
 
     const nextState = reducer(
@@ -153,5 +175,49 @@ describe('conversationSlice', () => {
     expect(nextState.listIds[0]).toBe('server-1');
     expect(nextState.listIds).toEqual(['server-1', 'older']);
     expect(nextState.hydrationStatus['server-1']).toBe('done');
+  });
+
+  it('setLastReadyConversationSnapshot writes the UI transition snapshot', () => {
+    const messages = [textMessage('m1')];
+
+    const nextState = reducer(
+      undefined,
+      setLastReadyConversationSnapshot({ chatId: 'conv-1', messages })
+    );
+
+    expect(nextState.lastReadyConversationSnapshot).toEqual({
+      chatId: 'conv-1',
+      messages,
+    });
+  });
+
+  it('clearConversationMessages clears the matching ready snapshot', () => {
+    const messages = [textMessage('m1')];
+    const stateWithSnapshot = reducer(
+      reducer(undefined, setLastReadyConversationSnapshot({ chatId: 'conv-1', messages })),
+      clearConversationMessages('conv-1')
+    );
+
+    expect(stateWithSnapshot.lastReadyConversationSnapshot).toBeNull();
+  });
+
+  it('removeConversation clears the matching ready snapshot', () => {
+    const messages = [textMessage('m1')];
+    const nextState = reducer(
+      reducer(undefined, setLastReadyConversationSnapshot({ chatId: 'conv-1', messages })),
+      removeConversation('conv-1')
+    );
+
+    expect(nextState.lastReadyConversationSnapshot).toBeNull();
+  });
+
+  it('resetConversationState clears the ready snapshot', () => {
+    const messages = [textMessage('m1')];
+    const nextState = reducer(
+      reducer(undefined, setLastReadyConversationSnapshot({ chatId: 'conv-1', messages })),
+      resetConversationState()
+    );
+
+    expect(nextState.lastReadyConversationSnapshot).toBeNull();
   });
 });

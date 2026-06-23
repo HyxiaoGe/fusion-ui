@@ -20,11 +20,15 @@ const {
   fetchQuestionsMock,
   suggestedQuestionsState,
   streamState,
+  lastReadyConversationSnapshotState,
   transientCompletionState,
 } = vi.hoisted(() => ({
   currentRoute: { chatId: 'chat-a' },
   conversationsById: new Map<string, Conversation>(),
   hydrationById: new Map<string, { view: 'loading' | 'ready' | 'error'; error?: string }>(),
+  lastReadyConversationSnapshotState: {
+    value: null as { chatId: string; messages: Message[] } | null,
+  },
   suggestedQuestionsState: {
     questions: [] as string[],
     isLoading: false,
@@ -59,7 +63,10 @@ vi.mock('@/redux/hooks', () => ({
   useAppSelector: (selector: (state: any) => unknown) =>
     selector({
       auth: { isAuthenticated: true },
-      conversation: { globalError: null },
+      conversation: {
+        globalError: null,
+        lastReadyConversationSnapshot: lastReadyConversationSnapshotState.value,
+      },
       stream: streamState,
     }),
 }));
@@ -137,6 +144,10 @@ vi.mock('@/lib/agent/finishReason', () => ({
 vi.mock('@/redux/slices/conversationSlice', () => ({
   appendMessage: vi.fn((payload?: unknown) => ({ type: 'conversation/appendMessage', payload })),
   clearConversationMessages: vi.fn((payload?: unknown) => ({ type: 'conversation/clearConversationMessages', payload })),
+  setLastReadyConversationSnapshot: vi.fn((payload?: unknown) => ({
+    type: 'conversation/setLastReadyConversationSnapshot',
+    payload,
+  })),
   updateMessage: vi.fn((payload?: unknown) => ({ type: 'conversation/updateMessage', payload })),
 }));
 
@@ -225,12 +236,24 @@ function textMessage(id: string): Message {
   };
 }
 
+function countSnapshotDispatches() {
+  return dispatchMock.mock.calls.filter(
+    ([action]) => action?.type === 'conversation/setLastReadyConversationSnapshot'
+  ).length;
+}
+
 describe('ChatPage 会话切换体验', () => {
   beforeEach(() => {
     currentRoute.chatId = 'chat-a';
     conversationsById.clear();
     hydrationById.clear();
     dispatchMock.mockClear();
+    dispatchMock.mockImplementation((action: { type?: string; payload?: unknown }) => {
+      if (action?.type === 'conversation/setLastReadyConversationSnapshot') {
+        lastReadyConversationSnapshotState.value = action.payload as { chatId: string; messages: Message[] };
+      }
+      return action;
+    });
     routerPushMock.mockClear();
     chatInputMountMock.mockClear();
     chatInputUnmountMock.mockClear();
@@ -245,6 +268,7 @@ describe('ChatPage 会话切换体验', () => {
     suggestedQuestionsState.isLoading = false;
     streamState.isStreaming = false;
     streamState.conversationId = null;
+    lastReadyConversationSnapshotState.value = null;
     transientCompletionState.visible = false;
   });
 
@@ -293,6 +317,49 @@ describe('ChatPage 会话切换体验', () => {
     const lastMessageListProps = chatMessageListMock.mock.calls.at(-1)?.[0];
     expect(lastMessageListProps?.messages).toEqual([expect.objectContaining({ id: 'message-a' })]);
     expect(lastMessageListProps?.loadingState).toBeUndefined();
+  });
+
+  it('动态 page remount 后切到 loading 会话仍继续渲染上一段 ready messages', async () => {
+    conversationsById.set('chat-a', createConversation('chat-a', [textMessage('message-a')]));
+    hydrationById.set('chat-a', { view: 'ready' });
+    hydrationById.set('chat-b', { view: 'loading' });
+
+    const { unmount } = render(<ChatPage />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('message-list')).toHaveAttribute('data-message-ids', 'message-a');
+    });
+
+    unmount();
+    currentRoute.chatId = 'chat-b';
+    render(<ChatPage />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('message-list')).toHaveAttribute('data-message-ids', 'message-a');
+    });
+    expect(screen.queryByText('正在恢复这段对话')).toBeNull();
+  });
+
+  it('ready 会话只有元数据变化且 messages 引用不变时不重复写 snapshot', async () => {
+    const messages = [textMessage('message-a')];
+    conversationsById.set('chat-a', createConversation('chat-a', messages));
+    hydrationById.set('chat-a', { view: 'ready' });
+
+    const { rerender } = render(<ChatPage />);
+
+    await waitFor(() => {
+      expect(countSnapshotDispatches()).toBe(1);
+    });
+
+    conversationsById.set('chat-a', {
+      ...createConversation('chat-a', messages),
+      title: 'chat-a-renamed',
+      updatedAt: 2,
+    });
+    rerender(<ChatPage />);
+
+    expect(screen.getByTestId('message-list')).toHaveAttribute('data-message-ids', 'message-a');
+    expect(countSnapshotDispatches()).toBe(1);
   });
 
   it('过渡态旧消息只读，不下发会误用当前 chatId 的重试回调', async () => {

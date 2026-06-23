@@ -8,6 +8,10 @@ import type {
 
 export interface ConversationState {
   byId: Record<string, Conversation>;
+  lastReadyConversationSnapshot: {
+    chatId: string;
+    messages: Message[];
+  } | null;
   listIds: string[];
   pagination: Pagination | null;
   isLoadingList: boolean;
@@ -27,6 +31,7 @@ export interface ConversationState {
 
 const initialState: ConversationState = {
   byId: {},
+  lastReadyConversationSnapshot: null,
   listIds: [],
   pagination: null,
   isLoadingList: false,
@@ -171,6 +176,9 @@ const conversationSlice = createSlice({
       delete state.byId[id];
       delete state.hydrationStatus[id];
       delete state.hydrationError[id];
+      if (state.lastReadyConversationSnapshot?.chatId === id) {
+        state.lastReadyConversationSnapshot = null;
+      }
       state.listIds = state.listIds.filter((listId) => listId !== id);
       if (state.pendingConversationId === id) {
         state.pendingConversationId = null;
@@ -201,6 +209,9 @@ const conversationSlice = createSlice({
       if (conversation) {
         conversation.messages = [];
         conversation.updatedAt = Date.now();
+      }
+      if (state.lastReadyConversationSnapshot?.chatId === action.payload) {
+        state.lastReadyConversationSnapshot = null;
       }
     },
     appendMessage(
@@ -234,6 +245,12 @@ const conversationSlice = createSlice({
       if (message) {
         Object.assign(message, patch);
       }
+    },
+    setLastReadyConversationSnapshot(
+      state,
+      action: PayloadAction<{ chatId: string; messages: Message[] }>
+    ) {
+      state.lastReadyConversationSnapshot = action.payload;
     },
     toggleReasoningVisibility(
       state,
@@ -325,6 +342,7 @@ export const {
   setConversationList,
   setGlobalError,
   setHydrationStatus,
+  setLastReadyConversationSnapshot,
   setListError,
   setLoadingList,
   setLoadingMore,

@@ -12,6 +12,7 @@ import { useStore } from 'react-redux';
 import {
   appendMessage,
   clearConversationMessages,
+  setLastReadyConversationSnapshot,
   updateMessage,
 } from '@/redux/slices/conversationSlice';
 import {
@@ -43,12 +44,6 @@ import { useSuggestedQuestionContinuation } from '@/hooks/useSuggestedQuestionCo
 import { useTransientCompletionState } from '@/hooks/useTransientCompletionState';
 import { getRunStatusFromFinishReason } from '@/lib/agent/finishReason';
 import { shouldAutoFetchSuggestedQuestions } from '@/lib/chat/suggestedQuestionTiming';
-import type { Message } from '@/types/conversation';
-
-type ReadyConversationSnapshot = {
-  chatId: string;
-  messages: Message[];
-};
 
 export default function ChatPage() {
   const params = useParams();
@@ -58,8 +53,7 @@ export default function ChatPage() {
   const chatId = params?.chatId as string;
   const [confirmDialogOpen, setConfirmDialogOpen] = useState(false);
   const chatInputRef = useRef<HTMLDivElement>(null);
-  const fetchQuestionsRef = useRef<(force?: boolean) => Promise<void>>();
-  const lastReadyConversationRef = useRef<ReadyConversationSnapshot | null>(null);
+  const fetchQuestionsRef = useRef<((force?: boolean) => Promise<void>) | undefined>(undefined);
   const { conversation, hydrationView, hydrationError, retryHydration } = useConversation(chatId);
   const { sendMessage, stopStreaming, retryMessage } = useSendMessage();
   const {
@@ -69,27 +63,29 @@ export default function ChatPage() {
     clearQuestions,
   } = useSuggestedQuestions(chatId);
   fetchQuestionsRef.current = fetchQuestions;
-  const { conversationError, isStreaming, streamConversationId } =
+  const { conversationError, isStreaming, lastReadyConversationSnapshot, streamConversationId } =
     useAppSelector((state) => ({
       conversationError: state.conversation.globalError,
       isStreaming: state.stream.isStreaming,
+      lastReadyConversationSnapshot: state.conversation.lastReadyConversationSnapshot,
       streamConversationId: state.stream.conversationId,
     }));
+  const conversationMessages = conversation?.messages;
 
   useEffect(() => {
     clearQuestions();
   }, [chatId, clearQuestions]);
 
   useEffect(() => {
-    if (hydrationView !== 'ready' || !conversation) {
+    if (hydrationView !== 'ready' || !conversationMessages) {
       return;
     }
 
-    lastReadyConversationRef.current = {
+    dispatch(setLastReadyConversationSnapshot({
       chatId,
-      messages: conversation.messages || [],
-    };
-  }, [chatId, conversation, hydrationView]);
+      messages: [...conversationMessages],
+    }));
+  }, [chatId, conversationMessages, dispatch, hydrationView]);
 
   // 页面 mount / hydration 完成后检查是否有未完成的流 → 断线重连
   // TODO(遗漏1): 网络抖动自动重连需要独立实现，不能复用 checkAndReconnect，
@@ -319,7 +315,7 @@ export default function ChatPage() {
   const showCompletionState = useTransientCompletionState({
     isStreaming,
     isLoadingQuestions,
-    messages: conversation?.messages || lastReadyConversationRef.current?.messages || [],
+    messages: conversation?.messages || lastReadyConversationSnapshot?.messages || [],
   });
 
   const handleSendMessage = useCallback((content: string, attachments?: FileAttachment[]) => {
@@ -369,7 +365,7 @@ export default function ChatPage() {
   }, [chatId, dispatch]);
 
 
-  const lastReadyConversation = lastReadyConversationRef.current;
+  const lastReadyConversation = lastReadyConversationSnapshot;
   const shouldKeepPreviousContent =
     hydrationView === 'loading' &&
     Boolean(lastReadyConversation && lastReadyConversation.messages.length > 0);
