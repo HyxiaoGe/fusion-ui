@@ -45,6 +45,11 @@ import { useTransientCompletionState } from '@/hooks/useTransientCompletionState
 import { getRunStatusFromFinishReason } from '@/lib/agent/finishReason';
 import { shouldAutoFetchSuggestedQuestions } from '@/lib/chat/suggestedQuestionTiming';
 
+const CHAT_EMPTY_STATE = {
+  title: '这个会话还没有消息',
+  description: '发送第一条消息，继续这段会话。',
+};
+
 export default function ChatPage() {
   const params = useParams();
   const router = useRouter();
@@ -63,13 +68,12 @@ export default function ChatPage() {
     clearQuestions,
   } = useSuggestedQuestions(chatId);
   fetchQuestionsRef.current = fetchQuestions;
-  const { conversationError, isStreaming, lastReadyConversationSnapshot, streamConversationId } =
-    useAppSelector((state) => ({
-      conversationError: state.conversation.globalError,
-      isStreaming: state.stream.isStreaming,
-      lastReadyConversationSnapshot: state.conversation.lastReadyConversationSnapshot,
-      streamConversationId: state.stream.conversationId,
-    }));
+  const conversationError = useAppSelector((state) => state.conversation.globalError);
+  const isStreaming = useAppSelector((state) => state.stream.isStreaming);
+  const lastReadyConversationSnapshot = useAppSelector(
+    (state) => state.conversation.lastReadyConversationSnapshot
+  );
+  const streamConversationId = useAppSelector((state) => state.stream.conversationId);
   const conversationMessages = conversation?.messages;
 
   useEffect(() => {
@@ -427,10 +431,7 @@ export default function ChatPage() {
             onSelectQuestion={shouldKeepPreviousContent ? undefined : handleSelectQuestion}
             onRefreshQuestions={shouldKeepPreviousContent ? undefined : handleRefreshQuestions}
             completionStateVisible={shouldKeepPreviousContent ? false : showCompletionState}
-            emptyState={{
-              title: '这个会话还没有消息',
-              description: '发送第一条消息，继续这段会话。',
-            }}
+            emptyState={CHAT_EMPTY_STATE}
           />
         </div>
 

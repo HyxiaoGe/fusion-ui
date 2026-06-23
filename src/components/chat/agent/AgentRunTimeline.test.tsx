@@ -81,6 +81,56 @@ describe('AgentRunTimeline', () => {
     expect(container.firstChild).toBeNull();
   });
 
+  it('传入 run prop 为 null 时不订阅全局 currentRun 且不渲染', () => {
+    const { container } = render(
+      <AgentRunTimeline
+        assistantMessageId="assistant-1"
+        run={null}
+      />,
+    );
+
+    expect(mockUseAppSelector).not.toHaveBeenCalled();
+    expect(container.firstChild).toBeNull();
+  });
+
+  it('run 为 undefined 时保留旧 store fallback', () => {
+    setCurrentRun(run());
+
+    render(
+      <AgentRunTimeline
+        assistantMessageId="m1"
+        run={undefined}
+      />,
+    );
+
+    expect(mockUseAppSelector).toHaveBeenCalledTimes(1);
+    expect(screen.getByText(/已用/)).toBeInTheDocument();
+  });
+
+  it('传入 run prop 时不订阅全局 currentRun 并按传入 run 渲染', () => {
+    render(
+      <AgentRunTimeline
+        assistantMessageId="m1"
+        run={run()}
+      />,
+    );
+
+    expect(mockUseAppSelector).not.toHaveBeenCalled();
+    expect(screen.getByText(/已用/)).toBeInTheDocument();
+  });
+
+  it('传入 run prop 时按 messageId 过滤不匹配 run', () => {
+    const { container } = render(
+      <AgentRunTimeline
+        assistantMessageId="m_other"
+        run={run()}
+      />,
+    );
+
+    expect(mockUseAppSelector).not.toHaveBeenCalled();
+    expect(container.firstChild).toBeNull();
+  });
+
   it('messageId 不匹配时不渲染（contract §1 message 归属）', () => {
     const { container } = renderTimeline(run(), { assistantMessageId: 'm_OTHER' });
 

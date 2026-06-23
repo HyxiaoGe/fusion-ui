@@ -1,7 +1,22 @@
 import React from 'react';
-import { describe, it, expect, vi } from 'vitest';
+import { beforeEach, describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent, within } from '@testing-library/react';
 import MarkdownRenderer from './MarkdownRenderer';
+
+const reactMarkdownRenderMock = vi.hoisted(() => vi.fn());
+
+vi.mock('react-markdown', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('react-markdown')>();
+
+  return {
+    ...actual,
+    default: (props: React.ComponentProps<typeof actual.default>) => {
+      reactMarkdownRenderMock();
+      const ActualReactMarkdown = actual.default;
+      return <ActualReactMarkdown {...props} />;
+    },
+  };
+});
 
 // mock CodeBlock，避免拉入 syntax-highlighter 重量依赖
 vi.mock('./CodeBlock', () => ({
@@ -12,6 +27,10 @@ const mockSources = [
   { url: 'https://a.com', title: 'Source A', favicon: '' },
   { url: 'https://b.com', title: 'Source B', favicon: '' },
 ];
+
+beforeEach(() => {
+  reactMarkdownRenderMock.mockClear();
+});
 
 describe('MarkdownRenderer — citation 行为（contract §9）', () => {
   it('文本里的 [1] 渲染为可点击 chip（button 包含数字 1）', () => {
@@ -142,5 +161,48 @@ describe('MarkdownRenderer — citation 行为（contract §9）', () => {
     // 没有 button / link / cite chip
     expect(container.querySelector('button')).toBeNull();
     expect(container.querySelector('a[aria-label*="参考资料"]')).toBeNull();
+  });
+});
+
+describe('MarkdownRenderer — code/table 行为', () => {
+  it('多行 fenced code 使用 CodeBlock 渲染', () => {
+    render(
+      <MarkdownRenderer
+        content={'```ts\nconst a = 1;\nconst b = 2;\n```'}
+        sources={mockSources}
+      />
+    );
+
+    expect(screen.getByTestId('code-block').textContent).toBe('const a = 1;\nconst b = 2;');
+  });
+
+  it('table 保留横向滚动容器和单元格边框样式', () => {
+    const { container } = render(
+      <MarkdownRenderer
+        content={'| A | B |\n| - | - |\n| 1 | 2 |'}
+        sources={mockSources}
+      />
+    );
+
+    expect(container.querySelector('.overflow-x-auto table')).toBeTruthy();
+    expect(screen.getByRole('columnheader', { name: 'A' })).toHaveClass('border');
+    expect(screen.getByRole('cell', { name: '1' })).toHaveClass('border');
+  });
+});
+
+describe('MarkdownRenderer — memo 行为', () => {
+  it('相同 props rerender 时不重复执行 ReactMarkdown', () => {
+    const sources = [{ title: 'A', url: 'https://example.com/a', favicon: '' }];
+    const onCitationClick = vi.fn();
+
+    const { rerender } = render(
+      <MarkdownRenderer content="hello [1]" sources={sources} onCitationClick={onCitationClick} />
+    );
+
+    rerender(
+      <MarkdownRenderer content="hello [1]" sources={sources} onCitationClick={onCitationClick} />
+    );
+
+    expect(reactMarkdownRenderMock).toHaveBeenCalledTimes(1);
   });
 });

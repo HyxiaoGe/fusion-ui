@@ -13,6 +13,8 @@ interface AgentRunTimelineProps {
   /** 用户点「重试运行」/「重新提问」时调用。
    * undefined 时 RunBanner 不显示按钮（避免 fake CTA，contract §7）。 */
   onRetry?: () => void;
+  /** 上层已知的 run。传入 null 时不订阅全局 currentRun；undefined 按未传处理。 */
+  run?: AgentRunState | null;
 }
 
 /**
@@ -23,9 +25,45 @@ interface AgentRunTimelineProps {
  *   - 必须有 currentRun
  *   - currentRun.messageId 必须与 assistantMessageId 匹配（或 serverMessageId 匹配）
  */
-export function AgentRunTimeline({ assistantMessageId, onRetry }: AgentRunTimelineProps) {
+export function AgentRunTimeline(props: AgentRunTimelineProps) {
+  if (props.run !== undefined) {
+    return (
+      <AgentRunTimelineContent
+        assistantMessageId={props.assistantMessageId}
+        onRetry={props.onRetry}
+        run={props.run ?? null}
+      />
+    );
+  }
+
+  return (
+    <AgentRunTimelineFromStore
+      assistantMessageId={props.assistantMessageId}
+      onRetry={props.onRetry}
+    />
+  );
+}
+
+function AgentRunTimelineFromStore({
+  assistantMessageId,
+  onRetry,
+}: Omit<AgentRunTimelineProps, 'run'>) {
   const run = useAppSelector(s => s.stream.currentRun);
 
+  return (
+    <AgentRunTimelineContent
+      assistantMessageId={assistantMessageId}
+      onRetry={onRetry}
+      run={run}
+    />
+  );
+}
+
+function AgentRunTimelineContent({
+  assistantMessageId,
+  onRetry,
+  run,
+}: Required<Pick<AgentRunTimelineProps, 'assistantMessageId' | 'run'>> & Pick<AgentRunTimelineProps, 'onRetry'>) {
   if (!run) return null;
   // contract §1：只挂到归属本 message 的 currentRun
   if (run.messageId !== assistantMessageId && run.serverMessageId !== assistantMessageId) {
@@ -38,7 +76,10 @@ export function AgentRunTimeline({ assistantMessageId, onRetry }: AgentRunTimeli
   if (!run.steps?.length && (run.status === 'running' || (run.status === 'completed' && !run.limitReachedReason))) return null;
 
   return (
-    <div className="mb-3 w-full max-w-full min-w-0 self-stretch">
+    <div
+      data-testid="agent-run-timeline"
+      className="mb-3 w-full max-w-full min-w-0 self-stretch"
+    >
       <RunHeader run={run} />
       <RunBanner run={run} onRetry={onRetry} />
       <StepTimeline run={run} />

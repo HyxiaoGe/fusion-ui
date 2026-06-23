@@ -1,6 +1,7 @@
 'use client';
 
 import type { SearchSourceSummary } from '@/types/conversation';
+import type { AgentRunState } from '@/types/agentRun';
 import ReasoningContent from './ReasoningContent';
 import AssistantActivityStatus from './AssistantActivityStatus';
 import type { AssistantActivity } from './assistantActivity';
@@ -21,6 +22,7 @@ interface AssistantResponseStackProps {
     endTime?: number;
   };
   activity: AssistantActivity;
+  agentRun?: AgentRunState | null;
   onRetry?: () => void;
   answerEvidence: AnswerEvidenceModel | null;
   onSourceClick: (index: number) => void;
@@ -37,6 +39,7 @@ export default function AssistantResponseStack({
   assistantMessageId,
   reasoning,
   activity,
+  agentRun,
   onRetry,
   answerEvidence,
   onSourceClick,
@@ -44,6 +47,10 @@ export default function AssistantResponseStack({
   markdown,
   showStreamingCursor,
 }: AssistantResponseStackProps) {
+  const agentRunTimelineProps = agentRun === undefined
+    ? { assistantMessageId, onRetry }
+    : { assistantMessageId, onRetry, run: agentRun };
+
   return (
     <div
       data-testid="assistant-response-stack"
@@ -62,10 +69,7 @@ export default function AssistantResponseStack({
 
       <AssistantActivityStatus activity={activity} />
 
-      <AgentRunTimeline
-        assistantMessageId={assistantMessageId}
-        onRetry={onRetry}
-      />
+      <AgentRunTimeline {...agentRunTimelineProps} />
 
       <AnswerEvidence
         evidence={answerEvidence}

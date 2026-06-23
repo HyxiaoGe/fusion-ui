@@ -1,10 +1,13 @@
 import React from 'react';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
+import type { AgentRunState } from '@/types/agentRun';
 import type { SearchSourceSummary } from '@/types/conversation';
 import type { AssistantActivity } from './assistantActivity';
 import type { AnswerEvidenceModel } from './answerEvidenceModel';
 import AssistantResponseStack from './AssistantResponseStack';
+
+const agentRunTimelinePropsMock = vi.hoisted(() => vi.fn());
 
 vi.mock('./ReasoningContent', () => ({
   default: ({
@@ -42,17 +45,26 @@ vi.mock('./AssistantActivityStatus', () => ({
 }));
 
 vi.mock('./agent', () => ({
-  AgentRunTimeline: ({
-    assistantMessageId,
-    onRetry,
-  }: {
+  AgentRunTimeline: (props: {
     assistantMessageId: string;
     onRetry?: () => void;
-  }) => (
-    <section data-testid="stack-agent" data-message-id={assistantMessageId}>
-      <button type="button" onClick={onRetry}>重试运行</button>
-    </section>
-  ),
+    run?: AgentRunState | null;
+  }) => {
+    agentRunTimelinePropsMock({
+      hasRunProp: Object.prototype.hasOwnProperty.call(props, 'run'),
+      run: props.run,
+    });
+
+    return (
+      <section
+        data-testid="stack-agent"
+        data-message-id={props.assistantMessageId}
+        data-run-id={props.run?.runId ?? 'none'}
+      >
+        <button type="button" onClick={props.onRetry}>重试运行</button>
+      </section>
+    );
+  },
 }));
 
 vi.mock('./AnswerEvidence', () => ({
@@ -144,6 +156,17 @@ const answerEvidence: AnswerEvidenceModel = {
   hiddenUrlCount: 0,
   summary: '回答依据 · 搜索 1 条',
   hasSearchSources: true,
+};
+
+const agentRun: AgentRunState = {
+  runId: 'run-1',
+  messageId: 'assistant-1',
+  status: 'running',
+  config: { maxSteps: 8, maxToolCalls: 20, timeoutS: 300 },
+  totalSteps: 0,
+  totalToolCalls: 0,
+  steps: [],
+  lastSequence: 1,
 };
 
 describe('AssistantResponseStack', () => {
@@ -243,6 +266,74 @@ describe('AssistantResponseStack', () => {
     expect(onSourceClick).toHaveBeenCalledWith(0);
     expect(onOpenSources).toHaveBeenCalledTimes(1);
     expect(onCitationClick).toHaveBeenCalledWith(0);
+  });
+
+  it('向 AgentRunTimeline 透传当前 agentRun', () => {
+    agentRunTimelinePropsMock.mockClear();
+
+    render(
+      <AssistantResponseStack
+        assistantMessageId="assistant-1"
+        reasoning={{
+          shouldRender: false,
+          content: '',
+          isVisible: false,
+          isStreaming: false,
+          onToggle: vi.fn(),
+        }}
+        activity={activity()}
+        agentRun={agentRun}
+        onRetry={undefined}
+        answerEvidence={null}
+        onSourceClick={vi.fn()}
+        onOpenSources={vi.fn()}
+        markdown={{
+          content: '回答',
+          sources: [],
+          onCitationClick: undefined,
+        }}
+        showStreamingCursor={false}
+      />,
+    );
+
+    expect(screen.getByTestId('stack-agent')).toHaveAttribute('data-run-id', 'run-1');
+    expect(agentRunTimelinePropsMock).toHaveBeenLastCalledWith({
+      hasRunProp: true,
+      run: agentRun,
+    });
+  });
+
+  it('未传 agentRun 时不向 AgentRunTimeline 传 run prop，保留旧 store fallback', () => {
+    agentRunTimelinePropsMock.mockClear();
+
+    render(
+      <AssistantResponseStack
+        assistantMessageId="assistant-1"
+        reasoning={{
+          shouldRender: false,
+          content: '',
+          isVisible: false,
+          isStreaming: false,
+          onToggle: vi.fn(),
+        }}
+        activity={activity()}
+        onRetry={undefined}
+        answerEvidence={null}
+        onSourceClick={vi.fn()}
+        onOpenSources={vi.fn()}
+        markdown={{
+          content: '回答',
+          sources: [],
+          onCitationClick: undefined,
+        }}
+        showStreamingCursor={false}
+      />,
+    );
+
+    expect(agentRunTimelinePropsMock).toHaveBeenLastCalledWith({
+      hasRunProp: false,
+      run: undefined,
+    });
   });
 
   it('只在显式要求时渲染推理区和流式光标', () => {

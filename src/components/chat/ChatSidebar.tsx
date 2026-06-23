@@ -83,10 +83,18 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ onNewChat, activeChatIdOverri
     if (!containerRef.current) return;
     // 等下一个渲染帧再 scroll，确保 ChatItem 已渲染（updatedAt 变化触发 sortedAndGroupedChats 重排）
     const timer = setTimeout(() => {
-      const target = containerRef.current?.querySelector(
+      const container = containerRef.current;
+      const target = container?.querySelector(
         `[data-conversation-id="${activeChatId}"]`
       ) as HTMLElement | null;
-      if (target) {
+      if (container && target) {
+        const containerRect = container.getBoundingClientRect();
+        const targetRect = target.getBoundingClientRect();
+        const visibilityTolerancePx = 1;
+        const isTargetVisible =
+          targetRect.top >= containerRect.top - visibilityTolerancePx &&
+          targetRect.bottom <= containerRect.bottom + visibilityTolerancePx;
+        if (isTargetVisible) return;
         target.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
       }
     }, 50);

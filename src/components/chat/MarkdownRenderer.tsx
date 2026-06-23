@@ -147,10 +147,12 @@ const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({ content, className,
         remarkPlugins={[remarkGfm]}
         rehypePlugins={[rehypeRaw]}
         components={{
-          pre: ({ node, children, ...props }) => {
+          pre: ({ node, children }) => {
+            void node;
             return <>{children}</>;
           },
           code: ({ node, className, children, ...props }) => {
+            void node;
             const match = /language-(\w+)/.exec(className || '');
             const codeContent = String(children).replace(/\n$/, '');
 
@@ -173,44 +175,56 @@ const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({ content, className,
           },
           // 拦截各种文本容器标签，处理 ⟦n⟧ 引用占位符
           p: ({ node, children, ...props }) => {
+            void node;
             if (!hasSources) return <p {...props}>{children}</p>;
             return <p {...props}>{processChildren(children, sources, onCitationClick)}</p>;
           },
           li: ({ node, children, ...props }) => {
+            void node;
             if (!hasSources) return <li {...props}>{children}</li>;
             return <li {...props}>{processChildren(children, sources, onCitationClick)}</li>;
           },
           strong: ({ node, children, ...props }) => {
+            void node;
             if (!hasSources) return <strong {...props}>{children}</strong>;
             return <strong {...props}>{processChildren(children, sources, onCitationClick)}</strong>;
           },
           em: ({ node, children, ...props }) => {
+            void node;
             if (!hasSources) return <em {...props}>{children}</em>;
             return <em {...props}>{processChildren(children, sources, onCitationClick)}</em>;
           },
           h1: ({ node, children, ...props }) => {
+            void node;
             if (!hasSources) return <h1 {...props}>{children}</h1>;
             return <h1 {...props}>{processChildren(children, sources, onCitationClick)}</h1>;
           },
           h2: ({ node, children, ...props }) => {
+            void node;
             if (!hasSources) return <h2 {...props}>{children}</h2>;
             return <h2 {...props}>{processChildren(children, sources, onCitationClick)}</h2>;
           },
           h3: ({ node, children, ...props }) => {
+            void node;
             if (!hasSources) return <h3 {...props}>{children}</h3>;
             return <h3 {...props}>{processChildren(children, sources, onCitationClick)}</h3>;
           },
-          table: ({ node, ...props }) => (
-            <div className="overflow-x-auto my-4">
-              <table className="border-collapse w-full" {...props} />
-            </div>
-          ),
-          th: ({ node, ...props }) => (
-            <th className="border border-border px-4 py-2 text-left" {...props} />
-          ),
-          td: ({ node, ...props }) => (
-            <td className="border border-border px-4 py-2" {...props} />
-          ),
+          table: ({ node, ...props }) => {
+            void node;
+            return (
+              <div className="overflow-x-auto my-4">
+                <table className="border-collapse w-full" {...props} />
+              </div>
+            );
+          },
+          th: ({ node, ...props }) => {
+            void node;
+            return <th className="border border-border px-4 py-2 text-left" {...props} />;
+          },
+          td: ({ node, ...props }) => {
+            void node;
+            return <td className="border border-border px-4 py-2" {...props} />;
+          },
         }}
       >
         {processedContent}
@@ -219,4 +233,4 @@ const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({ content, className,
   );
 };
 
-export default MarkdownRenderer;
+export default React.memo(MarkdownRenderer);

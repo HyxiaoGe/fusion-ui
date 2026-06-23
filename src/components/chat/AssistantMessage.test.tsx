@@ -5,10 +5,12 @@ import type { Message, SearchSourceSummary } from '@/types/conversation';
 
 const {
   dispatchMock,
+  assistantResponseStackMock,
   deriveStaticAssistantMessageViewModelMock,
   useAssistantMessageViewModelMock,
 } = vi.hoisted(() => ({
   dispatchMock: vi.fn(),
+  assistantResponseStackMock: vi.fn(),
   deriveStaticAssistantMessageViewModelMock: vi.fn(),
   useAssistantMessageViewModelMock: vi.fn(),
 }));
@@ -24,11 +26,7 @@ vi.mock('../models/ProviderIcon', () => ({
 }));
 
 vi.mock('./AssistantResponseStack', () => ({
-  default: ({
-    markdown,
-    onSourceClick,
-    onOpenSources,
-  }: {
+  default: (props: {
     markdown: {
       content: string;
       sources: SearchSourceSummary[];
@@ -36,15 +34,24 @@ vi.mock('./AssistantResponseStack', () => ({
     };
     onSourceClick: (index: number) => void;
     onOpenSources: () => void;
-  }) => (
-    <section data-testid="assistant-response-stack">
-      <p>{markdown.content}</p>
-      <button type="button" onClick={() => markdown.onCitationClick?.(0)}>Markdown 引用</button>
-      <button type="button" onClick={() => onSourceClick(0)}>依据来源</button>
-      <button type="button" onClick={onOpenSources}>全部来源</button>
-      <span data-testid="stack-source-count">{markdown.sources.length}</span>
-    </section>
-  ),
+  }) => {
+    assistantResponseStackMock(props);
+    const {
+      markdown,
+      onSourceClick,
+      onOpenSources,
+    } = props;
+
+    return (
+      <section data-testid="assistant-response-stack">
+        <p>{markdown.content}</p>
+        <button type="button" onClick={() => markdown.onCitationClick?.(0)}>Markdown 引用</button>
+        <button type="button" onClick={() => onSourceClick(0)}>依据来源</button>
+        <button type="button" onClick={onOpenSources}>全部来源</button>
+        <span data-testid="stack-source-count">{markdown.sources.length}</span>
+      </section>
+    );
+  },
 }));
 
 vi.mock('./SourcesSidebar', () => ({
@@ -156,6 +163,7 @@ function renderAssistant(overrides: Partial<React.ComponentProps<typeof Assistan
 describe('AssistantMessage', () => {
   beforeEach(() => {
     dispatchMock.mockReset();
+    assistantResponseStackMock.mockReset();
     deriveStaticAssistantMessageViewModelMock.mockReset();
     deriveStaticAssistantMessageViewModelMock.mockReturnValue(defaultViewModel());
     useAssistantMessageViewModelMock.mockReset();
@@ -189,6 +197,79 @@ describe('AssistantMessage', () => {
 
     expect(screen.getByTestId('assistant-response-stack')).toBeInTheDocument();
     expect(screen.getByText('助手正文')).toBeInTheDocument();
+  });
+
+  it('静态 assistant 在无关 props 引用稳定时不重复派生 view model', () => {
+    const message = assistantMessage({ id: 'assistant-stable', content: [{ type: 'text', id: 'text-stable', text: '回答内容' }] });
+    const stableQuestions: string[] = [];
+    const onSelectQuestion = vi.fn();
+    const onRefreshQuestions = vi.fn();
+
+    const { rerender } = render(
+      <AssistantMessage
+        message={message}
+        isLastMessage={false}
+        isStreaming={false}
+        suggestedQuestions={stableQuestions}
+        isLoadingQuestions={false}
+        activeChatId="chat-1"
+        modelName="AI助手"
+        onSelectQuestion={onSelectQuestion}
+        onRefreshQuestions={onRefreshQuestions}
+      />,
+    );
+
+    rerender(
+      <AssistantMessage
+        message={message}
+        isLastMessage={false}
+        isStreaming={false}
+        suggestedQuestions={stableQuestions}
+        isLoadingQuestions={false}
+        activeChatId="chat-1"
+        modelName="AI助手"
+        onSelectQuestion={onSelectQuestion}
+        onRefreshQuestions={onRefreshQuestions}
+      />,
+    );
+
+    expect(deriveStaticAssistantMessageViewModelMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('静态 assistant rerender 时保持来源相关回调稳定，避免 Markdown memo 失效', () => {
+    const message = assistantMessage({ id: 'assistant-citation-stable' });
+
+    const { rerender } = render(
+      <AssistantMessage
+        message={message}
+        isLastMessage={false}
+        isStreaming={false}
+        suggestedQuestions={[]}
+        isLoadingQuestions={false}
+        activeChatId="chat-1"
+        modelName="AI助手"
+      />,
+    );
+
+    const firstProps = assistantResponseStackMock.mock.calls.at(-1)?.[0];
+
+    rerender(
+      <AssistantMessage
+        message={message}
+        isLastMessage={false}
+        isStreaming={false}
+        suggestedQuestions={[]}
+        isLoadingQuestions={false}
+        activeChatId="chat-1"
+        modelName="AI助手"
+      />,
+    );
+
+    const secondProps = assistantResponseStackMock.mock.calls.at(-1)?.[0];
+
+    expect(secondProps.markdown.onCitationClick).toBe(firstProps.markdown.onCitationClick);
+    expect(secondProps.onSourceClick).toBe(firstProps.onSourceClick);
+    expect(secondProps.onOpenSources).toBe(firstProps.onOpenSources);
   });
 
   it('点击 Markdown 引用后打开 SourcesSidebar 并高亮来源', () => {

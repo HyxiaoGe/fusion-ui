@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Bot } from 'lucide-react';
 
 import type { FileWithPreview } from '@/lib/utils/fileHelpers';
@@ -95,12 +95,20 @@ function AssistantMessage({
 }
 
 function StaticAssistantMessage(props: AssistantMessageProps) {
-  const viewModel = deriveStaticAssistantMessageViewModel({
-    message: props.message,
-    isLoadingQuestions: props.isLoadingQuestions,
-    suggestedQuestionsCount: props.suggestedQuestions.length,
-    currentRun: props.agentRun,
-  });
+  const viewModel = useMemo(
+    () => deriveStaticAssistantMessageViewModel({
+      message: props.message,
+      isLoadingQuestions: props.isLoadingQuestions,
+      suggestedQuestionsCount: props.suggestedQuestions.length,
+      currentRun: props.agentRun,
+    }),
+    [
+      props.agentRun,
+      props.isLoadingQuestions,
+      props.message,
+      props.suggestedQuestions.length,
+    ],
+  );
 
   return <AssistantMessageFrame {...props} viewModel={viewModel} />;
 }
@@ -124,6 +132,7 @@ function AssistantMessageFrame({
   isLastMessage,
   isStreaming,
   onRetry,
+  agentRun,
   suggestedQuestions,
   isLoadingQuestions,
   onSelectQuestion,
@@ -154,15 +163,19 @@ function AssistantMessageFrame({
 
   const { copied, copy } = useMessageCopy({ text: displayText });
 
-  const handleCitationClick = (index: number) => {
+  const handleCitationClick = useCallback((index: number) => {
     setSourcesSidebarOpen(true);
     setCitationHighlight(prev => ({ index, tick: prev.tick + 1 }));
-  };
+  }, []);
 
-  const handleSourcesClose = () => {
+  const handleSourcesClose = useCallback(() => {
     setSourcesSidebarOpen(false);
     setCitationHighlight({ index: -1, tick: 0 });
-  };
+  }, []);
+
+  const handleOpenSources = useCallback(() => {
+    setSourcesSidebarOpen(true);
+  }, []);
 
   const handleToggleReasoning = () => {
     if (activeChatId) {
@@ -218,10 +231,11 @@ function AssistantMessageFrame({
               endTime: (isLastMessage ? streamingEndTime : undefined) ?? undefined,
             }}
             activity={activity}
+            agentRun={agentRun}
             onRetry={onRetry ? () => onRetry(message.id) : undefined}
             answerEvidence={answerEvidence}
             onSourceClick={handleCitationClick}
-            onOpenSources={() => setSourcesSidebarOpen(true)}
+            onOpenSources={handleOpenSources}
             markdown={{
               content: displayText || '',
               sources: searchSources,
@@ -281,4 +295,4 @@ function AssistantMessageFrame({
 }
 
 export type { AssistantMessageProps };
-export default AssistantMessage;
+export default React.memo(AssistantMessage);

@@ -407,4 +407,22 @@ describe('ChatPage 会话切换体验', () => {
     expect(lastMessageListProps?.completionStateVisible).toBe(false);
     expect(lastMessageListProps?.isStreaming).toBe(false);
   });
+
+  it('同一会话无关状态变化时保持 ChatMessageList 的 emptyState 引用稳定', async () => {
+    conversationsById.set('chat-a', createConversation('chat-a', [textMessage('message-a')]));
+    hydrationById.set('chat-a', { view: 'ready' });
+
+    const { rerender } = render(<ChatPage />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('message-list')).toHaveAttribute('data-message-ids', 'message-a');
+    });
+
+    const firstProps = chatMessageListMock.mock.calls.at(-1)?.[0];
+    transientCompletionState.visible = true;
+    rerender(<ChatPage />);
+    const secondProps = chatMessageListMock.mock.calls.at(-1)?.[0];
+
+    expect(secondProps.emptyState).toBe(firstProps.emptyState);
+  });
 });
