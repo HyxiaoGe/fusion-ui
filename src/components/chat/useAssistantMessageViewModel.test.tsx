@@ -25,7 +25,10 @@ vi.mock('@/redux/hooks', () => ({
   useAppSelector: (selector: (state: typeof selectorState) => unknown) => selector(selectorState),
 }));
 
-import { useAssistantMessageViewModel } from './useAssistantMessageViewModel';
+import {
+  deriveStaticAssistantMessageViewModel,
+  useAssistantMessageViewModel,
+} from './useAssistantMessageViewModel';
 
 function resetSelectorState() {
   Object.assign(selectorState.stream, {
@@ -89,6 +92,25 @@ describe('useAssistantMessageViewModel', () => {
         url: 'https://example.com/ai-standard',
       }),
     );
+  });
+
+  it('静态历史消息派生不订阅 stream 状态', () => {
+    const message: Message = {
+      id: 'assistant-1',
+      role: 'assistant',
+      content: [{ type: 'text', id: 'text-1', text: '历史正文' }],
+      timestamp: 1,
+    };
+
+    const result = deriveStaticAssistantMessageViewModel({
+      message,
+      isLoadingQuestions: false,
+      suggestedQuestionsCount: 0,
+    });
+
+    expect(result.blocksToRender).toBe(message.content);
+    expect(result.displayText).toBe('历史正文');
+    expect(result.isCurrentlyStreaming).toBe(false);
   });
 
   it('流式最后一条消息从 stream blocks 派生正文', () => {

@@ -6,6 +6,7 @@ import { Bot } from 'lucide-react';
 import type { FileWithPreview } from '@/lib/utils/fileHelpers';
 import { useAppDispatch } from '@/redux/hooks';
 import { toggleReasoningVisibility } from '@/redux/slices/conversationSlice';
+import type { AgentRunState } from '@/types/agentRun';
 import type { Message } from '@/types/conversation';
 
 import ProviderIcon from '../models/ProviderIcon';
@@ -14,7 +15,11 @@ import FileCard from './FileCard';
 import MessageActions from './MessageActions';
 import SourcesSidebar from './SourcesSidebar';
 import SuggestedQuestions from './SuggestedQuestions';
-import { useAssistantMessageViewModel } from './useAssistantMessageViewModel';
+import {
+  deriveStaticAssistantMessageViewModel,
+  useAssistantMessageViewModel,
+} from './useAssistantMessageViewModel';
+import type { AssistantMessageViewModel } from './useAssistantMessageViewModel';
 import { useMessageCopy } from './useMessageCopy';
 
 interface AssistantMessageProps {
@@ -23,6 +28,7 @@ interface AssistantMessageProps {
   isLastMessage: boolean;
   isStreaming: boolean;
   onRetry?: (messageId: string) => void;
+  agentRun?: AgentRunState | null;
   suggestedQuestions: string[];
   isLoadingQuestions: boolean;
   onSelectQuestion?: (question: string) => void;
@@ -38,6 +44,7 @@ function AssistantMessage({
   isLastMessage,
   isStreaming,
   onRetry,
+  agentRun,
   suggestedQuestions,
   isLoadingQuestions,
   onSelectQuestion,
@@ -46,6 +53,86 @@ function AssistantMessage({
   providerId,
   modelName,
 }: AssistantMessageProps) {
+  const shouldUseStreamState = isStreaming && isLastMessage;
+
+  if (shouldUseStreamState) {
+    return (
+      <StreamingAssistantMessage
+        message={message}
+        files={files}
+        isLastMessage={isLastMessage}
+        isStreaming={isStreaming}
+        onRetry={onRetry}
+        agentRun={agentRun}
+        suggestedQuestions={suggestedQuestions}
+        isLoadingQuestions={isLoadingQuestions}
+        onSelectQuestion={onSelectQuestion}
+        onRefreshQuestions={onRefreshQuestions}
+        activeChatId={activeChatId}
+        providerId={providerId}
+        modelName={modelName}
+      />
+    );
+  }
+
+  return (
+    <StaticAssistantMessage
+      message={message}
+      files={files}
+      isLastMessage={isLastMessage}
+      isStreaming={isStreaming}
+      onRetry={onRetry}
+      agentRun={agentRun}
+      suggestedQuestions={suggestedQuestions}
+      isLoadingQuestions={isLoadingQuestions}
+      onSelectQuestion={onSelectQuestion}
+      onRefreshQuestions={onRefreshQuestions}
+      activeChatId={activeChatId}
+      providerId={providerId}
+      modelName={modelName}
+    />
+  );
+}
+
+function StaticAssistantMessage(props: AssistantMessageProps) {
+  const viewModel = deriveStaticAssistantMessageViewModel({
+    message: props.message,
+    isLoadingQuestions: props.isLoadingQuestions,
+    suggestedQuestionsCount: props.suggestedQuestions.length,
+    currentRun: props.agentRun,
+  });
+
+  return <AssistantMessageFrame {...props} viewModel={viewModel} />;
+}
+
+function StreamingAssistantMessage(props: AssistantMessageProps) {
+  const viewModel = useAssistantMessageViewModel({
+    message: props.message,
+    isStreaming: props.isStreaming,
+    isLastMessage: props.isLastMessage,
+    isLoadingQuestions: props.isLoadingQuestions,
+    suggestedQuestionsCount: props.suggestedQuestions.length,
+    currentRun: props.agentRun,
+  });
+
+  return <AssistantMessageFrame {...props} viewModel={viewModel} />;
+}
+
+function AssistantMessageFrame({
+  message,
+  files,
+  isLastMessage,
+  isStreaming,
+  onRetry,
+  suggestedQuestions,
+  isLoadingQuestions,
+  onSelectQuestion,
+  onRefreshQuestions,
+  activeChatId,
+  providerId,
+  modelName,
+  viewModel,
+}: AssistantMessageProps & { viewModel: AssistantMessageViewModel }) {
   const dispatch = useAppDispatch();
   const [localReasoningVisible, setLocalReasoningVisible] = useState(message.isReasoningVisible || false);
   const [sourcesSidebarOpen, setSourcesSidebarOpen] = useState(false);
@@ -63,13 +150,7 @@ function AssistantMessage({
     streamingEndTime,
     isStreamingReasoning,
     isThinkingPhaseComplete,
-  } = useAssistantMessageViewModel({
-    message,
-    isStreaming,
-    isLastMessage,
-    isLoadingQuestions,
-    suggestedQuestionsCount: suggestedQuestions.length,
-  });
+  } = viewModel;
 
   const { copied, copy } = useMessageCopy({ text: displayText });
 

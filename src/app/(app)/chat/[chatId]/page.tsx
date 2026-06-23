@@ -309,7 +309,7 @@ export default function ChatPage() {
     messages: conversation?.messages || [],
   });
 
-  const handleSendMessage = useCallback((content: string, attachments?: FileAttachment[], _pendingConversationId?: string) => {
+  const handleSendMessage = useCallback((content: string, attachments?: FileAttachment[]) => {
     clearQuestions();
     return sendMessage(
       content,
@@ -324,7 +324,7 @@ export default function ChatPage() {
       },
       attachments
     );
-  }, [chatId, clearQuestions, fetchQuestions, sendMessage]);
+  }, [chatId, clearQuestions, sendMessage]);
 
   const handleSelectQuestion = useSuggestedQuestionContinuation({
     canContinue: Boolean(chatId),
@@ -399,6 +399,7 @@ export default function ChatPage() {
         <div className="flex-1 overflow-y-auto px-4 pt-4" data-chat-scroll-container="true">
           <ChatMessageListLazy
             messages={conversation.messages || []}
+            conversationId={chatId}
             isStreaming={isStreaming && streamConversationId === chatId}
             onRetry={handleRetry}
             suggestedQuestions={suggestedQuestions}

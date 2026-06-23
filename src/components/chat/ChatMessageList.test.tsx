@@ -7,6 +7,8 @@ vi.mock('@/redux/hooks', () => ({
   useAppSelector: (selector: (state: any) => unknown) =>
     selector({
       stream: {
+        conversationId: null,
+        currentRun: null,
         blockOrder: [],
         textBlocks: {},
         thinkingBlocks: {},
@@ -14,6 +16,15 @@ vi.mock('@/redux/hooks', () => ({
         totalTextLength: 0,
         displayedTextLength: 0,
         lastError: null,
+      },
+      conversation: {
+        byId: {
+          'chat-1': { id: 'chat-1', model_id: 'model-1', messages: [] },
+        },
+      },
+      models: {
+        selectedModelId: 'model-1',
+        models: [{ id: 'model-1', provider: 'qwen', name: 'Qwen Max' }],
       },
     }),
 }));

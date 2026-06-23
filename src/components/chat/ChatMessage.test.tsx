@@ -329,7 +329,7 @@ describe('ChatMessage', () => {
   });
 
   it('renders degraded web_search notice without rendering an empty sources panel', () => {
-    selectorState.stream.currentRun = {
+    const agentRun = {
       runId: 'run-1',
       messageId: 'assistant-1',
       status: 'completed',
@@ -358,7 +358,7 @@ describe('ChatMessage', () => {
           ],
         },
       ],
-    };
+    } as AgentRunState;
 
     render(
       <ChatMessage
@@ -369,6 +369,7 @@ describe('ChatMessage', () => {
           timestamp: 1,
           chatId: 'chat-1',
         }}
+        agentRun={agentRun}
       />,
     );
 
@@ -376,7 +377,6 @@ describe('ChatMessage', () => {
     expect(screen.getByText('已基于现有信息回答')).toBeTruthy();
     expect(screen.queryByText(/参考 \d+ 篇资料/)).toBeNull();
 
-    selectorState.stream.currentRun = null;
   });
 
   it('ignores activity issues from a run owned by another assistant message', () => {

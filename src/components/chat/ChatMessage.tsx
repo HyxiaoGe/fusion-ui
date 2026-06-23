@@ -2,12 +2,11 @@
 
 import { cn } from '@/lib/utils';
 import { FileWithPreview } from '@/lib/utils/fileHelpers';
-import { useAppSelector } from '@/redux/hooks';
-import { selectChatModel } from '@/redux/selectors';
 import type { Message, FileBlock as FileBlockType } from '@/types/conversation';
 import { extractTextFromBlocks } from '@/types/conversation';
 import React, { useState, useEffect, useMemo } from 'react';
 import { chatStore } from '@/lib/db/chatStore';
+import type { AgentRunState } from '@/types/agentRun';
 import ImageViewer from './ImageViewer';
 import UserMessage from './UserMessage';
 import AssistantMessage from './AssistantMessage';
@@ -19,33 +18,31 @@ interface ChatMessageProps {
   isStreaming?: boolean;
   onRetry?: (messageId: string) => void;
   onEdit?: (messageId: string, content: string) => void;
+  activeChatId?: string | null;
+  providerId?: string;
+  modelName?: string;
+  agentRun?: AgentRunState | null;
   suggestedQuestions?: string[];
   isLoadingQuestions?: boolean;
   onSelectQuestion?: (question: string) => void;
   onRefreshQuestions?: () => void;
 }
 
-const ChatMessage: React.FC<ChatMessageProps> = ({ message, files, isLastMessage = false, isStreaming = false, onRetry, onEdit, suggestedQuestions = [], isLoadingQuestions = false, onSelectQuestion, onRefreshQuestions }) => {
+const ChatMessage: React.FC<ChatMessageProps> = ({ message, files, isLastMessage = false, isStreaming = false, onRetry, onEdit, activeChatId = null, providerId, modelName = 'AI助手', agentRun = null, suggestedQuestions = [], isLoadingQuestions = false, onSelectQuestion, onRefreshQuestions }) => {
   const isUser = message.role === 'user';
 
   // 从 content blocks 中提取文本（用于编辑）
   const messageText = useMemo(() => extractTextFromBlocks(message.content), [message.content]);
 
   const [viewingImage, setViewingImage] = useState<FileBlockType | null>(null);
-  const activeChatId = useAppSelector(state => state.stream.conversationId);
-
-  // 获取模型信息
   const chatId = message.chatId || activeChatId;
-  const model = useAppSelector(state => selectChatModel(state, chatId));
-  const providerId = model?.provider;
-  const modelName = model ? model.name : 'AI助手';
 
   // 同步到数据库
   useEffect(() => {
-    if (message.shouldSyncToDb && (message.chatId || activeChatId)) {
+    if (message.shouldSyncToDb && chatId) {
       const messageSnapshot = {
         ...message,
-        chatId: message.chatId || activeChatId || undefined,
+        chatId,
       };
       const syncToDb = async () => {
         try {
@@ -56,7 +53,7 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, files, isLastMessage
       };
       syncToDb();
     }
-  }, [message, activeChatId]);
+  }, [message, chatId]);
 
   return (
     <div
@@ -86,6 +83,7 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, files, isLastMessage
             isLastMessage={isLastMessage}
             isStreaming={isStreaming}
             onRetry={onRetry}
+            agentRun={agentRun}
             suggestedQuestions={suggestedQuestions}
             isLoadingQuestions={isLoadingQuestions}
             onSelectQuestion={onSelectQuestion}
@@ -106,4 +104,4 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, files, isLastMessage
   );
 };
 
-export default ChatMessage;
+export default React.memo(ChatMessage);

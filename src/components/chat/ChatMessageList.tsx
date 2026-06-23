@@ -8,9 +8,12 @@ import LoadingIndicator from '../ui/loading-indicator';
 import ChatMessage from './ChatMessage';
 import StreamErrorCard from './StreamErrorCard';
 import { isNearBottom } from '@/lib/chat/scrollBehavior';
+import type { AgentRunState } from '@/types/agentRun';
+import { selectChatModel } from '@/redux/selectors';
 
 interface ChatMessageListProps {
   messages: Message[];
+  conversationId?: string | null;
   loading?: boolean;
   isStreaming?: boolean;
   loadingState?: 'default' | 'history-hydration';
@@ -42,8 +45,11 @@ const DEFAULT_EMPTY_STATE = {
   description: '输入你的问题，开始与 AI 助手对话...',
 };
 
+const EMPTY_SUGGESTED_QUESTIONS: string[] = [];
+
 const ChatMessageList: React.FC<ChatMessageListProps> = ({
   messages,
+  conversationId = null,
   loading = false,
   isStreaming = false,
   loadingState = 'default',
@@ -121,6 +127,10 @@ const ChatMessageList: React.FC<ChatMessageListProps> = ({
   // 流式内容信号：打字机推进字符数 + 块数量，覆盖 token 追加和新块出现两种情况
   const dispatch = useAppDispatch();
   const streamError = useAppSelector(state => state.stream.lastError);
+  const currentRun = useAppSelector(state => state.stream.currentRun);
+  const model = useAppSelector(state => selectChatModel(state, conversationId));
+  const providerId = model?.provider;
+  const modelName = model?.name ?? 'AI助手';
   const streamScrollSignal = useAppSelector(
     state => isStreaming ? state.stream.displayedTextLength + state.stream.blockOrder.length : 0
   );
@@ -172,6 +182,13 @@ const ChatMessageList: React.FC<ChatMessageListProps> = ({
     return null;
   }, [completionStateVisible, isLoadingQuestions, isStreaming, sortedMessages, suggestedQuestions.length]);
 
+  const getMessageRun = (messageId: string): AgentRunState | null => {
+    if (!currentRun) return null;
+    return currentRun.messageId === messageId || currentRun.serverMessageId === messageId
+      ? currentRun
+      : null;
+  };
+
   if (messages.length === 0 && loadingState === 'history-hydration') {
     return (
       <div className="mx-auto flex w-full max-w-3xl flex-col gap-6 px-4 py-8">
@@ -222,7 +239,11 @@ const ChatMessageList: React.FC<ChatMessageListProps> = ({
               isStreaming={isStreaming && index === sortedMessages.length - 1 && message.role === 'assistant'}
               onRetry={onRetry}
               onEdit={onEdit}
-              suggestedQuestions={index === lastAssistantIndex ? suggestedQuestions : []}
+              activeChatId={conversationId}
+              providerId={providerId}
+              modelName={modelName}
+              agentRun={getMessageRun(message.id)}
+              suggestedQuestions={index === lastAssistantIndex ? suggestedQuestions : EMPTY_SUGGESTED_QUESTIONS}
               isLoadingQuestions={index === lastAssistantIndex ? isLoadingQuestions : false}
               onSelectQuestion={onSelectQuestion}
               onRefreshQuestions={onRefreshQuestions}

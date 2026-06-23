@@ -5,9 +5,11 @@ import type { Message, SearchSourceSummary } from '@/types/conversation';
 
 const {
   dispatchMock,
+  deriveStaticAssistantMessageViewModelMock,
   useAssistantMessageViewModelMock,
 } = vi.hoisted(() => ({
   dispatchMock: vi.fn(),
+  deriveStaticAssistantMessageViewModelMock: vi.fn(),
   useAssistantMessageViewModelMock: vi.fn(),
 }));
 
@@ -86,6 +88,7 @@ vi.mock('./useMessageCopy', () => ({
 }));
 
 vi.mock('./useAssistantMessageViewModel', () => ({
+  deriveStaticAssistantMessageViewModel: deriveStaticAssistantMessageViewModelMock,
   useAssistantMessageViewModel: useAssistantMessageViewModelMock,
 }));
 
@@ -153,6 +156,8 @@ function renderAssistant(overrides: Partial<React.ComponentProps<typeof Assistan
 describe('AssistantMessage', () => {
   beforeEach(() => {
     dispatchMock.mockReset();
+    deriveStaticAssistantMessageViewModelMock.mockReset();
+    deriveStaticAssistantMessageViewModelMock.mockReturnValue(defaultViewModel());
     useAssistantMessageViewModelMock.mockReset();
     useAssistantMessageViewModelMock.mockReturnValue(defaultViewModel());
   });
