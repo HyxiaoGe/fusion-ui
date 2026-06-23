@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ConversationListItem } from '@/hooks/useConversationList';
 
@@ -8,11 +8,13 @@ const {
   mockUseSidebarActions,
   mockUsePathname,
   mockDispatch,
+  mockChatListProps,
 } = vi.hoisted(() => ({
   mockUseConversationList: vi.fn(),
   mockUseSidebarActions: vi.fn(),
   mockUsePathname: vi.fn(),
   mockDispatch: vi.fn(),
+  mockChatListProps: vi.fn(),
 }));
 
 vi.mock('next/navigation', () => ({
@@ -63,28 +65,40 @@ vi.mock('./sidebar/ChatSidebarHeader', () => ({
 vi.mock('./sidebar/ChatList', () => ({
   default: ({
     chats,
+    sortedAndGroupedChats,
     activeChatId,
     containerRef,
     sentinelRef,
+    searchQuery,
   }: {
     chats: ConversationListItem[];
+    sortedAndGroupedChats: { groupLabel: string; groupChats: ConversationListItem[] }[];
     activeChatId: string | null;
     containerRef: React.RefObject<HTMLDivElement | null>;
     sentinelRef?: React.RefObject<HTMLDivElement | null>;
-  }) => (
-    <div ref={containerRef} data-testid="chat-sidebar-scroll-container">
-      {chats.map((chat) => (
-        <div
-          key={chat.id}
-          data-active={chat.id === activeChatId ? 'true' : 'false'}
-          data-conversation-id={chat.id}
-        >
-          {chat.title}
-        </div>
-      ))}
-      <div ref={sentinelRef} />
-    </div>
-  ),
+    searchQuery?: string;
+  }) => {
+    mockChatListProps({
+      chats,
+      sortedAndGroupedChats,
+      searchQuery,
+    });
+
+    return (
+      <div ref={containerRef} data-testid="chat-sidebar-scroll-container">
+        {chats.map((chat) => (
+          <div
+            key={chat.id}
+            data-active={chat.id === activeChatId ? 'true' : 'false'}
+            data-conversation-id={chat.id}
+          >
+            {chat.title}
+          </div>
+        ))}
+        <div ref={sentinelRef} />
+      </div>
+    );
+  },
 }));
 
 import ChatSidebar from './ChatSidebar';
@@ -142,6 +156,7 @@ describe('ChatSidebar', () => {
       selectConversation: vi.fn(),
       setRenameValue: vi.fn(),
     });
+    mockChatListProps.mockClear();
     Element.prototype.scrollIntoView = vi.fn();
   });
 
@@ -207,5 +222,68 @@ describe('ChatSidebar', () => {
     await vi.advanceTimersByTimeAsync(60);
 
     expect(scrollIntoView).toHaveBeenCalledWith({ block: 'nearest', behavior: 'smooth' });
+  });
+
+  it('搜索模式下保持传给 ChatList 的空分组引用稳定', () => {
+    const searchResults: ConversationListItem[] = [
+      {
+        id: 'chat-search',
+        title: '搜索结果',
+        model_id: 'model-a',
+        createdAt: 1_700_000_000_000,
+        updatedAt: 1_700_000_000_000,
+      },
+    ];
+
+    mockUseConversationList.mockReturnValue({
+      conversations: [
+        {
+          id: 'chat-a',
+          title: '普通对话 A',
+          model_id: 'model-a',
+          createdAt: 1_700_000_000_000,
+          updatedAt: 1_700_000_000_000,
+        },
+      ],
+      isLoadingList: false,
+      isLoadingMore: false,
+      loadMore: vi.fn(),
+      pagination: null,
+      searchConversations: vi.fn(),
+      searchResults,
+      isSearching: false,
+      searchError: null,
+    });
+
+    const { rerender } = render(<ChatSidebar onNewChat={vi.fn()} activeChatIdOverride="chat-a" />);
+    const input = screen.getByPlaceholderText('搜索对话...');
+    fireEvent.change(input, { target: { value: '搜索' } });
+
+    const firstProps = mockChatListProps.mock.calls.at(-1)?.[0];
+
+    mockUseConversationList.mockReturnValue({
+      conversations: [
+        {
+          id: 'chat-b',
+          title: '普通对话 B',
+          model_id: 'model-a',
+          createdAt: 1_700_000_000_001,
+          updatedAt: 1_700_000_000_001,
+        },
+      ],
+      isLoadingList: false,
+      isLoadingMore: false,
+      loadMore: vi.fn(),
+      pagination: null,
+      searchConversations: vi.fn(),
+      searchResults,
+      isSearching: false,
+      searchError: null,
+    });
+
+    rerender(<ChatSidebar onNewChat={vi.fn()} activeChatIdOverride="chat-a" />);
+
+    const secondProps = mockChatListProps.mock.calls.at(-1)?.[0];
+    expect(secondProps.sortedAndGroupedChats).toBe(firstProps.sortedAndGroupedChats);
   });
 });

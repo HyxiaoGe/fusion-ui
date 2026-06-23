@@ -106,4 +106,4 @@ const ChatList: React.FC<ChatListProps> = ({
   );
 };
 
-export default ChatList; 
+export default React.memo(ChatList);

@@ -27,6 +27,15 @@ vi.mock('../models/ProviderIcon', () => ({
 
 vi.mock('./AssistantResponseStack', () => ({
   default: (props: {
+    reasoning: {
+      shouldRender: boolean;
+      content: string;
+      isVisible: boolean;
+      isStreaming: boolean;
+      onToggle: () => void;
+      startTime?: number;
+      endTime?: number;
+    };
     markdown: {
       content: string;
       sources: SearchSourceSummary[];
@@ -34,6 +43,7 @@ vi.mock('./AssistantResponseStack', () => ({
     };
     onSourceClick: (index: number) => void;
     onOpenSources: () => void;
+    onRetry?: () => void;
   }) => {
     assistantResponseStackMock(props);
     const {
@@ -236,8 +246,9 @@ describe('AssistantMessage', () => {
     expect(deriveStaticAssistantMessageViewModelMock).toHaveBeenCalledTimes(1);
   });
 
-  it('静态 assistant rerender 时保持来源相关回调稳定，避免 Markdown memo 失效', () => {
+  it('静态 assistant rerender 时保持传入响应栈的对象和回调稳定，避免静态子树重复渲染', () => {
     const message = assistantMessage({ id: 'assistant-citation-stable' });
+    const onRetry = vi.fn();
 
     const { rerender } = render(
       <AssistantMessage
@@ -248,6 +259,7 @@ describe('AssistantMessage', () => {
         isLoadingQuestions={false}
         activeChatId="chat-1"
         modelName="AI助手"
+        onRetry={onRetry}
       />,
     );
 
@@ -262,14 +274,19 @@ describe('AssistantMessage', () => {
         isLoadingQuestions={false}
         activeChatId="chat-1"
         modelName="AI助手"
+        onRetry={onRetry}
       />,
     );
 
     const secondProps = assistantResponseStackMock.mock.calls.at(-1)?.[0];
 
+    expect(secondProps.reasoning).toBe(firstProps.reasoning);
+    expect(secondProps.reasoning.onToggle).toBe(firstProps.reasoning.onToggle);
+    expect(secondProps.markdown).toBe(firstProps.markdown);
     expect(secondProps.markdown.onCitationClick).toBe(firstProps.markdown.onCitationClick);
     expect(secondProps.onSourceClick).toBe(firstProps.onSourceClick);
     expect(secondProps.onOpenSources).toBe(firstProps.onOpenSources);
+    expect(secondProps.onRetry).toBe(firstProps.onRetry);
   });
 
   it('点击 Markdown 引用后打开 SourcesSidebar 并高亮来源', () => {

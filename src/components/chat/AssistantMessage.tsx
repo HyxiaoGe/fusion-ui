@@ -177,7 +177,7 @@ function AssistantMessageFrame({
     setSourcesSidebarOpen(true);
   }, []);
 
-  const handleToggleReasoning = () => {
+  const handleToggleReasoning = useCallback(() => {
     if (activeChatId) {
       dispatch(toggleReasoningVisibility({
         conversationId: activeChatId,
@@ -187,7 +187,41 @@ function AssistantMessageFrame({
     } else {
       setLocalReasoningVisible(!localReasoningVisible);
     }
-  };
+  }, [activeChatId, dispatch, localReasoningVisible, message.id, message.isReasoningVisible]);
+
+  const handleRetry = useMemo(
+    () => onRetry ? () => onRetry(message.id) : undefined,
+    [message.id, onRetry],
+  );
+
+  const reasoningProps = useMemo(() => ({
+    shouldRender: !suppressThinking && (hasThinking || (isStreaming && isLastMessage && isStreamingReasoning)),
+    content: displayThinking,
+    isVisible: message.isReasoningVisible || localReasoningVisible || (isStreaming && isLastMessage),
+    onToggle: handleToggleReasoning,
+    isStreaming: isStreamingReasoning && isLastMessage && !isThinkingPhaseComplete,
+    startTime: (isLastMessage ? streamingStartTime : undefined) ?? undefined,
+    endTime: (isLastMessage ? streamingEndTime : undefined) ?? undefined,
+  }), [
+    displayThinking,
+    handleToggleReasoning,
+    hasThinking,
+    isLastMessage,
+    isStreaming,
+    isStreamingReasoning,
+    isThinkingPhaseComplete,
+    localReasoningVisible,
+    message.isReasoningVisible,
+    streamingEndTime,
+    streamingStartTime,
+    suppressThinking,
+  ]);
+
+  const markdownProps = useMemo(() => ({
+    content: displayText || '',
+    sources: searchSources,
+    onCitationClick: searchSources.length > 0 ? handleCitationClick : undefined,
+  }), [displayText, handleCitationClick, searchSources]);
 
   useEffect(() => {
     if (!isStreaming && hasThinking && displayText && message.isReasoningVisible) {
@@ -221,26 +255,14 @@ function AssistantMessageFrame({
         <div className="w-full min-w-0">
           <AssistantResponseStack
             assistantMessageId={message.id}
-            reasoning={{
-              shouldRender: !suppressThinking && (hasThinking || (isStreaming && isLastMessage && isStreamingReasoning)),
-              content: displayThinking,
-              isVisible: message.isReasoningVisible || localReasoningVisible || (isStreaming && isLastMessage),
-              onToggle: handleToggleReasoning,
-              isStreaming: isStreamingReasoning && isLastMessage && !isThinkingPhaseComplete,
-              startTime: (isLastMessage ? streamingStartTime : undefined) ?? undefined,
-              endTime: (isLastMessage ? streamingEndTime : undefined) ?? undefined,
-            }}
+            reasoning={reasoningProps}
             activity={activity}
             agentRun={agentRun}
-            onRetry={onRetry ? () => onRetry(message.id) : undefined}
+            onRetry={handleRetry}
             answerEvidence={answerEvidence}
             onSourceClick={handleCitationClick}
             onOpenSources={handleOpenSources}
-            markdown={{
-              content: displayText || '',
-              sources: searchSources,
-              onCitationClick: searchSources.length > 0 ? handleCitationClick : undefined,
-            }}
+            markdown={markdownProps}
             showStreamingCursor={isStreaming && isLastMessage && activity.kind === 'answering'}
           />
 
@@ -249,7 +271,7 @@ function AssistantMessageFrame({
               timestamp={message.timestamp}
               copied={copied}
               onCopy={copy}
-              onRetry={onRetry ? () => onRetry(message.id) : undefined}
+              onRetry={handleRetry}
               retryLabel="重新生成"
             />
           )}

@@ -1,5 +1,6 @@
 'use client';
 
+import { memo } from 'react';
 import type { SearchSourceSummary } from '@/types/conversation';
 import type { AgentRunState } from '@/types/agentRun';
 import ReasoningContent from './ReasoningContent';
@@ -35,7 +36,7 @@ interface AssistantResponseStackProps {
   showStreamingCursor: boolean;
 }
 
-export default function AssistantResponseStack({
+function AssistantResponseStack({
   assistantMessageId,
   reasoning,
   activity,
@@ -95,3 +96,5 @@ export default function AssistantResponseStack({
     </div>
   );
 }
+
+export default memo(AssistantResponseStack);

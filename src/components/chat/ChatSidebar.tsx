@@ -22,6 +22,9 @@ interface ChatSidebarProps {
   activeChatIdOverride?: string | null;
 }
 
+const EMPTY_CONVERSATIONS: ConversationListItem[] = [];
+const EMPTY_GROUPED_CONVERSATIONS: { groupLabel: string; groupChats: ConversationListItem[] }[] = [];
+
 const ChatSidebar: React.FC<ChatSidebarProps> = ({ onNewChat, activeChatIdOverride }) => {
   const pathname = usePathname();
   const {
@@ -192,8 +195,9 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ onNewChat, activeChatIdOverri
     };
   }, []);
 
-  const isSearchMode = searchQuery.trim().length > 0;
-  const displayChats = isSearchMode ? (searchResults ?? []) : conversations;
+  const trimmedSearchQuery = searchQuery.trim();
+  const isSearchMode = trimmedSearchQuery.length > 0;
+  const displayChats = isSearchMode ? (searchResults ?? EMPTY_CONVERSATIONS) : conversations;
   const handleStartEditing = useCallback((e: React.MouseEvent, chatId: string, currentTitle: string) => {
     e.stopPropagation();
     openRenameDialog(chatId, currentTitle);
@@ -259,14 +263,14 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ onNewChat, activeChatIdOverri
 
       <ChatList
         chats={displayChats}
-        sortedAndGroupedChats={sortedAndGroupedChats}
+        sortedAndGroupedChats={isSearchMode ? EMPTY_GROUPED_CONVERSATIONS : sortedAndGroupedChats}
         activeChatId={activeChatId}
         modelNameById={modelNameById}
         isLoadingServerList={isLoadingList}
         isLoadingMoreServer={isLoadingMore}
         containerRef={containerRef}
         handleSelectChat={selectConversation}
-        searchQuery={searchQuery.trim() || undefined}
+        searchQuery={trimmedSearchQuery || undefined}
         sentinelRef={sentinelRef}
         handleStartEditing={handleStartEditing}
         handleDeleteChat={handleDeleteChat}
