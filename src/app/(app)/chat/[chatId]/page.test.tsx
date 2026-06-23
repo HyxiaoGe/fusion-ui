@@ -203,7 +203,7 @@ vi.mock('@/components/lazy/LazyComponents', () => ({
         data-loading-state={props.loadingState ?? ''}
       >
         {props.messages.length === 0 && props.loadingState === 'history-hydration'
-          ? '正在恢复这段对话'
+          ? '正在加载这段对话'
           : null}
       </div>
     );
@@ -315,7 +315,7 @@ describe('ChatPage 会话切换体验', () => {
     await waitFor(() => {
       expect(screen.getByTestId('message-list')).toHaveAttribute('data-message-ids', '');
     });
-    expect(screen.getByText('正在恢复这段对话')).toBeInTheDocument();
+    expect(screen.getByText('正在加载这段对话')).toBeInTheDocument();
     const lastMessageListProps = chatMessageListMock.mock.calls.at(-1)?.[0];
     expect(lastMessageListProps?.messages).toEqual([]);
     expect(lastMessageListProps?.loadingState).toBe('history-hydration');
@@ -361,7 +361,7 @@ describe('ChatPage 会话切换体验', () => {
     await waitFor(() => {
       expect(screen.getByTestId('message-list')).toHaveAttribute('data-message-ids', '');
     });
-    expect(screen.getByText('正在恢复这段对话')).toBeInTheDocument();
+    expect(screen.getByText('正在加载这段对话')).toBeInTheDocument();
   });
 
   it('ready 会话只有元数据变化且 messages 引用不变时不重复写 snapshot', async () => {

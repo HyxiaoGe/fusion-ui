@@ -269,7 +269,7 @@ const ChatMessageList: React.FC<ChatMessageListProps> = ({
     return (
       <div className="mx-auto flex w-full max-w-3xl flex-col gap-6 px-4 py-8">
         <div className="space-y-2 text-center">
-          <h3 className="text-xl font-medium">正在恢复这段对话</h3>
+          <h3 className="text-xl font-medium">正在加载这段对话</h3>
           <p className="text-sm text-muted-foreground">消息会在几秒内加载完成。</p>
         </div>
         <div className="space-y-4">

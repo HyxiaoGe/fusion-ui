@@ -423,7 +423,7 @@ describe('ChatMessageList', () => {
     expect(screen.queryByText('开始一个新对话')).toBeNull();
   });
 
-  it('shows an in-place history hydration skeleton instead of the generic empty state', () => {
+  it('shows an in-place conversation loading skeleton instead of the generic empty state', () => {
     render(
       <ChatMessageList
         messages={[]}
@@ -431,7 +431,7 @@ describe('ChatMessageList', () => {
       />
     );
 
-    expect(screen.getByText('正在恢复这段对话')).toBeTruthy();
+    expect(screen.getByText('正在加载这段对话')).toBeTruthy();
     expect(screen.getByText('消息会在几秒内加载完成。')).toBeTruthy();
     expect(screen.queryByText('开始一个新对话')).toBeNull();
   });
