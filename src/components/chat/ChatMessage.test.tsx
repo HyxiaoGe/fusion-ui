@@ -615,7 +615,7 @@ describe('ChatMessage', () => {
 
     expect(screen.getByText('回答依据 · 搜索 1 条 · 读取 4 个网页')).toBeInTheDocument();
     expect(screen.getAllByRole('link', { name: /打开网页：/ })).toHaveLength(2);
-    expect(screen.getByText('另有 2 个网页')).toBeInTheDocument();
+    expect(screen.getByText('未预览 2 个网页')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: '查看全部搜索来源' })).toBeNull();
   });
 

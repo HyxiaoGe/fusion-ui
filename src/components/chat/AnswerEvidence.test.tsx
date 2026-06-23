@@ -125,23 +125,24 @@ describe('AnswerEvidence', () => {
       'gap-1.5',
       'rounded-md',
       'border',
-      'border-border/30',
-      'bg-muted/10',
+      'border-border/40',
+      'bg-background/70',
       'px-2',
       'py-1',
       'text-left',
       'transition-colors',
-      'hover:bg-muted/30',
+      'hover:border-border/60',
+      'hover:bg-muted/40',
     );
 
     const urlLink = screen.getByRole('link', { name: '打开网页：网页标题' });
     expect(urlLink).toHaveClass(
       'inline-flex',
       'gap-1.5',
-      'border-border/30',
-      'bg-muted/10',
+      'border-border/40',
+      'bg-background/70',
       'py-1',
-      'hover:bg-muted/30',
+      'hover:bg-muted/40',
       'no-underline',
     );
   });
@@ -285,10 +286,10 @@ describe('AnswerEvidence', () => {
 
     fireEvent.click(screen.getByRole('button', { name: '查看全部搜索来源' }));
     expect(onOpenSources).toHaveBeenCalledTimes(1);
-    expect(screen.getByText('查看全部搜索来源')).toBeInTheDocument();
+    expect(screen.getByText('查看全部')).toBeInTheDocument();
   });
 
-  it('5 条搜索来源默认预览 3 条时提示隐藏搜索来源并保留侧栏入口', () => {
+  it('5 条搜索来源默认预览 3 条时用紧凑 chip 提示未预览数量', () => {
     const onOpenSources = vi.fn();
 
     render(
@@ -307,7 +308,7 @@ describe('AnswerEvidence', () => {
     );
 
     expect(screen.getByText('回答依据 · 搜索 5 条')).toBeInTheDocument();
-    expect(screen.getByText('另有 2 条搜索来源')).toBeInTheDocument();
+    expect(screen.getByText('未预览 2 条搜索')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: '查看全部搜索来源' }));
     expect(onOpenSources).toHaveBeenCalledTimes(1);
   });
@@ -351,7 +352,7 @@ describe('AnswerEvidence', () => {
       />,
     );
 
-    expect(screen.getByText('另有 1 个网页')).toBeInTheDocument();
+    expect(screen.getByText('未预览 1 个网页')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: '查看全部搜索来源' })).toBeNull();
   });
 
@@ -376,7 +377,7 @@ describe('AnswerEvidence', () => {
     expect(screen.getAllByRole('link')).toHaveLength(2);
     expect(screen.getByRole('link', { name: '打开网页：网页 1' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: '打开网页：网页 2' })).toBeInTheDocument();
-    expect(screen.getByText('另有 2 个网页')).toBeInTheDocument();
+    expect(screen.getByText('未预览 2 个网页')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: '查看全部搜索来源' })).toBeNull();
     expect(screen.queryByRole('button', { name: '查看全部参考资料' })).toBeNull();
   });
@@ -406,7 +407,7 @@ describe('AnswerEvidence', () => {
 
     fireEvent.click(screen.getByRole('button', { name: '查看全部搜索来源' }));
     expect(onOpenSources).toHaveBeenCalledTimes(1);
-    expect(screen.getByText('另有 1 个网页')).toBeInTheDocument();
+    expect(screen.getByText('未预览 1 个网页')).toBeInTheDocument();
   });
 
   it('同时隐藏搜索来源和 URL 时两个提示都显示', () => {
@@ -431,8 +432,8 @@ describe('AnswerEvidence', () => {
       />,
     );
 
-    expect(screen.getByText('另有 2 条搜索来源')).toBeInTheDocument();
-    expect(screen.getByText('另有 2 个网页')).toBeInTheDocument();
+    expect(screen.getByText('未预览 2 条搜索')).toBeInTheDocument();
+    expect(screen.getByText('未预览 2 个网页')).toBeInTheDocument();
   });
 
   it('长标题文本节点保留 title 属性和 truncate class', () => {
