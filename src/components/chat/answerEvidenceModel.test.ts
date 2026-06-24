@@ -68,6 +68,21 @@ describe('deriveAnswerEvidence', () => {
     });
   });
 
+  it('搜索来源带最终 provider 时在摘要中展示服务提供方', () => {
+    const evidence = deriveAnswerEvidence({
+      searchSources: [
+        {
+          title: 'Fallback 搜索结果',
+          url: 'https://fallback.example.com',
+        },
+      ],
+      urlBlocks: [],
+      searchProvider: 'brave',
+    });
+
+    expect(evidence?.summary).toBe('回答依据 · 搜索 1 条 · 本次搜索由 Brave 提供');
+  });
+
   it('优先使用统一 sourceRefs，避免旧 sources 和 urlBlocks 重复计数', () => {
     const evidence = deriveAnswerEvidence({
       sourceRefs,

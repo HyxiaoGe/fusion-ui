@@ -37,6 +37,7 @@ interface DeriveAnswerEvidenceInput {
   sourceRefs?: SourceReference[];
   searchSources: SearchSourceSummary[];
   urlBlocks: UrlBlock[];
+  searchProvider?: string | null;
   previewLimit?: number;
 }
 
@@ -69,7 +70,7 @@ export function deriveAnswerEvidence(input: DeriveAnswerEvidenceInput): AnswerEv
     totalCount: items.length,
     hiddenSearchCount,
     hiddenUrlCount,
-    summary: buildSummary(searchItems.length, urlItems.length),
+    summary: buildSummary(searchItems.length, urlItems.length, deriveSearchProviderLabel(input.searchProvider)),
     hasSearchSources: searchItems.length > 0,
   };
 }
@@ -226,7 +227,7 @@ function derivePreviewItems(
   return [...searchItems, ...urlItems].slice(0, previewLimit);
 }
 
-function buildSummary(searchCount: number, urlCount: number): string {
+function buildSummary(searchCount: number, urlCount: number, searchProviderLabel?: string): string {
   const parts = ['回答依据'];
 
   if (searchCount > 0) {
@@ -237,5 +238,29 @@ function buildSummary(searchCount: number, urlCount: number): string {
     parts.push(`读取 ${urlCount} 个网页`);
   }
 
+  if (searchCount > 0 && searchProviderLabel) {
+    parts.push(`本次搜索由 ${searchProviderLabel} 提供`);
+  }
+
   return parts.join(' · ');
+}
+
+const SEARCH_PROVIDER_LABELS: Record<string, string> = {
+  brave: 'Brave',
+  firecrawl: 'Firecrawl',
+  tavily: 'Tavily',
+};
+
+function deriveSearchProviderLabel(provider: string | null | undefined): string | undefined {
+  if (!provider) {
+    return undefined;
+  }
+
+  const trimmed = provider.trim();
+  if (!trimmed) {
+    return undefined;
+  }
+
+  const normalized = trimmed.toLowerCase();
+  return SEARCH_PROVIDER_LABELS[normalized] ?? trimmed;
 }

@@ -94,6 +94,31 @@ describe('useAssistantMessageViewModel', () => {
     );
   });
 
+  it('从 SearchBlock 的最终 provider 派生回答依据提供方文案', () => {
+    const message: Message = {
+      id: 'assistant-1',
+      role: 'assistant',
+      content: [
+        {
+          type: 'search',
+          id: 'search-1',
+          query: '中国结婚人数',
+          sources: [{ title: '搜索来源', url: 'https://example.com/search' }],
+          requested_provider: 'firecrawl',
+          result_provider: 'brave',
+          fallback_used: true,
+          provider_chain: ['firecrawl', 'brave'],
+        },
+        { type: 'text', id: 'text-1', text: '历史正文。[1]' },
+      ],
+      timestamp: 1,
+    };
+
+    const { result } = renderViewModel(message);
+
+    expect(result.current.answerEvidence?.summary).toBe('回答依据 · 搜索 1 条 · 本次搜索由 Brave 提供');
+  });
+
   it('历史 assistant 消息优先用统一 source_refs 派生回答依据', () => {
     const legacySource = {
       title: '旧搜索来源',

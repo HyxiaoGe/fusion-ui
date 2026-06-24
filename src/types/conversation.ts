@@ -31,6 +31,10 @@ export interface SearchSource {
   description: string;
   content?: string;
   favicon?: string;
+  requested_provider?: string | null;
+  result_provider?: string | null;
+  fallback_used?: boolean;
+  provider_chain?: string[];
 }
 
 // 轻量版搜索来源，用于 SearchBlock 存储和 UI 展示
@@ -63,6 +67,10 @@ export interface SearchBlock {
   error_message?: string | null;
   source_count?: number;
   source_refs?: SourceReference[];
+  requested_provider?: string | null;
+  result_provider?: string | null;
+  fallback_used?: boolean;
+  provider_chain?: string[];
 }
 
 export interface UrlBlock {

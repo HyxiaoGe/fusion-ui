@@ -78,6 +78,7 @@ export function deriveStaticAssistantMessageViewModel({
     sourceRefs: collectSourceRefs(searchBlocks, activity.urlBlocks),
     searchSources: evidenceSearchSources,
     urlBlocks: activity.urlBlocks,
+    searchProvider: collectSearchProvider(searchBlocks),
   });
   const displayText = extractTextFromBlocks(blocksToRender);
   const displayThinking = extractThinkingFromBlocks(blocksToRender);
@@ -163,6 +164,7 @@ export function useAssistantMessageViewModel({
         sourceRefs: collectSourceRefs(searchBlocks, activity.urlBlocks),
         searchSources: collectSearchSources(searchBlocks),
         urlBlocks: activity.urlBlocks,
+        searchProvider: collectSearchProvider(searchBlocks),
       });
     },
     [blocksToRender, activity.urlBlocks],
@@ -198,6 +200,12 @@ function collectSearchBlocks(contentBlocks: ContentBlock[]): SearchBlock[] {
 
 function collectSearchSources(searchBlocks: SearchBlock[]): SearchSourceSummary[] {
   return dedupeSearchSources(searchBlocks.flatMap(block => block.sources ?? []));
+}
+
+function collectSearchProvider(searchBlocks: SearchBlock[]): string | undefined {
+  return searchBlocks
+    .map(block => block.result_provider?.trim())
+    .find(Boolean);
 }
 
 function collectCitationSearchSources(
