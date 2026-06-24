@@ -43,7 +43,9 @@ interface DeriveAnswerEvidenceInput {
 export function deriveAnswerEvidence(input: DeriveAnswerEvidenceInput): AnswerEvidenceModel | null {
   const useSourceRefs = Boolean(input.sourceRefs && input.sourceRefs.length > 0);
   const sourceRefItems = input.sourceRefs?.filter(isUsableSourceRef) ?? [];
-  const unifiedItems = useSourceRefs ? toSourceRefEvidenceItems(sourceRefItems) : null;
+  const unifiedItems = useSourceRefs
+    ? toSourceRefEvidenceItems(sourceRefItems, buildFaviconFallbacks(input.searchSources, input.urlBlocks))
+    : null;
   const searchItems = unifiedItems?.searchItems ?? input.searchSources.map(toSearchEvidenceItem);
   const urlItems = unifiedItems?.urlItems ?? input.urlBlocks.filter(isSuccessfulUrlBlock).map(toUrlEvidenceItem);
   const items = [...searchItems, ...urlItems];
@@ -95,7 +97,10 @@ function toUrlEvidenceItem(block: UrlBlock): UrlReadAnswerEvidenceItem {
   };
 }
 
-function toSourceRefEvidenceItems(sourceRefs: SourceReference[]): {
+function toSourceRefEvidenceItems(
+  sourceRefs: SourceReference[],
+  faviconFallbacks: FaviconFallbacks,
+): {
   searchItems: SearchAnswerEvidenceItem[];
   urlItems: UrlReadAnswerEvidenceItem[];
 } {
@@ -109,7 +114,7 @@ function toSourceRefEvidenceItems(sourceRefs: SourceReference[]): {
       title: normalizeTitle(source.title, source.url),
       url: source.url,
       domain: normalizeDomain(source.domain, source.url),
-      favicon: source.favicon,
+      favicon: source.favicon || findFallbackFavicon(source.url, faviconFallbacks),
     };
 
     if (source.kind === 'search') {
@@ -128,6 +133,37 @@ function toSourceRefEvidenceItems(sourceRefs: SourceReference[]): {
 
     return acc;
   }, { searchItems: [], urlItems: [] });
+}
+
+interface FaviconFallbacks {
+  byUrl: Map<string, string>;
+  byDomain: Map<string, string>;
+}
+
+function buildFaviconFallbacks(
+  searchSources: SearchSourceSummary[],
+  urlBlocks: UrlBlock[],
+): FaviconFallbacks {
+  const byUrl = new Map<string, string>();
+  const byDomain = new Map<string, string>();
+
+  const add = (url: string, favicon?: string) => {
+    if (!favicon?.trim()) return;
+    byUrl.set(url, favicon);
+    const domain = deriveDomain(url);
+    if (!byDomain.has(domain)) {
+      byDomain.set(domain, favicon);
+    }
+  };
+
+  searchSources.forEach(source => add(source.url, source.favicon));
+  urlBlocks.forEach(block => add(block.url, block.favicon));
+
+  return { byUrl, byDomain };
+}
+
+function findFallbackFavicon(url: string, fallback: FaviconFallbacks): string | undefined {
+  return fallback.byUrl.get(url) ?? fallback.byDomain.get(deriveDomain(url));
 }
 
 function isUsableSourceRef(source: SourceReference): boolean {
@@ -159,10 +195,10 @@ function deriveDomain(url: string): string {
 }
 
 function normalizePreviewLimit(previewLimit: number | undefined): number {
-  const rawLimit = previewLimit ?? 3;
+  const rawLimit = previewLimit ?? 5;
 
   if (!Number.isFinite(rawLimit)) {
-    return 3;
+    return 5;
   }
 
   return Math.max(1, Math.floor(rawLimit));

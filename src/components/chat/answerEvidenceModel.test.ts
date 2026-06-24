@@ -96,6 +96,48 @@ describe('deriveAnswerEvidence', () => {
     ]);
   });
 
+  it('sourceRefs 缺 favicon 时用同 URL 的旧来源补齐站点图标', () => {
+    const evidence = deriveAnswerEvidence({
+      sourceRefs: [
+        {
+          kind: 'search',
+          title: '统一搜索来源',
+          url: 'https://www.example.com/news/one',
+        },
+      ],
+      searchSources,
+      urlBlocks: [],
+    });
+
+    expect(evidence?.items[0]).toEqual(
+      expect.objectContaining({
+        kind: 'search_source',
+        favicon: 'https://example.com/favicon.ico',
+      }),
+    );
+  });
+
+  it('sourceRefs 自带 favicon 时不被旧来源覆盖', () => {
+    const evidence = deriveAnswerEvidence({
+      sourceRefs: [
+        {
+          kind: 'search',
+          title: '统一搜索来源',
+          url: 'https://www.example.com/news/one',
+          favicon: 'https://source-ref.example.com/icon.svg',
+        },
+      ],
+      searchSources,
+      urlBlocks: [],
+    });
+
+    expect(evidence?.items[0]).toEqual(
+      expect.objectContaining({
+        favicon: 'https://source-ref.example.com/icon.svg',
+      }),
+    );
+  });
+
   it('统一 sourceRefs 中的失败来源不作为正常回答依据', () => {
     const evidence = deriveAnswerEvidence({
       sourceRefs: [
@@ -274,16 +316,17 @@ describe('deriveAnswerEvidence', () => {
     expect(evidence?.previewItems[0]?.id).toBe('search-0');
   });
 
-  it('previewLimit 默认展示 3 条预览', () => {
-    const fourSearchEvidence = deriveAnswerEvidence({
+  it('previewLimit 默认展示单次搜索返回的 5 条结果', () => {
+    const fiveSearchEvidence = deriveAnswerEvidence({
       searchSources: [
         ...searchSources,
         { title: '第三条搜索结果', url: 'https://third.example.com' },
         { title: '第四条搜索结果', url: 'https://fourth.example.com' },
+        { title: '第五条搜索结果', url: 'https://fifth.example.com' },
       ],
       urlBlocks: [],
     });
-    const fourUrlEvidence = deriveAnswerEvidence({
+    const fiveUrlEvidence = deriveAnswerEvidence({
       searchSources: [],
       urlBlocks: [
         ...urlBlocks,
@@ -299,11 +342,19 @@ describe('deriveAnswerEvidence', () => {
           url: 'https://fourth.example.com',
           title: '第四篇网页',
         },
+        {
+          type: 'url_read',
+          id: 'url-5',
+          url: 'https://fifth.example.com',
+          title: '第五篇网页',
+        },
       ],
     });
 
-    expect(fourSearchEvidence?.previewItems).toHaveLength(3);
-    expect(fourUrlEvidence?.previewItems).toHaveLength(3);
+    expect(fiveSearchEvidence?.previewItems).toHaveLength(5);
+    expect(fiveSearchEvidence?.hiddenSearchCount).toBe(0);
+    expect(fiveUrlEvidence?.previewItems).toHaveLength(5);
+    expect(fiveUrlEvidence?.hiddenUrlCount).toBe(0);
   });
 
   it('搜索和 URL 同时存在且 previewLimit=1 时只预览第一个 URL', () => {

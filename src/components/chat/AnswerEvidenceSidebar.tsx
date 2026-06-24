@@ -167,8 +167,6 @@ const UsedSourceItem = React.forwardRef<HTMLDivElement, {
   item: AnswerEvidenceSidebarUsedItem;
   highlighted: boolean;
 }>(({ item, highlighted }, ref) => {
-  const Icon = item.kind === 'search' ? Search : Globe2;
-
   return (
     <div
       ref={ref}
@@ -182,7 +180,7 @@ const UsedSourceItem = React.forwardRef<HTMLDivElement, {
         'mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-md',
         item.kind === 'search' ? 'text-info' : 'text-teal',
       )}>
-        <Icon className="h-4 w-4" aria-hidden="true" />
+        <UsedSourceIcon item={item} />
       </span>
       <div className="min-w-0 flex-1">
         <div className="mb-1 flex min-w-0 items-center gap-2">
@@ -208,6 +206,24 @@ const UsedSourceItem = React.forwardRef<HTMLDivElement, {
   );
 });
 UsedSourceItem.displayName = 'UsedSourceItem';
+
+function UsedSourceIcon({ item }: { item: AnswerEvidenceSidebarUsedItem }) {
+  if (item.favicon) {
+    return (
+      <img
+        src={item.favicon}
+        alt=""
+        className="h-4 w-4 rounded-sm object-contain"
+        onError={(event) => {
+          event.currentTarget.style.display = 'none';
+        }}
+      />
+    );
+  }
+
+  const Icon = item.kind === 'search' ? Search : Globe2;
+  return <Icon className="h-4 w-4" aria-hidden="true" />;
+}
 
 function IssueSourceItem({ item }: { item: AnswerEvidenceSidebarIssueItem }) {
   return (

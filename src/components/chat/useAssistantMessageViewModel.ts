@@ -5,7 +5,14 @@ import { useMemo } from 'react';
 import { useAppSelector } from '@/redux/hooks';
 import { selectStreamContentBlocks } from '@/redux/slices/streamSlice';
 import type { AgentRunState } from '@/types/agentRun';
-import type { ContentBlock, Message, SearchSourceSummary, SourceReference, UrlBlock } from '@/types/conversation';
+import type {
+  ContentBlock,
+  Message,
+  SearchBlock,
+  SearchSourceSummary,
+  SourceReference,
+  UrlBlock,
+} from '@/types/conversation';
 import { extractTextFromBlocks, extractThinkingFromBlocks } from '@/types/conversation';
 
 import { deriveAssistantActivity } from './assistantActivity';
@@ -64,10 +71,12 @@ export function deriveStaticAssistantMessageViewModel({
     isLoadingSuggestedQuestions: isLoadingQuestions,
     suggestedQuestionsCount,
   });
-  const searchSources = activity.searchBlock?.sources ?? [];
+  const searchBlocks = collectSearchBlocks(blocksToRender);
+  const evidenceSearchSources = collectSearchSources(searchBlocks);
+  const searchSources = collectCitationSearchSources(searchBlocks, evidenceSearchSources);
   const answerEvidence = deriveAnswerEvidence({
-    sourceRefs: collectSourceRefs(activity.searchBlock?.source_refs, activity.urlBlocks),
-    searchSources,
+    sourceRefs: collectSourceRefs(searchBlocks, activity.urlBlocks),
+    searchSources: evidenceSearchSources,
     urlBlocks: activity.urlBlocks,
   });
   const displayText = extractTextFromBlocks(blocksToRender);
@@ -143,16 +152,20 @@ export function useAssistantMessageViewModel({
 
   const searchSources: SearchSourceSummary[] = useMemo(() => {
     if (isCurrentlyStreaming) return streamSearchSources;
-    return activity.searchBlock?.sources ?? [];
-  }, [isCurrentlyStreaming, streamSearchSources, activity.searchBlock]);
+    const searchBlocks = collectSearchBlocks(blocksToRender);
+    return collectCitationSearchSources(searchBlocks, collectSearchSources(searchBlocks));
+  }, [isCurrentlyStreaming, streamSearchSources, blocksToRender]);
 
   const answerEvidence = useMemo(
-    () => deriveAnswerEvidence({
-      sourceRefs: collectSourceRefs(activity.searchBlock?.source_refs, activity.urlBlocks),
-      searchSources,
-      urlBlocks: activity.urlBlocks,
-    }),
-    [searchSources, activity.searchBlock?.source_refs, activity.urlBlocks],
+    () => {
+      const searchBlocks = collectSearchBlocks(blocksToRender);
+      return deriveAnswerEvidence({
+        sourceRefs: collectSourceRefs(searchBlocks, activity.urlBlocks),
+        searchSources: collectSearchSources(searchBlocks),
+        urlBlocks: activity.urlBlocks,
+      });
+    },
+    [blocksToRender, activity.urlBlocks],
   );
 
   const displayText = useMemo(() => extractTextFromBlocks(blocksToRender), [blocksToRender]);
@@ -179,14 +192,61 @@ export function useAssistantMessageViewModel({
   };
 }
 
+function collectSearchBlocks(contentBlocks: ContentBlock[]): SearchBlock[] {
+  return contentBlocks.filter((block): block is SearchBlock => block.type === 'search');
+}
+
+function collectSearchSources(searchBlocks: SearchBlock[]): SearchSourceSummary[] {
+  return dedupeSearchSources(searchBlocks.flatMap(block => block.sources ?? []));
+}
+
+function collectCitationSearchSources(
+  searchBlocks: SearchBlock[],
+  fallbackSources: SearchSourceSummary[],
+): SearchSourceSummary[] {
+  const sourceRefs = searchBlocks.flatMap(block => block.source_refs ?? []);
+  if (sourceRefs.length === 0) {
+    return fallbackSources;
+  }
+
+  const faviconFallbacks = new Map(fallbackSources.map(source => [source.url, source.favicon]));
+  return dedupeSearchSources(
+    sourceRefs
+      .filter(ref => ref.kind === 'search' && isUsableSourceRef(ref))
+      .map(ref => ({
+        title: ref.title,
+        url: ref.url,
+        favicon: ref.favicon ?? faviconFallbacks.get(ref.url),
+      })),
+  );
+}
+
 function collectSourceRefs(
-  searchSourceRefs: SourceReference[] | undefined,
+  searchBlocks: SearchBlock[],
   urlBlocks: UrlBlock[],
 ): SourceReference[] | undefined {
   const sourceRefs = [
-    ...(searchSourceRefs ?? []),
+    ...searchBlocks.flatMap(block => block.source_refs ?? []),
     ...urlBlocks.flatMap(block => block.source_refs ?? []),
   ];
 
   return sourceRefs.length > 0 ? sourceRefs : undefined;
+}
+
+function isUsableSourceRef(source: SourceReference): boolean {
+  return Boolean(source.url?.trim()) && (source.status == null || source.status === 'success');
+}
+
+function dedupeSearchSources(sources: SearchSourceSummary[]): SearchSourceSummary[] {
+  const seen = new Set<string>();
+  const result: SearchSourceSummary[] = [];
+
+  for (const source of sources) {
+    const key = source.url || source.title;
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    result.push(source);
+  }
+
+  return result;
 }

@@ -17,6 +17,7 @@ const model: AnswerEvidenceSidebarModel = {
       title: '搜索来源',
       url: 'https://search.example.com/a',
       domain: 'search.example.com',
+      favicon: 'https://search.example.com/favicon.ico',
       sourceIndex: 0,
     },
     {
@@ -75,6 +76,7 @@ describe('AnswerEvidenceSidebar', () => {
     expect(screen.getByText('2 个未使用')).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: '已使用来源' })).toBeInTheDocument();
     expect(screen.getByText('搜索来源')).toBeInTheDocument();
+    expect(screen.getByAltText('')).toHaveAttribute('src', 'https://search.example.com/favicon.ico');
     expect(screen.getByText('读取来源')).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: '未使用或异常' })).toBeInTheDocument();
     expect(screen.getByText('失败页面')).toBeInTheDocument();

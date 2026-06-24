@@ -1,9 +1,11 @@
 'use client';
 
-import { ChevronDown, ChevronRight, Clock, Wrench } from 'lucide-react';
-import { useState } from 'react';
+import { Clock, Wrench } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import type { NetworkDiagnosticsModel } from './networkDiagnosticsModel';
+import type {
+  NetworkDiagnosticsModel,
+  NetworkDiagnosticsProcessItem,
+} from './networkDiagnosticsModel';
 
 interface NetworkDiagnosticsPanelProps {
   model: NetworkDiagnosticsModel | null;
@@ -16,70 +18,78 @@ export default function NetworkDiagnosticsPanel({
   isLoading = false,
   error = null,
 }: NetworkDiagnosticsPanelProps) {
-  const [expanded, setExpanded] = useState(false);
-
   if (isLoading) {
-    return <section className="mt-5 text-xs text-muted-foreground">正在读取联网诊断...</section>;
+    return <section className="mt-5 text-xs text-muted-foreground">正在读取联网过程...</section>;
   }
   if (error) {
-    return <section className="mt-5 text-xs text-muted-foreground">联网诊断暂不可用</section>;
+    return <section className="mt-5 text-xs text-muted-foreground">联网过程暂不可用</section>;
   }
   if (!model) {
     return null;
   }
 
+  const processItems = model.processItems ?? [];
+  const summaryText = model.displaySummaryText ?? model.summaryText;
+
   return (
     <section className="mt-5" data-testid="network-diagnostics-panel">
       <h4 className="mb-2 flex items-center gap-1.5 text-xs font-medium text-foreground">
         <Wrench className="h-3.5 w-3.5" aria-hidden="true" />
-        联网诊断
+        联网过程
       </h4>
       <div className="rounded-md border border-border/40 bg-muted/10 px-3 py-2">
         <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
           <Clock className="h-3.5 w-3.5" aria-hidden="true" />
-          <span>{model.summaryText}</span>
+          <span>{summaryText}</span>
         </div>
-        {model.issueItems.length > 0 ? (
-          <div className="mt-2 space-y-1">
-            {model.issueItems.map(item => (
-              <div key={item.id} className="text-xs text-muted-foreground">
-                <span className={cn(
-                  item.status === 'failed' ? 'text-danger'
-                    : item.status === 'degraded' ? 'text-warn'
-                      : 'text-muted-foreground',
-                )}>
-                  {item.status === 'failed' ? '失败' : item.status === 'degraded' ? '降级' : '中断'}
-                </span>
-                <span> · {item.title}：{item.reason}</span>
-              </div>
-            ))}
-          </div>
-        ) : null}
-        {model.canShowAdminDetails ? (
-          <button
-            type="button"
-            aria-expanded={expanded}
-            className="mt-2 inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
-            onClick={() => setExpanded(value => !value)}
-          >
-            {expanded ? (
-              <ChevronDown className="h-3.5 w-3.5" aria-hidden="true" />
-            ) : (
-              <ChevronRight className="h-3.5 w-3.5" aria-hidden="true" />
-            )}
-            管理员明细
-          </button>
-        ) : null}
-        {expanded ? (
-          <div className="mt-2 space-y-1 border-t border-border/40 pt-2">
-            {model.tools.map(tool => (
-              <div key={tool.tool_call_log_id} className="text-xs text-muted-foreground">
-                {tool.tool_name} · {tool.status} · {tool.duration_ms ?? '-'}ms · {tool.target || '-'}
-              </div>
+        {processItems.length > 0 ? (
+          <div className="mt-2 space-y-2">
+            {processItems.map(item => (
+              <ProcessItem key={item.id} item={item} />
             ))}
           </div>
         ) : null}
       </div>
     </section>
   );
+}
+
+function ProcessItem({ item }: { item: NetworkDiagnosticsProcessItem }) {
+  return (
+    <div className="rounded-md border border-border/30 bg-background/60 px-2.5 py-2 text-xs">
+      <div className="mb-1 flex flex-wrap items-center gap-1.5 text-muted-foreground">
+        <span className="rounded-full border border-border/30 px-1.5 py-0.5 text-[10px] text-foreground">
+          {item.toolLabel}
+        </span>
+        <span className={cn('text-[10px]', getStatusClassName(item.status))}>
+          {item.statusLabel}
+        </span>
+        {item.resultCount !== null ? (
+          <span>{item.resultCount} 条结果</span>
+        ) : null}
+        <span>{item.durationText}</span>
+      </div>
+      <p className="line-clamp-2 text-xs text-foreground" title={item.target}>
+        {item.target}
+      </p>
+      {item.reason ? (
+        <p className="mt-1 text-xs text-muted-foreground">
+          原因：<span>{item.reason}</span>
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+function getStatusClassName(status: NetworkDiagnosticsProcessItem['status']): string {
+  if (status === 'success') {
+    return 'text-success';
+  }
+  if (status === 'failed') {
+    return 'text-danger';
+  }
+  if (status === 'degraded') {
+    return 'text-warn';
+  }
+  return 'text-muted-foreground';
 }

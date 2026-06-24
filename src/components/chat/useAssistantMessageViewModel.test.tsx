@@ -149,6 +149,93 @@ describe('useAssistantMessageViewModel', () => {
     ]);
   });
 
+  it('聚合历史 assistant 消息里的多次搜索来源', () => {
+    const message: Message = {
+      id: 'assistant-1',
+      role: 'assistant',
+      content: [
+        {
+          type: 'search',
+          id: 'search-1',
+          query: '第一轮搜索',
+          sources: [
+            { title: '第一轮来源', url: 'https://first.example.com/a' },
+          ],
+        },
+        {
+          type: 'search',
+          id: 'search-2',
+          query: '第二轮搜索',
+          sources: [
+            { title: '第二轮来源', url: 'https://second.example.com/b' },
+          ],
+        },
+        { type: 'text', id: 'text-1', text: '聚合后回答。[1][2]' },
+      ],
+      timestamp: 1,
+    };
+
+    const { result } = renderViewModel(message);
+
+    expect(result.current.searchSources).toEqual([
+      { title: '第一轮来源', url: 'https://first.example.com/a' },
+      { title: '第二轮来源', url: 'https://second.example.com/b' },
+    ]);
+    expect(result.current.answerEvidence?.summary).toBe('回答依据 · 搜索 2 条');
+    expect(result.current.answerEvidence?.items.map(item => item.title)).toEqual([
+      '第一轮来源',
+      '第二轮来源',
+    ]);
+  });
+
+  it('聚合多个 search block 的 source_refs 作为统一回答依据', () => {
+    const message: Message = {
+      id: 'assistant-1',
+      role: 'assistant',
+      content: [
+        {
+          type: 'search',
+          id: 'search-1',
+          query: '第一轮搜索',
+          sources: [{ title: '旧来源 1', url: 'https://legacy.example.com/one' }],
+          source_refs: [
+            {
+              kind: 'search',
+              title: '统一来源 1',
+              url: 'https://ref-one.example.com',
+            },
+          ],
+        },
+        {
+          type: 'search',
+          id: 'search-2',
+          query: '第二轮搜索',
+          sources: [{ title: '旧来源 2', url: 'https://legacy.example.com/two' }],
+          source_refs: [
+            {
+              kind: 'search',
+              title: '统一来源 2',
+              url: 'https://ref-two.example.com',
+            },
+          ],
+        },
+        { type: 'text', id: 'text-1', text: '聚合后回答。[1][2]' },
+      ],
+      timestamp: 1,
+    };
+
+    const { result } = renderViewModel(message);
+
+    expect(result.current.searchSources).toEqual([
+      { title: '统一来源 1', url: 'https://ref-one.example.com', favicon: undefined },
+      { title: '统一来源 2', url: 'https://ref-two.example.com', favicon: undefined },
+    ]);
+    expect(result.current.answerEvidence?.items.map(item => item.title)).toEqual([
+      '统一来源 1',
+      '统一来源 2',
+    ]);
+  });
+
   it('静态历史消息派生不订阅 stream 状态', () => {
     const message: Message = {
       id: 'assistant-1',

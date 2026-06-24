@@ -11,11 +11,11 @@ const base: NetworkDiagnosticsResponse = {
   summary: {
     total_duration_ms: 4200,
     total_steps: 2,
-    total_tool_calls: 3,
+    total_tool_calls: 4,
     search_calls: 2,
     url_read_calls: 1,
     success_count: 2,
-    failed_count: 0,
+    failed_count: 1,
     degraded_count: 1,
     interrupted_count: 0,
   },
@@ -36,15 +36,55 @@ const base: NetworkDiagnosticsResponse = {
       target: 'https://example.com',
       reason: 'reader-service 暂时未返回内容',
     },
+    {
+      tool_call_log_id: 'log-3',
+      tool_name: 'custom_fetch',
+      status: 'failed',
+      duration_ms: null,
+      target: '自定义工具目标',
+      reason: '工具超时',
+    },
   ],
 };
 
 describe('deriveNetworkDiagnosticsModel', () => {
-  it('生成用户摘要和异常列表', () => {
+  it('生成用户可读摘要和完整联网过程', () => {
     const model = deriveNetworkDiagnosticsModel(base);
 
-    expect(model?.summaryText).toBe('联网诊断 · 搜索 2 次 · 读取 1 个网页 · 用时 4.2s');
-    expect(model?.issueItems).toHaveLength(1);
+    expect(model?.summaryText).toBe('联网诊断 · 搜索 2 次 · 读取 1 个网页 · 用时 4.2s · 异常 2 次');
+    expect(model?.displaySummaryText).toBe('搜索 2 次 · 读取 1 个网页 · 用时 4.2s · 异常 2 次');
+    expect(model?.processItems).toEqual([
+      {
+        id: 'log-1',
+        toolLabel: '搜索',
+        status: 'success',
+        statusLabel: '成功',
+        target: 'G7 AI',
+        resultCount: 5,
+        durationText: '1.2s',
+      },
+      {
+        id: 'log-2',
+        toolLabel: '读取网页',
+        status: 'degraded',
+        statusLabel: '降级',
+        target: 'https://example.com',
+        resultCount: null,
+        durationText: '3.0s',
+        reason: 'reader-service 暂时未返回内容',
+      },
+      {
+        id: 'log-3',
+        toolLabel: 'custom_fetch',
+        status: 'failed',
+        statusLabel: '失败',
+        target: '自定义工具目标',
+        resultCount: null,
+        durationText: '耗时未知',
+        reason: '工具超时',
+      },
+    ]);
+    expect(model?.issueItems).toHaveLength(2);
     expect(model?.issueItems[0].reason).toContain('reader-service');
   });
 
@@ -52,13 +92,13 @@ describe('deriveNetworkDiagnosticsModel', () => {
     expect(deriveNetworkDiagnosticsModel({ ...base, is_empty: true, tools: [] })).toBeNull();
   });
 
-  it('管理员可展开明细', () => {
+  it('管理员数据不再开启管理员明细', () => {
     const model = deriveNetworkDiagnosticsModel({
       ...base,
       visibility: 'admin',
       tools: [{ ...base.tools[0], admin: { trace_id: 'trace-1' } }],
     });
 
-    expect(model?.canShowAdminDetails).toBe(true);
+    expect(model?.canShowAdminDetails).toBe(false);
   });
 });
