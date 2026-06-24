@@ -4,10 +4,12 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Bot } from 'lucide-react';
 
 import type { FileWithPreview } from '@/lib/utils/fileHelpers';
+import { getMessageNetworkDiagnostics } from '@/lib/api/chatDiagnostics';
 import { useAppDispatch } from '@/redux/hooks';
 import { toggleReasoningVisibility } from '@/redux/slices/conversationSlice';
 import type { AgentRunState } from '@/types/agentRun';
 import type { Message } from '@/types/conversation';
+import type { NetworkDiagnosticsResponse } from '@/types/networkDiagnostics';
 
 import ProviderIcon from '../models/ProviderIcon';
 import AssistantResponseStack from './AssistantResponseStack';
@@ -15,6 +17,7 @@ import FileCard from './FileCard';
 import MessageActions from './MessageActions';
 import AnswerEvidenceSidebar from './AnswerEvidenceSidebar';
 import { deriveAnswerEvidenceSidebar } from './answerEvidenceSidebarModel';
+import { deriveNetworkDiagnosticsModel } from './networkDiagnosticsModel';
 import SuggestedQuestions from './SuggestedQuestions';
 import {
   deriveStaticAssistantMessageViewModel,
@@ -147,7 +150,11 @@ function AssistantMessageFrame({
   const [localReasoningVisible, setLocalReasoningVisible] = useState(message.isReasoningVisible || false);
   const [answerEvidenceSidebarOpen, setAnswerEvidenceSidebarOpen] = useState(false);
   const [citationHighlight, setCitationHighlight] = useState<{ index: number; tick: number }>({ index: -1, tick: 0 });
+  const [networkDiagnostics, setNetworkDiagnostics] = useState<NetworkDiagnosticsResponse | null>(null);
+  const [networkDiagnosticsLoading, setNetworkDiagnosticsLoading] = useState(false);
+  const [networkDiagnosticsError, setNetworkDiagnosticsError] = useState<string | null>(null);
   const userToggledReasoningRef = useRef(false);
+  const networkDiagnosticsRequestInFlightRef = useRef(false);
 
   const {
     activity,
@@ -172,6 +179,11 @@ function AssistantMessageFrame({
       urlBlocks: activity.urlBlocks,
     }),
     [activity.searchBlock, activity.urlBlocks, answerEvidence],
+  );
+
+  const networkDiagnosticsModel = useMemo(
+    () => deriveNetworkDiagnosticsModel(networkDiagnostics),
+    [networkDiagnostics],
   );
 
   const handleCitationClick = useCallback((index: number) => {
@@ -209,6 +221,56 @@ function AssistantMessageFrame({
   useEffect(() => {
     userToggledReasoningRef.current = false;
   }, [message.id]);
+
+  useEffect(() => {
+    setNetworkDiagnostics(null);
+    setNetworkDiagnosticsError(null);
+    setNetworkDiagnosticsLoading(false);
+    networkDiagnosticsRequestInFlightRef.current = false;
+  }, [activeChatId, message.id]);
+
+  useEffect(() => {
+    if (
+      !answerEvidenceSidebarOpen
+      || !activeChatId
+      || networkDiagnostics
+      || networkDiagnosticsError
+      || networkDiagnosticsRequestInFlightRef.current
+    ) {
+      return;
+    }
+
+    let cancelled = false;
+    networkDiagnosticsRequestInFlightRef.current = true;
+    setNetworkDiagnosticsLoading(true);
+    setNetworkDiagnosticsError(null);
+
+    getMessageNetworkDiagnostics(activeChatId, message.id)
+      .then(data => {
+        if (!cancelled) {
+          setNetworkDiagnostics(data);
+        }
+      })
+      .catch(error => {
+        if (!cancelled) {
+          setNetworkDiagnosticsError(error instanceof Error ? error.message : '联网诊断暂不可用');
+        }
+      })
+      .finally(() => {
+        networkDiagnosticsRequestInFlightRef.current = false;
+        setNetworkDiagnosticsLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    activeChatId,
+    answerEvidenceSidebarOpen,
+    message.id,
+    networkDiagnostics,
+    networkDiagnosticsError,
+  ]);
 
   const reasoningProps = useMemo(() => ({
     shouldRender: !suppressThinking && (hasThinking || (isStreaming && isLastMessage && isStreamingReasoning)),
@@ -324,6 +386,9 @@ function AssistantMessageFrame({
       {answerEvidenceSidebar ? (
         <AnswerEvidenceSidebar
           model={answerEvidenceSidebar}
+          diagnostics={networkDiagnosticsModel}
+          diagnosticsLoading={networkDiagnosticsLoading}
+          diagnosticsError={networkDiagnosticsError}
           isOpen={answerEvidenceSidebarOpen}
           onClose={handleSourcesClose}
           highlightIndex={citationHighlight.index}

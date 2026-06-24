@@ -8,9 +8,14 @@ import type {
   AnswerEvidenceSidebarModel,
   AnswerEvidenceSidebarUsedItem,
 } from './answerEvidenceSidebarModel';
+import NetworkDiagnosticsPanel from './NetworkDiagnosticsPanel';
+import type { NetworkDiagnosticsModel } from './networkDiagnosticsModel';
 
 interface AnswerEvidenceSidebarProps {
   model: AnswerEvidenceSidebarModel | null;
+  diagnostics?: NetworkDiagnosticsModel | null;
+  diagnosticsLoading?: boolean;
+  diagnosticsError?: string | null;
   isOpen: boolean;
   onClose: () => void;
   highlightIndex?: number;
@@ -19,6 +24,9 @@ interface AnswerEvidenceSidebarProps {
 
 export default function AnswerEvidenceSidebar({
   model,
+  diagnostics = null,
+  diagnosticsLoading = false,
+  diagnosticsError = null,
   isOpen,
   onClose,
   highlightIndex,
@@ -143,6 +151,12 @@ export default function AnswerEvidenceSidebar({
               </div>
             </section>
           ) : null}
+
+          <NetworkDiagnosticsPanel
+            model={diagnostics}
+            isLoading={diagnosticsLoading}
+            error={diagnosticsError}
+          />
         </div>
       </aside>
     </>
