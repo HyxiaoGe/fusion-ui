@@ -1,6 +1,6 @@
 import React from "react";
-import { render } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { render, screen } from "@testing-library/react";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ConversationListItem } from "@/hooks/useConversationList";
 
 const { mockChatItemRender } = vi.hoisted(() => ({
@@ -17,7 +17,11 @@ vi.mock("./ChatItem", () => ({
 import ChatList from "./ChatList";
 
 describe("ChatList", () => {
-  it("props 引用保持相同时 rerender 不重复渲染列表项", () => {
+  beforeEach(() => {
+    mockChatItemRender.mockClear();
+  });
+
+  const createStableProps = () => {
     const chats: ConversationListItem[] = [
       {
         id: "chat-a",
@@ -27,10 +31,10 @@ describe("ChatList", () => {
         updatedAt: 1_700_000_000_000,
       },
     ];
-    const sortedAndGroupedChats = [{ groupLabel: "今天", groupChats: chats }];
-    const stableProps = {
+
+    return {
       chats,
-      sortedAndGroupedChats,
+      sortedAndGroupedChats: [{ groupLabel: "今天", groupChats: chats }],
       activeChatId: "chat-a",
       modelNameById: new Map([["model-a", "测试模型"]]),
       isLoadingServerList: false,
@@ -43,6 +47,16 @@ describe("ChatList", () => {
       formatDate: vi.fn(() => "06/23/2026"),
       sentinelRef: React.createRef<HTMLDivElement>(),
     };
+  };
+
+  it("隐藏对话列表滚动条但保留滚动容器", () => {
+    render(<ChatList {...createStableProps()} />);
+
+    expect(screen.getByTestId("chat-list-scroll-container")).toHaveClass("scrollbar-hide");
+  });
+
+  it("props 引用保持相同时 rerender 不重复渲染列表项", () => {
+    const stableProps = createStableProps();
 
     const { rerender } = render(<ChatList {...stableProps} />);
     expect(mockChatItemRender).toHaveBeenCalledTimes(1);

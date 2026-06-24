@@ -38,7 +38,12 @@ const ChatList: React.FC<ChatListProps> = ({
   sentinelRef,
 }) => {
   return (
-    <div className="px-2 flex-1 overflow-y-auto" ref={containerRef} onScroll={handleScroll}>
+    <div
+      data-testid="chat-list-scroll-container"
+      className="px-2 flex-1 overflow-y-auto scrollbar-hide"
+      ref={containerRef}
+      onScroll={handleScroll}
+    >
       {chats.length === 0 ? (
         <div className="text-sm text-muted-foreground mt-4 text-center">
           {searchQuery ? `未找到包含 "${searchQuery}" 的对话` : '暂无对话记录'}
