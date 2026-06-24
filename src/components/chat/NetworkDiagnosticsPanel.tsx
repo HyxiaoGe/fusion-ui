@@ -72,6 +72,13 @@ function ProcessItem({ item }: { item: NetworkDiagnosticsProcessItem }) {
       <p className="line-clamp-2 text-xs text-foreground" title={item.target}>
         {item.target}
       </p>
+      {item.detailParts.length > 0 ? (
+        <div className="mt-1 flex flex-wrap gap-x-2 gap-y-0.5 text-[11px] leading-4 text-muted-foreground">
+          {item.detailParts.map(part => (
+            <span key={part}>{part}</span>
+          ))}
+        </div>
+      ) : null}
       {item.reason ? (
         <p className="mt-1 text-xs text-muted-foreground">
           原因：<span>{item.reason}</span>

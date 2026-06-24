@@ -71,6 +71,13 @@ export interface SearchBlock {
   result_provider?: string | null;
   fallback_used?: boolean;
   provider_chain?: string[];
+  requested_count?: number | null;
+  actual_count?: number | null;
+  context_source_count?: number | null;
+  intent?: 'quick_fact' | 'freshness' | 'comparison' | 'deep_research' | 'official_source' | string | null;
+  domains?: string[];
+  recency_days?: number | null;
+  budget_limited?: boolean;
 }
 
 export interface UrlBlock {
@@ -84,6 +91,7 @@ export interface UrlBlock {
   error_message?: string | null;
   source_count?: number;
   source_refs?: SourceReference[];
+  reason?: string | null;
 }
 
 export type ContentBlock = TextBlock | ThinkingBlock | FileBlock | SearchBlock | UrlBlock;

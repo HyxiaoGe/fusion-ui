@@ -22,6 +22,13 @@ export interface NetworkDiagnosticsToolItem {
   target: string;
   result_count?: number | null;
   reason?: string | null;
+  requested_count?: number | null;
+  actual_count?: number | null;
+  context_count?: number | null;
+  intent?: 'quick_fact' | 'freshness' | 'comparison' | 'deep_research' | 'official_source' | string | null;
+  domains?: string[];
+  recency_days?: number | null;
+  budget_limited?: boolean;
   started_at?: string | null;
   admin?: Record<string, unknown> | null;
 }

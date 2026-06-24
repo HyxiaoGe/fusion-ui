@@ -62,6 +62,7 @@ describe('deriveNetworkDiagnosticsModel', () => {
         target: 'G7 AI',
         resultCount: 5,
         durationText: '1.2s',
+        detailParts: [],
       },
       {
         id: 'log-2',
@@ -72,6 +73,7 @@ describe('deriveNetworkDiagnosticsModel', () => {
         resultCount: null,
         durationText: '3.0s',
         reason: 'reader-service 暂时未返回内容',
+        detailParts: [],
       },
       {
         id: 'log-3',
@@ -82,6 +84,7 @@ describe('deriveNetworkDiagnosticsModel', () => {
         resultCount: null,
         durationText: '耗时未知',
         reason: '工具超时',
+        detailParts: [],
       },
     ]);
     expect(model?.issueItems).toHaveLength(2);
@@ -100,5 +103,55 @@ describe('deriveNetworkDiagnosticsModel', () => {
     });
 
     expect(model?.canShowAdminDetails).toBe(false);
+  });
+
+  it('为搜索和读取工具生成紧凑详情文案', () => {
+    const model = deriveNetworkDiagnosticsModel({
+      ...base,
+      summary: {
+        ...base.summary,
+        total_tool_calls: 2,
+        search_calls: 1,
+        url_read_calls: 1,
+      },
+      tools: [
+        {
+          tool_call_log_id: 'log-search',
+          tool_name: 'web_search',
+          status: 'degraded',
+          duration_ms: 900,
+          target: 'AI regulation',
+          result_count: 7,
+          requested_count: 8,
+          actual_count: 7,
+          context_count: 6,
+          intent: 'comparison',
+          domains: ['europa.eu', 'whitehouse.gov'],
+          recency_days: 30,
+          budget_limited: true,
+        },
+        {
+          tool_call_log_id: 'log-read',
+          tool_name: 'url_read',
+          status: 'success',
+          duration_ms: 500,
+          target: 'https://example.com/report',
+          reason: '需要核实官方原文细节',
+        },
+      ],
+    });
+
+    expect(model?.processItems[0].detailParts).toEqual([
+      'intent: comparison',
+      '请求 8 条',
+      '返回 7 条',
+      '用于上下文 6 条',
+      '限定域名：europa.eu、whitehouse.gov',
+      '近 30 天',
+      '已达联网预算',
+    ]);
+    expect(model?.processItems[1].detailParts).toEqual([
+      '读取原因：需要核实官方原文细节',
+    ]);
   });
 });

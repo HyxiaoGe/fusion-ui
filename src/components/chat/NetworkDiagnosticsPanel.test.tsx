@@ -29,6 +29,13 @@ const diagnostics: NetworkDiagnosticsResponse = {
       duration_ms: 1200,
       target: 'G7 AI',
       result_count: 5,
+      requested_count: 8,
+      actual_count: 5,
+      context_count: 4,
+      intent: 'comparison',
+      domains: ['europa.eu'],
+      recency_days: 7,
+      budget_limited: true,
       admin: {
         trace_id: 'trace-1',
         input_params: { query: 'secret query' },
@@ -60,6 +67,13 @@ describe('NetworkDiagnosticsPanel', () => {
     expect(screen.getByText('搜索')).toBeInTheDocument();
     expect(screen.getByText('成功')).toBeInTheDocument();
     expect(screen.getByText('5 条结果')).toBeInTheDocument();
+    expect(screen.getByText('intent: comparison')).toBeInTheDocument();
+    expect(screen.getByText('请求 8 条')).toBeInTheDocument();
+    expect(screen.getByText('返回 5 条')).toBeInTheDocument();
+    expect(screen.getByText('用于上下文 4 条')).toBeInTheDocument();
+    expect(screen.getByText('限定域名：europa.eu')).toBeInTheDocument();
+    expect(screen.getByText('近 7 天')).toBeInTheDocument();
+    expect(screen.getByText('已达联网预算')).toBeInTheDocument();
     expect(screen.getByText('G7 AI')).toBeInTheDocument();
     expect(screen.getByText('读取网页')).toBeInTheDocument();
     expect(screen.getByText('降级')).toBeInTheDocument();
