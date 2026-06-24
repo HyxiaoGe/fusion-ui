@@ -153,6 +153,44 @@ describe('deriveAnswerEvidence', () => {
     );
   });
 
+  it('搜索来源缺 favicon 时使用同源站点图标兜底', () => {
+    const evidence = deriveAnswerEvidence({
+      searchSources: [
+        {
+          title: 'Firecrawl 搜索结果',
+          url: 'https://www.reddit.com/r/apple/comments/example',
+        },
+      ],
+      urlBlocks: [],
+    });
+
+    expect(evidence?.items[0]).toEqual(
+      expect.objectContaining({
+        favicon: 'https://www.reddit.com/favicon.ico',
+      }),
+    );
+  });
+
+  it('sourceRefs 和旧来源都缺 favicon 时使用同源站点图标兜底', () => {
+    const evidence = deriveAnswerEvidence({
+      sourceRefs: [
+        {
+          kind: 'search',
+          title: '统一搜索来源',
+          url: 'https://news.example.com/article',
+        },
+      ],
+      searchSources: [],
+      urlBlocks: [],
+    });
+
+    expect(evidence?.items[0]).toEqual(
+      expect.objectContaining({
+        favicon: 'https://news.example.com/favicon.ico',
+      }),
+    );
+  });
+
   it('统一 sourceRefs 中的失败来源不作为正常回答依据', () => {
     const evidence = deriveAnswerEvidence({
       sourceRefs: [

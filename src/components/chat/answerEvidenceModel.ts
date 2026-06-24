@@ -82,7 +82,7 @@ function toSearchEvidenceItem(source: SearchSourceSummary, index: number): Searc
     title: normalizeTitle(source.title, source.url),
     url: source.url,
     domain: deriveDomain(source.url),
-    favicon: source.favicon,
+    favicon: normalizeFavicon(source.url, source.favicon),
     sourceIndex: index,
   };
 }
@@ -94,7 +94,7 @@ function toUrlEvidenceItem(block: UrlBlock): UrlReadAnswerEvidenceItem {
     title: normalizeTitle(block.title, block.url),
     url: block.url,
     domain: deriveDomain(block.url),
-    favicon: block.favicon,
+    favicon: normalizeFavicon(block.url, block.favicon),
   };
 }
 
@@ -115,7 +115,7 @@ function toSourceRefEvidenceItems(
       title: normalizeTitle(source.title, source.url),
       url: source.url,
       domain: normalizeDomain(source.domain, source.url),
-      favicon: source.favicon || findFallbackFavicon(source.url, faviconFallbacks),
+      favicon: normalizeFavicon(source.url, source.favicon || findFallbackFavicon(source.url, faviconFallbacks)),
     };
 
     if (source.kind === 'search') {
@@ -165,6 +165,24 @@ function buildFaviconFallbacks(
 
 function findFallbackFavicon(url: string, fallback: FaviconFallbacks): string | undefined {
   return fallback.byUrl.get(url) ?? fallback.byDomain.get(deriveDomain(url));
+}
+
+function normalizeFavicon(url: string, favicon: string | undefined): string | undefined {
+  const trimmed = favicon?.trim();
+  if (trimmed) {
+    return trimmed;
+  }
+
+  return deriveSameOriginFavicon(url);
+}
+
+function deriveSameOriginFavicon(url: string): string | undefined {
+  try {
+    const parsed = new URL(url);
+    return `${parsed.origin}/favicon.ico`;
+  } catch {
+    return undefined;
+  }
 }
 
 function isUsableSourceRef(source: SourceReference): boolean {
