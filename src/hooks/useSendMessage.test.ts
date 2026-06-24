@@ -833,6 +833,19 @@ describe('useSendMessage', () => {
       expect(getConversationMock).toHaveBeenCalledWith('existing-conv');
     });
     expect(store.getState().stream.currentRun?.totalToolCalls).toBe(1);
+
+    await waitFor(() => {
+      const assistantMsg = store.getState().conversation.byId['existing-conv'].messages.find(
+        (m: any) => m.role === 'assistant'
+      );
+      expect(assistantMsg).toEqual(
+        expect.objectContaining({
+          id: 'srv-asst-1',
+          content: [{ type: 'text', text: 'final from db' }],
+          usage: { input_tokens: 10, output_tokens: 20 },
+        })
+      );
+    });
   });
 
   it('completes immediately when onDone arrives without any content', async () => {

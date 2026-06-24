@@ -330,7 +330,9 @@ export function useSendMessage() {
                     conversationId: finalConvId,
                     messageId: assistantMessageId,
                     patch: {
+                      id: lastAssistant.id,
                       content: lastAssistant.content,
+                      model_id: lastAssistant.model_id ?? enabledModel.id,
                       usage: lastAssistant.usage ?? undefined,
                       isReasoningVisible: lastAssistant.content.some((b: any) => b.type === 'thinking') ? false : undefined,
                     },
