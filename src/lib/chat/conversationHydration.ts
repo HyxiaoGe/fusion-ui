@@ -21,6 +21,10 @@ interface ServerBlock {
   error_message?: string | null;
   source_count?: number;
   source_refs?: SourceReference[];
+  requested_provider?: string | null;
+  result_provider?: string | null;
+  fallback_used?: boolean;
+  provider_chain?: string[];
   url?: string;
   title?: string;
   favicon?: string;
@@ -78,6 +82,10 @@ function buildContentBlocks(serverBlocks: ServerBlock[]): ContentBlock[] {
         error_message: b.error_message,
         source_count: b.source_count,
         source_refs: b.source_refs,
+        requested_provider: b.requested_provider,
+        result_provider: b.result_provider,
+        fallback_used: b.fallback_used,
+        provider_chain: b.provider_chain,
       } satisfies SearchBlock);
     } else if (b.type === 'url_read' && b.url) {
       blocks.push({

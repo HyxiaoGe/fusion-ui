@@ -206,4 +206,39 @@ describe('conversationHydration', () => {
       }),
     ]);
   });
+
+  it('preserves search provider metadata while hydrating search blocks', () => {
+    const chat = buildChatFromServerConversation({
+      id: 'chat-5',
+      title: 'Server chat',
+      model_id: 'qwen-max-latest',
+      messages: [
+        {
+          id: 'assistant-1',
+          role: 'assistant',
+          content: [
+            {
+              type: 'search',
+              id: 'search-1',
+              query: 'AI 标准',
+              sources: [{ title: '来源', url: 'https://example.com' }],
+              requested_provider: 'firecrawl',
+              result_provider: 'brave',
+              fallback_used: true,
+              provider_chain: ['firecrawl', 'brave'],
+            },
+          ],
+          created_at: '2026-03-14T08:00:02Z',
+        },
+      ],
+    });
+
+    expect(chat.messages[0].content[0]).toMatchObject({
+      type: 'search',
+      requested_provider: 'firecrawl',
+      result_provider: 'brave',
+      fallback_used: true,
+      provider_chain: ['firecrawl', 'brave'],
+    });
+  });
 });
