@@ -6,13 +6,13 @@ const {
   useAppSelectorMock,
   usePathnameMock,
   homeChatSurfaceMock,
-  chatSidebarLazyMock,
+  chatSidebarMock,
 } = vi.hoisted(() => ({
   routerPushMock: vi.fn(),
   useAppSelectorMock: vi.fn(),
   usePathnameMock: vi.fn(),
   homeChatSurfaceMock: vi.fn(),
-  chatSidebarLazyMock: vi.fn(),
+  chatSidebarMock: vi.fn(),
 }));
 
 vi.mock('next/navigation', () => ({
@@ -33,9 +33,9 @@ vi.mock('@/components/layouts/MainLayout', () => ({
   ),
 }));
 
-vi.mock('@/components/lazy/LazyComponents', () => ({
-  ChatSidebarLazy: ({ onNewChat, isNewChatActive }: { onNewChat: () => void; isNewChatActive?: boolean }) => {
-    chatSidebarLazyMock({ isNewChatActive });
+vi.mock('@/components/chat/ChatSidebar', () => ({
+  default: ({ onNewChat, isNewChatActive }: { onNewChat: () => void; isNewChatActive?: boolean }) => {
+    chatSidebarMock({ isNewChatActive });
     return (
       <button type="button" onClick={onNewChat} aria-pressed={isNewChatActive}>
         新对话
@@ -57,7 +57,7 @@ describe('AppLayout 新建对话过渡', () => {
   beforeEach(() => {
     routerPushMock.mockClear();
     homeChatSurfaceMock.mockClear();
-    chatSidebarLazyMock.mockClear();
+    chatSidebarMock.mockClear();
     usePathnameMock.mockReturnValue('/chat/test');
     useAppSelectorMock.mockImplementation((selector) =>
       selector({

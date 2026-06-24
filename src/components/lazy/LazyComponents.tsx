@@ -2,14 +2,12 @@ import React, { Suspense, lazy } from 'react';
 import ChatLoadingSurface from '@/components/chat/ChatLoadingSurface';
 import {
   preloadChatMessageList,
-  preloadChatSidebar,
   preloadHomePage,
   preloadModelSelector,
 } from './preloaders';
 
 // 懒加载组件定义
 export const LazyChatMessageList = lazy(preloadChatMessageList);
-export const LazyChatSidebar = lazy(preloadChatSidebar);
 export const LazyModelSelector = lazy(preloadModelSelector);
 export const LazyHomePage = lazy(preloadHomePage);
 
@@ -40,12 +38,6 @@ export const LazyWrapper: React.FC<LazyWrapperProps> = ({
 export const ChatMessageListLazy: React.FC<any> = (props) => (
   <LazyWrapper>
     <LazyChatMessageList {...props} />
-  </LazyWrapper>
-);
-
-export const ChatSidebarLazy: React.FC<any> = (props) => (
-  <LazyWrapper>
-    <LazyChatSidebar {...props} />
   </LazyWrapper>
 );
 

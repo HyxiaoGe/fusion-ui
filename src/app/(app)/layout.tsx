@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import MainLayout from '@/components/layouts/MainLayout';
-import { ChatSidebarLazy } from '@/components/lazy/LazyComponents';
+import ChatSidebar from '@/components/chat/ChatSidebar';
 import HomeChatSurface from '@/components/home/HomeChatSurface';
 import { useAppSelector } from '@/redux/hooks';
 import { getFirstEnabledModelId } from '@/lib/models/modelPreference';
@@ -35,7 +35,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
   return (
     <MainLayout
-      sidebar={<ChatSidebarLazy onNewChat={handleNewChat} isNewChatActive={showNewChatSurface || pathname === '/'} />}
+      sidebar={<ChatSidebar onNewChat={handleNewChat} isNewChatActive={showNewChatSurface || pathname === '/'} />}
     >
       <PerfProbe />
       {showNewChatSurface ? <HomeChatSurface /> : children}
