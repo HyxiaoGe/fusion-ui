@@ -124,7 +124,7 @@ function buildProcessItem(item: NetworkDiagnosticsToolItem): NetworkDiagnosticsP
     status: item.status,
     statusLabel: getStatusLabel(item.status),
     target: item.target?.trim() || '未提供目标',
-    resultCount: item.tool_name === 'web_search' ? item.result_count ?? null : null,
+    resultCount: null,
     durationText: item.duration_ms === null ? '耗时未知' : formatDuration(item.duration_ms),
     detailParts: buildDetailParts(item),
     ...(reason ? { reason } : {}),
@@ -133,47 +133,13 @@ function buildProcessItem(item: NetworkDiagnosticsToolItem): NetworkDiagnosticsP
 
 function buildDetailParts(item: NetworkDiagnosticsToolItem): string[] {
   if (item.tool_name === 'web_search') {
-    return buildSearchDetailParts(item);
+    return [];
   }
   if (item.tool_name === 'url_read') {
     const reason = item.status === 'success' ? item.reason?.trim() : '';
     return reason ? [`读取原因：${reason}`] : [];
   }
   return [];
-}
-
-function buildSearchDetailParts(item: NetworkDiagnosticsToolItem): string[] {
-  const parts: string[] = [];
-  const intent = item.intent?.trim();
-
-  if (intent) {
-    parts.push(`intent: ${intent}`);
-  }
-  if (isDisplayableNumber(item.requested_count)) {
-    parts.push(`请求 ${item.requested_count} 条`);
-  }
-  if (isDisplayableNumber(item.actual_count)) {
-    parts.push(`返回 ${item.actual_count} 条`);
-  }
-  if (isDisplayableNumber(item.context_count)) {
-    parts.push(`用于上下文 ${item.context_count} 条`);
-  }
-  const domains = item.domains?.map(domain => domain.trim()).filter(Boolean);
-  if (domains && domains.length > 0) {
-    parts.push(`限定域名：${domains.join('、')}`);
-  }
-  if (isDisplayableNumber(item.recency_days)) {
-    parts.push(`近 ${item.recency_days} 天`);
-  }
-  if (item.budget_limited) {
-    parts.push('已达联网预算');
-  }
-
-  return parts;
-}
-
-function isDisplayableNumber(value: number | null | undefined): value is number {
-  return typeof value === 'number' && Number.isFinite(value);
 }
 
 function getStatusLabel(status: NetworkDiagnosticsToolItem['status']): string {

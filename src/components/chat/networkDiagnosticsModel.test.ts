@@ -60,7 +60,7 @@ describe('deriveNetworkDiagnosticsModel', () => {
         status: 'success',
         statusLabel: '成功',
         target: 'G7 AI',
-        resultCount: 5,
+        resultCount: null,
         durationText: '1.2s',
         detailParts: [],
       },
@@ -105,7 +105,7 @@ describe('deriveNetworkDiagnosticsModel', () => {
     expect(model?.canShowAdminDetails).toBe(false);
   });
 
-  it('为搜索和读取工具生成紧凑详情文案', () => {
+  it('隐藏搜索预算细节，仅保留读取原因详情', () => {
     const model = deriveNetworkDiagnosticsModel({
       ...base,
       summary: {
@@ -141,15 +141,8 @@ describe('deriveNetworkDiagnosticsModel', () => {
       ],
     });
 
-    expect(model?.processItems[0].detailParts).toEqual([
-      'intent: comparison',
-      '请求 8 条',
-      '返回 7 条',
-      '用于上下文 6 条',
-      '限定域名：europa.eu、whitehouse.gov',
-      '近 30 天',
-      '已达联网预算',
-    ]);
+    expect(model?.processItems[0].resultCount).toBeNull();
+    expect(model?.processItems[0].detailParts).toEqual([]);
     expect(model?.processItems[1].detailParts).toEqual([
       '读取原因：需要核实官方原文细节',
     ]);
