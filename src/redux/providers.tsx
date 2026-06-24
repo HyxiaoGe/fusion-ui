@@ -1,6 +1,6 @@
 'use client';
 
-import LoadingIndicator from '@/components/ui/loading-indicator';
+import ChatLoadingSurface from '@/components/chat/ChatLoadingSurface';
 import initializeStoreFromDB from '@/lib/db/initializeStore';
 import { useEffect, useState } from 'react';
 import { Provider } from 'react-redux';
@@ -28,13 +28,7 @@ const StoreInitializer = ({ children }: { children: React.ReactNode }) => {
 
   // 显示加载状态或返回子组件
   if (!isLoaded) {
-    return (
-      <div className="flex items-center justify-center h-screen bg-background">
-        <div className="text-center">
-          <LoadingIndicator size="lg" text="初始化中..." />
-        </div>
-      </div>
-    );
+    return <ChatLoadingSurface variant="app-shell" />;
   }
 
   return <>{children}</>;

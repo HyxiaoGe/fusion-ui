@@ -1,5 +1,5 @@
 import React, { Suspense, lazy } from 'react';
-import LoadingIndicator from '@/components/ui/loading-indicator';
+import ChatLoadingSurface from '@/components/chat/ChatLoadingSurface';
 import {
   preloadChatMessageList,
   preloadChatSidebar,
@@ -26,9 +26,7 @@ export const LazyWrapper: React.FC<LazyWrapperProps> = ({
   className 
 }) => {
   const defaultFallback = (
-    <div className={`flex items-center justify-center p-4 ${className || ''}`}>
-      <LoadingIndicator size="sm" text="加载中..." />
-    </div>
+    <ChatLoadingSurface className={className} />
   );
 
   return (

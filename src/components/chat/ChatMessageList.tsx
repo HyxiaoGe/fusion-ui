@@ -7,6 +7,7 @@ import { clearStreamError } from '@/redux/slices/streamSlice';
 import LoadingIndicator from '../ui/loading-indicator';
 import ChatMessage from './ChatMessage';
 import StreamErrorCard from './StreamErrorCard';
+import ChatLoadingSurface from './ChatLoadingSurface';
 import { isNearBottom } from '@/lib/chat/scrollBehavior';
 import type { AgentRunState } from '@/types/agentRun';
 import { selectChatModel } from '@/redux/selectors';
@@ -280,23 +281,8 @@ const ChatMessageList: React.FC<ChatMessageListProps> = ({
 
   if (messages.length === 0 && loadingState === 'history-hydration') {
     return (
-      <div
-        data-testid="history-hydration-skeleton"
-        role="status"
-        aria-label="正在加载会话消息"
-        className="mx-auto flex w-full max-w-3xl flex-col gap-5 px-4 py-8"
-      >
-        <div className="space-y-4" aria-hidden="true">
-          <div className="ml-auto w-full max-w-xl space-y-3 rounded-2xl bg-primary/8 px-5 py-4">
-            <div className="h-3.5 w-3/4 animate-pulse rounded-full bg-primary/15" />
-            <div className="h-3.5 w-2/3 animate-pulse rounded-full bg-primary/10" />
-          </div>
-          <div className="w-full max-w-2xl space-y-3 rounded-2xl border border-border/50 bg-card/80 px-5 py-4 shadow-fdv2-xs">
-            <div className="h-3.5 w-5/6 animate-pulse rounded-full bg-muted" />
-            <div className="h-3.5 w-3/4 animate-pulse rounded-full bg-muted/80" />
-            <div className="h-3.5 w-2/3 animate-pulse rounded-full bg-muted/70" />
-          </div>
-        </div>
+      <div data-testid="history-hydration-skeleton">
+        <ChatLoadingSurface />
       </div>
     );
   }

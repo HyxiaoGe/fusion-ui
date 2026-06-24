@@ -470,6 +470,7 @@ describe('ChatMessageList', () => {
     );
 
     expect(screen.getByTestId('history-hydration-skeleton')).toBeTruthy();
+    expect(screen.getByTestId('chat-loading-surface')).toBeTruthy();
     expect(screen.queryByText('正在加载这段对话')).toBeNull();
     expect(screen.queryByText('开始一个新对话')).toBeNull();
   });
