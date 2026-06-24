@@ -8,20 +8,44 @@ interface AnswerEvidenceProps {
   evidence: AnswerEvidenceModel | null;
   onSourceClick: (index: number) => void;
   onOpenSources: () => void;
+  hasSidebarContent?: boolean;
+  sidebarIssueCount?: number;
 }
 
 export default function AnswerEvidence({
   evidence,
   onSourceClick,
   onOpenSources,
+  hasSidebarContent = false,
+  sidebarIssueCount = 0,
 }: AnswerEvidenceProps) {
   if (!evidence || evidence.totalCount === 0) {
+    if (hasSidebarContent && sidebarIssueCount > 0) {
+      return (
+        <section className="mb-2 rounded-md border border-border/30 bg-transparent px-2.5 py-2 text-xs text-muted-foreground">
+          <div className="flex min-w-0 flex-wrap items-center gap-2">
+            <FileSearch className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+            <span className="min-w-0 flex-1 truncate font-medium text-muted-foreground">
+              回答依据 · {sidebarIssueCount} 个未使用
+            </span>
+            <button
+              type="button"
+              aria-label="查看全部依据"
+              onClick={onOpenSources}
+              className="shrink-0 rounded-full border border-border/40 bg-background/70 px-2 py-0.5 text-[11px] font-medium text-foreground transition-colors hover:border-border/60 hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+            >
+              查看全部依据
+            </button>
+          </div>
+        </section>
+      );
+    }
     return null;
   }
 
   const showHiddenSearch = evidence.hiddenSearchCount > 0;
-  const showOpenAll = evidence.hasSearchSources && showHiddenSearch;
   const showHiddenUrls = evidence.hiddenUrlCount > 0;
+  const showOpenAll = hasSidebarContent || showHiddenSearch || showHiddenUrls;
 
   return (
     <section className="mb-2 rounded-md border border-border/30 bg-transparent px-2.5 py-2 text-xs text-muted-foreground">
@@ -40,11 +64,11 @@ export default function AnswerEvidence({
           {showOpenAll ? (
             <button
               type="button"
-              aria-label="查看全部搜索来源"
+              aria-label="查看全部依据"
               onClick={onOpenSources}
               className="shrink-0 rounded-full border border-border/40 bg-background/70 px-2 py-0.5 text-[11px] font-medium text-foreground transition-colors hover:border-border/60 hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
             >
-              查看全部
+              查看全部依据
             </button>
           ) : null}
         </div>

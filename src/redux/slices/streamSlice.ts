@@ -24,7 +24,7 @@ export interface StreamState {
   isThinkingPhaseComplete: boolean;
   reasoningStartTime: number | null;
   reasoningEndTime: number | undefined;
-  // ── 来源（保留：SourcesSidebar 仍读）──
+  // ── 来源（保留：Markdown 引用与回答依据仍读）──
   // 注：Phase 1 cut over 后 streaming 期 searchSources 不再被 reducer 主动填充；
   // 由 ChatMessage (Task 13b) 在 stream 结束后从消息 ContentBlock 提取
   searchSources: SearchSourceSummary[];

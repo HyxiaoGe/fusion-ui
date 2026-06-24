@@ -135,11 +135,7 @@ function isUsableSourceRef(source: SourceReference): boolean {
     return false;
   }
 
-  if (source.kind === 'url_read') {
-    return source.status == null || source.status === 'success';
-  }
-
-  return source.status !== 'failed';
+  return source.status == null || source.status === 'success';
 }
 
 function isSuccessfulUrlBlock(block: UrlBlock): boolean {

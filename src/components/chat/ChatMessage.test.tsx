@@ -511,6 +511,64 @@ describe('ChatMessage', () => {
     expect(screen.queryByTestId('old-url-card')).toBeNull();
   });
 
+  it('URL-only 回答通过真实回答依据入口打开统一侧栏', () => {
+    render(
+      <ChatMessage
+        message={{
+          id: 'assistant-1',
+          role: 'assistant',
+          content: [
+            {
+              type: 'url_read',
+              id: 'url-1',
+              title: 'URL Only Article',
+              url: 'https://example.com/url-only',
+            },
+            { type: 'text', id: 'text-1', text: '基于网页回答。' },
+          ],
+          timestamp: 1,
+          chatId: 'chat-1',
+        }}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: '查看全部依据' }));
+
+    expect(screen.getByRole('dialog', { name: '回答依据' })).toBeInTheDocument();
+    expect(screen.getAllByText('URL Only Article').length).toBeGreaterThanOrEqual(2);
+  });
+
+  it('只有异常来源时通过真实回答依据入口打开统一侧栏查看原因', () => {
+    render(
+      <ChatMessage
+        message={{
+          id: 'assistant-1',
+          role: 'assistant',
+          content: [
+            {
+              type: 'url_read',
+              id: 'url-failed',
+              title: '读取失败页面',
+              url: 'https://failed.example.com/article',
+              status: 'failed',
+              error_message: 'timeout',
+            },
+            { type: 'text', id: 'text-1', text: '部分来源不可用。' },
+          ],
+          timestamp: 1,
+          chatId: 'chat-1',
+        }}
+      />,
+    );
+
+    expect(screen.getByText('回答依据 · 1 个未使用')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '查看全部依据' }));
+
+    expect(screen.getByRole('dialog', { name: '回答依据' })).toBeInTheDocument();
+    expect(screen.getByText('读取失败页面')).toBeInTheDocument();
+    expect(screen.getByText('timeout')).toBeInTheDocument();
+  });
+
   it('assistant 回复通过 AssistantResponseStack 渲染正文和辅助层', () => {
     render(
       <ChatMessage
@@ -579,7 +637,7 @@ describe('ChatMessage', () => {
 
     fireEvent.click(screen.getByRole('button', { name: '查看参考资料 1：AI Standards Source' }));
 
-    expect(screen.getByText('参考资料')).toBeInTheDocument();
+    expect(screen.getByText('回答依据')).toBeInTheDocument();
     expect(screen.getAllByText('AI Standards Source').length).toBeGreaterThanOrEqual(1);
   });
 

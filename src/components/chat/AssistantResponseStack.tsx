@@ -8,6 +8,7 @@ import AssistantActivityStatus from './AssistantActivityStatus';
 import type { AssistantActivity } from './assistantActivity';
 import AnswerEvidence from './AnswerEvidence';
 import type { AnswerEvidenceModel } from './answerEvidenceModel';
+import type { AnswerEvidenceSidebarModel } from './answerEvidenceSidebarModel';
 import { AgentRunTimeline } from './agent';
 import MarkdownRenderer from './MarkdownRenderer';
 
@@ -26,6 +27,7 @@ interface AssistantResponseStackProps {
   agentRun?: AgentRunState | null;
   onRetry?: () => void;
   answerEvidence: AnswerEvidenceModel | null;
+  answerEvidenceSidebar?: AnswerEvidenceSidebarModel | null;
   onSourceClick: (index: number) => void;
   onOpenSources: () => void;
   markdown: {
@@ -43,6 +45,7 @@ function AssistantResponseStack({
   agentRun,
   onRetry,
   answerEvidence,
+  answerEvidenceSidebar,
   onSourceClick,
   onOpenSources,
   markdown,
@@ -76,6 +79,8 @@ function AssistantResponseStack({
         evidence={answerEvidence}
         onSourceClick={onSourceClick}
         onOpenSources={onOpenSources}
+        hasSidebarContent={Boolean(answerEvidenceSidebar?.isRenderable)}
+        sidebarIssueCount={answerEvidenceSidebar?.summary.issueCount ?? 0}
       />
 
       <MarkdownRenderer

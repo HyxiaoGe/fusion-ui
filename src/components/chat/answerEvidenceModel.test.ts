@@ -127,6 +127,42 @@ describe('deriveAnswerEvidence', () => {
     ]);
   });
 
+  it('统一 sourceRefs 中降级或中断的搜索来源不作为正常回答依据', () => {
+    const evidence = deriveAnswerEvidence({
+      sourceRefs: [
+        {
+          kind: 'search',
+          title: '降级搜索来源',
+          url: 'https://degraded-search.example.com',
+          status: 'degraded',
+        },
+        {
+          kind: 'search',
+          title: '中断搜索来源',
+          url: 'https://interrupted-search.example.com',
+          status: 'interrupted',
+        },
+        {
+          kind: 'search',
+          title: '成功搜索来源',
+          url: 'https://success-search.example.com',
+          status: 'success',
+        },
+      ],
+      searchSources: [],
+      urlBlocks: [],
+    });
+
+    expect(evidence?.summary).toBe('回答依据 · 搜索 1 条');
+    expect(evidence?.items).toEqual([
+      expect.objectContaining({
+        kind: 'search_source',
+        title: '成功搜索来源',
+        url: 'https://success-search.example.com',
+      }),
+    ]);
+  });
+
   it('统一 sourceRefs 非空但全部不可用时不回退旧来源', () => {
     const evidence = deriveAnswerEvidence({
       sourceRefs: [

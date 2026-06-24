@@ -13,7 +13,8 @@ import ProviderIcon from '../models/ProviderIcon';
 import AssistantResponseStack from './AssistantResponseStack';
 import FileCard from './FileCard';
 import MessageActions from './MessageActions';
-import SourcesSidebar from './SourcesSidebar';
+import AnswerEvidenceSidebar from './AnswerEvidenceSidebar';
+import { deriveAnswerEvidenceSidebar } from './answerEvidenceSidebarModel';
 import SuggestedQuestions from './SuggestedQuestions';
 import {
   deriveStaticAssistantMessageViewModel,
@@ -144,7 +145,7 @@ function AssistantMessageFrame({
 }: AssistantMessageProps & { viewModel: AssistantMessageViewModel }) {
   const dispatch = useAppDispatch();
   const [localReasoningVisible, setLocalReasoningVisible] = useState(message.isReasoningVisible || false);
-  const [sourcesSidebarOpen, setSourcesSidebarOpen] = useState(false);
+  const [answerEvidenceSidebarOpen, setAnswerEvidenceSidebarOpen] = useState(false);
   const [citationHighlight, setCitationHighlight] = useState<{ index: number; tick: number }>({ index: -1, tick: 0 });
   const userToggledReasoningRef = useRef(false);
 
@@ -164,18 +165,27 @@ function AssistantMessageFrame({
 
   const { copied, copy } = useMessageCopy({ text: displayText });
 
+  const answerEvidenceSidebar = useMemo(
+    () => deriveAnswerEvidenceSidebar({
+      answerEvidence,
+      searchBlock: activity.searchBlock,
+      urlBlocks: activity.urlBlocks,
+    }),
+    [activity.searchBlock, activity.urlBlocks, answerEvidence],
+  );
+
   const handleCitationClick = useCallback((index: number) => {
-    setSourcesSidebarOpen(true);
+    setAnswerEvidenceSidebarOpen(true);
     setCitationHighlight(prev => ({ index, tick: prev.tick + 1 }));
   }, []);
 
   const handleSourcesClose = useCallback(() => {
-    setSourcesSidebarOpen(false);
+    setAnswerEvidenceSidebarOpen(false);
     setCitationHighlight({ index: -1, tick: 0 });
   }, []);
 
   const handleOpenSources = useCallback(() => {
-    setSourcesSidebarOpen(true);
+    setAnswerEvidenceSidebarOpen(true);
   }, []);
 
   const handleToggleReasoning = useCallback(() => {
@@ -267,6 +277,7 @@ function AssistantMessageFrame({
             agentRun={agentRun}
             onRetry={handleRetry}
             answerEvidence={answerEvidence}
+            answerEvidenceSidebar={answerEvidenceSidebar}
             onSourceClick={handleCitationClick}
             onOpenSources={handleOpenSources}
             markdown={markdownProps}
@@ -310,15 +321,15 @@ function AssistantMessageFrame({
         />
       )}
 
-      {searchSources.length > 0 && (
-        <SourcesSidebar
-          sources={searchSources}
-          isOpen={sourcesSidebarOpen}
+      {answerEvidenceSidebar ? (
+        <AnswerEvidenceSidebar
+          model={answerEvidenceSidebar}
+          isOpen={answerEvidenceSidebarOpen}
           onClose={handleSourcesClose}
           highlightIndex={citationHighlight.index}
           highlightTick={citationHighlight.tick}
         />
-      )}
+      ) : null}
     </>
   );
 }

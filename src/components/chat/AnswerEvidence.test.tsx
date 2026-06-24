@@ -20,7 +20,7 @@ function evidence(overrides: Partial<AnswerEvidenceModel>): AnswerEvidenceModel 
 }
 
 describe('AnswerEvidence', () => {
-  it('evidence 为 null 时不渲染', () => {
+  it('evidence 为 null 且没有侧栏内容时不渲染', () => {
     const { container } = render(
       <AnswerEvidence evidence={null} onSourceClick={vi.fn()} onOpenSources={vi.fn()} />,
     );
@@ -28,7 +28,25 @@ describe('AnswerEvidence', () => {
     expect(container.innerHTML).toBe('');
   });
 
-  it('evidence 非 null 但 totalCount=0 时不渲染', () => {
+  it('evidence 为 null 但存在异常侧栏内容时渲染轻量入口', () => {
+    const onOpenSources = vi.fn();
+
+    render(
+      <AnswerEvidence
+        evidence={null}
+        onSourceClick={vi.fn()}
+        onOpenSources={onOpenSources}
+        hasSidebarContent={true}
+        sidebarIssueCount={2}
+      />,
+    );
+
+    expect(screen.getByText('回答依据 · 2 个未使用')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '查看全部依据' }));
+    expect(onOpenSources).toHaveBeenCalledTimes(1);
+  });
+
+  it('evidence 非 null 但 totalCount=0 且没有侧栏内容时不渲染', () => {
     const { container } = render(
       <AnswerEvidence evidence={evidence({})} onSourceClick={vi.fn()} onOpenSources={vi.fn()} />,
     );
@@ -239,7 +257,7 @@ describe('AnswerEvidence', () => {
     expect(screen.getByRole('link', { name: '打开网页：网页标题' })).toBeInTheDocument();
   });
 
-  it('存在更多搜索来源时支持查看全部搜索来源', () => {
+  it('存在更多搜索来源时支持查看全部依据', () => {
     const onOpenSources = vi.fn();
 
     render(
@@ -284,9 +302,9 @@ describe('AnswerEvidence', () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole('button', { name: '查看全部搜索来源' }));
+    fireEvent.click(screen.getByRole('button', { name: '查看全部依据' }));
     expect(onOpenSources).toHaveBeenCalledTimes(1);
-    expect(screen.getByText('查看全部')).toBeInTheDocument();
+    expect(screen.getByText('查看全部依据')).toBeInTheDocument();
   });
 
   it('5 条搜索来源默认预览 3 条时用紧凑 chip 提示未预览数量', () => {
@@ -309,7 +327,7 @@ describe('AnswerEvidence', () => {
 
     expect(screen.getByText('回答依据 · 搜索 5 条')).toBeInTheDocument();
     expect(screen.getByText('未预览 2 条搜索')).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: '查看全部搜索来源' }));
+    fireEvent.click(screen.getByRole('button', { name: '查看全部依据' }));
     expect(onOpenSources).toHaveBeenCalledTimes(1);
   });
 
@@ -353,10 +371,10 @@ describe('AnswerEvidence', () => {
     );
 
     expect(screen.getByText('未预览 1 个网页')).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: '查看全部搜索来源' })).toBeNull();
+    expect(screen.getByRole('button', { name: '查看全部依据' })).toBeInTheDocument();
   });
 
-  it('混合依据中搜索少 URL 多时补足 URL 外链且不显示搜索侧栏按钮', () => {
+  it('混合依据中搜索少 URL 多时补足 URL 外链并提供统一依据入口', () => {
     render(
       <AnswerEvidence
         evidence={deriveAnswerEvidence({
@@ -378,11 +396,11 @@ describe('AnswerEvidence', () => {
     expect(screen.getByRole('link', { name: '打开网页：网页 1' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: '打开网页：网页 2' })).toBeInTheDocument();
     expect(screen.getByText('未预览 2 个网页')).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: '查看全部搜索来源' })).toBeNull();
+    expect(screen.getByRole('button', { name: '查看全部依据' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: '查看全部参考资料' })).toBeNull();
   });
 
-  it('混合依据中搜索被隐藏时显示搜索侧栏按钮并提示隐藏 URL', () => {
+  it('混合依据中搜索被隐藏时显示统一依据入口并提示隐藏 URL', () => {
     const onOpenSources = vi.fn();
 
     render(
@@ -405,7 +423,7 @@ describe('AnswerEvidence', () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole('button', { name: '查看全部搜索来源' }));
+    fireEvent.click(screen.getByRole('button', { name: '查看全部依据' }));
     expect(onOpenSources).toHaveBeenCalledTimes(1);
     expect(screen.getByText('未预览 1 个网页')).toBeInTheDocument();
   });
