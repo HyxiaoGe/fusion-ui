@@ -10,7 +10,7 @@ vi.mock('@/lib/db/initializeStore', () => ({
 import { Providers } from './providers';
 
 describe('Providers', () => {
-  it('uses a blank startup placeholder while restoring local state', async () => {
+  it('renders children immediately while restoring local state in the background', async () => {
     let resolveInitialize: () => void = () => {};
     initializeStoreFromDBMock.mockReturnValue(
       new Promise<void>((resolve) => {
@@ -24,9 +24,11 @@ describe('Providers', () => {
       </Providers>
     );
 
-    expect(screen.getByTestId('chat-loading-app-shell')).toBeTruthy();
-    expect(screen.queryByTestId('chat-loading-sidebar-row')).toBeNull();
+    expect(screen.getByText('应用内容')).toBeTruthy();
+    expect(screen.queryByTestId('chat-loading-app-shell')).toBeNull();
     expect(screen.queryByText('初始化中...')).toBeNull();
+    expect(initializeStoreFromDBMock).toHaveBeenCalledTimes(1);
+    expect(initializeStoreFromDBMock).toHaveBeenCalledWith(expect.any(Function), { includeChats: false });
 
     resolveInitialize();
     await waitFor(() => expect(screen.getByText('应用内容')).toBeTruthy());
