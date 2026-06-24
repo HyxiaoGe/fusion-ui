@@ -7,7 +7,7 @@ function SuspendedChild(): React.ReactNode {
 }
 
 describe('LazyWrapper', () => {
-  it('uses the unified chat skeleton instead of a generic spinner fallback', () => {
+  it('uses a blank chat placeholder instead of a generic spinner fallback', () => {
     render(
       <LazyWrapper>
         <SuspendedChild />
@@ -15,6 +15,7 @@ describe('LazyWrapper', () => {
     );
 
     expect(screen.getByTestId('chat-loading-surface')).toBeTruthy();
+    expect(screen.queryByTestId('chat-loading-user-bubble')).toBeNull();
     expect(screen.queryByText('加载中...')).toBeNull();
   });
 });

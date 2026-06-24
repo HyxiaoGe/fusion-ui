@@ -10,7 +10,7 @@ vi.mock('@/lib/db/initializeStore', () => ({
 import { Providers } from './providers';
 
 describe('Providers', () => {
-  it('uses the unified app shell skeleton while restoring local state', async () => {
+  it('uses a blank startup placeholder while restoring local state', async () => {
     let resolveInitialize: () => void = () => {};
     initializeStoreFromDBMock.mockReturnValue(
       new Promise<void>((resolve) => {
@@ -25,6 +25,7 @@ describe('Providers', () => {
     );
 
     expect(screen.getByTestId('chat-loading-app-shell')).toBeTruthy();
+    expect(screen.queryByTestId('chat-loading-sidebar-row')).toBeNull();
     expect(screen.queryByText('初始化中...')).toBeNull();
 
     resolveInitialize();
