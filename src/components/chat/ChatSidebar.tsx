@@ -48,6 +48,7 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ onNewChat, activeChatIdOverri
     generateTitle,
     openDeleteDialog,
     openRenameDialog,
+    prefetchConversation,
     renameTargetId,
     renameValue,
     selectConversation,
@@ -271,6 +272,7 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ onNewChat, activeChatIdOverri
         isLoadingMoreServer={isLoadingMore}
         containerRef={containerRef}
         handleSelectChat={selectConversation}
+        handlePrefetchChat={prefetchConversation}
         searchQuery={trimmedSearchQuery || undefined}
         sentinelRef={sentinelRef}
         handleStartEditing={handleStartEditing}

@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAppDispatch } from '@/redux/hooks';
 import { store } from '@/redux/store';
@@ -6,6 +6,7 @@ import {
   removeConversation,
   requestConversationListRefresh,
   setAnimatingTitleId,
+  upsertConversation,
   updateConversationTitle,
 } from '@/redux/slices/conversationSlice';
 import { deleteConversation, getConversation, renameConversation } from '@/lib/api/chat';
@@ -18,6 +19,7 @@ export function useSidebarActions() {
   const dispatch = useAppDispatch();
   const router = useRouter();
   const { toast } = useToast();
+  const prefetchingConversationIdsRef = useRef<Set<string>>(new Set());
   const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
   const [renameTargetId, setRenameTargetId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState('');
@@ -26,6 +28,23 @@ export function useSidebarActions() {
     (id: string) => router.push(`/chat/${id}`),
     [router]
   );
+
+  const prefetchConversation = useCallback(async (id: string) => {
+    const existing = store.getState().conversation.byId[id];
+    if (existing?.messages?.length > 0) return;
+    if (prefetchingConversationIdsRef.current.has(id)) return;
+
+    prefetchingConversationIdsRef.current.add(id);
+    try {
+      const serverData = await getConversation(id);
+      const serverChat = buildChatFromServerConversation(serverData);
+      dispatch(upsertConversation(serverChat));
+    } catch {
+      // 预取失败不打断点击导航；进入会话后仍由 useConversation 正常水合/报错。
+    } finally {
+      prefetchingConversationIdsRef.current.delete(id);
+    }
+  }, [dispatch]);
 
   const openDeleteDialog = useCallback((id: string) => setDeleteTargetId(id), []);
   const closeDeleteDialog = useCallback(() => setDeleteTargetId(null), []);
@@ -107,6 +126,7 @@ export function useSidebarActions() {
     generateTitle,
     openDeleteDialog,
     openRenameDialog,
+    prefetchConversation,
     renameTargetId,
     renameValue,
     selectConversation,

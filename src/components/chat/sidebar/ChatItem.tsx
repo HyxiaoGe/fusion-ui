@@ -20,6 +20,7 @@ interface ChatItemProps {
   isActive: boolean;
   modelNameById: Map<string, string>;
   onSelectChat: (chatId: string) => void;
+  onPrefetchChat?: (chatId: string) => void;
   onStartEditing: (e: React.MouseEvent, chatId: string, currentTitle: string) => void;
   onDeleteChat: (e: React.MouseEvent, chatId: string) => void;
   onGenerateTitle: (e: React.MouseEvent, chatId: string) => void;
@@ -47,6 +48,7 @@ const ChatItem: React.FC<ChatItemProps> = ({
   isActive,
   modelNameById,
   onSelectChat,
+  onPrefetchChat,
   onStartEditing,
   onDeleteChat,
   onGenerateTitle,
@@ -63,6 +65,8 @@ const ChatItem: React.FC<ChatItemProps> = ({
           ? "relative pl-4 bg-muted/50 before:absolute before:left-0 before:top-2 before:bottom-2 before:w-0.5 before:rounded-full before:bg-primary"
           : "hover:bg-black/5 dark:hover:bg-white/10 hover:text-foreground"
       }`}
+      onMouseEnter={() => onPrefetchChat?.(chat.id)}
+      onMouseDown={() => onPrefetchChat?.(chat.id)}
       onClick={() => onSelectChat(chat.id)}
     >
       <div className="flex-1 min-w-0 relative">

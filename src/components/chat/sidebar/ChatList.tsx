@@ -12,6 +12,7 @@ interface ChatListProps {
   containerRef: React.RefObject<HTMLDivElement | null>;
   handleScroll?: () => void;
   handleSelectChat: (chatId: string) => void;
+  handlePrefetchChat?: (chatId: string) => void;
   handleStartEditing: (e: React.MouseEvent, chatId: string, currentTitle: string) => void;
   handleDeleteChat: (e: React.MouseEvent, chatId: string) => void;
   handleGenerateTitle: (e: React.MouseEvent, chatId: string) => void;
@@ -30,6 +31,7 @@ const ChatList: React.FC<ChatListProps> = ({
   containerRef,
   handleScroll,
   handleSelectChat,
+  handlePrefetchChat,
   handleStartEditing,
   handleDeleteChat,
   handleGenerateTitle,
@@ -58,6 +60,7 @@ const ChatList: React.FC<ChatListProps> = ({
               isActive={chat.id === activeChatId}
               modelNameById={modelNameById}
               onSelectChat={handleSelectChat}
+              onPrefetchChat={handlePrefetchChat}
               onStartEditing={handleStartEditing}
               onDeleteChat={handleDeleteChat}
               onGenerateTitle={handleGenerateTitle}
@@ -80,6 +83,7 @@ const ChatList: React.FC<ChatListProps> = ({
                     isActive={chat.id === activeChatId}
                     modelNameById={modelNameById}
                     onSelectChat={handleSelectChat}
+                    onPrefetchChat={handlePrefetchChat}
                     onStartEditing={handleStartEditing}
                     onDeleteChat={handleDeleteChat}
                     onGenerateTitle={handleGenerateTitle}
