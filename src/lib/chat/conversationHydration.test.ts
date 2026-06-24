@@ -139,4 +139,71 @@ describe('conversationHydration', () => {
     expect(chat.messages[1].content[0]).toMatchObject({ type: 'thinking', thinking: 'deep thought' });
     expect(chat.messages[1].content[1]).toMatchObject({ type: 'text', text: 'world' });
   });
+
+  it('hydrates network source metadata from search and url_read blocks', () => {
+    const chat = buildChatFromServerConversation({
+      id: 'chat-4',
+      title: 'Server chat',
+      model_id: 'qwen-max-latest',
+      messages: [
+        {
+          id: 'assistant-1',
+          role: 'assistant',
+          content: [
+            {
+              type: 'search',
+              id: 'search-1',
+              query: 'AI 标准',
+              tool_call_log_id: 'tc-search',
+              sources: [{ title: '旧搜索来源', url: 'https://legacy.example.com' }],
+              status: 'success',
+              source_count: 1,
+              source_refs: [
+                {
+                  kind: 'search',
+                  title: '统一搜索来源',
+                  url: 'https://unified.example.com/search',
+                  tool_call_log_id: 'tc-search',
+                },
+              ],
+            },
+            {
+              type: 'url_read',
+              id: 'url-1',
+              url: 'https://reader.example.com/article',
+              title: '读取来源',
+              status: 'degraded',
+              error_message: 'timeout',
+              source_count: 0,
+              source_refs: [],
+            },
+          ],
+          created_at: '2026-03-14T08:00:02Z',
+        },
+      ],
+    });
+
+    expect(chat.messages[0].content).toEqual([
+      expect.objectContaining({
+        type: 'search',
+        status: 'success',
+        source_count: 1,
+        source_refs: [
+          expect.objectContaining({
+            kind: 'search',
+            title: '统一搜索来源',
+            url: 'https://unified.example.com/search',
+            tool_call_log_id: 'tc-search',
+          }),
+        ],
+      }),
+      expect.objectContaining({
+        type: 'url_read',
+        status: 'degraded',
+        error_message: 'timeout',
+        source_count: 0,
+        source_refs: [],
+      }),
+    ]);
+  });
 });

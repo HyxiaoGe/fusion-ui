@@ -40,12 +40,29 @@ export interface SearchSourceSummary {
   favicon?: string;
 }
 
+export type NetworkSourceStatus = 'success' | 'failed' | 'degraded' | 'interrupted';
+
+export interface SourceReference {
+  kind: 'search' | 'url_read';
+  title: string;
+  url: string;
+  domain?: string;
+  favicon?: string;
+  status?: NetworkSourceStatus;
+  tool_call_log_id?: string;
+  error_message?: string | null;
+}
+
 export interface SearchBlock {
   type: 'search';
   id: string;
   query: string;
   tool_call_log_id?: string;
   sources: SearchSourceSummary[];
+  status?: NetworkSourceStatus;
+  error_message?: string | null;
+  source_count?: number;
+  source_refs?: SourceReference[];
 }
 
 export interface UrlBlock {
@@ -55,6 +72,10 @@ export interface UrlBlock {
   title?: string;
   favicon?: string;
   tool_call_log_id?: string;
+  status?: NetworkSourceStatus;
+  error_message?: string | null;
+  source_count?: number;
+  source_refs?: SourceReference[];
 }
 
 export type ContentBlock = TextBlock | ThinkingBlock | FileBlock | SearchBlock | UrlBlock;

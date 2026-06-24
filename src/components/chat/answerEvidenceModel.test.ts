@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { SearchSourceSummary, UrlBlock } from '@/types/conversation';
+import type { SearchSourceSummary, SourceReference, UrlBlock } from '@/types/conversation';
 import { deriveAnswerEvidence } from './answerEvidenceModel';
 
 const searchSources: SearchSourceSummary[] = [
@@ -30,6 +30,21 @@ const urlBlocks: UrlBlock[] = [
   },
 ];
 
+const sourceRefs: SourceReference[] = [
+  {
+    kind: 'search',
+    title: '统一搜索来源',
+    url: 'https://unified.example.com/search-source',
+    favicon: 'https://unified.example.com/favicon.ico',
+  },
+  {
+    kind: 'url_read',
+    title: '统一读取来源',
+    url: 'https://reader.example.com/unified',
+    domain: 'reader.example.com',
+  },
+];
+
 describe('deriveAnswerEvidence', () => {
   it('无搜索来源和 URL 读取时返回 null', () => {
     expect(deriveAnswerEvidence({ searchSources: [], urlBlocks: [] })).toBeNull();
@@ -51,6 +66,106 @@ describe('deriveAnswerEvidence', () => {
       domain: 'example.com',
       favicon: 'https://example.com/favicon.ico',
     });
+  });
+
+  it('优先使用统一 sourceRefs，避免旧 sources 和 urlBlocks 重复计数', () => {
+    const evidence = deriveAnswerEvidence({
+      sourceRefs,
+      searchSources,
+      urlBlocks,
+    });
+
+    expect(evidence).not.toBeNull();
+    expect(evidence?.summary).toBe('回答依据 · 搜索 1 条 · 读取 1 个网页');
+    expect(evidence?.totalCount).toBe(2);
+    expect(evidence?.items).toEqual([
+      expect.objectContaining({
+        id: 'source-ref-0',
+        kind: 'search_source',
+        title: '统一搜索来源',
+        url: 'https://unified.example.com/search-source',
+        domain: 'unified.example.com',
+      }),
+      expect.objectContaining({
+        id: 'source-ref-1',
+        kind: 'url_read',
+        title: '统一读取来源',
+        url: 'https://reader.example.com/unified',
+        domain: 'reader.example.com',
+      }),
+    ]);
+  });
+
+  it('统一 sourceRefs 中的失败来源不作为正常回答依据', () => {
+    const evidence = deriveAnswerEvidence({
+      sourceRefs: [
+        {
+          kind: 'url_read',
+          title: '失败读取来源',
+          url: 'https://failed.example.com',
+          status: 'failed',
+          error_message: 'timeout',
+        },
+        {
+          kind: 'search',
+          title: '成功搜索来源',
+          url: 'https://success.example.com',
+          status: 'success',
+        },
+      ],
+      searchSources: [],
+      urlBlocks: [],
+    });
+
+    expect(evidence?.summary).toBe('回答依据 · 搜索 1 条');
+    expect(evidence?.items).toEqual([
+      expect.objectContaining({
+        kind: 'search_source',
+        title: '成功搜索来源',
+        url: 'https://success.example.com',
+      }),
+    ]);
+  });
+
+  it('统一 sourceRefs 非空但全部不可用时不回退旧来源', () => {
+    const evidence = deriveAnswerEvidence({
+      sourceRefs: [
+        {
+          kind: 'url_read',
+          title: '降级读取来源',
+          url: 'https://degraded.example.com',
+          status: 'degraded',
+        },
+        {
+          kind: 'url_read',
+          title: '中断读取来源',
+          url: 'https://interrupted.example.com',
+          status: 'interrupted',
+        },
+      ],
+      searchSources,
+      urlBlocks,
+    });
+
+    expect(evidence).toBeNull();
+  });
+
+  it('没有统一来源时不把失败 URL 读取渲染成正常回答依据', () => {
+    const evidence = deriveAnswerEvidence({
+      searchSources: [],
+      urlBlocks: [
+        {
+          type: 'url_read',
+          id: 'url-failed',
+          url: 'https://failed.example.com',
+          title: '读取失败页面',
+          status: 'failed',
+          error_message: 'timeout',
+        },
+      ],
+    });
+
+    expect(evidence).toBeNull();
   });
 
   it('将 URL blocks 转换为 url_read evidence items', () => {

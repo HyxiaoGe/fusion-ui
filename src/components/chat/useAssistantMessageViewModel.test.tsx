@@ -94,6 +94,61 @@ describe('useAssistantMessageViewModel', () => {
     );
   });
 
+  it('历史 assistant 消息优先用统一 source_refs 派生回答依据', () => {
+    const legacySource = {
+      title: '旧搜索来源',
+      url: 'https://legacy.example.com/search',
+    };
+    const message: Message = {
+      id: 'assistant-1',
+      role: 'assistant',
+      content: [
+        {
+          type: 'search',
+          id: 'search-1',
+          query: 'AI 标准',
+          sources: [legacySource],
+          source_refs: [
+            {
+              kind: 'search',
+              title: '统一搜索来源',
+              url: 'https://unified.example.com/search',
+            },
+            {
+              kind: 'url_read',
+              title: '统一读取来源',
+              url: 'https://reader.example.com/article',
+            },
+          ],
+        },
+        {
+          type: 'url_read',
+          id: 'url-1',
+          url: 'https://legacy.example.com/read',
+          title: '旧读取来源',
+        },
+        { type: 'text', id: 'text-1', text: '历史正文。[1]' },
+      ],
+      timestamp: 1,
+    };
+
+    const { result } = renderViewModel(message);
+
+    expect(result.current.answerEvidence?.summary).toBe('回答依据 · 搜索 1 条 · 读取 1 个网页');
+    expect(result.current.answerEvidence?.items).toEqual([
+      expect.objectContaining({
+        kind: 'search_source',
+        title: '统一搜索来源',
+        url: 'https://unified.example.com/search',
+      }),
+      expect.objectContaining({
+        kind: 'url_read',
+        title: '统一读取来源',
+        url: 'https://reader.example.com/article',
+      }),
+    ]);
+  });
+
   it('静态历史消息派生不订阅 stream 状态', () => {
     const message: Message = {
       id: 'assistant-1',
@@ -111,6 +166,43 @@ describe('useAssistantMessageViewModel', () => {
     expect(result.blocksToRender).toBe(message.content);
     expect(result.displayText).toBe('历史正文');
     expect(result.isCurrentlyStreaming).toBe(false);
+  });
+
+  it('静态历史消息同样优先用统一 source_refs 派生回答依据', () => {
+    const result = deriveStaticAssistantMessageViewModel({
+      message: {
+        id: 'assistant-1',
+        role: 'assistant',
+        content: [
+          {
+            type: 'search',
+            id: 'search-1',
+            query: 'AI 标准',
+            sources: [{ title: '旧搜索来源', url: 'https://legacy.example.com/search' }],
+            source_refs: [
+              {
+                kind: 'search',
+                title: '统一搜索来源',
+                url: 'https://unified.example.com/search',
+              },
+            ],
+          },
+          { type: 'text', id: 'text-1', text: '历史正文。[1]' },
+        ],
+        timestamp: 1,
+      },
+      isLoadingQuestions: false,
+      suggestedQuestionsCount: 0,
+    });
+
+    expect(result.answerEvidence?.summary).toBe('回答依据 · 搜索 1 条');
+    expect(result.answerEvidence?.items[0]).toEqual(
+      expect.objectContaining({
+        kind: 'search_source',
+        title: '统一搜索来源',
+        url: 'https://unified.example.com/search',
+      }),
+    );
   });
 
   it('流式最后一条消息从 stream blocks 派生正文', () => {

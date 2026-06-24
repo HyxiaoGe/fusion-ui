@@ -1,4 +1,4 @@
-import type { SearchSourceSummary, UrlBlock } from '@/types/conversation';
+import type { SearchSourceSummary, SourceReference, UrlBlock } from '@/types/conversation';
 
 export type AnswerEvidenceKind = 'search_source' | 'url_read';
 
@@ -34,14 +34,18 @@ export interface AnswerEvidenceModel {
 }
 
 interface DeriveAnswerEvidenceInput {
+  sourceRefs?: SourceReference[];
   searchSources: SearchSourceSummary[];
   urlBlocks: UrlBlock[];
   previewLimit?: number;
 }
 
 export function deriveAnswerEvidence(input: DeriveAnswerEvidenceInput): AnswerEvidenceModel | null {
-  const searchItems = input.searchSources.map(toSearchEvidenceItem);
-  const urlItems = input.urlBlocks.map(toUrlEvidenceItem);
+  const useSourceRefs = Boolean(input.sourceRefs && input.sourceRefs.length > 0);
+  const sourceRefItems = input.sourceRefs?.filter(isUsableSourceRef) ?? [];
+  const unifiedItems = useSourceRefs ? toSourceRefEvidenceItems(sourceRefItems) : null;
+  const searchItems = unifiedItems?.searchItems ?? input.searchSources.map(toSearchEvidenceItem);
+  const urlItems = unifiedItems?.urlItems ?? input.urlBlocks.filter(isSuccessfulUrlBlock).map(toUrlEvidenceItem);
   const items = [...searchItems, ...urlItems];
 
   if (items.length === 0) {
@@ -91,8 +95,63 @@ function toUrlEvidenceItem(block: UrlBlock): UrlReadAnswerEvidenceItem {
   };
 }
 
+function toSourceRefEvidenceItems(sourceRefs: SourceReference[]): {
+  searchItems: SearchAnswerEvidenceItem[];
+  urlItems: UrlReadAnswerEvidenceItem[];
+} {
+  let searchIndex = 0;
+  return sourceRefs.reduce<{
+    searchItems: SearchAnswerEvidenceItem[];
+    urlItems: UrlReadAnswerEvidenceItem[];
+  }>((acc, source, index) => {
+    const base = {
+      id: `source-ref-${index}`,
+      title: normalizeTitle(source.title, source.url),
+      url: source.url,
+      domain: normalizeDomain(source.domain, source.url),
+      favicon: source.favicon,
+    };
+
+    if (source.kind === 'search') {
+      acc.searchItems.push({
+        ...base,
+        kind: 'search_source',
+        sourceIndex: searchIndex,
+      });
+      searchIndex += 1;
+    } else {
+      acc.urlItems.push({
+        ...base,
+        kind: 'url_read',
+      });
+    }
+
+    return acc;
+  }, { searchItems: [], urlItems: [] });
+}
+
+function isUsableSourceRef(source: SourceReference): boolean {
+  if (!source.url?.trim()) {
+    return false;
+  }
+
+  if (source.kind === 'url_read') {
+    return source.status == null || source.status === 'success';
+  }
+
+  return source.status !== 'failed';
+}
+
+function isSuccessfulUrlBlock(block: UrlBlock): boolean {
+  return block.status == null || block.status === 'success';
+}
+
 function normalizeTitle(title: string | undefined, fallbackUrl: string): string {
   return title?.trim() || fallbackUrl;
+}
+
+function normalizeDomain(domain: string | undefined, fallbackUrl: string): string {
+  return domain?.trim() || deriveDomain(fallbackUrl);
 }
 
 function deriveDomain(url: string): string {

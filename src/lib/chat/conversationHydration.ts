@@ -1,6 +1,7 @@
 import type {
   Conversation, Message, ContentBlock,
-  TextBlock, ThinkingBlock, FileBlock, SearchBlock, SearchSourceSummary, UrlBlock,
+  TextBlock, ThinkingBlock, FileBlock, NetworkSourceStatus, SearchBlock,
+  SearchSourceSummary, SourceReference, UrlBlock,
 } from '@/types/conversation';
 import { parseTimestamp } from '@/lib/utils/parseTimestamp';
 
@@ -16,6 +17,10 @@ interface ServerBlock {
   query?: string;
   tool_call_log_id?: string;
   sources?: SearchSourceSummary[];
+  status?: NetworkSourceStatus;
+  error_message?: string | null;
+  source_count?: number;
+  source_refs?: SourceReference[];
   url?: string;
   title?: string;
   favicon?: string;
@@ -69,6 +74,10 @@ function buildContentBlocks(serverBlocks: ServerBlock[]): ContentBlock[] {
         query: b.query,
         tool_call_log_id: b.tool_call_log_id,
         sources: b.sources ?? [],
+        status: b.status,
+        error_message: b.error_message,
+        source_count: b.source_count,
+        source_refs: b.source_refs,
       } satisfies SearchBlock);
     } else if (b.type === 'url_read' && b.url) {
       blocks.push({
@@ -78,6 +87,10 @@ function buildContentBlocks(serverBlocks: ServerBlock[]): ContentBlock[] {
         title: b.title,
         favicon: b.favicon,
         tool_call_log_id: b.tool_call_log_id,
+        status: b.status,
+        error_message: b.error_message,
+        source_count: b.source_count,
+        source_refs: b.source_refs,
       } satisfies UrlBlock);
     }
   }

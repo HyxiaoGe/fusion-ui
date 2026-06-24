@@ -5,7 +5,7 @@ import { useMemo } from 'react';
 import { useAppSelector } from '@/redux/hooks';
 import { selectStreamContentBlocks } from '@/redux/slices/streamSlice';
 import type { AgentRunState } from '@/types/agentRun';
-import type { ContentBlock, Message, SearchSourceSummary } from '@/types/conversation';
+import type { ContentBlock, Message, SearchSourceSummary, SourceReference, UrlBlock } from '@/types/conversation';
 import { extractTextFromBlocks, extractThinkingFromBlocks } from '@/types/conversation';
 
 import { deriveAssistantActivity } from './assistantActivity';
@@ -66,6 +66,7 @@ export function deriveStaticAssistantMessageViewModel({
   });
   const searchSources = activity.searchBlock?.sources ?? [];
   const answerEvidence = deriveAnswerEvidence({
+    sourceRefs: collectSourceRefs(activity.searchBlock?.source_refs, activity.urlBlocks),
     searchSources,
     urlBlocks: activity.urlBlocks,
   });
@@ -147,10 +148,11 @@ export function useAssistantMessageViewModel({
 
   const answerEvidence = useMemo(
     () => deriveAnswerEvidence({
+      sourceRefs: collectSourceRefs(activity.searchBlock?.source_refs, activity.urlBlocks),
       searchSources,
       urlBlocks: activity.urlBlocks,
     }),
-    [searchSources, activity.urlBlocks],
+    [searchSources, activity.searchBlock?.source_refs, activity.urlBlocks],
   );
 
   const displayText = useMemo(() => extractTextFromBlocks(blocksToRender), [blocksToRender]);
@@ -175,4 +177,16 @@ export function useAssistantMessageViewModel({
     isStreamingReasoning,
     isThinkingPhaseComplete,
   };
+}
+
+function collectSourceRefs(
+  searchSourceRefs: SourceReference[] | undefined,
+  urlBlocks: UrlBlock[],
+): SourceReference[] | undefined {
+  const sourceRefs = [
+    ...(searchSourceRefs ?? []),
+    ...urlBlocks.flatMap(block => block.source_refs ?? []),
+  ];
+
+  return sourceRefs.length > 0 ? sourceRefs : undefined;
 }
