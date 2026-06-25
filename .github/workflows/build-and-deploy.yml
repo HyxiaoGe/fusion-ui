@@ -43,9 +43,9 @@ jobs:
           echo runner_name=${{ runner.name }}>>%GITHUB_OUTPUT%
 
       - name: Push CI/CD active metric
-        continue-on-error: true
         shell: powershell -NoProfile -ExecutionPolicy Bypass -Command ". '{0}'"
         run: |
+          $ProgressPreference = "SilentlyContinue"
           $environment = if ($env:GITHUB_REF_NAME -eq "master") { "dev" } else { "preview" }
           $branchKey = $env:GITHUB_REF_NAME -replace '[^A-Za-z0-9_.-]', '_'
           $now = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
@@ -59,7 +59,12 @@ jobs:
           "@
           $body = (($metrics -replace "`r`n", "`n").Trim() + "`n")
           $bytes = [System.Text.Encoding]::UTF8.GetBytes($body)
-          Invoke-WebRequest -UseBasicParsing -Method Post -Uri "http://192.168.1.10:9092/metrics/job/cicd_active/project_key/fusion-ui/branch_key/$branchKey/environment_key/$environment" -ContentType "text/plain; version=0.0.4" -Body $bytes
+          try {
+            Invoke-WebRequest -UseBasicParsing -Method Post -Uri "http://192.168.1.10:9092/metrics/job/cicd_active/project_key/fusion-ui/branch_key/$branchKey/environment_key/$environment" -ContentType "text/plain; version=0.0.4" -Body $bytes -TimeoutSec 5 | Out-Null
+            Write-Host "CI/CD active metric pushed"
+          } catch {
+            Write-Host "CI/CD active metric push failed, ignored: $($_.Exception.Message)"
+          }
 
       - name: Checkout
         uses: actions/checkout@v6
@@ -182,7 +187,7 @@ jobs:
       - name: Push CI/CD metrics
         if: always()
         run: |
-          bash ~/scripts/push-cicd-metrics.sh \
+          if ! timeout 15s bash ~/scripts/push-cicd-metrics.sh \
             fusion-ui \
             "${{ github.ref_name }}" \
             preview \
@@ -192,7 +197,9 @@ jobs:
             "${{ github.sha }}" \
             "${{ needs.build.outputs.runner_name }}" \
             fusion-ui-preview \
-            "${{ env.DEPLOY_START }}"
+            "${{ env.DEPLOY_START }}"; then
+            echo "CI/CD metrics push failed, ignored"
+          fi
 
   deploy-dev:
     name: Deploy master on dev server
@@ -252,7 +259,7 @@ jobs:
       - name: Push CI/CD metrics
         if: always()
         run: |
-          bash ~/scripts/push-cicd-metrics.sh \
+          if ! timeout 15s bash ~/scripts/push-cicd-metrics.sh \
             fusion-ui \
             "${{ github.ref_name }}" \
             dev \
@@ -262,7 +269,9 @@ jobs:
             "${{ github.sha }}" \
             "${{ needs.build.outputs.runner_name }}" \
             fusion-ui \
-            "${{ env.DEPLOY_START }}"
+            "${{ env.DEPLOY_START }}"; then
+            echo "CI/CD metrics push failed, ignored"
+          fi
 
       - name: 通知飞书(部署结果)
         if: always()

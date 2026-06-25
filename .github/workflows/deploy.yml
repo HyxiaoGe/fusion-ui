@@ -31,4 +31,7 @@ jobs:
 
       - name: Push deploy metrics
         if: always()
-        run: bash ~/scripts/push-deploy-metrics.sh fusion-ui master ${{ job.status }} ${{ env.BUILD_START }}
+        run: |
+          if ! timeout 15s bash ~/scripts/push-deploy-metrics.sh fusion-ui master "${{ job.status }}" "${{ env.BUILD_START }}"; then
+            echo "deploy metrics push failed, ignored"
+          fi
