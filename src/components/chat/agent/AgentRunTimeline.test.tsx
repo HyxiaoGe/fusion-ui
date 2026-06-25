@@ -230,7 +230,7 @@ describe('AgentRunTimeline', () => {
       ],
     }));
 
-    expect(screen.getByText(/搜索降级/)).toBeInTheDocument();
+    expect(screen.getByText(/搜索部分可用/)).toBeInTheDocument();
   });
 
   it('completed 但存在 failed step 时仍渲染 timeline', () => {

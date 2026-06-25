@@ -412,7 +412,7 @@ describe('deriveAssistantActivity', () => {
     });
 
     expect(activity.issue?.toolKind).toBe('url_read');
-    expect(activity.issue?.title).toBe('网页读取失败');
+    expect(activity.issue?.title).toBe('网页暂时无法读取');
     expect(activity.issue?.detail).toBe('未使用该页面内容');
   });
 

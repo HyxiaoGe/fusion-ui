@@ -135,14 +135,15 @@ describe('AgentStepCard', () => {
     expect(screen.getByText('www.semafor.com')).toBeInTheDocument();
   });
 
-  it('failed 工具组默认展开并显示错误信息', () => {
+  it('failed 工具组默认展开但不显示内部错误信息', () => {
     render(<AgentStepCard step={step({
-      toolCalls: [tc({ status: 'failed', resultSummary: undefined, error: 'TIMEOUT: fetch 超时' })],
+      toolCalls: [tc({ status: 'failed', resultSummary: undefined, error: 'reader-service 读取超时，已降级跳过' })],
       status: 'failed',
     })} _isLast={false} />);
 
-    expect(screen.getByText(/搜索失败/)).toBeInTheDocument();
-    expect(screen.getByText(/TIMEOUT/)).toBeInTheDocument();
+    expect(screen.getByText(/搜索未取得可用结果/)).toBeInTheDocument();
+    expect(screen.getByText(/部分搜索结果未能使用/)).toBeInTheDocument();
+    expect(screen.queryByText(/reader-service/)).not.toBeInTheDocument();
   });
 
   it('truncated tool call：默认折叠，展开后显示截断提示', () => {
@@ -159,14 +160,14 @@ describe('AgentStepCard', () => {
     expect(screen.getByText(/截断/)).toBeInTheDocument();
   });
 
-  it('degraded tool call 默认展开并显示降级摘要', () => {
+  it('degraded tool call 默认展开并显示部分可用摘要', () => {
     render(<AgentStepCard step={step({
       toolCalls: [tc({ status: 'degraded', resultSummary: undefined })],
       status: 'completed',
     })} _isLast={false} />);
 
-    expect(screen.getByText(/搜索降级/)).toBeInTheDocument();
-    expect(screen.getByText(/部分结果不可用/)).toBeInTheDocument();
+    expect(screen.getByText(/搜索部分可用/)).toBeInTheDocument();
+    expect(screen.getByText(/部分搜索结果未能使用/)).toBeInTheDocument();
   });
 
   it('interrupted 步骤显示中断摘要', () => {
@@ -176,7 +177,7 @@ describe('AgentStepCard', () => {
     })} _isLast={false} />);
 
     expect(screen.getByText('搜索已中断 · 1 个查询')).toBeInTheDocument();
-    expect(screen.getAllByText('已中断').length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByText('搜索已中断').length).toBeGreaterThanOrEqual(1);
   });
 
   it('running + 0 toolCalls + 0 contentBlockIds 显示 pending（LLM 在思考下一步）', () => {

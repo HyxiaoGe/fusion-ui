@@ -101,7 +101,7 @@ function collectIssueItems(
       kind: 'search',
       title: searchBlock.query,
       status: searchBlock.status,
-      reason: getIssueReason(searchBlock.status, searchBlock.error_message),
+      reason: getIssueReason('search', searchBlock.status, searchBlock.error_message),
     });
   }
 
@@ -115,7 +115,7 @@ function collectIssueItems(
         url: block.url,
         domain: deriveDomain(block.url),
         status: block.status,
-        reason: getIssueReason(block.status, block.error_message),
+        reason: getIssueReason('url_read', block.status, block.error_message),
       });
     }
   });
@@ -133,7 +133,7 @@ function collectSourceRefIssues(sourceRefs: SourceReference[]): AnswerEvidenceSi
       url: ref.url || undefined,
       domain: ref.url ? deriveDomain(ref.url) : undefined,
       status: ref.status as Exclude<AnswerEvidenceSidebarItemStatus, 'success'>,
-      reason: getIssueReason(ref.status, ref.error_message),
+      reason: getIssueReason(ref.kind, ref.status, ref.error_message),
     }));
 }
 
@@ -147,13 +147,45 @@ function isIssueStatus(
   return status === 'failed' || status === 'degraded' || status === 'interrupted';
 }
 
-function getIssueReason(status: NetworkSourceStatus | undefined, errorMessage?: string | null): string {
-  if (errorMessage?.trim()) {
-    return errorMessage.trim();
+function getIssueReason(
+  kind: AnswerEvidenceSidebarItemKind,
+  status: NetworkSourceStatus | undefined,
+  errorMessage?: string | null,
+): string {
+  const rawReason = errorMessage?.trim();
+  if (rawReason === 'url 为空') {
+    return '缺少可读取的网址';
+  }
+
+  if (kind === 'search') {
+    if (status === 'interrupted') {
+      return '搜索已中断';
+    }
+    return '部分搜索结果未能使用';
+  }
+
+  if (kind === 'url_read') {
+    if (status === 'failed') {
+      return '网页暂时无法读取';
+    }
+    if (status === 'degraded') {
+      return '部分网页暂时无法读取';
+    }
+    if (status === 'interrupted') {
+      return '读取已中断';
+    }
+  }
+
+  if (rawReason && !isInternalFailureReason(rawReason)) {
+    return rawReason;
+  }
+
+  if (status === 'failed') {
+    return '网页暂时无法读取';
   }
 
   if (status === 'degraded') {
-    return '部分内容不可用，已降级处理';
+    return '部分网页暂时无法读取';
   }
 
   if (status === 'interrupted') {
@@ -161,6 +193,19 @@ function getIssueReason(status: NetworkSourceStatus | undefined, errorMessage?: 
   }
 
   return '未取得可用内容';
+}
+
+function isInternalFailureReason(reason: string): boolean {
+  const normalized = reason.toLowerCase();
+  return normalized.includes('reader-service')
+    || normalized.includes('web_search')
+    || normalized.includes('url_read')
+    || normalized.includes('timeout')
+    || normalized.includes('超时')
+    || normalized.includes('本轮联网预算')
+    || normalized.includes('已降级跳过')
+    || normalized.includes('降级处理')
+    || normalized.includes('预算');
 }
 
 function normalizeTitle(title: string | undefined, fallback: string): string {

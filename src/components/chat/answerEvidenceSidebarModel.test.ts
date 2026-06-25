@@ -51,7 +51,7 @@ describe('deriveAnswerEvidenceSidebar', () => {
 
   it('collects failed degraded and interrupted url blocks as issue items', () => {
     const urlBlocks: UrlBlock[] = [
-      { type: 'url_read', id: 'u1', url: 'https://failed.example.com', status: 'failed', error_message: 'timeout' },
+      { type: 'url_read', id: 'u1', url: 'https://failed.example.com', status: 'failed', error_message: 'reader-service 读取超时，已降级跳过' },
       { type: 'url_read', id: 'u2', url: 'https://degraded.example.com', status: 'degraded' },
       { type: 'url_read', id: 'u3', url: 'https://interrupted.example.com', status: 'interrupted' },
     ];
@@ -63,11 +63,11 @@ describe('deriveAnswerEvidenceSidebar', () => {
     expect(model?.issueItems[0]).toMatchObject({
       title: 'https://failed.example.com',
       status: 'failed',
-      reason: 'timeout',
+      reason: '网页暂时无法读取',
     });
     expect(model?.issueItems[1]).toMatchObject({
       status: 'degraded',
-      reason: '部分内容不可用，已降级处理',
+      reason: '部分网页暂时无法读取',
     });
     expect(model?.issueItems[2]).toMatchObject({
       status: 'interrupted',
@@ -82,9 +82,9 @@ describe('deriveAnswerEvidenceSidebar', () => {
       query: 'AI 标准',
       sources: [],
       source_refs: [
-        { kind: 'url_read', title: '失败页面', url: 'https://dup.example.com', status: 'failed', error_message: 'timeout' },
-        { kind: 'url_read', title: '重复失败页面', url: 'https://dup.example.com', status: 'failed', error_message: 'timeout' },
-        { kind: 'search', title: '降级搜索', url: 'https://search.example.com', status: 'degraded' },
+        { kind: 'url_read', title: '失败页面', url: 'https://dup.example.com', status: 'failed', error_message: 'reader-service 读取超时，已降级跳过' },
+        { kind: 'url_read', title: '重复失败页面', url: 'https://dup.example.com', status: 'failed', error_message: 'reader-service 读取超时，已降级跳过' },
+        { kind: 'search', title: '降级搜索', url: 'https://search.example.com', status: 'degraded', error_message: 'web_search 已达到本轮联网预算' },
       ],
     };
 
@@ -92,6 +92,23 @@ describe('deriveAnswerEvidenceSidebar', () => {
 
     expect(model?.issueItems).toHaveLength(2);
     expect(model?.issueItems.map(item => item.title)).toEqual(['失败页面', '降级搜索']);
+    expect(model?.issueItems.map(item => item.reason)).toEqual(['网页暂时无法读取', '部分搜索结果未能使用']);
+  });
+
+  it('url_read 失败时不透出 HTTP 状态等底层错误', () => {
+    const searchBlock: SearchBlock = {
+      type: 'search',
+      id: 'search-http',
+      query: 'AI 标准',
+      sources: [],
+      source_refs: [
+        { kind: 'url_read', title: '404 页面', url: 'https://example.com/404', status: 'failed', error_message: 'HTTP 404' },
+      ],
+    };
+
+    const model = deriveAnswerEvidenceSidebar({ answerEvidence: null, searchBlock, urlBlocks: [] });
+
+    expect(model?.issueItems[0].reason).toBe('网页暂时无法读取');
   });
 
   it('returns null when there are no used or issue items', () => {

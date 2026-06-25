@@ -1,5 +1,6 @@
 import type { ToolCallState, ToolCallStatus } from '@/types/agentRun';
 import { getToolMeta } from './toolRegistry';
+import { getToolErrorDisplay } from './toolErrorDisplay';
 
 export type ToolCallGroupKind = 'web_search' | 'url_read' | 'other';
 export type ToolCallGroupStatus =
@@ -124,26 +125,26 @@ function buildSummary(
 ): string {
   if (kind === 'web_search') {
     if (status === 'running') return `正在搜索 · ${count} 个查询`;
-    if (status === 'partial') return `搜索 ${count} 次 · ${failedCount} 次失败`;
-    if (status === 'failed') return `搜索失败 · ${count} 个查询`;
-    if (status === 'degraded') return '搜索降级 · 已跳过外部结果';
+    if (status === 'partial') return `搜索 ${count} 次 · ${failedCount} 次未使用`;
+    if (status === 'failed') return `搜索未取得可用结果 · ${count} 个查询`;
+    if (status === 'degraded') return '搜索部分可用 · 已跳过部分结果';
     if (status === 'interrupted') return `搜索已中断 · ${count} 个查询`;
     return resultCount > 0 ? `搜索 ${count} 次 · 共 ${resultCount} 条结果` : `搜索 ${count} 次`;
   }
 
   if (kind === 'url_read') {
     if (status === 'running') return `正在读取网页 · ${count} 个目标`;
-    if (status === 'partial') return `读取 ${count} 个网页 · ${failedCount} 个失败`;
-    if (status === 'failed') return `网页读取失败 · ${count} 个目标`;
-    if (status === 'degraded') return '网页读取降级 · 已跳过部分页面';
+    if (status === 'partial') return `读取 ${count} 个网页 · ${failedCount} 个未使用`;
+    if (status === 'failed') return `网页暂时无法读取 · ${count} 个目标`;
+    if (status === 'degraded') return '网页读取部分可用 · 已跳过部分页面';
     if (status === 'interrupted') return `网页读取已中断 · ${count} 个目标`;
     return `读取 ${count} 个网页`;
   }
 
   if (status === 'running') return `正在调用工具 · ${count} 个任务`;
-  if (status === 'partial') return `调用 ${count} 个工具 · ${failedCount} 个失败`;
-  if (status === 'failed') return `工具调用失败 · ${count} 个任务`;
-  if (status === 'degraded') return '工具调用降级 · 已跳过部分结果';
+  if (status === 'partial') return `调用 ${count} 个工具 · ${failedCount} 个未使用`;
+  if (status === 'failed') return `工具未取得可用结果 · ${count} 个任务`;
+  if (status === 'degraded') return '工具调用部分可用 · 已跳过部分结果';
   if (status === 'interrupted') return `工具调用已中断 · ${count} 个任务`;
   return `调用 ${count} 个工具`;
 }
@@ -151,10 +152,11 @@ function buildSummary(
 function toGroupDetail(call: ToolCallState): ToolCallGroupDetail {
   const target = getTarget(call);
   const resultTitle = call.resultSummary?.title;
+  const issueText = getToolErrorDisplay(call.toolName, call.status, call.error);
   return {
     id: call.toolCallId,
     primary: target.short,
-    secondary: call.error || resultTitle || getStatusText(call.status),
+    secondary: issueText || resultTitle || getStatusText(call.status),
     status: call.status,
     truncated: call.resultSummary?.truncated === true,
     fullValue: target.full,

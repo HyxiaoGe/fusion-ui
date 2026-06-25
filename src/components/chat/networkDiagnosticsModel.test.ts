@@ -34,7 +34,7 @@ const base: NetworkDiagnosticsResponse = {
       status: 'degraded',
       duration_ms: 3000,
       target: 'https://example.com',
-      reason: 'reader-service 暂时未返回内容',
+      reason: 'reader-service 读取超时，已降级跳过',
     },
     {
       tool_call_log_id: 'log-3',
@@ -51,8 +51,8 @@ describe('deriveNetworkDiagnosticsModel', () => {
   it('生成用户可读摘要和完整联网过程', () => {
     const model = deriveNetworkDiagnosticsModel(base);
 
-    expect(model?.summaryText).toBe('联网诊断 · 搜索 2 次 · 读取 1 个网页 · 用时 4.2s · 异常 2 次');
-    expect(model?.displaySummaryText).toBe('搜索 2 次 · 读取 1 个网页 · 用时 4.2s · 异常 2 次');
+    expect(model?.summaryText).toBe('联网诊断 · 搜索 2 次 · 读取 1 个网页 · 用时 4.2s · 部分来源未使用 2 次');
+    expect(model?.displaySummaryText).toBe('搜索 2 次 · 读取 1 个网页 · 用时 4.2s · 部分来源未使用 2 次');
     expect(model?.processItems).toEqual([
       {
         id: 'log-1',
@@ -68,27 +68,28 @@ describe('deriveNetworkDiagnosticsModel', () => {
         id: 'log-2',
         toolLabel: '读取网页',
         status: 'degraded',
-        statusLabel: '降级',
+        statusLabel: '部分可用',
         target: 'https://example.com',
         resultCount: null,
         durationText: '3.0s',
-        reason: 'reader-service 暂时未返回内容',
+        reason: '网页暂时无法读取',
         detailParts: [],
       },
       {
         id: 'log-3',
         toolLabel: 'custom_fetch',
         status: 'failed',
-        statusLabel: '失败',
+        statusLabel: '未使用',
         target: '自定义工具目标',
         resultCount: null,
         durationText: '耗时未知',
-        reason: '工具超时',
+        reason: '部分来源未能使用',
         detailParts: [],
       },
     ]);
     expect(model?.issueItems).toHaveLength(2);
-    expect(model?.issueItems[0].reason).toContain('reader-service');
+    expect(model?.issueItems[0].reason).toBe('网页暂时无法读取');
+    expect(model?.issueItems[1].reason).toBe('部分来源未能使用');
   });
 
   it('空 diagnostics 不渲染', () => {
@@ -144,7 +145,26 @@ describe('deriveNetworkDiagnosticsModel', () => {
     expect(model?.processItems[0].resultCount).toBeNull();
     expect(model?.processItems[0].detailParts).toEqual([]);
     expect(model?.processItems[1].detailParts).toEqual([
-      '读取原因：需要核实官方原文细节',
+      '读取目的：需要核实官方原文细节',
     ]);
+  });
+
+  it('url_read 失败时不透出 HTTP 状态等底层错误', () => {
+    const model = deriveNetworkDiagnosticsModel({
+      ...base,
+      tools: [
+        {
+          tool_call_log_id: 'log-http',
+          tool_name: 'url_read',
+          status: 'failed',
+          duration_ms: 1200,
+          target: 'https://example.com/not-found',
+          reason: 'HTTP 404',
+        },
+      ],
+    });
+
+    expect(model?.processItems[0].reason).toBe('网页暂时无法读取');
+    expect(model?.issueItems[0].reason).toBe('网页暂时无法读取');
   });
 });

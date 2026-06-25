@@ -150,8 +150,8 @@ describe('AssistantActivityStatus', () => {
             kind: 'degraded',
             toolKind: 'web_search',
             toolName: 'web_search',
-            title: '搜索暂不可用',
-            detail: '已基于现有信息回答',
+            title: '部分搜索结果未能使用',
+            detail: '已基于可用信息回答',
             call: {
               toolCallId: 'tool-1',
               toolName: 'web_search',
@@ -164,8 +164,8 @@ describe('AssistantActivityStatus', () => {
       />,
     );
 
-    expect(screen.getByText('搜索暂不可用')).toBeTruthy();
-    expect(screen.getByText('已基于现有信息回答')).toBeTruthy();
+    expect(screen.getByText('部分搜索结果未能使用')).toBeTruthy();
+    expect(screen.getByText('已基于可用信息回答')).toBeTruthy();
     expect(screen.getByRole('status')).toHaveAttribute('aria-live', 'polite');
   });
 
@@ -178,7 +178,7 @@ describe('AssistantActivityStatus', () => {
             kind: 'failed',
             toolKind: 'web_search',
             toolName: 'web_search',
-            title: '搜索失败',
+            title: '搜索未取得可用结果',
             detail: '本轮回答未使用搜索结果',
             call: {
               toolCallId: 'tool-1',
@@ -193,7 +193,7 @@ describe('AssistantActivityStatus', () => {
     );
 
     expect(screen.getByRole('alert')).toHaveTextContent('生成失败，请重试');
-    expect(screen.queryByText('搜索失败')).toBeNull();
+    expect(screen.queryByText('搜索未取得可用结果')).toBeNull();
     expect(screen.queryByText('本轮回答未使用搜索结果')).toBeNull();
   });
 

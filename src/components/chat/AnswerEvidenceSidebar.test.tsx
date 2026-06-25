@@ -36,14 +36,14 @@ const model: AnswerEvidenceSidebarModel = {
       url: 'https://failed.example.com',
       domain: 'failed.example.com',
       status: 'failed',
-      reason: 'timeout',
+      reason: '网页暂时无法读取',
     },
     {
       id: 'issue-2',
       kind: 'search',
-      title: '降级搜索',
+      title: '未使用搜索',
       status: 'degraded',
-      reason: '部分内容不可用，已降级处理',
+      reason: '部分搜索结果未能使用',
     },
   ],
   isRenderable: true,
@@ -78,10 +78,12 @@ describe('AnswerEvidenceSidebar', () => {
     expect(screen.getByText('搜索来源')).toBeInTheDocument();
     expect(screen.getByAltText('')).toHaveAttribute('src', 'https://search.example.com/favicon.ico');
     expect(screen.getByText('读取来源')).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: '未使用或异常' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: '未使用来源' })).toBeInTheDocument();
     expect(screen.getByText('失败页面')).toBeInTheDocument();
-    expect(screen.getByText('timeout')).toBeInTheDocument();
-    expect(screen.getByText('降级搜索')).toBeInTheDocument();
+    expect(screen.getByText('网页暂时无法读取')).toBeInTheDocument();
+    expect(screen.getByText('未使用搜索')).toBeInTheDocument();
+    expect(screen.getByText('未使用')).toBeInTheDocument();
+    expect(screen.getByText('部分可用')).toBeInTheDocument();
   });
 
   it('渲染联网诊断分区', () => {

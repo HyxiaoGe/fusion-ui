@@ -451,7 +451,7 @@ describe('AssistantMessage', () => {
             id: 'url-failed',
             url: 'https://failed.example.com',
             status: 'failed',
-            error_message: 'timeout',
+            error_message: 'reader-service 读取超时，已降级跳过',
           },
         ],
       },
@@ -462,7 +462,8 @@ describe('AssistantMessage', () => {
     fireEvent.click(screen.getByRole('button', { name: '全部来源' }));
 
     expect(screen.getByTestId('answer-evidence-sidebar')).toBeInTheDocument();
-    expect(screen.getByText('timeout')).toBeInTheDocument();
+    expect(screen.getByText('网页暂时无法读取')).toBeInTheDocument();
+    expect(screen.queryByText(/reader-service/)).not.toBeInTheDocument();
   });
 
   it('用户手动展开思考过程后不会被自动折叠计时器关闭', () => {

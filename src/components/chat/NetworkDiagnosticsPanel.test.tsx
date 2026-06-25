@@ -48,7 +48,7 @@ const diagnostics: NetworkDiagnosticsResponse = {
       status: 'degraded',
       duration_ms: 300,
       target: 'https://example.com',
-      reason: 'reader-service 暂时未返回内容',
+      reason: 'reader-service 读取超时，已降级跳过',
       admin: {
         trace_id: 'trace-2',
         input_params: { url: 'https://example.com' },
@@ -63,7 +63,7 @@ describe('NetworkDiagnosticsPanel', () => {
     render(<NetworkDiagnosticsPanel model={deriveNetworkDiagnosticsModel(diagnostics)} />);
 
     expect(screen.getByRole('heading', { name: '联网过程' })).toBeInTheDocument();
-    expect(screen.getByText('搜索 1 次 · 读取 1 个网页 · 用时 1.5s · 异常 1 次')).toBeInTheDocument();
+    expect(screen.getByText('搜索 1 次 · 读取 1 个网页 · 用时 1.5s · 部分来源未使用 1 次')).toBeInTheDocument();
     expect(screen.getByText('搜索')).toBeInTheDocument();
     expect(screen.getByText('成功')).toBeInTheDocument();
     expect(screen.queryByText('5 条结果')).not.toBeInTheDocument();
@@ -76,8 +76,11 @@ describe('NetworkDiagnosticsPanel', () => {
     expect(screen.queryByText('已达联网预算')).not.toBeInTheDocument();
     expect(screen.getByText('G7 AI')).toBeInTheDocument();
     expect(screen.getByText('读取网页')).toBeInTheDocument();
-    expect(screen.getByText('降级')).toBeInTheDocument();
-    expect(screen.getByText('reader-service 暂时未返回内容')).toBeInTheDocument();
+    expect(screen.getByText('部分可用')).toBeInTheDocument();
+    expect(screen.getByText('网页暂时无法读取')).toBeInTheDocument();
+    expect(screen.queryByText(/reader-service/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/web_search/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/原因：/)).not.toBeInTheDocument();
 
     expect(screen.queryByText('管理员明细')).not.toBeInTheDocument();
     expect(screen.queryByText('trace-1')).not.toBeInTheDocument();

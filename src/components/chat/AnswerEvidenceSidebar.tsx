@@ -143,7 +143,7 @@ export default function AnswerEvidenceSidebar({
 
           {model.issueItems.length > 0 ? (
             <section className="mt-5">
-              <h4 className="mb-2 text-xs font-medium text-foreground">未使用或异常</h4>
+              <h4 className="mb-2 text-xs font-medium text-foreground">未使用来源</h4>
               <div className="space-y-2">
                 {model.issueItems.map(item => (
                   <IssueSourceItem key={item.id} item={item} />
@@ -265,7 +265,7 @@ function IssueSourceItem({ item }: { item: AnswerEvidenceSidebarIssueItem }) {
 }
 
 function StatusBadge({ status }: { status: AnswerEvidenceSidebarIssueItem['status'] }) {
-  const text = status === 'failed' ? '失败' : status === 'degraded' ? '降级' : '中断';
+  const text = status === 'failed' ? '未使用' : status === 'degraded' ? '部分可用' : '中断';
   return (
     <span className={cn(
       'shrink-0 rounded-full border px-1.5 py-0.5 text-[10px]',

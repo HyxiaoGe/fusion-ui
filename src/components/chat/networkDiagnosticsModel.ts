@@ -47,7 +47,7 @@ export function deriveNetworkDiagnosticsModel(
       toolName: item.tool_name,
       title: item.target || getToolLabel(item.tool_name),
       status: item.status,
-      reason: item.reason || getFallbackReason(item.status),
+      reason: getDisplayReason(item),
     }));
 
   return {
@@ -78,7 +78,7 @@ function buildSummaryText(
     + diagnostics.summary.degraded_count
     + diagnostics.summary.interrupted_count;
   if (issueCount > 0) {
-    parts.push(`异常 ${issueCount} 次`);
+    parts.push(`部分来源未使用 ${issueCount} 次`);
   }
   if (parts.length === 0) {
     parts.push(`${diagnostics.summary.total_tool_calls} 次工具调用`);
@@ -93,14 +93,33 @@ function formatDuration(ms: number): string {
   return `${(ms / 1000).toFixed(1)}s`;
 }
 
-function getFallbackReason(status: NetworkDiagnosticsToolItem['status']): string {
-  if (status === 'degraded') {
-    return '部分内容不可用，已降级处理';
+function getDisplayReason(item: NetworkDiagnosticsToolItem): string {
+  if (item.tool_name === 'url_read') {
+    if (item.status === 'interrupted') {
+      return '网页读取已中断';
+    }
+    return '网页暂时无法读取';
   }
-  if (status === 'interrupted') {
+
+  if (item.tool_name === 'web_search') {
+    if (item.status === 'interrupted') {
+      return '搜索已中断';
+    }
+    return '部分搜索结果未能使用';
+  }
+
+  const rawReason = item.reason?.trim();
+  if (rawReason && !isInternalFailureReason(rawReason)) {
+    return rawReason;
+  }
+
+  if (item.status === 'degraded') {
+    return '部分来源未能使用';
+  }
+  if (item.status === 'interrupted') {
     return '工具调用已中断';
   }
-  return '未取得可用内容';
+  return '部分来源未能使用';
 }
 
 function getToolLabel(toolName: string): string {
@@ -116,7 +135,7 @@ function getToolLabel(toolName: string): string {
 function buildProcessItem(item: NetworkDiagnosticsToolItem): NetworkDiagnosticsProcessItem {
   const reason = item.status === 'success'
     ? undefined
-    : item.reason || getFallbackReason(item.status);
+    : getDisplayReason(item);
 
   return {
     id: item.tool_call_log_id,
@@ -137,7 +156,7 @@ function buildDetailParts(item: NetworkDiagnosticsToolItem): string[] {
   }
   if (item.tool_name === 'url_read') {
     const reason = item.status === 'success' ? item.reason?.trim() : '';
-    return reason ? [`读取原因：${reason}`] : [];
+    return reason ? [`读取目的：${reason}`] : [];
   }
   return [];
 }
@@ -147,10 +166,23 @@ function getStatusLabel(status: NetworkDiagnosticsToolItem['status']): string {
     return '成功';
   }
   if (status === 'failed') {
-    return '失败';
+    return '未使用';
   }
   if (status === 'degraded') {
-    return '降级';
+    return '部分可用';
   }
   return '中断';
+}
+
+function isInternalFailureReason(reason: string): boolean {
+  const normalized = reason.toLowerCase();
+  return normalized.includes('reader-service')
+    || normalized.includes('web_search')
+    || normalized.includes('url_read')
+    || normalized.includes('timeout')
+    || normalized.includes('超时')
+    || normalized.includes('本轮联网预算')
+    || normalized.includes('已降级跳过')
+    || normalized.includes('降级处理')
+    || normalized.includes('预算');
 }

@@ -81,7 +81,7 @@ function ProcessItem({ item }: { item: NetworkDiagnosticsProcessItem }) {
       ) : null}
       {item.reason ? (
         <p className="mt-1 text-xs text-muted-foreground">
-          原因：<span>{item.reason}</span>
+          说明：<span>{item.reason}</span>
         </p>
       ) : null}
     </div>

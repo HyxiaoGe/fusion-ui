@@ -53,17 +53,18 @@ describe('ToolCallSummary', () => {
     expect(screen.getByText('AI CEOs pitch G7 leaders')).toBeInTheDocument();
   });
 
-  it('failed details 显示失败目标和失败详情', () => {
+  it('failed details 显示失败目标和用户可读说明', () => {
     render(<ToolCallSummary group={group({
       status: 'failed',
-      summary: '搜索失败 · 2 个查询',
+      summary: '搜索未取得可用结果 · 2 个查询',
       details: [
-        { id: 's1', primary: 'Global AI Standards Forum', secondary: 'TIMEOUT', status: 'failed', truncated: false, fullValue: 'Global AI Standards Forum' },
+        { id: 's1', primary: 'Global AI Standards Forum', secondary: '部分搜索结果未能使用', status: 'failed', truncated: false, fullValue: 'Global AI Standards Forum' },
       ],
     })} mode="details" />);
 
     expect(screen.getByText('Global AI Standards Forum')).toBeInTheDocument();
-    expect(screen.getByText('TIMEOUT')).toBeInTheDocument();
+    expect(screen.getByText('部分搜索结果未能使用')).toBeInTheDocument();
+    expect(screen.queryByText(/TIMEOUT/)).not.toBeInTheDocument();
   });
 
   it('running summary 显示 spinner 和运行中文案', () => {

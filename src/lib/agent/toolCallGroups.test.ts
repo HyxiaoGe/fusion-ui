@@ -56,15 +56,15 @@ describe('groupToolCalls', () => {
   it('同组存在成功和失败时显示 partial 并默认展开详情', () => {
     const groups = groupToolCalls([
       tc({ toolCallId: 's1', status: 'success' }),
-      tc({ toolCallId: 's2', status: 'failed', resultSummary: undefined, error: 'TIMEOUT: fetch 超时' }),
+      tc({ toolCallId: 's2', status: 'failed', resultSummary: undefined, error: 'reader-service 读取超时，已降级跳过' }),
     ]);
 
     const search = findGroup(groups, 'web_search');
     expect(search.status).toBe('partial');
-    expect(search.summary).toBe('搜索 2 次 · 1 次失败');
+    expect(search.summary).toBe('搜索 2 次 · 1 次未使用');
     expect(search.hasExpandableDetails).toBe(true);
     expect(search.shouldShowDetailsByDefault).toBe(true);
-    expect(search.details[1].secondary).toBe('TIMEOUT: fetch 超时');
+    expect(search.details[1].secondary).toBe('部分搜索结果未能使用');
   });
 
   it('running 优先于其他状态并显示正在搜索', () => {
@@ -81,24 +81,44 @@ describe('groupToolCalls', () => {
 
   it('全部失败时显示失败摘要', () => {
     const groups = groupToolCalls([
-      tc({ toolCallId: 's1', status: 'failed', resultSummary: undefined, error: 'SERVICE_UNAVAILABLE' }),
+      tc({ toolCallId: 's1', status: 'failed', resultSummary: undefined, error: 'web_search 已达到本轮联网预算' }),
       tc({ toolCallId: 's2', status: 'failed', resultSummary: undefined, error: 'TIMEOUT' }),
     ]);
 
     const search = findGroup(groups, 'web_search');
     expect(search.status).toBe('failed');
-    expect(search.summary).toBe('搜索失败 · 2 个查询');
+    expect(search.summary).toBe('搜索未取得可用结果 · 2 个查询');
     expect(search.shouldShowDetailsByDefault).toBe(true);
+    expect(search.details.map(detail => detail.secondary)).toEqual([
+      '部分搜索结果未能使用',
+      '部分搜索结果未能使用',
+    ]);
   });
 
-  it('degraded 状态显示降级摘要', () => {
+  it('url_read 失败不透出 HTTP 状态等底层错误', () => {
+    const groups = groupToolCalls([
+      tc({
+        toolCallId: 'u1',
+        toolName: 'url_read',
+        status: 'failed',
+        arguments: { url: 'https://example.com/a' },
+        resultSummary: undefined,
+        error: 'HTTP 404',
+      }),
+    ]);
+
+    const read = findGroup(groups, 'url_read');
+    expect(read.details[0].secondary).toBe('网页暂时无法读取');
+  });
+
+  it('degraded 状态显示部分可用摘要', () => {
     const groups = groupToolCalls([
       tc({ toolCallId: 'u1', toolName: 'url_read', status: 'degraded', arguments: { url: 'https://example.com/a' }, resultSummary: undefined }),
     ]);
 
     const read = findGroup(groups, 'url_read');
     expect(read.status).toBe('degraded');
-    expect(read.summary).toBe('网页读取降级 · 已跳过部分页面');
+    expect(read.summary).toBe('网页读取部分可用 · 已跳过部分页面');
     expect(read.shouldShowDetailsByDefault).toBe(true);
   });
 

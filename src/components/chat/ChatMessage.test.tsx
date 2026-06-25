@@ -373,8 +373,8 @@ describe('ChatMessage', () => {
       />,
     );
 
-    expect(screen.getByText('搜索暂不可用')).toBeTruthy();
-    expect(screen.getByText('已基于现有信息回答')).toBeTruthy();
+    expect(screen.getByRole('status')).toHaveTextContent('部分搜索结果未能使用');
+    expect(screen.getByRole('status')).toHaveTextContent('已基于可用信息回答');
     expect(screen.queryByText(/参考 \d+ 篇资料/)).toBeNull();
 
   });
@@ -551,7 +551,7 @@ describe('ChatMessage', () => {
               title: '读取失败页面',
               url: 'https://failed.example.com/article',
               status: 'failed',
-              error_message: 'timeout',
+              error_message: 'reader-service 读取超时，已降级跳过',
             },
             { type: 'text', id: 'text-1', text: '部分来源不可用。' },
           ],
@@ -566,7 +566,8 @@ describe('ChatMessage', () => {
 
     expect(screen.getByRole('dialog', { name: '回答依据' })).toBeInTheDocument();
     expect(screen.getByText('读取失败页面')).toBeInTheDocument();
-    expect(screen.getByText('timeout')).toBeInTheDocument();
+    expect(screen.getByText('网页暂时无法读取')).toBeInTheDocument();
+    expect(screen.queryByText(/reader-service/)).not.toBeInTheDocument();
   });
 
   it('assistant 回复通过 AssistantResponseStack 渲染正文和辅助层', () => {

@@ -225,26 +225,26 @@ function toToolIssue(status: ToolIssueStatus, call: ToolCallState): AssistantToo
 
 function getIssueCopy(status: ToolIssueStatus, toolKind: AssistantToolKind): { title: string; detail: string } {
   if (toolKind === 'web_search' && status === 'degraded') {
-    return { title: '搜索暂不可用', detail: '已基于现有信息回答' };
+    return { title: '部分搜索结果未能使用', detail: '已基于可用信息回答' };
   }
 
   if (toolKind === 'web_search' && status === 'failed') {
-    return { title: '搜索失败', detail: '本轮回答未使用搜索结果' };
+    return { title: '搜索未取得可用结果', detail: '本轮回答未使用搜索结果' };
   }
 
   if (toolKind === 'url_read' && status === 'degraded') {
-    return { title: '网页暂时未返回内容', detail: '已跳过该页面' };
+    return { title: '网页暂时无法读取', detail: '已跳过该页面' };
   }
 
   if (toolKind === 'url_read' && status === 'failed') {
-    return { title: '网页读取失败', detail: '未使用该页面内容' };
+    return { title: '网页暂时无法读取', detail: '未使用该页面内容' };
   }
 
   if (status === 'degraded') {
-    return { title: '工具暂不可用', detail: '已基于现有信息继续回答' };
+    return { title: '部分工具结果未能使用', detail: '已基于可用信息继续回答' };
   }
 
-  return { title: '工具调用失败', detail: '本轮回答未使用该工具结果' };
+  return { title: '工具未取得可用结果', detail: '本轮回答未使用该工具结果' };
 }
 
 function toToolActivity(call: ToolCallState): AssistantToolActivity {
