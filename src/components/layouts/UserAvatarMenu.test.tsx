@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { Provider } from 'react-redux';
 import { configureStore } from '@reduxjs/toolkit';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -44,11 +44,13 @@ function renderMenu(preloadedAuth: unknown) {
     },
   } as any);
 
-  return render(
+  const view = render(
     <Provider store={store}>
       <UserAvatarMenu />
     </Provider>
   );
+
+  return { store, ...view };
 }
 
 describe('UserAvatarMenu', () => {
@@ -123,5 +125,30 @@ describe('UserAvatarMenu', () => {
     });
 
     expect(screen.getByRole('button').textContent).toContain('S');
+  });
+
+  it('已登录用户点击设置菜单会打开设置弹窗状态', () => {
+    const { store } = renderMenu({
+      isAuthenticated: true,
+      token: 'token',
+      status: 'succeeded',
+      error: null,
+      sessionResolved: true,
+      user: {
+        id: 'user-1',
+        username: '18889592303',
+        nickname: 'Sean',
+        avatar: null,
+        email: 'sean@example.com',
+        mobile: null,
+        system_prompt: '',
+        is_superuser: true,
+      },
+    });
+
+    fireEvent.pointerDown(screen.getByRole('button'), { button: 0, ctrlKey: false });
+    fireEvent.click(screen.getByText('设置'));
+
+    expect(store.getState().settings.isSettingsDialogOpen).toBe(true);
   });
 });
