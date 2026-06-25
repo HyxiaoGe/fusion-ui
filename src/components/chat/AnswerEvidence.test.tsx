@@ -1,5 +1,5 @@
-import { fireEvent, render, screen } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { AnswerEvidenceModel } from './answerEvidenceModel';
 import { deriveAnswerEvidence } from './answerEvidenceModel';
 import AnswerEvidence from './AnswerEvidence';
@@ -19,7 +19,29 @@ function evidence(overrides: Partial<AnswerEvidenceModel>): AnswerEvidenceModel 
   };
 }
 
+function mockEvidenceListWidth(width: number) {
+  vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function getRect(this: HTMLElement) {
+    const rectWidth = this.dataset.testid === 'answer-evidence-items' ? width : 0;
+
+    return {
+      x: 0,
+      y: 0,
+      width: rectWidth,
+      height: 0,
+      top: 0,
+      right: rectWidth,
+      bottom: 0,
+      left: 0,
+      toJSON: () => ({}),
+    };
+  });
+}
+
 describe('AnswerEvidence', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
   it('evidence 为 null 且没有侧栏内容时不渲染', () => {
     const { container } = render(
       <AnswerEvidence evidence={null} onSourceClick={vi.fn()} onOpenSources={vi.fn()} />,
@@ -257,8 +279,9 @@ describe('AnswerEvidence', () => {
     expect(screen.getByRole('link', { name: '打开网页：网页标题' })).toBeInTheDocument();
   });
 
-  it('存在更多搜索来源时支持查看全部依据', () => {
+  it('存在更多搜索来源且宽度不足时支持查看全部依据', async () => {
     const onOpenSources = vi.fn();
+    mockEvidenceListWidth(180);
 
     render(
       <AnswerEvidence
@@ -302,13 +325,57 @@ describe('AnswerEvidence', () => {
       />,
     );
 
+    await screen.findByText('未预览 1 条搜索');
     fireEvent.click(screen.getByRole('button', { name: '查看全部依据' }));
     expect(onOpenSources).toHaveBeenCalledTimes(1);
     expect(screen.getByText('查看全部依据')).toBeInTheDocument();
   });
 
-  it('5 条搜索来源默认预览 3 条时用紧凑 chip 提示未预览数量', () => {
+  it('宽度足够时展示全部依据并忽略旧 previewItems 裁剪字段', async () => {
+    mockEvidenceListWidth(1200);
+
+    render(
+      <AnswerEvidence
+        evidence={evidence({
+          items: Array.from({ length: 4 }, (_, index) => ({
+            id: `search-${index}`,
+            kind: 'search_source',
+            title: `搜索 ${index + 1}`,
+            url: `https://search-${index + 1}.example.com`,
+            domain: `search-${index + 1}.example.com`,
+            sourceIndex: index,
+          })),
+          previewItems: [
+            {
+              id: 'search-0',
+              kind: 'search_source',
+              title: '搜索 1',
+              url: 'https://search-1.example.com',
+              domain: 'search-1.example.com',
+              sourceIndex: 0,
+            },
+          ],
+          searchCount: 4,
+          totalCount: 4,
+          hiddenSearchCount: 3,
+          summary: '回答依据 · 搜索 4 条',
+          hasSearchSources: true,
+        })}
+        onSourceClick={vi.fn()}
+        onOpenSources={vi.fn()}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getAllByRole('button', { name: /查看来源：搜索/ })).toHaveLength(4);
+    });
+    expect(screen.queryByText(/未预览/)).toBeNull();
+    expect(screen.queryByRole('button', { name: '查看全部依据' })).toBeNull();
+  });
+
+  it('5 条搜索来源主区域只能容纳 3 条时用紧凑 chip 提示未预览数量', async () => {
     const onOpenSources = vi.fn();
+    mockEvidenceListWidth(560);
 
     render(
       <AnswerEvidence
@@ -318,7 +385,6 @@ describe('AnswerEvidence', () => {
             url: `https://search-${index + 1}.example.com`,
           })),
           urlBlocks: [],
-          previewLimit: 3,
         })}
         onSourceClick={vi.fn()}
         onOpenSources={onOpenSources}
@@ -326,12 +392,14 @@ describe('AnswerEvidence', () => {
     );
 
     expect(screen.getByText('回答依据 · 搜索 5 条')).toBeInTheDocument();
-    expect(screen.getByText('未预览 2 条搜索')).toBeInTheDocument();
+    await screen.findByText('未预览 2 条搜索');
     fireEvent.click(screen.getByRole('button', { name: '查看全部依据' }));
     expect(onOpenSources).toHaveBeenCalledTimes(1);
   });
 
-  it('只有 URL 超过预览上限时显示隐藏网页数量', () => {
+  it('只有 URL 超过主区域宽度时显示隐藏网页数量', async () => {
+    mockEvidenceListWidth(180);
+
     render(
       <AnswerEvidence
         evidence={evidence({
@@ -370,11 +438,13 @@ describe('AnswerEvidence', () => {
       />,
     );
 
-    expect(screen.getByText('未预览 1 个网页')).toBeInTheDocument();
+    await screen.findByText('未预览 1 个网页');
     expect(screen.getByRole('button', { name: '查看全部依据' })).toBeInTheDocument();
   });
 
-  it('混合依据中搜索少 URL 多时补足 URL 外链并提供统一依据入口', () => {
+  it('混合依据中搜索少 URL 多且宽度有限时补足 URL 外链并提供统一依据入口', async () => {
+    mockEvidenceListWidth(560);
+
     render(
       <AnswerEvidence
         evidence={deriveAnswerEvidence({
@@ -385,13 +455,13 @@ describe('AnswerEvidence', () => {
             { type: 'url_read', id: 'url-3', title: '网页 3', url: 'https://three.example.com' },
             { type: 'url_read', id: 'url-4', title: '网页 4', url: 'https://four.example.com' },
           ],
-          previewLimit: 3,
         })}
         onSourceClick={vi.fn()}
         onOpenSources={vi.fn()}
       />,
     );
 
+    await screen.findByText('未预览 2 个网页');
     expect(screen.getAllByRole('link')).toHaveLength(2);
     expect(screen.getByRole('link', { name: '打开网页：网页 1' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: '打开网页：网页 2' })).toBeInTheDocument();
@@ -400,8 +470,9 @@ describe('AnswerEvidence', () => {
     expect(screen.queryByRole('button', { name: '查看全部参考资料' })).toBeNull();
   });
 
-  it('混合依据中搜索被隐藏时显示统一依据入口并提示隐藏 URL', () => {
+  it('混合依据中搜索被隐藏时显示统一依据入口并提示隐藏 URL', async () => {
     const onOpenSources = vi.fn();
+    mockEvidenceListWidth(560);
 
     render(
       <AnswerEvidence
@@ -416,19 +487,21 @@ describe('AnswerEvidence', () => {
             { type: 'url_read', id: 'url-1', title: '网页 1', url: 'https://one.example.com' },
             { type: 'url_read', id: 'url-2', title: '网页 2', url: 'https://two.example.com' },
           ],
-          previewLimit: 3,
         })}
         onSourceClick={vi.fn()}
         onOpenSources={onOpenSources}
       />,
     );
 
+    await screen.findByText('未预览 1 个网页');
     fireEvent.click(screen.getByRole('button', { name: '查看全部依据' }));
     expect(onOpenSources).toHaveBeenCalledTimes(1);
     expect(screen.getByText('未预览 1 个网页')).toBeInTheDocument();
   });
 
-  it('同时隐藏搜索来源和 URL 时两个提示都显示', () => {
+  it('同时隐藏搜索来源和 URL 时两个提示都显示', async () => {
+    mockEvidenceListWidth(560);
+
     render(
       <AnswerEvidence
         evidence={deriveAnswerEvidence({
@@ -443,14 +516,13 @@ describe('AnswerEvidence', () => {
             { type: 'url_read', id: 'url-2', title: '网页 2', url: 'https://two.example.com' },
             { type: 'url_read', id: 'url-3', title: '网页 3', url: 'https://three.example.com' },
           ],
-          previewLimit: 3,
         })}
         onSourceClick={vi.fn()}
         onOpenSources={vi.fn()}
       />,
     );
 
-    expect(screen.getByText('未预览 2 条搜索')).toBeInTheDocument();
+    expect(await screen.findByText('未预览 2 条搜索')).toBeInTheDocument();
     expect(screen.getByText('未预览 2 个网页')).toBeInTheDocument();
   });
 

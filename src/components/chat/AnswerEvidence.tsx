@@ -1,8 +1,10 @@
 'use client';
 
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { ExternalLink, FileSearch, Globe2, Search } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { AnswerEvidenceItem, AnswerEvidenceModel } from './answerEvidenceModel';
+import { layoutAnswerEvidenceItems } from './answerEvidenceLayout';
 
 interface AnswerEvidenceProps {
   evidence: AnswerEvidenceModel | null;
@@ -43,9 +45,66 @@ export default function AnswerEvidence({
     return null;
   }
 
-  const showHiddenSearch = evidence.hiddenSearchCount > 0;
-  const showHiddenUrls = evidence.hiddenUrlCount > 0;
-  const showOpenAll = hasSidebarContent || showHiddenSearch || showHiddenUrls;
+  return (
+    <AnswerEvidenceContent
+      evidence={evidence}
+      onSourceClick={onSourceClick}
+      onOpenSources={onOpenSources}
+      hasSidebarContent={hasSidebarContent}
+    />
+  );
+}
+
+function AnswerEvidenceContent({
+  evidence,
+  onSourceClick,
+  onOpenSources,
+  hasSidebarContent,
+}: {
+  evidence: AnswerEvidenceModel;
+  onSourceClick: (index: number) => void;
+  onOpenSources: () => void;
+  hasSidebarContent: boolean;
+}) {
+  const itemsContainerRef = useRef<HTMLDivElement | null>(null);
+  const [containerWidth, setContainerWidth] = useState(0);
+  const layout = useMemo(
+    () => layoutAnswerEvidenceItems({
+      items: evidence.items,
+      containerWidth,
+    }),
+    [containerWidth, evidence.items],
+  );
+  const showHiddenSearch = layout.hiddenSearchCount > 0;
+  const showHiddenUrls = layout.hiddenUrlCount > 0;
+  const showOpenAll = hasSidebarContent || layout.hasHiddenItems;
+
+  useEffect(() => {
+    const node = itemsContainerRef.current;
+    if (!node) {
+      return;
+    }
+
+    const updateWidth = (width?: number) => {
+      setContainerWidth(Math.max(0, Math.floor(width ?? node.getBoundingClientRect().width)));
+    };
+
+    updateWidth();
+
+    if (typeof ResizeObserver === 'undefined') {
+      return;
+    }
+
+    const observer = new ResizeObserver((entries) => {
+      updateWidth(entries[0]?.contentRect.width);
+    });
+
+    observer.observe(node);
+
+    return () => {
+      observer.disconnect();
+    };
+  }, [evidence.totalCount]);
 
   return (
     <section className="mb-2 rounded-md border border-border/30 bg-transparent px-2.5 py-2 text-xs text-muted-foreground">
@@ -56,10 +115,10 @@ export default function AnswerEvidence({
         </span>
         <div className="flex shrink-0 items-center gap-1.5">
           {showHiddenSearch ? (
-            <EvidenceMetaChip>未预览 {evidence.hiddenSearchCount} 条搜索</EvidenceMetaChip>
+            <EvidenceMetaChip>未预览 {layout.hiddenSearchCount} 条搜索</EvidenceMetaChip>
           ) : null}
           {showHiddenUrls ? (
-            <EvidenceMetaChip>未预览 {evidence.hiddenUrlCount} 个网页</EvidenceMetaChip>
+            <EvidenceMetaChip>未预览 {layout.hiddenUrlCount} 个网页</EvidenceMetaChip>
           ) : null}
           {showOpenAll ? (
             <button
@@ -73,8 +132,12 @@ export default function AnswerEvidence({
           ) : null}
         </div>
       </div>
-      <div className="flex min-w-0 flex-wrap gap-2">
-        {evidence.previewItems.map(item => (
+      <div
+        ref={itemsContainerRef}
+        data-testid="answer-evidence-items"
+        className="flex min-w-0 flex-nowrap gap-2 overflow-hidden"
+      >
+        {layout.visibleItems.map(item => (
           <EvidenceItem
             key={item.id}
             item={item}
@@ -111,7 +174,7 @@ function EvidenceItem({
         onClick={() => {
           onSourceClick(item.sourceIndex);
         }}
-        className="inline-flex min-w-0 max-w-full items-center gap-1.5 rounded-md border border-border/40 bg-background/70 px-2 py-1 text-left transition-colors hover:border-border/60 hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+        className="inline-flex min-w-0 w-44 max-w-full items-center gap-1.5 rounded-md border border-border/40 bg-background/70 px-2 py-1 text-left transition-colors hover:border-border/60 hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
       >
         {content}
       </button>
@@ -124,7 +187,7 @@ function EvidenceItem({
       target="_blank"
       rel="noopener noreferrer"
       aria-label={`打开网页：${item.title}`}
-      className="inline-flex min-w-0 max-w-full items-center gap-1.5 rounded-md border border-border/40 bg-background/70 px-2 py-1 text-left no-underline transition-colors hover:border-border/60 hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+      className="inline-flex min-w-0 w-44 max-w-full items-center gap-1.5 rounded-md border border-border/40 bg-background/70 px-2 py-1 text-left no-underline transition-colors hover:border-border/60 hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
     >
       {content}
       <ExternalLink className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />

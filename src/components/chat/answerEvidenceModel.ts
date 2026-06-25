@@ -55,21 +55,14 @@ export function deriveAnswerEvidence(input: DeriveAnswerEvidenceInput): AnswerEv
     return null;
   }
 
-  const previewLimit = normalizePreviewLimit(input.previewLimit);
-  const previewItems = derivePreviewItems(searchItems, urlItems, previewLimit);
-  const previewSearchCount = previewItems.filter(item => item.kind === 'search_source').length;
-  const previewUrlCount = previewItems.filter(item => item.kind === 'url_read').length;
-  const hiddenSearchCount = Math.max(0, searchItems.length - previewSearchCount);
-  const hiddenUrlCount = Math.max(0, urlItems.length - previewUrlCount);
-
   return {
     items,
-    previewItems,
+    previewItems: items,
     searchCount: searchItems.length,
     urlCount: urlItems.length,
     totalCount: items.length,
-    hiddenSearchCount,
-    hiddenUrlCount,
+    hiddenSearchCount: 0,
+    hiddenUrlCount: 0,
     summary: buildSummary(searchItems.length, urlItems.length, deriveSearchProviderLabel(input.searchProvider)),
     hasSearchSources: searchItems.length > 0,
   };
@@ -211,38 +204,6 @@ function deriveDomain(url: string): string {
   } catch {
     return url;
   }
-}
-
-function normalizePreviewLimit(previewLimit: number | undefined): number {
-  const rawLimit = previewLimit ?? 5;
-
-  if (!Number.isFinite(rawLimit)) {
-    return 5;
-  }
-
-  return Math.max(1, Math.floor(rawLimit));
-}
-
-function derivePreviewItems(
-  searchItems: SearchAnswerEvidenceItem[],
-  urlItems: UrlReadAnswerEvidenceItem[],
-  previewLimit: number,
-): AnswerEvidenceItem[] {
-  if (searchItems.length > 0 && urlItems.length > 0) {
-    if (previewLimit === 1) {
-      return urlItems.slice(0, 1);
-    }
-
-    const searchPreviewCount = Math.min(searchItems.length, previewLimit - 1);
-    const urlPreviewCount = previewLimit - searchPreviewCount;
-
-    return [
-      ...searchItems.slice(0, searchPreviewCount),
-      ...urlItems.slice(0, urlPreviewCount),
-    ];
-  }
-
-  return [...searchItems, ...urlItems].slice(0, previewLimit);
 }
 
 function buildSummary(searchCount: number, urlCount: number, searchProviderLabel?: string): string {

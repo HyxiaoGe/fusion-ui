@@ -342,7 +342,7 @@ describe('deriveAnswerEvidence', () => {
     });
   });
 
-  it('搜索和 URL 同时存在且超过预览上限时保留搜索和首个 URL', () => {
+  it('搜索和 URL 同时存在时 previewItems 兼容字段保留完整 items', () => {
     const evidence = deriveAnswerEvidence({
       searchSources: [
         ...searchSources,
@@ -353,20 +353,22 @@ describe('deriveAnswerEvidence', () => {
       previewLimit: 3,
     });
 
-    expect(evidence?.previewItems).toHaveLength(3);
-    expect(evidence?.previewItems.filter(item => item.kind === 'search_source')).toHaveLength(2);
-    expect(evidence?.previewItems.filter(item => item.kind === 'url_read')).toHaveLength(1);
+    expect(evidence?.items).toHaveLength(5);
+    expect(evidence?.previewItems).toEqual(evidence?.items);
+    expect(evidence?.hiddenSearchCount).toBe(0);
+    expect(evidence?.hiddenUrlCount).toBe(0);
   });
 
-  it('previewLimit 小于 1 时按 1 处理', () => {
+  it('previewLimit 小于 1 时不再裁剪模型层 items', () => {
     const evidence = deriveAnswerEvidence({
       searchSources,
       urlBlocks: [],
       previewLimit: 0,
     });
 
-    expect(evidence?.previewItems).toHaveLength(1);
-    expect(evidence?.previewItems[0]?.id).toBe('search-0');
+    expect(evidence?.previewItems).toEqual(evidence?.items);
+    expect(evidence?.previewItems).toHaveLength(2);
+    expect(evidence?.hiddenSearchCount).toBe(0);
   });
 
   it('previewLimit 默认展示单次搜索返回的 5 条结果', () => {
@@ -410,21 +412,24 @@ describe('deriveAnswerEvidence', () => {
     expect(fiveUrlEvidence?.hiddenUrlCount).toBe(0);
   });
 
-  it('搜索和 URL 同时存在且 previewLimit=1 时只预览第一个 URL', () => {
+  it('搜索和 URL 同时存在且 previewLimit=1 时仍保留完整 items', () => {
     const evidence = deriveAnswerEvidence({
       searchSources,
       urlBlocks,
       previewLimit: 1,
     });
 
-    expect(evidence?.previewItems).toHaveLength(1);
+    expect(evidence?.previewItems).toEqual(evidence?.items);
+    expect(evidence?.previewItems).toHaveLength(4);
     expect(evidence?.previewItems[0]).toMatchObject({
-      id: 'url-url-1',
-      kind: 'url_read',
+      id: 'search-0',
+      kind: 'search_source',
     });
+    expect(evidence?.hiddenSearchCount).toBe(0);
+    expect(evidence?.hiddenUrlCount).toBe(0);
   });
 
-  it('搜索少于预留位时用 URL 补满 mixed 预览', () => {
+  it('搜索少于旧预留位时也不在模型层隐藏 URL', () => {
     const evidence = deriveAnswerEvidence({
       searchSources: searchSources.slice(0, 1),
       urlBlocks: [
@@ -445,28 +450,30 @@ describe('deriveAnswerEvidence', () => {
       previewLimit: 3,
     });
 
-    expect(evidence?.previewItems).toHaveLength(3);
+    expect(evidence?.previewItems).toEqual(evidence?.items);
+    expect(evidence?.previewItems).toHaveLength(5);
     expect(evidence?.previewItems.filter(item => item.kind === 'search_source')).toHaveLength(1);
-    expect(evidence?.previewItems.filter(item => item.kind === 'url_read')).toHaveLength(2);
-    expect(evidence?.hiddenUrlCount).toBe(2);
+    expect(evidence?.previewItems.filter(item => item.kind === 'url_read')).toHaveLength(4);
+    expect(evidence?.hiddenUrlCount).toBe(0);
     expect(evidence?.hiddenSearchCount).toBe(0);
   });
 
-  it('搜索刚好占满预留位时 mixed 预览保留首个 URL', () => {
+  it('搜索刚好占满旧预留位时也保留全部 URL', () => {
     const evidence = deriveAnswerEvidence({
       searchSources,
       urlBlocks,
       previewLimit: 3,
     });
 
-    expect(evidence?.previewItems).toHaveLength(3);
+    expect(evidence?.previewItems).toEqual(evidence?.items);
+    expect(evidence?.previewItems).toHaveLength(4);
     expect(evidence?.previewItems.filter(item => item.kind === 'search_source')).toHaveLength(2);
-    expect(evidence?.previewItems.filter(item => item.kind === 'url_read')).toHaveLength(1);
-    expect(evidence?.hiddenUrlCount).toBe(1);
+    expect(evidence?.previewItems.filter(item => item.kind === 'url_read')).toHaveLength(2);
+    expect(evidence?.hiddenUrlCount).toBe(0);
     expect(evidence?.hiddenSearchCount).toBe(0);
   });
 
-  it('搜索超过预留位时统计隐藏搜索和隐藏 URL', () => {
+  it('搜索超过旧预留位时不再由模型层统计隐藏依据', () => {
     const evidence = deriveAnswerEvidence({
       searchSources: [
         ...searchSources,
@@ -477,14 +484,15 @@ describe('deriveAnswerEvidence', () => {
       previewLimit: 3,
     });
 
-    expect(evidence?.previewItems).toHaveLength(3);
-    expect(evidence?.previewItems.filter(item => item.kind === 'search_source')).toHaveLength(2);
-    expect(evidence?.previewItems.filter(item => item.kind === 'url_read')).toHaveLength(1);
-    expect(evidence?.hiddenUrlCount).toBe(1);
-    expect(evidence?.hiddenSearchCount).toBe(2);
+    expect(evidence?.previewItems).toEqual(evidence?.items);
+    expect(evidence?.previewItems).toHaveLength(6);
+    expect(evidence?.previewItems.filter(item => item.kind === 'search_source')).toHaveLength(4);
+    expect(evidence?.previewItems.filter(item => item.kind === 'url_read')).toHaveLength(2);
+    expect(evidence?.hiddenUrlCount).toBe(0);
+    expect(evidence?.hiddenSearchCount).toBe(0);
   });
 
-  it('只有 URL 超过上限时统计隐藏网页数量', () => {
+  it('只有 URL 超过旧上限时也保留完整 URL', () => {
     const evidence = deriveAnswerEvidence({
       searchSources: [],
       urlBlocks: [
@@ -505,8 +513,9 @@ describe('deriveAnswerEvidence', () => {
       previewLimit: 3,
     });
 
-    expect(evidence?.previewItems).toHaveLength(3);
-    expect(evidence?.hiddenUrlCount).toBe(1);
+    expect(evidence?.previewItems).toEqual(evidence?.items);
+    expect(evidence?.previewItems).toHaveLength(4);
+    expect(evidence?.hiddenUrlCount).toBe(0);
   });
 
   it('隐藏计数不小于 0', () => {
