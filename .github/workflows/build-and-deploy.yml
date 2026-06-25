@@ -124,7 +124,7 @@ jobs:
             Remove-Item $cacheNext -Recurse -Force
           }
 
-          docker buildx inspect $builder *> $null
+          cmd /c "docker buildx inspect $builder >NUL 2>NUL"
           if ($LASTEXITCODE -ne 0) {
             docker buildx create --name $builder --driver docker-container --use
             if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
