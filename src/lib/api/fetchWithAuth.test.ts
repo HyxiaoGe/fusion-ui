@@ -19,7 +19,7 @@ vi.mock('@/lib/auth/authService', () => ({
   clearAuthStorage: clearAuthStorageMock,
 }));
 
-import fetchWithAuth from './fetchWithAuth';
+import fetchWithAuth, { apiRequest } from './fetchWithAuth';
 
 const res = (status: number) => new Response('{}', { status });
 
@@ -104,5 +104,35 @@ describe('fetchWithAuth (shared-SDK token lifecycle)', () => {
 
     expect(clearAuthStorageMock).toHaveBeenCalledTimes(1);
     expect(new Headers(fetchMock.mock.calls[0][1].headers).get('Authorization')).toBeNull();
+  });
+});
+
+describe('apiRequest', () => {
+  let fetchMock: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    getValidAccessTokenMock.mockResolvedValue('valid-token');
+    fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('将 HTML 错误页转换成可读的 API 错误', async () => {
+    fetchMock.mockResolvedValue(
+      new Response('<!DOCTYPE html><html><body>Bad Gateway</body></html>', {
+        status: 502,
+        headers: { 'Content-Type': 'text/html' },
+      })
+    );
+
+    await expect(apiRequest('/api/admin/search-usage')).rejects.toMatchObject({
+      name: 'ApiError',
+      code: 'BAD_RESPONSE',
+      message: '请求返回了非 JSON 内容',
+    });
   });
 });

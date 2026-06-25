@@ -61,6 +61,18 @@ async function fetchWithAuth(url: string, options: RequestInit = {}): Promise<Re
   return response;
 }
 
+async function readApiResponse<T>(response: Response): Promise<ApiResponse<T>> {
+  try {
+    return (await response.json()) as ApiResponse<T>;
+  } catch {
+    const contentType = response.headers.get('content-type') || '';
+    const message = contentType.includes('json')
+      ? '请求返回了无效 JSON 内容'
+      : '请求返回了非 JSON 内容';
+    throw new ApiError('BAD_RESPONSE', message, '');
+  }
+}
+
 /**
  * 统一 API 请求：自动拆包 {code, data, message, request_id}，
  * 成功返回 data，失败抛出 ApiError。
@@ -69,7 +81,7 @@ async function fetchWithAuth(url: string, options: RequestInit = {}): Promise<Re
  */
 export async function apiRequest<T>(url: string, options: RequestInit = {}): Promise<T> {
   const response = await fetchWithAuth(url, options);
-  const body: ApiResponse<T> = await response.json();
+  const body = await readApiResponse<T>(response);
 
   if (!response.ok || body.code !== 'SUCCESS') {
     throw new ApiError(
