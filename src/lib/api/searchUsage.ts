@@ -10,6 +10,17 @@ export interface ProviderUsage {
   usage_ratio?: number | null;
   billing_period_start?: string | null;
   billing_period_end?: string | null;
+  recorded_usage?: ProviderRecordedUsage | null;
+}
+
+export interface ProviderRecordedUsage {
+  provider: string;
+  available?: boolean;
+  credits_used: number;
+  request_count: number;
+  period_start?: string | null;
+  period_end?: string | null;
+  source?: string | null;
 }
 
 export interface ProviderUsagePeriod {

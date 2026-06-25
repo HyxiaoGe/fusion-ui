@@ -50,6 +50,8 @@ export default function SearchUsageMonitor() {
   }, []);
 
   const firecrawl = data?.firecrawl;
+  const recordedUsage = firecrawl?.recorded_usage;
+  const recordedUsageAvailable = Boolean(recordedUsage && recordedUsage.available !== false);
   const usagePercent = useMemo(() => {
     if (firecrawl?.usage_ratio === null || firecrawl?.usage_ratio === undefined) return null;
     return Math.max(0, Math.min(100, firecrawl.usage_ratio * 100));
@@ -108,11 +110,11 @@ export default function SearchUsageMonitor() {
               <WalletCards className="h-5 w-5 text-primary" />
               Firecrawl 用量
             </CardTitle>
-            <Badge variant="outline">官方余额</Badge>
+            <Badge variant="outline">官方余额 + 系统记录</Badge>
           </div>
         </CardHeader>
         <CardContent className="space-y-4 pt-4">
-          <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
             <div className="rounded-md border p-3">
               <p className="text-xs text-muted-foreground">剩余 credits</p>
               <p className="mt-1 text-2xl font-semibold">{formatNumber(firecrawl.remaining_credits)}</p>
@@ -121,21 +123,29 @@ export default function SearchUsageMonitor() {
               <p className="text-xs text-muted-foreground">账期额度</p>
               <p className="mt-1 text-2xl font-semibold">{formatNumber(firecrawl.plan_credits)}</p>
             </div>
-            <div className="rounded-md border p-3">
-              <p className="text-xs text-muted-foreground">已消耗</p>
-              <p className="mt-1 text-2xl font-semibold">{formatNumber(firecrawl.used_credits)}</p>
-            </div>
           </div>
 
           {usagePercent !== null && (
             <div className="space-y-2">
               <div className="flex items-center justify-between text-sm">
-                <span className="text-muted-foreground">本账期使用比例</span>
-                <span className="font-medium">已用 {usagePercent.toFixed(1)}%</span>
+                <span className="text-muted-foreground">官方额度参考</span>
+                <span className="font-medium">官方已用 {usagePercent.toFixed(1)}%</span>
               </div>
               <Progress value={usagePercent} />
             </div>
           )}
+
+          <div className="rounded-md border bg-muted/10 p-3">
+            <p className="text-xs text-muted-foreground">本系统记录消耗</p>
+            <p className="mt-1 text-2xl font-semibold">
+              {recordedUsageAvailable ? formatNumber(recordedUsage?.credits_used) : "--"}
+            </p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              {recordedUsageAvailable
+                ? `${formatNumber(recordedUsage?.request_count)} 次 Firecrawl 请求`
+                : "记录暂不可用"}
+            </p>
+          </div>
 
           <div className="flex flex-wrap items-center gap-4 text-sm text-muted-foreground">
             <span className="flex items-center gap-2">
@@ -145,7 +155,7 @@ export default function SearchUsageMonitor() {
             {latestCredits(data) !== null && (
               <span className="flex items-center gap-2">
                 <BarChart3 className="h-4 w-4" />
-                历史消耗 {formatNumber(latestCredits(data))} credits
+                官方历史消耗 {formatNumber(latestCredits(data))} credits
               </span>
             )}
           </div>
@@ -154,7 +164,7 @@ export default function SearchUsageMonitor() {
 
       <Card className="border-muted shadow-sm">
         <CardContent className="pt-4 text-sm text-muted-foreground">
-          Brave 暂无官方余额接口，当前只展示 Firecrawl 官方余额。
+          当前展示 Firecrawl 官方余额和本系统 Firecrawl 调用记录。
         </CardContent>
       </Card>
     </div>
