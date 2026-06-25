@@ -117,7 +117,8 @@ jobs:
           $processInfo.UseShellExecute = $false
 
           $process = [System.Diagnostics.Process]::Start($processInfo)
-          $process.StandardInput.WriteLine($env:ACR_PASSWORD)
+          $passwordBytes = [System.Text.Encoding]::UTF8.GetBytes($env:ACR_PASSWORD)
+          $process.StandardInput.BaseStream.Write($passwordBytes, 0, $passwordBytes.Length)
           $process.StandardInput.Close()
           $process.WaitForExit()
 
@@ -210,9 +211,19 @@ jobs:
 
       - name: Cleanup local Docker artifacts
         if: always()
+        shell: powershell -NoProfile -ExecutionPolicy Bypass -Command ". '{0}'"
         run: |
-          docker image rm "%IMAGE_NAME%:%GITHUB_SHA%" 2>NUL || echo local image not found
-          if exist "%RUNNER_TEMP%\fusion-ui-buildx-cache-next" rmdir /s /q "%RUNNER_TEMP%\fusion-ui-buildx-cache-next"
+          $image = "${env:IMAGE_NAME}:${env:GITHUB_SHA}"
+          docker image rm $image 2>$null
+          if ($LASTEXITCODE -ne 0) {
+            Write-Host "local image not found, ignored"
+          }
+
+          $cacheNext = Join-Path $env:RUNNER_TEMP "fusion-ui-buildx-cache-next"
+          if (Test-Path $cacheNext) {
+            Remove-Item $cacheNext -Recurse -Force -ErrorAction SilentlyContinue
+          }
+          exit 0
 
   deploy-preview:
     name: Deploy preview on dev server
