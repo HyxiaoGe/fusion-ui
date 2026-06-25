@@ -108,7 +108,24 @@ jobs:
           ACR_PASSWORD: ${{ secrets.ACR_PASSWORD }}
         run: |
           $ErrorActionPreference = "Stop"
-          $env:ACR_PASSWORD | docker login $env:REGISTRY -u $env:ACR_USERNAME --password-stdin
+          $processInfo = New-Object System.Diagnostics.ProcessStartInfo
+          $processInfo.FileName = "docker"
+          $processInfo.Arguments = "login $env:REGISTRY -u `"$env:ACR_USERNAME`" --password-stdin"
+          $processInfo.RedirectStandardInput = $true
+          $processInfo.RedirectStandardOutput = $true
+          $processInfo.RedirectStandardError = $true
+          $processInfo.UseShellExecute = $false
+
+          $process = [System.Diagnostics.Process]::Start($processInfo)
+          $process.StandardInput.WriteLine($env:ACR_PASSWORD)
+          $process.StandardInput.Close()
+          $process.WaitForExit()
+
+          $stdout = $process.StandardOutput.ReadToEnd()
+          $stderr = $process.StandardError.ReadToEnd()
+          if ($stdout) { Write-Host $stdout.Trim() }
+          if ($stderr) { Write-Host $stderr.Trim() }
+          if ($process.ExitCode -ne 0) { exit $process.ExitCode }
 
       - name: Build Docker image
         shell: powershell -NoProfile -ExecutionPolicy Bypass -Command ". '{0}'"
@@ -194,7 +211,7 @@ jobs:
       - name: Cleanup local Docker artifacts
         if: always()
         run: |
-          docker image rm "%IMAGE_NAME%:%GITHUB_SHA%" 2>NUL
+          docker image rm "%IMAGE_NAME%:%GITHUB_SHA%" 2>NUL || echo local image not found
           if exist "%RUNNER_TEMP%\fusion-ui-buildx-cache-next" rmdir /s /q "%RUNNER_TEMP%\fusion-ui-buildx-cache-next"
 
   deploy-preview:
