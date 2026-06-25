@@ -1,12 +1,55 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { AlertCircle, BarChart3, CalendarDays, Loader2, RefreshCw, WalletCards } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
-import { fetchSearchUsageAPI, type SearchUsageOverview } from "@/lib/api/searchUsage";
+import { fetchSearchUsageAPI, type ProviderRecordedUsageDaily, type SearchUsageOverview } from "@/lib/api/searchUsage";
+
+const SEARCH_USAGE_CACHE_TTL_MS = 60_000;
+
+let cachedSearchUsage: { scope: string; data: SearchUsageOverview } | null = null;
+let cachedSearchUsageAt = 0;
+
+function hashCachePart(value: string): string {
+  let hash = 0;
+  for (let index = 0; index < value.length; index += 1) {
+    hash = (hash * 31 + value.charCodeAt(index)) >>> 0;
+  }
+  return hash.toString(16);
+}
+
+function currentCacheScope(): string {
+  if (typeof window === "undefined") return "server";
+  try {
+    const rawProfile = window.localStorage.getItem("user_profile");
+    if (rawProfile) {
+      const profile = JSON.parse(rawProfile);
+      if (typeof profile?.id === "string" && profile.id.trim()) {
+        return `user:${profile.id}`;
+      }
+    }
+    const token = window.localStorage.getItem("auth_token");
+    if (token) return `token:${hashCachePart(token)}`;
+  } catch {
+    return "unavailable";
+  }
+  return "anonymous";
+}
+
+function getCachedSearchUsage(scope: string): SearchUsageOverview | null {
+  if (!cachedSearchUsage) return null;
+  if (cachedSearchUsage.scope !== scope) return null;
+  if (Date.now() - cachedSearchUsageAt > SEARCH_USAGE_CACHE_TTL_MS) return null;
+  return cachedSearchUsage.data;
+}
+
+function setCachedSearchUsage(scope: string, data: SearchUsageOverview) {
+  cachedSearchUsage = { scope, data };
+  cachedSearchUsageAt = Date.now();
+}
 
 function formatNumber(value: number | null | undefined): string {
   if (value === null || value === undefined) return "--";
@@ -23,31 +66,57 @@ function formatDate(value: string | null | undefined): string {
   return `${yyyy}/${mm}/${dd}`;
 }
 
-function latestCredits(data: SearchUsageOverview | null): number | null {
-  const latest = data?.historical?.periods?.[0];
-  return latest?.total_credits ?? null;
+function formatMonth(value: string | null | undefined): string {
+  if (!value) return "--";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "--";
+  const yyyy = date.getUTCFullYear();
+  const mm = String(date.getUTCMonth() + 1).padStart(2, "0");
+  return `${yyyy}/${mm}`;
+}
+
+function timestamp(value: string): number {
+  const time = new Date(value).getTime();
+  return Number.isNaN(time) ? 0 : time;
+}
+
+function recentDailyUsage(daily: ProviderRecordedUsageDaily[] | undefined): ProviderRecordedUsageDaily[] {
+  return [...(daily ?? [])].sort((a, b) => timestamp(b.date) - timestamp(a.date)).slice(0, 5);
 }
 
 export default function SearchUsageMonitor() {
-  const [data, setData] = useState<SearchUsageOverview | null>(null);
-  const [loading, setLoading] = useState(true);
+  const initialScope = currentCacheScope();
+  const initialData = getCachedSearchUsage(initialScope);
+  const [data, setData] = useState<SearchUsageOverview | null>(initialData);
+  const [loading, setLoading] = useState(!initialData);
   const [error, setError] = useState<string | null>(null);
 
-  const load = async () => {
+  const load = useCallback(async (forceRefresh = false) => {
+    const scope = currentCacheScope();
+    const cachedData = forceRefresh ? null : getCachedSearchUsage(scope);
+    if (cachedData) {
+      setData(cachedData);
+      setLoading(false);
+      setError(null);
+      return;
+    }
+
     setLoading(true);
     setError(null);
     try {
-      setData(await fetchSearchUsageAPI());
+      const nextData = await fetchSearchUsageAPI();
+      setCachedSearchUsage(scope, nextData);
+      setData(nextData);
     } catch (err: any) {
       setError(err?.message || "联网用量查询失败");
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
     void load();
-  }, []);
+  }, [load]);
 
   const firecrawl = data?.firecrawl;
   const recordedUsage = firecrawl?.recorded_usage;
@@ -56,6 +125,13 @@ export default function SearchUsageMonitor() {
     if (firecrawl?.usage_ratio === null || firecrawl?.usage_ratio === undefined) return null;
     return Math.max(0, Math.min(100, firecrawl.usage_ratio * 100));
   }, [firecrawl?.usage_ratio]);
+  const historicalPeriods = useMemo(() => {
+    if (!data?.historical?.available) return [];
+    return [...(data.historical.periods ?? [])]
+      .sort((a, b) => timestamp(b.start_date) - timestamp(a.start_date))
+      .slice(0, 6);
+  }, [data?.historical]);
+  const dailyUsage = useMemo(() => recentDailyUsage(recordedUsage?.daily), [recordedUsage?.daily]);
 
   if (loading) {
     return (
@@ -76,7 +152,7 @@ export default function SearchUsageMonitor() {
             <AlertCircle className="h-4 w-4" />
             <span>{error}</span>
           </div>
-          <Button size="sm" variant="outline" onClick={() => void load()}>
+          <Button size="sm" variant="outline" onClick={() => void load(true)}>
             <RefreshCw className="mr-1 h-4 w-4" />
             重试
           </Button>
@@ -110,7 +186,18 @@ export default function SearchUsageMonitor() {
               <WalletCards className="h-5 w-5 text-primary" />
               Firecrawl 用量
             </CardTitle>
-            <Badge variant="outline">官方余额 + 系统记录</Badge>
+            <div className="flex items-center gap-2">
+              <Badge variant="outline">官方余额 + 系统记录</Badge>
+              <Button
+                aria-label="刷新联网用量"
+                size="sm"
+                variant="outline"
+                onClick={() => void load(true)}
+                disabled={loading}
+              >
+                <RefreshCw className="h-4 w-4" />
+              </Button>
+            </div>
           </div>
         </CardHeader>
         <CardContent className="space-y-4 pt-4">
@@ -145,6 +232,18 @@ export default function SearchUsageMonitor() {
                 ? `${formatNumber(recordedUsage?.request_count)} 次 Firecrawl 请求`
                 : "记录暂不可用"}
             </p>
+            {dailyUsage.length > 0 && (
+              <ul className="mt-3 space-y-1 border-t pt-3 text-xs text-muted-foreground">
+                {dailyUsage.map((day) => (
+                  <li key={day.date} className="flex items-center justify-between gap-3">
+                    <span>{formatDate(day.date)}</span>
+                    <span>
+                      {formatNumber(day.credits_used)} credits / {formatNumber(day.request_count)} 次
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
           </div>
 
           <div className="flex flex-wrap items-center gap-4 text-sm text-muted-foreground">
@@ -152,11 +251,26 @@ export default function SearchUsageMonitor() {
               <CalendarDays className="h-4 w-4" />
               {formatDate(firecrawl.billing_period_start)} - {formatDate(firecrawl.billing_period_end)}
             </span>
-            {latestCredits(data) !== null && (
-              <span className="flex items-center gap-2">
-                <BarChart3 className="h-4 w-4" />
-                官方历史消耗 {formatNumber(latestCredits(data))} credits
-              </span>
+          </div>
+
+          <div className="rounded-md border p-3" data-testid="search-usage-history">
+            <div className="mb-2 flex items-center gap-2 text-sm font-medium">
+              <BarChart3 className="h-4 w-4 text-muted-foreground" />
+              官方历史消耗
+            </div>
+            {historicalPeriods.length > 0 ? (
+              <ul className="space-y-2 text-sm">
+                {historicalPeriods.map((period) => (
+                  <li key={`${period.start_date}-${period.end_date}`} className="flex items-center justify-between gap-3">
+                    <span className="text-muted-foreground">{formatMonth(period.start_date)}</span>
+                    <span className="font-medium">{formatNumber(period.total_credits)} credits</span>
+                  </li>
+                ))}
+              </ul>
+            ) : data?.historical?.available === false ? (
+              <p className="text-sm text-muted-foreground">官方历史暂不可用</p>
+            ) : (
+              <p className="text-sm text-muted-foreground">官方历史暂无数据</p>
             )}
           </div>
         </CardContent>

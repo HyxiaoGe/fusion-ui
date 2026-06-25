@@ -18,9 +18,16 @@ export interface ProviderRecordedUsage {
   available?: boolean;
   credits_used: number;
   request_count: number;
+  daily?: ProviderRecordedUsageDaily[];
   period_start?: string | null;
   period_end?: string | null;
   source?: string | null;
+}
+
+export interface ProviderRecordedUsageDaily {
+  date: string;
+  credits_used: number;
+  request_count: number;
 }
 
 export interface ProviderUsagePeriod {
