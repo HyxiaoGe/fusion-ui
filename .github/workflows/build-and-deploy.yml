@@ -102,16 +102,75 @@ jobs:
         run: npm test
 
       - name: Login to ACR
-        uses: docker/login-action@v3
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ secrets.ACR_USERNAME }}
-          password: ${{ secrets.ACR_PASSWORD }}
+        shell: powershell -NoProfile -ExecutionPolicy Bypass -Command ". '{0}'"
+        env:
+          ACR_USERNAME: ${{ secrets.ACR_USERNAME }}
+          ACR_PASSWORD: ${{ secrets.ACR_PASSWORD }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          $env:ACR_PASSWORD | docker login $env:REGISTRY -u $env:ACR_USERNAME --password-stdin
 
       - name: Build Docker image
+        shell: powershell -NoProfile -ExecutionPolicy Bypass -Command ". '{0}'"
         run: |
-          REM Windows 自托管 runner 复用多个项目的 Docker cache，可能在 push 时触发跨仓 blob mount 权限校验。
-          docker build --no-cache --build-arg NEXT_PUBLIC_AUTH_SERVICE_BASE_URL="%NEXT_PUBLIC_AUTH_SERVICE_BASE_URL%" --build-arg NEXT_PUBLIC_AUTH_SERVICE_CLIENT_ID="%NEXT_PUBLIC_AUTH_SERVICE_CLIENT_ID%" --build-arg NEXT_PUBLIC_AUTH_CALLBACK_URL="%NEXT_PUBLIC_AUTH_CALLBACK_URL%" --build-arg API_BACKEND_URL=http://fusion-api:8000 -t "%IMAGE_NAME%:%GITHUB_SHA%" .
+          $ErrorActionPreference = "Stop"
+          $refKey = $env:GITHUB_REF_NAME -replace '[^A-Za-z0-9_.-]', '-'
+          if (-not $refKey) { $refKey = "ref" }
+          $builder = "fusion-ui-ci-$refKey"
+          $cacheBase = if ($env:RUNNER_TOOL_CACHE) { $env:RUNNER_TOOL_CACHE } else { $env:RUNNER_TEMP }
+          $cacheRoot = Join-Path $cacheBase "docker-buildx-cache\fusion-ui\$refKey"
+          $cacheNext = Join-Path $env:RUNNER_TEMP "fusion-ui-buildx-cache-next"
+          $image = "${env:IMAGE_NAME}:${env:GITHUB_SHA}"
+
+          if (Test-Path $cacheNext) {
+            Remove-Item $cacheNext -Recurse -Force
+          }
+
+          docker buildx inspect $builder *> $null
+          if ($LASTEXITCODE -ne 0) {
+            docker buildx create --name $builder --driver docker-container --use
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          } else {
+            docker buildx use $builder
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
+
+          docker buildx inspect --builder $builder --bootstrap
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+          $buildArgs = @(
+            "buildx", "build",
+            "--builder", $builder,
+            "--load",
+            "--provenance=false",
+            "--build-arg", "NEXT_PUBLIC_AUTH_SERVICE_BASE_URL=$env:NEXT_PUBLIC_AUTH_SERVICE_BASE_URL",
+            "--build-arg", "NEXT_PUBLIC_AUTH_SERVICE_CLIENT_ID=$env:NEXT_PUBLIC_AUTH_SERVICE_CLIENT_ID",
+            "--build-arg", "NEXT_PUBLIC_AUTH_CALLBACK_URL=$env:NEXT_PUBLIC_AUTH_CALLBACK_URL",
+            "--build-arg", "API_BACKEND_URL=http://fusion-api:8000",
+            "-t", $image
+          )
+          if (Test-Path $cacheRoot) {
+            $buildArgs += @("--cache-from", "type=local,src=$cacheRoot")
+          }
+          $buildArgs += @("--cache-to", "type=local,dest=$cacheNext,mode=max", ".")
+
+          docker @buildArgs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+          if (Test-Path $cacheNext) {
+            $cacheOld = "$cacheRoot-old"
+            if (Test-Path $cacheOld) {
+              Remove-Item $cacheOld -Recurse -Force
+            }
+            if (Test-Path $cacheRoot) {
+              Move-Item $cacheRoot $cacheOld -Force
+            }
+            New-Item -ItemType Directory -Force -Path (Split-Path $cacheRoot) | Out-Null
+            Move-Item $cacheNext $cacheRoot -Force
+            if (Test-Path $cacheOld) {
+              Remove-Item $cacheOld -Recurse -Force
+            }
+          }
 
       - name: Push Docker image
         shell: powershell -NoProfile -ExecutionPolicy Bypass -Command ". '{0}'"
@@ -136,7 +195,7 @@ jobs:
         if: always()
         run: |
           docker image rm "%IMAGE_NAME%:%GITHUB_SHA%" 2>NUL
-          docker builder prune --filter "until=72h" -f
+          if exist "%RUNNER_TEMP%\fusion-ui-buildx-cache-next" rmdir /s /q "%RUNNER_TEMP%\fusion-ui-buildx-cache-next"
 
   deploy-preview:
     name: Deploy preview on dev server
@@ -182,6 +241,19 @@ jobs:
           EOF
           docker rm -f fusion-ui-design-system-v2 2>/dev/null || true
           docker compose -f docker-compose.fusion-ui-preview.yml up -d
+
+      - name: Smoke check preview deployment
+        run: |
+          for attempt in 1 2 3 4 5 6 7 8 9 10 11 12; do
+            if curl --fail --silent --show-error --max-time 5 http://127.0.0.1:3005/ >/dev/null; then
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "fusion-ui preview smoke check failed"
+          docker ps --filter "name=fusion-ui-preview"
+          docker logs --tail 80 fusion-ui-preview || true
+          exit 1
 
       - name: Cleanup old preview images
         if: always()
@@ -254,6 +326,19 @@ jobs:
           # 兜底：清掉旧 compose project 持有的同名容器，避免首次切换镜像源时容器名冲突
           docker rm -f fusion-ui 2>/dev/null || true
           docker compose -f docker-compose.fusion-ui-ghcr.yml up -d
+
+      - name: Smoke check dev deployment
+        run: |
+          for attempt in 1 2 3 4 5 6 7 8 9 10 11 12; do
+            if curl --fail --silent --show-error --max-time 5 http://127.0.0.1:3004/ >/dev/null; then
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "fusion-ui dev smoke check failed"
+          docker ps --filter "name=fusion-ui"
+          docker logs --tail 80 fusion-ui || true
+          exit 1
 
       - name: Cleanup old images
         if: always()

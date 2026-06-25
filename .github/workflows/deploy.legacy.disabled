@@ -1,3 +1,7 @@
+# 已禁用：旧的 server-side build 部署流程。
+# 当前部署入口是 .github/workflows/build-and-deploy.yml，它会先构建镜像、推送 ACR，再在 dev 服务器拉取镜像部署。
+# 如需恢复此流程，先确认不会绕过镜像制品部署和部署后 smoke check，再改回 .yml 后缀。
+
 name: Deploy to Dev Server
 on:
   workflow_dispatch:
