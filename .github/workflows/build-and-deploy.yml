@@ -102,31 +102,11 @@ jobs:
         run: npm test
 
       - name: Login to ACR
-        shell: powershell -NoProfile -ExecutionPolicy Bypass -Command ". '{0}'"
-        env:
-          ACR_USERNAME: ${{ secrets.ACR_USERNAME }}
-          ACR_PASSWORD: ${{ secrets.ACR_PASSWORD }}
-        run: |
-          $ErrorActionPreference = "Stop"
-          $processInfo = New-Object System.Diagnostics.ProcessStartInfo
-          $processInfo.FileName = "docker"
-          $processInfo.Arguments = "login $env:REGISTRY -u `"$env:ACR_USERNAME`" --password-stdin"
-          $processInfo.RedirectStandardInput = $true
-          $processInfo.RedirectStandardOutput = $true
-          $processInfo.RedirectStandardError = $true
-          $processInfo.UseShellExecute = $false
-
-          $process = [System.Diagnostics.Process]::Start($processInfo)
-          $passwordBytes = [System.Text.Encoding]::UTF8.GetBytes($env:ACR_PASSWORD)
-          $process.StandardInput.BaseStream.Write($passwordBytes, 0, $passwordBytes.Length)
-          $process.StandardInput.Close()
-          $process.WaitForExit()
-
-          $stdout = $process.StandardOutput.ReadToEnd()
-          $stderr = $process.StandardError.ReadToEnd()
-          if ($stdout) { Write-Host $stdout.Trim() }
-          if ($stderr) { Write-Host $stderr.Trim() }
-          if ($process.ExitCode -ne 0) { exit $process.ExitCode }
+        uses: docker/login-action@v4.2.0
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ secrets.ACR_USERNAME }}
+          password: ${{ secrets.ACR_PASSWORD }}
 
       - name: Build Docker image
         shell: powershell -NoProfile -ExecutionPolicy Bypass -Command ". '{0}'"
@@ -211,19 +191,11 @@ jobs:
 
       - name: Cleanup local Docker artifacts
         if: always()
-        shell: powershell -NoProfile -ExecutionPolicy Bypass -Command ". '{0}'"
         run: |
-          $image = "${env:IMAGE_NAME}:${env:GITHUB_SHA}"
-          docker image rm $image 2>$null
-          if ($LASTEXITCODE -ne 0) {
-            Write-Host "local image not found, ignored"
-          }
-
-          $cacheNext = Join-Path $env:RUNNER_TEMP "fusion-ui-buildx-cache-next"
-          if (Test-Path $cacheNext) {
-            Remove-Item $cacheNext -Recurse -Force -ErrorAction SilentlyContinue
-          }
-          exit 0
+          docker image inspect "%IMAGE_NAME%:%GITHUB_SHA%" >NUL 2>NUL
+          if %ERRORLEVEL% EQU 0 docker image rm "%IMAGE_NAME%:%GITHUB_SHA%"
+          if exist "%RUNNER_TEMP%\fusion-ui-buildx-cache-next" rmdir /s /q "%RUNNER_TEMP%\fusion-ui-buildx-cache-next"
+          exit /b 0
 
   deploy-preview:
     name: Deploy preview on dev server
