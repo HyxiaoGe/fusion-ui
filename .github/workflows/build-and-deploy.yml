@@ -163,23 +163,24 @@ jobs:
             }
           }
 
+      - name: Login to ACR
+        uses: docker/login-action@v4.2.0
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ secrets.ACR_USERNAME }}
+          password: ${{ secrets.ACR_PASSWORD }}
+          logout: false
+
       - name: Push Docker image
         shell: powershell -NoProfile -ExecutionPolicy Bypass -Command ". '{0}'"
-        env:
-          ACR_USERNAME: ${{ secrets.ACR_USERNAME }}
-          ACR_PASSWORD: ${{ secrets.ACR_PASSWORD }}
         run: |
           $image = "${env:IMAGE_NAME}:${env:GITHUB_SHA}"
           for ($attempt = 1; $attempt -le 4; $attempt++) {
-            $env:ACR_PASSWORD | docker login $env:REGISTRY -u $env:ACR_USERNAME --password-stdin
+            docker push $image
             $exitCode = $LASTEXITCODE
 
             if ($exitCode -eq 0) {
-              docker push $image
-              $exitCode = $LASTEXITCODE
-              if ($exitCode -eq 0) {
-                exit 0
-              }
+              exit 0
             }
 
             if ($attempt -eq 4) {
@@ -187,7 +188,7 @@ jobs:
             }
 
             $delay = 15 * $attempt
-            Write-Host "docker login/push 失败，第 $attempt 次，${delay}s 后重新登录并重试..."
+            Write-Host "docker push 失败，第 $attempt 次，${delay}s 后重试..."
             Start-Sleep -Seconds $delay
           }
 
