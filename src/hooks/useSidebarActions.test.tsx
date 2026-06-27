@@ -8,6 +8,7 @@ const {
   toastMock,
   getConversationMock,
   buildChatFromServerConversationMock,
+  deleteConversationMock,
 } = vi.hoisted(() => ({
   dispatchMock: vi.fn(),
   getStateMock: vi.fn(),
@@ -15,6 +16,7 @@ const {
   toastMock: vi.fn(),
   getConversationMock: vi.fn(),
   buildChatFromServerConversationMock: vi.fn(),
+  deleteConversationMock: vi.fn(),
 }));
 
 vi.mock("next/navigation", () => ({
@@ -36,7 +38,7 @@ vi.mock("@/components/ui/toast", () => ({
 }));
 
 vi.mock("@/lib/api/chat", () => ({
-  deleteConversation: vi.fn(),
+  deleteConversation: deleteConversationMock,
   getConversation: getConversationMock,
   renameConversation: vi.fn(),
 }));
@@ -59,6 +61,7 @@ describe("useSidebarActions", () => {
     toastMock.mockClear();
     getConversationMock.mockReset();
     buildChatFromServerConversationMock.mockReset();
+    deleteConversationMock.mockReset();
   });
 
   it("prefetchConversation 在本地没有正文时拉取并写入 Redux", async () => {
@@ -111,5 +114,22 @@ describe("useSidebarActions", () => {
 
     expect(getConversationMock).not.toHaveBeenCalled();
     expect(dispatchMock).not.toHaveBeenCalled();
+  });
+
+  it("删除对话成功后跳转到正式新建对话页", async () => {
+    deleteConversationMock.mockResolvedValue(undefined);
+
+    const { result } = renderHook(() => useSidebarActions());
+
+    act(() => {
+      result.current.openDeleteDialog("chat-a");
+    });
+
+    await act(async () => {
+      await result.current.confirmDelete();
+    });
+
+    expect(deleteConversationMock).toHaveBeenCalledWith("chat-a");
+    expect(routerPushMock).toHaveBeenCalledWith("/chat/new");
   });
 });

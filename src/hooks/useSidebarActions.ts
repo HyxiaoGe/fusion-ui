@@ -12,6 +12,7 @@ import {
 import { deleteConversation, getConversation, renameConversation } from '@/lib/api/chat';
 import { generateChatTitle } from '@/lib/api/title';
 import { buildChatFromServerConversation } from '@/lib/chat/conversationHydration';
+import { CHAT_NEW_PATH } from '@/lib/routes/chatRoutes';
 import { useToast } from '@/components/ui/toast';
 import type { Message } from '@/types/conversation';
 
@@ -55,7 +56,7 @@ export function useSidebarActions() {
       await deleteConversation(deleteTargetId);
       dispatch(removeConversation(deleteTargetId));
       toast({ message: '对话已删除', type: 'success' });
-      router.push('/');
+      router.push(CHAT_NEW_PATH);
     } catch {
       toast({ message: '删除失败，请重试', type: 'error' });
     } finally {
