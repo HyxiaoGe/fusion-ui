@@ -44,6 +44,7 @@ import { useSuggestedQuestionContinuation } from '@/hooks/useSuggestedQuestionCo
 import { useTransientCompletionState } from '@/hooks/useTransientCompletionState';
 import { getRunStatusFromFinishReason } from '@/lib/agent/finishReason';
 import { shouldAutoFetchSuggestedQuestions } from '@/lib/chat/suggestedQuestionTiming';
+import { CHAT_NEW_PATH } from '@/lib/routes/chatRoutes';
 
 const CHAT_EMPTY_STATE = {
   title: '这个会话还没有消息',
@@ -398,7 +399,7 @@ export default function ChatPage() {
                 </button>
               ) : null}
               <button
-                onClick={() => router.push('/')}
+                onClick={() => router.push(CHAT_NEW_PATH)}
                 className="px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90"
               >
                 返回首页

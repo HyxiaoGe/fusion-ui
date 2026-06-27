@@ -286,4 +286,31 @@ describe('ChatSidebar', () => {
     const secondProps = mockChatListProps.mock.calls.at(-1)?.[0];
     expect(secondProps.sortedAndGroupedChats).toBe(firstProps.sortedAndGroupedChats);
   });
+
+  it('pathname 是 /chat/new 时不会把 id 为 new 的会话标记为 active', () => {
+    mockUsePathname.mockReturnValue('/chat/new');
+    mockUseConversationList.mockReturnValue({
+      conversations: [
+        {
+          id: 'new',
+          title: '真实 ID 为 new 的会话',
+          model_id: 'model-a',
+          createdAt: 1_700_000_000_000,
+          updatedAt: 1_700_000_000_000,
+        },
+      ],
+      isLoadingList: false,
+      isLoadingMore: false,
+      loadMore: vi.fn(),
+      pagination: null,
+      searchConversations: vi.fn(),
+      searchResults: null,
+      isSearching: false,
+      searchError: null,
+    });
+
+    render(<ChatSidebar onNewChat={vi.fn()} />);
+
+    expect(screen.getByText('真实 ID 为 new 的会话')).toHaveAttribute('data-active', 'false');
+  });
 });

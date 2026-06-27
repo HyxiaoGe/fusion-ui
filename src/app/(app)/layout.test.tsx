@@ -68,7 +68,7 @@ describe('AppLayout 新建对话过渡', () => {
     );
   });
 
-  it('点击新建对话后立即显示新对话 surface，不继续停留旧会话 children', () => {
+  it('点击新建对话时导航到 /chat/new 并保留当前 children 等待路由切换', () => {
     render(
       <AppLayout>
         <div>旧会话内容</div>
@@ -79,30 +79,24 @@ describe('AppLayout 新建对话过渡', () => {
 
     fireEvent.click(screen.getByRole('button', { name: '新对话' }));
 
-    expect(routerPushMock).toHaveBeenCalledWith('/?new=true&model=model-1');
-    expect(screen.getByRole('button', { name: '新对话' })).toHaveAttribute('aria-pressed', 'true');
-    expect(screen.getByTestId('new-chat-surface')).toBeInTheDocument();
-    expect(screen.queryByText('旧会话内容')).toBeNull();
+    expect(routerPushMock).toHaveBeenCalledWith('/chat/new?model=model-1');
+    expect(homeChatSurfaceMock).not.toHaveBeenCalled();
+    expect(screen.queryByTestId('new-chat-surface')).toBeNull();
+    expect(screen.getByText('旧会话内容')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '新对话' })).toHaveAttribute('aria-pressed', 'false');
   });
 
-  it('新建过渡期间如果路由进入新会话，会恢复渲染当前路由 children', () => {
-    const { rerender } = render(
+  it('pathname 是 /chat/new 时 Sidebar 新建按钮 active', () => {
+    usePathnameMock.mockReturnValue('/chat/new');
+
+    render(
       <AppLayout>
-        <div>旧会话内容</div>
+        <div>新建路由内容</div>
       </AppLayout>
     );
 
-    fireEvent.click(screen.getByRole('button', { name: '新对话' }));
-    expect(screen.getByTestId('new-chat-surface')).toBeInTheDocument();
-
-    usePathnameMock.mockReturnValue('/chat/draft-conv');
-    rerender(
-      <AppLayout>
-        <div>新会话内容</div>
-      </AppLayout>
-    );
-
-    expect(screen.getByText('新会话内容')).toBeInTheDocument();
-    expect(screen.queryByTestId('new-chat-surface')).toBeNull();
+    expect(chatSidebarMock).toHaveBeenLastCalledWith({ isNewChatActive: true });
+    expect(screen.getByRole('button', { name: '新对话' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByText('新建路由内容')).toBeInTheDocument();
   });
 });

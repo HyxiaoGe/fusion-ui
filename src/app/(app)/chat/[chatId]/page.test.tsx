@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Conversation, Message } from '@/types/conversation';
 
@@ -450,5 +450,25 @@ describe('ChatPage 会话切换体验', () => {
     const secondProps = chatMessageListMock.mock.calls.at(-1)?.[0];
 
     expect(secondProps.emptyState).toBe(firstProps.emptyState);
+  });
+
+  it('hydration error 时点击返回首页进入 /chat/new', () => {
+    hydrationById.set('chat-a', { view: 'error', error: '加载失败' });
+
+    render(<ChatPage />);
+
+    fireEvent.click(screen.getByRole('button', { name: '返回首页' }));
+
+    expect(routerPushMock).toHaveBeenCalledWith('/chat/new');
+  });
+
+  it('conversation missing 时点击返回首页进入 /chat/new', () => {
+    hydrationById.set('chat-a', { view: 'ready' });
+
+    render(<ChatPage />);
+
+    fireEvent.click(screen.getByRole('button', { name: '返回首页' }));
+
+    expect(routerPushMock).toHaveBeenCalledWith('/chat/new');
   });
 });

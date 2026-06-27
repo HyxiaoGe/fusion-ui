@@ -14,6 +14,7 @@ import { useSidebarActions } from "@/hooks/useSidebarActions";
 import { useAppSelector, useAppDispatch } from "@/redux/hooks";
 import { setThemeMode } from "@/redux/slices/themeSlice";
 import { useResolvedTheme } from "@/lib/hooks/useResolvedTheme";
+import { getRouteConversationId } from "@/lib/routes/chatRoutes";
 import type { ConversationListItem } from "@/hooks/useConversationList";
 import { formatInTimeZone } from 'date-fns-tz';
 
@@ -67,7 +68,7 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ onNewChat, activeChatIdOverri
     dispatch(setThemeMode(isDark ? 'light' : 'dark'));
   }, [dispatch, isDark]);
 
-  const routeConversationId = pathname?.startsWith('/chat/') ? pathname.split('/chat/')[1] : null;
+  const routeConversationId = getRouteConversationId(pathname);
   const activeChatId = activeChatIdOverride === undefined ? routeConversationId : activeChatIdOverride;
   const containerRef = useRef<HTMLDivElement | null>(null);
   const sentinelRef = useRef<HTMLDivElement | null>(null);

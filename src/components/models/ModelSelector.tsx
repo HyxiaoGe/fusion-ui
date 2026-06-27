@@ -7,6 +7,7 @@ import { setSelectedModel } from "@/redux/slices/modelsSlice";
 import { updateConversationModel } from "@/redux/slices/conversationSlice";
 import { getPreferredModelId } from "@/lib/models/modelPreference";
 import { getRecentModels, addRecentModel } from "@/lib/models/recentModels";
+import { getRouteConversationId } from "@/lib/routes/chatRoutes";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import ModelSelectorTrigger from "./ModelSelectorTrigger";
 import ModelSelectorPanel from "./ModelSelectorPanel";
@@ -27,7 +28,7 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({ onChange, modelId, disabl
   const [isOpen, setIsOpen] = useState(false);
   const [recentModelIds, setRecentModelIds] = useState<string[]>(getRecentModels);
 
-  const activeChatId = pathname.startsWith("/chat/") ? pathname.split("/chat/")[1] : null;
+  const activeChatId = getRouteConversationId(pathname);
   const activeChat = activeChatId ? chats[activeChatId] : null;
   const hasMessages = activeChat?.messages?.some((msg) => msg.role === "user") || false;
 
