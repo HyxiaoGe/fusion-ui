@@ -1,38 +1,50 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import ChatInput from '@/components/chat/ChatInput';
 import HomePage from '@/components/home/HomePage';
-import { useAppSelector } from '@/redux/hooks';
+import { useAppDispatch, useAppSelector } from '@/redux/hooks';
+import { setSelectedModel } from '@/redux/slices/modelsSlice';
 import { useSendMessage } from '@/hooks/useSendMessage';
-import { getFirstEnabledModelId } from '@/lib/models/modelPreference';
+import { getFirstEnabledModelId, getPreferredModelId } from '@/lib/models/modelPreference';
+import { buildChatConversationPath, buildChatNewPath, isChatNewPath } from '@/lib/routes/chatRoutes';
 import type { FileAttachment } from '@/lib/utils/fileHelpers';
 
 export default function HomeChatSurface() {
   const router = useRouter();
+  const pathname = usePathname();
   const searchParams = useSearchParams();
+  const dispatch = useAppDispatch();
   const [inputKey, setInputKey] = useState(() => Date.now());
+  const appliedModelHintRef = useRef<string | null>(null);
   const models = useAppSelector((state) => state.models.models);
   const { sendMessage } = useSendMessage();
+  const modelHint = searchParams?.get('model') ?? null;
 
   useEffect(() => {
-    if (searchParams?.get('new') === 'true') {
-      setInputKey(Date.now());
+    if (!modelHint || appliedModelHintRef.current === modelHint) {
+      return;
     }
-  }, [searchParams]);
 
-  const handleSendMessage = useCallback((content: string, attachments?: FileAttachment[], pendingConversationId?: string) => {
+    const preferredModelId = getPreferredModelId(models, modelHint);
+    if (preferredModelId !== modelHint) {
+      return;
+    }
+
+    appliedModelHintRef.current = modelHint;
+    dispatch(setSelectedModel(modelHint));
+  }, [dispatch, modelHint, models]);
+
+  const handleSendMessage = useCallback((content: string, attachments?: FileAttachment[]) => {
     return sendMessage(
       content,
       {
-        conversationId: pendingConversationId || null,
+        conversationId: null,
         isDraft: true,
-        onDraftCreated: (draftConversationId) => {
-          router.replace(`/chat/${draftConversationId}`);
-        },
+        onDraftCreated: () => {},
         onMaterialized: (serverConversationId) => {
-          router.replace(`/chat/${serverConversationId}`);
+          router.replace(buildChatConversationPath(serverConversationId));
           setInputKey(Date.now());
         },
       },
@@ -41,10 +53,15 @@ export default function HomeChatSurface() {
   }, [router, sendMessage]);
 
   const handleNewChat = useCallback(() => {
-    const modelToUse = searchParams?.get('model') || getFirstEnabledModelId(models);
+    if (isChatNewPath(pathname)) {
+      setInputKey(Date.now());
+      return;
+    }
+
+    const modelToUse = modelHint || getFirstEnabledModelId(models);
     setInputKey(Date.now());
-    router.push(modelToUse ? `/?new=true&model=${modelToUse}` : '/');
-  }, [models, router, searchParams]);
+    router.push(buildChatNewPath(modelToUse));
+  }, [modelHint, models, pathname, router]);
 
   return (
     <div className="h-full flex flex-col relative">
