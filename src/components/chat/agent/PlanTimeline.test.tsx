@@ -54,4 +54,64 @@ describe('PlanTimeline', () => {
     expect(screen.getByText('生成回答')).toBeInTheDocument();
     expect(screen.getByText('回答')).toBeInTheDocument();
   });
+
+  it('已完成 run 不展示历史 snapshot 中残留的 running/pending 状态', () => {
+    const { container } = render(<PlanTimeline run={{
+      ...baseRun,
+      status: 'completed',
+      totalToolCalls: 1,
+      evidence: [{
+        id: 'ev-1',
+        kind: 'web',
+        status: 'used',
+        title: '官方来源',
+        claim: '确认来源',
+        usedByFinalAnswer: true,
+      }],
+      plan: {
+        planId: 'plan-r1',
+        revision: 1,
+        items: [
+          {
+            id: 'understand',
+            title: '理解问题',
+            status: 'running',
+            kind: 'reasoning',
+            toolNames: [],
+            evidenceItemIds: [],
+          },
+          {
+            id: 'search',
+            title: '查找资料',
+            status: 'completed',
+            kind: 'search',
+            summary: '完成 0 个工具调用',
+            toolNames: ['web_search'],
+            evidenceItemIds: ['ev-1'],
+          },
+          {
+            id: 'read',
+            title: '读取关键来源',
+            status: 'pending',
+            kind: 'read',
+            toolNames: [],
+            evidenceItemIds: ['ev-1'],
+          },
+          {
+            id: 'answer',
+            title: '整理回答',
+            status: 'pending',
+            kind: 'answer',
+            toolNames: [],
+            evidenceItemIds: [],
+          },
+        ],
+      },
+    }} />);
+
+    expect(container.querySelector('.animate-spin')).toBeNull();
+    expect(container.querySelectorAll('svg.text-success')).toHaveLength(4);
+    expect(screen.queryByText('完成 0 个工具调用')).not.toBeInTheDocument();
+    expect(screen.getByText('完成 1 个工具调用')).toBeInTheDocument();
+  });
 });

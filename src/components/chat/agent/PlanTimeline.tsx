@@ -4,7 +4,7 @@ import { AlertCircle, CheckCircle2, Circle, Loader2, MinusCircle } from 'lucide-
 import type { AgentPlanItem, AgentRunState } from '@/types/agentRun';
 
 export function PlanTimeline({ run }: { run: AgentRunState }) {
-  const items = run.plan?.items ?? [];
+  const items = getDisplayItems(run);
   if (!items.length) return null;
 
   return (
@@ -38,6 +38,63 @@ function PlanItemRow({ item }: { item: AgentPlanItem }) {
       </div>
     </div>
   );
+}
+
+function getDisplayItems(run: AgentRunState): AgentPlanItem[] {
+  const items = run.plan?.items ?? [];
+  if (!items.length) return items;
+  if (run.status !== 'completed') return items;
+
+  return items.map(item => normalizeCompletedRunItem(run, item));
+}
+
+function normalizeCompletedRunItem(run: AgentRunState, item: AgentPlanItem): AgentPlanItem {
+  const status = normalizeCompletedRunStatus(run, item);
+  const summary = normalizeCompletedRunSummary(run, item);
+  if (status === item.status && summary === item.summary) return item;
+  return { ...item, status, summary };
+}
+
+function normalizeCompletedRunStatus(
+  run: AgentRunState,
+  item: AgentPlanItem,
+): AgentPlanItem['status'] {
+  if (item.status !== 'running' && item.status !== 'pending') return item.status;
+  return shouldTreatAsCompleted(run, item) ? 'completed' : 'skipped';
+}
+
+function shouldTreatAsCompleted(run: AgentRunState, item: AgentPlanItem): boolean {
+  if (item.kind === 'reasoning' || item.kind === 'synthesis' || item.kind === 'answer') {
+    return true;
+  }
+  if (item.kind === 'search') {
+    return hasToolOrEvidence(run, item);
+  }
+  if (item.kind === 'read') {
+    return hasEvidence(run, item);
+  }
+  return true;
+}
+
+function normalizeCompletedRunSummary(
+  run: AgentRunState,
+  item: AgentPlanItem,
+): string | undefined {
+  if (item.summary !== '完成 0 个工具调用') return item.summary;
+  const toolCount = Math.max(run.totalToolCalls, run.toolDigests?.length ?? 0);
+  if (toolCount <= 0) return undefined;
+  return `完成 ${toolCount} 个工具调用`;
+}
+
+function hasToolOrEvidence(run: AgentRunState, item: AgentPlanItem): boolean {
+  return run.totalToolCalls > 0
+    || Boolean(run.toolDigests?.length)
+    || Boolean(item.toolNames.length)
+    || hasEvidence(run, item);
+}
+
+function hasEvidence(run: AgentRunState, item: AgentPlanItem): boolean {
+  return Boolean(item.evidenceItemIds.length || run.evidence?.length);
 }
 
 function getStatusIcon(status: AgentPlanItem['status']) {
