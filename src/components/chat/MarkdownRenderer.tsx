@@ -6,7 +6,6 @@ import rehypeRaw from 'rehype-raw';
 import remarkGfm from 'remark-gfm';
 import CodeBlock from './CodeBlock';
 import type { SearchSourceSummary } from '@/types/conversation';
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 
 interface MarkdownRendererProps {
   content: string;
@@ -78,6 +77,7 @@ function renderWithCitations(
           }}
           className={sharedClass}
           aria-label={`查看参考资料 ${num}：${source.title}`}
+          title={`${source.title} · ${domain}`}
         >
           {num}
         </button>
@@ -87,22 +87,13 @@ function renderWithCitations(
           target="_blank"
           rel="noopener noreferrer"
           className={sharedClass}
+          title={`${source.title} · ${domain}`}
         >
           {num}
         </a>
       );
 
-      parts.push(
-        <TooltipProvider key={`cite-${match.index}`} delayDuration={200}>
-          <Tooltip>
-            <TooltipTrigger asChild>{trigger}</TooltipTrigger>
-            <TooltipContent side="top" className="max-w-[280px]">
-              <p className="text-xs font-medium">{source.title}</p>
-              <p className="text-[10px] text-muted-foreground">{domain}</p>
-            </TooltipContent>
-          </Tooltip>
-        </TooltipProvider>
-      );
+      parts.push(<React.Fragment key={`cite-${match.index}`}>{trigger}</React.Fragment>);
     } else {
       parts.push(`[${num}]`);
     }

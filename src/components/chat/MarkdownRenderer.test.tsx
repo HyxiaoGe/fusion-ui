@@ -27,6 +27,11 @@ const mockSources = [
   { url: 'https://a.com', title: 'Source A', favicon: '' },
   { url: 'https://b.com', title: 'Source B', favicon: '' },
 ];
+const manySources = Array.from({ length: 60 }, (_, index) => ({
+  url: `https://example.com/${index + 1}`,
+  title: `Source ${index + 1}`,
+  favicon: '',
+}));
 
 beforeEach(() => {
   reactMarkdownRenderMock.mockClear();
@@ -161,6 +166,20 @@ describe('MarkdownRenderer — citation 行为（contract §9）', () => {
     // 没有 button / link / cite chip
     expect(container.querySelector('button')).toBeNull();
     expect(container.querySelector('a[aria-label*="参考资料"]')).toBeNull();
+  });
+
+  it('大量引用 chip 不挂载 Radix tooltip trigger，避免 Popper 批量更新', () => {
+    const content = manySources.map((_, index) => `[${index + 1}]`).join(' ');
+    const { container } = render(
+      <MarkdownRenderer
+        content={content}
+        sources={manySources}
+        onCitationClick={vi.fn()}
+      />
+    );
+
+    expect(screen.getAllByRole('button')).toHaveLength(60);
+    expect(container.querySelector('[data-slot="tooltip-trigger"]')).toBeNull();
   });
 });
 
