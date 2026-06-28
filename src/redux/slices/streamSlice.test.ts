@@ -28,6 +28,10 @@ function initial() {
 
 const baseConfig = { maxSteps: 8, maxToolCalls: 20, timeoutS: 300 };
 
+function planStatus(state: ReturnType<typeof initial>, id: string) {
+  return state.currentRun?.plan?.items.find(item => item.id === id)?.status;
+}
+
 describe('streamSlice — agent run timeline', () => {
   it('initRun 创建 currentRun (status=running, lastSequence=0)', () => {
     const state = reducer(initial(), initRun({
@@ -83,6 +87,141 @@ describe('streamSlice — agent run timeline', () => {
     expect(s.currentRun?.plan?.revision).toBe(3);
     expect(s.currentRun?.plan?.items).toHaveLength(1);
     expect(s.currentRun?.plan?.items[0].status).toBe('completed');
+  });
+
+  it('agent plan v2 实时推进搜索、读取、整理回答状态', () => {
+    let s = reducer(initial(), initRun({ runId: 'r1', messageId: 'm1', config: baseConfig, sequence: 0 }));
+    s = reducer(s, applyPlanSnapshot({
+      runId: 'r1',
+      sequence: 1,
+      plan: {
+        planId: 'plan-r1',
+        revision: 1,
+        items: [
+          { id: 'understand', title: '理解问题', status: 'running', kind: 'reasoning', toolNames: [], evidenceItemIds: [] },
+          { id: 'search', title: '查找资料', status: 'pending', kind: 'search', toolNames: ['web_search'], evidenceItemIds: [] },
+          { id: 'read', title: '读取关键来源', status: 'pending', kind: 'read', toolNames: ['web_search'], evidenceItemIds: [] },
+          { id: 'answer', title: '整理回答', status: 'pending', kind: 'answer', toolNames: [], evidenceItemIds: [] },
+        ],
+      },
+    }));
+    s = reducer(s, updatePlanStep({
+      runId: 'r1',
+      sequence: 2,
+      planId: 'plan-r1',
+      revision: 3,
+      item: { id: 'understand', title: '理解问题', status: 'completed', kind: 'reasoning', toolNames: [], evidenceItemIds: [] },
+    }));
+    s = reducer(s, updatePlanStep({
+      runId: 'r1',
+      sequence: 3,
+      planId: 'plan-r1',
+      revision: 4,
+      item: { id: 'search', title: '查找资料', status: 'running', kind: 'search', toolNames: [], evidenceItemIds: [] },
+    }));
+    s = reducer(s, updateRunProgress({
+      runId: 'r1',
+      sequence: 4,
+      progress: {
+        phase: 'researching',
+        label: '正在查找资料',
+        completedSteps: 1,
+        completedToolCalls: 0,
+        maxToolCalls: 20,
+      },
+    }));
+
+    expect(planStatus(s, 'understand')).toBe('completed');
+    expect(planStatus(s, 'search')).toBe('running');
+    expect(planStatus(s, 'read')).toBe('pending');
+    expect(s.currentRun?.progress).toMatchObject({ phase: 'researching', completedToolCalls: 0, maxToolCalls: 20 });
+
+    s = reducer(s, updatePlanStep({
+      runId: 'r1',
+      sequence: 5,
+      planId: 'plan-r1',
+      revision: 5,
+      item: { id: 'search', title: '查找资料', status: 'completed', kind: 'search', toolNames: ['web_search'], evidenceItemIds: [] },
+    }));
+    s = reducer(s, updatePlanStep({
+      runId: 'r1',
+      sequence: 6,
+      planId: 'plan-r1',
+      revision: 6,
+      item: { id: 'read', title: '读取关键来源', status: 'running', kind: 'read', toolNames: [], evidenceItemIds: [] },
+    }));
+    s = reducer(s, updateRunProgress({
+      runId: 'r1',
+      sequence: 7,
+      progress: {
+        phase: 'reading',
+        label: '正在读取关键来源',
+        completedSteps: 2,
+        completedToolCalls: 1,
+        maxToolCalls: 20,
+      },
+    }));
+
+    expect(planStatus(s, 'search')).toBe('completed');
+    expect(planStatus(s, 'read')).toBe('running');
+    expect(planStatus(s, 'answer')).toBe('pending');
+    expect(s.currentRun?.progress).toMatchObject({ phase: 'reading', completedToolCalls: 1, maxToolCalls: 20 });
+
+    s = reducer(s, updatePlanStep({
+      runId: 'r1',
+      sequence: 8,
+      planId: 'plan-r1',
+      revision: 7,
+      item: { id: 'read', title: '读取关键来源', status: 'completed', kind: 'read', toolNames: [], evidenceItemIds: [] },
+    }));
+    s = reducer(s, updatePlanStep({
+      runId: 'r1',
+      sequence: 9,
+      planId: 'plan-r1',
+      revision: 8,
+      item: { id: 'answer', title: '整理回答', status: 'running', kind: 'answer', toolNames: [], evidenceItemIds: [] },
+    }));
+    s = reducer(s, updateRunProgress({
+      runId: 'r1',
+      sequence: 10,
+      progress: {
+        phase: 'synthesizing',
+        label: '正在整理回答',
+        completedSteps: 3,
+        completedToolCalls: 1,
+        maxToolCalls: 20,
+      },
+    }));
+
+    expect(planStatus(s, 'read')).toBe('completed');
+    expect(planStatus(s, 'answer')).toBe('running');
+
+    s = reducer(s, updatePlanStep({
+      runId: 'r1',
+      sequence: 11,
+      planId: 'plan-r1',
+      revision: 9,
+      item: { id: 'answer', title: '整理回答', status: 'completed', kind: 'answer', toolNames: [], evidenceItemIds: [] },
+    }));
+    s = reducer(s, updateRunProgress({
+      runId: 'r1',
+      sequence: 12,
+      progress: {
+        phase: 'answering',
+        label: '已完成回答整理',
+        completedSteps: 4,
+        completedToolCalls: 1,
+        maxToolCalls: 20,
+      },
+    }));
+
+    expect(planStatus(s, 'answer')).toBe('completed');
+    expect(s.currentRun?.progress).toMatchObject({
+      phase: 'answering',
+      completedSteps: 4,
+      completedToolCalls: 1,
+      maxToolCalls: 20,
+    });
   });
 
   it('upsertEvidenceItem 和 upsertToolDigest 不重复', () => {
