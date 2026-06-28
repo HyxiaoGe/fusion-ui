@@ -1,7 +1,12 @@
 import { describe, it, expect } from 'vitest';
 import streamSliceReducer, {
   startStream,
+  applyPlanSnapshot,
   initRun,
+  updatePlanStep,
+  updateRunProgress,
+  upsertEvidenceItem,
+  upsertToolDigest,
   pushStep,
   pushToolCall,
   mergeToolCallDelta,
@@ -32,6 +37,84 @@ describe('streamSlice — agent run timeline', () => {
     expect(state.currentRun?.status).toBe('running');
     expect(state.currentRun?.lastSequence).toBe(0);
     expect(state.currentRun?.steps).toHaveLength(0);
+    expect(state.currentRun?.evidence).toEqual([]);
+    expect(state.currentRun?.toolDigests).toEqual([]);
+  });
+
+  it('updateRunProgress 写入 progress 并按 sequence 幂等', () => {
+    let s = reducer(initial(), initRun({ runId: 'r1', messageId: 'm1', config: baseConfig, sequence: 0 }));
+    s = reducer(s, updateRunProgress({
+      runId: 'r1',
+      sequence: 1,
+      progress: { phase: 'researching', label: '正在搜索相关资料', completedSteps: 1, totalSteps: 4 },
+    }));
+    s = reducer(s, updateRunProgress({
+      runId: 'r1',
+      sequence: 1,
+      progress: { phase: 'answering', label: '旧事件不应覆盖' },
+    }));
+
+    expect(s.currentRun?.progress?.label).toBe('正在搜索相关资料');
+    expect(s.currentRun?.lastSequence).toBe(1);
+  });
+
+  it('plan reducers 按 revision 更新并忽略旧 revision', () => {
+    let s = reducer(initial(), initRun({ runId: 'r1', messageId: 'm1', config: baseConfig, sequence: 0 }));
+    s = reducer(s, applyPlanSnapshot({
+      runId: 'r1',
+      sequence: 1,
+      plan: { planId: 'plan-r1', revision: 2, items: [] },
+    }));
+    s = reducer(s, updatePlanStep({
+      runId: 'r1',
+      sequence: 2,
+      planId: 'plan-r1',
+      revision: 2,
+      item: { id: 'search', title: '搜索资料', status: 'running', kind: 'search', toolNames: [], evidenceItemIds: [] },
+    }));
+    s = reducer(s, updatePlanStep({
+      runId: 'r1',
+      sequence: 3,
+      planId: 'plan-r1',
+      revision: 3,
+      item: { id: 'search', title: '搜索资料', status: 'completed', kind: 'search', toolNames: ['web_search'], evidenceItemIds: ['ev-1'] },
+    }));
+
+    expect(s.currentRun?.plan?.revision).toBe(3);
+    expect(s.currentRun?.plan?.items).toHaveLength(1);
+    expect(s.currentRun?.plan?.items[0].status).toBe('completed');
+  });
+
+  it('upsertEvidenceItem 和 upsertToolDigest 不重复', () => {
+    let s = reducer(initial(), initRun({ runId: 'r1', messageId: 'm1', config: baseConfig, sequence: 0 }));
+    s = reducer(s, upsertEvidenceItem({
+      runId: 'r1',
+      sequence: 1,
+      evidence: { id: 'ev-1', kind: 'web', status: 'candidate', title: '来源', claim: '发现', usedByFinalAnswer: false },
+    }));
+    s = reducer(s, upsertEvidenceItem({
+      runId: 'r1',
+      sequence: 2,
+      evidence: { id: 'ev-1', kind: 'web', status: 'used', title: '来源', claim: '已采用', usedByFinalAnswer: true },
+    }));
+    s = reducer(s, upsertToolDigest({
+      runId: 'r1',
+      sequence: 3,
+      digest: {
+        toolCallId: 'tc1',
+        toolName: 'web_search',
+        status: 'success',
+        title: '找到结果',
+        summary: '摘要',
+        keyFindings: [],
+        sourceRefs: ['ev-1'],
+        truncated: false,
+      },
+    }));
+
+    expect(s.currentRun?.evidence).toHaveLength(1);
+    expect(s.currentRun?.evidence?.[0].status).toBe('used');
+    expect(s.currentRun?.toolDigests).toHaveLength(1);
   });
 
   it('pushStep 添加 running step + 更新 totalSteps', () => {

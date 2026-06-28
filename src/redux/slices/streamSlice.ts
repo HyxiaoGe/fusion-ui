@@ -1,8 +1,13 @@
 import { createSlice, PayloadAction } from '@reduxjs/toolkit';
 import type { ContentBlock, SearchSourceSummary } from '@/types/conversation';
 import type {
+  AgentEvidenceItem,
+  AgentPlanItem,
+  AgentPlanState,
+  AgentProgressState,
   AgentRunState,
   AgentRunStatus,
+  AgentToolDigest,
   LimitReachedReason,
   ToolCallResultSummary,
 } from '@/types/agentRun';
@@ -187,8 +192,95 @@ const streamSlice = createSlice({
         totalSteps: 0,
         totalToolCalls: 0,
         steps: [],
+        evidence: [],
+        toolDigests: [],
         lastSequence: sequence,
       };
+    },
+
+    updateRunProgress(
+      state,
+      action: PayloadAction<{ runId: string; sequence: number; progress: AgentProgressState }>
+    ) {
+      const run = state.currentRun;
+      const { runId, sequence, progress } = action.payload;
+      if (!run || run.runId !== runId || sequence <= run.lastSequence) return;
+      run.lastSequence = sequence;
+      run.protocolVersion = 2;
+      run.progress = progress;
+    },
+
+    applyPlanSnapshot(
+      state,
+      action: PayloadAction<{ runId: string; sequence: number; plan: AgentPlanState }>
+    ) {
+      const run = state.currentRun;
+      const { runId, sequence, plan } = action.payload;
+      if (!run || run.runId !== runId || sequence <= run.lastSequence) return;
+      run.lastSequence = sequence;
+      run.protocolVersion = 2;
+      run.plan = plan;
+    },
+
+    updatePlanStep(
+      state,
+      action: PayloadAction<{
+        runId: string;
+        sequence: number;
+        planId: string;
+        revision: number;
+        item: AgentPlanItem;
+      }>
+    ) {
+      const run = state.currentRun;
+      const { runId, sequence, planId, revision, item } = action.payload;
+      if (!run || run.runId !== runId || sequence <= run.lastSequence) return;
+      if (!run.plan || run.plan.planId !== planId || revision <= run.plan.revision) return;
+      run.lastSequence = sequence;
+      run.protocolVersion = 2;
+      const index = run.plan.items.findIndex(existing => existing.id === item.id);
+      if (index >= 0) {
+        run.plan.items[index] = item;
+      } else {
+        run.plan.items.push(item);
+      }
+      run.plan.revision = revision;
+    },
+
+    upsertToolDigest(
+      state,
+      action: PayloadAction<{ runId: string; sequence: number; digest: AgentToolDigest }>
+    ) {
+      const run = state.currentRun;
+      const { runId, sequence, digest } = action.payload;
+      if (!run || run.runId !== runId || sequence <= run.lastSequence) return;
+      run.lastSequence = sequence;
+      run.protocolVersion = 2;
+      run.toolDigests = run.toolDigests ?? [];
+      const index = run.toolDigests.findIndex(existing => existing.toolCallId === digest.toolCallId);
+      if (index >= 0) {
+        run.toolDigests[index] = digest;
+      } else {
+        run.toolDigests.push(digest);
+      }
+    },
+
+    upsertEvidenceItem(
+      state,
+      action: PayloadAction<{ runId: string; sequence: number; evidence: AgentEvidenceItem }>
+    ) {
+      const run = state.currentRun;
+      const { runId, sequence, evidence } = action.payload;
+      if (!run || run.runId !== runId || sequence <= run.lastSequence) return;
+      run.lastSequence = sequence;
+      run.protocolVersion = 2;
+      run.evidence = run.evidence ?? [];
+      const index = run.evidence.findIndex(existing => existing.id === evidence.id);
+      if (index >= 0) {
+        run.evidence[index] = evidence;
+      } else {
+        run.evidence.push(evidence);
+      }
     },
 
     pushStep(
@@ -460,6 +552,7 @@ export const {
   advanceTypewriter,
   appendTextDelta,
   appendThinkingDelta,
+  applyPlanSnapshot,
   clearStreamError,
   completeThinkingPhase,
   endStream,
@@ -476,6 +569,10 @@ export const {
   setStreamError,
   setStreamStatus,
   startStream,
+  updatePlanStep,
+  updateRunProgress,
+  upsertEvidenceItem,
+  upsertToolDigest,
 } = streamSlice.actions;
 
 export default streamSlice.reducer;

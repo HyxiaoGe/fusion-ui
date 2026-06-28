@@ -21,24 +21,15 @@ import {
   appendThinkingDelta,
   completeThinkingPhase,
   endStream,
-  finalizeRun,
-  finalizeStep,
-  finalizeToolCall,
-  initRun,
-  markLimitReached,
-  mergeToolCallDelta,
   migrateStreamConversation,
-  pushStep,
-  pushToolCall,
   selectFullStreamContentBlocks,
   selectStreamContentBlocks,
   setStreamError,
   startStream,
 } from '@/redux/slices/streamSlice';
-import type { LimitReachedReason, ToolCallResultSummary, FinalizeToolCallStatus } from '@/types/agentRun';
 import { sendMessageStream, getConversation } from '@/lib/api/chat';
 import { generateChatTitle } from '@/lib/api/title';
-import { getRunStatusFromFinishReason } from '@/lib/agent/finishReason';
+import { createAgentStreamEventHandlers } from '@/lib/agent/streamEventHandlers';
 import type { Message, ContentBlock } from '@/types/conversation';
 import type { FileAttachment } from '@/lib/utils/fileHelpers';
 import { useTypewriter } from './useTypewriter';
@@ -393,114 +384,15 @@ export function useSendMessage() {
               }));
             },
 
-            onRunStarted: (ev) => {
-              if (!activeConvIdRef.current) return;
-              dispatch(initRun({
-                runId: ev.run_id,
-                // 优先本地 placeholder（streaming 期 message.id 是它），
-                // ref 为 null 兜底用 ev.message_id（极少触发）
-                messageId: assistantMessageIdRef.current ?? ev.message_id,
-                serverMessageId: ev.message_id,
-                config: {
-                  maxSteps: (ev.config.max_steps as number) ?? 0,
-                  maxToolCalls: (ev.config.max_tool_calls as number) ?? 0,
-                  timeoutS: (ev.config.timeout_s as number) ?? 0,
-                },
-                sequence: ev.sequence,
-              }));
-            },
-
-            onStepStarted: (ev) => {
-              if (!activeConvIdRef.current || !ev.step_id) return;
-              dispatch(pushStep({
-                runId: ev.run_id,
-                stepId: ev.step_id,
-                stepNumber: ev.step_number,
-                sequence: ev.sequence,
-              }));
-            },
-
-            onToolCallStarted: (ev) => {
-              if (!activeConvIdRef.current || !ev.step_id || !ev.tool_call_id) return;
-              dispatch(pushToolCall({
-                runId: ev.run_id,
-                stepId: ev.step_id,
-                toolCallId: ev.tool_call_id,
-                toolName: ev.tool_name,
-                arguments: ev.arguments,
-                sequence: ev.sequence,
-              }));
-            },
-
-            onToolCallDelta: (ev) => {
-              if (!activeConvIdRef.current || !ev.tool_call_id) return;
-              dispatch(mergeToolCallDelta({
-                runId: ev.run_id,
-                toolCallId: ev.tool_call_id,
-                delta: ev.delta,
-                sequence: ev.sequence,
-              }));
-            },
-
-            onToolCallCompleted: (ev) => {
-              if (!activeConvIdRef.current || !ev.tool_call_id) return;
-              dispatch(finalizeToolCall({
-                runId: ev.run_id,
-                toolCallId: ev.tool_call_id,
-                status: ev.status as FinalizeToolCallStatus,
-                durationMs: ev.duration_ms,
-                resultSummary: ev.result_summary as unknown as ToolCallResultSummary | undefined,
-                error: ev.error ?? null,
-                sequence: ev.sequence,
-              }));
-            },
-
-            onStepCompleted: (ev) => {
-              if (!activeConvIdRef.current || !ev.step_id) return;
-              dispatch(finalizeStep({
-                runId: ev.run_id,
-                stepId: ev.step_id,
-                sequence: ev.sequence,
-              }));
-            },
-
-            onRunLimitReached: (ev) => {
-              if (!activeConvIdRef.current) return;
-              dispatch(markLimitReached({
-                runId: ev.run_id,
-                reason: ev.reason as LimitReachedReason,
-                sequence: ev.sequence,
-              }));
-            },
-
-            onRunInterrupted: (ev) => {
-              if (!activeConvIdRef.current) return;
-              dispatch(finalizeRun({
-                runId: ev.run_id,
-                status: 'interrupted',
-                reason: ev.reason,
-                sequence: ev.sequence,
-              }));
-            },
-
-            onRunFailed: (ev) => {
-              if (!activeConvIdRef.current) return;
-              dispatch(finalizeRun({
-                runId: ev.run_id,
-                status: 'failed',
-                failure: { code: ev.error_code, message: ev.message },
-                sequence: ev.sequence,
-              }));
-            },
-
-            onRunCompleted: (ev) => {
-              if (!activeConvIdRef.current) return;
-              dispatch(finalizeRun({
-                runId: ev.run_id,
-                status: getRunStatusFromFinishReason(ev.finish_reason),
-                sequence: ev.sequence,
-              }));
-            },
+            ...createAgentStreamEventHandlers({
+              dispatch,
+              isActive: () => Boolean(activeConvIdRef.current),
+              // 优先本地 placeholder（streaming 期 message.id 是它），ref 为 null 时兜底用后端 ID。
+              resolveMessageId: ev => assistantMessageIdRef.current ?? ev.message_id,
+              setServerMessageId: messageId => {
+                serverMessageIdRef.current = messageId;
+              },
+            }),
 
             onDone: ({ conversationId: incomingConvId }) => {
               donePayload = { incomingConvId };

@@ -277,4 +277,130 @@ describe('conversationHydration', () => {
       steps: [],
     });
   });
+
+  it('hydrates agent progress snapshot from assistant messages', () => {
+    const chat = buildChatFromServerConversation({
+      id: 'chat-7',
+      title: 'Server chat',
+      model_id: 'deepseek-chat',
+      messages: [
+        {
+          id: 'assistant-1',
+          role: 'assistant',
+          content: [{ type: 'text', id: 'blk_a1', text: '带进度的回答' }],
+          created_at: '2026-03-14T08:00:02Z',
+          agent_run: {
+            run_id: 'run-1',
+            status: 'completed',
+            progress: {
+              run_id: 'run-1',
+              message_id: 'assistant-1',
+              status: 'completed',
+              progress: {
+                phase: 'synthesizing',
+                label: '正在整理结论',
+                completed_steps: 2,
+                total_steps: 3,
+                completed_tool_calls: 1,
+                max_tool_calls: 5,
+              },
+              plan: {
+                plan_id: 'plan-run-1',
+                revision: 2,
+                items: [
+                  {
+                    id: 'search',
+                    title: '搜索资料',
+                    status: 'completed',
+                    kind: 'search',
+                    summary: '找到 2 条来源',
+                    tool_names: ['web_search'],
+                    evidence_item_ids: ['ev-1'],
+                  },
+                ],
+              },
+              tool_digests: [
+                {
+                  tool_call_id: 'tc-1',
+                  tool_name: 'web_search',
+                  status: 'success',
+                  title: '搜索资料',
+                  summary: '找到 2 条来源',
+                  key_findings: ['G7 讨论 AI 标准'],
+                  source_refs: ['https://example.com/news'],
+                  truncated: false,
+                },
+              ],
+              evidence: [
+                {
+                  id: 'ev-1',
+                  kind: 'web',
+                  status: 'used',
+                  title: '新闻来源',
+                  url: 'https://example.com/news',
+                  domain: 'example.com',
+                  claim: 'G7 讨论 AI 标准',
+                  snippet: '来源摘要',
+                  used_by_final_answer: true,
+                },
+              ],
+            },
+          },
+        } as any,
+      ],
+    });
+
+    expect(chat.messages[0].agent_run).toMatchObject({
+      runId: 'run-1',
+      protocolVersion: 2,
+      progress: {
+        phase: 'synthesizing',
+        label: '正在整理结论',
+        completedSteps: 2,
+        totalSteps: 3,
+        completedToolCalls: 1,
+        maxToolCalls: 5,
+      },
+      plan: {
+        planId: 'plan-run-1',
+        revision: 2,
+        items: [
+          {
+            id: 'search',
+            title: '搜索资料',
+            status: 'completed',
+            kind: 'search',
+            summary: '找到 2 条来源',
+            toolNames: ['web_search'],
+            evidenceItemIds: ['ev-1'],
+          },
+        ],
+      },
+      toolDigests: [
+        {
+          toolCallId: 'tc-1',
+          toolName: 'web_search',
+          status: 'success',
+          title: '搜索资料',
+          summary: '找到 2 条来源',
+          keyFindings: ['G7 讨论 AI 标准'],
+          sourceRefs: ['https://example.com/news'],
+          truncated: false,
+        },
+      ],
+      evidence: [
+        {
+          id: 'ev-1',
+          kind: 'web',
+          status: 'used',
+          title: '新闻来源',
+          url: 'https://example.com/news',
+          domain: 'example.com',
+          claim: 'G7 讨论 AI 标准',
+          snippet: '来源摘要',
+          usedByFinalAnswer: true,
+        },
+      ],
+    });
+  });
 });

@@ -263,6 +263,95 @@ describe('sendMessageStream — 新 envelope 协议', () => {
     expect(cbs.onRunCompleted).toHaveBeenCalledTimes(1);
   });
 
+  it('agent_event v2 五类事件 dispatch 到对应 callback 且不触发 onReady', async () => {
+    fetchWithAuthMock.mockResolvedValue(
+      createStreamResponse([
+        agentEvent('run_progress_updated', {
+          protocol_version: 2,
+          phase: 'researching',
+          label: '正在搜索相关资料',
+          completed_steps: 1,
+          total_steps: 4,
+        }, 0),
+        agentEvent('plan_snapshot', {
+          protocol_version: 2,
+          plan_id: 'plan-r1',
+          revision: 1,
+          items: [
+            {
+              id: 'search',
+              title: '搜索资料',
+              status: 'running',
+              kind: 'search',
+              tool_names: ['web_search'],
+              evidence_item_ids: [],
+            },
+          ],
+        }, 1),
+        agentEvent('plan_step_updated', {
+          protocol_version: 2,
+          plan_id: 'plan-r1',
+          revision: 2,
+          item: {
+            id: 'search',
+            title: '搜索资料',
+            status: 'completed',
+            kind: 'search',
+            tool_names: ['web_search'],
+            evidence_item_ids: ['ev-1'],
+          },
+        }, 2),
+        agentEvent('tool_result_digest', {
+          protocol_version: 2,
+          tool_call_id: 'tc1',
+          tool_name: 'web_search',
+          status: 'success',
+          title: '找到 2 条结果',
+          summary: '优先保留官方来源。',
+          key_findings: ['官方页面确认发布时间。'],
+          source_refs: ['ev-1'],
+          truncated: false,
+        }, 3),
+        agentEvent('evidence_item_upserted', {
+          protocol_version: 2,
+          evidence: {
+            id: 'ev-1',
+            kind: 'web',
+            status: 'used',
+            title: '官方发布页',
+            url: 'https://example.com/news',
+            domain: 'example.com',
+            claim: '官方页面确认发布时间。',
+            used_by_final_answer: true,
+          },
+        }, 4),
+        envelope('done', {}),
+        'data: [DONE]\n\n',
+      ]),
+    );
+    const cbs = {
+      onReady: vi.fn(),
+      onRunProgressUpdated: vi.fn(),
+      onPlanSnapshot: vi.fn(),
+      onPlanStepUpdated: vi.fn(),
+      onToolResultDigest: vi.fn(),
+      onEvidenceItemUpserted: vi.fn(),
+      onReasoning: vi.fn(),
+      onAnswering: vi.fn(),
+      onDone: vi.fn(),
+      onError: vi.fn(),
+    };
+
+    await sendMessageStream({ model_id: 'g', message: 'q' }, cbs);
+
+    expect(cbs.onReady).not.toHaveBeenCalled();
+    expect(cbs.onRunProgressUpdated).toHaveBeenCalledTimes(1);
+    expect(cbs.onPlanSnapshot).toHaveBeenCalledTimes(1);
+    expect(cbs.onPlanStepUpdated).toHaveBeenCalledTimes(1);
+    expect(cbs.onToolResultDigest).toHaveBeenCalledTimes(1);
+    expect(cbs.onEvidenceItemUpserted).toHaveBeenCalledTimes(1);
+  });
+
   it('未知 chunk_type warn 不抛', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     fetchWithAuthMock.mockResolvedValue(

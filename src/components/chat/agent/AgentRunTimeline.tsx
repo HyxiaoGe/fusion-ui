@@ -5,6 +5,9 @@ import type { AgentRunState } from '@/types/agentRun';
 import { RunHeader } from './RunHeader';
 import { RunBanner } from './RunBanner';
 import { StepTimeline } from './StepTimeline';
+import { RunProgressStrip } from './RunProgressStrip';
+import { PlanTimeline } from './PlanTimeline';
+import { EvidenceDigest } from './EvidenceDigest';
 
 interface AgentRunTimelineProps {
   /** 当前 message 的 id（FE 占位 messageId 或 server messageId）。
@@ -76,10 +79,15 @@ function AgentRunTimelineContent({
     return null;
   }
   if (shouldHideCompletedRun(run)) return null;
+  const hasV2Artifacts = hasReadableProgress(run);
   // 空 steps 守卫（contract §1）：
   //   - running / completed：空 steps 没有可展示信息，避免空容器
   //   - failed / interrupted / limit_reached：banner 仍有用户价值（如 ProviderOffline 0 step），保留渲染
-  if (!run.steps?.length && (run.status === 'running' || (run.status === 'completed' && !run.limitReachedReason))) return null;
+  if (
+    !run.steps?.length
+    && !hasV2Artifacts
+    && (run.status === 'running' || (run.status === 'completed' && !run.limitReachedReason))
+  ) return null;
 
   return (
     <div
@@ -87,11 +95,14 @@ function AgentRunTimelineContent({
       className="mb-3 w-full max-w-full min-w-0 self-stretch"
     >
       <RunHeader run={run} />
+      <RunProgressStrip run={run} />
       <RunBanner
         run={run}
         onRetry={onRetry}
         onContinue={onContinue ? () => onContinue(run.runId) : undefined}
       />
+      <PlanTimeline run={run} />
+      <EvidenceDigest run={run} />
       <StepTimeline run={run} />
     </div>
   );
@@ -100,6 +111,7 @@ function AgentRunTimelineContent({
 function shouldHideCompletedRun(run: AgentRunState): boolean {
   if (run.status !== 'completed') return false;
   if (run.limitReachedReason) return false;
+  if (hasReadableProgress(run)) return false;
 
   return !run.steps?.some(step => (
     step.status === 'failed'
@@ -110,4 +122,13 @@ function shouldHideCompletedRun(run: AgentRunState): boolean {
       || call.status === 'interrupted'
     ))
   ));
+}
+
+function hasReadableProgress(run: AgentRunState): boolean {
+  return Boolean(
+    run.progress
+    || run.plan?.items.length
+    || run.toolDigests?.length
+    || run.evidence?.length
+  );
 }

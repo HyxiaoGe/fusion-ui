@@ -2,6 +2,9 @@ import { API_CONFIG } from '../config';
 import fetchWithAuth, { apiRequest } from './fetchWithAuth';
 import type {
   AgentEventEnvelope,
+  AgentPlanItemKind,
+  AgentPlanItemStatus,
+  AgentProgressPhase,
   SseEnvelope,
 } from '@/types/agentRun';
 
@@ -125,6 +128,77 @@ export interface StreamCallbacks {
       finish_reason: string;
     },
   ) => void;
+  onRunProgressUpdated?: (
+    ev: AgentEventEnvelope & {
+      protocol_version: 2;
+      phase: AgentProgressPhase;
+      label: string;
+      completed_steps?: number;
+      total_steps?: number;
+      completed_tool_calls?: number;
+      max_tool_calls?: number;
+    },
+  ) => void;
+  onPlanSnapshot?: (
+    ev: AgentEventEnvelope & {
+      protocol_version: 2;
+      plan_id: string;
+      revision: number;
+      items: Array<{
+        id: string;
+        title: string;
+        status: AgentPlanItemStatus;
+        kind: AgentPlanItemKind;
+        summary?: string | null;
+        tool_names?: string[];
+        evidence_item_ids?: string[];
+      }>;
+    },
+  ) => void;
+  onPlanStepUpdated?: (
+    ev: AgentEventEnvelope & {
+      protocol_version: 2;
+      plan_id: string;
+      revision: number;
+      item: {
+        id: string;
+        title: string;
+        status: AgentPlanItemStatus;
+        kind: AgentPlanItemKind;
+        summary?: string | null;
+        tool_names?: string[];
+        evidence_item_ids?: string[];
+      };
+    },
+  ) => void;
+  onToolResultDigest?: (
+    ev: AgentEventEnvelope & {
+      protocol_version: 2;
+      tool_name: string;
+      status: 'success' | 'failed' | 'degraded' | 'interrupted';
+      title: string;
+      summary: string;
+      key_findings?: string[];
+      source_refs?: string[];
+      truncated: boolean;
+    },
+  ) => void;
+  onEvidenceItemUpserted?: (
+    ev: AgentEventEnvelope & {
+      protocol_version: 2;
+      evidence: {
+        id: string;
+        kind: 'web' | 'file' | 'tool' | 'model';
+        status: 'candidate' | 'used' | 'discarded';
+        title: string;
+        url?: string;
+        domain?: string;
+        claim: string;
+        snippet?: string;
+        used_by_final_answer?: boolean;
+      };
+    },
+  ) => void;
 
   /** done chunk：协议层流完成（与 [DONE] SSE 通道终止并存） */
   onDone: (meta: { messageId: string; conversationId: string }) => void;
@@ -211,6 +285,16 @@ async function parseSseEnvelopeStream(
         return callbacks.onRunFailed?.(ev as never);
       case 'run_completed':
         return callbacks.onRunCompleted?.(ev as never);
+      case 'run_progress_updated':
+        return callbacks.onRunProgressUpdated?.(ev as never);
+      case 'plan_snapshot':
+        return callbacks.onPlanSnapshot?.(ev as never);
+      case 'plan_step_updated':
+        return callbacks.onPlanStepUpdated?.(ev as never);
+      case 'tool_result_digest':
+        return callbacks.onToolResultDigest?.(ev as never);
+      case 'evidence_item_upserted':
+        return callbacks.onEvidenceItemUpserted?.(ev as never);
       default:
         console.warn('[chat] 未知 agent_event type，已忽略', ev.type);
     }

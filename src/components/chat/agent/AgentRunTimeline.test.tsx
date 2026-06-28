@@ -178,6 +178,53 @@ describe('AgentRunTimeline', () => {
     expect(container.firstChild).toBeNull();
   });
 
+  it('有 v2 progress/plan 时即使 steps=[] 也渲染可读化时间线', () => {
+    renderTimeline(run({
+      protocolVersion: 2,
+      status: 'completed',
+      steps: [],
+      totalSteps: 0,
+      totalToolCalls: 0,
+      progress: {
+        phase: 'synthesizing',
+        label: '正在整理结论',
+        completedSteps: 2,
+        totalSteps: 3,
+      },
+      plan: {
+        planId: 'plan-r1',
+        revision: 1,
+        items: [
+          {
+            id: 'search',
+            title: '搜索资料',
+            status: 'completed',
+            kind: 'search',
+            summary: '找到 2 条来源',
+            toolNames: ['web_search'],
+            evidenceItemIds: ['ev-1'],
+          },
+        ],
+      },
+      toolDigests: [
+        {
+          toolCallId: 'tc-1',
+          toolName: 'web_search',
+          status: 'success',
+          title: '搜索资料',
+          summary: '找到 2 条来源',
+          keyFindings: ['G7 讨论 AI 标准'],
+          sourceRefs: [],
+          truncated: false,
+        },
+      ],
+    }));
+
+    expect(screen.getByText('正在整理结论')).toBeInTheDocument();
+    expect(screen.getAllByText('搜索资料').length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByText('工具结果')).toBeInTheDocument();
+  });
+
   it('failed + steps=[] 仍显示失败 banner（防 M1 guard 误杀 ProviderOffline 场景）', () => {
     renderTimeline(run({
       status: 'failed',
@@ -212,6 +259,34 @@ describe('AgentRunTimeline', () => {
     expect(container.firstChild).toBeNull();
     expect(screen.queryByText(/搜索/)).not.toBeInTheDocument();
     expect(screen.queryByText(/整理答复/)).not.toBeInTheDocument();
+  });
+
+  it('completed 且工具全成功但有 v2 摘要时保留可读化结果', () => {
+    renderTimeline(run({
+      status: 'completed',
+      toolDigests: [
+        {
+          toolCallId: 'tc-1',
+          toolName: 'web_search',
+          status: 'success',
+          title: '搜索资料',
+          summary: '找到 2 条来源',
+          keyFindings: [],
+          sourceRefs: [],
+          truncated: false,
+        },
+      ],
+      steps: [
+        step({
+          stepId: 's1',
+          stepNumber: 1,
+          toolCalls: [toolCall({ toolCallId: 't1' })],
+        }),
+      ],
+    }));
+
+    expect(screen.getByText('工具结果')).toBeInTheDocument();
+    expect(screen.getByText('搜索资料')).toBeInTheDocument();
   });
 
   it('completed 但存在 degraded 工具时仍渲染 timeline', () => {

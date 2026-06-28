@@ -3,7 +3,7 @@ import { useStore } from 'react-redux';
 import { useAppDispatch } from '@/redux/hooks';
 import { continueAgentRunStream, getConversation, stopStream } from '@/lib/api/chat';
 import type { StreamCallbacks } from '@/lib/api/chat';
-import { getRunStatusFromFinishReason } from '@/lib/agent/finishReason';
+import { createAgentStreamEventHandlers } from '@/lib/agent/streamEventHandlers';
 import { buildChatFromServerConversation } from '@/lib/chat/conversationHydration';
 import { updateMessage } from '@/redux/slices/conversationSlice';
 import {
@@ -12,24 +12,11 @@ import {
   appendThinkingDelta,
   completeThinkingPhase,
   endStream,
-  finalizeRun,
-  finalizeStep,
-  finalizeToolCall,
-  initRun,
-  markLimitReached,
-  mergeToolCallDelta,
-  pushStep,
-  pushToolCall,
   selectFullStreamContentBlocks,
   setStreamError,
   startStream,
 } from '@/redux/slices/streamSlice';
 import type { StreamState } from '@/redux/slices/streamSlice';
-import type {
-  FinalizeToolCallStatus,
-  LimitReachedReason,
-  ToolCallResultSummary,
-} from '@/types/agentRun';
 import type { Conversation } from '@/types/conversation';
 
 interface ContinueAgentRunInput {
@@ -130,109 +117,12 @@ function buildContinuationStreamCallbacks({
       }));
       dispatch(advanceTypewriter(payload.delta.length));
     },
-    onRunStarted: ev => {
-      if (!isActive()) return;
-      setServerMessageId(ev.message_id);
-      dispatch(initRun({
-        runId: ev.run_id,
-        messageId: assistantMessageId,
-        serverMessageId: ev.message_id,
-        config: {
-          maxSteps: (ev.config.max_steps as number) ?? 0,
-          maxToolCalls: (ev.config.max_tool_calls as number) ?? 0,
-          timeoutS: (ev.config.timeout_s as number) ?? 0,
-        },
-        sequence: ev.sequence,
-      }));
-    },
-    onStepStarted: ev => {
-      if (!isActive()) return;
-      if (!ev.step_id) return;
-      dispatch(pushStep({
-        runId: ev.run_id,
-        stepId: ev.step_id,
-        stepNumber: ev.step_number,
-        sequence: ev.sequence,
-      }));
-    },
-    onToolCallStarted: ev => {
-      if (!isActive()) return;
-      if (!ev.step_id || !ev.tool_call_id) return;
-      dispatch(pushToolCall({
-        runId: ev.run_id,
-        stepId: ev.step_id,
-        toolCallId: ev.tool_call_id,
-        toolName: ev.tool_name,
-        arguments: ev.arguments,
-        sequence: ev.sequence,
-      }));
-    },
-    onToolCallDelta: ev => {
-      if (!isActive()) return;
-      if (!ev.tool_call_id) return;
-      dispatch(mergeToolCallDelta({
-        runId: ev.run_id,
-        toolCallId: ev.tool_call_id,
-        delta: ev.delta,
-        sequence: ev.sequence,
-      }));
-    },
-    onToolCallCompleted: ev => {
-      if (!isActive()) return;
-      if (!ev.tool_call_id) return;
-      dispatch(finalizeToolCall({
-        runId: ev.run_id,
-        toolCallId: ev.tool_call_id,
-        status: ev.status as FinalizeToolCallStatus,
-        durationMs: ev.duration_ms,
-        resultSummary: ev.result_summary as unknown as ToolCallResultSummary | undefined,
-        error: ev.error ?? null,
-        sequence: ev.sequence,
-      }));
-    },
-    onStepCompleted: ev => {
-      if (!isActive()) return;
-      if (!ev.step_id) return;
-      dispatch(finalizeStep({
-        runId: ev.run_id,
-        stepId: ev.step_id,
-        sequence: ev.sequence,
-      }));
-    },
-    onRunLimitReached: ev => {
-      if (!isActive()) return;
-      dispatch(markLimitReached({
-        runId: ev.run_id,
-        reason: ev.reason as LimitReachedReason,
-        sequence: ev.sequence,
-      }));
-    },
-    onRunInterrupted: ev => {
-      if (!isActive()) return;
-      dispatch(finalizeRun({
-        runId: ev.run_id,
-        status: 'interrupted',
-        reason: ev.reason,
-        sequence: ev.sequence,
-      }));
-    },
-    onRunFailed: ev => {
-      if (!isActive()) return;
-      dispatch(finalizeRun({
-        runId: ev.run_id,
-        status: 'failed',
-        failure: { code: ev.error_code, message: ev.message },
-        sequence: ev.sequence,
-      }));
-    },
-    onRunCompleted: ev => {
-      if (!isActive()) return;
-      dispatch(finalizeRun({
-        runId: ev.run_id,
-        status: getRunStatusFromFinishReason(ev.finish_reason),
-        sequence: ev.sequence,
-      }));
-    },
+    ...createAgentStreamEventHandlers({
+      dispatch,
+      isActive,
+      resolveMessageId: () => assistantMessageId,
+      setServerMessageId,
+    }),
     onDone: () => {
       if (!isActive()) return;
       const streamState = (store.getState() as RootStateForContinuation).stream;

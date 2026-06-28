@@ -30,6 +30,79 @@ export type FinalizeToolCallStatus = Exclude<ToolCallStatus, 'running' | 'interr
 
 export type LimitReachedReason = 'max_steps' | 'max_tool_calls' | 'timeout';
 
+export type AgentProgressPhase =
+  | 'planning'
+  | 'thinking'
+  | 'researching'
+  | 'reading'
+  | 'synthesizing'
+  | 'answering'
+  | 'recovering';
+
+export type AgentPlanItemStatus =
+  | 'pending'
+  | 'running'
+  | 'completed'
+  | 'failed'
+  | 'skipped'
+  | 'blocked';
+
+export type AgentPlanItemKind =
+  | 'reasoning'
+  | 'search'
+  | 'read'
+  | 'synthesis'
+  | 'answer'
+  | 'other';
+
+export interface AgentProgressState {
+  phase: AgentProgressPhase;
+  label: string;
+  completedSteps?: number;
+  totalSteps?: number;
+  completedToolCalls?: number;
+  maxToolCalls?: number;
+}
+
+export interface AgentPlanItem {
+  id: string;
+  title: string;
+  status: AgentPlanItemStatus;
+  kind: AgentPlanItemKind;
+  summary?: string;
+  toolNames: string[];
+  evidenceItemIds: string[];
+}
+
+export interface AgentPlanState {
+  planId: string;
+  revision: number;
+  items: AgentPlanItem[];
+}
+
+export interface AgentEvidenceItem {
+  id: string;
+  kind: 'web' | 'file' | 'tool' | 'model';
+  status: 'candidate' | 'used' | 'discarded';
+  title: string;
+  url?: string;
+  domain?: string;
+  claim: string;
+  snippet?: string;
+  usedByFinalAnswer: boolean;
+}
+
+export interface AgentToolDigest {
+  toolCallId: string;
+  toolName: string;
+  status: 'success' | 'failed' | 'degraded' | 'interrupted';
+  title: string;
+  summary: string;
+  keyFindings: string[];
+  sourceRefs: string[];
+  truncated: boolean;
+}
+
 export interface ToolCallResultSummary {
   kind: string;
   title?: string;
@@ -67,6 +140,7 @@ export interface AgentRunConfig {
 
 export interface AgentRunState {
   runId: string;
+  protocolVersion?: number;
   /** FE 当前渲染期 message.id；useSendMessage 路径是本地 placeholder，
    * reconnect 路径是 stream-status 拿到的 server messageId。
    * AgentStepCard 渲染过滤用此字段。 */
@@ -81,6 +155,10 @@ export interface AgentRunState {
   steps: AgentStepState[];
   limitReachedReason?: LimitReachedReason;
   failure?: { code: string; message: string };
+  progress?: AgentProgressState;
+  plan?: AgentPlanState;
+  evidence?: AgentEvidenceItem[];
+  toolDigests?: AgentToolDigest[];
   lastSequence: number;
 }
 
@@ -93,6 +171,7 @@ export interface SseEnvelope<T = unknown> {
 /** agent_event 内层 payload 共享字段. */
 export interface AgentEventEnvelope {
   type: string;
+  protocol_version?: number;
   run_id: string;
   parent_run_id: string | null;
   step_id: string | null;

@@ -21,20 +21,11 @@ import {
   appendThinkingDelta,
   completeThinkingPhase,
   endStream,
-  finalizeRun,
-  finalizeStep,
-  finalizeToolCall,
-  initRun,
-  markLimitReached,
-  mergeToolCallDelta,
-  pushStep,
-  pushToolCall,
   selectFullStreamContentBlocks,
   setStreamStatus,
   startStream,
 } from '@/redux/slices/streamSlice';
 import type { StreamState } from '@/redux/slices/streamSlice';
-import type { LimitReachedReason, ToolCallResultSummary, FinalizeToolCallStatus } from '@/types/agentRun';
 import { fetchStreamStatus } from '@/lib/api/streamStatus';
 import { reconnectStream } from '@/lib/api/chat';
 import { useConversation } from '@/hooks/useConversation';
@@ -43,7 +34,7 @@ import { useSendMessage } from '@/hooks/useSendMessage';
 import { useSuggestedQuestions } from '@/hooks/useSuggestedQuestions';
 import { useSuggestedQuestionContinuation } from '@/hooks/useSuggestedQuestionContinuation';
 import { useTransientCompletionState } from '@/hooks/useTransientCompletionState';
-import { getRunStatusFromFinishReason } from '@/lib/agent/finishReason';
+import { createAgentStreamEventHandlers } from '@/lib/agent/streamEventHandlers';
 import { shouldAutoFetchSuggestedQuestions } from '@/lib/chat/suggestedQuestionTiming';
 import { CHAT_NEW_PATH } from '@/lib/routes/chatRoutes';
 
@@ -169,104 +160,12 @@ export default function ChatPage() {
               stepId: payload.step_id,
             }));
           },
-          onRunStarted: (ev) => {
-            if (cancelled) return;
-            dispatch(initRun({
-              runId: ev.run_id,
-              // reconnect 路径：messageId 来自 stream-status（已是 server 真实 ID）
-              messageId: messageId,
-              serverMessageId: ev.message_id,
-              config: {
-                maxSteps: (ev.config.max_steps as number) ?? 0,
-                maxToolCalls: (ev.config.max_tool_calls as number) ?? 0,
-                timeoutS: (ev.config.timeout_s as number) ?? 0,
-              },
-              sequence: ev.sequence,
-            }));
-          },
-          onStepStarted: (ev) => {
-            if (cancelled || !ev.step_id) return;
-            dispatch(pushStep({
-              runId: ev.run_id,
-              stepId: ev.step_id,
-              stepNumber: ev.step_number,
-              sequence: ev.sequence,
-            }));
-          },
-          onToolCallStarted: (ev) => {
-            if (cancelled || !ev.step_id || !ev.tool_call_id) return;
-            dispatch(pushToolCall({
-              runId: ev.run_id,
-              stepId: ev.step_id,
-              toolCallId: ev.tool_call_id,
-              toolName: ev.tool_name,
-              arguments: ev.arguments,
-              sequence: ev.sequence,
-            }));
-          },
-          onToolCallDelta: (ev) => {
-            if (cancelled || !ev.tool_call_id) return;
-            dispatch(mergeToolCallDelta({
-              runId: ev.run_id,
-              toolCallId: ev.tool_call_id,
-              delta: ev.delta,
-              sequence: ev.sequence,
-            }));
-          },
-          onToolCallCompleted: (ev) => {
-            if (cancelled || !ev.tool_call_id) return;
-            dispatch(finalizeToolCall({
-              runId: ev.run_id,
-              toolCallId: ev.tool_call_id,
-              status: ev.status as FinalizeToolCallStatus,
-              durationMs: ev.duration_ms,
-              resultSummary: ev.result_summary as unknown as ToolCallResultSummary | undefined,
-              error: ev.error ?? null,
-              sequence: ev.sequence,
-            }));
-          },
-          onStepCompleted: (ev) => {
-            if (cancelled || !ev.step_id) return;
-            dispatch(finalizeStep({
-              runId: ev.run_id,
-              stepId: ev.step_id,
-              sequence: ev.sequence,
-            }));
-          },
-          onRunLimitReached: (ev) => {
-            if (cancelled) return;
-            dispatch(markLimitReached({
-              runId: ev.run_id,
-              reason: ev.reason as LimitReachedReason,
-              sequence: ev.sequence,
-            }));
-          },
-          onRunInterrupted: (ev) => {
-            if (cancelled) return;
-            dispatch(finalizeRun({
-              runId: ev.run_id,
-              status: 'interrupted',
-              reason: ev.reason,
-              sequence: ev.sequence,
-            }));
-          },
-          onRunFailed: (ev) => {
-            if (cancelled) return;
-            dispatch(finalizeRun({
-              runId: ev.run_id,
-              status: 'failed',
-              failure: { code: ev.error_code, message: ev.message },
-              sequence: ev.sequence,
-            }));
-          },
-          onRunCompleted: (ev) => {
-            if (cancelled) return;
-            dispatch(finalizeRun({
-              runId: ev.run_id,
-              status: getRunStatusFromFinishReason(ev.finish_reason),
-              sequence: ev.sequence,
-            }));
-          },
+          ...createAgentStreamEventHandlers({
+            dispatch,
+            isActive: () => !cancelled,
+            // reconnect 路径：messageId 来自 stream-status，已是后端真实 ID。
+            resolveMessageId: () => messageId,
+          }),
           onDone: () => {
             if (cancelled) return;
             // 把 streamSlice 的内容写入 conversation 消息，防止 endStream 清空后内容丢失
