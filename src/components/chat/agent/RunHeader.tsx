@@ -23,7 +23,7 @@ interface StatusTagProps {
 }
 
 export function RunHeader({ run }: RunHeaderProps) {
-  const usedSteps = run.steps?.length ?? 0;
+  const usedSteps = run.steps?.length ? run.steps.length : run.totalSteps;
 
   // maxSteps 不在常驻 header 里展示——触顶时由 RunBanner（limit_reached）单独提示，
   // 避免普通运行下「N / 8」对用户没信息量。

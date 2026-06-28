@@ -30,6 +30,17 @@ describe('RunHeader', () => {
     expect(screen.queryByText(/\/ 8/)).not.toBeInTheDocument();
   });
 
+  it('hydration 只有 run summary 时用 totalSteps 兜底显示已用步数', () => {
+    render(<RunHeader run={run({
+      status: 'completed',
+      totalSteps: 2,
+      steps: [],
+    })} />);
+
+    expect(screen.getByText(/已用/)).toBeInTheDocument();
+    expect(screen.getByText('2')).toBeInTheDocument();
+  });
+
   it('running 状态秒数实时跳（fake timer 1s 后秒数 +1）', () => {
     vi.useFakeTimers();
     const startTime = 1_000_000;
