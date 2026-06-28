@@ -11,6 +11,7 @@ export interface StreamState {
   // ── 流元信息 ──
   conversationId: string | null;
   messageId: string | null;
+  staticBlocks: ContentBlock[];
   // ── block 增量（保留：reasoning/answering 仍走这里）──
   textBlocks: Record<string, string>;
   thinkingBlocks: Record<string, string>;
@@ -40,6 +41,7 @@ export interface StreamState {
 const initialState: StreamState = {
   conversationId: null,
   messageId: null,
+  staticBlocks: [],
   textBlocks: {},
   thinkingBlocks: {},
   blockOrder: [],
@@ -64,10 +66,11 @@ const streamSlice = createSlice({
   reducers: {
     startStream(
       state,
-      action: PayloadAction<{ conversationId: string; messageId: string }>
+      action: PayloadAction<{ conversationId: string; messageId: string; staticBlocks?: ContentBlock[] }>
     ) {
       state.conversationId = action.payload.conversationId;
       state.messageId = action.payload.messageId;
+      state.staticBlocks = action.payload.staticBlocks ?? [];
       state.textBlocks = {};
       state.thinkingBlocks = {};
       state.blockOrder = [];
@@ -395,7 +398,7 @@ const streamSlice = createSlice({
 // thinking blocks 全量返回（实时显示），text blocks 按 displayedTextLength 截断（打字机效果）
 export function selectStreamContentBlocks(state: StreamState): ContentBlock[] {
   let remainingChars = state.displayedTextLength;
-  const blocks: ContentBlock[] = [];
+  const blocks: ContentBlock[] = [...state.staticBlocks];
 
   // 先输出 thinking blocks
   for (const blockId of state.blockOrder) {
@@ -427,7 +430,7 @@ export function selectStreamContentBlocks(state: StreamState): ContentBlock[] {
 
 // 完整版 selector（不截断），用于流结束时写入最终消息
 export function selectFullStreamContentBlocks(state: StreamState): ContentBlock[] {
-  const blocks: ContentBlock[] = [];
+  const blocks: ContentBlock[] = [...state.staticBlocks];
 
   for (const blockId of state.blockOrder) {
     const type = state.blockTypes[blockId];

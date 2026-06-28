@@ -32,6 +32,7 @@ interface AssistantMessageProps {
   isLastMessage: boolean;
   isStreaming: boolean;
   onRetry?: (messageId: string) => void;
+  onContinueAgentRun?: (messageId: string, previousRunId?: string) => void;
   agentRun?: AgentRunState | null;
   suggestedQuestions: string[];
   isLoadingQuestions: boolean;
@@ -48,6 +49,7 @@ function AssistantMessage({
   isLastMessage,
   isStreaming,
   onRetry,
+  onContinueAgentRun,
   agentRun,
   suggestedQuestions,
   isLoadingQuestions,
@@ -57,7 +59,7 @@ function AssistantMessage({
   providerId,
   modelName,
 }: AssistantMessageProps) {
-  const shouldUseStreamState = isStreaming && isLastMessage;
+  const shouldUseStreamState = isStreaming;
 
   if (shouldUseStreamState) {
     return (
@@ -67,6 +69,7 @@ function AssistantMessage({
         isLastMessage={isLastMessage}
         isStreaming={isStreaming}
         onRetry={onRetry}
+        onContinueAgentRun={onContinueAgentRun}
         agentRun={agentRun}
         suggestedQuestions={suggestedQuestions}
         isLoadingQuestions={isLoadingQuestions}
@@ -86,6 +89,7 @@ function AssistantMessage({
       isLastMessage={isLastMessage}
       isStreaming={isStreaming}
       onRetry={onRetry}
+      onContinueAgentRun={onContinueAgentRun}
       agentRun={agentRun}
       suggestedQuestions={suggestedQuestions}
       isLoadingQuestions={isLoadingQuestions}
@@ -136,6 +140,7 @@ function AssistantMessageFrame({
   isLastMessage,
   isStreaming,
   onRetry,
+  onContinueAgentRun,
   agentRun,
   suggestedQuestions,
   isLoadingQuestions,
@@ -171,6 +176,7 @@ function AssistantMessageFrame({
   } = viewModel;
 
   const { copied, copy } = useMessageCopy({ text: displayText });
+  const isCurrentMessageStreaming = viewModel.isCurrentlyStreaming || isStreaming;
 
   const answerEvidenceSidebar = useMemo(
     () => deriveAnswerEvidenceSidebar({
@@ -216,6 +222,13 @@ function AssistantMessageFrame({
   const handleRetry = useMemo(
     () => onRetry ? () => onRetry(message.id) : undefined,
     [message.id, onRetry],
+  );
+
+  const handleContinue = useMemo(
+    () => onContinueAgentRun
+      ? (previousRunId?: string) => onContinueAgentRun(message.id, previousRunId)
+      : undefined,
+    [message.id, onContinueAgentRun],
   );
 
   useEffect(() => {
@@ -273,19 +286,18 @@ function AssistantMessageFrame({
   ]);
 
   const reasoningProps = useMemo(() => ({
-    shouldRender: !suppressThinking && (hasThinking || (isStreaming && isLastMessage && isStreamingReasoning)),
+    shouldRender: !suppressThinking && (hasThinking || (isCurrentMessageStreaming && isStreamingReasoning)),
     content: displayThinking,
-    isVisible: message.isReasoningVisible || localReasoningVisible || (isStreaming && isLastMessage),
+    isVisible: message.isReasoningVisible || localReasoningVisible || isCurrentMessageStreaming,
     onToggle: handleToggleReasoning,
-    isStreaming: isStreamingReasoning && isLastMessage && !isThinkingPhaseComplete,
-    startTime: (isLastMessage ? streamingStartTime : undefined) ?? undefined,
-    endTime: (isLastMessage ? streamingEndTime : undefined) ?? undefined,
+    isStreaming: isStreamingReasoning && isCurrentMessageStreaming && !isThinkingPhaseComplete,
+    startTime: (isCurrentMessageStreaming ? streamingStartTime : undefined) ?? undefined,
+    endTime: (isCurrentMessageStreaming ? streamingEndTime : undefined) ?? undefined,
   }), [
     displayThinking,
     handleToggleReasoning,
     hasThinking,
-    isLastMessage,
-    isStreaming,
+    isCurrentMessageStreaming,
     isStreamingReasoning,
     isThinkingPhaseComplete,
     localReasoningVisible,
@@ -338,12 +350,13 @@ function AssistantMessageFrame({
             activity={activity}
             agentRun={agentRun}
             onRetry={handleRetry}
+            onContinueAgentRun={handleContinue}
             answerEvidence={answerEvidence}
             answerEvidenceSidebar={answerEvidenceSidebar}
             onSourceClick={handleCitationClick}
             onOpenSources={handleOpenSources}
             markdown={markdownProps}
-            showStreamingCursor={isStreaming && isLastMessage && activity.kind === 'answering'}
+            showStreamingCursor={isCurrentMessageStreaming && activity.kind === 'answering'}
           />
 
           {!isStreaming && (

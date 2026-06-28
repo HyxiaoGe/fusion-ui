@@ -259,6 +259,49 @@ describe('AssistantMessage', () => {
     expect(screen.getByText('助手正文')).toBeInTheDocument();
   });
 
+  it('非最后一条消息被标记为流式时使用流式 view model', () => {
+    useAssistantMessageViewModelMock.mockReturnValue(defaultViewModel({ displayText: '继续后的正文' }));
+
+    renderAssistant({
+      isLastMessage: false,
+      isStreaming: true,
+    });
+
+    expect(useAssistantMessageViewModelMock).toHaveBeenCalledWith(expect.objectContaining({
+      message: expect.objectContaining({ id: 'assistant-1' }),
+      isStreaming: true,
+      isLastMessage: false,
+    }));
+    expect(deriveStaticAssistantMessageViewModelMock).not.toHaveBeenCalled();
+    expect(screen.getByText('继续后的正文')).toBeInTheDocument();
+  });
+
+  it('非最后一条消息 continuation 流式中仍显示光标并保持推理流状态', () => {
+    useAssistantMessageViewModelMock.mockReturnValue(defaultViewModel({
+      displayText: '继续后的正文',
+      displayThinking: '继续思考',
+      hasThinking: true,
+      isCurrentlyStreaming: true,
+      isStreamingReasoning: true,
+      isThinkingPhaseComplete: false,
+      streamingStartTime: 123,
+    }));
+
+    renderAssistant({
+      isLastMessage: false,
+      isStreaming: true,
+    });
+
+    const props = assistantResponseStackMock.mock.calls.at(-1)?.[0];
+    expect(props.reasoning).toMatchObject({
+      shouldRender: true,
+      isVisible: true,
+      isStreaming: true,
+      startTime: 123,
+    });
+    expect(props.showStreamingCursor).toBe(true);
+  });
+
   it('静态 assistant 在无关 props 引用稳定时不重复派生 view model', () => {
     const message = assistantMessage({ id: 'assistant-stable', content: [{ type: 'text', id: 'text-stable', text: '回答内容' }] });
     const stableQuestions: string[] = [];

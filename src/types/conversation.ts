@@ -1,3 +1,5 @@
+import type { AgentRunState } from './agentRun';
+
 // ============================================================
 // Content Blocks（对齐后端 schema）
 // ============================================================
@@ -120,6 +122,7 @@ export interface Message {
   status?: 'pending' | 'failed' | null;
   isReasoningVisible?: boolean;
   shouldSyncToDb?: boolean;
+  agent_run?: AgentRunState | null;
   // 持久化推荐问题，刷新后随消息恢复
   suggestedQuestions?: string[];
 }

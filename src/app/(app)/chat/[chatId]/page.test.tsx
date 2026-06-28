@@ -16,6 +16,8 @@ const {
   sendMessageMock,
   stopStreamingMock,
   retryMessageMock,
+  continueAgentRunMock,
+  stopContinueAgentRunMock,
   clearQuestionsMock,
   fetchQuestionsMock,
   suggestedQuestionsState,
@@ -49,6 +51,8 @@ const {
   sendMessageMock: vi.fn(),
   stopStreamingMock: vi.fn(),
   retryMessageMock: vi.fn(),
+  continueAgentRunMock: vi.fn(),
+  stopContinueAgentRunMock: vi.fn(),
   clearQuestionsMock: vi.fn(),
   fetchQuestionsMock: vi.fn(),
 }));
@@ -105,6 +109,13 @@ vi.mock('@/hooks/useSendMessage', () => ({
     sendMessage: sendMessageMock,
     stopStreaming: stopStreamingMock,
     retryMessage: retryMessageMock,
+  }),
+}));
+
+vi.mock('@/hooks/useContinueAgentRun', () => ({
+  useContinueAgentRun: () => ({
+    continueAgentRun: continueAgentRunMock,
+    stopContinueAgentRun: stopContinueAgentRunMock,
   }),
 }));
 
@@ -174,9 +185,11 @@ vi.mock('@/components/chat/ChatInput', () => ({
   default: function MockChatInput({
     activeChatId,
     resetSignal,
+    onStopStreaming,
   }: {
     activeChatId?: string;
     resetSignal?: string;
+    onStopStreaming?: () => void;
   }) {
     useEffect(() => {
       chatInputMountMock();
@@ -188,7 +201,9 @@ vi.mock('@/components/chat/ChatInput', () => ({
         data-testid="chat-input"
         data-active-chat-id={activeChatId}
         data-reset-signal={resetSignal}
-      />
+      >
+        <button type="button" onClick={onStopStreaming}>停止生成</button>
+      </div>
     );
   },
 }));
@@ -262,6 +277,9 @@ describe('ChatPage 会话切换体验', () => {
     sendMessageMock.mockClear();
     stopStreamingMock.mockClear();
     retryMessageMock.mockClear();
+    continueAgentRunMock.mockClear();
+    stopContinueAgentRunMock.mockClear();
+    stopContinueAgentRunMock.mockResolvedValue(false);
     clearQuestionsMock.mockClear();
     fetchQuestionsMock.mockClear();
     suggestedQuestionsState.questions = [];
@@ -404,6 +422,98 @@ describe('ChatPage 会话切换体验', () => {
     expect(lastMessageListProps?.messages).toEqual([]);
     expect(lastMessageListProps?.loadingState).toBe('history-hydration');
     expect(lastMessageListProps?.onRetry).toBeUndefined();
+  });
+
+  it('向消息列表下发 continuation handler，点击后续跑同一条 assistant message', async () => {
+    conversationsById.set('chat-a', createConversation('chat-a', [
+      textMessage('user-1'),
+      {
+        id: 'assistant-1',
+        role: 'assistant',
+        content: [{ type: 'text', id: 'answer-1', text: '旧回答' }],
+        timestamp: 2,
+      },
+    ]));
+    hydrationById.set('chat-a', { view: 'ready' });
+
+    render(<ChatPage />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('message-list')).toHaveAttribute('data-message-ids', 'user-1,assistant-1');
+    });
+
+    const lastMessageListProps = chatMessageListMock.mock.calls.at(-1)?.[0];
+    lastMessageListProps.onContinueAgentRun('assistant-1', 'run-1');
+
+    expect(continueAgentRunMock).toHaveBeenCalledWith({
+      conversationId: 'chat-a',
+      assistantMessageId: 'assistant-1',
+      previousRunId: 'run-1',
+    });
+  });
+
+  it('流式中不下发 continuation handler，避免显示继续入口', async () => {
+    conversationsById.set('chat-a', createConversation('chat-a', [
+      textMessage('user-1'),
+      {
+        id: 'assistant-1',
+        role: 'assistant',
+        content: [{ type: 'text', id: 'answer-1', text: '旧回答' }],
+        timestamp: 2,
+      },
+    ]));
+    hydrationById.set('chat-a', { view: 'ready' });
+    streamState.isStreaming = true;
+    streamState.conversationId = 'chat-a';
+
+    render(<ChatPage />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('message-list')).toHaveAttribute('data-message-ids', 'user-1,assistant-1');
+    });
+
+    const lastMessageListProps = chatMessageListMock.mock.calls.at(-1)?.[0];
+    expect(lastMessageListProps.onContinueAgentRun).toBeUndefined();
+    expect(continueAgentRunMock).not.toHaveBeenCalled();
+  });
+
+  it('停止按钮优先停止 continuation stream，不误走普通发送 stop', async () => {
+    conversationsById.set('chat-a', createConversation('chat-a', [textMessage('message-a')]));
+    hydrationById.set('chat-a', { view: 'ready' });
+    streamState.isStreaming = true;
+    streamState.conversationId = 'chat-a';
+    stopContinueAgentRunMock.mockResolvedValue(true);
+
+    render(<ChatPage />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('chat-input')).toHaveAttribute('data-active-chat-id', 'chat-a');
+    });
+    fireEvent.click(screen.getByRole('button', { name: '停止生成' }));
+
+    await waitFor(() => {
+      expect(stopContinueAgentRunMock).toHaveBeenCalledTimes(1);
+    });
+    expect(stopStreamingMock).not.toHaveBeenCalled();
+  });
+
+  it('非 continuation stream 停止时回退普通发送 stop', async () => {
+    conversationsById.set('chat-a', createConversation('chat-a', [textMessage('message-a')]));
+    hydrationById.set('chat-a', { view: 'ready' });
+    streamState.isStreaming = true;
+    streamState.conversationId = 'chat-a';
+    stopContinueAgentRunMock.mockResolvedValue(false);
+
+    render(<ChatPage />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('chat-input')).toHaveAttribute('data-active-chat-id', 'chat-a');
+    });
+    fireEvent.click(screen.getByRole('button', { name: '停止生成' }));
+
+    await waitFor(() => {
+      expect(stopStreamingMock).toHaveBeenCalledTimes(1);
+    });
   });
 
   it('过渡态屏蔽当前会话的建议问题、完成态和流式状态', async () => {

@@ -241,4 +241,40 @@ describe('conversationHydration', () => {
       provider_chain: ['firecrawl', 'brave'],
     });
   });
+
+  it('hydrates latest agent run summary from assistant messages', () => {
+    const chat = buildChatFromServerConversation({
+      id: 'chat-6',
+      title: 'Server chat',
+      model_id: 'deepseek-chat',
+      messages: [
+        {
+          id: 'assistant-1',
+          role: 'assistant',
+          content: [{ type: 'text', id: 'blk_a1', text: '触顶回答' }],
+          created_at: '2026-03-14T08:00:02Z',
+          agent_run: {
+            run_id: 'run-1',
+            status: 'limit_reached',
+            config: { max_steps: 3, max_tool_calls: 5, timeout_s: 60 },
+            total_steps: 3,
+            total_tool_calls: 5,
+            limit_reason: 'max_steps',
+          },
+        } as any,
+      ],
+    });
+
+    expect(chat.messages[0].agent_run).toMatchObject({
+      runId: 'run-1',
+      messageId: 'assistant-1',
+      serverMessageId: 'assistant-1',
+      status: 'limit_reached',
+      config: { maxSteps: 3, maxToolCalls: 5, timeoutS: 60 },
+      totalSteps: 3,
+      totalToolCalls: 5,
+      limitReachedReason: 'max_steps',
+      steps: [],
+    });
+  });
 });

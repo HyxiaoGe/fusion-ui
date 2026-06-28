@@ -9,16 +9,16 @@ interface RunBannerProps {
   /** 用户点「重试运行」/「重新提问」时调用。
    * undefined 时按钮不渲染（避免 fake CTA，contract §7）。 */
   onRetry?: () => void;
+  onContinue?: () => void;
 }
 
 /**
  * 三种终态 banner（contract §7 CTA 白名单已限制不做 fake CTA）：
  *   - failed → danger banner + 重试运行按钮
  *   - interrupted → neutral banner（不显示恢复按钮，能力没有）
- *   - limit_reached → warn banner + 三种 reason 文案 + max_steps/max_tool_calls 走
- *     suggested question 不出按钮，timeout 给重新提问按钮
+ *   - limit_reached → warn banner + 三种 reason 文案 + 继续查按钮
  */
-export function RunBanner({ run, onRetry }: RunBannerProps) {
+export function RunBanner({ run, onRetry, onContinue }: RunBannerProps) {
   if (run.status === 'failed') {
     return (
       <div className="rounded-lg border border-danger/30 bg-danger/5 p-3 flex items-start gap-2 mb-2">
@@ -69,14 +69,14 @@ export function RunBanner({ run, onRetry }: RunBannerProps) {
           <div className="text-sm font-medium text-warn">{text.title}</div>
           <div className="text-xs text-muted-foreground mt-0.5">{text.sub}</div>
         </div>
-        {run.limitReachedReason === 'timeout' && onRetry && (
+        {onContinue && (
           <button
             type="button"
-            onClick={onRetry}
+            onClick={onContinue}
             className="shrink-0 inline-flex items-center gap-1 px-2 py-1 rounded border border-warn/30 text-xs text-warn hover:bg-warn/10 transition-colors duration-fast"
           >
             <RotateCw className="w-3 h-3" />
-            重新提问
+            继续查
           </button>
         )}
       </div>

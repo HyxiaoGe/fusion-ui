@@ -48,6 +48,7 @@ vi.mock('./agent', () => ({
   AgentRunTimeline: (props: {
     assistantMessageId: string;
     onRetry?: () => void;
+    onContinue?: (previousRunId?: string) => void;
     run?: AgentRunState | null;
   }) => {
     agentRunTimelinePropsMock({
@@ -62,6 +63,7 @@ vi.mock('./agent', () => ({
         data-run-id={props.run?.runId ?? 'none'}
       >
         <button type="button" onClick={props.onRetry}>重试运行</button>
+        <button type="button" onClick={() => props.onContinue?.('run-1')}>继续查</button>
       </section>
     );
   },
@@ -266,6 +268,40 @@ describe('AssistantResponseStack', () => {
     expect(onSourceClick).toHaveBeenCalledWith(0);
     expect(onOpenSources).toHaveBeenCalledTimes(1);
     expect(onCitationClick).toHaveBeenCalledWith(0);
+  });
+
+  it('向 AgentRunTimeline 透传 continuation 事件', () => {
+    const onContinueAgentRun = vi.fn();
+
+    render(
+      <AssistantResponseStack
+        assistantMessageId="assistant-1"
+        reasoning={{
+          shouldRender: false,
+          content: '',
+          isVisible: false,
+          isStreaming: false,
+          onToggle: vi.fn(),
+        }}
+        activity={activity()}
+        agentRun={agentRun}
+        onRetry={undefined}
+        onContinueAgentRun={onContinueAgentRun}
+        answerEvidence={null}
+        onSourceClick={vi.fn()}
+        onOpenSources={vi.fn()}
+        markdown={{
+          content: '回答',
+          sources: [],
+          onCitationClick: undefined,
+        }}
+        showStreamingCursor={false}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: '继续查' }));
+
+    expect(onContinueAgentRun).toHaveBeenCalledWith('run-1');
   });
 
   it('向 AgentRunTimeline 透传当前 agentRun', () => {

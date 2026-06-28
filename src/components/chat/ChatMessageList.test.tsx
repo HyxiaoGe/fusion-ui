@@ -7,6 +7,7 @@ const { selectorState, chatMessageRenderMock, isNearBottomMock } = vi.hoisted(()
   selectorState: {
     stream: {
       conversationId: null,
+      messageId: null as string | null,
       currentRun: null as AgentRunState | null,
       blockOrder: [] as string[],
       textBlocks: {},
@@ -44,16 +45,32 @@ vi.mock('./ChatMessage', () => ({
   default: ({
     message,
     agentRun,
+    isStreaming,
+    onContinueAgentRun,
     suggestedQuestions,
   }: {
     message: { id: string; content: Array<{ type: string; text?: string }> };
     agentRun?: AgentRunState | null;
+    isStreaming?: boolean;
+    onContinueAgentRun?: (messageId: string, previousRunId?: string) => void;
     suggestedQuestions?: string[];
   }) => {
     chatMessageRenderMock(message.id, agentRun?.runId ?? null);
     return (
-      <div data-testid={`chat-message-${message.id}`} data-run-id={agentRun?.runId ?? ''}>
+      <div
+        data-testid={`chat-message-${message.id}`}
+        data-run-id={agentRun?.runId ?? ''}
+        data-streaming={isStreaming ? 'true' : 'false'}
+      >
         <div>{message.content.filter(b => b.type === 'text').map(b => b.text).join('')}</div>
+        {agentRun?.status === 'limit_reached' ? (
+          <button
+            type="button"
+            onClick={() => onContinueAgentRun?.(message.id, agentRun.runId)}
+          >
+            继续查
+          </button>
+        ) : null}
         {suggestedQuestions?.map((question) => (
           <div key={question}>{question}</div>
         ))}
@@ -66,6 +83,7 @@ import ChatMessageList from './ChatMessageList';
 
 describe('ChatMessageList', () => {
   beforeEach(() => {
+    selectorState.stream.messageId = null;
     selectorState.stream.currentRun = null;
     selectorState.stream.blockOrder = [];
     selectorState.stream.displayedTextLength = 0;
@@ -410,6 +428,68 @@ describe('ChatMessageList', () => {
     expect(chatMessageRenderMock).toHaveBeenCalledTimes(2);
     expect(chatMessageRenderMock).toHaveBeenCalledWith('assistant-1', null);
     expect(chatMessageRenderMock).toHaveBeenCalledWith('assistant-2', 'run-2');
+  });
+
+  it('uses persisted latest agent run to continue a hydrated historical message', () => {
+    const onContinueAgentRun = vi.fn();
+    render(
+      <ChatMessageList
+        conversationId="chat-1"
+        onContinueAgentRun={onContinueAgentRun}
+        messages={[
+          {
+            id: 'assistant-1',
+            role: 'assistant',
+            content: [{ type: 'text' as const, id: 'blk_1', text: '触顶回答' }],
+            timestamp: 1,
+            agent_run: {
+              runId: 'run-1',
+              status: 'limit_reached',
+              config: { maxSteps: 3, maxToolCalls: 5, timeoutS: 60 },
+              totalSteps: 3,
+              totalToolCalls: 5,
+              limitReachedReason: 'max_steps',
+            },
+          } as any,
+          {
+            id: 'assistant-2',
+            role: 'assistant',
+            content: [{ type: 'text' as const, id: 'blk_2', text: '最新回复' }],
+            timestamp: 2_000,
+          },
+        ]}
+      />
+    );
+
+    expect(screen.getByTestId('chat-message-assistant-1').dataset.runId).toBe('run-1');
+    fireEvent.click(screen.getByText('继续查'));
+    expect(onContinueAgentRun).toHaveBeenCalledWith('assistant-1', 'run-1');
+  });
+
+  it('marks the message owning stream.messageId as streaming even when it is not last', () => {
+    selectorState.stream.messageId = 'assistant-1';
+    render(
+      <ChatMessageList
+        isStreaming
+        messages={[
+          {
+            id: 'assistant-1',
+            role: 'assistant',
+            content: [{ type: 'text' as const, id: 'blk_1', text: '继续中的旧回答' }],
+            timestamp: 1,
+          },
+          {
+            id: 'assistant-2',
+            role: 'assistant',
+            content: [{ type: 'text' as const, id: 'blk_2', text: '最新回复' }],
+            timestamp: 2_000,
+          },
+        ]}
+      />
+    );
+
+    expect(screen.getByTestId('chat-message-assistant-1').dataset.streaming).toBe('true');
+    expect(screen.getByTestId('chat-message-assistant-2').dataset.streaming).toBe('false');
   });
 
   it('stream 滚动信号更新时不重新渲染消息行', () => {

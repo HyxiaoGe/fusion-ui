@@ -25,6 +25,12 @@ export interface ChatRequest {
   file_ids?: string[];
 }
 
+export interface ContinueAgentRunRequest {
+  conversationId: string;
+  messageId: string;
+  previousRunId?: string;
+}
+
 // ============================================================
 // 流回调接口（新 SSE envelope 协议，BE Task 8）
 // ============================================================
@@ -325,6 +331,39 @@ export async function sendMessageStream(
   await parseSseEnvelopeStream(reader, callbacks, {
     fallbackConversationId: data.conversation_id ?? '',
     // sendMessageStream 不消费 id 行（不做断线续传游标）
+  });
+}
+
+export async function continueAgentRunStream(
+  data: ContinueAgentRunRequest,
+  callbacks: StreamCallbacks,
+  signal?: AbortSignal,
+): Promise<void> {
+  const response = await fetchWithAuth(
+    `${API_BASE_URL}/api/chat/conversations/${encodeURIComponent(data.conversationId)}/messages/${encodeURIComponent(data.messageId)}/continue`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      signal,
+      body: JSON.stringify({
+        previous_run_id: data.previousRunId ?? null,
+        stream: true,
+      }),
+    },
+  );
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    const body = errorData as { code?: string; message?: string; detail?: string };
+    throw new Error(body.message || body.detail || '继续执行失败');
+  }
+
+  if (!response.body) throw new Error('响应体为空');
+
+  const reader = response.body.getReader();
+  await parseSseEnvelopeStream(reader, callbacks, {
+    fallbackConversationId: data.conversationId,
+    doneConversationId: () => data.conversationId,
   });
 }
 

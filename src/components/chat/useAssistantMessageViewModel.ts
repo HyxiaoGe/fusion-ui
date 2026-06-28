@@ -114,14 +114,14 @@ export function useAssistantMessageViewModel({
   const isThinkingPhaseComplete = useAppSelector(state => state.stream.isThinkingPhaseComplete);
 
   const streamBlocks = useAppSelector(state =>
-    isStreaming && isLastMessage && state.stream.messageId === message.id
+    isStreaming && (state.stream.messageId === message.id || (!state.stream.messageId && isLastMessage))
       ? selectStreamContentBlocks(state.stream)
       : null
   );
-  const blocksToRender: ContentBlock[] = (isStreaming && isLastMessage && streamBlocks)
+  const blocksToRender: ContentBlock[] = (isStreaming && streamBlocks)
     ? streamBlocks
     : message.content;
-  const isCurrentlyStreaming = isStreaming && isLastMessage && streamBlocks !== null;
+  const isCurrentlyStreaming = isStreaming && streamBlocks !== null;
 
   const streamCurrentRun = useAppSelector(state => state.stream.currentRun);
   const streamSearchSources = useAppSelector(state => state.stream.searchSources);

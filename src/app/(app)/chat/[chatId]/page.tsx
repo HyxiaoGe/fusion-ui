@@ -38,6 +38,7 @@ import type { LimitReachedReason, ToolCallResultSummary, FinalizeToolCallStatus 
 import { fetchStreamStatus } from '@/lib/api/streamStatus';
 import { reconnectStream } from '@/lib/api/chat';
 import { useConversation } from '@/hooks/useConversation';
+import { useContinueAgentRun } from '@/hooks/useContinueAgentRun';
 import { useSendMessage } from '@/hooks/useSendMessage';
 import { useSuggestedQuestions } from '@/hooks/useSuggestedQuestions';
 import { useSuggestedQuestionContinuation } from '@/hooks/useSuggestedQuestionContinuation';
@@ -62,6 +63,7 @@ export default function ChatPage() {
   const fetchQuestionsRef = useRef<((force?: boolean) => Promise<void>) | undefined>(undefined);
   const { conversation, hydrationView, hydrationError, retryHydration } = useConversation(chatId);
   const { sendMessage, stopStreaming, retryMessage } = useSendMessage();
+  const { continueAgentRun, stopContinueAgentRun } = useContinueAgentRun();
   const {
     suggestedQuestions,
     isLoadingQuestions,
@@ -360,6 +362,22 @@ export default function ChatPage() {
     [chatId, retryMessage]
   );
 
+  const handleContinueAgentRun = useCallback((messageId: string, previousRunId?: string) => {
+    if (!chatId || isStreaming) return;
+    void continueAgentRun({
+      conversationId: chatId,
+      assistantMessageId: messageId,
+      previousRunId,
+    });
+  }, [chatId, continueAgentRun, isStreaming]);
+
+  const handleStopStreaming = useCallback(async () => {
+    if (await stopContinueAgentRun()) {
+      return;
+    }
+    await stopStreaming();
+  }, [stopContinueAgentRun, stopStreaming]);
+
   const handleClearChat = () => {
     if (!chatId) return;
     setConfirmDialogOpen(true);
@@ -382,6 +400,8 @@ export default function ChatPage() {
     ? lastReadyConversation?.chatId || null
     : chatId;
   const isHydratingWithoutContent = hydrationView === 'loading' && !shouldKeepPreviousContent;
+  const isDisplayConversationStreaming =
+    !isHydratingWithoutContent && isStreaming && streamConversationId === displayConversationId;
 
   if ((!conversation && !shouldKeepPreviousContent && !isHydratingWithoutContent) || hydrationView === 'error') {
     return (
@@ -417,9 +437,14 @@ export default function ChatPage() {
           <ChatMessageListLazy
             messages={isHydratingWithoutContent ? [] : displayMessages}
             conversationId={displayConversationId}
-            isStreaming={!isHydratingWithoutContent && isStreaming && streamConversationId === displayConversationId}
+            isStreaming={isDisplayConversationStreaming}
             loadingState={isHydratingWithoutContent ? 'history-hydration' : undefined}
             onRetry={shouldKeepPreviousContent || isHydratingWithoutContent ? undefined : handleRetry}
+            onContinueAgentRun={
+              shouldKeepPreviousContent || isHydratingWithoutContent || isDisplayConversationStreaming
+                ? undefined
+                : handleContinueAgentRun
+            }
             suggestedQuestions={shouldKeepPreviousContent || isHydratingWithoutContent ? [] : suggestedQuestions}
             isLoadingQuestions={shouldKeepPreviousContent || isHydratingWithoutContent ? false : isLoadingQuestions}
             onSelectQuestion={shouldKeepPreviousContent || isHydratingWithoutContent ? undefined : handleSelectQuestion}
@@ -433,7 +458,7 @@ export default function ChatPage() {
           <ChatInput
             onSendMessage={handleSendMessage}
             onClearMessage={handleClearChat}
-            onStopStreaming={stopStreaming}
+            onStopStreaming={handleStopStreaming}
             onModelChange={clearQuestions}
             activeChatId={chatId}
             resetSignal={chatId}

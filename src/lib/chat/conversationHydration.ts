@@ -3,6 +3,7 @@ import type {
   TextBlock, ThinkingBlock, FileBlock, NetworkSourceStatus, SearchBlock,
   SearchSourceSummary, SourceReference, UrlBlock,
 } from '@/types/conversation';
+import type { AgentRunState, AgentRunStatus, LimitReachedReason } from '@/types/agentRun';
 import { parseTimestamp } from '@/lib/utils/parseTimestamp';
 
 // 服务端返回的原始类型（对齐后端 schema）
@@ -35,6 +36,19 @@ interface ServerUsage {
   output_tokens: number;
 }
 
+interface ServerAgentRunSummary {
+  run_id: string;
+  status: AgentRunStatus | 'error';
+  config?: {
+    max_steps?: number;
+    max_tool_calls?: number;
+    timeout_s?: number;
+  } | null;
+  total_steps?: number | null;
+  total_tool_calls?: number | null;
+  limit_reason?: LimitReachedReason | null;
+}
+
 interface ServerMessage {
   id: string;
   role: 'user' | 'assistant';
@@ -43,6 +57,7 @@ interface ServerMessage {
   usage?: ServerUsage | null;
   created_at?: string | number | null;
   suggested_questions?: string[] | null;
+  agent_run?: ServerAgentRunSummary | null;
 }
 
 interface ServerConversation {
@@ -117,6 +132,31 @@ function buildMessage(serverMessage: ServerMessage, conversationId: string): Mes
     timestamp: parseServerTimestamp(serverMessage.created_at),
     isReasoningVisible: hasThinking ? false : undefined,
     suggestedQuestions: serverMessage.suggested_questions ?? undefined,
+    agent_run: buildAgentRunState(serverMessage.agent_run, serverMessage.id),
+  };
+}
+
+function buildAgentRunState(
+  serverRun: ServerAgentRunSummary | null | undefined,
+  messageId: string,
+): AgentRunState | null {
+  if (!serverRun) return null;
+  const config = serverRun.config ?? {};
+  return {
+    runId: serverRun.run_id,
+    messageId,
+    serverMessageId: messageId,
+    status: serverRun.status === 'error' ? 'failed' : serverRun.status,
+    config: {
+      maxSteps: config.max_steps ?? 0,
+      maxToolCalls: config.max_tool_calls ?? 0,
+      timeoutS: config.timeout_s ?? 0,
+    },
+    totalSteps: serverRun.total_steps ?? 0,
+    totalToolCalls: serverRun.total_tool_calls ?? 0,
+    steps: [],
+    limitReachedReason: serverRun.limit_reason ?? undefined,
+    lastSequence: Number.MAX_SAFE_INTEGER,
   };
 }
 

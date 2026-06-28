@@ -12,6 +12,7 @@ import streamSliceReducer, {
   appendTextDelta,
   appendThinkingDelta,
   endStream,
+  selectFullStreamContentBlocks,
 } from './streamSlice';
 
 const reducer = streamSliceReducer;
@@ -312,6 +313,26 @@ describe('streamSlice — agent run timeline', () => {
     s = reducer(s, pushStep({ runId: 'r1', stepId: 's1', stepNumber: 1, sequence: 1 }));
     s = reducer(s, startStream({ conversationId: 'c2', messageId: 'm2' }));
     expect(s.currentRun).toBeNull();
+  });
+
+  it('continuation 旧 blocks 保留在新 delta 前', () => {
+    let s = reducer(initial(), startStream({
+      conversationId: 'c1',
+      messageId: 'm1',
+      staticBlocks: [{ type: 'text', id: 'old-text', text: '旧回答' }],
+    }));
+
+    s = reducer(s, appendTextDelta({
+      blockId: 'new-text',
+      delta: '新补充',
+      runId: 'r2',
+      stepId: 's1',
+    }));
+
+    expect(selectFullStreamContentBlocks(s)).toEqual([
+      { type: 'text', id: 'old-text', text: '旧回答' },
+      { type: 'text', id: 'new-text', text: '新补充' },
+    ]);
   });
 });
 

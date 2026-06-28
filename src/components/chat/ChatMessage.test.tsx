@@ -18,6 +18,7 @@ const selectorState = {
   stream: {
     conversationId: 'chat-1',
     messageId: null as string | null,
+    staticBlocks: [],
     textBlocks: {} as Record<string, string>,
     thinkingBlocks: {} as Record<string, string>,
     blockOrder: [] as string[],
@@ -52,6 +53,7 @@ function resetSelectorState() {
   Object.assign(selectorState.stream, {
     conversationId: 'chat-1',
     messageId: null,
+    staticBlocks: [],
     textBlocks: {},
     thinkingBlocks: {},
     blockOrder: [],

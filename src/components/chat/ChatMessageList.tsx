@@ -20,6 +20,7 @@ interface ChatMessageListProps {
   isStreaming?: boolean;
   loadingState?: 'default' | 'history-hydration';
   onRetry?: (messageId: string) => void;
+  onContinueAgentRun?: (messageId: string, previousRunId?: string) => void;
   onEdit?: (messageId: string, content: string) => void;
   suggestedQuestions?: string[];
   isLoadingQuestions?: boolean;
@@ -56,6 +57,7 @@ interface ChatMessageRowProps {
   isLastMessage: boolean;
   isStreamingMessage: boolean;
   onRetry?: (messageId: string) => void;
+  onContinueAgentRun?: (messageId: string, previousRunId?: string) => void;
   onEdit?: (messageId: string, content: string) => void;
   conversationId: string | null;
   providerId?: string;
@@ -67,11 +69,11 @@ interface ChatMessageRowProps {
   onRefreshQuestions?: () => void;
 }
 
-function getMessageRun(messageId: string, currentRun: AgentRunState | null): AgentRunState | null {
-  if (!currentRun) return null;
-  return currentRun.messageId === messageId || currentRun.serverMessageId === messageId
-    ? currentRun
-    : null;
+function getMessageRun(message: Message, currentRun: AgentRunState | null): AgentRunState | null {
+  if (currentRun?.messageId === message.id || currentRun?.serverMessageId === message.id) {
+    return currentRun;
+  }
+  return message.agent_run ?? null;
 }
 
 const ChatMessageRow = React.memo(function ChatMessageRow({
@@ -81,6 +83,7 @@ const ChatMessageRow = React.memo(function ChatMessageRow({
   isLastMessage,
   isStreamingMessage,
   onRetry,
+  onContinueAgentRun,
   onEdit,
   conversationId,
   providerId,
@@ -100,11 +103,12 @@ const ChatMessageRow = React.memo(function ChatMessageRow({
         isLastMessage={isLastMessage}
         isStreaming={isStreamingMessage}
         onRetry={onRetry}
+        onContinueAgentRun={onContinueAgentRun}
         onEdit={onEdit}
         activeChatId={conversationId}
         providerId={providerId}
         modelName={modelName}
-        agentRun={getMessageRun(message.id, currentRun)}
+        agentRun={getMessageRun(message, currentRun)}
         suggestedQuestions={suggestedQuestions}
         isLoadingQuestions={isLoadingQuestions}
         onSelectQuestion={onSelectQuestion}
@@ -121,11 +125,12 @@ function areChatMessageRowPropsEqual(prev: ChatMessageRowProps, next: ChatMessag
     && prev.isLastMessage === next.isLastMessage
     && prev.isStreamingMessage === next.isStreamingMessage
     && prev.onRetry === next.onRetry
+    && prev.onContinueAgentRun === next.onContinueAgentRun
     && prev.onEdit === next.onEdit
     && prev.conversationId === next.conversationId
     && prev.providerId === next.providerId
     && prev.modelName === next.modelName
-    && getMessageRun(prev.message.id, prev.currentRun) === getMessageRun(next.message.id, next.currentRun)
+    && getMessageRun(prev.message, prev.currentRun) === getMessageRun(next.message, next.currentRun)
     && prev.suggestedQuestions === next.suggestedQuestions
     && prev.isLoadingQuestions === next.isLoadingQuestions
     && prev.onSelectQuestion === next.onSelectQuestion
@@ -139,6 +144,7 @@ const ChatMessageList: React.FC<ChatMessageListProps> = ({
   isStreaming = false,
   loadingState = 'default',
   onRetry,
+  onContinueAgentRun,
   onEdit,
   suggestedQuestions = EMPTY_SUGGESTED_QUESTIONS,
   isLoadingQuestions = false,
@@ -223,12 +229,25 @@ const ChatMessageList: React.FC<ChatMessageListProps> = ({
   const dispatch = useAppDispatch();
   const streamError = useAppSelector(state => state.stream.lastError);
   const currentRun = useAppSelector(state => state.stream.currentRun);
+  const streamMessageId = useAppSelector(state => state.stream.messageId);
   const model = useAppSelector(state => selectChatModel(state, conversationId));
   const providerId = model?.provider;
   const modelName = model?.name ?? 'AI助手';
   const streamScrollSignal = useAppSelector(
     state => isStreaming ? state.stream.displayedTextLength + state.stream.blockOrder.length : 0
   );
+
+  const isStreamingForMessage = (message: Message, index: number): boolean => {
+    if (!isStreaming || message.role !== 'assistant') {
+      return false;
+    }
+    if (streamMessageId) {
+      return message.id === streamMessageId
+        || currentRun?.messageId === message.id
+        || currentRun?.serverMessageId === message.id;
+    }
+    return index === sortedMessages.length - 1;
+  };
 
   useEffect(() => {
     if (messages.length === 0) {
@@ -313,8 +332,9 @@ const ChatMessageList: React.FC<ChatMessageListProps> = ({
             previousRole={prevMessage?.role ?? null}
             isFirstMessage={index === 0}
             isLastMessage={index === sortedMessages.length - 1}
-            isStreamingMessage={isStreaming && index === sortedMessages.length - 1 && message.role === 'assistant'}
+            isStreamingMessage={isStreamingForMessage(message, index)}
             onRetry={onRetry}
+            onContinueAgentRun={onContinueAgentRun}
             onEdit={onEdit}
             conversationId={conversationId}
             providerId={providerId}

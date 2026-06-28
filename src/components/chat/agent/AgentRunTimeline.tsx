@@ -13,6 +13,7 @@ interface AgentRunTimelineProps {
   /** 用户点「重试运行」/「重新提问」时调用。
    * undefined 时 RunBanner 不显示按钮（避免 fake CTA，contract §7）。 */
   onRetry?: () => void;
+  onContinue?: (previousRunId?: string) => void;
   /** 上层已知的 run。传入 null 时不订阅全局 currentRun；undefined 按未传处理。 */
   run?: AgentRunState | null;
 }
@@ -31,6 +32,7 @@ export function AgentRunTimeline(props: AgentRunTimelineProps) {
       <AgentRunTimelineContent
         assistantMessageId={props.assistantMessageId}
         onRetry={props.onRetry}
+        onContinue={props.onContinue}
         run={props.run ?? null}
       />
     );
@@ -40,6 +42,7 @@ export function AgentRunTimeline(props: AgentRunTimelineProps) {
     <AgentRunTimelineFromStore
       assistantMessageId={props.assistantMessageId}
       onRetry={props.onRetry}
+      onContinue={props.onContinue}
     />
   );
 }
@@ -47,6 +50,7 @@ export function AgentRunTimeline(props: AgentRunTimelineProps) {
 function AgentRunTimelineFromStore({
   assistantMessageId,
   onRetry,
+  onContinue,
 }: Omit<AgentRunTimelineProps, 'run'>) {
   const run = useAppSelector(s => s.stream.currentRun);
 
@@ -54,6 +58,7 @@ function AgentRunTimelineFromStore({
     <AgentRunTimelineContent
       assistantMessageId={assistantMessageId}
       onRetry={onRetry}
+      onContinue={onContinue}
       run={run}
     />
   );
@@ -62,8 +67,9 @@ function AgentRunTimelineFromStore({
 function AgentRunTimelineContent({
   assistantMessageId,
   onRetry,
+  onContinue,
   run,
-}: Required<Pick<AgentRunTimelineProps, 'assistantMessageId' | 'run'>> & Pick<AgentRunTimelineProps, 'onRetry'>) {
+}: Required<Pick<AgentRunTimelineProps, 'assistantMessageId' | 'run'>> & Pick<AgentRunTimelineProps, 'onRetry' | 'onContinue'>) {
   if (!run) return null;
   // contract §1：只挂到归属本 message 的 currentRun
   if (run.messageId !== assistantMessageId && run.serverMessageId !== assistantMessageId) {
@@ -81,7 +87,11 @@ function AgentRunTimelineContent({
       className="mb-3 w-full max-w-full min-w-0 self-stretch"
     >
       <RunHeader run={run} />
-      <RunBanner run={run} onRetry={onRetry} />
+      <RunBanner
+        run={run}
+        onRetry={onRetry}
+        onContinue={onContinue ? () => onContinue(run.runId) : undefined}
+      />
       <StepTimeline run={run} />
     </div>
   );

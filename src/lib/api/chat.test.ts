@@ -13,7 +13,7 @@ vi.mock('./fetchWithAuth', () => ({
   apiRequest: apiRequestMock,
 }));
 
-import { getConversation, reconnectStream, sendMessageStream } from './chat';
+import { continueAgentRunStream, getConversation, reconnectStream, sendMessageStream } from './chat';
 
 function createStreamResponse(chunks: string[]) {
   const encoder = new TextEncoder();
@@ -538,6 +538,74 @@ describe('reconnectStream — 新 envelope 协议', () => {
       expect.any(Object),
     );
     warn.mockRestore();
+  });
+});
+
+describe('continueAgentRunStream', () => {
+  beforeEach(() => {
+    fetchWithAuthMock.mockReset();
+  });
+
+  it('向 continuation endpoint 发起 POST 并复用 SSE envelope 回调', async () => {
+    fetchWithAuthMock.mockResolvedValue(
+      createStreamResponse([
+        agentEvent(
+          'run_started',
+          {
+            conversation_id: 'conv-1',
+            message_id: 'msg-1',
+            model: 'gpt',
+            tools: [],
+            config: { max_steps: 8, max_tool_calls: 20, timeout_s: 300 },
+          },
+          0,
+          'run-2',
+        ),
+        envelope('done', {}),
+        'data: [DONE]\n\n',
+      ]),
+    );
+
+    const onReady = vi.fn();
+    const onRunStarted = vi.fn();
+    const onDone = vi.fn();
+
+    await continueAgentRunStream(
+      {
+        conversationId: 'conv-1',
+        messageId: 'msg-1',
+        previousRunId: 'run-1',
+      },
+      {
+        onReady,
+        onRunStarted,
+        onReasoning: vi.fn(),
+        onAnswering: vi.fn(),
+        onDone,
+        onError: vi.fn(),
+      },
+    );
+
+    expect(fetchWithAuthMock).toHaveBeenCalledWith(
+      expect.stringContaining('/api/chat/conversations/conv-1/messages/msg-1/continue'),
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({ previous_run_id: 'run-1', stream: true }),
+      }),
+    );
+    expect(onReady).toHaveBeenCalledWith({
+      messageId: 'msg-1',
+      conversationId: 'conv-1',
+    });
+    expect(onRunStarted).toHaveBeenCalledWith(expect.objectContaining({
+      type: 'run_started',
+      run_id: 'run-2',
+      message_id: 'msg-1',
+    }));
+    expect(onDone).toHaveBeenCalledWith({
+      messageId: 'msg-1',
+      conversationId: 'conv-1',
+    });
   });
 });
 

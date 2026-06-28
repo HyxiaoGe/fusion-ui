@@ -6,6 +6,7 @@ import type { Message, SearchSourceSummary } from '@/types/conversation';
 const selectorState = {
   stream: {
     messageId: null as string | null,
+    staticBlocks: [] as Message['content'],
     textBlocks: {} as Record<string, string>,
     thinkingBlocks: {} as Record<string, string>,
     blockOrder: [] as string[],
@@ -33,6 +34,7 @@ import {
 function resetSelectorState() {
   Object.assign(selectorState.stream, {
     messageId: null,
+    staticBlocks: [],
     textBlocks: {},
     thinkingBlocks: {},
     blockOrder: [],
@@ -340,6 +342,31 @@ describe('useAssistantMessageViewModel', () => {
       { type: 'text', id: 'stream-text-1', text: '流式正文' },
     ]);
     expect(result.current.displayText).toBe('流式正文');
+  });
+
+  it('流式归属消息不是最后一条时也从 stream blocks 派生正文', () => {
+    selectorState.stream.messageId = 'assistant-1';
+    selectorState.stream.textBlocks = { 'stream-text-1': '继续后的正文' };
+    selectorState.stream.blockOrder = ['stream-text-1'];
+    selectorState.stream.blockTypes = { 'stream-text-1': 'text' };
+    selectorState.stream.totalTextLength = 6;
+    selectorState.stream.displayedTextLength = 6;
+
+    const { result } = renderViewModel(
+      {
+        id: 'assistant-1',
+        role: 'assistant',
+        content: [{ type: 'text', id: 'persisted-text-1', text: '历史正文' }],
+        timestamp: 1,
+      },
+      { isStreaming: true, isLastMessage: false },
+    );
+
+    expect(result.current.isCurrentlyStreaming).toBe(true);
+    expect(result.current.blocksToRender).toEqual([
+      { type: 'text', id: 'stream-text-1', text: '继续后的正文' },
+    ]);
+    expect(result.current.displayText).toBe('继续后的正文');
   });
 
   it('currentRun 不归属当前消息时不会污染 activity 状态', () => {

@@ -26,6 +26,7 @@ interface AssistantResponseStackProps {
   activity: AssistantActivity;
   agentRun?: AgentRunState | null;
   onRetry?: () => void;
+  onContinueAgentRun?: (previousRunId?: string) => void;
   answerEvidence: AnswerEvidenceModel | null;
   answerEvidenceSidebar?: AnswerEvidenceSidebarModel | null;
   onSourceClick: (index: number) => void;
@@ -44,6 +45,7 @@ function AssistantResponseStack({
   activity,
   agentRun,
   onRetry,
+  onContinueAgentRun,
   answerEvidence,
   answerEvidenceSidebar,
   onSourceClick,
@@ -52,8 +54,8 @@ function AssistantResponseStack({
   showStreamingCursor,
 }: AssistantResponseStackProps) {
   const agentRunTimelineProps = agentRun === undefined
-    ? { assistantMessageId, onRetry }
-    : { assistantMessageId, onRetry, run: agentRun };
+    ? { assistantMessageId, onRetry, onContinue: onContinueAgentRun }
+    : { assistantMessageId, onRetry, onContinue: onContinueAgentRun, run: agentRun };
 
   return (
     <div

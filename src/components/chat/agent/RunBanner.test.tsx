@@ -62,15 +62,15 @@ describe('RunBanner', () => {
     expect(screen.getByText(/工具调用/)).toBeInTheDocument();
   });
 
-  it('limit_reached + timeout reason 显示超时文案 + 重试按钮', () => {
+  it('limit_reached + timeout reason 显示超时文案且不走旧重试按钮', () => {
     const onRetry = vi.fn();
     render(<RunBanner run={run({
       status: 'limit_reached',
       limitReachedReason: 'timeout',
     })} onRetry={onRetry} />);
     expect(screen.getByText(/超时/)).toBeInTheDocument();
-    fireEvent.click(screen.getByText(/重新提问/));
-    expect(onRetry).toHaveBeenCalled();
+    expect(screen.queryByText(/重新提问/)).not.toBeInTheDocument();
+    expect(onRetry).not.toHaveBeenCalled();
   });
 
   it('incomplete 显示部分完成 banner + 重试按钮', () => {
@@ -89,7 +89,7 @@ describe('RunBanner', () => {
     expect(screen.queryByText(/重试运行/)).not.toBeInTheDocument();
   });
 
-  it('limit_reached + timeout 但 onRetry 未传时不显示「重新提问」按钮（contract §7 不做 fake CTA）', () => {
+  it('limit_reached + timeout 但 onContinue 未传时不显示「继续查」按钮（contract §7 不做 fake CTA）', () => {
     render(<RunBanner run={run({
       status: 'limit_reached',
       limitReachedReason: 'timeout',
@@ -97,6 +97,21 @@ describe('RunBanner', () => {
     // 文案应该显示
     expect(screen.getByText(/超时/)).toBeInTheDocument();
     // 按钮不应该显示
-    expect(screen.queryByText(/重新提问/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/继续查/)).not.toBeInTheDocument();
   });
+
+  it.each(['max_steps', 'max_tool_calls', 'timeout'] as const)(
+    'limit_reached + %s 显示继续查按钮',
+    reason => {
+      const onContinue = vi.fn();
+      render(<RunBanner run={run({
+        status: 'limit_reached',
+        limitReachedReason: reason,
+      })} onContinue={onContinue} />);
+
+      fireEvent.click(screen.getByRole('button', { name: '继续查' }));
+
+      expect(onContinue).toHaveBeenCalledTimes(1);
+    },
+  );
 });
