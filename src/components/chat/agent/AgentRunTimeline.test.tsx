@@ -220,7 +220,8 @@ describe('AgentRunTimeline', () => {
       ],
     }));
 
-    expect(screen.getByText('正在整理结论')).toBeInTheDocument();
+    expect(screen.queryByText('正在整理结论')).not.toBeInTheDocument();
+    expect(screen.getByText('已完成回答整理')).toBeInTheDocument();
     expect(screen.getAllByText('搜索资料').length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText('工具结果')).toBeInTheDocument();
   });

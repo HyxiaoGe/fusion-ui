@@ -38,4 +38,20 @@ describe('RunProgressStrip', () => {
     expect(screen.getByText('2/4 步')).toBeInTheDocument();
     expect(screen.getByText('工具 1/5')).toBeInTheDocument();
   });
+
+  it('已完成 run 不继续展示进行中文案', () => {
+    render(<RunProgressStrip run={{
+      ...baseRun,
+      status: 'completed',
+      progress: {
+        phase: 'synthesizing',
+        label: '正在整理回答',
+        completedSteps: 2,
+        totalSteps: 2,
+      },
+    }} />);
+
+    expect(screen.queryByText('正在整理回答')).not.toBeInTheDocument();
+    expect(screen.getByText('已完成回答整理')).toBeInTheDocument();
+  });
 });
