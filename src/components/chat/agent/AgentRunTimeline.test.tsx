@@ -287,7 +287,8 @@ describe('AgentRunTimeline', () => {
     }));
 
     expect(screen.getByText('工具结果')).toBeInTheDocument();
-    expect(screen.getByText('搜索资料')).toBeInTheDocument();
+    expect(screen.getByText('搜索完成')).toBeInTheDocument();
+    expect(screen.getByText('找到 2 条来源')).toBeInTheDocument();
   });
 
   it('completed 但存在 degraded 工具时仍渲染 timeline', () => {
