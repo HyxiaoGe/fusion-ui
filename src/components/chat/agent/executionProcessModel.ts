@@ -58,6 +58,10 @@ export function sanitizeExecutionTitle(digest: AgentToolDigest): string {
 }
 
 export function sanitizeExecutionSummary(digest: AgentToolDigest): string {
+  if (digest.toolName === 'url_read' && digest.status === 'success') {
+    return '已读取网页内容，供后续回答核验。';
+  }
+
   if (digest.toolName === 'url_read' && digest.status !== 'success') {
     return digest.status === 'interrupted'
       ? '网页读取已中断，未使用该来源。'

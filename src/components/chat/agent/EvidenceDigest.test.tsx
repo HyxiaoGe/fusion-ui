@@ -103,4 +103,28 @@ describe('EvidenceDigest', () => {
     expect(screen.queryByText(/url_read/)).not.toBeInTheDocument();
     expect(screen.queryByText(/reader-service/)).not.toBeInTheDocument();
   });
+
+  it('网页读取成功摘要不透出旧版工具兜底文案', () => {
+    render(<EvidenceDigest run={{
+      ...baseRun,
+      status: 'running',
+      toolDigests: [
+        {
+          toolCallId: 'tc-3',
+          toolName: 'url_read',
+          status: 'success',
+          title: 'url_read 已完成',
+          summary: '工具返回了可用结果。',
+          keyFindings: [],
+          sourceRefs: [],
+          truncated: false,
+        },
+      ],
+    }} />);
+
+    expect(screen.getByText('网页读取完成')).toBeInTheDocument();
+    expect(screen.getByText('已读取网页内容，供后续回答核验。')).toBeInTheDocument();
+    expect(screen.queryByText(/工具返回/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/url_read/)).not.toBeInTheDocument();
+  });
 });
