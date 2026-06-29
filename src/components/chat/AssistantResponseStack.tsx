@@ -30,6 +30,7 @@ interface AssistantResponseStackProps {
   onContinueAgentRun?: (previousRunId?: string) => void;
   answerEvidence: AnswerEvidenceModel | null;
   answerEvidenceSidebar?: AnswerEvidenceSidebarModel | null;
+  searchQueries?: string[];
   onSourceClick: (index: number) => void;
   onOpenSources: () => void;
   markdown: {
@@ -49,6 +50,7 @@ function AssistantResponseStack({
   onContinueAgentRun,
   answerEvidence,
   answerEvidenceSidebar,
+  searchQueries,
   onSourceClick,
   onOpenSources,
   markdown,
@@ -61,6 +63,7 @@ function AssistantResponseStack({
       onRetry,
       onContinue: onContinueAgentRun,
       searchSources: executionSearchSources,
+      searchQueries,
       onOpenSources,
     }
     : {
@@ -69,6 +72,7 @@ function AssistantResponseStack({
       onContinue: onContinueAgentRun,
       run: agentRun,
       searchSources: executionSearchSources,
+      searchQueries,
       onOpenSources,
     };
 

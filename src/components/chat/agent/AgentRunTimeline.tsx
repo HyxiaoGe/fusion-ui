@@ -23,6 +23,8 @@ interface AgentRunTimelineProps {
   run?: AgentRunState | null;
   /** 对话正文已经解析出的搜索来源，用于补齐执行过程侧栏的候选列表。 */
   searchSources?: ExecutionProcessSource[];
+  /** 对话正文已经解析出的搜索关键词，用于补齐历史执行过程。 */
+  searchQueries?: string[];
   /** 打开回答依据侧栏。执行过程只展示动作摘要，完整来源交给回答依据。 */
   onOpenSources?: () => void;
 }
@@ -44,6 +46,7 @@ export function AgentRunTimeline(props: AgentRunTimelineProps) {
         onContinue={props.onContinue}
         run={props.run ?? null}
         searchSources={props.searchSources}
+        searchQueries={props.searchQueries}
         onOpenSources={props.onOpenSources}
       />
     );
@@ -55,6 +58,7 @@ export function AgentRunTimeline(props: AgentRunTimelineProps) {
       onRetry={props.onRetry}
       onContinue={props.onContinue}
       searchSources={props.searchSources}
+      searchQueries={props.searchQueries}
       onOpenSources={props.onOpenSources}
     />
   );
@@ -65,6 +69,7 @@ function AgentRunTimelineFromStore({
   onRetry,
   onContinue,
   searchSources,
+  searchQueries,
   onOpenSources,
 }: Omit<AgentRunTimelineProps, 'run'>) {
   const run = useAppSelector(s => s.stream.currentRun);
@@ -76,6 +81,7 @@ function AgentRunTimelineFromStore({
       onContinue={onContinue}
       run={run}
       searchSources={searchSources}
+      searchQueries={searchQueries}
       onOpenSources={onOpenSources}
     />
   );
@@ -87,14 +93,15 @@ function AgentRunTimelineContent({
   onContinue,
   run,
   searchSources,
+  searchQueries,
   onOpenSources,
-}: Required<Pick<AgentRunTimelineProps, 'assistantMessageId' | 'run'>> & Pick<AgentRunTimelineProps, 'onRetry' | 'onContinue' | 'searchSources' | 'onOpenSources'>) {
+}: Required<Pick<AgentRunTimelineProps, 'assistantMessageId' | 'run'>> & Pick<AgentRunTimelineProps, 'onRetry' | 'onContinue' | 'searchSources' | 'searchQueries' | 'onOpenSources'>) {
   if (!run) return null;
   // contract §1：只挂到归属本 message 的 currentRun
   if (run.messageId !== assistantMessageId && run.serverMessageId !== assistantMessageId) {
     return null;
   }
-  const completedProcessModel = buildExecutionProcessModel(run, { searchSources });
+  const completedProcessModel = buildExecutionProcessModel(run, { searchSources, searchQueries });
   if (shouldRenderCompletedProcess(run, completedProcessModel.isRenderable)) {
     return (
       <div
@@ -104,6 +111,7 @@ function AgentRunTimelineContent({
         <ExecutionProcess
           run={run}
           searchSources={searchSources}
+          searchQueries={searchQueries}
           onOpenSources={onOpenSources}
         />
       </div>

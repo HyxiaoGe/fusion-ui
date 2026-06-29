@@ -257,6 +257,10 @@ describe('useAssistantMessageViewModel', () => {
       { title: '统一来源 1', url: 'https://ref-one.example.com', favicon: undefined },
       { title: '统一来源 2', url: 'https://ref-two.example.com', favicon: undefined },
     ]);
+    expect(result.current.searchQueries).toEqual([
+      '第一轮搜索',
+      '第二轮搜索',
+    ]);
     expect(result.current.answerEvidence?.items.map(item => item.title)).toEqual([
       '统一来源 1',
       '统一来源 2',
@@ -310,6 +314,7 @@ describe('useAssistantMessageViewModel', () => {
     });
 
     expect(result.answerEvidence?.summary).toBe('回答依据 · 搜索 1 条');
+    expect(result.searchQueries).toEqual(['AI 标准']);
     expect(result.answerEvidence?.items[0]).toEqual(
       expect.objectContaining({
         kind: 'search_source',

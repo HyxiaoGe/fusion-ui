@@ -52,6 +52,7 @@ vi.mock('./agent', () => ({
     onContinue?: (previousRunId?: string) => void;
     run?: AgentRunState | null;
     searchSources?: ExecutionProcessSource[];
+    searchQueries?: string[];
     onOpenSources?: () => void;
   }) => {
     const payload: {
@@ -59,6 +60,7 @@ vi.mock('./agent', () => ({
       hasOpenSources?: boolean;
       run?: AgentRunState | null;
       searchSources?: ExecutionProcessSource[];
+      searchQueries?: string[];
     } = {
       hasRunProp: Object.prototype.hasOwnProperty.call(props, 'run'),
       hasOpenSources: Boolean(props.onOpenSources),
@@ -66,6 +68,9 @@ vi.mock('./agent', () => ({
     };
     if (props.searchSources) {
       payload.searchSources = props.searchSources;
+    }
+    if (props.searchQueries) {
+      payload.searchQueries = props.searchQueries;
     }
     agentRunTimelinePropsMock(payload);
 
@@ -395,6 +400,58 @@ describe('AssistantResponseStack', () => {
           domain: 'example.com',
           favicon: undefined,
         },
+      ],
+    });
+  });
+
+  it('向 AgentRunTimeline 透传搜索关键词，供历史执行过程展示', () => {
+    agentRunTimelinePropsMock.mockClear();
+
+    render(
+      <AssistantResponseStack
+        assistantMessageId="assistant-1"
+        reasoning={{
+          shouldRender: false,
+          content: '',
+          isVisible: false,
+          isStreaming: false,
+          onToggle: vi.fn(),
+        }}
+        activity={activity()}
+        agentRun={agentRun}
+        onRetry={undefined}
+        answerEvidence={answerEvidence}
+        searchQueries={[
+          '暑期旅游哪里最火 2026 热门目的地',
+          '2026暑期旅游热门城市 目的地 排行榜',
+        ]}
+        onSourceClick={vi.fn()}
+        onOpenSources={vi.fn()}
+        markdown={{
+          content: '回答',
+          sources: [],
+          onCitationClick: undefined,
+        }}
+        showStreamingCursor={false}
+      />,
+    );
+
+    expect(agentRunTimelinePropsMock).toHaveBeenLastCalledWith({
+      hasRunProp: true,
+      hasOpenSources: true,
+      run: agentRun,
+      searchSources: [
+        {
+          id: 'search-0',
+          title: '来源一',
+          url: 'https://example.com/source',
+          domain: 'example.com',
+          favicon: undefined,
+        },
+      ],
+      searchQueries: [
+        '暑期旅游哪里最火 2026 热门目的地',
+        '2026暑期旅游热门城市 目的地 排行榜',
       ],
     });
   });

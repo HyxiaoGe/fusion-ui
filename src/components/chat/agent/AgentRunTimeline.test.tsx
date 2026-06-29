@@ -65,6 +65,7 @@ function renderTimeline(
     assistantMessageId?: string;
     onRetry?: () => void;
     onOpenSources?: () => void;
+    searchQueries?: string[];
   } = {},
 ) {
   setCurrentRun(currentRun);
@@ -74,6 +75,7 @@ function renderTimeline(
       assistantMessageId={props.assistantMessageId ?? 'm1'}
       onRetry={props.onRetry}
       onOpenSources={props.onOpenSources}
+      searchQueries={props.searchQueries}
     />,
   );
 }
@@ -532,7 +534,7 @@ describe('AgentRunTimeline', () => {
           truncated: false,
         },
       ],
-    }));
+    }), { searchQueries: ['暑期旅游哪里最火 2026 热门目的地', '2026暑期旅游热门城市 目的地 排行榜'] });
 
     expect(screen.getByText('执行过程 · 搜索 2 次 · 读取 2 个网页')).toBeInTheDocument();
     expect(screen.queryByText(/未使用/)).not.toBeInTheDocument();
@@ -544,6 +546,9 @@ describe('AgentRunTimeline', () => {
     expect(screen.getByRole('dialog', { name: '执行过程' })).toBeInTheDocument();
     expect(screen.getByText('搜索资料')).toBeInTheDocument();
     expect(screen.getByText('搜索 2 次，共保留 7 条候选结果')).toBeInTheDocument();
+    expect(screen.getByText('搜索关键词')).toBeInTheDocument();
+    expect(screen.getByText('暑期旅游哪里最火 2026 热门目的地')).toBeInTheDocument();
+    expect(screen.getByText('2026暑期旅游热门城市 目的地 排行榜')).toBeInTheDocument();
     expect(screen.getByText('网页读取')).toBeInTheDocument();
     expect(screen.getByText('成功读取 2 个网页')).toBeInTheDocument();
     expect(screen.getByText('已自动跳过 2 个不可读网页')).toBeInTheDocument();

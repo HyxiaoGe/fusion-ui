@@ -34,6 +34,7 @@ export interface AssistantMessageViewModel {
   isCurrentlyStreaming: boolean;
   activity: AssistantActivity;
   searchSources: SearchSourceSummary[];
+  searchQueries: string[];
   answerEvidence: AnswerEvidenceModel | null;
   displayText: string;
   displayThinking: string;
@@ -74,6 +75,7 @@ export function deriveStaticAssistantMessageViewModel({
   const searchBlocks = collectSearchBlocks(blocksToRender);
   const evidenceSearchSources = collectSearchSources(searchBlocks);
   const searchSources = collectCitationSearchSources(searchBlocks, evidenceSearchSources);
+  const searchQueries = collectSearchQueries(searchBlocks);
   const answerEvidence = deriveAnswerEvidence({
     sourceRefs: collectSourceRefs(searchBlocks, activity.urlBlocks),
     searchSources: evidenceSearchSources,
@@ -88,6 +90,7 @@ export function deriveStaticAssistantMessageViewModel({
     isCurrentlyStreaming: false,
     activity,
     searchSources,
+    searchQueries,
     answerEvidence,
     displayText,
     displayThinking,
@@ -157,6 +160,11 @@ export function useAssistantMessageViewModel({
     return collectCitationSearchSources(searchBlocks, collectSearchSources(searchBlocks));
   }, [isCurrentlyStreaming, streamSearchSources, blocksToRender]);
 
+  const searchQueries = useMemo(
+    () => collectSearchQueries(collectSearchBlocks(blocksToRender)),
+    [blocksToRender],
+  );
+
   const answerEvidence = useMemo(
     () => {
       const searchBlocks = collectSearchBlocks(blocksToRender);
@@ -182,6 +190,7 @@ export function useAssistantMessageViewModel({
     isCurrentlyStreaming,
     activity,
     searchSources,
+    searchQueries,
     answerEvidence,
     displayText,
     displayThinking,
@@ -200,6 +209,20 @@ function collectSearchBlocks(contentBlocks: ContentBlock[]): SearchBlock[] {
 
 function collectSearchSources(searchBlocks: SearchBlock[]): SearchSourceSummary[] {
   return dedupeSearchSources(searchBlocks.flatMap(block => block.sources ?? []));
+}
+
+function collectSearchQueries(searchBlocks: SearchBlock[]): string[] {
+  const seen = new Set<string>();
+  const result: string[] = [];
+
+  for (const block of searchBlocks) {
+    const query = block.query.trim();
+    if (!query || seen.has(query)) continue;
+    seen.add(query);
+    result.push(query);
+  }
+
+  return result;
 }
 
 function collectSearchProvider(searchBlocks: SearchBlock[]): string | undefined {

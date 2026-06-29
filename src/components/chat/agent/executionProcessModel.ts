@@ -8,6 +8,7 @@ export interface ExecutionProcessModel {
   readCount: number;
   skippedReadCount: number;
   searchCandidateCount: number;
+  searchQueries: string[];
   searchSources: ExecutionProcessSource[];
   groups: ToolCallGroup[];
   digestRows: ExecutionDigestRow[];
@@ -15,6 +16,7 @@ export interface ExecutionProcessModel {
 
 export interface ExecutionProcessModelOptions {
   searchSources?: ExecutionProcessSource[];
+  searchQueries?: string[];
 }
 
 export interface ExecutionProcessSource {
@@ -41,6 +43,7 @@ export function buildExecutionProcessModel(
   const groups = groupToolCalls(visibleToolCalls);
   const digestRows = (run.toolDigests ?? []).map(toDigestRow);
   const searchSources = collectSearchSources(run, options.searchSources ?? []);
+  const searchQueries = collectSearchQueries(toolCalls, options.searchQueries ?? []);
   const searchCount = countSearches(toolCalls, run.toolDigests);
   const readCount = countSuccessfulReads(toolCalls, run.toolDigests);
   const skippedReadCount = countSkippedReads(toolCalls, run.toolDigests);
@@ -59,6 +62,7 @@ export function buildExecutionProcessModel(
     readCount,
     skippedReadCount,
     searchCandidateCount,
+    searchQueries,
     searchSources,
     groups,
     digestRows,
@@ -163,6 +167,36 @@ function countSearchCandidates(toolCalls: ToolCallState[], digests: AgentToolDig
   return (digests ?? [])
     .filter(digest => digest.toolName === 'web_search')
     .reduce((count, digest) => count + extractCandidateCount(digest.summary), 0);
+}
+
+function collectSearchQueries(
+  toolCalls: ToolCallState[],
+  fallbackQueries: string[],
+): string[] {
+  return dedupeSearchQueries([
+    ...toolCalls
+      .filter(call => call.toolName === 'web_search')
+      .map(call => stringArg(call.arguments.query)),
+    ...fallbackQueries,
+  ]);
+}
+
+function stringArg(value: unknown): string {
+  return typeof value === 'string' ? value.trim() : '';
+}
+
+function dedupeSearchQueries(queries: string[]): string[] {
+  const seen = new Set<string>();
+  const result: string[] = [];
+
+  for (const rawQuery of queries) {
+    const query = rawQuery.trim();
+    if (!query || seen.has(query)) continue;
+    seen.add(query);
+    result.push(query);
+  }
+
+  return result;
 }
 
 function collectSearchSources(

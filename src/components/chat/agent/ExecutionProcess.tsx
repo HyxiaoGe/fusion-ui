@@ -17,14 +17,15 @@ import {
 interface ExecutionProcessProps {
   run: AgentRunState;
   searchSources?: ExecutionProcessSource[];
+  searchQueries?: string[];
   onOpenSources?: () => void;
 }
 
-export function ExecutionProcess({ run, searchSources, onOpenSources }: ExecutionProcessProps) {
+export function ExecutionProcess({ run, searchSources, searchQueries, onOpenSources }: ExecutionProcessProps) {
   const [open, setOpen] = useState(false);
   const model = useMemo(
-    () => buildExecutionProcessModel(run, { searchSources }),
-    [run, searchSources],
+    () => buildExecutionProcessModel(run, { searchSources, searchQueries }),
+    [run, searchSources, searchQueries],
   );
   if (!model.isRenderable) return null;
 
@@ -49,6 +50,7 @@ export function ExecutionProcess({ run, searchSources, onOpenSources }: Executio
       <ExecutionProcessSidebar
         run={run}
         searchSources={searchSources}
+        searchQueries={searchQueries}
         onOpenSources={onOpenSources}
         isOpen={open}
         onClose={() => setOpen(false)}
@@ -60,19 +62,21 @@ export function ExecutionProcess({ run, searchSources, onOpenSources }: Executio
 function ExecutionProcessSidebar({
   run,
   searchSources,
+  searchQueries,
   onOpenSources,
   isOpen,
   onClose,
 }: {
   run: AgentRunState;
   searchSources?: ExecutionProcessSource[];
+  searchQueries?: string[];
   onOpenSources?: () => void;
   isOpen: boolean;
   onClose: () => void;
 }) {
   const model = useMemo(
-    () => buildExecutionProcessModel(run, { searchSources }),
-    [run, searchSources],
+    () => buildExecutionProcessModel(run, { searchSources, searchQueries }),
+    [run, searchSources, searchQueries],
   );
   const closeButtonRef = useRef<HTMLButtonElement | null>(null);
   const previousFocusRef = useRef<HTMLElement | null>(null);
@@ -148,10 +152,9 @@ function ExecutionProcessSidebar({
                     {groupSectionTitle(group)}
                   </h4>
                   <div className="space-y-2">
-                    {group.kind === 'web_search' && model.searchSources.length > 0 ? (
+                    {group.kind === 'web_search' ? (
                       <SearchSourceProcessSummary
                         model={model}
-                        queryDetails={group.details}
                         onOpenSources={onOpenSources ? handleOpenSources : undefined}
                       />
                     ) : (
@@ -230,6 +233,7 @@ function DigestOnlyList({
             title={buildSearchAggregateTitle(model)}
             detail={buildSearchAggregateDetail(model)}
           />
+          <SearchQueryList queries={model.searchQueries} />
           {model.searchSources.length > 0 ? (
             <EvidenceShortcutButton onOpenSources={onOpenSources} />
           ) : null}
@@ -254,11 +258,9 @@ function DigestOnlyList({
 
 function SearchSourceProcessSummary({
   model,
-  queryDetails,
   onOpenSources,
 }: {
   model: ExecutionProcessModel;
-  queryDetails: ToolCallGroupDetail[];
   onOpenSources?: () => void;
 }) {
   return (
@@ -267,20 +269,15 @@ function SearchSourceProcessSummary({
         title={buildSearchAggregateTitle(model)}
         detail={buildSearchAggregateDetail(model)}
       />
-      <SearchQueryList details={queryDetails} />
-      <EvidenceShortcutButton onOpenSources={onOpenSources} />
+      <SearchQueryList queries={model.searchQueries} />
+      {model.searchSources.length > 0 ? (
+        <EvidenceShortcutButton onOpenSources={onOpenSources} />
+      ) : null}
     </>
   );
 }
 
-function SearchQueryList({ details }: { details: ToolCallGroupDetail[] }) {
-  const queries = details
-    .map(detail => ({
-      id: detail.id,
-      value: (detail.fullValue || detail.primary).trim(),
-    }))
-    .filter(query => query.value.length > 0);
-
+function SearchQueryList({ queries }: { queries: string[] }) {
   if (queries.length === 0) return null;
 
   return (
@@ -288,12 +285,12 @@ function SearchQueryList({ details }: { details: ToolCallGroupDetail[] }) {
       <p className="mb-1.5 text-xs font-medium text-foreground">搜索关键词</p>
       <div className="space-y-1.5">
         {queries.map((query, index) => (
-          <div key={query.id} className="flex min-w-0 items-start gap-2 text-xs">
+          <div key={query} className="flex min-w-0 items-start gap-2 text-xs">
             <span className="mt-0.5 flex h-4 min-w-4 shrink-0 items-center justify-center rounded-full border border-border/40 text-[10px] text-muted-foreground">
               {index + 1}
             </span>
-            <span className="min-w-0 break-words text-foreground" title={query.value}>
-              {query.value}
+            <span className="min-w-0 break-words text-foreground" title={query}>
+              {query}
             </span>
           </div>
         ))}

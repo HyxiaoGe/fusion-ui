@@ -157,6 +157,7 @@ function AssistantMessageFrame({
   const {
     activity,
     searchSources,
+    searchQueries,
     answerEvidence,
     displayText,
     displayThinking,
@@ -291,6 +292,7 @@ function AssistantMessageFrame({
             onContinueAgentRun={handleContinue}
             answerEvidence={answerEvidence}
             answerEvidenceSidebar={answerEvidenceSidebar}
+            searchQueries={searchQueries}
             onSourceClick={handleCitationClick}
             onOpenSources={handleOpenSources}
             markdown={markdownProps}

@@ -44,6 +44,7 @@ vi.mock('./AssistantResponseStack', () => ({
       sources: SearchSourceSummary[];
       onCitationClick?: (index: number) => void;
     };
+    searchQueries?: string[];
     onSourceClick: (index: number) => void;
     onOpenSources: () => void;
     onRetry?: () => void;
@@ -146,6 +147,7 @@ function defaultViewModel(overrides: Record<string, unknown> = {}) {
       suggestionState: 'idle',
     },
     searchSources: sources,
+    searchQueries: [],
     answerEvidence: null,
     displayText: '助手正文',
     displayThinking: '',
@@ -250,6 +252,20 @@ describe('AssistantMessage', () => {
 
     expect(screen.getByTestId('assistant-response-stack')).toBeInTheDocument();
     expect(screen.getByText('助手正文')).toBeInTheDocument();
+  });
+
+  it('把 ViewModel 的搜索关键词传给 AssistantResponseStack', () => {
+    deriveStaticAssistantMessageViewModelMock.mockReturnValue(defaultViewModel({
+      searchQueries: ['暑期旅游哪里最火 2026 热门目的地', '2026暑期旅游热门城市 目的地 排行榜'],
+    }));
+
+    renderAssistant();
+
+    const props = assistantResponseStackMock.mock.calls.at(-1)?.[0];
+    expect(props.searchQueries).toEqual([
+      '暑期旅游哪里最火 2026 热门目的地',
+      '2026暑期旅游热门城市 目的地 排行榜',
+    ]);
   });
 
   it('非最后一条消息被标记为流式时使用流式 view model', () => {
