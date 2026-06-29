@@ -188,8 +188,8 @@ describe('AgentRunTimeline', () => {
     expect(container.firstChild).toBeNull();
   });
 
-  it('有 v2 progress/plan 时即使 steps=[] 也渲染完成态执行过程入口', () => {
-    renderTimeline(run({
+  it('completed + v2 progress/plan 但没有真实工具调用时不渲染执行过程', () => {
+    const { container } = renderTimeline(run({
       protocolVersion: 2,
       status: 'completed',
       steps: [],
@@ -207,33 +207,99 @@ describe('AgentRunTimeline', () => {
         items: [
           {
             id: 'search',
-            title: '搜索资料',
+            title: '搜索：iPhone为什么要换USB-C接口',
             status: 'completed',
             kind: 'search',
-            summary: '找到 2 条来源',
+            summary: '工具：联网搜索；预算：最多 4 次搜索，每次 3-10 条结果',
             toolNames: ['web_search'],
-            evidenceItemIds: ['ev-1'],
+            evidenceItemIds: [],
+          },
+          {
+            id: 'read',
+            title: '筛选关键来源',
+            status: 'skipped',
+            kind: 'read',
+            summary: '必要时读取网页核验；预算：最多 5 个网页',
+            toolNames: ['url_read'],
+            evidenceItemIds: [],
           },
         ],
       },
-      toolDigests: [
-        {
-          toolCallId: 'tc-1',
-          toolName: 'web_search',
-          status: 'success',
-          title: '搜索资料',
-          summary: '找到 2 条来源',
-          keyFindings: ['G7 讨论 AI 标准'],
-          sourceRefs: [],
-          truncated: false,
-        },
-      ],
     }));
 
-    expect(screen.queryByText('正在整理结论')).not.toBeInTheDocument();
-    expect(screen.getByText('执行过程 · 搜索 1 次')).toBeInTheDocument();
-    expect(screen.queryByText('工具结果')).not.toBeInTheDocument();
-    expect(screen.queryByText('搜索资料')).not.toBeInTheDocument();
+    expect(container.firstChild).toBeNull();
+    expect(screen.queryByText('执行过程')).not.toBeInTheDocument();
+    expect(screen.queryByText('搜索：iPhone为什么要换USB-C接口')).not.toBeInTheDocument();
+    expect(screen.queryByText('筛选关键来源')).not.toBeInTheDocument();
+  });
+
+  it('completed + 只有回答整理 step 和 plan 时也不展示计划里的搜索/读取', () => {
+    const { container } = renderTimeline(run({
+      protocolVersion: 2,
+      status: 'completed',
+      steps: [
+        step({
+          stepId: 's-answer',
+          stepNumber: 1,
+          toolCalls: [],
+          contentBlockIds: ['answer-1', 'answer-2'],
+        }),
+      ],
+      totalToolCalls: 0,
+      progress: {
+        phase: 'answering',
+        label: '已完成回答整理',
+        completedSteps: 1,
+        totalSteps: 1,
+      },
+      plan: {
+        planId: 'plan-r1',
+        revision: 1,
+        items: [
+          {
+            id: 'understand',
+            title: '制定执行计划',
+            status: 'completed',
+            kind: 'reasoning',
+            summary: '围绕「iPhone为什么要换USB-C接口」判断资料需求和回答路径',
+            toolNames: [],
+            evidenceItemIds: [],
+          },
+          {
+            id: 'search',
+            title: '搜索：iPhone为什么要换USB-C接口',
+            status: 'completed',
+            kind: 'search',
+            summary: '工具：联网搜索；预算：最多 4 次搜索，每次 3-10 条结果',
+            toolNames: ['web_search'],
+            evidenceItemIds: [],
+          },
+          {
+            id: 'read',
+            title: '筛选关键来源',
+            status: 'skipped',
+            kind: 'read',
+            summary: '必要时读取网页核验；预算：最多 5 个网页',
+            toolNames: ['url_read'],
+            evidenceItemIds: [],
+          },
+          {
+            id: 'answer',
+            title: '整理回答',
+            status: 'completed',
+            kind: 'answer',
+            summary: '基于已有知识给出结论',
+            toolNames: [],
+            evidenceItemIds: [],
+          },
+        ],
+      },
+    }));
+
+    expect(container.firstChild).toBeNull();
+    expect(screen.queryByText('制定执行计划')).not.toBeInTheDocument();
+    expect(screen.queryByText('搜索：iPhone为什么要换USB-C接口')).not.toBeInTheDocument();
+    expect(screen.queryByText('筛选关键来源')).not.toBeInTheDocument();
   });
 
   it('failed + steps=[] 仍显示失败 banner（防 M1 guard 误杀 ProviderOffline 场景）', () => {

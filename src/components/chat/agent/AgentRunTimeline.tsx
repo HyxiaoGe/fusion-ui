@@ -170,6 +170,10 @@ function shouldHideCompletedRun(run: AgentRunState): boolean {
 }
 
 function hasReadableProgress(run: AgentRunState): boolean {
+  if (run.status === 'completed' && !run.limitReachedReason) {
+    return false;
+  }
+
   return Boolean(
     run.progress
     || run.plan?.items.length

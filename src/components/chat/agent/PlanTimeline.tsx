@@ -59,6 +59,12 @@ function normalizeCompletedRunStatus(
   run: AgentRunState,
   item: AgentPlanItem,
 ): AgentPlanItem['status'] {
+  if (item.status === 'failed' || item.status === 'blocked' || item.status === 'skipped') {
+    return item.status;
+  }
+  if (item.kind === 'search' || item.kind === 'read') {
+    return shouldTreatAsCompleted(run, item) ? 'completed' : 'skipped';
+  }
   if (item.status !== 'running' && item.status !== 'pending') return item.status;
   return shouldTreatAsCompleted(run, item) ? 'completed' : 'skipped';
 }
@@ -71,7 +77,7 @@ function shouldTreatAsCompleted(run: AgentRunState, item: AgentPlanItem): boolea
     return hasToolOrEvidence(run, item);
   }
   if (item.kind === 'read') {
-    return hasEvidence(run, item);
+    return hasReadToolOrEvidence(run, item);
   }
   return true;
 }
@@ -87,14 +93,27 @@ function normalizeCompletedRunSummary(
 }
 
 function hasToolOrEvidence(run: AgentRunState, item: AgentPlanItem): boolean {
-  return run.totalToolCalls > 0
-    || Boolean(run.toolDigests?.length)
-    || Boolean(item.toolNames.length)
+  return hasTool(run, 'web_search')
+    || hasEvidence(run, item);
+}
+
+function hasReadToolOrEvidence(run: AgentRunState, item: AgentPlanItem): boolean {
+  return hasTool(run, 'url_read')
     || hasEvidence(run, item);
 }
 
 function hasEvidence(run: AgentRunState, item: AgentPlanItem): boolean {
-  return Boolean(item.evidenceItemIds.length || run.evidence?.length);
+  const evidence = run.evidence ?? [];
+  if (!evidence.length) return false;
+  if (!item.evidenceItemIds.length) return true;
+
+  const existingIds = new Set(evidence.map(evidenceItem => evidenceItem.id));
+  return item.evidenceItemIds.some(id => existingIds.has(id));
+}
+
+function hasTool(run: AgentRunState, toolName: string): boolean {
+  return run.steps.some(step => step.toolCalls.some(call => call.toolName === toolName))
+    || Boolean(run.toolDigests?.some(digest => digest.toolName === toolName));
 }
 
 function getStatusIcon(status: AgentPlanItem['status']) {

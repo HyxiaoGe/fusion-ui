@@ -114,4 +114,38 @@ describe('PlanTimeline', () => {
     expect(screen.queryByText('完成 0 个工具调用')).not.toBeInTheDocument();
     expect(screen.getByText('完成 1 个工具调用')).toBeInTheDocument();
   });
+
+  it('已完成 run 不把计划中的 toolNames 当成真实搜索或读取', () => {
+    const { container } = render(<PlanTimeline run={{
+      ...baseRun,
+      status: 'completed',
+      plan: {
+        planId: 'plan-r1',
+        revision: 1,
+        items: [
+          {
+            id: 'search',
+            title: '搜索：iPhone为什么要换USB-C接口',
+            status: 'completed',
+            kind: 'search',
+            summary: '工具：联网搜索；预算：最多 4 次搜索，每次 3-10 条结果',
+            toolNames: ['web_search'],
+            evidenceItemIds: [],
+          },
+          {
+            id: 'read',
+            title: '筛选关键来源',
+            status: 'pending',
+            kind: 'read',
+            summary: '必要时读取网页核验；预算：最多 5 个网页',
+            toolNames: ['url_read'],
+            evidenceItemIds: ['ev-missing'],
+          },
+        ],
+      },
+    }} />);
+
+    expect(container.querySelectorAll('svg.text-success')).toHaveLength(0);
+    expect(container.querySelectorAll('svg.text-muted-foreground')).toHaveLength(2);
+  });
 });
