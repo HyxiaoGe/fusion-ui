@@ -20,7 +20,7 @@ describe('RunProgressStrip', () => {
     expect(container.firstChild).toBeNull();
   });
 
-  it('渲染当前 phase、label、步数和工具数', () => {
+  it('渲染当前 phase、label 和步数，不常驻展示内部工具预算', () => {
     render(<RunProgressStrip run={{
       ...baseRun,
       progress: {
@@ -36,7 +36,7 @@ describe('RunProgressStrip', () => {
     expect(screen.getByText('整理')).toBeInTheDocument();
     expect(screen.getByText('正在整理结论')).toBeInTheDocument();
     expect(screen.getByText('2/4 步')).toBeInTheDocument();
-    expect(screen.getByText('工具 1/5')).toBeInTheDocument();
+    expect(screen.queryByText('工具 1/5')).not.toBeInTheDocument();
   });
 
   it('已完成 run 不继续展示进行中文案', () => {

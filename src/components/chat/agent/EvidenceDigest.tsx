@@ -1,6 +1,7 @@
 'use client';
 
 import type { AgentRunState, AgentToolDigest } from '@/types/agentRun';
+import { sanitizeExecutionSummary, sanitizeExecutionTitle } from './executionProcessModel';
 
 export function EvidenceDigest({ run }: { run: AgentRunState }) {
   const digests = run.toolDigests ?? [];
@@ -9,7 +10,7 @@ export function EvidenceDigest({ run }: { run: AgentRunState }) {
   return (
     <div className="mb-2 space-y-2 rounded-md border border-border/30 bg-muted/10 px-2.5 py-2">
       <div className="space-y-1.5">
-        <div className="text-[11px] text-muted-foreground">工具结果</div>
+        <div className="text-[11px] text-muted-foreground">资料处理</div>
         {digests.slice(0, 3).map(digest => (
           <ToolDigestRow key={digest.toolCallId} digest={digest} />
         ))}
@@ -26,8 +27,8 @@ function ToolDigestRow({ digest }: { digest: AgentToolDigest }) {
         <span className="shrink-0 text-muted-foreground">·</span>
         <span className="shrink-0 text-muted-foreground">{getStatusText(digest.status)}</span>
       </div>
-      <div className="mt-0.5 truncate text-muted-foreground" title={digest.summary}>
-        {digest.summary}
+      <div className="mt-0.5 truncate text-muted-foreground" title={sanitizeExecutionSummary(digest)}>
+        {sanitizeExecutionSummary(digest)}
       </div>
     </div>
   );
@@ -54,5 +55,5 @@ function getDigestTitle(digest: AgentToolDigest): string {
   if (digest.toolName === 'web_search' && digest.status === 'success') {
     return '搜索完成';
   }
-  return digest.title;
+  return sanitizeExecutionTitle(digest);
 }

@@ -178,7 +178,7 @@ describe('AgentRunTimeline', () => {
     expect(container.firstChild).toBeNull();
   });
 
-  it('有 v2 progress/plan 时即使 steps=[] 也渲染可读化时间线', () => {
+  it('有 v2 progress/plan 时即使 steps=[] 也渲染完成态执行过程入口', () => {
     renderTimeline(run({
       protocolVersion: 2,
       status: 'completed',
@@ -221,9 +221,9 @@ describe('AgentRunTimeline', () => {
     }));
 
     expect(screen.queryByText('正在整理结论')).not.toBeInTheDocument();
-    expect(screen.getByText('已完成回答整理')).toBeInTheDocument();
-    expect(screen.getAllByText('搜索资料').length).toBeGreaterThanOrEqual(1);
-    expect(screen.getByText('工具结果')).toBeInTheDocument();
+    expect(screen.getByText('执行过程 · 搜索 1 次')).toBeInTheDocument();
+    expect(screen.queryByText('工具结果')).not.toBeInTheDocument();
+    expect(screen.queryByText('搜索资料')).not.toBeInTheDocument();
   });
 
   it('failed + steps=[] 仍显示失败 banner（防 M1 guard 误杀 ProviderOffline 场景）', () => {
@@ -239,8 +239,8 @@ describe('AgentRunTimeline', () => {
     expect(screen.getByText(/OpenAI 上游断流/)).toBeInTheDocument();
   });
 
-  it('completed 且工具全成功时隐藏搜索过程和整理答复', () => {
-    const { container } = renderTimeline(run({
+  it('completed 且工具全成功时收起为执行过程入口', () => {
+    renderTimeline(run({
       status: 'completed',
       steps: [
         step({
@@ -257,12 +257,11 @@ describe('AgentRunTimeline', () => {
       ],
     }));
 
-    expect(container.firstChild).toBeNull();
-    expect(screen.queryByText(/搜索/)).not.toBeInTheDocument();
+    expect(screen.getByText('执行过程 · 搜索 1 次')).toBeInTheDocument();
     expect(screen.queryByText(/整理答复/)).not.toBeInTheDocument();
   });
 
-  it('completed 且工具全成功但有 v2 摘要时保留可读化结果', () => {
+  it('completed 且存在执行过程时默认收起，并通过侧栏查看过程详情', () => {
     renderTimeline(run({
       status: 'completed',
       toolDigests: [
@@ -276,22 +275,54 @@ describe('AgentRunTimeline', () => {
           sourceRefs: [],
           truncated: false,
         },
+        {
+          toolCallId: 'tc-2',
+          toolName: 'url_read',
+          status: 'degraded',
+          title: 'url_read 降级完成',
+          summary: 'reader-service 返回 HTTP 502，已降级跳过',
+          keyFindings: [],
+          sourceRefs: [],
+          truncated: false,
+        },
       ],
       steps: [
         step({
           stepId: 's1',
           stepNumber: 1,
-          toolCalls: [toolCall({ toolCallId: 't1' })],
+          toolCalls: [
+            toolCall({ toolCallId: 't1', arguments: { query: 'GPT 5.5' } }),
+            toolCall({
+              toolCallId: 't2',
+              toolName: 'url_read',
+              arguments: { url: 'https://example.com/a' },
+              status: 'degraded',
+              resultSummary: undefined,
+              error: 'reader-service 返回 HTTP 502，已降级跳过',
+            }),
+          ],
         }),
       ],
     }));
 
-    expect(screen.getByText('工具结果')).toBeInTheDocument();
-    expect(screen.getByText('搜索完成')).toBeInTheDocument();
-    expect(screen.getByText('找到 2 条来源')).toBeInTheDocument();
+    expect(screen.getByText('执行过程 · 搜索 1 次 · 读取 1 个网页 · 1 个未使用')).toBeInTheDocument();
+    expect(screen.queryByText('工具结果')).not.toBeInTheDocument();
+    expect(screen.queryByText(/url_read/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/reader-service/)).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: '查看执行过程' }));
+
+    expect(screen.getByRole('dialog', { name: '执行过程' })).toBeInTheDocument();
+    expect(screen.getByText('搜索记录')).toBeInTheDocument();
+    expect(screen.getByText('网页读取')).toBeInTheDocument();
+    expect(screen.getByText('GPT 5.5')).toBeInTheDocument();
+    expect(screen.getByText('example.com')).toBeInTheDocument();
+    expect(screen.getAllByText('网页暂时无法读取')).toHaveLength(1);
+    expect(screen.queryByText(/url_read/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/reader-service/)).not.toBeInTheDocument();
   });
 
-  it('completed 但存在 degraded 工具时仍渲染 timeline', () => {
+  it('completed 但存在 degraded 工具时默认收起并标记未使用数量', () => {
     renderTimeline(run({
       status: 'completed',
       steps: [
@@ -307,7 +338,8 @@ describe('AgentRunTimeline', () => {
       ],
     }));
 
-    expect(screen.getByText(/搜索部分可用/)).toBeInTheDocument();
+    expect(screen.getByText('执行过程 · 搜索 1 次 · 1 个未使用')).toBeInTheDocument();
+    expect(screen.queryByText(/搜索部分可用/)).not.toBeInTheDocument();
   });
 
   it('completed 但存在 failed step 时仍渲染 timeline', () => {

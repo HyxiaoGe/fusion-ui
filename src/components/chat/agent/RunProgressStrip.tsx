@@ -50,11 +50,6 @@ export function RunProgressStrip({ run }: { run: AgentRunState }) {
           <div className="h-full rounded-full bg-info/70" style={{ width: `${width}%` }} />
         </div>
       )}
-      {typeof progress.completedToolCalls === 'number' && typeof progress.maxToolCalls === 'number' && (
-        <div className="mt-1 text-[11px] text-muted-foreground">
-          工具 {progress.completedToolCalls}/{progress.maxToolCalls}
-        </div>
-      )}
     </div>
   );
 }

@@ -40,9 +40,10 @@ describe('EvidenceDigest', () => {
     expect(container.firstChild).toBeNull();
   });
 
-  it('渲染工具摘要但不重复展示回答依据列表', () => {
+  it('运行中渲染资料处理摘要但不重复展示回答依据列表', () => {
     render(<EvidenceDigest run={{
       ...baseRun,
+      status: 'running',
       toolDigests: [
         {
           toolCallId: 'tc-1',
@@ -69,12 +70,37 @@ describe('EvidenceDigest', () => {
       ],
     }} />);
 
-    expect(screen.getByText('工具结果')).toBeInTheDocument();
+    expect(screen.getByText('资料处理')).toBeInTheDocument();
     expect(screen.getByText('搜索完成')).toBeInTheDocument();
     expect(screen.getByText('保留 2 条候选结果，供后续回答筛选。')).toBeInTheDocument();
     expect(screen.queryByText('回答依据')).not.toBeInTheDocument();
     expect(screen.queryByText('新闻来源 · example.com')).not.toBeInTheDocument();
     expect(screen.queryByText('G7 讨论 AI 标准')).not.toBeInTheDocument();
     expect(screen.queryByRole('link', { name: /新闻来源/ })).not.toBeInTheDocument();
+  });
+
+  it('资料处理摘要不暴露内部工具名和 reader-service 错误', () => {
+    render(<EvidenceDigest run={{
+      ...baseRun,
+      status: 'running',
+      toolDigests: [
+        {
+          toolCallId: 'tc-2',
+          toolName: 'url_read',
+          status: 'degraded',
+          title: 'url_read 降级完成',
+          summary: 'reader-service 返回 HTTP 502，已降级跳过',
+          keyFindings: [],
+          sourceRefs: [],
+          truncated: false,
+        },
+      ],
+    }} />);
+
+    expect(screen.getByText('资料处理')).toBeInTheDocument();
+    expect(screen.getByText('网页读取部分可用')).toBeInTheDocument();
+    expect(screen.getByText('网页暂时无法读取，已跳过该来源。')).toBeInTheDocument();
+    expect(screen.queryByText(/url_read/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/reader-service/)).not.toBeInTheDocument();
   });
 });

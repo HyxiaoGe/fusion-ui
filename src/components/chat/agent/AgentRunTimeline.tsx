@@ -8,6 +8,8 @@ import { StepTimeline } from './StepTimeline';
 import { RunProgressStrip } from './RunProgressStrip';
 import { PlanTimeline } from './PlanTimeline';
 import { EvidenceDigest } from './EvidenceDigest';
+import { ExecutionProcess } from './ExecutionProcess';
+import { buildExecutionProcessModel } from './executionProcessModel';
 
 interface AgentRunTimelineProps {
   /** 当前 message 的 id（FE 占位 messageId 或 server messageId）。
@@ -78,6 +80,17 @@ function AgentRunTimelineContent({
   if (run.messageId !== assistantMessageId && run.serverMessageId !== assistantMessageId) {
     return null;
   }
+  const completedProcessModel = buildExecutionProcessModel(run);
+  if (shouldRenderCompletedProcess(run, completedProcessModel.isRenderable)) {
+    return (
+      <div
+        data-testid="agent-run-timeline"
+        className="mb-3 w-full max-w-full min-w-0 self-stretch"
+      >
+        <ExecutionProcess run={run} />
+      </div>
+    );
+  }
   if (shouldHideCompletedRun(run)) return null;
   const hasV2Artifacts = hasReadableProgress(run);
   // 空 steps 守卫（contract §1）：
@@ -106,6 +119,12 @@ function AgentRunTimelineContent({
       <StepTimeline run={run} />
     </div>
   );
+}
+
+function shouldRenderCompletedProcess(run: AgentRunState, hasExecutionProcess: boolean): boolean {
+  return run.status === 'completed'
+    && !run.limitReachedReason
+    && hasExecutionProcess;
 }
 
 function shouldHideCompletedRun(run: AgentRunState): boolean {
