@@ -71,22 +71,16 @@ vi.mock('./AssistantResponseStack', () => ({
 vi.mock('./AnswerEvidenceSidebar', () => ({
   default: ({
     model,
-    diagnostics,
-    diagnosticsLoading,
     isOpen,
     highlightIndex,
   }: {
     model: AnswerEvidenceSidebarModel | null;
-    diagnostics?: { summaryText: string } | null;
-    diagnosticsLoading?: boolean;
     isOpen: boolean;
     highlightIndex?: number;
   }) => isOpen ? (
     <aside
       data-testid="answer-evidence-sidebar"
       data-highlight-index={highlightIndex}
-      data-diagnostics-loading={diagnosticsLoading ? 'true' : 'false'}
-      data-diagnostics-summary={diagnostics?.summaryText ?? ''}
     >
       {model?.usedItems.map(source => (
         <p key={source.id}>{source.title}</p>
@@ -94,7 +88,6 @@ vi.mock('./AnswerEvidenceSidebar', () => ({
       {model?.issueItems.map(source => (
         <p key={source.id}>{source.reason}</p>
       ))}
-      {diagnostics?.summaryText ? <p>{diagnostics.summaryText}</p> : null}
     </aside>
   ) : null,
 }));
@@ -446,7 +439,7 @@ describe('AssistantMessage', () => {
     expect(screen.getByText('读取来源')).toBeInTheDocument();
   });
 
-  it('打开回答依据侧栏时懒加载联网诊断', async () => {
+  it('打开回答依据侧栏时不再请求联网诊断', async () => {
     deriveStaticAssistantMessageViewModelMock.mockReturnValue(defaultViewModel({
       answerEvidence: {
         items: [
@@ -477,9 +470,10 @@ describe('AssistantMessage', () => {
     fireEvent.click(screen.getByRole('button', { name: '全部来源' }));
 
     await waitFor(() => {
-      expect(getMessageNetworkDiagnosticsMock).toHaveBeenCalledWith('chat-1', 'assistant-1');
+      expect(screen.getByTestId('answer-evidence-sidebar')).toBeInTheDocument();
     });
-    expect(await screen.findByText('联网诊断 · 搜索 1 次 · 用时 1.2s')).toBeInTheDocument();
+    expect(getMessageNetworkDiagnosticsMock).not.toHaveBeenCalled();
+    expect(screen.queryByText('联网诊断 · 搜索 1 次 · 用时 1.2s')).not.toBeInTheDocument();
   });
 
   it('只有异常来源时也能打开统一回答依据侧栏查看原因', () => {

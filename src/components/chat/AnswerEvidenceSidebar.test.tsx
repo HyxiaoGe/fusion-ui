@@ -86,23 +86,17 @@ describe('AnswerEvidenceSidebar', () => {
     expect(screen.getByText('部分可用')).toBeInTheDocument();
   });
 
-  it('渲染联网诊断分区', () => {
+  it('回答依据内不渲染联网过程', () => {
     render(
       <AnswerEvidenceSidebar
         model={model}
-        diagnostics={{
-          summaryText: '联网诊断 · 搜索 1 次 · 用时 1.2s',
-          issueItems: [],
-          tools: [],
-          canShowAdminDetails: false,
-        }}
         isOpen={true}
         onClose={vi.fn()}
       />,
     );
 
-    expect(screen.getByTestId('network-diagnostics-panel')).toBeInTheDocument();
-    expect(screen.getByText('联网诊断 · 搜索 1 次 · 用时 1.2s')).toBeInTheDocument();
+    expect(screen.queryByTestId('network-diagnostics-panel')).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: '联网过程' })).not.toBeInTheDocument();
   });
 
   it('打开时使用 dialog 语义并聚焦关闭按钮', () => {
