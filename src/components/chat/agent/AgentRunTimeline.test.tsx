@@ -428,12 +428,13 @@ describe('AgentRunTimeline', () => {
     expect(screen.getByText('搜索记录')).toBeInTheDocument();
     expect(screen.getByText('搜索 1 次，共保留 5 条候选结果')).toBeInTheDocument();
     expect(screen.getByText('候选结果已进入回答依据筛选。')).toBeInTheDocument();
+    expect(screen.getByText('搜索关键词')).toBeInTheDocument();
+    expect(screen.getByText('SpaceX 估值 上市 2026年')).toBeInTheDocument();
     expect(screen.queryByText('假的。SpaceX确实在2026年6月上市，估值约1.77兆美元 - Threads')).not.toBeInTheDocument();
     expect(screen.queryByText('關於SpaceX IPO你需要知道的：支撐2兆估值的是什麼？')).not.toBeInTheDocument();
     expect(screen.queryByText('SpaceX上市首日股價飆升，助馬斯克成全球首位萬億富豪 - BBC')).not.toBeInTheDocument();
     expect(screen.queryByText('SpaceX 懶人包：SPCX值得投資嗎？ETF納入時間')).not.toBeInTheDocument();
     expect(screen.queryByText('SpaceX推进史上最大规模IPO，发行价每股135美元 - 纽约时报')).not.toBeInTheDocument();
-    expect(screen.queryByText('SpaceX 估值 上市 2026年')).not.toBeInTheDocument();
     expect(screen.queryByRole('link', { name: /打开来源/ })).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: '查看依据' }));
