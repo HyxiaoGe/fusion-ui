@@ -52,13 +52,16 @@ vi.mock('./agent', () => ({
     onContinue?: (previousRunId?: string) => void;
     run?: AgentRunState | null;
     searchSources?: ExecutionProcessSource[];
+    onOpenSources?: () => void;
   }) => {
     const payload: {
       hasRunProp: boolean;
+      hasOpenSources?: boolean;
       run?: AgentRunState | null;
       searchSources?: ExecutionProcessSource[];
     } = {
       hasRunProp: Object.prototype.hasOwnProperty.call(props, 'run'),
+      hasOpenSources: Boolean(props.onOpenSources),
       run: props.run,
     };
     if (props.searchSources) {
@@ -74,6 +77,7 @@ vi.mock('./agent', () => ({
       >
         <button type="button" onClick={props.onRetry}>重试运行</button>
         <button type="button" onClick={() => props.onContinue?.('run-1')}>继续查</button>
+        <button type="button" onClick={props.onOpenSources}>过程查看依据</button>
       </section>
     );
   },
@@ -269,14 +273,15 @@ describe('AssistantResponseStack', () => {
 
     fireEvent.click(screen.getByTestId('stack-reasoning'));
     fireEvent.click(screen.getByRole('button', { name: '重试运行' }));
+    fireEvent.click(screen.getByRole('button', { name: '过程查看依据' }));
     fireEvent.click(screen.getByRole('button', { name: '打开来源' }));
     fireEvent.click(screen.getByRole('button', { name: '打开全部来源' }));
     fireEvent.click(screen.getByRole('button', { name: '引用来源' }));
 
     expect(onToggle).toHaveBeenCalledTimes(1);
     expect(onRetry).toHaveBeenCalledTimes(1);
+    expect(onOpenSources).toHaveBeenCalledTimes(2);
     expect(onSourceClick).toHaveBeenCalledWith(0);
-    expect(onOpenSources).toHaveBeenCalledTimes(1);
     expect(onCitationClick).toHaveBeenCalledWith(0);
   });
 
@@ -345,6 +350,7 @@ describe('AssistantResponseStack', () => {
     expect(screen.getByTestId('stack-agent')).toHaveAttribute('data-run-id', 'run-1');
     expect(agentRunTimelinePropsMock).toHaveBeenLastCalledWith({
       hasRunProp: true,
+      hasOpenSources: true,
       run: agentRun,
     });
   });
@@ -379,6 +385,7 @@ describe('AssistantResponseStack', () => {
 
     expect(agentRunTimelinePropsMock).toHaveBeenLastCalledWith({
       hasRunProp: true,
+      hasOpenSources: true,
       run: agentRun,
       searchSources: [
         {
@@ -421,6 +428,7 @@ describe('AssistantResponseStack', () => {
 
     expect(agentRunTimelinePropsMock).toHaveBeenLastCalledWith({
       hasRunProp: false,
+      hasOpenSources: true,
       run: undefined,
     });
   });

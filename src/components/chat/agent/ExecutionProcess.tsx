@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { AlertTriangle, CheckCircle2, ExternalLink, FileSearch, Search, Globe2, X } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, FileSearch, Search, Globe2, X } from 'lucide-react';
 import type { AgentRunState } from '@/types/agentRun';
 import { cn } from '@/lib/utils';
 import type { ToolCallGroupDetail } from '@/lib/agent/toolCallGroups';
@@ -17,9 +17,10 @@ import {
 interface ExecutionProcessProps {
   run: AgentRunState;
   searchSources?: ExecutionProcessSource[];
+  onOpenSources?: () => void;
 }
 
-export function ExecutionProcess({ run, searchSources }: ExecutionProcessProps) {
+export function ExecutionProcess({ run, searchSources, onOpenSources }: ExecutionProcessProps) {
   const [open, setOpen] = useState(false);
   const model = useMemo(
     () => buildExecutionProcessModel(run, { searchSources }),
@@ -48,6 +49,7 @@ export function ExecutionProcess({ run, searchSources }: ExecutionProcessProps) 
       <ExecutionProcessSidebar
         run={run}
         searchSources={searchSources}
+        onOpenSources={onOpenSources}
         isOpen={open}
         onClose={() => setOpen(false)}
       />
@@ -58,11 +60,13 @@ export function ExecutionProcess({ run, searchSources }: ExecutionProcessProps) 
 function ExecutionProcessSidebar({
   run,
   searchSources,
+  onOpenSources,
   isOpen,
   onClose,
 }: {
   run: AgentRunState;
   searchSources?: ExecutionProcessSource[];
+  onOpenSources?: () => void;
   isOpen: boolean;
   onClose: () => void;
 }) {
@@ -95,6 +99,11 @@ function ExecutionProcessSidebar({
   }, [isOpen]);
 
   if (!isOpen || !model.isRenderable) return null;
+
+  const handleOpenSources = () => {
+    onClose();
+    onOpenSources?.();
+  };
 
   return (
     <>
@@ -140,7 +149,10 @@ function ExecutionProcessSidebar({
                   </h4>
                   <div className="space-y-2">
                     {group.kind === 'web_search' && model.searchSources.length > 0 ? (
-                      <SearchSourceProcessList model={model} />
+                      <SearchSourceProcessSummary
+                        model={model}
+                        onOpenSources={onOpenSources ? handleOpenSources : undefined}
+                      />
                     ) : (
                       group.details.map(detail => (
                         <ProcessDetailItem key={detail.id} detail={detail} />
@@ -152,7 +164,10 @@ function ExecutionProcessSidebar({
               <SkippedReadNotice count={model.skippedReadCount} />
             </div>
           ) : (
-            <DigestOnlyList model={model} />
+            <DigestOnlyList
+              model={model}
+              onOpenSources={onOpenSources ? handleOpenSources : undefined}
+            />
           )}
         </div>
       </aside>
@@ -187,7 +202,13 @@ function ProcessDetailItem({ detail }: { detail: ToolCallGroupDetail }) {
   );
 }
 
-function DigestOnlyList({ model }: { model: ExecutionProcessModel }) {
+function DigestOnlyList({
+  model,
+  onOpenSources,
+}: {
+  model: ExecutionProcessModel;
+  onOpenSources?: () => void;
+}) {
   if (model.searchCount === 0 && model.readCount === 0) {
     return (
       <section className="rounded-md border border-border/40 bg-muted/10 px-3 py-2 text-xs text-muted-foreground">
@@ -209,9 +230,7 @@ function DigestOnlyList({ model }: { model: ExecutionProcessModel }) {
             detail={buildSearchAggregateDetail(model)}
           />
           {model.searchSources.length > 0 ? (
-            <div className="mt-2 space-y-2">
-              <SearchSourceList sources={model.searchSources} />
-            </div>
+            <EvidenceShortcutButton onOpenSources={onOpenSources} />
           ) : null}
         </section>
       ) : null}
@@ -232,57 +251,34 @@ function DigestOnlyList({ model }: { model: ExecutionProcessModel }) {
   );
 }
 
-function SearchSourceProcessList({ model }: { model: ExecutionProcessModel }) {
+function SearchSourceProcessSummary({
+  model,
+  onOpenSources,
+}: {
+  model: ExecutionProcessModel;
+  onOpenSources?: () => void;
+}) {
   return (
     <>
       <AggregateProcessItem
         title={buildSearchAggregateTitle(model)}
         detail={buildSearchAggregateDetail(model)}
       />
-      <SearchSourceList sources={model.searchSources} />
+      <EvidenceShortcutButton onOpenSources={onOpenSources} />
     </>
   );
 }
 
-function SearchSourceList({ sources }: { sources: ExecutionProcessSource[] }) {
+function EvidenceShortcutButton({ onOpenSources }: { onOpenSources?: () => void }) {
+  if (!onOpenSources) return null;
   return (
-    <>
-      {sources.map(source => (
-        <SearchSourceItem key={source.id} source={source} />
-      ))}
-    </>
-  );
-}
-
-function SearchSourceItem({ source }: { source: ExecutionProcessSource }) {
-  return (
-    <div className="flex min-w-0 gap-3 rounded-md border border-border/40 bg-background/70 px-3 py-2">
-      <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-info">
-        <Search className="h-4 w-4" aria-hidden="true" />
-      </span>
-      <div className="min-w-0 flex-1">
-        <div className="mb-1 flex min-w-0 items-center gap-2">
-          <span className="shrink-0 rounded-full border border-border/30 px-1.5 py-0.5 text-[10px] text-muted-foreground">
-            搜索
-          </span>
-          {source.domain ? (
-            <span className="min-w-0 truncate text-[10px] text-muted-foreground">{source.domain}</span>
-          ) : null}
-        </div>
-        <p className="line-clamp-2 text-sm font-medium text-foreground" title={source.title}>
-          {source.title}
-        </p>
-      </div>
-      <a
-        href={source.url}
-        target="_blank"
-        rel="noopener noreferrer"
-        aria-label={`打开来源：${source.title}`}
-        className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
-      >
-        <ExternalLink className="h-4 w-4" aria-hidden="true" />
-      </a>
-    </div>
+    <button
+      type="button"
+      onClick={onOpenSources}
+      className="inline-flex items-center rounded-full border border-border/40 bg-background/70 px-2.5 py-1 text-xs font-medium text-foreground transition-colors hover:border-border/60 hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+    >
+      查看依据
+    </button>
   );
 }
 
@@ -327,7 +323,7 @@ function buildSearchAggregateTitle(model: ExecutionProcessModel): string {
 
 function buildSearchAggregateDetail(model: ExecutionProcessModel): string {
   if (model.searchCandidateCount > 0) {
-    return '候选结果已用于后续回答筛选。';
+    return '候选结果已进入回答依据筛选。';
   }
   return '已完成资料搜索。';
 }

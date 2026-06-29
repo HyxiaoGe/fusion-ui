@@ -23,6 +23,8 @@ interface AgentRunTimelineProps {
   run?: AgentRunState | null;
   /** 对话正文已经解析出的搜索来源，用于补齐执行过程侧栏的候选列表。 */
   searchSources?: ExecutionProcessSource[];
+  /** 打开回答依据侧栏。执行过程只展示动作摘要，完整来源交给回答依据。 */
+  onOpenSources?: () => void;
 }
 
 /**
@@ -42,6 +44,7 @@ export function AgentRunTimeline(props: AgentRunTimelineProps) {
         onContinue={props.onContinue}
         run={props.run ?? null}
         searchSources={props.searchSources}
+        onOpenSources={props.onOpenSources}
       />
     );
   }
@@ -52,6 +55,7 @@ export function AgentRunTimeline(props: AgentRunTimelineProps) {
       onRetry={props.onRetry}
       onContinue={props.onContinue}
       searchSources={props.searchSources}
+      onOpenSources={props.onOpenSources}
     />
   );
 }
@@ -61,6 +65,7 @@ function AgentRunTimelineFromStore({
   onRetry,
   onContinue,
   searchSources,
+  onOpenSources,
 }: Omit<AgentRunTimelineProps, 'run'>) {
   const run = useAppSelector(s => s.stream.currentRun);
 
@@ -71,6 +76,7 @@ function AgentRunTimelineFromStore({
       onContinue={onContinue}
       run={run}
       searchSources={searchSources}
+      onOpenSources={onOpenSources}
     />
   );
 }
@@ -81,7 +87,8 @@ function AgentRunTimelineContent({
   onContinue,
   run,
   searchSources,
-}: Required<Pick<AgentRunTimelineProps, 'assistantMessageId' | 'run'>> & Pick<AgentRunTimelineProps, 'onRetry' | 'onContinue' | 'searchSources'>) {
+  onOpenSources,
+}: Required<Pick<AgentRunTimelineProps, 'assistantMessageId' | 'run'>> & Pick<AgentRunTimelineProps, 'onRetry' | 'onContinue' | 'searchSources' | 'onOpenSources'>) {
   if (!run) return null;
   // contract §1：只挂到归属本 message 的 currentRun
   if (run.messageId !== assistantMessageId && run.serverMessageId !== assistantMessageId) {
@@ -94,7 +101,11 @@ function AgentRunTimelineContent({
         data-testid="agent-run-timeline"
         className="mb-3 w-full max-w-full min-w-0 self-stretch"
       >
-        <ExecutionProcess run={run} searchSources={searchSources} />
+        <ExecutionProcess
+          run={run}
+          searchSources={searchSources}
+          onOpenSources={onOpenSources}
+        />
       </div>
     );
   }

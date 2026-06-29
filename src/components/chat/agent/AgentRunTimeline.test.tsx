@@ -59,13 +59,21 @@ function run(overrides: Partial<AgentRunState> = {}): AgentRunState {
   };
 }
 
-function renderTimeline(currentRun: AgentRunState | null, props: { assistantMessageId?: string; onRetry?: () => void } = {}) {
+function renderTimeline(
+  currentRun: AgentRunState | null,
+  props: {
+    assistantMessageId?: string;
+    onRetry?: () => void;
+    onOpenSources?: () => void;
+  } = {},
+) {
   setCurrentRun(currentRun);
 
   return render(
     <AgentRunTimeline
       assistantMessageId={props.assistantMessageId ?? 'm1'}
       onRetry={props.onRetry}
+      onOpenSources={props.onOpenSources}
     />,
   );
 }
@@ -323,7 +331,9 @@ describe('AgentRunTimeline', () => {
     expect(screen.queryByText(/reader-service/)).not.toBeInTheDocument();
   });
 
-  it('completed 的单次 web_search 在执行过程侧栏展示全部搜索候选来源', () => {
+  it('completed 的单次 web_search 在执行过程侧栏只展示过程摘要，并提供查看依据入口', () => {
+    const onOpenSources = vi.fn();
+
     renderTimeline(run({
       status: 'completed',
       steps: [
@@ -408,7 +418,7 @@ describe('AgentRunTimeline', () => {
           usedByFinalAnswer: false,
         },
       ],
-    }));
+    }), { onOpenSources });
 
     expect(screen.getByText('执行过程 · 搜索 1 次')).toBeInTheDocument();
 
@@ -417,12 +427,19 @@ describe('AgentRunTimeline', () => {
     expect(screen.getByRole('dialog', { name: '执行过程' })).toBeInTheDocument();
     expect(screen.getByText('搜索记录')).toBeInTheDocument();
     expect(screen.getByText('搜索 1 次，共保留 5 条候选结果')).toBeInTheDocument();
-    expect(screen.getByText('假的。SpaceX确实在2026年6月上市，估值约1.77兆美元 - Threads')).toBeInTheDocument();
-    expect(screen.getByText('關於SpaceX IPO你需要知道的：支撐2兆估值的是什麼？')).toBeInTheDocument();
-    expect(screen.getByText('SpaceX上市首日股價飆升，助馬斯克成全球首位萬億富豪 - BBC')).toBeInTheDocument();
-    expect(screen.getByText('SpaceX 懶人包：SPCX值得投資嗎？ETF納入時間')).toBeInTheDocument();
-    expect(screen.getByText('SpaceX推进史上最大规模IPO，发行价每股135美元 - 纽约时报')).toBeInTheDocument();
+    expect(screen.getByText('候选结果已进入回答依据筛选。')).toBeInTheDocument();
+    expect(screen.queryByText('假的。SpaceX确实在2026年6月上市，估值约1.77兆美元 - Threads')).not.toBeInTheDocument();
+    expect(screen.queryByText('關於SpaceX IPO你需要知道的：支撐2兆估值的是什麼？')).not.toBeInTheDocument();
+    expect(screen.queryByText('SpaceX上市首日股價飆升，助馬斯克成全球首位萬億富豪 - BBC')).not.toBeInTheDocument();
+    expect(screen.queryByText('SpaceX 懶人包：SPCX值得投資嗎？ETF納入時間')).not.toBeInTheDocument();
+    expect(screen.queryByText('SpaceX推进史上最大规模IPO，发行价每股135美元 - 纽约时报')).not.toBeInTheDocument();
     expect(screen.queryByText('SpaceX 估值 上市 2026年')).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /打开来源/ })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: '查看依据' }));
+
+    expect(onOpenSources).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole('dialog', { name: '执行过程' })).not.toBeInTheDocument();
   });
 
   it('completed 但存在 degraded 工具时默认收起且不在摘要标记未使用数量', () => {

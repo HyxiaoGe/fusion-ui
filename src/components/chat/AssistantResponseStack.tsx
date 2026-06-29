@@ -56,8 +56,21 @@ function AssistantResponseStack({
 }: AssistantResponseStackProps) {
   const executionSearchSources = toExecutionSearchSources(answerEvidence);
   const agentRunTimelineProps = agentRun === undefined
-    ? { assistantMessageId, onRetry, onContinue: onContinueAgentRun, searchSources: executionSearchSources }
-    : { assistantMessageId, onRetry, onContinue: onContinueAgentRun, run: agentRun, searchSources: executionSearchSources };
+    ? {
+      assistantMessageId,
+      onRetry,
+      onContinue: onContinueAgentRun,
+      searchSources: executionSearchSources,
+      onOpenSources,
+    }
+    : {
+      assistantMessageId,
+      onRetry,
+      onContinue: onContinueAgentRun,
+      run: agentRun,
+      searchSources: executionSearchSources,
+      onOpenSources,
+    };
 
   return (
     <div
