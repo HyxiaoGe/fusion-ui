@@ -46,6 +46,10 @@ const model: AnswerEvidenceSidebarModel = {
       reason: '部分搜索结果未能使用',
     },
   ],
+  searchQueries: [
+    'AI 标准',
+    'OpenAI 最新融资',
+  ],
   isRenderable: true,
 };
 
@@ -74,6 +78,9 @@ describe('AnswerEvidenceSidebar', () => {
     expect(screen.getByRole('heading', { name: '回答依据' })).toBeInTheDocument();
     expect(screen.getByText('已使用 2 条 · 搜索 1 条 · 读取 1 个网页')).toBeInTheDocument();
     expect(screen.getByText('2 个未使用')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: '搜索关键词' })).toBeInTheDocument();
+    expect(screen.getByText('AI 标准')).toBeInTheDocument();
+    expect(screen.getByText('OpenAI 最新融资')).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: '已使用来源' })).toBeInTheDocument();
     expect(screen.getByText('搜索来源')).toBeInTheDocument();
     expect(screen.getByAltText('')).toHaveAttribute('src', 'https://search.example.com/favicon.ico');

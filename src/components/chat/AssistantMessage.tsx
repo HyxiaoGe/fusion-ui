@@ -177,8 +177,9 @@ function AssistantMessageFrame({
       answerEvidence,
       searchBlock: activity.searchBlock,
       urlBlocks: activity.urlBlocks,
+      searchQueries,
     }),
-    [activity.searchBlock, activity.urlBlocks, answerEvidence],
+    [activity.searchBlock, activity.urlBlocks, answerEvidence, searchQueries],
   );
 
   const handleCitationClick = useCallback((index: number) => {

@@ -268,6 +268,37 @@ describe('AssistantMessage', () => {
     ]);
   });
 
+  it('把 ViewModel 的搜索关键词写入回答依据侧栏模型', () => {
+    deriveStaticAssistantMessageViewModelMock.mockReturnValue(defaultViewModel({
+      searchQueries: ['AI 标准', 'OpenAI 最新融资'],
+      answerEvidence: {
+        items: [
+          {
+            id: 'search-0',
+            kind: 'search_source',
+            title: '来源一',
+            url: 'https://example.com/source-1',
+            domain: 'example.com',
+            sourceIndex: 0,
+          },
+        ],
+        previewItems: [],
+        searchCount: 1,
+        urlCount: 0,
+        totalCount: 1,
+        hiddenSearchCount: 0,
+        hiddenUrlCount: 0,
+        summary: '回答依据 · 搜索 1 条',
+        hasSearchSources: true,
+      },
+    }));
+
+    renderAssistant();
+
+    const props = assistantResponseStackMock.mock.calls.at(-1)?.[0];
+    expect(props.answerEvidenceSidebar.searchQueries).toEqual(['AI 标准', 'OpenAI 最新融资']);
+  });
+
   it('非最后一条消息被标记为流式时使用流式 view model', () => {
     useAssistantMessageViewModelMock.mockReturnValue(defaultViewModel({ displayText: '继续后的正文' }));
 

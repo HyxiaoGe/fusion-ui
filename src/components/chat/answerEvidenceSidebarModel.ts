@@ -35,6 +35,7 @@ export interface AnswerEvidenceSidebarModel {
   summary: AnswerEvidenceSidebarSummary;
   usedItems: AnswerEvidenceSidebarUsedItem[];
   issueItems: AnswerEvidenceSidebarIssueItem[];
+  searchQueries: string[];
   isRenderable: boolean;
 }
 
@@ -42,6 +43,7 @@ interface DeriveAnswerEvidenceSidebarInput {
   answerEvidence: AnswerEvidenceModel | null;
   searchBlock?: SearchBlock | null;
   urlBlocks: UrlBlock[];
+  searchQueries?: string[];
 }
 
 export function deriveAnswerEvidenceSidebar(
@@ -49,6 +51,10 @@ export function deriveAnswerEvidenceSidebar(
 ): AnswerEvidenceSidebarModel | null {
   const usedItems = input.answerEvidence?.items.map(toUsedItem) ?? [];
   const issueItems = collectIssueItems(input.searchBlock ?? null, input.urlBlocks);
+  const searchQueries = normalizeSearchQueries([
+    ...(input.searchQueries ?? []),
+    input.searchBlock?.query ?? '',
+  ]);
 
   if (usedItems.length === 0 && issueItems.length === 0) {
     return null;
@@ -63,8 +69,23 @@ export function deriveAnswerEvidenceSidebar(
     },
     usedItems,
     issueItems,
+    searchQueries,
     isRenderable: true,
   };
+}
+
+function normalizeSearchQueries(queries: string[]): string[] {
+  const seen = new Set<string>();
+  const result: string[] = [];
+
+  for (const rawQuery of queries) {
+    const query = rawQuery.trim();
+    if (!query || seen.has(query)) continue;
+    seen.add(query);
+    result.push(query);
+  }
+
+  return result;
 }
 
 function toUsedItem(item: AnswerEvidenceItem): AnswerEvidenceSidebarUsedItem {

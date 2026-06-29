@@ -37,6 +37,7 @@ describe('deriveAnswerEvidenceSidebar', () => {
       answerEvidence,
       searchBlock: null,
       urlBlocks: [],
+      searchQueries: ['AI 标准', 'AI 标准', 'OpenAI 最新融资'],
     });
 
     expect(model).not.toBeNull();
@@ -47,6 +48,7 @@ describe('deriveAnswerEvidenceSidebar', () => {
       issueCount: 0,
     });
     expect(model?.usedItems.map(item => item.title)).toEqual(['搜索来源', '读取来源']);
+    expect(model?.searchQueries).toEqual(['AI 标准', 'OpenAI 最新融资']);
   });
 
   it('collects failed degraded and interrupted url blocks as issue items', () => {
