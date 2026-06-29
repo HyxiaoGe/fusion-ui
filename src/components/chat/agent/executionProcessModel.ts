@@ -1,4 +1,4 @@
-import type { AgentRunState, AgentToolDigest, ToolCallState, ToolCallStatus } from '@/types/agentRun';
+import type { AgentEvidenceItem, AgentRunState, AgentToolDigest, ToolCallState, ToolCallStatus } from '@/types/agentRun';
 import { groupToolCalls, type ToolCallGroup, type ToolCallGroupDetail } from '@/lib/agent/toolCallGroups';
 
 export interface ExecutionProcessModel {
@@ -8,8 +8,21 @@ export interface ExecutionProcessModel {
   readCount: number;
   skippedReadCount: number;
   searchCandidateCount: number;
+  searchSources: ExecutionProcessSource[];
   groups: ToolCallGroup[];
   digestRows: ExecutionDigestRow[];
+}
+
+export interface ExecutionProcessModelOptions {
+  searchSources?: ExecutionProcessSource[];
+}
+
+export interface ExecutionProcessSource {
+  id: string;
+  title: string;
+  url: string;
+  domain?: string;
+  favicon?: string;
 }
 
 export interface ExecutionDigestRow {
@@ -19,15 +32,22 @@ export interface ExecutionDigestRow {
   summary: string;
 }
 
-export function buildExecutionProcessModel(run: AgentRunState): ExecutionProcessModel {
+export function buildExecutionProcessModel(
+  run: AgentRunState,
+  options: ExecutionProcessModelOptions = {},
+): ExecutionProcessModel {
   const toolCalls = run.steps.flatMap(step => step.toolCalls);
   const visibleToolCalls = toolCalls.filter(isVisibleToolCall);
   const groups = groupToolCalls(visibleToolCalls);
   const digestRows = (run.toolDigests ?? []).map(toDigestRow);
+  const searchSources = collectSearchSources(run, options.searchSources ?? []);
   const searchCount = countSearches(toolCalls, run.toolDigests);
   const readCount = countSuccessfulReads(toolCalls, run.toolDigests);
   const skippedReadCount = countSkippedReads(toolCalls, run.toolDigests);
-  const searchCandidateCount = countSearchCandidates(toolCalls, run.toolDigests);
+  const searchCandidateCount = Math.max(
+    countSearchCandidates(toolCalls, run.toolDigests),
+    searchSources.length,
+  );
   const isRenderable = searchCount > 0
     || readCount > 0
     || groups.length > 0;
@@ -39,6 +59,7 @@ export function buildExecutionProcessModel(run: AgentRunState): ExecutionProcess
     readCount,
     skippedReadCount,
     searchCandidateCount,
+    searchSources,
     groups,
     digestRows,
   };
@@ -144,6 +165,72 @@ function countSearchCandidates(toolCalls: ToolCallState[], digests: AgentToolDig
     .reduce((count, digest) => count + extractCandidateCount(digest.summary), 0);
 }
 
+function collectSearchSources(
+  run: AgentRunState,
+  fallbackSources: ExecutionProcessSource[],
+): ExecutionProcessSource[] {
+  const evidenceById = new Map(
+    (run.evidence ?? [])
+      .filter(isRenderableSearchEvidence)
+      .map(evidence => [evidence.id, toExecutionProcessSource(evidence)]),
+  );
+  const digestSourceIds = (run.toolDigests ?? [])
+    .filter(digest => digest.toolName === 'web_search' && digest.status === 'success')
+    .flatMap(digest => digest.sourceRefs);
+  const digestSources = digestSourceIds
+    .map(sourceId => evidenceById.get(sourceId))
+    .filter((source): source is ExecutionProcessSource => Boolean(source));
+
+  if (digestSources.length > 0) {
+    return dedupeSources(digestSources);
+  }
+
+  const evidenceSources = (run.evidence ?? [])
+    .filter(isRenderableSearchEvidence)
+    .map(toExecutionProcessSource);
+  if (evidenceSources.length > 0) {
+    return dedupeSources(evidenceSources);
+  }
+
+  return dedupeSources(fallbackSources);
+}
+
+function isRenderableSearchEvidence(evidence: AgentEvidenceItem): boolean {
+  return evidence.kind === 'web'
+    && evidence.status !== 'discarded'
+    && Boolean(evidence.url?.trim());
+}
+
+function toExecutionProcessSource(evidence: AgentEvidenceItem): ExecutionProcessSource {
+  return {
+    id: evidence.id,
+    title: evidence.title.trim() || evidence.url || '搜索结果',
+    url: evidence.url ?? '',
+    domain: evidence.domain || deriveDomain(evidence.url),
+  };
+}
+
+function dedupeSources(sources: ExecutionProcessSource[]): ExecutionProcessSource[] {
+  const seen = new Set<string>();
+  const result: ExecutionProcessSource[] = [];
+
+  for (const source of sources) {
+    const url = source.url.trim();
+    if (!url) continue;
+    const key = url || source.title;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    result.push({
+      ...source,
+      title: source.title.trim() || url,
+      url,
+      domain: source.domain?.trim() || deriveDomain(url),
+    });
+  }
+
+  return result;
+}
+
 function buildSummary(searchCount: number, readCount: number): string {
   const parts = ['执行过程'];
   if (searchCount > 0) parts.push(`搜索 ${searchCount} 次`);
@@ -179,4 +266,13 @@ function sanitizeInternalText(value: string): string {
 function extractCandidateCount(summary: string): number {
   const match = summary.match(/(?:保留|找到)\s*(\d+)\s*条/);
   return match ? Number(match[1]) : 0;
+}
+
+function deriveDomain(url: string | undefined): string | undefined {
+  if (!url) return undefined;
+  try {
+    return new URL(url).hostname.replace(/^www\./i, '') || undefined;
+  } catch {
+    return undefined;
+  }
 }

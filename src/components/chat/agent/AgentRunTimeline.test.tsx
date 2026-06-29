@@ -323,6 +323,108 @@ describe('AgentRunTimeline', () => {
     expect(screen.queryByText(/reader-service/)).not.toBeInTheDocument();
   });
 
+  it('completed 的单次 web_search 在执行过程侧栏展示全部搜索候选来源', () => {
+    renderTimeline(run({
+      status: 'completed',
+      steps: [
+        step({
+          stepId: 's1',
+          stepNumber: 1,
+          toolCalls: [
+            toolCall({
+              toolCallId: 'tc-search',
+              arguments: { query: 'SpaceX 估值 上市 2026年' },
+              resultSummary: {
+                kind: 'search',
+                title: '假的。SpaceX确实在2026年6月上市，估值约1.77兆美元 - Threads',
+                count: 5,
+                truncated: false,
+              },
+            }),
+          ],
+        }),
+      ],
+      toolDigests: [
+        {
+          toolCallId: 'tc-search',
+          toolName: 'web_search',
+          status: 'success',
+          title: '搜索完成',
+          summary: '保留 5 条候选结果，供后续回答筛选。',
+          keyFindings: [],
+          sourceRefs: ['ev-search-0', 'ev-search-1', 'ev-search-2', 'ev-search-3', 'ev-search-4'],
+          truncated: false,
+        },
+      ],
+      evidence: [
+        {
+          id: 'ev-search-0',
+          kind: 'web',
+          status: 'candidate',
+          title: '假的。SpaceX确实在2026年6月上市，估值约1.77兆美元 - Threads',
+          url: 'https://www.threads.com/post/1',
+          domain: 'threads.com',
+          claim: 'Threads 讨论 SpaceX 上市传闻',
+          usedByFinalAnswer: false,
+        },
+        {
+          id: 'ev-search-1',
+          kind: 'web',
+          status: 'candidate',
+          title: '關於SpaceX IPO你需要知道的：支撐2兆估值的是什麼？',
+          url: 'https://www.tradingkey.com/news/1',
+          domain: 'tradingkey.com',
+          claim: 'TradingKey 分析 SpaceX IPO 估值',
+          usedByFinalAnswer: false,
+        },
+        {
+          id: 'ev-search-2',
+          kind: 'web',
+          status: 'candidate',
+          title: 'SpaceX上市首日股價飆升，助馬斯克成全球首位萬億富豪 - BBC',
+          url: 'https://www.bbc.com/zhongwen/articles/1',
+          domain: 'bbc.com',
+          claim: 'BBC 报道 SpaceX 上市传闻',
+          usedByFinalAnswer: false,
+        },
+        {
+          id: 'ev-search-3',
+          kind: 'web',
+          status: 'candidate',
+          title: 'SpaceX 懶人包：SPCX值得投資嗎？ETF納入時間',
+          url: 'https://www.sinotrade.com.tw/article/1',
+          domain: 'sinotrade.com.tw',
+          claim: '永豐金證券整理 SpaceX 投资信息',
+          usedByFinalAnswer: false,
+        },
+        {
+          id: 'ev-search-4',
+          kind: 'web',
+          status: 'candidate',
+          title: 'SpaceX推进史上最大规模IPO，发行价每股135美元 - 纽约时报',
+          url: 'https://cn.nytimes.com/business/1',
+          domain: 'cn.nytimes.com',
+          claim: '纽约时报报道 SpaceX IPO',
+          usedByFinalAnswer: false,
+        },
+      ],
+    }));
+
+    expect(screen.getByText('执行过程 · 搜索 1 次')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: '查看执行过程' }));
+
+    expect(screen.getByRole('dialog', { name: '执行过程' })).toBeInTheDocument();
+    expect(screen.getByText('搜索记录')).toBeInTheDocument();
+    expect(screen.getByText('搜索 1 次，共保留 5 条候选结果')).toBeInTheDocument();
+    expect(screen.getByText('假的。SpaceX确实在2026年6月上市，估值约1.77兆美元 - Threads')).toBeInTheDocument();
+    expect(screen.getByText('關於SpaceX IPO你需要知道的：支撐2兆估值的是什麼？')).toBeInTheDocument();
+    expect(screen.getByText('SpaceX上市首日股價飆升，助馬斯克成全球首位萬億富豪 - BBC')).toBeInTheDocument();
+    expect(screen.getByText('SpaceX 懶人包：SPCX值得投資嗎？ETF納入時間')).toBeInTheDocument();
+    expect(screen.getByText('SpaceX推进史上最大规模IPO，发行价每股135美元 - 纽约时报')).toBeInTheDocument();
+    expect(screen.queryByText('SpaceX 估值 上市 2026年')).not.toBeInTheDocument();
+  });
+
   it('completed 但存在 degraded 工具时默认收起且不在摘要标记未使用数量', () => {
     renderTimeline(run({
       status: 'completed',

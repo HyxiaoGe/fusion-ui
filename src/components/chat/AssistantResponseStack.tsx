@@ -10,6 +10,7 @@ import AnswerEvidence from './AnswerEvidence';
 import type { AnswerEvidenceModel } from './answerEvidenceModel';
 import type { AnswerEvidenceSidebarModel } from './answerEvidenceSidebarModel';
 import { AgentRunTimeline } from './agent';
+import type { ExecutionProcessSource } from './agent/executionProcessModel';
 import MarkdownRenderer from './MarkdownRenderer';
 
 interface AssistantResponseStackProps {
@@ -53,9 +54,10 @@ function AssistantResponseStack({
   markdown,
   showStreamingCursor,
 }: AssistantResponseStackProps) {
+  const executionSearchSources = toExecutionSearchSources(answerEvidence);
   const agentRunTimelineProps = agentRun === undefined
-    ? { assistantMessageId, onRetry, onContinue: onContinueAgentRun }
-    : { assistantMessageId, onRetry, onContinue: onContinueAgentRun, run: agentRun };
+    ? { assistantMessageId, onRetry, onContinue: onContinueAgentRun, searchSources: executionSearchSources }
+    : { assistantMessageId, onRetry, onContinue: onContinueAgentRun, run: agentRun, searchSources: executionSearchSources };
 
   return (
     <div
@@ -105,3 +107,17 @@ function AssistantResponseStack({
 }
 
 export default memo(AssistantResponseStack);
+
+function toExecutionSearchSources(answerEvidence: AnswerEvidenceModel | null): ExecutionProcessSource[] | undefined {
+  const sources = answerEvidence?.items
+    .filter(item => item.kind === 'search_source')
+    .map(item => ({
+      id: item.id,
+      title: item.title,
+      url: item.url,
+      domain: item.domain,
+      favicon: item.favicon,
+    })) ?? [];
+
+  return sources.length > 0 ? sources : undefined;
+}

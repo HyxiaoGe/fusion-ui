@@ -9,7 +9,7 @@ import { RunProgressStrip } from './RunProgressStrip';
 import { PlanTimeline } from './PlanTimeline';
 import { EvidenceDigest } from './EvidenceDigest';
 import { ExecutionProcess } from './ExecutionProcess';
-import { buildExecutionProcessModel } from './executionProcessModel';
+import { buildExecutionProcessModel, type ExecutionProcessSource } from './executionProcessModel';
 
 interface AgentRunTimelineProps {
   /** 当前 message 的 id（FE 占位 messageId 或 server messageId）。
@@ -21,6 +21,8 @@ interface AgentRunTimelineProps {
   onContinue?: (previousRunId?: string) => void;
   /** 上层已知的 run。传入 null 时不订阅全局 currentRun；undefined 按未传处理。 */
   run?: AgentRunState | null;
+  /** 对话正文已经解析出的搜索来源，用于补齐执行过程侧栏的候选列表。 */
+  searchSources?: ExecutionProcessSource[];
 }
 
 /**
@@ -39,6 +41,7 @@ export function AgentRunTimeline(props: AgentRunTimelineProps) {
         onRetry={props.onRetry}
         onContinue={props.onContinue}
         run={props.run ?? null}
+        searchSources={props.searchSources}
       />
     );
   }
@@ -48,6 +51,7 @@ export function AgentRunTimeline(props: AgentRunTimelineProps) {
       assistantMessageId={props.assistantMessageId}
       onRetry={props.onRetry}
       onContinue={props.onContinue}
+      searchSources={props.searchSources}
     />
   );
 }
@@ -56,6 +60,7 @@ function AgentRunTimelineFromStore({
   assistantMessageId,
   onRetry,
   onContinue,
+  searchSources,
 }: Omit<AgentRunTimelineProps, 'run'>) {
   const run = useAppSelector(s => s.stream.currentRun);
 
@@ -65,6 +70,7 @@ function AgentRunTimelineFromStore({
       onRetry={onRetry}
       onContinue={onContinue}
       run={run}
+      searchSources={searchSources}
     />
   );
 }
@@ -74,20 +80,21 @@ function AgentRunTimelineContent({
   onRetry,
   onContinue,
   run,
-}: Required<Pick<AgentRunTimelineProps, 'assistantMessageId' | 'run'>> & Pick<AgentRunTimelineProps, 'onRetry' | 'onContinue'>) {
+  searchSources,
+}: Required<Pick<AgentRunTimelineProps, 'assistantMessageId' | 'run'>> & Pick<AgentRunTimelineProps, 'onRetry' | 'onContinue' | 'searchSources'>) {
   if (!run) return null;
   // contract §1：只挂到归属本 message 的 currentRun
   if (run.messageId !== assistantMessageId && run.serverMessageId !== assistantMessageId) {
     return null;
   }
-  const completedProcessModel = buildExecutionProcessModel(run);
+  const completedProcessModel = buildExecutionProcessModel(run, { searchSources });
   if (shouldRenderCompletedProcess(run, completedProcessModel.isRenderable)) {
     return (
       <div
         data-testid="agent-run-timeline"
         className="mb-3 w-full max-w-full min-w-0 self-stretch"
       >
-        <ExecutionProcess run={run} />
+        <ExecutionProcess run={run} searchSources={searchSources} />
       </div>
     );
   }

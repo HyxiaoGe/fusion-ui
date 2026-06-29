@@ -3,6 +3,7 @@ import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import type { AgentRunState } from '@/types/agentRun';
 import type { SearchSourceSummary } from '@/types/conversation';
+import type { ExecutionProcessSource } from './agent/executionProcessModel';
 import type { AssistantActivity } from './assistantActivity';
 import type { AnswerEvidenceModel } from './answerEvidenceModel';
 import AssistantResponseStack from './AssistantResponseStack';
@@ -50,11 +51,20 @@ vi.mock('./agent', () => ({
     onRetry?: () => void;
     onContinue?: (previousRunId?: string) => void;
     run?: AgentRunState | null;
+    searchSources?: ExecutionProcessSource[];
   }) => {
-    agentRunTimelinePropsMock({
+    const payload: {
+      hasRunProp: boolean;
+      run?: AgentRunState | null;
+      searchSources?: ExecutionProcessSource[];
+    } = {
       hasRunProp: Object.prototype.hasOwnProperty.call(props, 'run'),
       run: props.run,
-    });
+    };
+    if (props.searchSources) {
+      payload.searchSources = props.searchSources;
+    }
+    agentRunTimelinePropsMock(payload);
 
     return (
       <section
@@ -336,6 +346,49 @@ describe('AssistantResponseStack', () => {
     expect(agentRunTimelinePropsMock).toHaveBeenLastCalledWith({
       hasRunProp: true,
       run: agentRun,
+    });
+  });
+
+  it('向 AgentRunTimeline 透传回答依据中的搜索来源，供执行过程侧栏兜底展示', () => {
+    agentRunTimelinePropsMock.mockClear();
+
+    render(
+      <AssistantResponseStack
+        assistantMessageId="assistant-1"
+        reasoning={{
+          shouldRender: false,
+          content: '',
+          isVisible: false,
+          isStreaming: false,
+          onToggle: vi.fn(),
+        }}
+        activity={activity()}
+        agentRun={agentRun}
+        onRetry={undefined}
+        answerEvidence={answerEvidence}
+        onSourceClick={vi.fn()}
+        onOpenSources={vi.fn()}
+        markdown={{
+          content: '回答',
+          sources: [],
+          onCitationClick: undefined,
+        }}
+        showStreamingCursor={false}
+      />,
+    );
+
+    expect(agentRunTimelinePropsMock).toHaveBeenLastCalledWith({
+      hasRunProp: true,
+      run: agentRun,
+      searchSources: [
+        {
+          id: 'search-0',
+          title: '来源一',
+          url: 'https://example.com/source',
+          domain: 'example.com',
+          favicon: undefined,
+        },
+      ],
     });
   });
 
