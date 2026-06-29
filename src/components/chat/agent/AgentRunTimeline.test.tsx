@@ -302,6 +302,78 @@ describe('AgentRunTimeline', () => {
     expect(screen.queryByText('筛选关键来源')).not.toBeInTheDocument();
   });
 
+  it('completed + 只有 evidence 没有真实工具时不渲染执行过程', () => {
+    const { container } = renderTimeline(run({
+      protocolVersion: 2,
+      status: 'completed',
+      steps: [],
+      totalSteps: 0,
+      totalToolCalls: 0,
+      evidence: [
+        {
+          id: 'ev-1',
+          kind: 'web',
+          status: 'used',
+          title: '欧盟统一充电接口法规',
+          url: 'https://example.com/eu-usb-c',
+          domain: 'example.com',
+          claim: '欧盟要求便携设备统一使用 USB-C',
+          usedByFinalAnswer: true,
+        },
+      ],
+    }));
+
+    expect(container.firstChild).toBeNull();
+    expect(screen.queryByText('执行过程')).not.toBeInTheDocument();
+    expect(screen.queryByText('欧盟统一充电接口法规')).not.toBeInTheDocument();
+  });
+
+  it('running + 只有 plan/progress 且工具未开始时展示计划态，不展示完成态执行过程入口', () => {
+    renderTimeline(run({
+      protocolVersion: 2,
+      status: 'running',
+      steps: [],
+      totalSteps: 0,
+      totalToolCalls: 0,
+      progress: {
+        phase: 'planning',
+        label: '正在制定执行计划',
+        completedSteps: 0,
+        totalSteps: 4,
+      },
+      plan: {
+        planId: 'plan-r1',
+        revision: 1,
+        items: [
+          {
+            id: 'understand',
+            title: '制定执行计划',
+            status: 'running',
+            kind: 'reasoning',
+            summary: '判断资料需求和回答路径',
+            toolNames: [],
+            evidenceItemIds: [],
+          },
+          {
+            id: 'search',
+            title: '搜索：iPhone为什么要换USB-C接口',
+            status: 'pending',
+            kind: 'search',
+            summary: '工具：联网搜索；预算：最多 4 次搜索，每次 3-10 条结果',
+            toolNames: ['web_search'],
+            evidenceItemIds: [],
+          },
+        ],
+      },
+    }));
+
+    expect(screen.getByText('正在制定执行计划')).toBeInTheDocument();
+    expect(screen.getByText('制定执行计划')).toBeInTheDocument();
+    expect(screen.getByText('搜索：iPhone为什么要换USB-C接口')).toBeInTheDocument();
+    expect(screen.queryByText(/执行过程 ·/)).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '查看执行过程' })).not.toBeInTheDocument();
+  });
+
   it('failed + steps=[] 仍显示失败 banner（防 M1 guard 误杀 ProviderOffline 场景）', () => {
     renderTimeline(run({
       status: 'failed',
@@ -335,6 +407,36 @@ describe('AgentRunTimeline', () => {
 
     expect(screen.getByText('执行过程 · 搜索 1 次')).toBeInTheDocument();
     expect(screen.queryByText(/整理答复/)).not.toBeInTheDocument();
+  });
+
+  it('completed + 真实 url_read 成功时展示读取过程，不伪造搜索过程', () => {
+    renderTimeline(run({
+      status: 'completed',
+      steps: [
+        step({
+          stepId: 's1',
+          stepNumber: 1,
+          toolCalls: [
+            toolCall({
+              toolCallId: 'read-1',
+              toolName: 'url_read',
+              arguments: { url: 'https://example.com/eu-usb-c' },
+              resultSummary: { kind: 'webpage', count: 1, truncated: false },
+            }),
+          ],
+        }),
+      ],
+    }));
+
+    expect(screen.getByText('执行过程 · 读取 1 个网页')).toBeInTheDocument();
+    expect(screen.queryByText(/搜索 1 次/)).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: '查看执行过程' }));
+
+    expect(screen.getByRole('dialog', { name: '执行过程' })).toBeInTheDocument();
+    expect(screen.getByText('网页读取')).toBeInTheDocument();
+    expect(screen.getByText('example.com')).toBeInTheDocument();
+    expect(screen.queryByText('搜索记录')).not.toBeInTheDocument();
   });
 
   it('completed 且存在执行过程时默认收起，并通过侧栏查看过程详情', () => {
@@ -669,5 +771,41 @@ describe('AgentRunTimeline', () => {
     }));
 
     expect(screen.getByText(/搜索/)).toBeInTheDocument();
+  });
+
+  it('limit_reached + 只有 plan/progress 没有工具时仍保留触顶说明', () => {
+    renderTimeline(run({
+      protocolVersion: 2,
+      status: 'limit_reached',
+      steps: [],
+      totalSteps: 0,
+      totalToolCalls: 0,
+      limitReachedReason: 'timeout',
+      progress: {
+        phase: 'synthesizing',
+        label: '正在整理回答',
+        completedSteps: 2,
+        totalSteps: 4,
+      },
+      plan: {
+        planId: 'plan-r1',
+        revision: 1,
+        items: [
+          {
+            id: 'answer',
+            title: '整理回答',
+            status: 'running',
+            kind: 'answer',
+            summary: '基于现有信息生成回答',
+            toolNames: [],
+            evidenceItemIds: [],
+          },
+        ],
+      },
+    }));
+
+    expect(screen.getByText(/运行超时/)).toBeInTheDocument();
+    expect(screen.getByText('整理回答')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '查看执行过程' })).not.toBeInTheDocument();
   });
 });
