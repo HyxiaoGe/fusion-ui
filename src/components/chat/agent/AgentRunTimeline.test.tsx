@@ -305,7 +305,8 @@ describe('AgentRunTimeline', () => {
       ],
     }));
 
-    expect(screen.getByText('执行过程 · 搜索 1 次 · 读取 1 个网页 · 1 个未使用')).toBeInTheDocument();
+    expect(screen.getByText('执行过程 · 搜索 1 次')).toBeInTheDocument();
+    expect(screen.queryByText(/未使用/)).not.toBeInTheDocument();
     expect(screen.queryByText('工具结果')).not.toBeInTheDocument();
     expect(screen.queryByText(/url_read/)).not.toBeInTheDocument();
     expect(screen.queryByText(/reader-service/)).not.toBeInTheDocument();
@@ -314,15 +315,15 @@ describe('AgentRunTimeline', () => {
 
     expect(screen.getByRole('dialog', { name: '执行过程' })).toBeInTheDocument();
     expect(screen.getByText('搜索记录')).toBeInTheDocument();
-    expect(screen.getByText('网页读取')).toBeInTheDocument();
     expect(screen.getByText('GPT 5.5')).toBeInTheDocument();
-    expect(screen.getByText('example.com')).toBeInTheDocument();
-    expect(screen.getAllByText('网页暂时无法读取')).toHaveLength(1);
+    expect(screen.queryByText('example.com')).not.toBeInTheDocument();
+    expect(screen.getByText('已自动跳过 1 个不可读网页')).toBeInTheDocument();
+    expect(screen.queryByText('网页暂时无法读取')).not.toBeInTheDocument();
     expect(screen.queryByText(/url_read/)).not.toBeInTheDocument();
     expect(screen.queryByText(/reader-service/)).not.toBeInTheDocument();
   });
 
-  it('completed 但存在 degraded 工具时默认收起并标记未使用数量', () => {
+  it('completed 但存在 degraded 工具时默认收起且不在摘要标记未使用数量', () => {
     renderTimeline(run({
       status: 'completed',
       steps: [
@@ -338,8 +339,97 @@ describe('AgentRunTimeline', () => {
       ],
     }));
 
-    expect(screen.getByText('执行过程 · 搜索 1 次 · 1 个未使用')).toBeInTheDocument();
+    expect(screen.getByText('执行过程 · 搜索 1 次')).toBeInTheDocument();
+    expect(screen.queryByText(/未使用/)).not.toBeInTheDocument();
     expect(screen.queryByText(/搜索部分可用/)).not.toBeInTheDocument();
+  });
+
+  it('completed 历史 digest-only 执行过程按类型聚合，不把失败读取提升成未使用告警', () => {
+    renderTimeline(run({
+      status: 'completed',
+      steps: [],
+      totalSteps: 0,
+      totalToolCalls: 0,
+      toolDigests: [
+        {
+          toolCallId: 'tc-search-1',
+          toolName: 'web_search',
+          status: 'success',
+          title: '搜索完成',
+          summary: '保留 2 条候选结果，供后续回答筛选。',
+          keyFindings: [],
+          sourceRefs: [],
+          truncated: false,
+        },
+        {
+          toolCallId: 'tc-read-1',
+          toolName: 'url_read',
+          status: 'degraded',
+          title: '网页读取部分可用',
+          summary: '网页暂时无法读取，已跳过该来源。',
+          keyFindings: [],
+          sourceRefs: [],
+          truncated: false,
+        },
+        {
+          toolCallId: 'tc-read-2',
+          toolName: 'url_read',
+          status: 'success',
+          title: '网页读取完成',
+          summary: '已读取网页内容，供后续回答核验。',
+          keyFindings: [],
+          sourceRefs: [],
+          truncated: false,
+        },
+        {
+          toolCallId: 'tc-search-2',
+          toolName: 'web_search',
+          status: 'success',
+          title: '搜索完成',
+          summary: '保留 5 条候选结果，供后续回答筛选。',
+          keyFindings: [],
+          sourceRefs: [],
+          truncated: false,
+        },
+        {
+          toolCallId: 'tc-read-3',
+          toolName: 'url_read',
+          status: 'success',
+          title: '网页读取完成',
+          summary: '已读取网页内容，供后续回答核验。',
+          keyFindings: [],
+          sourceRefs: [],
+          truncated: false,
+        },
+        {
+          toolCallId: 'tc-read-4',
+          toolName: 'url_read',
+          status: 'degraded',
+          title: '网页读取部分可用',
+          summary: '网页暂时无法读取，已跳过该来源。',
+          keyFindings: [],
+          sourceRefs: [],
+          truncated: false,
+        },
+      ],
+    }));
+
+    expect(screen.getByText('执行过程 · 搜索 2 次 · 读取 2 个网页')).toBeInTheDocument();
+    expect(screen.queryByText(/未使用/)).not.toBeInTheDocument();
+    expect(screen.queryByText('搜索完成')).not.toBeInTheDocument();
+    expect(screen.queryByText('网页读取部分可用')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: '查看执行过程' }));
+
+    expect(screen.getByRole('dialog', { name: '执行过程' })).toBeInTheDocument();
+    expect(screen.getByText('搜索资料')).toBeInTheDocument();
+    expect(screen.getByText('搜索 2 次，共保留 7 条候选结果')).toBeInTheDocument();
+    expect(screen.getByText('网页读取')).toBeInTheDocument();
+    expect(screen.getByText('成功读取 2 个网页')).toBeInTheDocument();
+    expect(screen.getByText('已自动跳过 2 个不可读网页')).toBeInTheDocument();
+    expect(screen.queryByText('2 个未使用')).not.toBeInTheDocument();
+    expect(screen.queryByText('搜索完成')).not.toBeInTheDocument();
+    expect(screen.queryByText('网页读取部分可用')).not.toBeInTheDocument();
   });
 
   it('completed 但存在 failed step 时仍渲染 timeline', () => {

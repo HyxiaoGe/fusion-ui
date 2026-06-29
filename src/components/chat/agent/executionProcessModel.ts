@@ -6,7 +6,8 @@ export interface ExecutionProcessModel {
   summary: string;
   searchCount: number;
   readCount: number;
-  issueCount: number;
+  skippedReadCount: number;
+  searchCandidateCount: number;
   groups: ToolCallGroup[];
   digestRows: ExecutionDigestRow[];
 }
@@ -20,23 +21,24 @@ export interface ExecutionDigestRow {
 
 export function buildExecutionProcessModel(run: AgentRunState): ExecutionProcessModel {
   const toolCalls = run.steps.flatMap(step => step.toolCalls);
-  const groups = groupToolCalls(toolCalls);
+  const visibleToolCalls = toolCalls.filter(isVisibleToolCall);
+  const groups = groupToolCalls(visibleToolCalls);
   const digestRows = (run.toolDigests ?? []).map(toDigestRow);
-  const searchCount = countToolName(toolCalls, run.toolDigests, 'web_search');
-  const readCount = countToolName(toolCalls, run.toolDigests, 'url_read');
-  const issueCount = countIssues(toolCalls, run.toolDigests);
+  const searchCount = countSearches(toolCalls, run.toolDigests);
+  const readCount = countSuccessfulReads(toolCalls, run.toolDigests);
+  const skippedReadCount = countSkippedReads(toolCalls, run.toolDigests);
+  const searchCandidateCount = countSearchCandidates(toolCalls, run.toolDigests);
   const isRenderable = searchCount > 0
     || readCount > 0
-    || issueCount > 0
-    || digestRows.length > 0
     || groups.length > 0;
 
   return {
     isRenderable,
-    summary: buildSummary(searchCount, readCount, issueCount),
+    summary: buildSummary(searchCount, readCount),
     searchCount,
     readCount,
-    issueCount,
+    skippedReadCount,
+    searchCandidateCount,
     groups,
     digestRows,
   };
@@ -105,27 +107,47 @@ export function groupDetailStatusText(detail: ToolCallGroupDetail): string {
   return statusText(detail.status);
 }
 
-function countToolName(
-  toolCalls: ToolCallState[],
-  digests: AgentToolDigest[] | undefined,
-  toolName: string,
-): number {
-  const callCount = toolCalls.filter(call => call.toolName === toolName).length;
+function isVisibleToolCall(call: ToolCallState): boolean {
+  if (call.toolName !== 'url_read') return true;
+  return call.status === 'success' || call.status === 'running';
+}
+
+function countSearches(toolCalls: ToolCallState[], digests: AgentToolDigest[] | undefined): number {
+  const callCount = toolCalls.filter(call => call.toolName === 'web_search').length;
   if (callCount > 0) return callCount;
-  return (digests ?? []).filter(digest => digest.toolName === toolName).length;
+  return (digests ?? []).filter(digest => digest.toolName === 'web_search').length;
 }
 
-function countIssues(toolCalls: ToolCallState[], digests: AgentToolDigest[] | undefined): number {
-  const issueCalls = toolCalls.filter(call => call.status !== 'success' && call.status !== 'running').length;
-  if (issueCalls > 0) return issueCalls;
-  return (digests ?? []).filter(digest => digest.status !== 'success').length;
+function countSuccessfulReads(toolCalls: ToolCallState[], digests: AgentToolDigest[] | undefined): number {
+  const readCalls = toolCalls.filter(call => call.toolName === 'url_read');
+  if (readCalls.length > 0) {
+    return readCalls.filter(call => call.status === 'success').length;
+  }
+  return (digests ?? []).filter(digest => digest.toolName === 'url_read' && digest.status === 'success').length;
 }
 
-function buildSummary(searchCount: number, readCount: number, issueCount: number): string {
+function countSkippedReads(toolCalls: ToolCallState[], digests: AgentToolDigest[] | undefined): number {
+  const readCalls = toolCalls.filter(call => call.toolName === 'url_read');
+  if (readCalls.length > 0) {
+    return readCalls.filter(call => call.status !== 'success' && call.status !== 'running').length;
+  }
+  return (digests ?? []).filter(digest => digest.toolName === 'url_read' && digest.status !== 'success').length;
+}
+
+function countSearchCandidates(toolCalls: ToolCallState[], digests: AgentToolDigest[] | undefined): number {
+  const callCount = toolCalls
+    .filter(call => call.toolName === 'web_search')
+    .reduce((count, call) => count + (call.resultSummary?.count ?? 0), 0);
+  if (callCount > 0) return callCount;
+  return (digests ?? [])
+    .filter(digest => digest.toolName === 'web_search')
+    .reduce((count, digest) => count + extractCandidateCount(digest.summary), 0);
+}
+
+function buildSummary(searchCount: number, readCount: number): string {
   const parts = ['执行过程'];
   if (searchCount > 0) parts.push(`搜索 ${searchCount} 次`);
   if (readCount > 0) parts.push(`读取 ${readCount} 个网页`);
-  if (issueCount > 0) parts.push(`${issueCount} 个未使用`);
   return parts.join(' · ');
 }
 
@@ -152,4 +174,9 @@ function sanitizeInternalText(value: string): string {
     return '部分资料暂时不可用，已基于可用信息继续。';
   }
   return normalized;
+}
+
+function extractCandidateCount(summary: string): number {
+  const match = summary.match(/(?:保留|找到)\s*(\d+)\s*条/);
+  return match ? Number(match[1]) : 0;
 }

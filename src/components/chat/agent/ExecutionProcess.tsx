@@ -7,10 +7,9 @@ import { cn } from '@/lib/utils';
 import type { ToolCallGroupDetail } from '@/lib/agent/toolCallGroups';
 import {
   buildExecutionProcessModel,
+  type ExecutionProcessModel,
   groupDetailStatusText,
   groupSectionTitle,
-  sanitizeExecutionSummary,
-  sanitizeExecutionTitle,
   statusText,
 } from './executionProcessModel';
 
@@ -102,11 +101,6 @@ function ExecutionProcessSidebar({
             <p className="mt-1 text-xs text-muted-foreground">{model.summary}</p>
           </div>
           <div className="flex shrink-0 items-center gap-2">
-            {model.issueCount > 0 ? (
-              <span className="rounded-full border border-warn/30 bg-warn/5 px-2 py-0.5 text-[11px] text-warn">
-                {model.issueCount} 个未使用
-              </span>
-            ) : null}
             <button
               ref={closeButtonRef}
               type="button"
@@ -136,9 +130,10 @@ function ExecutionProcessSidebar({
                   </div>
                 </section>
               ))}
+              <SkippedReadNotice count={model.skippedReadCount} />
             </div>
           ) : (
-            <DigestOnlyList run={run} />
+            <DigestOnlyList model={model} />
           )}
         </div>
       </aside>
@@ -173,9 +168,8 @@ function ProcessDetailItem({ detail }: { detail: ToolCallGroupDetail }) {
   );
 }
 
-function DigestOnlyList({ run }: { run: AgentRunState }) {
-  const digests = run.toolDigests ?? [];
-  if (!digests.length) {
+function DigestOnlyList({ model }: { model: ExecutionProcessModel }) {
+  if (model.searchCount === 0 && model.readCount === 0) {
     return (
       <section className="rounded-md border border-border/40 bg-muted/10 px-3 py-2 text-xs text-muted-foreground">
         没有可展示的执行过程
@@ -184,25 +178,78 @@ function DigestOnlyList({ run }: { run: AgentRunState }) {
   }
 
   return (
-    <section>
-      <h4 className="mb-2 text-xs font-medium text-foreground">资料处理</h4>
-      <div className="space-y-2">
-        {digests.map(digest => (
-          <div key={digest.toolCallId} className="rounded-md border border-border/40 bg-background/70 px-3 py-2">
-            <div className="mb-1 flex items-center gap-2">
-              <span className="min-w-0 flex-1 truncate text-sm font-medium text-foreground">
-                {sanitizeExecutionTitle(digest)}
-              </span>
-              <span className="shrink-0 rounded-full border border-border/30 px-1.5 py-0.5 text-[10px] text-muted-foreground">
-                {statusText(digest.status)}
-              </span>
-            </div>
-            <p className="line-clamp-2 text-xs text-muted-foreground" title={sanitizeExecutionSummary(digest)}>
-              {sanitizeExecutionSummary(digest)}
-            </p>
-          </div>
-        ))}
-      </div>
-    </section>
+    <div className="space-y-5">
+      {model.searchCount > 0 ? (
+        <section>
+          <h4 className="mb-2 flex items-center gap-1.5 text-xs font-medium text-foreground">
+            <Search className="h-3.5 w-3.5 text-info" aria-hidden="true" />
+            搜索资料
+          </h4>
+          <AggregateProcessItem
+            title={buildSearchAggregateTitle(model)}
+            detail={buildSearchAggregateDetail(model)}
+          />
+        </section>
+      ) : null}
+      {model.readCount > 0 ? (
+        <section>
+          <h4 className="mb-2 flex items-center gap-1.5 text-xs font-medium text-foreground">
+            <Globe2 className="h-3.5 w-3.5 text-teal" aria-hidden="true" />
+            网页读取
+          </h4>
+          <AggregateProcessItem
+            title={`成功读取 ${model.readCount} 个网页`}
+            detail="已读取网页内容，供后续回答核验。"
+          />
+        </section>
+      ) : null}
+      <SkippedReadNotice count={model.skippedReadCount} />
+    </div>
   );
+}
+
+function AggregateProcessItem({ title, detail }: { title: string; detail: string }) {
+  return (
+    <div className="flex min-w-0 gap-3 rounded-md border border-border/40 bg-background/70 px-3 py-2">
+      <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-success">
+        <CheckCircle2 className="h-4 w-4" aria-hidden="true" />
+      </span>
+      <div className="min-w-0 flex-1">
+        <div className="mb-1 flex min-w-0 items-center gap-2">
+          <span className="min-w-0 truncate text-sm font-medium text-foreground">
+            {title}
+          </span>
+          <span className="shrink-0 rounded-full border border-border/30 px-1.5 py-0.5 text-[10px] text-muted-foreground">
+            完成
+          </span>
+        </div>
+        <p className="line-clamp-2 text-xs text-muted-foreground" title={detail}>
+          {detail}
+        </p>
+      </div>
+    </div>
+  );
+}
+
+function SkippedReadNotice({ count }: { count: number }) {
+  if (count <= 0) return null;
+  return (
+    <p className="px-1 text-xs text-muted-foreground">
+      已自动跳过 {count} 个不可读网页
+    </p>
+  );
+}
+
+function buildSearchAggregateTitle(model: ExecutionProcessModel): string {
+  if (model.searchCandidateCount > 0) {
+    return `搜索 ${model.searchCount} 次，共保留 ${model.searchCandidateCount} 条候选结果`;
+  }
+  return `搜索 ${model.searchCount} 次`;
+}
+
+function buildSearchAggregateDetail(model: ExecutionProcessModel): string {
+  if (model.searchCandidateCount > 0) {
+    return '候选结果已用于后续回答筛选。';
+  }
+  return '已完成资料搜索。';
 }
