@@ -186,6 +186,41 @@ describe('useSendMessage', () => {
     });
   });
 
+  it('uses completion time as assistant timestamp so long first replies can still fetch suggestions', async () => {
+    const store = createStore();
+    vi.spyOn(Date, 'now').mockReturnValue(1_000);
+
+    sendMessageStreamMock.mockImplementation(
+      async (_payload: any, callbacks: StreamCallbacks) => {
+        callbacks.onReady({ messageId: 'assistant-1', conversationId: 'server-conv' });
+        callbacks.onAnswering({ block_id: 'blk_c', delta: 'long answer' });
+        vi.mocked(Date.now).mockReturnValue(95_000);
+        callbacks.onDone({ messageId: 'assistant-1', conversationId: 'server-conv' });
+      }
+    );
+
+    const { result } = renderHook(() => useSendMessage(), {
+      wrapper: createWrapper(store),
+    });
+
+    await act(async () => {
+      await result.current.sendMessage('hello', {
+        conversationId: null,
+      });
+    });
+
+    await act(async () => {
+      tickIntervals(4);
+    });
+
+    await waitFor(() => {
+      const assistantMsg = store.getState().conversation.byId['server-conv'].messages.find(
+        (m: any) => m.role === 'assistant'
+      );
+      expect(assistantMsg?.timestamp).toBe(95_000);
+    });
+  });
+
   it('exposes the local draft conversation before waiting for the stream to be ready', async () => {
     const store = createStore();
     const onDraftCreated = vi.fn();

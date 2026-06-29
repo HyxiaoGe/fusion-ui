@@ -276,6 +276,7 @@ export function useSendMessage() {
             patch: {
               content: finalBlocks,
               model_id: enabledModel.id,
+              timestamp: Date.now(),
               // usage：当前 done 事件不再携带；agent 模式由后续 GET conversation 拉取覆盖
               isReasoningVisible: hasThinking ? false : undefined,
             },
