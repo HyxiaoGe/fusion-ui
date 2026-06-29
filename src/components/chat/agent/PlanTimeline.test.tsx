@@ -76,7 +76,7 @@ describe('PlanTimeline', () => {
             title: '整理回答',
             status: 'pending',
             kind: 'answer',
-            summary: '基于已有上下文直接回答，不使用联网工具',
+            summary: '完成问题理解后，根据实际资料需求整理回答',
             toolNames: [],
             evidenceItemIds: [],
           },
@@ -88,6 +88,7 @@ describe('PlanTimeline', () => {
     expect(screen.getByText('整理回答')).toBeInTheDocument();
     expect(screen.queryByText(/搜索/)).not.toBeInTheDocument();
     expect(screen.queryByText(/读取/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/不使用联网工具/)).not.toBeInTheDocument();
   });
 
   it('已完成 run 不展示历史 snapshot 中残留的 running/pending 状态', () => {
