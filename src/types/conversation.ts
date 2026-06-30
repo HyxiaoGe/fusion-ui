@@ -76,6 +76,8 @@ export interface SearchBlock {
   requested_count?: number | null;
   actual_count?: number | null;
   context_source_count?: number | null;
+  context_source_limit?: number | null;
+  search_budget?: string | null;
   intent?: 'quick_fact' | 'freshness' | 'comparison' | 'deep_research' | 'official_source' | string | null;
   domains?: string[];
   recency_days?: number | null;
