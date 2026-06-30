@@ -175,7 +175,7 @@ const answerEvidence: AnswerEvidenceModel = {
   totalCount: 1,
   hiddenSearchCount: 0,
   hiddenUrlCount: 0,
-  summary: '回答依据 · 搜索 1 条',
+  summary: '回答依据 · 搜索候选 1 条',
   hasSearchSources: true,
 };
 

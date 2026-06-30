@@ -90,7 +90,7 @@ describe('AnswerEvidence', () => {
       />,
     );
 
-    expect(screen.getByText('回答依据 · 搜索 1 条')).toBeInTheDocument();
+    expect(screen.getByText('回答依据 · 搜索候选 1 条')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: '查看来源：标题' }));
     expect(onSourceClick).toHaveBeenCalledWith(0);
   });
@@ -136,7 +136,7 @@ describe('AnswerEvidence', () => {
           searchCount: 1,
           urlCount: 1,
           totalCount: 2,
-          summary: '回答依据 · 搜索 1 条 · 读取 1 个网页',
+          summary: '回答依据 · 搜索候选 1 条 · 深读 1 个网页',
           hasSearchSources: true,
         })}
         onSourceClick={vi.fn()}
@@ -211,14 +211,14 @@ describe('AnswerEvidence', () => {
           ],
           urlCount: 1,
           totalCount: 1,
-          summary: '回答依据 · 读取 1 个网页',
+          summary: '回答依据 · 深读 1 个网页',
         })}
         onSourceClick={vi.fn()}
         onOpenSources={vi.fn()}
       />,
     );
 
-    expect(screen.getByText('回答依据 · 读取 1 个网页')).toBeInTheDocument();
+    expect(screen.getByText('回答依据 · 深读 1 个网页')).toBeInTheDocument();
     const link = screen.getByRole('link', { name: '打开网页：标题' });
     expect(link).toHaveAttribute('href', 'https://example.com/article');
     expect(link).toHaveAttribute('target', '_blank');
@@ -267,7 +267,7 @@ describe('AnswerEvidence', () => {
           urlCount: 1,
           totalCount: 2,
           hiddenSearchCount: 0,
-          summary: '回答依据 · 搜索 1 条 · 读取 1 个网页',
+          summary: '回答依据 · 搜索候选 1 条 · 深读 1 个网页',
           hasSearchSources: true,
         })}
         onSourceClick={vi.fn()}
@@ -275,7 +275,7 @@ describe('AnswerEvidence', () => {
       />,
     );
 
-    expect(screen.getByText('回答依据 · 搜索 1 条 · 读取 1 个网页')).toBeInTheDocument();
+    expect(screen.getByText('回答依据 · 搜索候选 1 条 · 深读 1 个网页')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: '打开网页：网页标题' })).toBeInTheDocument();
   });
 
@@ -317,7 +317,7 @@ describe('AnswerEvidence', () => {
           searchCount: 2,
           totalCount: 2,
           hiddenSearchCount: 1,
-          summary: '回答依据 · 搜索 2 条',
+          summary: '回答依据 · 搜索候选 2 条',
           hasSearchSources: true,
         })}
         onSourceClick={vi.fn()}
@@ -358,7 +358,7 @@ describe('AnswerEvidence', () => {
           searchCount: 4,
           totalCount: 4,
           hiddenSearchCount: 3,
-          summary: '回答依据 · 搜索 4 条',
+          summary: '回答依据 · 搜索候选 4 条',
           hasSearchSources: true,
         })}
         onSourceClick={vi.fn()}
@@ -391,7 +391,7 @@ describe('AnswerEvidence', () => {
       />,
     );
 
-    expect(screen.getByText('回答依据 · 搜索 5 条')).toBeInTheDocument();
+    expect(screen.getByText('回答依据 · 搜索候选 5 条')).toBeInTheDocument();
     await screen.findByText('未预览 2 条搜索');
     fireEvent.click(screen.getByRole('button', { name: '查看全部依据' }));
     expect(onOpenSources).toHaveBeenCalledTimes(1);
@@ -431,7 +431,7 @@ describe('AnswerEvidence', () => {
           urlCount: 2,
           totalCount: 2,
           hiddenUrlCount: 1,
-          summary: '回答依据 · 读取 2 个网页',
+          summary: '回答依据 · 深读 2 个网页',
         })}
         onSourceClick={vi.fn()}
         onOpenSources={vi.fn()}
@@ -552,7 +552,7 @@ describe('AnswerEvidence', () => {
           ],
           urlCount: 1,
           totalCount: 1,
-          summary: '回答依据 · 读取 1 个网页',
+          summary: '回答依据 · 深读 1 个网页',
         })}
         onSourceClick={vi.fn()}
         onOpenSources={vi.fn()}

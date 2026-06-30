@@ -13,6 +13,7 @@ interface BaseAnswerEvidenceItem {
 type SearchAnswerEvidenceItem = BaseAnswerEvidenceItem & {
   kind: 'search_source';
   sourceIndex: number;
+  deepRead?: boolean;
 };
 
 type UrlReadAnswerEvidenceItem = BaseAnswerEvidenceItem & {
@@ -47,8 +48,10 @@ export function deriveAnswerEvidence(input: DeriveAnswerEvidenceInput): AnswerEv
   const unifiedItems = useSourceRefs
     ? toSourceRefEvidenceItems(sourceRefItems, buildFaviconFallbacks(input.searchSources, input.urlBlocks))
     : null;
-  const searchItems = unifiedItems?.searchItems ?? input.searchSources.map(toSearchEvidenceItem);
-  const urlItems = unifiedItems?.urlItems ?? input.urlBlocks.filter(isSuccessfulUrlBlock).map(toUrlEvidenceItem);
+  const legacyItems = unifiedItems ? null : toLegacyEvidenceItems(input.searchSources, input.urlBlocks);
+  const searchItems = unifiedItems?.searchItems ?? legacyItems?.searchItems ?? [];
+  const urlItems = unifiedItems?.urlItems ?? legacyItems?.urlItems ?? [];
+  const urlCount = unifiedItems?.urlCount ?? legacyItems?.urlCount ?? urlItems.length;
   const items = [...searchItems, ...urlItems];
 
   if (items.length === 0) {
@@ -59,16 +62,20 @@ export function deriveAnswerEvidence(input: DeriveAnswerEvidenceInput): AnswerEv
     items,
     previewItems: items,
     searchCount: searchItems.length,
-    urlCount: urlItems.length,
+    urlCount,
     totalCount: items.length,
     hiddenSearchCount: 0,
     hiddenUrlCount: 0,
-    summary: buildSummary(searchItems.length, urlItems.length, deriveSearchProviderLabel(input.searchProvider)),
+    summary: buildSummary(searchItems.length, urlCount, deriveSearchProviderLabel(input.searchProvider)),
     hasSearchSources: searchItems.length > 0,
   };
 }
 
-function toSearchEvidenceItem(source: SearchSourceSummary, index: number): SearchAnswerEvidenceItem {
+function toSearchEvidenceItem(
+  source: SearchSourceSummary,
+  index: number,
+  deepReadUrls: Set<string> = new Set(),
+): SearchAnswerEvidenceItem {
   return {
     id: `search-${index}`,
     kind: 'search_source',
@@ -77,6 +84,7 @@ function toSearchEvidenceItem(source: SearchSourceSummary, index: number): Searc
     domain: deriveDomain(source.url),
     favicon: normalizeFavicon(source.url, source.favicon),
     sourceIndex: index,
+    deepRead: deepReadUrls.has(normalizeUrlKey(source.url)),
   };
 }
 
@@ -97,12 +105,21 @@ function toSourceRefEvidenceItems(
 ): {
   searchItems: SearchAnswerEvidenceItem[];
   urlItems: UrlReadAnswerEvidenceItem[];
+  urlCount: number;
 } {
   let searchIndex = 0;
-  return sourceRefs.reduce<{
-    searchItems: SearchAnswerEvidenceItem[];
-    urlItems: UrlReadAnswerEvidenceItem[];
-  }>((acc, source, index) => {
+  const urlReadRefs = sourceRefs.filter(source => source.kind === 'url_read');
+  const deepReadUrls = new Set(urlReadRefs.map(source => normalizeUrlKey(source.url)).filter(Boolean));
+  const searchUrls = new Set(
+    sourceRefs
+      .filter(source => source.kind === 'search')
+      .map(source => normalizeUrlKey(source.url))
+      .filter(Boolean),
+  );
+  const searchItems: SearchAnswerEvidenceItem[] = [];
+  const urlItems: UrlReadAnswerEvidenceItem[] = [];
+
+  sourceRefs.forEach((source, index) => {
     const base = {
       id: `source-ref-${index}`,
       title: normalizeTitle(source.title, source.url),
@@ -112,21 +129,51 @@ function toSourceRefEvidenceItems(
     };
 
     if (source.kind === 'search') {
-      acc.searchItems.push({
+      const urlKey = normalizeUrlKey(source.url);
+      searchItems.push({
         ...base,
         kind: 'search_source',
         sourceIndex: searchIndex,
+        deepRead: deepReadUrls.has(urlKey),
       });
       searchIndex += 1;
     } else {
-      acc.urlItems.push({
+      const urlKey = normalizeUrlKey(source.url);
+      if (searchUrls.has(urlKey)) {
+        return;
+      }
+      urlItems.push({
         ...base,
         kind: 'url_read',
       });
     }
+  });
 
-    return acc;
-  }, { searchItems: [], urlItems: [] });
+  return {
+    searchItems,
+    urlItems,
+    urlCount: deepReadUrls.size,
+  };
+}
+
+function toLegacyEvidenceItems(
+  searchSources: SearchSourceSummary[],
+  urlBlocks: UrlBlock[],
+): {
+  searchItems: SearchAnswerEvidenceItem[];
+  urlItems: UrlReadAnswerEvidenceItem[];
+  urlCount: number;
+} {
+  const successfulUrlBlocks = urlBlocks.filter(isSuccessfulUrlBlock);
+  const deepReadUrls = new Set(successfulUrlBlocks.map(block => normalizeUrlKey(block.url)).filter(Boolean));
+  const searchUrls = new Set(searchSources.map(source => normalizeUrlKey(source.url)).filter(Boolean));
+  return {
+    searchItems: searchSources.map((source, index) => toSearchEvidenceItem(source, index, deepReadUrls)),
+    urlItems: successfulUrlBlocks
+      .filter(block => !searchUrls.has(normalizeUrlKey(block.url)))
+      .map(toUrlEvidenceItem),
+    urlCount: deepReadUrls.size,
+  };
 }
 
 interface FaviconFallbacks {
@@ -210,11 +257,11 @@ function buildSummary(searchCount: number, urlCount: number, searchProviderLabel
   const parts = ['回答依据'];
 
   if (searchCount > 0) {
-    parts.push(`搜索 ${searchCount} 条`);
+    parts.push(`搜索候选 ${searchCount} 条`);
   }
 
   if (urlCount > 0) {
-    parts.push(`读取 ${urlCount} 个网页`);
+    parts.push(`深读 ${urlCount} 个网页`);
   }
 
   if (searchCount > 0 && searchProviderLabel) {
@@ -222,6 +269,23 @@ function buildSummary(searchCount: number, urlCount: number, searchProviderLabel
   }
 
   return parts.join(' · ');
+}
+
+function normalizeUrlKey(url: string | undefined): string {
+  const trimmed = url?.trim();
+  if (!trimmed) {
+    return '';
+  }
+
+  try {
+    const parsed = new URL(trimmed);
+    parsed.hash = '';
+    parsed.hostname = parsed.hostname.toLowerCase();
+    parsed.pathname = parsed.pathname.replace(/\/+$/, '');
+    return parsed.toString();
+  } catch {
+    return trimmed.replace(/\/+$/, '');
+  }
 }
 
 const SEARCH_PROVIDER_LABELS: Record<string, string> = {

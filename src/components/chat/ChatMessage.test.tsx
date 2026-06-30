@@ -481,7 +481,7 @@ describe('ChatMessage', () => {
       />,
     );
 
-    expect(screen.getByText('回答依据 · 搜索 1 条')).toBeInTheDocument();
+    expect(screen.getByText('回答依据 · 搜索候选 1 条')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '查看来源：Global AI Standards Forum G7 functions governance' })).toBeInTheDocument();
     expect(screen.queryByTestId('old-sources-panel')).toBeNull();
     expect(screen.queryByText(/参考 \d+ 篇资料/)).toBeNull();
@@ -508,7 +508,7 @@ describe('ChatMessage', () => {
       />,
     );
 
-    expect(screen.getByText('回答依据 · 读取 1 个网页')).toBeInTheDocument();
+    expect(screen.getByText('回答依据 · 深读 1 个网页')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: '打开网页：Example Article' })).toHaveAttribute('href', 'https://example.com/article');
     expect(screen.queryByTestId('old-url-card')).toBeNull();
   });
@@ -608,7 +608,7 @@ describe('ChatMessage', () => {
 
     expect(stack).toBeInTheDocument();
     expect(within(stack).getByText('AI 标准需要透明的评估流程。')).toBeInTheDocument();
-    expect(within(stack).getByText('回答依据 · 搜索 1 条 · 读取 1 个网页')).toBeInTheDocument();
+    expect(within(stack).getByText('回答依据 · 搜索候选 1 条 · 深读 1 个网页')).toBeInTheDocument();
     expect(within(stack).getByRole('button', { name: '查看参考资料 1：AI Standards Source' })).toBeInTheDocument();
   });
 
@@ -674,7 +674,7 @@ describe('ChatMessage', () => {
       />,
     );
 
-    expect(screen.getByText('回答依据 · 搜索 1 条 · 读取 4 个网页')).toBeInTheDocument();
+    expect(screen.getByText('回答依据 · 搜索候选 1 条 · 深读 4 个网页')).toBeInTheDocument();
     expect(screen.getAllByRole('link', { name: /打开网页：/ })).toHaveLength(4);
     expect(screen.queryByText('未预览 2 个网页')).toBeNull();
     expect(screen.queryByRole('button', { name: '查看全部搜索来源' })).toBeNull();

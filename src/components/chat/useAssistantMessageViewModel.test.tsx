@@ -86,7 +86,7 @@ describe('useAssistantMessageViewModel', () => {
     expect(result.current.blocksToRender).toBe(message.content);
     expect(result.current.displayText).toBe('历史正文。[1]');
     expect(result.current.searchSources).toEqual([source]);
-    expect(result.current.answerEvidence?.summary).toBe('回答依据 · 搜索 1 条');
+    expect(result.current.answerEvidence?.summary).toBe('回答依据 · 搜索候选 1 条');
     expect(result.current.answerEvidence?.items[0]).toEqual(
       expect.objectContaining({
         kind: 'search_source',
@@ -118,7 +118,7 @@ describe('useAssistantMessageViewModel', () => {
 
     const { result } = renderViewModel(message);
 
-    expect(result.current.answerEvidence?.summary).toBe('回答依据 · 搜索 1 条 · 本次搜索由 Brave 提供');
+    expect(result.current.answerEvidence?.summary).toBe('回答依据 · 搜索候选 1 条 · 本次搜索由 Brave 提供');
   });
 
   it('历史 assistant 消息优先用统一 source_refs 派生回答依据', () => {
@@ -161,7 +161,7 @@ describe('useAssistantMessageViewModel', () => {
 
     const { result } = renderViewModel(message);
 
-    expect(result.current.answerEvidence?.summary).toBe('回答依据 · 搜索 1 条 · 读取 1 个网页');
+    expect(result.current.answerEvidence?.summary).toBe('回答依据 · 搜索候选 1 条 · 深读 1 个网页');
     expect(result.current.answerEvidence?.items).toEqual([
       expect.objectContaining({
         kind: 'search_source',
@@ -208,7 +208,7 @@ describe('useAssistantMessageViewModel', () => {
       { title: '第一轮来源', url: 'https://first.example.com/a' },
       { title: '第二轮来源', url: 'https://second.example.com/b' },
     ]);
-    expect(result.current.answerEvidence?.summary).toBe('回答依据 · 搜索 2 条');
+    expect(result.current.answerEvidence?.summary).toBe('回答依据 · 搜索候选 2 条');
     expect(result.current.answerEvidence?.items.map(item => item.title)).toEqual([
       '第一轮来源',
       '第二轮来源',
@@ -313,7 +313,7 @@ describe('useAssistantMessageViewModel', () => {
       suggestedQuestionsCount: 0,
     });
 
-    expect(result.answerEvidence?.summary).toBe('回答依据 · 搜索 1 条');
+    expect(result.answerEvidence?.summary).toBe('回答依据 · 搜索候选 1 条');
     expect(result.searchQueries).toEqual(['AI 标准']);
     expect(result.answerEvidence?.items[0]).toEqual(
       expect.objectContaining({

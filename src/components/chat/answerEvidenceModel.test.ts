@@ -54,7 +54,7 @@ describe('deriveAnswerEvidence', () => {
     const evidence = deriveAnswerEvidence({ searchSources, urlBlocks: [] });
 
     expect(evidence).not.toBeNull();
-    expect(evidence?.summary).toBe('回答依据 · 搜索 2 条');
+    expect(evidence?.summary).toBe('回答依据 · 搜索候选 2 条');
     expect(evidence?.searchCount).toBe(2);
     expect(evidence?.urlCount).toBe(0);
     expect(evidence?.items[0]).toMatchObject({
@@ -80,7 +80,7 @@ describe('deriveAnswerEvidence', () => {
       searchProvider: 'brave',
     });
 
-    expect(evidence?.summary).toBe('回答依据 · 搜索 1 条 · 本次搜索由 Brave 提供');
+    expect(evidence?.summary).toBe('回答依据 · 搜索候选 1 条 · 本次搜索由 Brave 提供');
   });
 
   it('优先使用统一 sourceRefs，避免旧 sources 和 urlBlocks 重复计数', () => {
@@ -91,7 +91,7 @@ describe('deriveAnswerEvidence', () => {
     });
 
     expect(evidence).not.toBeNull();
-    expect(evidence?.summary).toBe('回答依据 · 搜索 1 条 · 读取 1 个网页');
+    expect(evidence?.summary).toBe('回答依据 · 搜索候选 1 条 · 深读 1 个网页');
     expect(evidence?.totalCount).toBe(2);
     expect(evidence?.items).toEqual([
       expect.objectContaining({
@@ -109,6 +109,77 @@ describe('deriveAnswerEvidence', () => {
         domain: 'reader.example.com',
       }),
     ]);
+  });
+
+  it('搜索候选与深读网页同 URL 时去重展示并保留深读计数', () => {
+    const evidence = deriveAnswerEvidence({
+      sourceRefs: [
+        {
+          kind: 'search',
+          title: 'Previewing GPT-5.6 Sol',
+          url: 'https://openai.com/index/previewing-gpt-5-6-sol',
+        },
+        {
+          kind: 'search',
+          title: 'OpenAI 新闻室',
+          url: 'https://openai.com/zh-Hant-HK/news/company-announcements',
+        },
+        {
+          kind: 'search',
+          title: '健康隐私通知',
+          url: 'https://openai.com/zh-Hans-CN/policies/health-privacy-policy',
+        },
+        {
+          kind: 'search',
+          title: 'Helping build shared standards for advanced AI',
+          url: 'https://openai.com/index/helping-build-shared-standards-for-advanced-ai',
+        },
+        {
+          kind: 'search',
+          title: 'ChatGPT 版本说明',
+          url: 'https://help.openai.com/zh-hant/articles/6825453-chatgpt-%E7%89%88%E6%9C%AC%E8%AA%AA%E6%98%8E',
+        },
+        {
+          kind: 'search',
+          title: 'YouTube 搜索结果 1',
+          url: 'https://youtube.com/watch?v=-MSH5Oeta0s',
+        },
+        {
+          kind: 'search',
+          title: 'YouTube 搜索结果 2',
+          url: 'https://youtube.com/watch?v=3QYAPbc9KLc',
+        },
+        {
+          kind: 'search',
+          title: 'Nikkei 搜索结果',
+          url: 'https://online.nikkei-cnbc.co.jp/vod/66381',
+        },
+        {
+          kind: 'url_read',
+          title: 'Helping build shared standards for advanced AI',
+          url: 'https://openai.com/index/helping-build-shared-standards-for-advanced-ai',
+        },
+        {
+          kind: 'url_read',
+          title: 'Previewing GPT-5.6 Sol',
+          url: 'https://openai.com/index/previewing-gpt-5-6-sol',
+        },
+        {
+          kind: 'url_read',
+          title: 'OpenAI 新闻室',
+          url: 'https://openai.com/zh-Hant-HK/news/company-announcements',
+        },
+      ],
+      searchSources: [],
+      urlBlocks: [],
+    });
+
+    expect(evidence?.summary).toBe('回答依据 · 搜索候选 8 条 · 深读 3 个网页');
+    expect(evidence?.searchCount).toBe(8);
+    expect(evidence?.urlCount).toBe(3);
+    expect(evidence?.totalCount).toBe(8);
+    expect(evidence?.items.filter(item => item.kind === 'url_read')).toHaveLength(0);
+    expect(evidence?.items.filter(item => item.kind === 'search_source' && item.deepRead)).toHaveLength(3);
   });
 
   it('sourceRefs 缺 favicon 时用同 URL 的旧来源补齐站点图标', () => {
@@ -212,7 +283,7 @@ describe('deriveAnswerEvidence', () => {
       urlBlocks: [],
     });
 
-    expect(evidence?.summary).toBe('回答依据 · 搜索 1 条');
+    expect(evidence?.summary).toBe('回答依据 · 搜索候选 1 条');
     expect(evidence?.items).toEqual([
       expect.objectContaining({
         kind: 'search_source',
@@ -248,7 +319,7 @@ describe('deriveAnswerEvidence', () => {
       urlBlocks: [],
     });
 
-    expect(evidence?.summary).toBe('回答依据 · 搜索 1 条');
+    expect(evidence?.summary).toBe('回答依据 · 搜索候选 1 条');
     expect(evidence?.items).toEqual([
       expect.objectContaining({
         kind: 'search_source',
@@ -303,7 +374,7 @@ describe('deriveAnswerEvidence', () => {
     const evidence = deriveAnswerEvidence({ searchSources: [], urlBlocks });
 
     expect(evidence).not.toBeNull();
-    expect(evidence?.summary).toBe('回答依据 · 读取 2 个网页');
+    expect(evidence?.summary).toBe('回答依据 · 深读 2 个网页');
     expect(evidence?.items[0]).toMatchObject({
       id: 'url-url-1',
       kind: 'url_read',
@@ -318,7 +389,7 @@ describe('deriveAnswerEvidence', () => {
     const evidence = deriveAnswerEvidence({ searchSources, urlBlocks });
 
     expect(evidence).not.toBeNull();
-    expect(evidence?.summary).toBe('回答依据 · 搜索 2 条 · 读取 2 个网页');
+    expect(evidence?.summary).toBe('回答依据 · 搜索候选 2 条 · 深读 2 个网页');
     expect(evidence?.totalCount).toBe(4);
     expect(evidence?.hasSearchSources).toBe(true);
   });

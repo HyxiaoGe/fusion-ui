@@ -288,7 +288,7 @@ describe('AssistantMessage', () => {
         totalCount: 1,
         hiddenSearchCount: 0,
         hiddenUrlCount: 0,
-        summary: '回答依据 · 搜索 1 条',
+        summary: '回答依据 · 搜索候选 1 条',
         hasSearchSources: true,
       },
     }));
@@ -441,7 +441,7 @@ describe('AssistantMessage', () => {
         totalCount: 1,
         hiddenSearchCount: 0,
         hiddenUrlCount: 0,
-        summary: '回答依据 · 搜索 1 条',
+        summary: '回答依据 · 搜索候选 1 条',
         hasSearchSources: true,
       },
     }));
@@ -473,7 +473,7 @@ describe('AssistantMessage', () => {
         totalCount: 1,
         hiddenSearchCount: 0,
         hiddenUrlCount: 0,
-        summary: '回答依据 · 读取 1 个网页',
+        summary: '回答依据 · 深读 1 个网页',
         hasSearchSources: false,
       },
     }));
@@ -505,7 +505,7 @@ describe('AssistantMessage', () => {
         totalCount: 1,
         hiddenSearchCount: 0,
         hiddenUrlCount: 0,
-        summary: '回答依据 · 搜索 1 条',
+        summary: '回答依据 · 搜索候选 1 条',
         hasSearchSources: true,
       },
     }));

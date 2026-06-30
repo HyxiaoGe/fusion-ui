@@ -27,7 +27,7 @@ const answerEvidence: AnswerEvidenceModel = {
   totalCount: 2,
   hiddenSearchCount: 0,
   hiddenUrlCount: 0,
-  summary: '回答依据 · 搜索 1 条 · 读取 1 个网页',
+  summary: '回答依据 · 搜索候选 1 条 · 深读 1 个网页',
   hasSearchSources: true,
 };
 

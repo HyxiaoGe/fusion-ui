@@ -91,7 +91,12 @@ export default function AnswerEvidenceSidebar({
           <div className="min-w-0">
             <h3 className="text-sm font-medium">回答依据</h3>
             <p className="mt-1 text-xs text-muted-foreground">
-              已使用 {model.summary.usedCount} 条 · 搜索 {model.summary.searchCount} 条 · 读取 {model.summary.urlCount} 个网页
+              {model.summary.searchCount > 0
+                ? `候选来源 ${model.summary.usedCount} 条`
+                : `深读 ${model.summary.urlCount} 个网页`}
+              {model.summary.searchCount > 0 && model.summary.urlCount > 0
+                ? ` · 深读 ${model.summary.urlCount} 个网页`
+                : ''}
             </p>
           </div>
           <div className="flex shrink-0 items-center gap-2">
@@ -117,7 +122,9 @@ export default function AnswerEvidenceSidebar({
 
           {model.usedItems.length > 0 ? (
             <section>
-              <h4 className="mb-2 text-xs font-medium text-foreground">已使用来源</h4>
+              <h4 className="mb-2 text-xs font-medium text-foreground">
+                {model.summary.searchCount > 0 ? '候选来源' : '已读取网页'}
+              </h4>
               <div className="space-y-2">
                 {model.usedItems.map((item, index) => (
                   <UsedSourceItem
@@ -200,6 +207,11 @@ const UsedSourceItem = React.forwardRef<HTMLDivElement, {
           <span className="shrink-0 rounded-full border border-border/30 px-1.5 py-0.5 text-[10px] text-muted-foreground">
             {item.kind === 'search' ? '搜索' : '读取'}
           </span>
+          {item.deepRead ? (
+            <span className="shrink-0 rounded-full border border-success/30 bg-success/5 px-1.5 py-0.5 text-[10px] text-success">
+              已深读
+            </span>
+          ) : null}
           <span className="min-w-0 truncate text-[10px] text-muted-foreground">{item.domain}</span>
         </div>
         <p className="line-clamp-2 text-sm font-medium text-foreground" title={item.title}>

@@ -12,6 +12,7 @@ export interface AnswerEvidenceSidebarUsedItem {
   domain: string;
   favicon?: string;
   sourceIndex?: number;
+  deepRead?: boolean;
 }
 
 export interface AnswerEvidenceSidebarIssueItem {
@@ -97,6 +98,7 @@ function toUsedItem(item: AnswerEvidenceItem): AnswerEvidenceSidebarUsedItem {
     domain: item.domain,
     favicon: item.favicon,
     sourceIndex: item.kind === 'search_source' ? item.sourceIndex : undefined,
+    deepRead: item.kind === 'search_source' ? item.deepRead : true,
   };
 }
 

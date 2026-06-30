@@ -43,7 +43,7 @@ npm run build                       # Next.js 生产构建
 5. **TDD 优先**：bugfix 和行为变更先补能失败的回归测试，再实现。UI 改动优先覆盖派生模型、组件渲染和关键交互。
 6. **编码中**：遵守前端架构和编码约定，优先复用现有组件、hooks、派生模型和样式 token；保持改动范围最小，不回滚无关用户改动。
 7. **禁止默认本地启动**：不得为调查或验收启动 `npm run dev*`、`next dev`、Electron 或本地 Docker；优先使用 `npm test`、`npm run build`、CI、远端 dev 和用户已登录 Chrome。只有用户明确要求本地启动时才可执行。
-8. **真实 Chrome 回归**：用户已登录 Chrome 可用时，使用已部署 dev/prod 链接补充验证登录态、关键交互、真实网络请求、控制台错误和可见异常；Chrome 回归不替代 Vitest/build/CI，也不使用本地 Fusion 服务或假数据得结论。
+8. **真实 Chrome 回归**：用户已登录 Chrome 可用时，只能复用用户已经打开的、与任务匹配的 Chrome 标签补充验证登录态、关键交互、真实网络请求、控制台错误和可见异常。**严禁打开新的 Chrome、新标签、新窗口、`about:blank`、isolated context，严禁使用会创建或切到独立浏览器目标的 DevTools/CDP 通道。**若没有可复用的匹配标签，必须停止并说明阻塞，不能自行新开页面；Chrome 回归不替代 Vitest/build/CI，也不使用本地 Fusion 服务或假数据得结论。
 9. **变更后验证**：运行与改动匹配的 Vitest；涉及路由、构建、样式或跨组件协议时运行 `npm run build`。不能只凭代码阅读声称完成。
 10. **CI/CD 收尾**：按正常 Git 流程中文提交并包含 `Co-Authored-By`，push 后持续监控 GitHub Actions 和 dev 部署；失败时拉日志定位并修复。
 
