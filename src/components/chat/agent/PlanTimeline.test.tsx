@@ -151,6 +151,92 @@ describe('PlanTimeline', () => {
     expect(screen.getByText('完成 1 个工具调用')).toBeInTheDocument();
   });
 
+  it('已达上限 run 不展示读取步骤残留的 running 状态', () => {
+    const { container } = render(<PlanTimeline run={{
+      ...baseRun,
+      status: 'limit_reached',
+      limitReachedReason: 'max_steps',
+      totalToolCalls: 3,
+      evidence: [{
+        id: 'ev-read-1',
+        kind: 'web',
+        status: 'read_success',
+        title: '官方公告',
+        claim: '已读取官方公告',
+        usedByFinalAnswer: false,
+      }],
+      toolDigests: [
+        {
+          toolCallId: 'search-1',
+          toolName: 'web_search',
+          status: 'success',
+          title: '搜索完成',
+          summary: '保留 3 条候选结果',
+          keyFindings: [],
+          sourceRefs: ['ev-read-1'],
+          truncated: false,
+        },
+        {
+          toolCallId: 'read-1',
+          toolName: 'url_read',
+          status: 'success',
+          title: '网页读取完成',
+          summary: '已读取网页内容',
+          keyFindings: [],
+          sourceRefs: ['ev-read-1'],
+          truncated: false,
+        },
+      ],
+      plan: {
+        planId: 'plan-r1',
+        revision: 1,
+        items: [
+          {
+            id: 'understand',
+            title: '理解问题',
+            status: 'completed',
+            kind: 'reasoning',
+            summary: '已完成问题理解',
+            toolNames: [],
+            evidenceItemIds: [],
+          },
+          {
+            id: 'search',
+            title: '查找资料',
+            status: 'completed',
+            kind: 'search',
+            summary: '完成 1 个工具调用',
+            toolNames: ['web_search'],
+            evidenceItemIds: ['ev-read-1'],
+          },
+          {
+            id: 'read',
+            title: '读取关键来源',
+            status: 'running',
+            kind: 'read',
+            summary: '正在整理关键来源',
+            toolNames: ['url_read'],
+            evidenceItemIds: ['ev-read-1'],
+          },
+          {
+            id: 'answer',
+            title: '整理回答',
+            status: 'completed',
+            kind: 'answer',
+            summary: '已完成回答整理',
+            toolNames: [],
+            evidenceItemIds: [],
+          },
+        ],
+      },
+    }} />);
+
+    expect(container.querySelector('.animate-spin')).toBeNull();
+    expect(screen.queryByText('正在整理关键来源')).not.toBeInTheDocument();
+    expect(screen.getByText('读取关键来源')).toBeInTheDocument();
+    expect(screen.getByText('已完成关键来源读取')).toBeInTheDocument();
+  });
+
   it('已完成 run 不把计划中的 toolNames 当成真实搜索或读取', () => {
     const { container } = render(<PlanTimeline run={{
       ...baseRun,

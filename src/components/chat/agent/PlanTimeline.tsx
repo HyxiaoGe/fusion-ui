@@ -43,14 +43,20 @@ function PlanItemRow({ item }: { item: AgentPlanItem }) {
 function getDisplayItems(run: AgentRunState): AgentPlanItem[] {
   const items = run.plan?.items ?? [];
   if (!items.length) return items;
-  if (run.status !== 'completed') return items;
+  if (!shouldNormalizeTerminalPlan(run.status)) return items;
 
   return items.map(item => normalizeCompletedRunItem(run, item));
 }
 
+function shouldNormalizeTerminalPlan(status: AgentRunState['status']): boolean {
+  return status === 'completed'
+    || status === 'limit_reached'
+    || status === 'incomplete';
+}
+
 function normalizeCompletedRunItem(run: AgentRunState, item: AgentPlanItem): AgentPlanItem {
   const status = normalizeCompletedRunStatus(run, item);
-  const summary = normalizeCompletedRunSummary(run, item);
+  const summary = normalizeCompletedRunSummary(run, item, status);
   if (status === item.status && summary === item.summary) return item;
   return { ...item, status, summary };
 }
@@ -85,11 +91,46 @@ function shouldTreatAsCompleted(run: AgentRunState, item: AgentPlanItem): boolea
 function normalizeCompletedRunSummary(
   run: AgentRunState,
   item: AgentPlanItem,
+  normalizedStatus: AgentPlanItem['status'],
 ): string | undefined {
+  if (isInFlightSummary(item.summary) && normalizedStatus !== item.status) {
+    return getNormalizedSummary(normalizedStatus, item.kind);
+  }
   if (item.summary !== '完成 0 个工具调用') return item.summary;
   const toolCount = Math.max(run.totalToolCalls, run.toolDigests?.length ?? 0);
   if (toolCount <= 0) return undefined;
   return `完成 ${toolCount} 个工具调用`;
+}
+
+function isInFlightSummary(summary: string | undefined): boolean {
+  if (!summary) return false;
+  return summary.trim().startsWith('正在');
+}
+
+function getNormalizedSummary(
+  status: AgentPlanItem['status'],
+  kind: AgentPlanItem['kind'],
+): string | undefined {
+  if (status === 'skipped') return undefined;
+  if (status !== 'completed') return undefined;
+
+  switch (kind) {
+    case 'reasoning':
+      return '已完成问题理解';
+    case 'search':
+      return '已完成资料查找';
+    case 'read':
+      return '已完成关键来源读取';
+    case 'synthesis':
+    case 'answer':
+      return '已完成回答整理';
+    case 'other':
+      return '已完成该步骤';
+    default: {
+      void (kind as never);
+      return undefined;
+    }
+  }
 }
 
 function hasToolOrEvidence(run: AgentRunState, item: AgentPlanItem): boolean {
