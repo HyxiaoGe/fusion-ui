@@ -50,4 +50,19 @@ describe('ReasoningContent', () => {
     );
     expect(screen.getByText('正在深度思考...')).toBeInTheDocument();
   });
+
+  it('裸 URL 后接中文说明时不把说明吞进链接', () => {
+    const { container } = render(
+      <ReasoningContent
+        content="读取 https://example.com/a?froms=ggmp，原因是需要核验。"
+        isStreaming={false}
+        isVisible={true}
+        onToggle={vi.fn()}
+      />,
+    );
+
+    const link = screen.getByRole('link', { name: 'https://example.com/a?froms=ggmp' });
+    expect(link.getAttribute('href')).toBe('https://example.com/a?froms=ggmp');
+    expect(container.textContent).toContain('，原因是需要核验。');
+  });
 });

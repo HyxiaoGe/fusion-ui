@@ -184,6 +184,31 @@ describe('MarkdownRenderer — citation 行为（contract §9）', () => {
 });
 
 describe('MarkdownRenderer — code/table 行为', () => {
+  it('裸 URL 后接中文说明时链接边界停在 URL 本身', () => {
+    const { container } = render(
+      <MarkdownRenderer
+        content="参考 https://example.com/a?froms=ggmp，原因是需要核验。"
+        sources={[]}
+      />
+    );
+
+    const link = screen.getByRole('link', { name: 'https://example.com/a?froms=ggmp' });
+    expect(link.getAttribute('href')).toBe('https://example.com/a?froms=ggmp');
+    expect(container.textContent).toContain('，原因是需要核验。');
+  });
+
+  it('已有 Markdown 链接不被裸 URL 预处理破坏', () => {
+    render(
+      <MarkdownRenderer
+        content="[官网](https://example.com/a?froms=ggmp)，原因是需要核验。"
+        sources={[]}
+      />
+    );
+
+    const link = screen.getByRole('link', { name: '官网' });
+    expect(link.getAttribute('href')).toBe('https://example.com/a?froms=ggmp');
+  });
+
   it('多行 fenced code 使用 CodeBlock 渲染', () => {
     render(
       <MarkdownRenderer

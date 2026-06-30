@@ -120,7 +120,7 @@ describe('executionProcessModel 场景矩阵', () => {
     expect(model.groups.map(group => group.kind)).toEqual(['web_search']);
   });
 
-  it('真实 url_read 只把成功读取计入读取数，失败读取进入跳过数', () => {
+  it('真实 url_read 同时展示成功读取数和跳过数', () => {
     const model = buildExecutionProcessModel(run({
       totalSteps: 1,
       totalToolCalls: 3,
@@ -159,7 +159,7 @@ describe('executionProcessModel 场景矩阵', () => {
     }));
 
     expect(model.isRenderable).toBe(true);
-    expect(model.summary).toBe('执行过程 · 读取 1 个网页');
+    expect(model.summary).toBe('执行过程 · 读取 1 个网页 · 跳过 2 个网页');
     expect(model.readCount).toBe(1);
     expect(model.skippedReadCount).toBe(2);
     expect(model.groups.map(group => group.kind)).toEqual(['url_read']);
@@ -176,8 +176,39 @@ describe('executionProcessModel 场景矩阵', () => {
     }));
 
     expect(model.isRenderable).toBe(true);
-    expect(model.summary).toBe('执行过程 · 搜索 2 次 · 读取 1 个网页');
+    expect(model.summary).toBe('执行过程 · 搜索 2 次 · 读取 1 个网页 · 跳过 1 个网页');
     expect(model.searchCandidateCount).toBe(7);
+    expect(model.skippedReadCount).toBe(1);
+    expect(model.groups).toHaveLength(0);
+  });
+
+  it('只有不可读网页时仍构成可查看执行过程', () => {
+    const model = buildExecutionProcessModel(run({
+      totalSteps: 1,
+      totalToolCalls: 1,
+      steps: [{
+        stepId: 's1',
+        stepNumber: 1,
+        status: 'completed',
+        toolCalls: [
+          toolCall({
+            toolCallId: 'read-failed',
+            toolName: 'url_read',
+            arguments: { url: 'https://example.com/fail' },
+            status: 'failed',
+            resultSummary: undefined,
+            error: 'reader-service 返回 HTTP 502',
+          }),
+        ],
+        contentBlockIds: [],
+        startedAt: 1_000,
+        completedAt: 2_000,
+      }],
+    }));
+
+    expect(model.isRenderable).toBe(true);
+    expect(model.summary).toBe('执行过程 · 跳过 1 个网页');
+    expect(model.readCount).toBe(0);
     expect(model.skippedReadCount).toBe(1);
     expect(model.groups).toHaveLength(0);
   });

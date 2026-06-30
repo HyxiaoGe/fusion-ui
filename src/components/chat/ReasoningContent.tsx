@@ -2,11 +2,12 @@
 
 import { CheckCircle, ChevronUp } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import React, { useRef, useEffect, useState } from 'react';
+import React, { useRef, useEffect, useMemo, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import rehypeRaw from 'rehype-raw';
 import remarkGfm from 'remark-gfm';
 import CodeBlock from './CodeBlock';
+import { normalizeBareUrlsForMarkdown } from '@/lib/chat/markdownLinks';
 
 interface ReasoningContentProps {
   content: string;
@@ -59,6 +60,10 @@ const ReasoningContent: React.FC<ReasoningContentProps> = ({
     }
     return null;
   })();
+  const renderedContent = useMemo(
+    () => normalizeBareUrlsForMarkdown(content.trim()),
+    [content],
+  );
 
   return (
     <div className={cn(
@@ -134,7 +139,7 @@ const ReasoningContent: React.FC<ReasoningContentProps> = ({
                     },
                   }}
                 >
-                  {content.trim()}
+                  {renderedContent}
                 </ReactMarkdown>
               ) : (
                 <span className="text-muted-foreground animate-pulse motion-reduce:animate-none">AI 正在组织思路...</span>

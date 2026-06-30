@@ -6,6 +6,7 @@ import rehypeRaw from 'rehype-raw';
 import remarkGfm from 'remark-gfm';
 import CodeBlock from './CodeBlock';
 import type { SearchSourceSummary } from '@/types/conversation';
+import { normalizeBareUrlsForMarkdown } from '@/lib/chat/markdownLinks';
 
 interface MarkdownRendererProps {
   content: string;
@@ -128,7 +129,7 @@ const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({ content, className,
   const hasSources = sources.length > 0;
 
   const processedContent = useMemo(
-    () => hasSources ? preprocessCitations(content) : content,
+    () => normalizeBareUrlsForMarkdown(hasSources ? preprocessCitations(content) : content),
     [content, hasSources]
   );
 

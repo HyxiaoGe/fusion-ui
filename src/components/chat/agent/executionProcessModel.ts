@@ -53,11 +53,12 @@ export function buildExecutionProcessModel(
   );
   const isRenderable = searchCount > 0
     || readCount > 0
+    || skippedReadCount > 0
     || groups.length > 0;
 
   return {
     isRenderable,
-    summary: buildSummary(searchCount, readCount),
+    summary: buildSummary(searchCount, readCount, skippedReadCount),
     searchCount,
     readCount,
     skippedReadCount,
@@ -265,10 +266,11 @@ function dedupeSources(sources: ExecutionProcessSource[]): ExecutionProcessSourc
   return result;
 }
 
-function buildSummary(searchCount: number, readCount: number): string {
+function buildSummary(searchCount: number, readCount: number, skippedReadCount: number): string {
   const parts = ['执行过程'];
   if (searchCount > 0) parts.push(`搜索 ${searchCount} 次`);
   if (readCount > 0) parts.push(`读取 ${readCount} 个网页`);
+  if (skippedReadCount > 0) parts.push(`跳过 ${skippedReadCount} 个网页`);
   return parts.join(' · ');
 }
 

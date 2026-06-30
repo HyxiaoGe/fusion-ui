@@ -213,7 +213,7 @@ function DigestOnlyList({
   model: ExecutionProcessModel;
   onOpenSources?: () => void;
 }) {
-  if (model.searchCount === 0 && model.readCount === 0) {
+  if (model.searchCount === 0 && model.readCount === 0 && model.skippedReadCount === 0) {
     return (
       <section className="rounded-md border border-border/40 bg-muted/10 px-3 py-2 text-xs text-muted-foreground">
         没有可展示的执行过程

@@ -483,7 +483,7 @@ describe('AgentRunTimeline', () => {
       ],
     }));
 
-    expect(screen.getByText('执行过程 · 搜索 1 次')).toBeInTheDocument();
+    expect(screen.getByText('执行过程 · 搜索 1 次 · 跳过 1 个网页')).toBeInTheDocument();
     expect(screen.queryByText(/未使用/)).not.toBeInTheDocument();
     expect(screen.queryByText('工具结果')).not.toBeInTheDocument();
     expect(screen.queryByText(/url_read/)).not.toBeInTheDocument();
@@ -704,7 +704,7 @@ describe('AgentRunTimeline', () => {
       ],
     }), { searchQueries: ['暑期旅游哪里最火 2026 热门目的地', '2026暑期旅游热门城市 目的地 排行榜'] });
 
-    expect(screen.getByText('执行过程 · 搜索 2 次 · 读取 2 个网页')).toBeInTheDocument();
+    expect(screen.getByText('执行过程 · 搜索 2 次 · 读取 2 个网页 · 跳过 2 个网页')).toBeInTheDocument();
     expect(screen.queryByText(/未使用/)).not.toBeInTheDocument();
     expect(screen.queryByText('搜索完成')).not.toBeInTheDocument();
     expect(screen.queryByText('网页读取部分可用')).not.toBeInTheDocument();
