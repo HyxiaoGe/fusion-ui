@@ -181,4 +181,41 @@ describe('executionProcessModel 场景矩阵', () => {
     expect(model.skippedReadCount).toBe(1);
     expect(model.groups).toHaveLength(0);
   });
+
+  it('selected/read_success evidence 都作为可展示搜索来源', () => {
+    const model = buildExecutionProcessModel(run({
+      toolDigests: [
+        digest({
+          sourceRefs: ['ev-selected', 'ev-read'],
+          summary: '保留 2 条候选结果，供后续回答筛选。',
+        }),
+      ],
+      evidence: [
+        evidence({
+          id: 'ev-selected',
+          status: 'selected',
+          title: '建议深读来源',
+          url: 'https://example.com/selected',
+          usedByFinalAnswer: false,
+        }),
+        evidence({
+          id: 'ev-read',
+          status: 'read_success',
+          title: '已深读来源',
+          url: 'https://example.com/read',
+          usedByFinalAnswer: false,
+        }),
+        evidence({
+          id: 'ev-discarded',
+          status: 'discarded',
+          title: '不展示来源',
+          url: 'https://example.com/discarded',
+          usedByFinalAnswer: false,
+        }),
+      ],
+    }));
+
+    expect(model.searchSources.map(source => source.id)).toEqual(['ev-selected', 'ev-read']);
+    expect(model.searchCandidateCount).toBe(2);
+  });
 });

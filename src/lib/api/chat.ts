@@ -1,6 +1,7 @@
 import { API_CONFIG } from '../config';
 import fetchWithAuth, { apiRequest } from './fetchWithAuth';
 import type {
+  AgentEvidenceItem,
   AgentEventEnvelope,
   AgentPlanItemKind,
   AgentPlanItemStatus,
@@ -188,8 +189,8 @@ export interface StreamCallbacks {
       protocol_version: 2;
       evidence: {
         id: string;
-        kind: 'web' | 'file' | 'tool' | 'model';
-        status: 'candidate' | 'used' | 'discarded';
+        kind: AgentEvidenceItem['kind'];
+        status: AgentEvidenceItem['status'];
         title: string;
         url?: string;
         domain?: string;

@@ -335,7 +335,7 @@ describe('conversationHydration', () => {
                 {
                   id: 'ev-1',
                   kind: 'web',
-                  status: 'used',
+                  status: 'read_success',
                   title: '新闻来源',
                   url: 'https://example.com/news',
                   domain: 'example.com',
@@ -392,7 +392,7 @@ describe('conversationHydration', () => {
         {
           id: 'ev-1',
           kind: 'web',
-          status: 'used',
+          status: 'read_success',
           title: '新闻来源',
           url: 'https://example.com/news',
           domain: 'example.com',

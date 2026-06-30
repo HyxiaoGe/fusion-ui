@@ -83,7 +83,7 @@ export interface AgentPlanState {
 export interface AgentEvidenceItem {
   id: string;
   kind: 'web' | 'file' | 'tool' | 'model';
-  status: 'candidate' | 'used' | 'discarded';
+  status: 'candidate' | 'selected' | 'read_success' | 'read_degraded' | 'read_failed' | 'used' | 'discarded';
   title: string;
   url?: string;
   domain?: string;

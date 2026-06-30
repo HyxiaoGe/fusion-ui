@@ -256,6 +256,39 @@ describe('streamSlice — agent run timeline', () => {
     expect(s.currentRun?.toolDigests).toHaveLength(1);
   });
 
+  it('upsertEvidenceItem 接收 selected/read_success evidence 状态', () => {
+    let s = reducer(initial(), initRun({ runId: 'r1', messageId: 'm1', config: baseConfig, sequence: 0 }));
+    s = reducer(s, upsertEvidenceItem({
+      runId: 'r1',
+      sequence: 1,
+      evidence: {
+        id: 'ev-web-1',
+        kind: 'web',
+        status: 'selected',
+        title: '建议深读来源',
+        url: 'https://example.com/report',
+        claim: '建议深读：官方来源',
+        usedByFinalAnswer: false,
+      },
+    }));
+    s = reducer(s, upsertEvidenceItem({
+      runId: 'r1',
+      sequence: 2,
+      evidence: {
+        id: 'ev-web-1',
+        kind: 'web',
+        status: 'read_success',
+        title: '已读取来源',
+        url: 'https://example.com/report',
+        claim: '已读取网页内容。',
+        usedByFinalAnswer: false,
+      },
+    }));
+
+    expect(s.currentRun?.evidence).toHaveLength(1);
+    expect(s.currentRun?.evidence?.[0].status).toBe('read_success');
+  });
+
   it('pushStep 添加 running step + 更新 totalSteps', () => {
     let s = reducer(initial(), initRun({ runId: 'r1', messageId: 'm1', config: baseConfig, sequence: 0 }));
     s = reducer(s, pushStep({ runId: 'r1', stepId: 's1', stepNumber: 1, sequence: 1 }));

@@ -94,4 +94,50 @@ describe('createAgentStreamEventHandlers', () => {
 
     expect(dispatch).not.toHaveBeenCalled();
   });
+
+  it('映射 selected evidence event 到 Redux action', () => {
+    const dispatch = vi.fn();
+    const handlers = createAgentStreamEventHandlers({
+      dispatch,
+      isActive: () => true,
+      resolveMessageId: ev => ev.message_id,
+    });
+
+    handlers.onEvidenceItemUpserted?.({
+      type: 'evidence_item_upserted',
+      protocol_version: 2,
+      run_id: 'r1',
+      parent_run_id: null,
+      step_id: 's1',
+      parent_step_id: null,
+      tool_call_id: 'tc-search',
+      sequence: 3,
+      trace_id: 'r1',
+      ts: 0,
+      evidence: {
+        id: 'ev-web-1',
+        kind: 'web',
+        status: 'selected',
+        title: '建议深读来源',
+        url: 'https://example.com/report',
+        domain: 'example.com',
+        claim: '建议深读：官方来源',
+        snippet: '来自搜索关键词：OpenAI',
+        used_by_final_answer: false,
+      },
+    });
+
+    expect(dispatch).toHaveBeenCalledWith(expect.objectContaining({
+      type: 'stream/upsertEvidenceItem',
+      payload: expect.objectContaining({
+        runId: 'r1',
+        sequence: 3,
+        evidence: expect.objectContaining({
+          id: 'ev-web-1',
+          status: 'selected',
+          usedByFinalAnswer: false,
+        }),
+      }),
+    }));
+  });
 });
