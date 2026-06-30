@@ -30,6 +30,7 @@ describe('MessageActions', () => {
     expect(onCopy).toHaveBeenCalledTimes(1);
     expect(onRetry).toHaveBeenCalledTimes(1);
     expect(screen.getByText(expectedTime)).toBeInTheDocument();
+    expect(document.querySelector('[data-slot="tooltip-trigger"]')).toBeNull();
 
     rerender(
       <MessageActions

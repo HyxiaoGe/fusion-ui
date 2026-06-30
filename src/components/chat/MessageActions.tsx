@@ -3,7 +3,6 @@
 import { Check, Copy, Edit2, RefreshCw } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 
 interface MessageActionsProps {
@@ -54,56 +53,42 @@ function MessageActions({
           {formattedTime}
         </span>
       ) : null}
-      <TooltipProvider delayDuration={300}>
-        {onCopy ? (
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                aria-label={copyLabel}
-                variant="ghost"
-                size="icon"
-                className={actionButtonClassName}
-                onClick={onCopy}
-              >
-                {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent side="bottom"><p>{copyLabel}</p></TooltipContent>
-          </Tooltip>
-        ) : null}
-        {onEdit ? (
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                aria-label="编辑"
-                variant="ghost"
-                size="icon"
-                className={actionButtonClassName}
-                onClick={onEdit}
-              >
-                <Edit2 className="h-4 w-4" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent side="bottom"><p>编辑</p></TooltipContent>
-          </Tooltip>
-        ) : null}
-        {onRetry ? (
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                aria-label={retryLabel}
-                variant="ghost"
-                size="icon"
-                className={actionButtonClassName}
-                onClick={onRetry}
-              >
-                <RefreshCw className="h-4 w-4" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent side="bottom"><p>{retryLabel}</p></TooltipContent>
-          </Tooltip>
-        ) : null}
-      </TooltipProvider>
+      {onCopy ? (
+        <Button
+          aria-label={copyLabel}
+          title={copyLabel}
+          variant="ghost"
+          size="icon"
+          className={actionButtonClassName}
+          onClick={onCopy}
+        >
+          {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+        </Button>
+      ) : null}
+      {onEdit ? (
+        <Button
+          aria-label="编辑"
+          title="编辑"
+          variant="ghost"
+          size="icon"
+          className={actionButtonClassName}
+          onClick={onEdit}
+        >
+          <Edit2 className="h-4 w-4" />
+        </Button>
+      ) : null}
+      {onRetry ? (
+        <Button
+          aria-label={retryLabel}
+          title={retryLabel}
+          variant="ghost"
+          size="icon"
+          className={actionButtonClassName}
+          onClick={onRetry}
+        >
+          <RefreshCw className="h-4 w-4" />
+        </Button>
+      ) : null}
     </div>
   );
 }

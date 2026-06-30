@@ -157,8 +157,7 @@ describe('ChatMessage', () => {
       />,
     );
 
-    // The copy button is the first tooltip-trigger button in the action bar
-    const copyButton = document.querySelector('button[data-slot="tooltip-trigger"]') as HTMLElement;
+    const copyButton = screen.getByRole('button', { name: '复制' });
     fireEvent.click(copyButton);
 
     expect(navigator.clipboard.writeText).toHaveBeenCalledWith('复制这条消息');
@@ -192,7 +191,7 @@ describe('ChatMessage', () => {
       />,
     );
 
-    const copyButton = document.querySelector('button[data-slot="tooltip-trigger"]') as HTMLElement;
+    const copyButton = screen.getByRole('button', { name: '复制' });
     fireEvent.click(copyButton);
 
     await act(async () => {
