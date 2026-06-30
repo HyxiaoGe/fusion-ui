@@ -4,6 +4,10 @@ import { useAppDispatch } from '@/redux/hooks';
 import { continueAgentRunStream, getConversation, stopStream } from '@/lib/api/chat';
 import type { StreamCallbacks } from '@/lib/api/chat';
 import { createAgentStreamEventHandlers } from '@/lib/agent/streamEventHandlers';
+import {
+  recoverReasoningOnlyFinalBlocks,
+  shouldRecoverReasoningOnlyFinalBlocks,
+} from '@/lib/chat/contentBlocks';
 import { buildChatFromServerConversation } from '@/lib/chat/conversationHydration';
 import { updateMessage } from '@/redux/slices/conversationSlice';
 import {
@@ -126,7 +130,13 @@ function buildContinuationStreamCallbacks({
     onDone: () => {
       if (!isActive()) return;
       const streamState = (store.getState() as RootStateForContinuation).stream;
-      const finalBlocks = selectFullStreamContentBlocks(streamState);
+      const rawFinalBlocks = selectFullStreamContentBlocks(streamState);
+      const finalBlocks = shouldRecoverReasoningOnlyFinalBlocks({
+        runStatus: streamState.currentRun?.status,
+        messageMatches: true,
+      })
+        ? recoverReasoningOnlyFinalBlocks(rawFinalBlocks)
+        : rawFinalBlocks;
       dispatch(updateMessage({
         conversationId,
         messageId: assistantMessageId,

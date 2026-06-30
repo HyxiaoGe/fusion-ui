@@ -30,6 +30,10 @@ import {
 import { sendMessageStream, getConversation } from '@/lib/api/chat';
 import { generateChatTitle } from '@/lib/api/title';
 import { createAgentStreamEventHandlers } from '@/lib/agent/streamEventHandlers';
+import {
+  recoverReasoningOnlyFinalBlocks,
+  shouldRecoverReasoningOnlyFinalBlocks,
+} from '@/lib/chat/contentBlocks';
 import type { Message, ContentBlock } from '@/types/conversation';
 import type { FileAttachment } from '@/lib/utils/fileHelpers';
 import { useTypewriter } from './useTypewriter';
@@ -266,7 +270,13 @@ export function useSendMessage() {
         const isAgentMode =
           streamState.currentRun?.messageId === assistantMessageId &&
           (streamState.currentRun?.totalToolCalls ?? 0) > 0;
-        const finalBlocks = selectFullStreamContentBlocks(streamState);
+        const rawFinalBlocks = selectFullStreamContentBlocks(streamState);
+        const finalBlocks = shouldRecoverReasoningOnlyFinalBlocks({
+          runStatus: streamState.currentRun?.status,
+          messageMatches: streamState.currentRun?.messageId === assistantMessageId,
+        })
+          ? recoverReasoningOnlyFinalBlocks(rawFinalBlocks)
+          : rawFinalBlocks;
         const hasThinking = finalBlocks.some(b => b.type === 'thinking');
 
         dispatch(

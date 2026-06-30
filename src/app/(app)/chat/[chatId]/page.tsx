@@ -35,6 +35,10 @@ import { useSuggestedQuestions } from '@/hooks/useSuggestedQuestions';
 import { useSuggestedQuestionContinuation } from '@/hooks/useSuggestedQuestionContinuation';
 import { useTransientCompletionState } from '@/hooks/useTransientCompletionState';
 import { createAgentStreamEventHandlers } from '@/lib/agent/streamEventHandlers';
+import {
+  recoverReasoningOnlyFinalBlocks,
+  shouldRecoverReasoningOnlyFinalBlocks,
+} from '@/lib/chat/contentBlocks';
 import { shouldAutoFetchSuggestedQuestions } from '@/lib/chat/suggestedQuestionTiming';
 import { CHAT_NEW_PATH } from '@/lib/routes/chatRoutes';
 
@@ -170,7 +174,13 @@ export default function ChatPage() {
             if (cancelled) return;
             // 把 streamSlice 的内容写入 conversation 消息，防止 endStream 清空后内容丢失
             const streamState = (store.getState() as { stream: StreamState }).stream;
-            const blocks = selectFullStreamContentBlocks(streamState);
+            const rawBlocks = selectFullStreamContentBlocks(streamState);
+            const blocks = shouldRecoverReasoningOnlyFinalBlocks({
+              runStatus: streamState.currentRun?.status,
+              messageMatches: true,
+            })
+              ? recoverReasoningOnlyFinalBlocks(rawBlocks)
+              : rawBlocks;
             if (messageId && blocks.length > 0) {
               dispatch(updateMessage({
                 conversationId: chatId,

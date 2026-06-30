@@ -642,6 +642,102 @@ describe('useSendMessage', () => {
     expect(getConversationMock).not.toHaveBeenCalled();
   });
 
+  it('普通无工具问答：reasoning-only 完成时恢复为正文，避免最终正文空白', async () => {
+    const store = createStore();
+    store.dispatch(
+      upsertConversation({
+        id: 'existing-conv',
+        title: 'Existing',
+        model_id: 'model-1',
+        messages: [],
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      })
+    );
+
+    sendMessageStreamMock.mockImplementationOnce(async (_payload: any, callbacks: StreamCallbacks) => {
+      callbacks.onReady({ messageId: 'assistant-1', conversationId: 'existing-conv' });
+      callbacks.onRunStarted?.({
+        type: 'run_started',
+        run_id: 'run-1',
+        parent_run_id: null,
+        step_id: null,
+        parent_step_id: null,
+        tool_call_id: null,
+        sequence: 1,
+        trace_id: 'trace-1',
+        ts: Date.now(),
+        conversation_id: 'existing-conv',
+        message_id: 'assistant-1',
+        model: 'model-1',
+        tools: [],
+        config: { max_steps: 5, max_tool_calls: 10, timeout_s: 60 },
+      });
+      callbacks.onStepStarted?.({
+        type: 'step_started',
+        run_id: 'run-1',
+        parent_run_id: null,
+        step_id: 'step-1',
+        parent_step_id: null,
+        tool_call_id: null,
+        sequence: 2,
+        trace_id: 'trace-1',
+        ts: Date.now(),
+        step_number: 1,
+      });
+      callbacks.onReasoning({ block_id: 'blk_t', delta: '你好！我是 DeepSeek。' });
+      callbacks.onStepCompleted?.({
+        type: 'step_completed',
+        run_id: 'run-1',
+        parent_run_id: null,
+        step_id: 'step-1',
+        parent_step_id: null,
+        tool_call_id: null,
+        sequence: 3,
+        trace_id: 'trace-1',
+        ts: Date.now(),
+        step_number: 1,
+        tool_call_count: 0,
+        duration_ms: 10,
+      });
+      callbacks.onRunCompleted?.({
+        type: 'run_completed',
+        run_id: 'run-1',
+        parent_run_id: null,
+        step_id: null,
+        parent_step_id: null,
+        tool_call_id: null,
+        sequence: 4,
+        trace_id: 'trace-1',
+        ts: Date.now(),
+        total_steps: 1,
+        total_tool_calls: 0,
+        finish_reason: 'stop',
+      });
+      callbacks.onDone({ messageId: 'assistant-1', conversationId: 'existing-conv' });
+    });
+
+    const { result } = renderHook(() => useSendMessage(), {
+      wrapper: createWrapper(store),
+    });
+
+    await act(async () => {
+      await result.current.sendMessage('hello', { conversationId: 'existing-conv' });
+    });
+
+    await waitFor(() => {
+      expect(store.getState().stream.isStreaming).toBe(false);
+    });
+
+    const assistantMsg = store.getState().conversation.byId['existing-conv'].messages.find(
+      (m: any) => m.role === 'assistant'
+    );
+    expect(assistantMsg?.content).toEqual([
+      { type: 'text', id: 'recovered-blk_t', text: '你好！我是 DeepSeek。' },
+    ]);
+    expect(getConversationMock).not.toHaveBeenCalled();
+  });
+
   it('run_completed finish_reason=incomplete 时保留 incomplete 状态', async () => {
     const store = createStore();
     store.dispatch(
