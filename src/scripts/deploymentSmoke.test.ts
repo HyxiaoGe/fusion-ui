@@ -4,7 +4,7 @@ import {
   buildSmokeUrl,
   resolveSmokeBaseUrl,
   validateDeploymentSmokeResult,
-} from '../../scripts/smoke-dev-deployment.mjs';
+} from '../../scripts/smoke-dev-deployment-helpers.mjs';
 
 describe('deployment smoke helpers', () => {
   it('优先使用命令行 base-url，其次使用 SMOKE_BASE_URL，最后回退 dev 本机地址', () => {
