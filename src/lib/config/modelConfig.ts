@@ -8,6 +8,8 @@ export interface ModelCapability {
   deepThinking?: boolean; // 深度思考
   fileSupport?: boolean; // 文件处理
   functionCalling?: boolean; // 工具调用（含联网搜索）
+  agentTools?: boolean; // Fusion agent 工具链（联网搜索/读源）
+  webSearch?: boolean; // 联网搜索能力
   vision?: boolean; // 图片理解
 }
 

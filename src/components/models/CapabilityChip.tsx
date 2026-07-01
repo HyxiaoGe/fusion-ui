@@ -1,27 +1,23 @@
 import { memo } from 'react';
 import { cn } from '@/lib/utils';
+import type { CapabilityLabel, CapabilityTone } from '@/lib/models/modelCapabilityPresentation';
 
-const CHIP_CONFIG: Record<string, { label: string; className: string }> = {
-  deepThinking: { label: '思考', className: 'bg-orange-50 text-orange-600 dark:bg-orange-950/30 dark:text-orange-400' },
-  fileSupport: { label: '文件', className: 'bg-green-50 text-green-600 dark:bg-green-950/30 dark:text-green-400' },
-  functionCalling: { label: '工具', className: 'bg-purple-50 text-purple-600 dark:bg-purple-950/30 dark:text-purple-400' },
-  imageGen: { label: '画图', className: 'bg-pink-50 text-pink-600 dark:bg-pink-950/30 dark:text-pink-400' },
+const CHIP_TONE_CLASS: Record<CapabilityTone, string> = {
+  success: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-400',
+  muted: 'bg-muted text-muted-foreground',
+  info: 'bg-blue-50 text-blue-700 dark:bg-blue-950/30 dark:text-blue-400',
+  warning: 'bg-amber-50 text-amber-700 dark:bg-amber-950/30 dark:text-amber-400',
+  danger: 'bg-red-50 text-red-700 dark:bg-red-950/30 dark:text-red-400',
 };
 
-// 优先级顺序：思考 > 工具 > 文件 > 画图
-const PRIORITY_ORDER = ['deepThinking', 'functionCalling', 'fileSupport', 'imageGen'];
-
 interface CapabilityChipProps {
-  type: string;
+  label: CapabilityLabel;
 }
 
-const CapabilityChip = memo(({ type }: CapabilityChipProps) => {
-  const config = CHIP_CONFIG[type];
-  if (!config) return null;
-
+const CapabilityChip = memo(({ label }: CapabilityChipProps) => {
   return (
-    <span className={cn('rounded text-[10px] px-1.5 py-0.5 font-medium whitespace-nowrap', config.className)}>
-      {config.label}
+    <span className={cn('rounded text-[10px] px-1.5 py-0.5 font-medium whitespace-nowrap', CHIP_TONE_CLASS[label.tone])}>
+      {label.text}
     </span>
   );
 });
@@ -29,21 +25,20 @@ const CapabilityChip = memo(({ type }: CapabilityChipProps) => {
 CapabilityChip.displayName = 'CapabilityChip';
 
 interface CapabilityChipListProps {
-  capabilities: Record<string, boolean | undefined>;
+  labels: CapabilityLabel[];
   maxCount?: number;
 }
 
 /** 按优先级渲染能力 chip，最多显示 maxCount 个 */
-export const CapabilityChipList = memo(({ capabilities, maxCount = 3 }: CapabilityChipListProps) => {
-  const active = PRIORITY_ORDER.filter((key) => capabilities[key]);
-  const visible = active.slice(0, maxCount);
+export const CapabilityChipList = memo(({ labels, maxCount = 3 }: CapabilityChipListProps) => {
+  const visible = labels.slice(0, maxCount);
 
   if (visible.length === 0) return null;
 
   return (
     <div className="flex gap-1 mt-1.5">
-      {visible.map((key) => (
-        <CapabilityChip key={key} type={key} />
+      {visible.map((label) => (
+        <CapabilityChip key={label.key} label={label} />
       ))}
     </div>
   );

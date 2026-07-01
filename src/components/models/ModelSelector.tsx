@@ -6,9 +6,11 @@ import { useAppDispatch, useAppSelector } from "@/redux/hooks";
 import { setSelectedModel } from "@/redux/slices/modelsSlice";
 import { updateConversationModel } from "@/redux/slices/conversationSlice";
 import { getPreferredModelId } from "@/lib/models/modelPreference";
+import { buildModelCapabilityTooltip } from "@/lib/models/modelCapabilityPresentation";
 import { getRecentModels, addRecentModel } from "@/lib/models/recentModels";
 import { getRouteConversationId } from "@/lib/routes/chatRoutes";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import ModelSelectorTrigger from "./ModelSelectorTrigger";
 import ModelSelectorPanel from "./ModelSelectorPanel";
 
@@ -40,6 +42,10 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({ onChange, modelId, disabl
   const currentModel = useMemo(
     () => models.find((m) => m.id === currentModelId) ?? null,
     [models, currentModelId],
+  );
+  const currentModelTooltip = useMemo(
+    () => buildModelCapabilityTooltip(currentModel),
+    [currentModel],
   );
 
   const modelsByProvider = useMemo(
@@ -95,33 +101,45 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({ onChange, modelId, disabl
   if (models.length === 0) return null;
 
   return (
-    <Popover open={isOpen} onOpenChange={isDisabled ? undefined : setIsOpen}>
-      <PopoverTrigger asChild>
-        <ModelSelectorTrigger
-          model={currentModel}
-          providers={providers}
-          isOpen={isOpen}
-          disabled={isDisabled}
-        />
-      </PopoverTrigger>
-      <PopoverContent
-        side="top"
-        align="start"
-        avoidCollisions={true}
-        sideOffset={4}
-        className="p-0 w-[calc(100vw-32px)] sm:w-[480px] max-h-[420px] overflow-y-auto"
-      >
-        <ModelSelectorPanel
-          modelsByProvider={modelsByProvider}
-          selectedModelId={currentModelId}
-          recentModelIds={recentModelIds}
-          allModels={models}
-          activeProvider={effectiveProvider}
-          onSelect={handleModelChange}
-          onProviderChange={handleProviderChange}
-        />
-      </PopoverContent>
-    </Popover>
+    <TooltipProvider delayDuration={150}>
+      <Tooltip>
+        <Popover open={isOpen} onOpenChange={isDisabled ? undefined : setIsOpen}>
+          <TooltipTrigger asChild>
+            <span className="inline-flex" title={currentModelTooltip}>
+              <PopoverTrigger asChild>
+                <ModelSelectorTrigger
+                  model={currentModel}
+                  providers={providers}
+                  isOpen={isOpen}
+                  disabled={isDisabled}
+                  title={currentModelTooltip}
+                />
+              </PopoverTrigger>
+            </span>
+          </TooltipTrigger>
+          <PopoverContent
+            side="top"
+            align="start"
+            avoidCollisions={true}
+            sideOffset={4}
+            className="p-0 w-[calc(100vw-32px)] sm:w-[480px] max-h-[420px] overflow-y-auto"
+          >
+            <ModelSelectorPanel
+              modelsByProvider={modelsByProvider}
+              selectedModelId={currentModelId}
+              recentModelIds={recentModelIds}
+              allModels={models}
+              activeProvider={effectiveProvider}
+              onSelect={handleModelChange}
+              onProviderChange={handleProviderChange}
+            />
+          </PopoverContent>
+        </Popover>
+        <TooltipContent side="top" className="max-w-[260px] whitespace-pre-line text-xs">
+          {currentModelTooltip}
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
   );
 };
 

@@ -33,8 +33,20 @@ vi.mock('@/redux/hooks', () => ({
         selectedModelId: 'model-a',
         providers: [{ id: 'provider-a', name: 'Provider A', order: 1 }],
         models: [
-          { id: 'model-a', name: '模型 A', provider: 'provider-a', enabled: true },
-          { id: 'model-b', name: '模型 B', provider: 'provider-a', enabled: true },
+          {
+            id: 'model-a',
+            name: '模型 A',
+            provider: 'provider-a',
+            enabled: true,
+            capabilities: { agentTools: true, webSearch: true, vision: true, deepThinking: true },
+          },
+          {
+            id: 'model-b',
+            name: '模型 B',
+            provider: 'provider-a',
+            enabled: true,
+            capabilities: { agentTools: false, functionCalling: true, vision: false, deepThinking: false },
+          },
         ],
       },
       conversation: {
@@ -69,8 +81,8 @@ vi.mock('@/components/ui/popover', () => ({
 }));
 
 vi.mock('./ModelSelectorTrigger', () => ({
-  default: ({ disabled }: { disabled?: boolean }) => (
-    <button type="button" disabled={disabled}>
+  default: ({ disabled, title }: { disabled?: boolean; title?: string }) => (
+    <button type="button" disabled={disabled} title={title}>
       选择模型
     </button>
   ),
@@ -111,5 +123,13 @@ describe('ModelSelector 路由语义', () => {
       type: 'conversation/updateConversationModel',
       payload: { id: 'new', model_id: 'model-b' },
     });
+  });
+
+  it('给模型按钮传递当前模型能力说明 tooltip 文案', () => {
+    render(<ModelSelector />);
+
+    const trigger = screen.getByRole('button', { name: '选择模型' });
+    expect(trigger).toHaveAttribute('title', expect.stringContaining('可按问题需要自主联网搜索和读取关键来源'));
+    expect(trigger).toHaveAttribute('title', expect.stringContaining('支持图片理解'));
   });
 });

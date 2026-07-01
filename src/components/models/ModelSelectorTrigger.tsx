@@ -9,6 +9,7 @@ interface ModelSelectorTriggerProps {
   providers: ProviderInfo[];
   isOpen: boolean;
   disabled: boolean;
+  title?: string;
   onClick?: () => void;
 }
 

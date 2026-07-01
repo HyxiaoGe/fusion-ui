@@ -2,6 +2,7 @@ import { memo, useRef, useCallback } from "react";
 import { cn } from "@/lib/utils";
 import { Check, AlertCircle } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { buildModelCapabilityLabels } from "@/lib/models/modelCapabilityPresentation";
 import { CapabilityChipList } from "./CapabilityChip";
 import ProviderIcon from "./ProviderIcon";
 import type { ModelInfo, ProviderInfo } from "@/lib/config/modelConfig";
@@ -109,7 +110,7 @@ const ProviderTabs = memo(
     const containerRef = useRef<HTMLDivElement>(null);
 
     const handleClick = useCallback(
-      (e: React.MouseEvent<HTMLButtonElement>, providerId: string, idx: number) => {
+      (_e: React.MouseEvent<HTMLButtonElement>, providerId: string, idx: number) => {
         onProviderChange(providerId);
 
         const container = containerRef.current;
@@ -185,7 +186,7 @@ const ModelCard = memo(
           {isSelected && <Check size={14} className="shrink-0 text-primary" />}
           {unhealthy && <AlertCircle size={13} className="shrink-0 text-amber-600 dark:text-amber-500" />}
         </div>
-        <CapabilityChipList capabilities={model.capabilities} maxCount={4} />
+        <CapabilityChipList labels={buildModelCapabilityLabels(model)} maxCount={4} />
       </button>
     );
     if (!unhealthy) return card;
