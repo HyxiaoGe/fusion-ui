@@ -26,6 +26,7 @@ jobs:
       runner_name: ${{ steps.pipeline_start.outputs.runner_name }}
     env:
       ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
+      PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1"
       NPM_CONFIG_AUDIT: "false"
       NPM_CONFIG_FUND: "false"
       NEXT_PUBLIC_AUTH_SERVICE_BASE_URL: ${{ vars.NEXT_PUBLIC_AUTH_SERVICE_BASE_URL }}
@@ -211,6 +212,9 @@ jobs:
       - name: Record deploy start time
         run: echo "DEPLOY_START=$(date +%s)" >> "$GITHUB_ENV"
 
+      - name: Checkout smoke scripts
+        uses: actions/checkout@v6
+
       - name: Login to ACR
         run: echo "${ACR_PASSWORD}" | docker login "${REGISTRY}" -u "${ACR_USERNAME}" --password-stdin
         env:
@@ -342,6 +346,24 @@ jobs:
           docker ps --filter "name=fusion-ui"
           docker logs --tail 80 fusion-ui || true
           exit 1
+
+      - name: Run dev browser smoke
+        env:
+          SMOKE_BASE_URL: http://127.0.0.1:3004
+        run: |
+          if ! docker run --rm --network host --ipc=host --user "$(id -u):$(id -g)" \
+            -e SMOKE_BASE_URL=http://127.0.0.1:3004 \
+            -e PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 \
+            -e HOME=/tmp \
+            -v "$GITHUB_WORKSPACE:/work" \
+            -w /work \
+            mcr.microsoft.com/playwright:v1.58.2-noble \
+            sh -lc 'npm ci --ignore-scripts --no-audit --no-fund --cache /tmp/npm-cache && node scripts/smoke-dev-deployment.mjs'; then
+            echo "fusion-ui dev browser smoke failed"
+            docker ps --filter "name=fusion-ui"
+            docker logs --tail 80 fusion-ui || true
+            exit 1
+          fi
 
       - name: Cleanup old images
         if: always()
