@@ -27,6 +27,7 @@ export interface AnswerEvidenceSidebarIssueItem {
 
 export interface AnswerEvidenceSidebarSummary {
   usedCount: number;
+  candidateCount: number;
   searchCount: number;
   urlCount: number;
   issueCount: number;
@@ -35,6 +36,7 @@ export interface AnswerEvidenceSidebarSummary {
 export interface AnswerEvidenceSidebarModel {
   summary: AnswerEvidenceSidebarSummary;
   usedItems: AnswerEvidenceSidebarUsedItem[];
+  candidateItems: AnswerEvidenceSidebarUsedItem[];
   issueItems: AnswerEvidenceSidebarIssueItem[];
   searchQueries: string[];
   isRenderable: boolean;
@@ -50,25 +52,31 @@ interface DeriveAnswerEvidenceSidebarInput {
 export function deriveAnswerEvidenceSidebar(
   input: DeriveAnswerEvidenceSidebarInput,
 ): AnswerEvidenceSidebarModel | null {
-  const usedItems = input.answerEvidence?.items.map(toUsedItem) ?? [];
+  const usedItems = (input.answerEvidence?.usedItems ?? input.answerEvidence?.items ?? []).map(toUsedItem);
+  const candidateItems = (input.answerEvidence?.candidateItems ?? []).map(toUsedItem);
   const issueItems = collectIssueItems(input.searchBlock ?? null, input.urlBlocks);
   const searchQueries = normalizeSearchQueries([
     ...(input.searchQueries ?? []),
     input.searchBlock?.query ?? '',
   ]);
 
-  if (usedItems.length === 0 && issueItems.length === 0) {
+  if (usedItems.length === 0 && candidateItems.length === 0 && issueItems.length === 0) {
     return null;
   }
 
+  const sourceItems = [...usedItems, ...candidateItems];
+  const derivedSearchCount = countUsedByKind(sourceItems, 'search');
+  const derivedUrlCount = countUsedByKind(sourceItems, 'url_read');
   return {
     summary: {
       usedCount: usedItems.length,
-      searchCount: input.answerEvidence?.searchCount ?? countUsedByKind(usedItems, 'search'),
-      urlCount: input.answerEvidence?.urlCount ?? countUsedByKind(usedItems, 'url_read'),
+      candidateCount: candidateItems.length,
+      searchCount: Math.max(input.answerEvidence?.searchCount ?? 0, derivedSearchCount),
+      urlCount: Math.max(input.answerEvidence?.urlCount ?? 0, derivedUrlCount),
       issueCount: issueItems.length,
     },
     usedItems,
+    candidateItems,
     issueItems,
     searchQueries,
     isRenderable: true,

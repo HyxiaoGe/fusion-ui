@@ -176,6 +176,63 @@ describe('useAssistantMessageViewModel', () => {
     ]);
   });
 
+  it('当前 run 有 evidence 时优先使用 ledger 的 used/candidate 状态', () => {
+    const message: Message = {
+      id: 'assistant-1',
+      role: 'assistant',
+      content: [
+        {
+          type: 'search',
+          id: 'search-1',
+          query: 'OpenAI 最新公告',
+          sources: [{ title: '旧候选来源', url: 'https://legacy.example.com/search' }],
+        },
+        { type: 'text', id: 'text-1', text: '历史正文。[1]' },
+      ],
+      timestamp: 1,
+    };
+
+    const currentRun: AgentRunState = {
+      runId: 'run-1',
+      messageId: 'assistant-1',
+      status: 'completed',
+      config: { maxSteps: 8, maxToolCalls: 20, timeoutS: 300 },
+      totalSteps: 1,
+      totalToolCalls: 1,
+      steps: [],
+      evidence: [
+        {
+          id: 'ev-used',
+          kind: 'web',
+          status: 'used',
+          title: 'Ledger 已使用来源',
+          url: 'https://openai.com/news/product',
+          domain: 'openai.com',
+          claim: '最终回答引用了该来源。',
+          usedByFinalAnswer: true,
+        },
+        {
+          id: 'ev-candidate',
+          kind: 'web',
+          status: 'candidate',
+          title: 'Ledger 候选来源',
+          url: 'https://example.com/candidate',
+          domain: 'example.com',
+          claim: '搜索候选。',
+          usedByFinalAnswer: false,
+        },
+      ],
+      lastSequence: 10,
+    };
+
+    const { result } = renderViewModel(message, { currentRun });
+
+    expect(result.current.answerEvidence?.summary).toBe('回答依据 · 已使用 1 条 · 候选 1 条');
+    expect(result.current.answerEvidence?.items.map(item => item.title)).toEqual(['Ledger 已使用来源']);
+    expect(result.current.answerEvidence?.usedItems?.map(item => item.title)).toEqual(['Ledger 已使用来源']);
+    expect(result.current.answerEvidence?.candidateItems?.map(item => item.title)).toEqual(['Ledger 候选来源']);
+  });
+
   it('聚合历史 assistant 消息里的多次搜索来源', () => {
     const message: Message = {
       id: 'assistant-1',

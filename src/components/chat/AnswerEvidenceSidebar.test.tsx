@@ -6,6 +6,7 @@ import AnswerEvidenceSidebar from './AnswerEvidenceSidebar';
 const model: AnswerEvidenceSidebarModel = {
   summary: {
     usedCount: 2,
+    candidateCount: 0,
     searchCount: 1,
     urlCount: 1,
     issueCount: 2,
@@ -28,6 +29,7 @@ const model: AnswerEvidenceSidebarModel = {
       domain: 'reader.example.com',
     },
   ],
+  candidateItems: [],
   issueItems: [
     {
       id: 'issue-1',
@@ -66,7 +68,7 @@ describe('AnswerEvidenceSidebar', () => {
     expect(container.querySelector('[data-testid="answer-evidence-sidebar"]')).toBeNull();
   });
 
-  it('渲染摘要、候选来源和异常来源', () => {
+  it('渲染摘要、已使用来源和异常来源', () => {
     render(
       <AnswerEvidenceSidebar
         model={model}
@@ -76,12 +78,12 @@ describe('AnswerEvidenceSidebar', () => {
     );
 
     expect(screen.getByRole('heading', { name: '回答依据' })).toBeInTheDocument();
-    expect(screen.getByText('候选来源 2 条 · 深读 1 个网页')).toBeInTheDocument();
+    expect(screen.getByText('已使用 2 条 · 深读 1 个网页')).toBeInTheDocument();
     expect(screen.getByText('2 个未使用')).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: '搜索关键词' })).toBeInTheDocument();
     expect(screen.getByText('AI 标准')).toBeInTheDocument();
     expect(screen.getByText('OpenAI 最新融资')).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: '候选来源' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: '已使用来源' })).toBeInTheDocument();
     expect(screen.getByText('搜索来源')).toBeInTheDocument();
     expect(screen.getByAltText('')).toHaveAttribute('src', 'https://search.example.com/favicon.ico');
     expect(screen.getByText('读取来源')).toBeInTheDocument();

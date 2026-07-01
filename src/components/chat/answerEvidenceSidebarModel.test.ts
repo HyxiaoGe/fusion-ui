@@ -48,7 +48,58 @@ describe('deriveAnswerEvidenceSidebar', () => {
       issueCount: 0,
     });
     expect(model?.usedItems.map(item => item.title)).toEqual(['搜索来源', '读取来源']);
+    expect(model?.candidateItems).toEqual([]);
     expect(model?.searchQueries).toEqual(['AI 标准', 'OpenAI 最新融资']);
+  });
+
+  it('把 answer evidence 的 used 和 candidate 来源分开展示', () => {
+    const model = deriveAnswerEvidenceSidebar({
+      answerEvidence: {
+        ...answerEvidence,
+        items: [
+          {
+            id: 'search-used',
+            kind: 'search_source',
+            title: '已使用来源',
+            url: 'https://used.example.com/a',
+            domain: 'used.example.com',
+            sourceIndex: 0,
+          },
+        ],
+        usedItems: [
+          {
+            id: 'search-used',
+            kind: 'search_source',
+            title: '已使用来源',
+            url: 'https://used.example.com/a',
+            domain: 'used.example.com',
+            sourceIndex: 0,
+          },
+        ],
+        candidateItems: [
+          {
+            id: 'search-candidate',
+            kind: 'search_source',
+            title: '候选来源',
+            url: 'https://candidate.example.com/a',
+            domain: 'candidate.example.com',
+            sourceIndex: 1,
+          },
+        ],
+        summary: '回答依据 · 已使用 1 条 · 候选 1 条',
+        totalCount: 2,
+      },
+      searchBlock: null,
+      urlBlocks: [],
+    });
+
+    expect(model?.summary).toMatchObject({
+      usedCount: 1,
+      candidateCount: 1,
+      searchCount: 2,
+    });
+    expect(model?.usedItems.map(item => item.title)).toEqual(['已使用来源']);
+    expect(model?.candidateItems.map(item => item.title)).toEqual(['候选来源']);
   });
 
   it('collects failed degraded and interrupted url blocks as issue items', () => {

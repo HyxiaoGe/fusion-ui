@@ -1,3 +1,4 @@
+import type { AgentEvidenceItem } from '@/types/agentRun';
 import type { SearchSourceSummary, SourceReference, UrlBlock } from '@/types/conversation';
 
 export type AnswerEvidenceKind = 'search_source' | 'url_read';
@@ -25,6 +26,10 @@ export type AnswerEvidenceItem = SearchAnswerEvidenceItem | UrlReadAnswerEvidenc
 export interface AnswerEvidenceModel {
   items: AnswerEvidenceItem[];
   previewItems: AnswerEvidenceItem[];
+  usedItems?: AnswerEvidenceItem[];
+  candidateItems?: AnswerEvidenceItem[];
+  usedCount?: number;
+  candidateCount?: number;
   searchCount: number;
   urlCount: number;
   totalCount: number;
@@ -38,11 +43,17 @@ interface DeriveAnswerEvidenceInput {
   sourceRefs?: SourceReference[];
   searchSources: SearchSourceSummary[];
   urlBlocks: UrlBlock[];
+  agentEvidence?: AgentEvidenceItem[] | null;
   searchProvider?: string | null;
   previewLimit?: number;
 }
 
 export function deriveAnswerEvidence(input: DeriveAnswerEvidenceInput): AnswerEvidenceModel | null {
+  const agentEvidenceModel = deriveAgentEvidenceModel(input);
+  if (agentEvidenceModel) {
+    return agentEvidenceModel;
+  }
+
   const useSourceRefs = Boolean(input.sourceRefs && input.sourceRefs.length > 0);
   const sourceRefItems = input.sourceRefs?.filter(isUsableSourceRef) ?? [];
   const unifiedItems = useSourceRefs
@@ -61,6 +72,10 @@ export function deriveAnswerEvidence(input: DeriveAnswerEvidenceInput): AnswerEv
   return {
     items,
     previewItems: items,
+    usedItems: items,
+    candidateItems: [],
+    usedCount: items.length,
+    candidateCount: 0,
     searchCount: searchItems.length,
     urlCount,
     totalCount: items.length,
@@ -69,6 +84,165 @@ export function deriveAnswerEvidence(input: DeriveAnswerEvidenceInput): AnswerEv
     summary: buildSummary(searchItems.length, urlCount, deriveSearchProviderLabel(input.searchProvider)),
     hasSearchSources: searchItems.length > 0,
   };
+}
+
+function deriveAgentEvidenceModel(input: DeriveAnswerEvidenceInput): AnswerEvidenceModel | null {
+  const evidence = input.agentEvidence?.filter(isRenderableAgentWebEvidence) ?? [];
+  if (evidence.length === 0) {
+    return null;
+  }
+
+  const context = buildAgentEvidenceContext(input, evidence);
+  const usedEvidence = evidence.filter(item => item.usedByFinalAnswer || item.status === 'used');
+  const usedItems = dedupeEvidenceItems(usedEvidence.map((item, index) => toAgentEvidenceItem(item, index, context)));
+  const usedKeys = new Set(usedItems.map(item => normalizeUrlKey(item.url)).filter(Boolean));
+  const candidateEvidence = evidence.filter(item => isCandidateAgentEvidence(item) && !usedKeys.has(normalizeUrlKey(item.url)));
+  const candidateItems = dedupeEvidenceItems(
+    candidateEvidence.map((item, index) => toAgentEvidenceItem(item, index + usedItems.length, context)),
+  );
+  const primaryItems = usedItems.length > 0 ? usedItems : candidateItems;
+
+  if (primaryItems.length === 0 && candidateItems.length === 0) {
+    return null;
+  }
+
+  const allItems = [...usedItems, ...candidateItems];
+  const searchCount = allItems.filter(item => item.kind === 'search_source').length;
+  const urlCount = context.deepReadUrls.size;
+
+  return {
+    items: primaryItems,
+    previewItems: primaryItems,
+    usedItems,
+    candidateItems,
+    usedCount: usedItems.length,
+    candidateCount: candidateItems.length,
+    searchCount,
+    urlCount,
+    totalCount: allItems.length,
+    hiddenSearchCount: 0,
+    hiddenUrlCount: 0,
+    summary: buildAgentEvidenceSummary({
+      usedCount: usedItems.length,
+      candidateCount: candidateItems.length,
+      urlCount,
+      searchProviderLabel: deriveSearchProviderLabel(input.searchProvider),
+    }),
+    hasSearchSources: searchCount > 0,
+  };
+}
+
+interface AgentEvidenceContext {
+  searchIndexByUrl: Map<string, number>;
+  faviconByUrl: Map<string, string>;
+  deepReadUrls: Set<string>;
+}
+
+function buildAgentEvidenceContext(
+  input: DeriveAnswerEvidenceInput,
+  evidence: AgentEvidenceItem[],
+): AgentEvidenceContext {
+  const searchIndexByUrl = new Map<string, number>();
+  const faviconByUrl = new Map<string, string>();
+  const deepReadUrls = new Set<string>();
+  let searchIndex = 0;
+
+  const addSearch = (url: string | undefined, favicon?: string) => {
+    const key = normalizeUrlKey(url);
+    if (!key) return;
+    if (!searchIndexByUrl.has(key)) {
+      searchIndexByUrl.set(key, searchIndex);
+      searchIndex += 1;
+    }
+    if (favicon?.trim() && !faviconByUrl.has(key)) {
+      faviconByUrl.set(key, favicon);
+    }
+  };
+
+  const addDeepRead = (url: string | undefined, favicon?: string) => {
+    const key = normalizeUrlKey(url);
+    if (!key) return;
+    deepReadUrls.add(key);
+    if (favicon?.trim() && !faviconByUrl.has(key)) {
+      faviconByUrl.set(key, favicon);
+    }
+  };
+
+  input.sourceRefs?.forEach(ref => {
+    if (ref.kind === 'search' && isUsableSourceRef(ref)) {
+      addSearch(ref.url, ref.favicon);
+    } else if (ref.kind === 'url_read' && isUsableSourceRef(ref)) {
+      addDeepRead(ref.url, ref.favicon);
+    }
+  });
+  input.searchSources.forEach(source => addSearch(source.url, source.favicon));
+  input.urlBlocks.filter(isSuccessfulUrlBlock).forEach(block => addDeepRead(block.url, block.favicon));
+  evidence
+    .filter(item => item.status === 'read_success')
+    .forEach(item => addDeepRead(item.url, undefined));
+
+  return { searchIndexByUrl, faviconByUrl, deepReadUrls };
+}
+
+function toAgentEvidenceItem(
+  evidence: AgentEvidenceItem,
+  fallbackIndex: number,
+  context: AgentEvidenceContext,
+): AnswerEvidenceItem {
+  const url = evidence.url ?? '';
+  const urlKey = normalizeUrlKey(url);
+  const searchIndex = context.searchIndexByUrl.get(urlKey);
+  const favicon = context.faviconByUrl.get(urlKey);
+  const domain = normalizeDomain(evidence.domain, url);
+  const base = {
+    id: `agent-evidence-${evidence.id || fallbackIndex}`,
+    title: normalizeTitle(evidence.title, url),
+    url,
+    domain,
+    favicon: normalizeFavicon(url, favicon),
+  };
+
+  if (evidence.status === 'read_success' || (searchIndex == null && context.deepReadUrls.has(urlKey))) {
+    return {
+      ...base,
+      kind: 'url_read',
+    };
+  }
+
+  return {
+    ...base,
+    kind: 'search_source',
+    sourceIndex: searchIndex ?? fallbackIndex,
+    deepRead: context.deepReadUrls.has(urlKey),
+  };
+}
+
+function dedupeEvidenceItems(items: AnswerEvidenceItem[]): AnswerEvidenceItem[] {
+  const deduped: AnswerEvidenceItem[] = [];
+  const seen = new Set<string>();
+  for (const item of items) {
+    const key = normalizeUrlKey(item.url) || item.id;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    deduped.push(item);
+  }
+  return deduped;
+}
+
+function isRenderableAgentWebEvidence(item: AgentEvidenceItem): boolean {
+  if (item.kind !== 'web' || !item.url?.trim()) {
+    return false;
+  }
+
+  return item.status === 'used'
+    || item.usedByFinalAnswer
+    || item.status === 'candidate'
+    || item.status === 'selected'
+    || item.status === 'read_success';
+}
+
+function isCandidateAgentEvidence(item: AgentEvidenceItem): boolean {
+  return item.status === 'candidate' || item.status === 'selected' || item.status === 'read_success';
 }
 
 function toSearchEvidenceItem(
@@ -265,6 +439,38 @@ function buildSummary(searchCount: number, urlCount: number, searchProviderLabel
   }
 
   if (searchCount > 0 && searchProviderLabel) {
+    parts.push(`本次搜索由 ${searchProviderLabel} 提供`);
+  }
+
+  return parts.join(' · ');
+}
+
+function buildAgentEvidenceSummary({
+  usedCount,
+  candidateCount,
+  urlCount,
+  searchProviderLabel,
+}: {
+  usedCount: number;
+  candidateCount: number;
+  urlCount: number;
+  searchProviderLabel?: string;
+}): string {
+  const parts = ['回答依据'];
+
+  if (usedCount > 0) {
+    parts.push(`已使用 ${usedCount} 条`);
+  }
+
+  if (candidateCount > 0) {
+    parts.push(`候选 ${candidateCount} 条`);
+  }
+
+  if (urlCount > 0) {
+    parts.push(`深读 ${urlCount} 个网页`);
+  }
+
+  if ((usedCount > 0 || candidateCount > 0) && searchProviderLabel) {
     parts.push(`本次搜索由 ${searchProviderLabel} 提供`);
   }
 

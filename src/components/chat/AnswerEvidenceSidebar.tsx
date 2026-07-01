@@ -27,6 +27,8 @@ export default function AnswerEvidenceSidebar({
   const itemRefs = useRef<Array<HTMLDivElement | null>>([]);
   const closeButtonRef = useRef<HTMLButtonElement | null>(null);
   const previousFocusRef = useRef<HTMLElement | null>(null);
+  const usedItems = model?.usedItems ?? [];
+  const candidateItems = model?.candidateItems ?? [];
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -56,9 +58,9 @@ export default function AnswerEvidenceSidebar({
   useEffect(() => {
     if (!isOpen) return;
     if (typeof highlightIndex !== 'number' || highlightIndex < 0) return;
-    const itemIndex = model?.usedItems.findIndex(
+    const itemIndex = usedItems.findIndex(
       item => item.kind === 'search' && item.sourceIndex === highlightIndex,
-    ) ?? -1;
+    );
     if (itemIndex < 0) return;
     const element = itemRefs.current[itemIndex];
     if (!element) return;
@@ -66,7 +68,7 @@ export default function AnswerEvidenceSidebar({
       element.scrollIntoView({ behavior: 'smooth', block: 'center' });
     }, 100);
     return () => clearTimeout(timer);
-  }, [highlightIndex, highlightTick, isOpen, model?.usedItems]);
+  }, [highlightIndex, highlightTick, isOpen, usedItems]);
 
   if (!isOpen || !model?.isRenderable) {
     return null;
@@ -91,10 +93,15 @@ export default function AnswerEvidenceSidebar({
           <div className="min-w-0">
             <h3 className="text-sm font-medium">回答依据</h3>
             <p className="mt-1 text-xs text-muted-foreground">
-              {model.summary.searchCount > 0
-                ? `候选来源 ${model.summary.usedCount} 条`
-                : `深读 ${model.summary.urlCount} 个网页`}
-              {model.summary.searchCount > 0 && model.summary.urlCount > 0
+              {model.summary.usedCount > 0
+                ? `已使用 ${model.summary.usedCount} 条`
+                : model.summary.candidateCount > 0
+                  ? `候选来源 ${model.summary.candidateCount} 条`
+                  : `深读 ${model.summary.urlCount} 个网页`}
+              {model.summary.usedCount > 0 && model.summary.candidateCount > 0
+                ? ` · 候选 ${model.summary.candidateCount} 条`
+                : ''}
+              {(model.summary.usedCount > 0 || model.summary.candidateCount > 0) && model.summary.urlCount > 0
                 ? ` · 深读 ${model.summary.urlCount} 个网页`
                 : ''}
             </p>
@@ -120,13 +127,13 @@ export default function AnswerEvidenceSidebar({
         <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
           <SearchQuerySection queries={model.searchQueries} />
 
-          {model.usedItems.length > 0 ? (
+          {usedItems.length > 0 ? (
             <section>
               <h4 className="mb-2 text-xs font-medium text-foreground">
-                {model.summary.searchCount > 0 ? '候选来源' : '已读取网页'}
+                已使用来源
               </h4>
               <div className="space-y-2">
-                {model.usedItems.map((item, index) => (
+                {usedItems.map((item, index) => (
                   <UsedSourceItem
                     key={item.id}
                     ref={(element) => { itemRefs.current[index] = element; }}
@@ -136,11 +143,28 @@ export default function AnswerEvidenceSidebar({
                 ))}
               </div>
             </section>
-          ) : (
+          ) : null}
+
+          {candidateItems.length > 0 ? (
+            <section className={usedItems.length > 0 ? 'mt-5' : undefined}>
+              <h4 className="mb-2 text-xs font-medium text-foreground">候选来源</h4>
+              <div className="space-y-2">
+                {candidateItems.map(item => (
+                  <UsedSourceItem
+                    key={item.id}
+                    item={item}
+                    highlighted={false}
+                  />
+                ))}
+              </div>
+            </section>
+          ) : null}
+
+          {usedItems.length === 0 && candidateItems.length === 0 ? (
             <section className="rounded-md border border-border/40 bg-muted/10 px-3 py-2 text-xs text-muted-foreground">
               没有可用回答依据
             </section>
-          )}
+          ) : null}
 
           {model.issueItems.length > 0 ? (
             <section className="mt-5">

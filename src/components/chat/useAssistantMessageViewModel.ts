@@ -80,6 +80,7 @@ export function deriveStaticAssistantMessageViewModel({
     sourceRefs: collectSourceRefs(searchBlocks, activity.urlBlocks),
     searchSources: evidenceSearchSources,
     urlBlocks: activity.urlBlocks,
+    agentEvidence: ownedRun?.evidence,
     searchProvider: collectSearchProvider(searchBlocks),
   });
   const displayText = extractTextFromBlocks(blocksToRender);
@@ -172,10 +173,11 @@ export function useAssistantMessageViewModel({
         sourceRefs: collectSourceRefs(searchBlocks, activity.urlBlocks),
         searchSources: collectSearchSources(searchBlocks),
         urlBlocks: activity.urlBlocks,
+        agentEvidence: ownedRun?.evidence,
         searchProvider: collectSearchProvider(searchBlocks),
       });
     },
-    [blocksToRender, activity.urlBlocks],
+    [blocksToRender, activity.urlBlocks, ownedRun?.evidence],
   );
 
   const displayText = useMemo(() => extractTextFromBlocks(blocksToRender), [blocksToRender]);

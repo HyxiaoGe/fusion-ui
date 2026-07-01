@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import type { AgentEvidenceItem } from '@/types/agentRun';
 import type { SearchSourceSummary, SourceReference, UrlBlock } from '@/types/conversation';
 import { deriveAnswerEvidence } from './answerEvidenceModel';
 
@@ -48,6 +49,96 @@ const sourceRefs: SourceReference[] = [
 describe('deriveAnswerEvidence', () => {
   it('无搜索来源和 URL 读取时返回 null', () => {
     expect(deriveAnswerEvidence({ searchSources: [], urlBlocks: [] })).toBeNull();
+  });
+
+  it('优先使用 agent evidence 区分已使用来源和候选来源', () => {
+    const agentEvidence: AgentEvidenceItem[] = [
+      {
+        id: 'ev-used',
+        kind: 'web',
+        status: 'used',
+        title: '官方公告',
+        url: 'https://openai.com/news/product',
+        domain: 'openai.com',
+        claim: '最终回答引用了该来源。',
+        usedByFinalAnswer: true,
+      },
+      {
+        id: 'ev-candidate',
+        kind: 'web',
+        status: 'candidate',
+        title: '媒体报道',
+        url: 'https://example.com/media',
+        domain: 'example.com',
+        claim: '搜索候选。',
+        usedByFinalAnswer: false,
+      },
+      {
+        id: 'ev-read-used',
+        kind: 'web',
+        status: 'read_success',
+        title: '官方公告深读',
+        url: 'https://openai.com/news/product',
+        domain: 'openai.com',
+        claim: '已读取网页。',
+        usedByFinalAnswer: false,
+      },
+    ];
+
+    const evidence = deriveAnswerEvidence({
+      agentEvidence,
+      searchSources: [
+        { title: '官方公告', url: 'https://openai.com/news/product' },
+        { title: '媒体报道', url: 'https://example.com/media' },
+      ],
+      urlBlocks: [
+        { type: 'url_read', id: 'url-1', url: 'https://openai.com/news/product', title: '官方公告深读' },
+      ],
+    });
+
+    expect(evidence?.summary).toBe('回答依据 · 已使用 1 条 · 候选 1 条 · 深读 1 个网页');
+    expect(evidence?.items.map(item => item.title)).toEqual(['官方公告']);
+    expect(evidence?.usedItems?.map(item => item.title)).toEqual(['官方公告']);
+    expect(evidence?.candidateItems?.map(item => item.title)).toEqual(['媒体报道']);
+    expect(evidence?.usedItems?.[0]).toMatchObject({
+      kind: 'search_source',
+      sourceIndex: 0,
+      deepRead: true,
+    });
+  });
+
+  it('agent evidence 没有 used 时预览候选来源但不伪装成已使用', () => {
+    const evidence = deriveAnswerEvidence({
+      agentEvidence: [
+        {
+          id: 'ev-candidate-1',
+          kind: 'web',
+          status: 'candidate',
+          title: '候选一',
+          url: 'https://example.com/one',
+          domain: 'example.com',
+          claim: '搜索候选。',
+          usedByFinalAnswer: false,
+        },
+        {
+          id: 'ev-read-1',
+          kind: 'web',
+          status: 'read_success',
+          title: '深读一',
+          url: 'https://reader.example.com/a',
+          domain: 'reader.example.com',
+          claim: '已读取网页。',
+          usedByFinalAnswer: false,
+        },
+      ],
+      searchSources: [],
+      urlBlocks: [],
+    });
+
+    expect(evidence?.summary).toBe('回答依据 · 候选 2 条 · 深读 1 个网页');
+    expect(evidence?.items.map(item => item.title)).toEqual(['候选一', '深读一']);
+    expect(evidence?.usedItems).toEqual([]);
+    expect(evidence?.candidateItems?.map(item => item.title)).toEqual(['候选一', '深读一']);
   });
 
   it('将搜索来源转换为 search_source evidence items', () => {
