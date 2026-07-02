@@ -14,6 +14,7 @@ describe('modelCapabilityPresentation', () => {
       temperature: 0.7,
       enabled: true,
       capabilities: {
+        searchCapable: true,
         agentTools: true,
         functionCalling: true,
         webSearch: true,
@@ -26,6 +27,46 @@ describe('modelCapabilityPresentation', () => {
     expect(labels[0].tone).toBe('success');
   });
 
+  it('优先用 searchCapable=true 判断模型可联网', () => {
+    const labels = buildModelCapabilityLabels({
+      id: 'search-contract-model',
+      name: 'Search Contract Model',
+      provider: 'openai',
+      temperature: 0.7,
+      enabled: true,
+      capabilities: {
+        searchCapable: true,
+        agentTools: false,
+        webSearch: false,
+      },
+    });
+
+    expect(labels.map((label) => label.text)).toContain('可联网');
+    expect(labels.map((label) => label.text)).not.toContain('不可联网');
+  });
+
+  it('searchCapable=false 时即使 webSearch=true 也展示不可联网', () => {
+    const model = {
+      id: 'search-disabled-model',
+      name: 'Search Disabled Model',
+      provider: 'openai',
+      temperature: 0.7,
+      enabled: true,
+      capabilities: {
+        searchCapable: false,
+        agentTools: true,
+        webSearch: true,
+      },
+    };
+
+    const labels = buildModelCapabilityLabels(model);
+    const tooltip = buildModelCapabilityTooltip(model);
+
+    expect(labels.map((label) => label.text)).toContain('不可联网');
+    expect(labels.map((label) => label.text)).not.toContain('可联网');
+    expect(tooltip).toContain('不支持联网搜索');
+  });
+
   it('为不支持 agent tools 的模型明确展示不可联网而不是工具调用', () => {
     const labels = buildModelCapabilityLabels({
       id: 'qwen-vl-max',
@@ -34,6 +75,7 @@ describe('modelCapabilityPresentation', () => {
       temperature: 0.7,
       enabled: true,
       capabilities: {
+        searchCapable: false,
         agentTools: false,
         functionCalling: true,
         vision: true,
@@ -52,6 +94,7 @@ describe('modelCapabilityPresentation', () => {
       temperature: 0.7,
       enabled: true,
       capabilities: {
+        searchCapable: false,
         agentTools: false,
         functionCalling: true,
         vision: false,

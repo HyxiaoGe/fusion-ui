@@ -22,6 +22,7 @@ const models: ModelInfo[] = [
     temperature: 0.7,
     enabled: true,
     capabilities: {
+      searchCapable: true,
       agentTools: true,
       functionCalling: true,
       webSearch: true,
@@ -36,6 +37,7 @@ const models: ModelInfo[] = [
     temperature: 0.7,
     enabled: true,
     capabilities: {
+      searchCapable: false,
       agentTools: false,
       functionCalling: true,
       vision: false,

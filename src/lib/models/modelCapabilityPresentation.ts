@@ -10,6 +10,10 @@ export interface CapabilityLabel {
 
 function supportsAgentTools(model: Pick<ModelInfo, 'capabilities'>): boolean {
   const capabilities = model.capabilities || {};
+  if (typeof capabilities.searchCapable === 'boolean') {
+    return capabilities.searchCapable;
+  }
+
   return Boolean(capabilities.agentTools || capabilities.webSearch);
 }
 

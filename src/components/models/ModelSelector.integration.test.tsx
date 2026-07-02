@@ -25,6 +25,7 @@ vi.mock('@/redux/hooks', () => ({
             provider: 'provider-a',
             enabled: true,
             capabilities: {
+              searchCapable: true,
               agentTools: true,
               webSearch: true,
               vision: true,
@@ -37,6 +38,7 @@ vi.mock('@/redux/hooks', () => ({
             provider: 'provider-a',
             enabled: true,
             capabilities: {
+              searchCapable: false,
               agentTools: false,
               functionCalling: true,
               vision: false,
