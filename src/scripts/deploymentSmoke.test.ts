@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   buildSmokeUrl,
+  resolveChromiumExecutablePath,
   resolvePlaywrightModuleSpecifier,
   resolveSmokeBaseUrl,
   validateDeploymentSmokeResult,
@@ -30,6 +31,18 @@ describe('deployment smoke helpers', () => {
     expect(resolvePlaywrightModuleSpecifier({})).toBe('playwright');
     expect(resolvePlaywrightModuleSpecifier({ PLAYWRIGHT_MODULE_PATH: modulePath })).toBe(
       pathToFileURL(modulePath).href,
+    );
+  });
+
+  it('支持 smoke runner 指定系统 Chromium 路径', () => {
+    expect(resolveChromiumExecutablePath({})).toBeUndefined();
+    expect(
+      resolveChromiumExecutablePath({
+        PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH: '/usr/bin/chromium-browser',
+      }),
+    ).toBe('/usr/bin/chromium-browser');
+    expect(resolveChromiumExecutablePath({ CHROMIUM_EXECUTABLE_PATH: '/custom/chromium' })).toBe(
+      '/custom/chromium',
     );
   });
 

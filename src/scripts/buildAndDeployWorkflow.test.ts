@@ -9,7 +9,7 @@ describe('build-and-deploy workflow 发布门禁', () => {
   it('dev 部署后使用 ACR 预构建 Playwright smoke runner', () => {
     expect(deployDevBlock).toContain('Run dev browser smoke');
     expect(workflow).toContain('SMOKE_IMAGE:');
-    expect(workflow).toContain('SMOKE_RUNNER_TAG:');
+    expect(workflow).toContain('SMOKE_RUNNER_TAG: chromium-alpine-1.58.2');
     expect(deployDevBlock).toContain('${{ env.SMOKE_IMAGE }}:${{ env.SMOKE_RUNNER_TAG }}');
     expect(deployDevBlock).not.toContain('mcr.microsoft.com/playwright:');
     expect(deployDevBlock).toContain('scripts/smoke-dev-deployment.mjs');
@@ -31,6 +31,7 @@ describe('build-and-deploy workflow 发布门禁', () => {
 
   it('dev browser smoke 不在部署机临时安装 Playwright', () => {
     expect(deployDevBlock).toContain('PLAYWRIGHT_MODULE_PATH=/smoke/node_modules/playwright/index.js');
+    expect(deployDevBlock).toContain('PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium-browser');
     expect(deployDevBlock).not.toContain('npm install --prefix /tmp/fusion-ui-smoke');
     expect(deployDevBlock).not.toContain('npm ci --ignore-scripts --no-audit --no-fund --cache /tmp/npm-cache && node scripts/smoke-dev-deployment.mjs');
   });

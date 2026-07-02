@@ -40,6 +40,10 @@ export function resolvePlaywrightModuleSpecifier(env = process.env) {
   return 'playwright';
 }
 
+export function resolveChromiumExecutablePath(env = process.env) {
+  return env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH || env.CHROMIUM_EXECUTABLE_PATH || undefined;
+}
+
 export function validateDeploymentSmokeResult(result) {
   const failures = [];
 

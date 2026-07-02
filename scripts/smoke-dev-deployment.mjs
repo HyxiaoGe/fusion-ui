@@ -3,6 +3,7 @@
 import { pathToFileURL } from 'node:url';
 import {
   buildSmokeUrl,
+  resolveChromiumExecutablePath,
   resolvePlaywrightModuleSpecifier,
   resolveSmokeBaseUrl,
   validateDeploymentSmokeResult,
@@ -14,8 +15,10 @@ function serializeErrors(entries) {
 
 export async function runDeploymentSmoke({ baseUrl = resolveSmokeBaseUrl(), chromium, logger = console } = {}) {
   const browserEngine = chromium || (await import(resolvePlaywrightModuleSpecifier())).chromium;
+  const executablePath = resolveChromiumExecutablePath();
   const browser = await browserEngine.launch({
     headless: true,
+    ...(executablePath ? { executablePath } : {}),
     args: ['--no-sandbox'],
   });
   const page = await browser.newPage();

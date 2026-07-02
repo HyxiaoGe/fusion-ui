@@ -16,7 +16,7 @@ env:
   REGISTRY: crpi-77w10wlykpqilmmb.cn-shenzhen.personal.cr.aliyuncs.com
   IMAGE_NAME: crpi-77w10wlykpqilmmb.cn-shenzhen.personal.cr.aliyuncs.com/seanfield/fusion-ui
   SMOKE_IMAGE: crpi-77w10wlykpqilmmb.cn-shenzhen.personal.cr.aliyuncs.com/seanfield/fusion-ui-smoke
-  SMOKE_RUNNER_TAG: playwright-1.58.2-noble
+  SMOKE_RUNNER_TAG: chromium-alpine-1.58.2
 
 jobs:
   build:
@@ -486,6 +486,7 @@ jobs:
             -e SMOKE_BASE_URL=http://127.0.0.1:3004 \
             -e PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 \
             -e PLAYWRIGHT_MODULE_PATH=/smoke/node_modules/playwright/index.js \
+            -e PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium-browser \
             -e HOME=/tmp \
             -v "$GITHUB_WORKSPACE:/work" \
             -w /work \
