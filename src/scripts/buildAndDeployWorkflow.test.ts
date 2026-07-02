@@ -6,17 +6,18 @@ const workflow = readFileSync(join(process.cwd(), '.github/workflows/build-and-d
 const deployDevBlock = workflow.slice(workflow.indexOf('  deploy-dev:'));
 
 describe('build-and-deploy workflow 发布门禁', () => {
-  it('dev 部署后使用 ACR 预构建 Playwright smoke runner', () => {
+  it('dev 部署后使用宿主 Chrome 运行 browser smoke', () => {
     expect(deployDevBlock).toContain('Run dev browser smoke');
-    expect(workflow).toContain('SMOKE_IMAGE:');
-    expect(workflow).toContain('SMOKE_RUNNER_TAG: chromium-alpine-1.58.2');
-    expect(deployDevBlock).toContain('${{ env.SMOKE_IMAGE }}:${{ env.SMOKE_RUNNER_TAG }}');
+    expect(deployDevBlock).toContain('Resolve browser smoke runtime');
+    expect(deployDevBlock).toContain('command -v google-chrome');
+    expect(deployDevBlock).toContain('PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=$chromePath');
     expect(deployDevBlock).not.toContain('mcr.microsoft.com/playwright:');
+    expect(deployDevBlock).not.toContain('${{ env.SMOKE_IMAGE }}:${{ env.SMOKE_RUNNER_TAG }}');
     expect(deployDevBlock).toContain('scripts/smoke-dev-deployment.mjs');
-    expect(deployDevBlock).toContain('SMOKE_BASE_URL=http://127.0.0.1:3004');
+    expect(deployDevBlock).toContain('SMOKE_BASE_URL: http://127.0.0.1:3004');
   });
 
-  it('dev 部署 job 给首次拉取 Playwright 镜像保留足够 timeout', () => {
+  it('dev 部署 job 给 browser smoke 保留足够 timeout', () => {
     expect(deployDevBlock).toContain('timeout-minutes: 25');
   });
 
@@ -29,19 +30,20 @@ describe('build-and-deploy workflow 发布门禁', () => {
     expect(deployDevBlock).toContain('docker logs --tail 80 fusion-ui || true');
   });
 
-  it('dev browser smoke 不在部署机临时安装 Playwright', () => {
-    expect(deployDevBlock).toContain('PLAYWRIGHT_MODULE_PATH=/smoke/node_modules/playwright/index.js');
-    expect(deployDevBlock).toContain('PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium-browser');
+  it('dev browser smoke 只缓存 Playwright 包且不下载浏览器', () => {
+    expect(deployDevBlock).toContain('smokeNodeDir="$HOME/.cache/fusion-ui-smoke/playwright-1.58.2"');
+    expect(deployDevBlock).toContain('PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 npm install --prefix "$smokeNodeDir"');
+    expect(deployDevBlock).toContain('PLAYWRIGHT_MODULE_PATH="$smokeNodeDir/node_modules/playwright/index.js"');
+    expect(deployDevBlock).toContain('PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH="$PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH"');
     expect(deployDevBlock).not.toContain('npm install --prefix /tmp/fusion-ui-smoke');
     expect(deployDevBlock).not.toContain('npm ci --ignore-scripts --no-audit --no-fund --cache /tmp/npm-cache && node scripts/smoke-dev-deployment.mjs');
   });
 
-  it('Windows 构建 job 会按需构建并推送 smoke runner 镜像', () => {
-    expect(workflow).toContain('Dockerfile.smoke');
-    expect(workflow).toContain('cmd /c "docker manifest inspect $smokeImage >NUL 2>NUL"');
-    expect(workflow).not.toContain('docker manifest inspect $smokeImage *> $null');
-    expect(workflow).toContain('docker build -f Dockerfile.smoke');
-    expect(workflow).toContain('docker push $smokeImage');
+  it('Windows 构建 job 不再构建 browser smoke runner 镜像', () => {
+    expect(workflow).not.toContain('Dockerfile.smoke');
+    expect(workflow).not.toContain('Ensure smoke runner image');
+    expect(workflow).not.toContain('docker build -f Dockerfile.smoke');
+    expect(workflow).not.toContain('docker push $smokeImage');
   });
 
   it('Windows 构建 job 的 Docker access 校验包含重试和服务启动兜底', () => {

@@ -15,8 +15,6 @@ concurrency:
 env:
   REGISTRY: crpi-77w10wlykpqilmmb.cn-shenzhen.personal.cr.aliyuncs.com
   IMAGE_NAME: crpi-77w10wlykpqilmmb.cn-shenzhen.personal.cr.aliyuncs.com/seanfield/fusion-ui
-  SMOKE_IMAGE: crpi-77w10wlykpqilmmb.cn-shenzhen.personal.cr.aliyuncs.com/seanfield/fusion-ui-smoke
-  SMOKE_RUNNER_TAG: chromium-alpine-1.58.2
 
 jobs:
   build:
@@ -245,53 +243,6 @@ jobs:
           password: ${{ secrets.ACR_PASSWORD }}
           logout: false
 
-      - name: Ensure smoke runner image
-        shell: powershell -NoProfile -ExecutionPolicy Bypass -Command ". '{0}'"
-        run: |
-          $ErrorActionPreference = "Stop"
-          $smokeImage = "${env:SMOKE_IMAGE}:${env:SMOKE_RUNNER_TAG}"
-
-          cmd /c "docker manifest inspect $smokeImage >NUL 2>NUL"
-          if ($LASTEXITCODE -eq 0) {
-            Write-Host "Smoke runner image already exists: $smokeImage"
-            exit 0
-          }
-
-          Write-Host "Smoke runner image missing, building: $smokeImage"
-          for ($attempt = 1; $attempt -le 3; $attempt++) {
-            docker build -f Dockerfile.smoke -t $smokeImage .
-            $buildExitCode = $LASTEXITCODE
-
-            if ($buildExitCode -eq 0) {
-              break
-            }
-
-            if ($attempt -eq 3) {
-              exit $buildExitCode
-            }
-
-            $delay = 20 * $attempt
-            Write-Host "smoke runner build 失败，第 $attempt 次，${delay}s 后重试..."
-            Start-Sleep -Seconds $delay
-          }
-
-          for ($attempt = 1; $attempt -le 4; $attempt++) {
-            docker push $smokeImage
-            $pushExitCode = $LASTEXITCODE
-
-            if ($pushExitCode -eq 0) {
-              exit 0
-            }
-
-            if ($attempt -eq 4) {
-              exit $pushExitCode
-            }
-
-            $delay = 15 * $attempt
-            Write-Host "smoke runner push 失败，第 $attempt 次，${delay}s 后重试..."
-            Start-Sleep -Seconds $delay
-          }
-
       - name: Push Docker image
         shell: powershell -NoProfile -ExecutionPolicy Bypass -Command ". '{0}'"
         run: |
@@ -467,31 +418,33 @@ jobs:
           docker logs --tail 80 fusion-ui || true
           exit 1
 
+      - name: Resolve browser smoke runtime
+        run: |
+          chromePath="$(command -v google-chrome || command -v google-chrome-stable || command -v chromium || command -v chromium-browser || true)"
+          if [ -z "$chromePath" ]; then
+            echo "browser smoke requires google-chrome/chromium on the dev runner"
+            exit 1
+          fi
+          command -v node
+          command -v npm
+          echo "PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=$chromePath" >> "$GITHUB_ENV"
+          echo "Resolved browser smoke Chrome: $chromePath"
+
       - name: Run dev browser smoke
         env:
           SMOKE_BASE_URL: http://127.0.0.1:3004
         run: |
-          for attempt in 1 2 3; do
-            if docker pull ${{ env.SMOKE_IMAGE }}:${{ env.SMOKE_RUNNER_TAG }}; then
-              break
-            fi
-            if [ "$attempt" = "3" ]; then
-              echo "fusion-ui smoke runner pull failed"
-              exit 1
-            fi
-            sleep $((10 * attempt))
-          done
+          smokeNodeDir="$HOME/.cache/fusion-ui-smoke/playwright-1.58.2"
+          if [ ! -f "$smokeNodeDir/node_modules/playwright/index.js" ]; then
+            rm -rf "$smokeNodeDir"
+            mkdir -p "$smokeNodeDir"
+            PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 npm install --prefix "$smokeNodeDir" --no-save --package-lock=false --ignore-scripts --no-audit --no-fund playwright@1.58.2
+          fi
 
-          if ! docker run --rm --network host --ipc=host --user "$(id -u):$(id -g)" \
-            -e SMOKE_BASE_URL=http://127.0.0.1:3004 \
-            -e PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 \
-            -e PLAYWRIGHT_MODULE_PATH=/smoke/node_modules/playwright/index.js \
-            -e PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium-browser \
-            -e HOME=/tmp \
-            -v "$GITHUB_WORKSPACE:/work" \
-            -w /work \
-            ${{ env.SMOKE_IMAGE }}:${{ env.SMOKE_RUNNER_TAG }} \
-            sh -lc 'node scripts/smoke-dev-deployment.mjs'; then
+          if ! PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 \
+            PLAYWRIGHT_MODULE_PATH="$smokeNodeDir/node_modules/playwright/index.js" \
+            PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH="$PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH" \
+            node scripts/smoke-dev-deployment.mjs; then
             echo "fusion-ui dev browser smoke failed"
             docker ps --filter "name=fusion-ui"
             docker logs --tail 80 fusion-ui || true
