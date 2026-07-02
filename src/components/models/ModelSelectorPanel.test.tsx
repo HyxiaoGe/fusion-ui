@@ -63,9 +63,9 @@ describe('ModelSelectorPanel', () => {
 
     expect(screen.getByText('可联网')).toBeInTheDocument();
     expect(screen.getByText('不可联网')).toBeInTheDocument();
-    expect(screen.getByText('视觉')).toBeInTheDocument();
+    expect(screen.getByText('读图')).toBeInTheDocument();
     expect(screen.getByText('长上下文')).toBeInTheDocument();
     expect(screen.getByText('深度任务')).toBeInTheDocument();
-    expect(screen.queryByText('工具')).not.toBeInTheDocument();
+    expect(screen.getByText('工具')).toBeInTheDocument();
   });
 });

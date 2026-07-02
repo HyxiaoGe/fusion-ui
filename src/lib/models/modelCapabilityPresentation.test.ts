@@ -6,7 +6,7 @@ import {
 } from './modelCapabilityPresentation';
 
 describe('modelCapabilityPresentation', () => {
-  it('为支持 agent tools 的模型展示可联网、视觉和深度任务标签', () => {
+  it('为支持 agent tools 的模型展示可联网、读图、工具和深度任务标签', () => {
     const labels = buildModelCapabilityLabels({
       id: 'deepseek-v4-flash',
       name: 'DeepSeek V4 Flash',
@@ -24,7 +24,7 @@ describe('modelCapabilityPresentation', () => {
       },
     });
 
-    expect(labels.map((label) => label.text)).toEqual(['可联网', '视觉', '长上下文', '深度任务']);
+    expect(labels.map((label) => label.text)).toEqual(['可联网', '读图', '工具', '长上下文', '深度任务']);
     expect(labels[0].tone).toBe('success');
   });
 

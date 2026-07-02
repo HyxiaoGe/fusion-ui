@@ -186,7 +186,7 @@ const ModelCard = memo(
           {isSelected && <Check size={14} className="shrink-0 text-primary" />}
           {unhealthy && <AlertCircle size={13} className="shrink-0 text-amber-600 dark:text-amber-500" />}
         </div>
-        <CapabilityChipList labels={buildModelCapabilityLabels(model)} maxCount={4} />
+        <CapabilityChipList labels={buildModelCapabilityLabels(model)} maxCount={5} />
       </button>
     );
     if (!unhealthy) return card;

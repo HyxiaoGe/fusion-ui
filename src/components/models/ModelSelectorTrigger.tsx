@@ -40,7 +40,7 @@ const ModelSelectorTrigger = forwardRef<HTMLButtonElement, ModelSelectorTriggerP
             <div className="flex flex-col items-start leading-tight">
               <span className="font-semibold text-sm truncate max-w-[140px]">{model.name}</span>
               <span className="text-[9px] text-muted-foreground">{providerName}</span>
-              <CapabilityChipList labels={capabilityLabels} maxCount={3} />
+              <CapabilityChipList labels={capabilityLabels} maxCount={4} />
             </div>
           </>
         ) : (

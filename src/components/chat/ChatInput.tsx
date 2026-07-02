@@ -200,7 +200,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
 
     if (!supportsFileUpload) {
       toast({
-        message: "当前模型不支持图片理解，请切换到支持视觉的模型",
+        message: "当前模型不支持图片理解，请切换到支持读图的模型",
         type: "warning",
         duration: 3000,
       });
@@ -820,7 +820,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
         {/* 模型不支持 vision 但有文件时的内嵌提示 */}
         {hasFilesButNoVision && (
           <div className="mx-3 mt-1 text-xs text-amber-600 dark:text-amber-400">
-            当前模型不支持图片理解，请切换到支持视觉的模型或移除已上传的文件
+            当前模型不支持图片理解，请切换到支持读图的模型或移除已上传的文件
           </div>
         )}
 

@@ -42,7 +42,11 @@ export function buildModelCapabilityLabels(model: ModelInfo): CapabilityLabel[] 
   ];
 
   if (capabilities.vision) {
-    labels.push({ key: 'vision', text: '视觉', tone: 'info' });
+    labels.push({ key: 'vision', text: '读图', tone: 'info' });
+  }
+
+  if (supportsAgentTools(model)) {
+    labels.push({ key: 'tools', text: '工具', tone: 'info' });
   }
 
   if (supportsLongContext(model)) {
@@ -82,7 +86,7 @@ export function buildModelCapabilityTooltip(model: ModelInfo | null): string {
       : '不支持联网搜索，将基于模型知识回答',
   );
 
-  lines.push(capabilities.vision ? '支持图片理解' : '不支持图片理解');
+  lines.push(capabilities.vision ? '支持读图和图片理解' : '不支持图片理解');
   if (model.contextWindowTokens) {
     lines.push(`上下文窗口约 ${formatTokenLimit(model.contextWindowTokens)}`);
   }
