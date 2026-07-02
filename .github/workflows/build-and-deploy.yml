@@ -212,9 +212,6 @@ jobs:
       - name: Record deploy start time
         run: echo "DEPLOY_START=$(date +%s)" >> "$GITHUB_ENV"
 
-      - name: Checkout smoke scripts
-        uses: actions/checkout@v6
-
       - name: Login to ACR
         run: echo "${ACR_PASSWORD}" | docker login "${REGISTRY}" -u "${ACR_USERNAME}" --password-stdin
         env:
@@ -298,6 +295,9 @@ jobs:
     steps:
       - name: Record deploy start time
         run: echo "DEPLOY_START=$(date +%s)" >> "$GITHUB_ENV"
+
+      - name: Checkout smoke scripts
+        uses: actions/checkout@v6
 
       - name: Login to ACR
         run: echo "${ACR_PASSWORD}" | docker login "${REGISTRY}" -u "${ACR_USERNAME}" --password-stdin
