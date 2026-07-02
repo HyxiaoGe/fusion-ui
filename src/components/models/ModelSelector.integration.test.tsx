@@ -70,12 +70,14 @@ describe('ModelSelector 集成渲染', () => {
 
     const trigger = screen.getByRole('button', { name: /Search Model/ });
     expect(trigger).toHaveAttribute('title', expect.stringContaining('可按问题需要自主联网搜索和读取关键来源'));
+    expect(trigger).toHaveTextContent('可联网');
+    expect(trigger).toHaveTextContent('视觉');
 
     fireEvent.click(trigger);
 
-    expect(screen.getByText('可联网')).toBeInTheDocument();
+    expect(screen.getAllByText('可联网')).toHaveLength(2);
     expect(screen.getByText('不可联网')).toBeInTheDocument();
-    expect(screen.getByText('视觉')).toBeInTheDocument();
+    expect(screen.getAllByText('视觉')).toHaveLength(2);
     expect(screen.getByText('深度任务')).toBeInTheDocument();
   });
 });
