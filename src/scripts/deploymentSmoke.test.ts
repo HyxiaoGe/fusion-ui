@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   buildSmokeUrl,
+  resolvePlaywrightModuleSpecifier,
   resolveSmokeBaseUrl,
   validateDeploymentSmokeResult,
 } from '../../scripts/smoke-dev-deployment-helpers.mjs';
@@ -19,6 +20,13 @@ describe('deployment smoke helpers', () => {
 
   it('构造 /chat/new smoke 地址时会去掉尾部斜杠', () => {
     expect(buildSmokeUrl('https://fusion.example.com/')).toBe('https://fusion.example.com/chat/new');
+  });
+
+  it('Playwright 模块默认按包名加载，也支持临时安装目录路径', () => {
+    expect(resolvePlaywrightModuleSpecifier({})).toBe('playwright');
+    expect(resolvePlaywrightModuleSpecifier({ PLAYWRIGHT_MODULE_PATH: '/tmp/smoke/node_modules/playwright/index.js' })).toBe(
+      'file:///tmp/smoke/node_modules/playwright/index.js',
+    );
   });
 
   it('校验新对话页输入区、模型能力说明、下拉标签和控制台错误', () => {

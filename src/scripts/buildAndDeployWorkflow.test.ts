@@ -27,8 +27,9 @@ describe('build-and-deploy workflow 发布门禁', () => {
   });
 
   it('dev browser smoke 只安装 Playwright 包而不是全量 npm ci', () => {
-    expect(deployDevBlock).toContain('npm install --no-save --package-lock=false');
+    expect(deployDevBlock).toContain('npm install --prefix /tmp/fusion-ui-smoke --no-save --package-lock=false');
     expect(deployDevBlock).toContain('playwright@1.58.2');
+    expect(deployDevBlock).toContain('PLAYWRIGHT_MODULE_PATH=/tmp/fusion-ui-smoke/node_modules/playwright/index.js');
     expect(deployDevBlock).not.toContain('npm ci --ignore-scripts --no-audit --no-fund --cache /tmp/npm-cache && node scripts/smoke-dev-deployment.mjs');
   });
 

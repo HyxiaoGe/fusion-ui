@@ -1,14 +1,19 @@
 #!/usr/bin/env node
 
 import { pathToFileURL } from 'node:url';
-import { buildSmokeUrl, resolveSmokeBaseUrl, validateDeploymentSmokeResult } from './smoke-dev-deployment-helpers.mjs';
+import {
+  buildSmokeUrl,
+  resolvePlaywrightModuleSpecifier,
+  resolveSmokeBaseUrl,
+  validateDeploymentSmokeResult,
+} from './smoke-dev-deployment-helpers.mjs';
 
 function serializeErrors(entries) {
   return entries.map((entry) => String(entry).slice(0, 500));
 }
 
 export async function runDeploymentSmoke({ baseUrl = resolveSmokeBaseUrl(), chromium, logger = console } = {}) {
-  const browserEngine = chromium || (await import('playwright')).chromium;
+  const browserEngine = chromium || (await import(resolvePlaywrightModuleSpecifier())).chromium;
   const browser = await browserEngine.launch({
     headless: true,
     args: ['--no-sandbox'],

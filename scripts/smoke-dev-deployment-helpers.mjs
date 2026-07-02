@@ -1,3 +1,5 @@
+import { pathToFileURL } from 'node:url';
+
 const DEFAULT_BASE_URL = 'http://127.0.0.1:3004';
 
 export class DeploymentSmokeError extends Error {
@@ -28,6 +30,14 @@ export function resolveSmokeBaseUrl(argv = process.argv, env = process.env) {
 
 export function buildSmokeUrl(baseUrl) {
   return `${normalizeBaseUrl(baseUrl)}/chat/new`;
+}
+
+export function resolvePlaywrightModuleSpecifier(env = process.env) {
+  if (env.PLAYWRIGHT_MODULE_PATH) {
+    return pathToFileURL(env.PLAYWRIGHT_MODULE_PATH).href;
+  }
+
+  return 'playwright';
 }
 
 export function validateDeploymentSmokeResult(result) {

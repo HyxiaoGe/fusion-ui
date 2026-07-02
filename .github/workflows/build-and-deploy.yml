@@ -429,7 +429,7 @@ jobs:
             -v "$GITHUB_WORKSPACE:/work" \
             -w /work \
             mcr.microsoft.com/playwright:v1.58.2-noble \
-            sh -lc 'npm install --no-save --package-lock=false --ignore-scripts --no-audit --no-fund --cache /tmp/npm-cache playwright@1.58.2 && node scripts/smoke-dev-deployment.mjs'; then
+            sh -lc 'rm -rf /tmp/fusion-ui-smoke && mkdir -p /tmp/fusion-ui-smoke && npm install --prefix /tmp/fusion-ui-smoke --no-save --package-lock=false --ignore-scripts --no-audit --no-fund --cache /tmp/npm-cache playwright@1.58.2 && PLAYWRIGHT_MODULE_PATH=/tmp/fusion-ui-smoke/node_modules/playwright/index.js node scripts/smoke-dev-deployment.mjs'; then
             echo "fusion-ui dev browser smoke failed"
             docker ps --filter "name=fusion-ui"
             docker logs --tail 80 fusion-ui || true
