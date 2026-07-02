@@ -361,7 +361,7 @@ jobs:
     if: github.ref == 'refs/heads/master'
     needs: build
     runs-on: [self-hosted, Linux, X64]
-    timeout-minutes: 10
+    timeout-minutes: 25
 
     steps:
       - name: Record deploy start time
@@ -429,7 +429,7 @@ jobs:
             -v "$GITHUB_WORKSPACE:/work" \
             -w /work \
             mcr.microsoft.com/playwright:v1.58.2-noble \
-            sh -lc 'npm ci --ignore-scripts --no-audit --no-fund --cache /tmp/npm-cache && node scripts/smoke-dev-deployment.mjs'; then
+            sh -lc 'npm install --no-save --package-lock=false --ignore-scripts --no-audit --no-fund --cache /tmp/npm-cache playwright@1.58.2 && node scripts/smoke-dev-deployment.mjs'; then
             echo "fusion-ui dev browser smoke failed"
             docker ps --filter "name=fusion-ui"
             docker logs --tail 80 fusion-ui || true

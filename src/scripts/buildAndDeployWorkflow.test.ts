@@ -13,6 +13,10 @@ describe('build-and-deploy workflow 发布门禁', () => {
     expect(deployDevBlock).toContain('SMOKE_BASE_URL=http://127.0.0.1:3004');
   });
 
+  it('dev 部署 job 给首次拉取 Playwright 镜像保留足够 timeout', () => {
+    expect(deployDevBlock).toContain('timeout-minutes: 25');
+  });
+
   it('dev 部署 job 会先 checkout smoke 脚本再执行浏览器 smoke', () => {
     expect(deployDevBlock).toContain('Checkout smoke scripts');
     expect(deployDevBlock.indexOf('Checkout smoke scripts')).toBeLessThan(deployDevBlock.indexOf('Run dev browser smoke'));
@@ -20,6 +24,12 @@ describe('build-and-deploy workflow 发布门禁', () => {
 
   it('dev smoke 失败时仍输出 fusion-ui 容器日志', () => {
     expect(deployDevBlock).toContain('docker logs --tail 80 fusion-ui || true');
+  });
+
+  it('dev browser smoke 只安装 Playwright 包而不是全量 npm ci', () => {
+    expect(deployDevBlock).toContain('npm install --no-save --package-lock=false');
+    expect(deployDevBlock).toContain('playwright@1.58.2');
+    expect(deployDevBlock).not.toContain('npm ci --ignore-scripts --no-audit --no-fund --cache /tmp/npm-cache && node scripts/smoke-dev-deployment.mjs');
   });
 
   it('Windows 构建 job 的 Docker access 校验包含重试和服务启动兜底', () => {
