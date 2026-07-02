@@ -26,6 +26,14 @@ describe('build-and-deploy workflow 发布门禁', () => {
     expect(workflow).toContain('for ($attempt = 1; $attempt -le 6; $attempt++)');
     expect(workflow).toContain("'docker', 'com.docker.service'");
     expect(workflow).toContain('Start-Service -Name $serviceName');
+    expect(workflow).toContain('Docker Desktop.exe');
+    expect(workflow).toContain('Start-Process -FilePath $desktopPath');
     expect(workflow).toContain('Docker daemon ready');
+  });
+
+  it('Docker 镜像构建对 registry 或 buildx 瞬断做有限重试', () => {
+    expect(workflow).toContain('for ($attempt = 1; $attempt -le 3; $attempt++)');
+    expect(workflow).toContain('docker @buildArgs');
+    expect(workflow).toContain('docker build 失败，第 $attempt 次');
   });
 });

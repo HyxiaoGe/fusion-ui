@@ -87,6 +87,11 @@ jobs:
         run: |
           $ErrorActionPreference = "Continue"
           $serviceNames = @('docker', 'com.docker.service')
+          $dockerDesktopStarted = $false
+          $desktopPaths = @(
+            "$env:ProgramFiles\Docker\Docker\Docker Desktop.exe",
+            "${env:ProgramFiles(x86)}\Docker\Docker\Docker Desktop.exe"
+          )
 
           for ($attempt = 1; $attempt -le 6; $attempt++) {
             Write-Host "Checking Docker access, attempt $attempt/6..."
@@ -108,6 +113,23 @@ jobs:
                   Start-Service -Name $serviceName -ErrorAction Stop
                 } catch {
                   Write-Host "Docker service start failed for ${serviceName}: $($_.Exception.Message)"
+                }
+              } elseif ($null -ne $service) {
+                Write-Host "Docker service ${serviceName} status: $($service.Status)"
+              }
+            }
+
+            if (-not $dockerDesktopStarted) {
+              foreach ($desktopPath in $desktopPaths) {
+                if ($desktopPath -and (Test-Path $desktopPath)) {
+                  Write-Host "Starting Docker Desktop: $desktopPath"
+                  try {
+                    Start-Process -FilePath $desktopPath -WindowStyle Minimized
+                    $dockerDesktopStarted = $true
+                    break
+                  } catch {
+                    Write-Host "Docker Desktop start failed: $($_.Exception.Message)"
+                  }
                 }
               }
             }
@@ -181,8 +203,22 @@ jobs:
           }
           $buildArgs += @("--cache-to", "type=local,dest=$cacheNext,mode=max", ".")
 
-          docker @buildArgs
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          for ($attempt = 1; $attempt -le 3; $attempt++) {
+            docker @buildArgs
+            $buildExitCode = $LASTEXITCODE
+
+            if ($buildExitCode -eq 0) {
+              break
+            }
+
+            if ($attempt -eq 3) {
+              exit $buildExitCode
+            }
+
+            $delay = 20 * $attempt
+            Write-Host "docker build 失败，第 $attempt 次，${delay}s 后重试..."
+            Start-Sleep -Seconds $delay
+          }
 
           if (Test-Path $cacheNext) {
             $cacheOld = "$cacheRoot-old"
