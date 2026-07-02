@@ -13,6 +13,7 @@ describe('modelCapabilityPresentation', () => {
       provider: 'deepseek',
       temperature: 0.7,
       enabled: true,
+      contextWindowTokens: 128000,
       capabilities: {
         searchCapable: true,
         agentTools: true,
@@ -23,8 +24,30 @@ describe('modelCapabilityPresentation', () => {
       },
     });
 
-    expect(labels.map((label) => label.text)).toEqual(['可联网', '视觉', '深度任务']);
+    expect(labels.map((label) => label.text)).toEqual(['可联网', '视觉', '长上下文', '深度任务']);
     expect(labels[0].tone).toBe('success');
+  });
+
+  it('上下文窗口达到 128k 时展示长上下文标签和 tooltip 说明', () => {
+    const model = {
+      id: 'long-context-model',
+      name: 'Long Context Model',
+      provider: 'openai',
+      temperature: 0.7,
+      enabled: true,
+      contextWindowTokens: 1_000_000,
+      capabilities: {
+        searchCapable: false,
+        agentTools: false,
+        vision: false,
+      },
+    };
+
+    const labels = buildModelCapabilityLabels(model);
+    const tooltip = buildModelCapabilityTooltip(model);
+
+    expect(labels.map((label) => label.text)).toContain('长上下文');
+    expect(tooltip).toContain('上下文窗口约 100万 tokens');
   });
 
   it('优先用 searchCapable=true 判断模型可联网', () => {

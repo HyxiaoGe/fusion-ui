@@ -21,6 +21,7 @@ const models: ModelInfo[] = [
     provider: 'provider-a',
     temperature: 0.7,
     enabled: true,
+    contextWindowTokens: 128000,
     capabilities: {
       searchCapable: true,
       agentTools: true,
@@ -63,6 +64,7 @@ describe('ModelSelectorPanel', () => {
     expect(screen.getByText('可联网')).toBeInTheDocument();
     expect(screen.getByText('不可联网')).toBeInTheDocument();
     expect(screen.getByText('视觉')).toBeInTheDocument();
+    expect(screen.getByText('长上下文')).toBeInTheDocument();
     expect(screen.getByText('深度任务')).toBeInTheDocument();
     expect(screen.queryByText('工具')).not.toBeInTheDocument();
   });

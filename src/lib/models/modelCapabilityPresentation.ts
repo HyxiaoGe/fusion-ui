@@ -17,6 +17,22 @@ function supportsAgentTools(model: Pick<ModelInfo, 'capabilities'>): boolean {
   return Boolean(capabilities.agentTools || capabilities.webSearch);
 }
 
+const LONG_CONTEXT_THRESHOLD_TOKENS = 128_000;
+
+function supportsLongContext(model: Pick<ModelInfo, 'contextWindowTokens'>): boolean {
+  return Number(model.contextWindowTokens || 0) >= LONG_CONTEXT_THRESHOLD_TOKENS;
+}
+
+function formatTokenLimit(tokens: number): string {
+  if (tokens >= 1_000_000) {
+    return `${Math.round(tokens / 10_000)}万 tokens`;
+  }
+  if (tokens >= 10_000) {
+    return `${Math.round(tokens / 1000)}k tokens`;
+  }
+  return `${tokens} tokens`;
+}
+
 export function buildModelCapabilityLabels(model: ModelInfo): CapabilityLabel[] {
   const capabilities = model.capabilities || {};
   const labels: CapabilityLabel[] = [
@@ -27,6 +43,10 @@ export function buildModelCapabilityLabels(model: ModelInfo): CapabilityLabel[] 
 
   if (capabilities.vision) {
     labels.push({ key: 'vision', text: '视觉', tone: 'info' });
+  }
+
+  if (supportsLongContext(model)) {
+    labels.push({ key: 'long-context', text: '长上下文', tone: 'info' });
   }
 
   if (capabilities.deepThinking) {
@@ -63,6 +83,9 @@ export function buildModelCapabilityTooltip(model: ModelInfo | null): string {
   );
 
   lines.push(capabilities.vision ? '支持图片理解' : '不支持图片理解');
+  if (model.contextWindowTokens) {
+    lines.push(`上下文窗口约 ${formatTokenLimit(model.contextWindowTokens)}`);
+  }
   lines.push(capabilities.deepThinking ? '适合复杂推理和深度任务' : '不支持深度思考模式');
 
   if (model.health?.status === 'unhealthy') {

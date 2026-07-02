@@ -32,6 +32,8 @@ export interface ApiModelData {
   modelId: string;
   provider: string;
   knowledgeCutoff?: string;
+  contextWindowTokens?: number | null;
+  maxOutputTokens?: number | null;
   capabilities: ModelCapability;
   pricing?: {
     input: number;
@@ -55,6 +57,8 @@ export interface ModelInfo {
   provider: string; // 提供商ID
   icon?: string; // 模型图标（可选）
   knowledgeCutoff?: string; // 知识库截取时间
+  contextWindowTokens?: number | null; // 上下文窗口 token 上限
+  maxOutputTokens?: number | null; // 单次输出 token 上限
   temperature: number; // 默认温度
   capabilities: ModelCapability; // 能力标识
   enabled: boolean; // 是否在 LiteLLM 注册（true）；false 通常意味着已下架
@@ -75,6 +79,8 @@ export const convertApiModelToModelInfo = (apiModel: ApiModelData): ModelInfo =>
     name: apiModel.name,
     provider: apiModel.provider,
     knowledgeCutoff: apiModel.knowledgeCutoff,
+    contextWindowTokens: apiModel.contextWindowTokens,
+    maxOutputTokens: apiModel.maxOutputTokens,
     temperature: 0.7, // 默认值，可以根据需求调整
     capabilities: apiModel.capabilities,
     enabled: apiModel.enabled,
