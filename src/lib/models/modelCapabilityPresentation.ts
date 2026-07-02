@@ -8,6 +8,16 @@ export interface CapabilityLabel {
   tone: CapabilityTone;
 }
 
+export type ModelRecommendationLevel = 'recommended' | 'capable' | 'limited' | 'unavailable';
+
+export interface ModelCapabilityRecommendation {
+  score: number;
+  level: ModelRecommendationLevel;
+  headline: string;
+  reasons: string[];
+  warnings: string[];
+}
+
 function supportsAgentTools(model: Pick<ModelInfo, 'capabilities'>): boolean {
   const capabilities = model.capabilities || {};
   if (typeof capabilities.searchCapable === 'boolean') {
@@ -31,6 +41,74 @@ function formatTokenLimit(tokens: number): string {
     return `${Math.round(tokens / 1000)}k tokens`;
   }
   return `${tokens} tokens`;
+}
+
+export function buildModelCapabilityRecommendation(model: ModelInfo): ModelCapabilityRecommendation {
+  if (model.health?.status === 'unhealthy') {
+    return {
+      score: 0,
+      level: 'unavailable',
+      headline: '不建议：当前不可用',
+      reasons: [],
+      warnings: [model.health.error || '服务商暂时不可用'],
+    };
+  }
+
+  const capabilities = model.capabilities || {};
+  const hasNetwork = supportsAgentTools(model);
+  const hasVision = Boolean(capabilities.vision);
+  const hasDeepThinking = Boolean(capabilities.deepThinking);
+  const hasLongContext = supportsLongContext(model);
+  const reasons: string[] = ['可处理普通文本任务'];
+  const warnings: string[] = [];
+  let score = 40;
+
+  if (hasNetwork) {
+    score += 25;
+    reasons.push('可联网搜索并读取关键来源');
+  } else {
+    warnings.push('不支持实时联网，涉及最新信息时会基于已有知识谨慎回答');
+  }
+
+  if (hasVision) {
+    score += 15;
+    reasons.push('支持图片理解');
+  }
+
+  if (hasLongContext) {
+    score += 15;
+    reasons.push('适合长上下文任务');
+  }
+
+  if (hasDeepThinking) {
+    score += 10;
+    reasons.push('适合复杂推理');
+  }
+
+  const normalizedScore = Math.min(score, 100);
+  const level: ModelRecommendationLevel =
+    normalizedScore >= 85 ? 'recommended' : normalizedScore >= 70 ? 'capable' : 'limited';
+
+  let headline = '适合：稳定知识与普通对话';
+  if (hasNetwork && hasVision && hasLongContext) {
+    headline = '推荐：实时资料、图片和长任务';
+  } else if (hasNetwork && hasLongContext) {
+    headline = '推荐：实时资料与长任务';
+  } else if (hasNetwork && hasVision) {
+    headline = '推荐：实时资料和图片理解';
+  } else if (hasNetwork) {
+    headline = '推荐：实时资料与复杂查询';
+  } else if (hasVision) {
+    headline = '适合：图片理解与普通对话';
+  }
+
+  return {
+    score: normalizedScore,
+    level,
+    headline,
+    reasons,
+    warnings,
+  };
 }
 
 export function buildModelCapabilityLabels(model: ModelInfo): CapabilityLabel[] {
@@ -78,7 +156,8 @@ export function buildModelCapabilityTooltip(model: ModelInfo | null): string {
   }
 
   const capabilities = model.capabilities || {};
-  const lines = [model.name];
+  const recommendation = buildModelCapabilityRecommendation(model);
+  const lines = [model.name, recommendation.headline];
 
   lines.push(
     supportsAgentTools(model)
@@ -91,6 +170,7 @@ export function buildModelCapabilityTooltip(model: ModelInfo | null): string {
     lines.push(`上下文窗口约 ${formatTokenLimit(model.contextWindowTokens)}`);
   }
   lines.push(capabilities.deepThinking ? '适合复杂推理和深度任务' : '不支持深度思考模式');
+  lines.push(...recommendation.warnings);
 
   if (model.health?.status === 'unhealthy') {
     lines.push(`健康状态异常：${model.health.error || '服务商暂时不可用'}`);

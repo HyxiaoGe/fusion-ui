@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   buildModelCapabilityLabels,
+  buildModelCapabilityRecommendation,
   buildModelCapabilityTooltip,
 } from './modelCapabilityPresentation';
 
@@ -130,8 +131,103 @@ describe('modelCapabilityPresentation', () => {
     });
 
     expect(tooltip).toContain('旧模型');
+    expect(tooltip).toContain('不建议：当前不可用');
     expect(tooltip).toContain('不支持联网搜索');
     expect(tooltip).toContain('不支持图片理解');
     expect(tooltip).toContain('健康状态异常：模型已下线');
+  });
+
+  it('为全能力模型生成高分推荐和适用场景原因', () => {
+    const recommendation = buildModelCapabilityRecommendation({
+      id: 'deepseek-v4-flash',
+      name: 'DeepSeek V4 Flash',
+      provider: 'deepseek',
+      temperature: 0.7,
+      enabled: true,
+      contextWindowTokens: 1_000_000,
+      capabilities: {
+        searchCapable: true,
+        agentTools: true,
+        functionCalling: true,
+        webSearch: true,
+        vision: true,
+        deepThinking: true,
+      },
+    });
+
+    expect(recommendation.score).toBeGreaterThanOrEqual(90);
+    expect(recommendation.level).toBe('recommended');
+    expect(recommendation.headline).toBe('推荐：实时资料、图片和长任务');
+    expect(recommendation.reasons).toContain('可联网搜索并读取关键来源');
+    expect(recommendation.reasons).toContain('支持图片理解');
+    expect(recommendation.reasons).toContain('适合长上下文任务');
+    expect(recommendation.warnings).toEqual([]);
+  });
+
+  it('tooltip 合并推荐摘要和实时信息边界', () => {
+    const tooltip = buildModelCapabilityTooltip({
+      id: 'plain-model',
+      name: 'Plain Model',
+      provider: 'qwen',
+      temperature: 0.7,
+      enabled: true,
+      capabilities: {
+        searchCapable: false,
+        agentTools: false,
+        functionCalling: true,
+        vision: false,
+        deepThinking: false,
+      },
+    });
+
+    expect(tooltip).toContain('适合：稳定知识与普通对话');
+    expect(tooltip).toContain('不支持实时联网，涉及最新信息时会基于已有知识谨慎回答');
+  });
+
+  it('为非联网文本模型给出实时信息边界提示但不判为不可用', () => {
+    const recommendation = buildModelCapabilityRecommendation({
+      id: 'plain-model',
+      name: 'Plain Model',
+      provider: 'qwen',
+      temperature: 0.7,
+      enabled: true,
+      capabilities: {
+        searchCapable: false,
+        agentTools: false,
+        functionCalling: true,
+        vision: false,
+        deepThinking: false,
+      },
+    });
+
+    expect(recommendation.score).toBeLessThan(70);
+    expect(recommendation.level).toBe('limited');
+    expect(recommendation.headline).toBe('适合：稳定知识与普通对话');
+    expect(recommendation.reasons).toContain('可处理普通文本任务');
+    expect(recommendation.warnings).toContain('不支持实时联网，涉及最新信息时会基于已有知识谨慎回答');
+  });
+
+  it('健康异常模型直接降级为不建议使用', () => {
+    const recommendation = buildModelCapabilityRecommendation({
+      id: 'offline-model',
+      name: 'Offline Model',
+      provider: 'qwen',
+      temperature: 0.7,
+      enabled: true,
+      capabilities: {
+        searchCapable: true,
+        agentTools: true,
+        vision: true,
+      },
+      health: {
+        status: 'unhealthy',
+        error: '模型已下线',
+      },
+    });
+
+    expect(recommendation.score).toBe(0);
+    expect(recommendation.level).toBe('unavailable');
+    expect(recommendation.headline).toBe('不建议：当前不可用');
+    expect(recommendation.warnings).toContain('模型已下线');
   });
 });
