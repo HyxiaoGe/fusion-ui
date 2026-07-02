@@ -3,6 +3,7 @@ import { pathToFileURL } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
 import {
+  buildSmokeSessionStorageFlags,
   buildSmokeUrl,
   resolveChromiumExecutablePath,
   resolvePlaywrightChromium,
@@ -24,6 +25,13 @@ describe('deployment smoke helpers', () => {
 
   it('构造 /chat/new smoke 地址时会去掉尾部斜杠', () => {
     expect(buildSmokeUrl('https://fusion.example.com/')).toBe('https://fusion.example.com/chat/new');
+  });
+
+  it('提供禁用静默 SSO 探测的 sessionStorage 标记', () => {
+    expect(buildSmokeSessionStorageFlags()).toEqual({
+      fusion_sso_logged_out: '1',
+      fusion_sso_probed: '1',
+    });
   });
 
   it('Playwright 模块默认按包名加载，也支持临时安装目录路径', () => {
@@ -64,6 +72,7 @@ describe('deployment smoke helpers', () => {
         inputVisible: true,
         modelCapabilityTextVisible: true,
         capabilityLabelsVisible: true,
+        sameOrigin: true,
         consoleErrors: [],
         pageErrors: [],
       }),
@@ -76,9 +85,23 @@ describe('deployment smoke helpers', () => {
         inputVisible: true,
         modelCapabilityTextVisible: false,
         capabilityLabelsVisible: true,
+        sameOrigin: true,
         consoleErrors: [],
         pageErrors: [],
       }),
     ).toThrow('模型能力说明不可见');
+
+    expect(() =>
+      validateDeploymentSmokeResult({
+        currentUrl: 'https://fusion.seanfield.org/chat/new',
+        hasApplicationError: false,
+        inputVisible: true,
+        modelCapabilityTextVisible: true,
+        capabilityLabelsVisible: true,
+        sameOrigin: false,
+        consoleErrors: [],
+        pageErrors: [],
+      }),
+    ).toThrow('页面跳转到非目标来源');
   });
 });

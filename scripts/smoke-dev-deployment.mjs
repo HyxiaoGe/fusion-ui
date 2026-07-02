@@ -2,7 +2,9 @@
 
 import { pathToFileURL } from 'node:url';
 import {
+  buildSmokeSessionStorageFlags,
   buildSmokeUrl,
+  isSameOrigin,
   resolveChromiumExecutablePath,
   resolvePlaywrightChromium,
   resolvePlaywrightModuleSpecifier,
@@ -12,6 +14,19 @@ import {
 
 function serializeErrors(entries) {
   return entries.map((entry) => String(entry).slice(0, 500));
+}
+
+async function dismissBlockingDialog(page) {
+  const overlay = page.locator('[data-slot="dialog-overlay"]').first();
+  if (!(await overlay.isVisible().catch(() => false))) return;
+
+  await page.keyboard.press('Escape').catch(() => {});
+  await overlay.waitFor({ state: 'hidden', timeout: 3_000 }).catch(async () => {
+    const closeButton = page.getByRole('button', { name: 'Close' }).first();
+    if (await closeButton.isVisible().catch(() => false)) {
+      await closeButton.click({ force: true, timeout: 1_000 }).catch(() => {});
+    }
+  });
 }
 
 export async function runDeploymentSmoke({ baseUrl = resolveSmokeBaseUrl(), chromium, logger = console } = {}) {
@@ -31,6 +46,15 @@ export async function runDeploymentSmoke({ baseUrl = resolveSmokeBaseUrl(), chro
       args: ['--no-sandbox'],
     });
     page = await browser.newPage();
+    await page.addInitScript((flags) => {
+      try {
+        for (const [key, value] of Object.entries(flags)) {
+          window.sessionStorage.setItem(key, value);
+        }
+      } catch {
+        // sessionStorage may be unavailable in hardened browser contexts.
+      }
+    }, buildSmokeSessionStorageFlags());
 
     page.on('console', (message) => {
       if (message.type() === 'error') {
@@ -50,6 +74,7 @@ export async function runDeploymentSmoke({ baseUrl = resolveSmokeBaseUrl(), chro
       undefined,
       { timeout: 20_000 },
     );
+    await dismissBlockingDialog(page);
 
     const modelTrigger = page.locator(
       'button[title*="可按问题需要自主联网搜索和读取关键来源"], [title*="可按问题需要自主联网搜索和读取关键来源"] button',
@@ -59,6 +84,7 @@ export async function runDeploymentSmoke({ baseUrl = resolveSmokeBaseUrl(), chro
 
     const result = {
       currentUrl: page.url(),
+      targetUrl: smokeUrl,
       hasApplicationError: await page.getByText('Application error', { exact: false }).isVisible().catch(() => false),
       inputVisible: await page.locator('[placeholder*="发消息给 Fusion AI"]').first().isVisible(),
       modelCapabilityTextVisible: await page
@@ -66,6 +92,7 @@ export async function runDeploymentSmoke({ baseUrl = resolveSmokeBaseUrl(), chro
         .first()
         .isVisible(),
       capabilityLabelsVisible: await page.getByText('可联网', { exact: true }).first().isVisible(),
+      sameOrigin: isSameOrigin(page.url(), smokeUrl),
       consoleErrors: serializeErrors(consoleErrors),
       pageErrors: serializeErrors(pageErrors),
     };

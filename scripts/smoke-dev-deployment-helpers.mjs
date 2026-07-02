@@ -32,6 +32,21 @@ export function buildSmokeUrl(baseUrl) {
   return `${normalizeBaseUrl(baseUrl)}/chat/new`;
 }
 
+export function buildSmokeSessionStorageFlags() {
+  return {
+    fusion_sso_logged_out: '1',
+    fusion_sso_probed: '1',
+  };
+}
+
+export function isSameOrigin(currentUrl, targetUrl) {
+  try {
+    return new URL(currentUrl).origin === new URL(targetUrl).origin;
+  } catch {
+    return false;
+  }
+}
+
 export function resolvePlaywrightModuleSpecifier(env = process.env) {
   if (env.PLAYWRIGHT_MODULE_PATH) {
     return pathToFileURL(env.PLAYWRIGHT_MODULE_PATH).href;
@@ -62,6 +77,7 @@ export function validateDeploymentSmokeResult(result) {
   if (!result.inputVisible) failures.push('新对话输入区不可见');
   if (!result.modelCapabilityTextVisible) failures.push('模型能力说明不可见');
   if (!result.capabilityLabelsVisible) failures.push('模型下拉能力标签不可见');
+  if (result.sameOrigin === false) failures.push('页面跳转到非目标来源');
   if (result.consoleErrors?.length) failures.push(`控制台错误 ${result.consoleErrors.length} 条`);
   if (result.pageErrors?.length) failures.push(`页面异常 ${result.pageErrors.length} 条`);
 
