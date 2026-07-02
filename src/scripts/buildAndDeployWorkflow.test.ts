@@ -6,9 +6,12 @@ const workflow = readFileSync(join(process.cwd(), '.github/workflows/build-and-d
 const deployDevBlock = workflow.slice(workflow.indexOf('  deploy-dev:'));
 
 describe('build-and-deploy workflow 发布门禁', () => {
-  it('dev 部署后运行 Playwright 官方容器 smoke', () => {
+  it('dev 部署后使用 ACR 预构建 Playwright smoke runner', () => {
     expect(deployDevBlock).toContain('Run dev browser smoke');
-    expect(deployDevBlock).toContain('mcr.microsoft.com/playwright:');
+    expect(workflow).toContain('SMOKE_IMAGE:');
+    expect(workflow).toContain('SMOKE_RUNNER_TAG:');
+    expect(deployDevBlock).toContain('${{ env.SMOKE_IMAGE }}:${{ env.SMOKE_RUNNER_TAG }}');
+    expect(deployDevBlock).not.toContain('mcr.microsoft.com/playwright:');
     expect(deployDevBlock).toContain('scripts/smoke-dev-deployment.mjs');
     expect(deployDevBlock).toContain('SMOKE_BASE_URL=http://127.0.0.1:3004');
   });
@@ -26,11 +29,17 @@ describe('build-and-deploy workflow 发布门禁', () => {
     expect(deployDevBlock).toContain('docker logs --tail 80 fusion-ui || true');
   });
 
-  it('dev browser smoke 只安装 Playwright 包而不是全量 npm ci', () => {
-    expect(deployDevBlock).toContain('npm install --prefix /tmp/fusion-ui-smoke --no-save --package-lock=false');
-    expect(deployDevBlock).toContain('playwright@1.58.2');
-    expect(deployDevBlock).toContain('PLAYWRIGHT_MODULE_PATH=/tmp/fusion-ui-smoke/node_modules/playwright/index.js');
+  it('dev browser smoke 不在部署机临时安装 Playwright', () => {
+    expect(deployDevBlock).toContain('PLAYWRIGHT_MODULE_PATH=/smoke/node_modules/playwright/index.js');
+    expect(deployDevBlock).not.toContain('npm install --prefix /tmp/fusion-ui-smoke');
     expect(deployDevBlock).not.toContain('npm ci --ignore-scripts --no-audit --no-fund --cache /tmp/npm-cache && node scripts/smoke-dev-deployment.mjs');
+  });
+
+  it('Windows 构建 job 会按需构建并推送 smoke runner 镜像', () => {
+    expect(workflow).toContain('Dockerfile.smoke');
+    expect(workflow).toContain('docker manifest inspect $smokeImage');
+    expect(workflow).toContain('docker build -f Dockerfile.smoke');
+    expect(workflow).toContain('docker push $smokeImage');
   });
 
   it('Windows 构建 job 的 Docker access 校验包含重试和服务启动兜底', () => {

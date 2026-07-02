@@ -15,6 +15,8 @@ concurrency:
 env:
   REGISTRY: crpi-77w10wlykpqilmmb.cn-shenzhen.personal.cr.aliyuncs.com
   IMAGE_NAME: crpi-77w10wlykpqilmmb.cn-shenzhen.personal.cr.aliyuncs.com/seanfield/fusion-ui
+  SMOKE_IMAGE: crpi-77w10wlykpqilmmb.cn-shenzhen.personal.cr.aliyuncs.com/seanfield/fusion-ui-smoke
+  SMOKE_RUNNER_TAG: playwright-1.58.2-noble
 
 jobs:
   build:
@@ -243,6 +245,53 @@ jobs:
           password: ${{ secrets.ACR_PASSWORD }}
           logout: false
 
+      - name: Ensure smoke runner image
+        shell: powershell -NoProfile -ExecutionPolicy Bypass -Command ". '{0}'"
+        run: |
+          $ErrorActionPreference = "Stop"
+          $smokeImage = "${env:SMOKE_IMAGE}:${env:SMOKE_RUNNER_TAG}"
+
+          docker manifest inspect $smokeImage *> $null
+          if ($LASTEXITCODE -eq 0) {
+            Write-Host "Smoke runner image already exists: $smokeImage"
+            exit 0
+          }
+
+          Write-Host "Smoke runner image missing, building: $smokeImage"
+          for ($attempt = 1; $attempt -le 3; $attempt++) {
+            docker build -f Dockerfile.smoke -t $smokeImage .
+            $buildExitCode = $LASTEXITCODE
+
+            if ($buildExitCode -eq 0) {
+              break
+            }
+
+            if ($attempt -eq 3) {
+              exit $buildExitCode
+            }
+
+            $delay = 20 * $attempt
+            Write-Host "smoke runner build 失败，第 $attempt 次，${delay}s 后重试..."
+            Start-Sleep -Seconds $delay
+          }
+
+          for ($attempt = 1; $attempt -le 4; $attempt++) {
+            docker push $smokeImage
+            $pushExitCode = $LASTEXITCODE
+
+            if ($pushExitCode -eq 0) {
+              exit 0
+            }
+
+            if ($attempt -eq 4) {
+              exit $pushExitCode
+            }
+
+            $delay = 15 * $attempt
+            Write-Host "smoke runner push 失败，第 $attempt 次，${delay}s 后重试..."
+            Start-Sleep -Seconds $delay
+          }
+
       - name: Push Docker image
         shell: powershell -NoProfile -ExecutionPolicy Bypass -Command ". '{0}'"
         run: |
@@ -422,14 +471,26 @@ jobs:
         env:
           SMOKE_BASE_URL: http://127.0.0.1:3004
         run: |
+          for attempt in 1 2 3; do
+            if docker pull ${{ env.SMOKE_IMAGE }}:${{ env.SMOKE_RUNNER_TAG }}; then
+              break
+            fi
+            if [ "$attempt" = "3" ]; then
+              echo "fusion-ui smoke runner pull failed"
+              exit 1
+            fi
+            sleep $((10 * attempt))
+          done
+
           if ! docker run --rm --network host --ipc=host --user "$(id -u):$(id -g)" \
             -e SMOKE_BASE_URL=http://127.0.0.1:3004 \
             -e PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 \
+            -e PLAYWRIGHT_MODULE_PATH=/smoke/node_modules/playwright/index.js \
             -e HOME=/tmp \
             -v "$GITHUB_WORKSPACE:/work" \
             -w /work \
-            mcr.microsoft.com/playwright:v1.58.2-noble \
-            sh -lc 'rm -rf /tmp/fusion-ui-smoke && mkdir -p /tmp/fusion-ui-smoke && npm install --prefix /tmp/fusion-ui-smoke --no-save --package-lock=false --ignore-scripts --no-audit --no-fund --cache /tmp/npm-cache playwright@1.58.2 && PLAYWRIGHT_MODULE_PATH=/tmp/fusion-ui-smoke/node_modules/playwright/index.js node scripts/smoke-dev-deployment.mjs'; then
+            ${{ env.SMOKE_IMAGE }}:${{ env.SMOKE_RUNNER_TAG }} \
+            sh -lc 'node scripts/smoke-dev-deployment.mjs'; then
             echo "fusion-ui dev browser smoke failed"
             docker ps --filter "name=fusion-ui"
             docker logs --tail 80 fusion-ui || true
