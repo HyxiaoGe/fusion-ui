@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest';
 import {
   buildSmokeUrl,
   resolveChromiumExecutablePath,
+  resolvePlaywrightChromium,
   resolvePlaywrightModuleSpecifier,
   resolveSmokeBaseUrl,
   validateDeploymentSmokeResult,
@@ -32,6 +33,15 @@ describe('deployment smoke helpers', () => {
     expect(resolvePlaywrightModuleSpecifier({ PLAYWRIGHT_MODULE_PATH: modulePath })).toBe(
       pathToFileURL(modulePath).href,
     );
+  });
+
+  it('兼容 Playwright ESM 命名导出和 CJS default 导出', () => {
+    const namedChromium = {};
+    const defaultChromium = {};
+
+    expect(resolvePlaywrightChromium({ chromium: namedChromium })).toBe(namedChromium);
+    expect(resolvePlaywrightChromium({ default: { chromium: defaultChromium } })).toBe(defaultChromium);
+    expect(() => resolvePlaywrightChromium({})).toThrow('无法加载 Playwright chromium');
   });
 
   it('支持 smoke runner 指定系统 Chromium 路径', () => {

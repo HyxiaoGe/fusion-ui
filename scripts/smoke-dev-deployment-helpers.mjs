@@ -40,6 +40,17 @@ export function resolvePlaywrightModuleSpecifier(env = process.env) {
   return 'playwright';
 }
 
+export function resolvePlaywrightChromium(playwrightModule) {
+  const chromium = playwrightModule?.chromium || playwrightModule?.default?.chromium;
+  if (!chromium) {
+    throw new DeploymentSmokeError('无法加载 Playwright chromium', {
+      exports: Object.keys(playwrightModule || {}),
+    });
+  }
+
+  return chromium;
+}
+
 export function resolveChromiumExecutablePath(env = process.env) {
   return env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH || env.CHROMIUM_EXECUTABLE_PATH || undefined;
 }

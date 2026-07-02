@@ -4,6 +4,7 @@ import { pathToFileURL } from 'node:url';
 import {
   buildSmokeUrl,
   resolveChromiumExecutablePath,
+  resolvePlaywrightChromium,
   resolvePlaywrightModuleSpecifier,
   resolveSmokeBaseUrl,
   validateDeploymentSmokeResult,
@@ -14,26 +15,30 @@ function serializeErrors(entries) {
 }
 
 export async function runDeploymentSmoke({ baseUrl = resolveSmokeBaseUrl(), chromium, logger = console } = {}) {
-  const browserEngine = chromium || (await import(resolvePlaywrightModuleSpecifier())).chromium;
-  const executablePath = resolveChromiumExecutablePath();
-  const browser = await browserEngine.launch({
-    headless: true,
-    ...(executablePath ? { executablePath } : {}),
-    args: ['--no-sandbox'],
-  });
-  const page = await browser.newPage();
   const consoleErrors = [];
   const pageErrors = [];
   const smokeUrl = buildSmokeUrl(baseUrl);
-
-  page.on('console', (message) => {
-    if (message.type() === 'error') {
-      consoleErrors.push(message.text());
-    }
-  });
-  page.on('pageerror', (error) => pageErrors.push(error?.stack || error?.message || error));
+  let browser;
+  let page;
 
   try {
+    const browserEngine =
+      chromium || resolvePlaywrightChromium(await import(resolvePlaywrightModuleSpecifier()));
+    const executablePath = resolveChromiumExecutablePath();
+    browser = await browserEngine.launch({
+      headless: true,
+      ...(executablePath ? { executablePath } : {}),
+      args: ['--no-sandbox'],
+    });
+    page = await browser.newPage();
+
+    page.on('console', (message) => {
+      if (message.type() === 'error') {
+        consoleErrors.push(message.text());
+      }
+    });
+    page.on('pageerror', (error) => pageErrors.push(error?.stack || error?.message || error));
+
     await page.goto(smokeUrl, { waitUntil: 'domcontentloaded', timeout: 30_000 });
     await page.waitForLoadState('networkidle', { timeout: 15_000 }).catch(() => {});
     await page.waitForSelector('[placeholder*="发消息给 Fusion AI"]', { timeout: 20_000 });
@@ -70,7 +75,7 @@ export async function runDeploymentSmoke({ baseUrl = resolveSmokeBaseUrl(), chro
     return result;
   } catch (error) {
     const failure = {
-      currentUrl: page.url(),
+      currentUrl: page?.url?.() || null,
       targetUrl: smokeUrl,
       consoleErrors: serializeErrors(consoleErrors),
       pageErrors: serializeErrors(pageErrors),
@@ -79,7 +84,7 @@ export async function runDeploymentSmoke({ baseUrl = resolveSmokeBaseUrl(), chro
     logger.error(`deployment smoke failed: ${JSON.stringify(failure, null, 2)}`);
     throw error;
   } finally {
-    await browser.close();
+    await browser?.close();
   }
 }
 
