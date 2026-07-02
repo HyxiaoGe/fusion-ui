@@ -1,3 +1,5 @@
+import { pathToFileURL } from 'node:url';
+
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -23,9 +25,11 @@ describe('deployment smoke helpers', () => {
   });
 
   it('Playwright 模块默认按包名加载，也支持临时安装目录路径', () => {
+    const modulePath = '/tmp/smoke/node_modules/playwright/index.js';
+
     expect(resolvePlaywrightModuleSpecifier({})).toBe('playwright');
-    expect(resolvePlaywrightModuleSpecifier({ PLAYWRIGHT_MODULE_PATH: '/tmp/smoke/node_modules/playwright/index.js' })).toBe(
-      'file:///tmp/smoke/node_modules/playwright/index.js',
+    expect(resolvePlaywrightModuleSpecifier({ PLAYWRIGHT_MODULE_PATH: modulePath })).toBe(
+      pathToFileURL(modulePath).href,
     );
   });
 
