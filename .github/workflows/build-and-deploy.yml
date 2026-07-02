@@ -251,7 +251,7 @@ jobs:
           $ErrorActionPreference = "Stop"
           $smokeImage = "${env:SMOKE_IMAGE}:${env:SMOKE_RUNNER_TAG}"
 
-          docker manifest inspect $smokeImage *> $null
+          cmd /c "docker manifest inspect $smokeImage >NUL 2>NUL"
           if ($LASTEXITCODE -eq 0) {
             Write-Host "Smoke runner image already exists: $smokeImage"
             exit 0

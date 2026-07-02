@@ -37,7 +37,8 @@ describe('build-and-deploy workflow 发布门禁', () => {
 
   it('Windows 构建 job 会按需构建并推送 smoke runner 镜像', () => {
     expect(workflow).toContain('Dockerfile.smoke');
-    expect(workflow).toContain('docker manifest inspect $smokeImage');
+    expect(workflow).toContain('cmd /c "docker manifest inspect $smokeImage >NUL 2>NUL"');
+    expect(workflow).not.toContain('docker manifest inspect $smokeImage *> $null');
     expect(workflow).toContain('docker build -f Dockerfile.smoke');
     expect(workflow).toContain('docker push $smokeImage');
   });
