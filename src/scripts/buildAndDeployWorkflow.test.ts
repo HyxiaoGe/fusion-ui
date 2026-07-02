@@ -21,4 +21,11 @@ describe('build-and-deploy workflow 发布门禁', () => {
   it('dev smoke 失败时仍输出 fusion-ui 容器日志', () => {
     expect(deployDevBlock).toContain('docker logs --tail 80 fusion-ui || true');
   });
+
+  it('Windows 构建 job 的 Docker access 校验包含重试和服务启动兜底', () => {
+    expect(workflow).toContain('for ($attempt = 1; $attempt -le 6; $attempt++)');
+    expect(workflow).toContain("'docker', 'com.docker.service'");
+    expect(workflow).toContain('Start-Service -Name $serviceName');
+    expect(workflow).toContain('Docker daemon ready');
+  });
 });
