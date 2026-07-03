@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 
 import { getConversationFiles, type FileInfo } from '@/lib/api/files';
 
@@ -27,7 +27,10 @@ export function useConversationFiles(conversationId: string | null): UseConversa
   const requestIdRef = useRef(0);
   const mountedRef = useRef(true);
   const latestConversationIdRef = useRef<string | null>(conversationId);
-  latestConversationIdRef.current = conversationId;
+
+  useLayoutEffect(() => {
+    latestConversationIdRef.current = conversationId;
+  }, [conversationId]);
 
   const clearState = useCallback((targetConversationId: string | null = latestConversationIdRef.current) => {
     requestIdRef.current += 1;
