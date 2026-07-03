@@ -71,11 +71,36 @@ vi.mock('@/components/home/HomePage', () => ({
 }));
 
 vi.mock('@/components/chat/ChatInput', () => ({
-  default: function MockChatInput({ onSendMessage }: { onSendMessage: (content: string) => void }) {
+  default: function MockChatInput({
+    onSendMessage,
+  }: {
+    onSendMessage: (content: string, attachments?: unknown[], pendingConversationId?: string) => void;
+  }) {
     return (
-      <button type="button" onClick={() => onSendMessage('输入框消息')}>
-        输入框发送
-      </button>
+      <div>
+        <button type="button" onClick={() => onSendMessage('输入框消息')}>
+          输入框发送
+        </button>
+        <button
+          type="button"
+          onClick={() =>
+            onSendMessage(
+              '带文件的输入框消息',
+              [
+                {
+                  fileId: 'file-1',
+                  filename: 'clipboard.png',
+                  mimeType: 'image/png',
+                  previewUrl: 'blob:preview',
+                },
+              ],
+              'pending-upload-conv'
+            )
+          }
+        >
+          输入框带文件发送
+        </button>
+      </div>
     );
   },
 }));
@@ -116,6 +141,34 @@ describe('NewChatPage', () => {
     );
     expect(routerReplaceMock).toHaveBeenCalledTimes(1);
     expect(routerReplaceMock).toHaveBeenCalledWith('/chat/server-conv');
+  });
+
+  it('新建页带文件发送时复用上传使用的 pending 会话 ID', async () => {
+    sendMessageMock.mockImplementation((_content, options) => {
+      options.onMaterialized('pending-upload-conv');
+      return Promise.resolve();
+    });
+
+    render(<NewChatPage />);
+
+    fireEvent.click(screen.getByRole('button', { name: '输入框带文件发送' }));
+
+    await waitFor(() => expect(sendMessageMock).toHaveBeenCalledTimes(1));
+    expect(sendMessageMock).toHaveBeenCalledWith(
+      '带文件的输入框消息',
+      expect.objectContaining({
+        conversationId: 'pending-upload-conv',
+        isDraft: true,
+      }),
+      [
+        expect.objectContaining({
+          fileId: 'file-1',
+          filename: 'clipboard.png',
+          mimeType: 'image/png',
+        }),
+      ]
+    );
+    expect(routerReplaceMock).toHaveBeenCalledWith('/chat/pending-upload-conv');
   });
 
   it('把有效 model query 作为初始模型 hint 派发一次', async () => {

@@ -36,11 +36,15 @@ export default function HomeChatSurface() {
     dispatch(setSelectedModel(modelHint));
   }, [dispatch, modelHint, models]);
 
-  const handleSendMessage = useCallback((content: string, attachments?: FileAttachment[]) => {
+  const handleSendMessage = useCallback((
+    content: string,
+    attachments?: FileAttachment[],
+    pendingConversationId?: string
+  ) => {
     return sendMessage(
       content,
       {
-        conversationId: null,
+        conversationId: pendingConversationId ?? null,
         isDraft: true,
         onDraftCreated: () => {},
         onMaterialized: (serverConversationId) => {
