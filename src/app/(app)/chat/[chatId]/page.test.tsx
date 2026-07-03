@@ -701,7 +701,9 @@ describe('ChatPage 会话切换体验', () => {
       expect(deleteFileMock).toHaveBeenCalledWith('file-1');
     });
     expect(useConversationFilesState.removeFile).toHaveBeenCalledWith('file-1');
-    expect(screen.getByTestId('chat-input')).toHaveAttribute('data-attachment-count', '0');
+    await waitFor(() => {
+      expect(screen.getByTestId('chat-input')).toHaveAttribute('data-attachment-count', '0');
+    });
   });
 
   it('切换会话时清空已选会话资料', async () => {
