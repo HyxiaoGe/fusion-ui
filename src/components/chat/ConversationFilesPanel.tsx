@@ -171,6 +171,7 @@ function FileVisual({ file }: { file: FileInfo }) {
 
   if (isImage && file.thumbnail_url) {
     return (
+      // eslint-disable-next-line @next/next/no-img-element -- 缩略图可能是已签名的本地代理或外部存储 URL，不能提前声明 next/image 域名。
       <img
         src={file.thumbnail_url}
         alt={`${file.filename} 缩略图`}
@@ -209,7 +210,7 @@ function getAddButtonState(file: FileInfo, selected: boolean): AddButtonState {
     return {
       disabled: true,
       label: '不可加入',
-      ariaLabel: `不可加入 ${file.filename}`,
+      ariaLabel: `处理失败，无法加入 ${file.filename}`,
       className: 'text-muted-foreground',
     };
   }
@@ -217,7 +218,7 @@ function getAddButtonState(file: FileInfo, selected: boolean): AddButtonState {
   return {
     disabled: true,
     label: '处理中',
-    ariaLabel: `${file.filename} 正在处理`,
+    ariaLabel: `资料正在处理，暂不可加入 ${file.filename}`,
     className: 'text-muted-foreground',
   };
 }

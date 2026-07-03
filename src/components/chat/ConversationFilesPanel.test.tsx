@@ -80,7 +80,7 @@ describe('ConversationFilesPanel', () => {
 
     expect(onAddFile).toHaveBeenCalledTimes(1);
     expect(onAddFile).toHaveBeenCalledWith(processedFile);
-    expect(screen.getByRole('button', { name: 'pending.txt 正在处理' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: '资料正在处理，暂不可加入 pending.txt' })).toBeDisabled();
   });
 
   it('selected 文件禁用且显示已加入', () => {
@@ -92,6 +92,23 @@ describe('ConversationFilesPanel', () => {
     const addButton = screen.getByRole('button', { name: '已加入 selected.txt' });
     expect(addButton).toBeDisabled();
     expect(addButton).toHaveTextContent('已加入');
+  });
+
+  it('父层更新 selectedFileIds 后加入按钮变为已加入', () => {
+    const file = createFile({ id: 'select-after-add', filename: 'after-add.txt' });
+    const { rerender, props } = renderPanel({ files: [file] });
+
+    fireEvent.click(screen.getByRole('button', { name: '加入本次提问 after-add.txt' }));
+
+    rerender(
+      <ConversationFilesPanel
+        {...props}
+        files={[file]}
+        selectedFileIds={new Set(['select-after-add'])}
+      />,
+    );
+
+    expect(screen.getByRole('button', { name: '已加入 after-add.txt' })).toBeDisabled();
   });
 
   it('error 文件显示错误信息且不可加入', () => {
@@ -118,8 +135,8 @@ describe('ConversationFilesPanel', () => {
     const defaultErrorItem = screen.getByText('unknown.pdf').closest('li');
     expect(defaultErrorItem).not.toBeNull();
     expect(within(defaultErrorItem as HTMLElement).getAllByText('处理失败')).toHaveLength(2);
-    expect(screen.getByRole('button', { name: '不可加入 broken.pdf' })).toBeDisabled();
-    expect(screen.getByRole('button', { name: '不可加入 unknown.pdf' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: '处理失败，无法加入 broken.pdf' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: '处理失败，无法加入 unknown.pdf' })).toBeDisabled();
   });
 
   it('删除按钮回调传入文件 id', () => {
