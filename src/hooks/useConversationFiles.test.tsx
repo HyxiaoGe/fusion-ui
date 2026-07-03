@@ -247,4 +247,54 @@ describe('useConversationFiles', () => {
     expect(result.current.files).toEqual(newFiles);
     expect(result.current.error).toBeNull();
   });
+
+  it('切换到新 conversation 后立即清空旧资料', async () => {
+    const newRequest = createDeferred<FileInfo[]>();
+    getConversationFilesMock
+      .mockResolvedValueOnce([createFile('old-file')])
+      .mockReturnValueOnce(newRequest.promise);
+
+    const { result, rerender } = renderHook(
+      ({ conversationId }: { conversationId: string }) => useConversationFiles(conversationId),
+      { initialProps: { conversationId: 'chat-old' } },
+    );
+
+    await waitFor(() => {
+      expect(result.current.files).toHaveLength(1);
+    });
+
+    rerender({ conversationId: 'chat-new' });
+
+    expect(result.current.files).toEqual([]);
+    expect(result.current.error).toBeNull();
+    expect(result.current.isLoading).toBe(true);
+  });
+
+  it('旧请求在切换会话后立即返回也不会写回', async () => {
+    const oldRequest = createDeferred<FileInfo[]>();
+    const newRequest = createDeferred<FileInfo[]>();
+    getConversationFilesMock
+      .mockReturnValueOnce(oldRequest.promise)
+      .mockReturnValueOnce(newRequest.promise);
+
+    const { result, rerender } = renderHook(
+      ({ conversationId }: { conversationId: string }) => useConversationFiles(conversationId),
+      { initialProps: { conversationId: 'chat-old' } },
+    );
+
+    await waitFor(() => {
+      expect(getConversationFilesMock).toHaveBeenCalledWith('chat-old');
+    });
+
+    rerender({ conversationId: 'chat-new' });
+
+    await act(async () => {
+      oldRequest.resolve([createFile('stale-file')]);
+      await oldRequest.promise;
+    });
+
+    expect(result.current.files).toEqual([]);
+    expect(result.current.error).toBeNull();
+    expect(result.current.isLoading).toBe(true);
+  });
 });

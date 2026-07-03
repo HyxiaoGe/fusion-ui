@@ -20,15 +20,18 @@ function getReadableError(error: unknown): string {
 }
 
 export function useConversationFiles(conversationId: string | null): UseConversationFilesResult {
+  const [stateConversationId, setStateConversationId] = useState<string | null>(conversationId);
   const [files, setFiles] = useState<FileInfo[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const requestIdRef = useRef(0);
   const mountedRef = useRef(true);
   const latestConversationIdRef = useRef<string | null>(conversationId);
+  latestConversationIdRef.current = conversationId;
 
-  const clearState = useCallback(() => {
+  const clearState = useCallback((targetConversationId: string | null = latestConversationIdRef.current) => {
     requestIdRef.current += 1;
+    setStateConversationId(targetConversationId);
     setFiles([]);
     setError(null);
     setIsLoading(false);
@@ -42,6 +45,9 @@ export function useConversationFiles(conversationId: string | null): UseConversa
 
     const requestId = requestIdRef.current + 1;
     requestIdRef.current = requestId;
+    setStateConversationId(targetConversationId);
+    setFiles([]);
+    setError(null);
     setIsLoading(true);
 
     try {
@@ -53,6 +59,7 @@ export function useConversationFiles(conversationId: string | null): UseConversa
       ) {
         return;
       }
+      setStateConversationId(targetConversationId);
       setFiles(nextFiles);
       setError(null);
     } catch (loadError) {
@@ -63,6 +70,7 @@ export function useConversationFiles(conversationId: string | null): UseConversa
       ) {
         return;
       }
+      setStateConversationId(targetConversationId);
       setFiles([]);
       setError(getReadableError(loadError));
     } finally {
@@ -74,10 +82,9 @@ export function useConversationFiles(conversationId: string | null): UseConversa
 
   useEffect(() => {
     mountedRef.current = true;
-    latestConversationIdRef.current = conversationId;
 
     if (!conversationId) {
-      clearState();
+      clearState(null);
       return;
     }
 
@@ -99,10 +106,12 @@ export function useConversationFiles(conversationId: string | null): UseConversa
     setFiles((currentFiles) => currentFiles.filter((file) => file.id !== fileId));
   }, []);
 
+  const isCurrentConversationState = stateConversationId === conversationId;
+
   return {
-    files,
-    isLoading,
-    error,
+    files: isCurrentConversationState ? files : [],
+    isLoading: conversationId ? (isCurrentConversationState ? isLoading : true) : false,
+    error: isCurrentConversationState ? error : null,
     refresh,
     removeFile,
   };
