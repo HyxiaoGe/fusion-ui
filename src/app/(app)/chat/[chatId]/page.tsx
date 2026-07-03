@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { Files } from 'lucide-react';
 import { ChatMessageListLazy } from '@/components/lazy/LazyComponents';
-import ChatInput from '@/components/chat/ChatInput';
+import ChatInput, { type ChatUploadCompleteFile } from '@/components/chat/ChatInput';
 import ConversationFilesPanel from '@/components/chat/ConversationFilesPanel';
 import {
   tryConversationFileToComposerAttachment,
@@ -63,6 +63,26 @@ interface ConversationAttachmentState {
   attachments: ConversationComposerAttachment[];
 }
 
+interface PendingAutoAttachState {
+  chatId: string;
+  fileIds: string[];
+}
+
+function uploadResultToConversationAttachment(file: ChatUploadCompleteFile): ConversationComposerAttachment | null {
+  if (file.status !== 'processed') {
+    return null;
+  }
+
+  return {
+    source: 'conversation',
+    fileId: file.fileId,
+    filename: file.filename,
+    mimetype: file.mimetype || 'application/octet-stream',
+    status: 'processed',
+    thumbnailUrl: file.thumbnailUrl ?? null,
+  };
+}
+
 export default function ChatPage() {
   const params = useParams();
   const router = useRouter();
@@ -76,6 +96,10 @@ export default function ChatPage() {
   const [conversationAttachmentState, setConversationAttachmentState] = useState<ConversationAttachmentState>({
     chatId,
     attachments: [],
+  });
+  const [pendingAutoAttachState, setPendingAutoAttachState] = useState<PendingAutoAttachState>({
+    chatId,
+    fileIds: [],
   });
   const chatInputRef = useRef<HTMLDivElement>(null);
   const fetchQuestionsRef = useRef<((force?: boolean) => Promise<void>) | undefined>(undefined);
@@ -115,6 +139,12 @@ export default function ChatPage() {
         return current;
       }
       return { chatId, attachments: [] };
+    });
+    setPendingAutoAttachState((current) => {
+      if (current.chatId === chatId && current.fileIds.length === 0) {
+        return current;
+      }
+      return { chatId, fileIds: [] };
     });
   }, [chatId]);
 
@@ -341,12 +371,7 @@ export default function ChatPage() {
     ? conversationAttachmentState.attachments
     : EMPTY_CONVERSATION_ATTACHMENTS;
 
-  const handleAddConversationFile = useCallback((file: FileInfo) => {
-    const attachment = tryConversationFileToComposerAttachment(file);
-    if (!attachment) {
-      return;
-    }
-
+  const addConversationAttachment = useCallback((attachment: ConversationComposerAttachment) => {
     setConversationAttachmentState((currentState) => {
       const currentAttachments = currentState.chatId === chatId ? currentState.attachments : [];
       if (currentAttachments.some((item) => item.fileId === attachment.fileId)) {
@@ -355,6 +380,15 @@ export default function ChatPage() {
       return { chatId, attachments: [...currentAttachments, attachment] };
     });
   }, [chatId]);
+
+  const handleAddConversationFile = useCallback((file: FileInfo) => {
+    const attachment = tryConversationFileToComposerAttachment(file);
+    if (!attachment) {
+      return;
+    }
+
+    addConversationAttachment(attachment);
+  }, [addConversationAttachment]);
 
   const handleRemoveConversationAttachment = useCallback((fileId: string) => {
     setConversationAttachmentState((currentState) => {
@@ -390,12 +424,106 @@ export default function ChatPage() {
             attachments: currentState.attachments.filter((item) => item.fileId !== fileId),
           };
         });
+        setPendingAutoAttachState((currentState) => {
+          if (currentState.chatId !== chatId || !currentState.fileIds.includes(fileId)) {
+            return currentState;
+          }
+          return {
+            chatId,
+            fileIds: currentState.fileIds.filter((item) => item !== fileId),
+          };
+        });
       })
       .catch((error) => {
         console.error('删除会话资料失败:', error);
         void refreshConversationFiles();
       });
   }, [chatId, refreshConversationFiles, removeConversationFile]);
+
+  const handleUploadComplete = useCallback((files: ChatUploadCompleteFile[] = [], uploadChatId = chatId) => {
+    void refreshConversationFiles();
+
+    if (uploadChatId !== chatId) {
+      return;
+    }
+
+    setFilesPanelOpen(true);
+
+    const uploadedFiles = Array.isArray(files) ? files : [];
+    const pendingFileIds: string[] = [];
+    const completedFileIds: string[] = [];
+    uploadedFiles.forEach((file) => {
+      const attachment = uploadResultToConversationAttachment(file);
+      if (attachment) {
+        addConversationAttachment(attachment);
+        completedFileIds.push(file.fileId);
+        return;
+      }
+
+      if (file.status === 'parsing' || file.status === 'uploading' || file.status === 'pending') {
+        pendingFileIds.push(file.fileId);
+        return;
+      }
+
+      completedFileIds.push(file.fileId);
+    });
+
+    if (pendingFileIds.length === 0 && completedFileIds.length === 0) {
+      return;
+    }
+
+    setPendingAutoAttachState((current) => {
+      const completedSet = new Set(completedFileIds);
+      const currentFileIds = current.chatId === chatId
+        ? current.fileIds.filter((fileId) => !completedSet.has(fileId))
+        : [];
+      const nextFileIds = [...currentFileIds];
+      pendingFileIds.forEach((fileId) => {
+        if (!nextFileIds.includes(fileId)) {
+          nextFileIds.push(fileId);
+        }
+      });
+      return { chatId, fileIds: nextFileIds };
+    });
+  }, [addConversationAttachment, chatId, refreshConversationFiles]);
+
+  const pendingAutoAttachFileIds = useMemo(
+    () => pendingAutoAttachState.chatId === chatId ? pendingAutoAttachState.fileIds : [],
+    [chatId, pendingAutoAttachState]
+  );
+
+  useEffect(() => {
+    if (pendingAutoAttachFileIds.length === 0) {
+      return;
+    }
+
+    const remainingFileIds = new Set(pendingAutoAttachFileIds);
+    conversationFiles.forEach((file) => {
+      if (!remainingFileIds.has(file.id)) {
+        return;
+      }
+
+      const attachment = tryConversationFileToComposerAttachment(file);
+      if (!attachment) {
+        if (file.status === 'error') {
+          remainingFileIds.delete(file.id);
+        }
+        return;
+      }
+
+      addConversationAttachment(attachment);
+      remainingFileIds.delete(file.id);
+    });
+
+    if (remainingFileIds.size === pendingAutoAttachFileIds.length) {
+      return;
+    }
+
+    setPendingAutoAttachState({
+      chatId,
+      fileIds: Array.from(remainingFileIds),
+    });
+  }, [addConversationAttachment, chatId, conversationFiles, pendingAutoAttachFileIds]);
 
   const selectedConversationFileIds = useMemo(
     () => new Set(conversationAttachments.map((file) => file.fileId)),
@@ -494,7 +622,7 @@ export default function ChatPage() {
               conversationAttachments={conversationAttachments}
               onRemoveConversationAttachment={handleRemoveConversationAttachment}
               onClearConversationAttachments={handleClearConversationAttachments}
-              onUploadComplete={refreshConversationFiles}
+              onUploadComplete={handleUploadComplete}
             />
           </div>
         </div>

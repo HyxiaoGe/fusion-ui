@@ -50,7 +50,16 @@ interface ChatInputProps {
   conversationAttachments?: ConversationComposerAttachment[];
   onRemoveConversationAttachment?: (fileId: string) => void;
   onClearConversationAttachments?: () => void;
-  onUploadComplete?: () => void;
+  onUploadComplete?: (files: ChatUploadCompleteFile[], uploadChatId: string) => void;
+}
+
+export interface ChatUploadCompleteFile {
+  fileId: string;
+  filename: string;
+  mimetype: string;
+  size: number;
+  thumbnailUrl?: string | null;
+  status: FileProcessingStatus;
 }
 
 interface LocalFileWithStatus {
@@ -263,6 +272,21 @@ const ChatInput: React.FC<ChatInputProps> = ({
     return pendingFiles;
   };
 
+  const removeLocalUploadFiles = (localIds: Set<string>) => {
+    if (localIds.size === 0) {
+      return;
+    }
+
+    setLocalFiles((prev) => {
+      prev.forEach((file) => {
+        if (localIds.has(file.id) && file.previewUrl) {
+          URL.revokeObjectURL(file.previewUrl);
+        }
+      });
+      return prev.filter((file) => !localIds.has(file.id));
+    });
+  };
+
   const splitDedupedFiles = (selectedFiles: File[]) => {
     const existingIdentities = new Set(localFiles.map((item) => getFileIdentity(item.file)));
     const seenInBatch = new Set<string>();
@@ -338,9 +362,23 @@ const ChatInput: React.FC<ChatInputProps> = ({
         })
       );
 
+      const uploadCompleteFiles: ChatUploadCompleteFile[] = uploadedFiles.map((uploaded, index) => {
+        const localFile = filesToUpload[index]?.file;
+        const isImage = localFile?.type.startsWith('image/') ?? false;
+        return {
+          fileId: uploaded.file_id,
+          filename: localFile?.name || '未命名文件',
+          mimetype: localFile?.type || 'application/octet-stream',
+          size: localFile?.size || 0,
+          thumbnailUrl: uploaded.thumbnail_url ?? null,
+          status: isImage ? 'processed' : 'parsing',
+        };
+      });
+
       uploadedFiles.forEach((uploaded, index) => {
         const fileId = uploaded.file_id;
         const isImage = filesToUpload[index]?.file.type.startsWith('image/');
+        const uploadCompleteFile = uploadCompleteFiles[index];
         dispatch(addFileId({ chatId: uploadChatId, fileId, fileIndex: index }));
 
         if (isImage) {
@@ -378,11 +416,37 @@ const ChatInput: React.FC<ChatInputProps> = ({
             type: success ? "success" : "error",
             duration: 3000,
           });
-          onUploadComplete?.();
+          if (uploadCompleteFile) {
+            onUploadComplete?.(
+              [
+                {
+                  ...uploadCompleteFile,
+                  status: success ? 'processed' : 'error',
+                },
+              ],
+              uploadChatId
+            );
+          }
+
+          if (success && activeChatId && onUploadComplete) {
+            const localId = filesToUpload[index]?.id;
+            if (localId) {
+              removeLocalUploadFiles(new Set([localId]));
+            }
+          }
         });
       });
 
-      onUploadComplete?.();
+      onUploadComplete?.(uploadCompleteFiles, uploadChatId);
+
+      if (activeChatId && onUploadComplete) {
+        const processedLocalIds = new Set(
+          filesToUpload
+            .filter((file) => file.file.type.startsWith('image/'))
+            .map((file) => file.id)
+        );
+        removeLocalUploadFiles(processedLocalIds);
+      }
     } catch (error) {
       const errorMessage = formatFileErrorMessage((error as Error).message || "文件上传失败，请重试");
 

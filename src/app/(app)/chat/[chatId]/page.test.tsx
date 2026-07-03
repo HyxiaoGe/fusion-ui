@@ -240,7 +240,7 @@ vi.mock('@/components/chat/ChatInput', () => ({
     conversationAttachments?: any[];
     onRemoveConversationAttachment?: (fileId: string) => void;
     onClearConversationAttachments?: () => void;
-    onUploadComplete?: () => void;
+    onUploadComplete?: (files?: any[], uploadChatId?: string) => void;
   }) {
     chatInputRenderMock({
       activeChatId,
@@ -269,7 +269,47 @@ vi.mock('@/components/chat/ChatInput', () => ({
           移除已选资料
         </button>
         <button type="button" onClick={onClearConversationAttachments}>清空已选资料</button>
-        <button type="button" onClick={onUploadComplete}>上传完成</button>
+        <button type="button" onClick={() => onUploadComplete?.()}>上传完成</button>
+        <button
+          type="button"
+          onClick={() =>
+            onUploadComplete?.(
+              [
+                {
+                  fileId: 'file-uploaded',
+                  filename: 'uploaded.png',
+                  mimetype: 'image/png',
+                  size: 120,
+                  thumbnailUrl: '/thumb.png',
+                  status: 'processed',
+                },
+              ],
+              'chat-a'
+            )
+          }
+        >
+          上传已处理资料
+        </button>
+        <button
+          type="button"
+          onClick={() =>
+            onUploadComplete?.(
+              [
+                {
+                  fileId: 'file-parsing',
+                  filename: 'report.pdf',
+                  mimetype: 'application/pdf',
+                  size: 240,
+                  thumbnailUrl: null,
+                  status: 'parsing',
+                },
+              ],
+              'chat-a'
+            )
+          }
+        >
+          上传解析中资料
+        </button>
       </div>
     );
   },
@@ -754,6 +794,138 @@ describe('ChatPage 会话切换体验', () => {
     sendOptions.onStreamEnd('chat-a');
 
     expect(useConversationFilesState.refresh).toHaveBeenCalledTimes(2);
+  });
+
+  it('已有会话上传已处理文件后打开资料面板并加入本次提问', async () => {
+    conversationsById.set('chat-a', createConversation('chat-a', [textMessage('message-a')]));
+    hydrationById.set('chat-a', { view: 'ready' });
+
+    render(<ChatPage />);
+
+    fireEvent.click(screen.getByRole('button', { name: '上传已处理资料' }));
+
+    expect(useConversationFilesState.refresh).toHaveBeenCalledTimes(1);
+    expect(screen.getByTestId('conversation-files-panel')).toBeInTheDocument();
+    expect(screen.getByTestId('chat-input')).toHaveAttribute('data-attachment-count', '1');
+    expect(screen.getByTestId('conversation-files-panel')).toHaveAttribute('data-selected-ids', 'file-uploaded');
+  });
+
+  it('已有会话上传解析中文件后等待资料刷新为 processed 再加入本次提问', async () => {
+    conversationsById.set('chat-a', createConversation('chat-a', [textMessage('message-a')]));
+    hydrationById.set('chat-a', { view: 'ready' });
+
+    const { rerender } = render(<ChatPage />);
+
+    fireEvent.click(screen.getByRole('button', { name: '上传解析中资料' }));
+
+    expect(useConversationFilesState.refresh).toHaveBeenCalledTimes(1);
+    expect(screen.getByTestId('conversation-files-panel')).toBeInTheDocument();
+    expect(screen.getByTestId('chat-input')).toHaveAttribute('data-attachment-count', '0');
+    expect(screen.getByTestId('conversation-files-panel')).toHaveAttribute('data-selected-ids', '');
+
+    useConversationFilesState.files = [
+      {
+        id: 'file-parsing',
+        filename: 'report.pdf',
+        mimetype: 'application/pdf',
+        size: 240,
+        created_at: '2026-07-03T10:00:00Z',
+        status: 'processed',
+        error_message: null,
+      },
+    ];
+    rerender(<ChatPage />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('chat-input')).toHaveAttribute('data-attachment-count', '1');
+    });
+    expect(screen.getByTestId('conversation-files-panel')).toHaveAttribute('data-selected-ids', 'file-parsing');
+  });
+
+  it('已有会话上传解析中文件失败后不会被旧 pending 状态再次自动加入', async () => {
+    conversationsById.set('chat-a', createConversation('chat-a', [textMessage('message-a')]));
+    hydrationById.set('chat-a', { view: 'ready' });
+
+    const { rerender } = render(<ChatPage />);
+
+    fireEvent.click(screen.getByRole('button', { name: '上传解析中资料' }));
+
+    useConversationFilesState.files = [
+      {
+        id: 'file-parsing',
+        filename: 'report.pdf',
+        mimetype: 'application/pdf',
+        size: 240,
+        created_at: '2026-07-03T10:00:00Z',
+        status: 'error',
+        error_message: '解析失败',
+      },
+    ];
+    rerender(<ChatPage />);
+
+    expect(screen.getByTestId('chat-input')).toHaveAttribute('data-attachment-count', '0');
+    expect(screen.getByTestId('conversation-files-panel')).toHaveAttribute('data-selected-ids', '');
+
+    useConversationFilesState.files = [
+      {
+        id: 'file-parsing',
+        filename: 'report.pdf',
+        mimetype: 'application/pdf',
+        size: 240,
+        created_at: '2026-07-03T10:00:00Z',
+        status: 'processed',
+        error_message: null,
+      },
+    ];
+    rerender(<ChatPage />);
+
+    expect(screen.getByTestId('chat-input')).toHaveAttribute('data-attachment-count', '0');
+    expect(screen.getByTestId('conversation-files-panel')).toHaveAttribute('data-selected-ids', '');
+  });
+
+  it('删除仍在解析的上传资料后不会被旧 pending 状态自动加入', async () => {
+    conversationsById.set('chat-a', createConversation('chat-a', [textMessage('message-a')]));
+    hydrationById.set('chat-a', { view: 'ready' });
+
+    const { rerender } = render(<ChatPage />);
+
+    fireEvent.click(screen.getByRole('button', { name: '上传解析中资料' }));
+
+    useConversationFilesState.files = [
+      {
+        id: 'file-parsing',
+        filename: 'report.pdf',
+        mimetype: 'application/pdf',
+        size: 240,
+        created_at: '2026-07-03T10:00:00Z',
+        status: 'parsing',
+        error_message: null,
+      },
+    ];
+    rerender(<ChatPage />);
+
+    fireEvent.click(screen.getByText('删除资料'));
+
+    await waitFor(() => {
+      expect(deleteFileMock).toHaveBeenCalledWith('file-parsing');
+    });
+    expect(useConversationFilesState.removeFile).toHaveBeenCalledWith('file-parsing');
+
+    useConversationFilesState.files = [
+      {
+        id: 'file-parsing',
+        filename: 'report.pdf',
+        mimetype: 'application/pdf',
+        size: 240,
+        created_at: '2026-07-03T10:00:00Z',
+        status: 'processed',
+        error_message: null,
+      },
+    ];
+    rerender(<ChatPage />);
+
+    expect(screen.getByTestId('chat-input')).toHaveAttribute('data-attachment-count', '0');
+    expect(screen.getByTestId('conversation-files-panel')).toHaveAttribute('data-selected-ids', '');
   });
 
   it('旧会话流结束时不刷新当前会话资料', async () => {
