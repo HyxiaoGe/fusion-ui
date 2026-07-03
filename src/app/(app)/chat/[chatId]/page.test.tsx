@@ -20,6 +20,8 @@ const {
   stopContinueAgentRunMock,
   clearQuestionsMock,
   fetchQuestionsMock,
+  useConversationFilesState,
+  deleteFileMock,
   suggestedQuestionsState,
   streamState,
   lastReadyConversationSnapshotState,
@@ -55,6 +57,14 @@ const {
   stopContinueAgentRunMock: vi.fn(),
   clearQuestionsMock: vi.fn(),
   fetchQuestionsMock: vi.fn(),
+  useConversationFilesState: {
+    files: [] as any[],
+    isLoading: false,
+    error: null as string | null,
+    refresh: vi.fn(),
+    removeFile: vi.fn(),
+  },
+  deleteFileMock: vi.fn(),
 }));
 
 vi.mock('next/navigation', () => ({
@@ -136,6 +146,30 @@ vi.mock('@/hooks/useTransientCompletionState', () => ({
   useTransientCompletionState: () => transientCompletionState.visible,
 }));
 
+vi.mock('@/hooks/useConversationFiles', () => ({
+  useConversationFiles: () => useConversationFilesState,
+}));
+
+vi.mock('@/lib/api/files', () => ({
+  deleteFile: deleteFileMock,
+}));
+
+vi.mock('@/components/chat/ConversationFilesPanel', () => ({
+  default: function MockConversationFilesPanel(props: any) {
+    if (!props.open) {
+      return null;
+    }
+
+    return (
+      <div data-testid="conversation-files-panel">
+        <button type="button" onClick={() => props.onAddFile(props.files[0])}>加入资料</button>
+        <button type="button" onClick={() => props.onDeleteFile(props.files[0].id)}>删除资料</button>
+        <button type="button" onClick={props.onRefresh}>刷新资料</button>
+      </div>
+    );
+  },
+}));
+
 vi.mock('@/lib/chat/suggestedQuestionTiming', () => ({
   shouldAutoFetchSuggestedQuestions: () => false,
 }));
@@ -186,10 +220,18 @@ vi.mock('@/components/chat/ChatInput', () => ({
     activeChatId,
     resetSignal,
     onStopStreaming,
+    onSendMessage,
+    conversationAttachments = [],
+    onClearConversationAttachments,
+    onUploadComplete,
   }: {
     activeChatId?: string;
     resetSignal?: string;
     onStopStreaming?: () => void;
+    onSendMessage?: (content: string) => void;
+    conversationAttachments?: any[];
+    onClearConversationAttachments?: () => void;
+    onUploadComplete?: () => void;
   }) {
     useEffect(() => {
       chatInputMountMock();
@@ -201,8 +243,12 @@ vi.mock('@/components/chat/ChatInput', () => ({
         data-testid="chat-input"
         data-active-chat-id={activeChatId}
         data-reset-signal={resetSignal}
+        data-attachment-count={conversationAttachments.length}
       >
         <button type="button" onClick={onStopStreaming}>停止生成</button>
+        <button type="button" onClick={() => onSendMessage?.('你好')}>发送消息</button>
+        <button type="button" onClick={onClearConversationAttachments}>清空已选资料</button>
+        <button type="button" onClick={onUploadComplete}>上传完成</button>
       </div>
     );
   },
@@ -288,6 +334,13 @@ describe('ChatPage 会话切换体验', () => {
     streamState.conversationId = null;
     lastReadyConversationSnapshotState.value = null;
     transientCompletionState.visible = false;
+    useConversationFilesState.files = [];
+    useConversationFilesState.isLoading = false;
+    useConversationFilesState.error = null;
+    useConversationFilesState.refresh.mockClear();
+    useConversationFilesState.removeFile.mockClear();
+    deleteFileMock.mockReset();
+    deleteFileMock.mockResolvedValue(undefined);
   });
 
   it('chatId 改变时不通过 key 重建 ChatInput', async () => {
@@ -560,6 +613,102 @@ describe('ChatPage 会话切换体验', () => {
     const secondProps = chatMessageListMock.mock.calls.at(-1)?.[0];
 
     expect(secondProps.emptyState).toBe(firstProps.emptyState);
+  });
+
+  it('打开会话资料面板后把已选资料传给 ChatInput', async () => {
+    conversationsById.set('chat-a', createConversation('chat-a', [textMessage('message-a')]));
+    hydrationById.set('chat-a', { view: 'ready' });
+    useConversationFilesState.files = [
+      {
+        id: 'file-1',
+        filename: 'diagram.png',
+        mimetype: 'image/png',
+        size: 100,
+        created_at: '2026-07-03T10:00:00Z',
+        status: 'processed',
+        error_message: null,
+      },
+    ];
+
+    render(<ChatPage />);
+
+    fireEvent.click(screen.getByRole('button', { name: '打开会话资料' }));
+    fireEvent.click(screen.getByText('加入资料'));
+
+    expect(screen.getByTestId('chat-input')).toHaveAttribute('data-attachment-count', '1');
+  });
+
+  it('删除会话资料时同步移除 composer 已选资料', async () => {
+    conversationsById.set('chat-a', createConversation('chat-a', [textMessage('message-a')]));
+    hydrationById.set('chat-a', { view: 'ready' });
+    useConversationFilesState.files = [
+      {
+        id: 'file-1',
+        filename: 'diagram.png',
+        mimetype: 'image/png',
+        size: 100,
+        created_at: '2026-07-03T10:00:00Z',
+        status: 'processed',
+        error_message: null,
+      },
+    ];
+
+    render(<ChatPage />);
+
+    fireEvent.click(screen.getByRole('button', { name: '打开会话资料' }));
+    fireEvent.click(screen.getByText('加入资料'));
+    fireEvent.click(screen.getByText('删除资料'));
+
+    await waitFor(() => {
+      expect(deleteFileMock).toHaveBeenCalledWith('file-1');
+    });
+    expect(useConversationFilesState.removeFile).toHaveBeenCalledWith('file-1');
+    expect(screen.getByTestId('chat-input')).toHaveAttribute('data-attachment-count', '0');
+  });
+
+  it('切换会话时清空已选会话资料', async () => {
+    conversationsById.set('chat-a', createConversation('chat-a', [textMessage('message-a')]));
+    conversationsById.set('chat-b', createConversation('chat-b', [textMessage('message-b')]));
+    hydrationById.set('chat-a', { view: 'ready' });
+    hydrationById.set('chat-b', { view: 'ready' });
+    useConversationFilesState.files = [
+      {
+        id: 'file-1',
+        filename: 'diagram.png',
+        mimetype: 'image/png',
+        size: 100,
+        created_at: '2026-07-03T10:00:00Z',
+        status: 'processed',
+        error_message: null,
+      },
+    ];
+
+    const { rerender } = render(<ChatPage />);
+
+    fireEvent.click(screen.getByRole('button', { name: '打开会话资料' }));
+    fireEvent.click(screen.getByText('加入资料'));
+    expect(screen.getByTestId('chat-input')).toHaveAttribute('data-attachment-count', '1');
+
+    currentRoute.chatId = 'chat-b';
+    rerender(<ChatPage />);
+
+    expect(screen.getByTestId('chat-input')).toHaveAttribute('data-attachment-count', '0');
+  });
+
+  it('上传或发送完成后刷新会话资料', async () => {
+    conversationsById.set('chat-a', createConversation('chat-a', [textMessage('message-a')]));
+    hydrationById.set('chat-a', { view: 'ready' });
+
+    render(<ChatPage />);
+
+    fireEvent.click(screen.getByRole('button', { name: '上传完成' }));
+    expect(useConversationFilesState.refresh).toHaveBeenCalledTimes(1);
+
+    fireEvent.click(screen.getByRole('button', { name: '发送消息' }));
+    const sendOptions = sendMessageMock.mock.calls.at(-1)?.[1];
+    sendOptions.onStreamEnd('chat-a');
+
+    expect(useConversationFilesState.refresh).toHaveBeenCalledTimes(2);
   });
 
   it('hydration error 时点击返回首页进入 /chat/new', () => {

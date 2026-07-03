@@ -1,9 +1,16 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
+import { Files } from 'lucide-react';
 import { ChatMessageListLazy } from '@/components/lazy/LazyComponents';
 import ChatInput from '@/components/chat/ChatInput';
+import ConversationFilesPanel from '@/components/chat/ConversationFilesPanel';
+import {
+  tryConversationFileToComposerAttachment,
+  type ConversationComposerAttachment,
+} from '@/components/chat/composerAttachments';
+import { Button } from '@/components/ui/button';
 import type { FileAttachment } from '@/lib/utils/fileHelpers';
 import ConfirmDialog from '@/components/ui/confirm-dialog';
 import { useAppDispatch, useAppSelector } from '@/redux/hooks';
@@ -34,6 +41,7 @@ import { useSendMessage } from '@/hooks/useSendMessage';
 import { useSuggestedQuestions } from '@/hooks/useSuggestedQuestions';
 import { useSuggestedQuestionContinuation } from '@/hooks/useSuggestedQuestionContinuation';
 import { useTransientCompletionState } from '@/hooks/useTransientCompletionState';
+import { useConversationFiles } from '@/hooks/useConversationFiles';
 import { createAgentStreamEventHandlers } from '@/lib/agent/streamEventHandlers';
 import {
   recoverReasoningOnlyFinalBlocks,
@@ -41,6 +49,7 @@ import {
 } from '@/lib/chat/contentBlocks';
 import { shouldAutoFetchSuggestedQuestions } from '@/lib/chat/suggestedQuestionTiming';
 import { CHAT_NEW_PATH } from '@/lib/routes/chatRoutes';
+import { deleteFile, type FileInfo } from '@/lib/api/files';
 
 const CHAT_EMPTY_STATE = {
   title: '这个会话还没有消息',
@@ -54,6 +63,8 @@ export default function ChatPage() {
   const store = useStore();
   const chatId = params?.chatId as string;
   const [confirmDialogOpen, setConfirmDialogOpen] = useState(false);
+  const [filesPanelOpen, setFilesPanelOpen] = useState(false);
+  const [conversationAttachments, setConversationAttachments] = useState<ConversationComposerAttachment[]>([]);
   const chatInputRef = useRef<HTMLDivElement>(null);
   const fetchQuestionsRef = useRef<((force?: boolean) => Promise<void>) | undefined>(undefined);
   const { conversation, hydrationView, hydrationError, retryHydration } = useConversation(chatId);
@@ -65,6 +76,13 @@ export default function ChatPage() {
     fetchQuestions,
     clearQuestions,
   } = useSuggestedQuestions(chatId);
+  const {
+    files: conversationFiles,
+    isLoading: conversationFilesLoading,
+    error: conversationFilesError,
+    refresh: refreshConversationFiles,
+    removeFile: removeConversationFile,
+  } = useConversationFiles(chatId);
   fetchQuestionsRef.current = fetchQuestions;
   const conversationError = useAppSelector((state) => state.conversation.globalError);
   const isStreaming = useAppSelector((state) => state.stream.isStreaming);
@@ -77,6 +95,11 @@ export default function ChatPage() {
   useEffect(() => {
     clearQuestions();
   }, [chatId, clearQuestions]);
+
+  useEffect(() => {
+    setFilesPanelOpen(false);
+    setConversationAttachments([]);
+  }, [chatId]);
 
   useEffect(() => {
     if (hydrationView !== 'ready' || !conversationMessages) {
@@ -244,12 +267,13 @@ export default function ChatPage() {
           if (conversationId === chatId) {
             // 用 ref 避免闭包过期（长时间 agent 流结束后 fetchQuestions 可能已更新）
             fetchQuestionsRef.current?.(true);
+            void refreshConversationFiles();
           }
         },
       },
       attachments
     );
-  }, [chatId, clearQuestions, sendMessage]);
+  }, [chatId, clearQuestions, refreshConversationFiles, sendMessage]);
 
   const handleSelectQuestion = useSuggestedQuestionContinuation({
     canContinue: Boolean(chatId),
@@ -296,6 +320,45 @@ export default function ChatPage() {
     dispatch(clearConversationMessages(chatId));
   }, [chatId, dispatch]);
 
+  const handleAddConversationFile = useCallback((file: FileInfo) => {
+    const attachment = tryConversationFileToComposerAttachment(file);
+    if (!attachment) {
+      return;
+    }
+
+    setConversationAttachments((current) => {
+      if (current.some((item) => item.fileId === attachment.fileId)) {
+        return current;
+      }
+      return [...current, attachment];
+    });
+  }, []);
+
+  const handleRemoveConversationAttachment = useCallback((fileId: string) => {
+    setConversationAttachments((current) => current.filter((item) => item.fileId !== fileId));
+  }, []);
+
+  const handleClearConversationAttachments = useCallback(() => {
+    setConversationAttachments([]);
+  }, []);
+
+  const handleDeleteConversationFile = useCallback((fileId: string) => {
+    void deleteFile(fileId)
+      .then(() => {
+        removeConversationFile(fileId);
+        setConversationAttachments((current) => current.filter((item) => item.fileId !== fileId));
+      })
+      .catch((error) => {
+        console.error('删除会话资料失败:', error);
+        void refreshConversationFiles();
+      });
+  }, [refreshConversationFiles, removeConversationFile]);
+
+  const selectedConversationFileIds = useMemo(
+    () => new Set(conversationAttachments.map((file) => file.fileId)),
+    [conversationAttachments]
+  );
+
 
   const lastReadyConversation = lastReadyConversationSnapshot;
   const shouldKeepPreviousContent =
@@ -341,38 +404,73 @@ export default function ChatPage() {
 
   return (
     <>
-      <div className="h-full flex flex-col relative">
-        <div className="flex-1 overflow-y-auto px-4 pt-4" data-chat-scroll-container="true">
-          <ChatMessageListLazy
-            messages={isHydratingWithoutContent ? [] : displayMessages}
-            conversationId={displayConversationId}
-            isStreaming={isDisplayConversationStreaming}
-            loadingState={isHydratingWithoutContent ? 'history-hydration' : undefined}
-            onRetry={shouldKeepPreviousContent || isHydratingWithoutContent ? undefined : handleRetry}
-            onContinueAgentRun={
-              shouldKeepPreviousContent || isHydratingWithoutContent || isDisplayConversationStreaming
-                ? undefined
-                : handleContinueAgentRun
-            }
-            suggestedQuestions={shouldKeepPreviousContent || isHydratingWithoutContent ? [] : suggestedQuestions}
-            isLoadingQuestions={shouldKeepPreviousContent || isHydratingWithoutContent ? false : isLoadingQuestions}
-            onSelectQuestion={shouldKeepPreviousContent || isHydratingWithoutContent ? undefined : handleSelectQuestion}
-            onRefreshQuestions={shouldKeepPreviousContent || isHydratingWithoutContent ? undefined : handleRefreshQuestions}
-            completionStateVisible={shouldKeepPreviousContent || isHydratingWithoutContent ? false : showCompletionState}
-            emptyState={CHAT_EMPTY_STATE}
-          />
+      <div className="relative flex h-full min-h-0">
+        <div className="relative flex min-h-0 flex-1 flex-col">
+          <div className="flex-1 overflow-y-auto px-4 pt-4" data-chat-scroll-container="true">
+            <ChatMessageListLazy
+              messages={isHydratingWithoutContent ? [] : displayMessages}
+              conversationId={displayConversationId}
+              isStreaming={isDisplayConversationStreaming}
+              loadingState={isHydratingWithoutContent ? 'history-hydration' : undefined}
+              onRetry={shouldKeepPreviousContent || isHydratingWithoutContent ? undefined : handleRetry}
+              onContinueAgentRun={
+                shouldKeepPreviousContent || isHydratingWithoutContent || isDisplayConversationStreaming
+                  ? undefined
+                  : handleContinueAgentRun
+              }
+              suggestedQuestions={shouldKeepPreviousContent || isHydratingWithoutContent ? [] : suggestedQuestions}
+              isLoadingQuestions={shouldKeepPreviousContent || isHydratingWithoutContent ? false : isLoadingQuestions}
+              onSelectQuestion={shouldKeepPreviousContent || isHydratingWithoutContent ? undefined : handleSelectQuestion}
+              onRefreshQuestions={shouldKeepPreviousContent || isHydratingWithoutContent ? undefined : handleRefreshQuestions}
+              completionStateVisible={shouldKeepPreviousContent || isHydratingWithoutContent ? false : showCompletionState}
+              emptyState={CHAT_EMPTY_STATE}
+            />
+          </div>
+
+          <div ref={chatInputRef} tabIndex={-1} className="flex-shrink-0 px-4 pb-4 pt-2">
+            <div className="mb-2 flex items-center justify-end">
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="h-8 gap-1.5"
+                aria-label="打开会话资料"
+                onClick={() => setFilesPanelOpen(true)}
+              >
+                <Files className="h-4 w-4" aria-hidden="true" />
+                资料
+              </Button>
+            </div>
+            <ChatInput
+              onSendMessage={handleSendMessage}
+              onClearMessage={handleClearChat}
+              onStopStreaming={handleStopStreaming}
+              onModelChange={clearQuestions}
+              activeChatId={chatId}
+              resetSignal={chatId}
+              conversationAttachments={conversationAttachments}
+              onRemoveConversationAttachment={handleRemoveConversationAttachment}
+              onClearConversationAttachments={handleClearConversationAttachments}
+              onUploadComplete={refreshConversationFiles}
+            />
+          </div>
         </div>
 
-        <div ref={chatInputRef} tabIndex={-1} className="flex-shrink-0 p-4">
-          <ChatInput
-            onSendMessage={handleSendMessage}
-            onClearMessage={handleClearChat}
-            onStopStreaming={handleStopStreaming}
-            onModelChange={clearQuestions}
-            activeChatId={chatId}
-            resetSignal={chatId}
-          />
-        </div>
+        {filesPanelOpen ? (
+          <div className="absolute inset-y-0 right-0 z-20 w-full max-w-sm bg-background shadow-lg md:relative md:z-auto md:w-80 md:shrink-0 md:shadow-none">
+            <ConversationFilesPanel
+              open={filesPanelOpen}
+              files={conversationFiles}
+              isLoading={conversationFilesLoading}
+              error={conversationFilesError}
+              selectedFileIds={selectedConversationFileIds}
+              onClose={() => setFilesPanelOpen(false)}
+              onRefresh={refreshConversationFiles}
+              onAddFile={handleAddConversationFile}
+              onDeleteFile={handleDeleteConversationFile}
+            />
+          </div>
+        ) : null}
       </div>
 
       <ConfirmDialog
