@@ -25,6 +25,7 @@ export function useConversationFiles(conversationId: string | null): UseConversa
   const [error, setError] = useState<string | null>(null);
   const requestIdRef = useRef(0);
   const mountedRef = useRef(true);
+  const latestConversationIdRef = useRef<string | null>(conversationId);
 
   const clearState = useCallback(() => {
     requestIdRef.current += 1;
@@ -45,13 +46,21 @@ export function useConversationFiles(conversationId: string | null): UseConversa
 
     try {
       const nextFiles = await getConversationFiles(targetConversationId);
-      if (!mountedRef.current || requestId !== requestIdRef.current) {
+      if (
+        !mountedRef.current ||
+        requestId !== requestIdRef.current ||
+        targetConversationId !== latestConversationIdRef.current
+      ) {
         return;
       }
       setFiles(nextFiles);
       setError(null);
     } catch (loadError) {
-      if (!mountedRef.current || requestId !== requestIdRef.current) {
+      if (
+        !mountedRef.current ||
+        requestId !== requestIdRef.current ||
+        targetConversationId !== latestConversationIdRef.current
+      ) {
         return;
       }
       setFiles([]);
@@ -65,6 +74,7 @@ export function useConversationFiles(conversationId: string | null): UseConversa
 
   useEffect(() => {
     mountedRef.current = true;
+    latestConversationIdRef.current = conversationId;
 
     if (!conversationId) {
       clearState();
@@ -82,8 +92,8 @@ export function useConversationFiles(conversationId: string | null): UseConversa
   }, []);
 
   const refresh = useCallback(async () => {
-    await loadFiles(conversationId);
-  }, [conversationId, loadFiles]);
+    await loadFiles(latestConversationIdRef.current);
+  }, [loadFiles]);
 
   const removeFile = useCallback((fileId: string) => {
     setFiles((currentFiles) => currentFiles.filter((file) => file.id !== fileId));

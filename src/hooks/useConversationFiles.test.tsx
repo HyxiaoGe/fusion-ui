@@ -101,6 +101,35 @@ describe('useConversationFiles', () => {
     expect(result.current.isLoading).toBe(false);
   });
 
+  it('pending 请求后切到 null 时旧结果不会写回', async () => {
+    const pendingRequest = createDeferred<FileInfo[]>();
+    getConversationFilesMock.mockReturnValue(pendingRequest.promise);
+
+    const { result, rerender } = renderHook(
+      ({ conversationId }: { conversationId: string | null }) => useConversationFiles(conversationId),
+      { initialProps: { conversationId: 'chat-1' } },
+    );
+
+    await waitFor(() => {
+      expect(result.current.isLoading).toBe(true);
+    });
+
+    rerender({ conversationId: null });
+
+    expect(result.current.files).toEqual([]);
+    expect(result.current.error).toBeNull();
+    expect(result.current.isLoading).toBe(false);
+
+    await act(async () => {
+      pendingRequest.resolve([createFile('stale-file')]);
+      await pendingRequest.promise;
+    });
+
+    expect(result.current.files).toEqual([]);
+    expect(result.current.error).toBeNull();
+    expect(result.current.isLoading).toBe(false);
+  });
+
   it('refresh 会重新拉取当前 conversation 的资料列表', async () => {
     const initialFiles = [createFile('file-1')];
     const refreshedFiles = [createFile('file-2')];
@@ -122,6 +151,37 @@ describe('useConversationFiles', () => {
     expect(getConversationFilesMock).toHaveBeenLastCalledWith('chat-1');
     expect(result.current.files).toEqual(refreshedFiles);
     expect(result.current.error).toBeNull();
+  });
+
+  it('旧 refresh 引用不会在切换会话后写回旧会话资料', async () => {
+    const oldFiles = [createFile('old-file')];
+    const newFiles = [createFile('new-file')];
+    getConversationFilesMock
+      .mockResolvedValueOnce(oldFiles)
+      .mockResolvedValueOnce(newFiles)
+      .mockResolvedValueOnce(newFiles);
+
+    const { result, rerender } = renderHook(
+      ({ conversationId }: { conversationId: string }) => useConversationFiles(conversationId),
+      { initialProps: { conversationId: 'chat-old' } },
+    );
+
+    await waitFor(() => {
+      expect(result.current.files).toEqual(oldFiles);
+    });
+    const staleRefresh = result.current.refresh;
+
+    rerender({ conversationId: 'chat-new' });
+    await waitFor(() => {
+      expect(result.current.files).toEqual(newFiles);
+    });
+
+    await act(async () => {
+      await staleRefresh();
+    });
+
+    expect(getConversationFilesMock).toHaveBeenLastCalledWith('chat-new');
+    expect(result.current.files).toEqual(newFiles);
   });
 
   it('removeFile 只从本地列表移除资料', async () => {
