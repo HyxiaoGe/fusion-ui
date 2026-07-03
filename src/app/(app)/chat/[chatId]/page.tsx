@@ -56,15 +56,27 @@ const CHAT_EMPTY_STATE = {
   description: '发送第一条消息，继续这段会话。',
 };
 
+const EMPTY_CONVERSATION_ATTACHMENTS: ConversationComposerAttachment[] = [];
+
+interface ConversationAttachmentState {
+  chatId: string;
+  attachments: ConversationComposerAttachment[];
+}
+
 export default function ChatPage() {
   const params = useParams();
   const router = useRouter();
   const dispatch = useAppDispatch();
   const store = useStore();
   const chatId = params?.chatId as string;
+  const latestChatIdRef = useRef(chatId);
+  latestChatIdRef.current = chatId;
   const [confirmDialogOpen, setConfirmDialogOpen] = useState(false);
   const [filesPanelOpen, setFilesPanelOpen] = useState(false);
-  const [conversationAttachments, setConversationAttachments] = useState<ConversationComposerAttachment[]>([]);
+  const [conversationAttachmentState, setConversationAttachmentState] = useState<ConversationAttachmentState>({
+    chatId,
+    attachments: [],
+  });
   const chatInputRef = useRef<HTMLDivElement>(null);
   const fetchQuestionsRef = useRef<((force?: boolean) => Promise<void>) | undefined>(undefined);
   const { conversation, hydrationView, hydrationError, retryHydration } = useConversation(chatId);
@@ -98,7 +110,12 @@ export default function ChatPage() {
 
   useEffect(() => {
     setFilesPanelOpen(false);
-    setConversationAttachments([]);
+    setConversationAttachmentState((current) => {
+      if (current.chatId === chatId && current.attachments.length === 0) {
+        return current;
+      }
+      return { chatId, attachments: [] };
+    });
   }, [chatId]);
 
   useEffect(() => {
@@ -264,8 +281,8 @@ export default function ChatPage() {
       {
         conversationId: chatId,
         onStreamEnd: (conversationId) => {
-          if (conversationId === chatId) {
-            // 用 ref 避免闭包过期（长时间 agent 流结束后 fetchQuestions 可能已更新）
+          if (conversationId === latestChatIdRef.current) {
+            // 用 ref 避免闭包过期（长时间 agent 流结束后 hook 可能已切到新会话）
             fetchQuestionsRef.current?.(true);
             void refreshConversationFiles();
           }
@@ -320,39 +337,65 @@ export default function ChatPage() {
     dispatch(clearConversationMessages(chatId));
   }, [chatId, dispatch]);
 
+  const conversationAttachments = conversationAttachmentState.chatId === chatId
+    ? conversationAttachmentState.attachments
+    : EMPTY_CONVERSATION_ATTACHMENTS;
+
   const handleAddConversationFile = useCallback((file: FileInfo) => {
     const attachment = tryConversationFileToComposerAttachment(file);
     if (!attachment) {
       return;
     }
 
-    setConversationAttachments((current) => {
-      if (current.some((item) => item.fileId === attachment.fileId)) {
-        return current;
+    setConversationAttachmentState((currentState) => {
+      const currentAttachments = currentState.chatId === chatId ? currentState.attachments : [];
+      if (currentAttachments.some((item) => item.fileId === attachment.fileId)) {
+        return currentState.chatId === chatId ? currentState : { chatId, attachments: currentAttachments };
       }
-      return [...current, attachment];
+      return { chatId, attachments: [...currentAttachments, attachment] };
     });
-  }, []);
+  }, [chatId]);
 
   const handleRemoveConversationAttachment = useCallback((fileId: string) => {
-    setConversationAttachments((current) => current.filter((item) => item.fileId !== fileId));
-  }, []);
+    setConversationAttachmentState((currentState) => {
+      if (currentState.chatId !== chatId) {
+        return currentState;
+      }
+      const nextAttachments = currentState.attachments.filter((item) => item.fileId !== fileId);
+      return nextAttachments.length === currentState.attachments.length
+        ? currentState
+        : { chatId, attachments: nextAttachments };
+    });
+  }, [chatId]);
 
   const handleClearConversationAttachments = useCallback(() => {
-    setConversationAttachments([]);
-  }, []);
+    setConversationAttachmentState((currentState) => {
+      if (currentState.chatId === chatId && currentState.attachments.length === 0) {
+        return currentState;
+      }
+      return { chatId, attachments: [] };
+    });
+  }, [chatId]);
 
   const handleDeleteConversationFile = useCallback((fileId: string) => {
     void deleteFile(fileId)
       .then(() => {
         removeConversationFile(fileId);
-        setConversationAttachments((current) => current.filter((item) => item.fileId !== fileId));
+        setConversationAttachmentState((currentState) => {
+          if (currentState.chatId !== chatId) {
+            return currentState;
+          }
+          return {
+            chatId,
+            attachments: currentState.attachments.filter((item) => item.fileId !== fileId),
+          };
+        });
       })
       .catch((error) => {
         console.error('删除会话资料失败:', error);
         void refreshConversationFiles();
       });
-  }, [refreshConversationFiles, removeConversationFile]);
+  }, [chatId, refreshConversationFiles, removeConversationFile]);
 
   const selectedConversationFileIds = useMemo(
     () => new Set(conversationAttachments.map((file) => file.fileId)),
@@ -405,7 +448,7 @@ export default function ChatPage() {
   return (
     <>
       <div className="relative flex h-full min-h-0">
-        <div className="relative flex min-h-0 flex-1 flex-col">
+        <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
           <div className="flex-1 overflow-y-auto px-4 pt-4" data-chat-scroll-container="true">
             <ChatMessageListLazy
               messages={isHydratingWithoutContent ? [] : displayMessages}

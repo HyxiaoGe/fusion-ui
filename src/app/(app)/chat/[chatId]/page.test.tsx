@@ -11,6 +11,7 @@ const {
   routerPushMock,
   chatInputMountMock,
   chatInputUnmountMock,
+  chatInputRenderMock,
   chatMessageListMock,
   retryHydrationMock,
   sendMessageMock,
@@ -48,6 +49,7 @@ const {
   routerPushMock: vi.fn(),
   chatInputMountMock: vi.fn(),
   chatInputUnmountMock: vi.fn(),
+  chatInputRenderMock: vi.fn(),
   chatMessageListMock: vi.fn(),
   retryHydrationMock: vi.fn(),
   sendMessageMock: vi.fn(),
@@ -161,7 +163,12 @@ vi.mock('@/components/chat/ConversationFilesPanel', () => ({
     }
 
     return (
-      <div data-testid="conversation-files-panel">
+      <div
+        data-testid="conversation-files-panel"
+        data-loading={props.isLoading ? 'true' : 'false'}
+        data-error={props.error ?? ''}
+        data-selected-ids={Array.from(props.selectedFileIds).join(',')}
+      >
         <button type="button" onClick={() => props.onAddFile(props.files[0])}>加入资料</button>
         <button type="button" onClick={() => props.onDeleteFile(props.files[0].id)}>删除资料</button>
         <button type="button" onClick={props.onRefresh}>刷新资料</button>
@@ -222,6 +229,7 @@ vi.mock('@/components/chat/ChatInput', () => ({
     onStopStreaming,
     onSendMessage,
     conversationAttachments = [],
+    onRemoveConversationAttachment,
     onClearConversationAttachments,
     onUploadComplete,
   }: {
@@ -230,9 +238,16 @@ vi.mock('@/components/chat/ChatInput', () => ({
     onStopStreaming?: () => void;
     onSendMessage?: (content: string) => void;
     conversationAttachments?: any[];
+    onRemoveConversationAttachment?: (fileId: string) => void;
     onClearConversationAttachments?: () => void;
     onUploadComplete?: () => void;
   }) {
+    chatInputRenderMock({
+      activeChatId,
+      resetSignal,
+      conversationAttachments,
+    });
+
     useEffect(() => {
       chatInputMountMock();
       return () => chatInputUnmountMock();
@@ -247,6 +262,12 @@ vi.mock('@/components/chat/ChatInput', () => ({
       >
         <button type="button" onClick={onStopStreaming}>停止生成</button>
         <button type="button" onClick={() => onSendMessage?.('你好')}>发送消息</button>
+        <button
+          type="button"
+          onClick={() => onRemoveConversationAttachment?.(conversationAttachments[0]?.fileId)}
+        >
+          移除已选资料
+        </button>
         <button type="button" onClick={onClearConversationAttachments}>清空已选资料</button>
         <button type="button" onClick={onUploadComplete}>上传完成</button>
       </div>
@@ -318,6 +339,7 @@ describe('ChatPage 会话切换体验', () => {
     routerPushMock.mockClear();
     chatInputMountMock.mockClear();
     chatInputUnmountMock.mockClear();
+    chatInputRenderMock.mockClear();
     chatMessageListMock.mockClear();
     retryHydrationMock.mockClear();
     sendMessageMock.mockClear();
@@ -629,13 +651,29 @@ describe('ChatPage 会话切换体验', () => {
         error_message: null,
       },
     ];
+    useConversationFilesState.isLoading = true;
+    useConversationFilesState.error = '暂时不可用';
 
     render(<ChatPage />);
 
     fireEvent.click(screen.getByRole('button', { name: '打开会话资料' }));
+    expect(screen.getByTestId('conversation-files-panel')).toHaveAttribute('data-loading', 'true');
+    expect(screen.getByTestId('conversation-files-panel')).toHaveAttribute('data-error', '暂时不可用');
+    expect(screen.getByTestId('conversation-files-panel')).toHaveAttribute('data-selected-ids', '');
+
     fireEvent.click(screen.getByText('加入资料'));
 
     expect(screen.getByTestId('chat-input')).toHaveAttribute('data-attachment-count', '1');
+    expect(screen.getByTestId('conversation-files-panel')).toHaveAttribute('data-selected-ids', 'file-1');
+
+    fireEvent.click(screen.getByText('移除已选资料'));
+    expect(screen.getByTestId('chat-input')).toHaveAttribute('data-attachment-count', '0');
+    expect(screen.getByTestId('conversation-files-panel')).toHaveAttribute('data-selected-ids', '');
+
+    fireEvent.click(screen.getByText('加入资料'));
+    fireEvent.click(screen.getByText('清空已选资料'));
+    expect(screen.getByTestId('chat-input')).toHaveAttribute('data-attachment-count', '0');
+    expect(screen.getByTestId('conversation-files-panel')).toHaveAttribute('data-selected-ids', '');
   });
 
   it('删除会话资料时同步移除 composer 已选资料', async () => {
@@ -693,6 +731,11 @@ describe('ChatPage 会话切换体验', () => {
     rerender(<ChatPage />);
 
     expect(screen.getByTestId('chat-input')).toHaveAttribute('data-attachment-count', '0');
+    const chatBRenders = chatInputRenderMock.mock.calls.filter(
+      ([props]) => props.activeChatId === 'chat-b'
+    );
+    expect(chatBRenders.length).toBeGreaterThan(0);
+    expect(chatBRenders.every(([props]) => props.conversationAttachments.length === 0)).toBe(true);
   });
 
   it('上传或发送完成后刷新会话资料', async () => {
@@ -709,6 +752,28 @@ describe('ChatPage 会话切换体验', () => {
     sendOptions.onStreamEnd('chat-a');
 
     expect(useConversationFilesState.refresh).toHaveBeenCalledTimes(2);
+  });
+
+  it('旧会话流结束时不刷新当前会话资料', async () => {
+    conversationsById.set('chat-a', createConversation('chat-a', [textMessage('message-a')]));
+    conversationsById.set('chat-b', createConversation('chat-b', [textMessage('message-b')]));
+    hydrationById.set('chat-a', { view: 'ready' });
+    hydrationById.set('chat-b', { view: 'ready' });
+
+    const { rerender } = render(<ChatPage />);
+
+    fireEvent.click(screen.getByRole('button', { name: '发送消息' }));
+    const sendOptions = sendMessageMock.mock.calls.at(-1)?.[1];
+    useConversationFilesState.refresh.mockClear();
+    fetchQuestionsMock.mockClear();
+
+    currentRoute.chatId = 'chat-b';
+    rerender(<ChatPage />);
+
+    sendOptions.onStreamEnd('chat-a');
+
+    expect(useConversationFilesState.refresh).not.toHaveBeenCalled();
+    expect(fetchQuestionsMock).not.toHaveBeenCalled();
   });
 
   it('hydration error 时点击返回首页进入 /chat/new', () => {
