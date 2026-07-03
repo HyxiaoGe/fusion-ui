@@ -18,7 +18,7 @@ export interface ConversationComposerAttachment {
   fileId: string;
   filename: string;
   mimetype: string;
-  status: FileProcessingStatus;
+  status: 'processed';
   thumbnailUrl?: string | null;
   width?: number | null;
   height?: number | null;
@@ -26,7 +26,11 @@ export interface ConversationComposerAttachment {
 
 export type ComposerAttachment = UploadComposerAttachment | ConversationComposerAttachment;
 
-export function conversationFileToComposerAttachment(file: FileInfo): ConversationComposerAttachment {
+export function conversationFileToComposerAttachment(file: FileInfo): ConversationComposerAttachment | null {
+  if (file.status !== 'processed') {
+    return null;
+  }
+
   return {
     source: 'conversation',
     fileId: file.id,

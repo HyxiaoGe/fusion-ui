@@ -49,6 +49,14 @@ describe('composerAttachments', () => {
     });
   });
 
+  it('未处理会话资料不会映射为可发送附件', () => {
+    const parsingFile = createConversationFile({ id: 'file-parsing', status: 'parsing' });
+    const errorFile = createConversationFile({ id: 'file-error', status: 'error' });
+
+    expect(conversationFileToComposerAttachment(parsingFile)).toBeNull();
+    expect(conversationFileToComposerAttachment(errorFile)).toBeNull();
+  });
+
   it('upload 无 fileId 视为处理中，upload error 视为错误，会话资料不视为处理中或错误', () => {
     const processingUpload: ComposerAttachment = {
       source: 'upload',
