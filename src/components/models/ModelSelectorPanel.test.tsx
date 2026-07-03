@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
 import ModelSelectorPanel from './ModelSelectorPanel';
@@ -69,7 +69,7 @@ describe('ModelSelectorPanel', () => {
     expect(screen.getByText('工具')).toBeInTheDocument();
   });
 
-  it('在模型卡片中展示能力推荐和非联网边界', () => {
+  it('在模型卡片中保留能力分但不内联展示推荐解释', () => {
     render(
       <ModelSelectorPanel
         modelsByProvider={[{ ...provider, models }]}
@@ -82,14 +82,23 @@ describe('ModelSelectorPanel', () => {
       />,
     );
 
-    expect(screen.getByText('推荐：实时资料、图片和长任务')).toBeInTheDocument();
-    expect(screen.getByText('能力 100')).toBeInTheDocument();
-    expect(screen.getByText('适合：稳定知识与普通对话')).toBeInTheDocument();
-    expect(screen.getByText('能力 40')).toBeInTheDocument();
-    expect(screen.getByText('不支持实时联网，涉及最新信息时会基于已有知识谨慎回答')).toBeInTheDocument();
+    const searchCard = screen.getByRole('button', { name: /Search Model/ });
+    const plainCard = screen.getByRole('button', { name: /Plain Model/ });
+
+    expect(within(searchCard).getByText('能力 100')).toBeInTheDocument();
+    expect(within(plainCard).getByText('能力 40')).toBeInTheDocument();
+    expect(screen.queryByText('推荐：实时资料、图片和长任务')).not.toBeInTheDocument();
+    expect(screen.queryByText('适合：稳定知识与普通对话')).not.toBeInTheDocument();
+    expect(screen.queryByText('不支持实时联网，涉及最新信息时会基于已有知识谨慎回答')).not.toBeInTheDocument();
+
+    expect(searchCard).toHaveAttribute('title', expect.stringContaining('推荐：实时资料、图片和长任务'));
+    expect(plainCard).toHaveAttribute(
+      'title',
+      expect.stringContaining('不支持实时联网，涉及最新信息时会基于已有知识谨慎回答'),
+    );
   });
 
-  it('健康异常模型展示不建议使用而不是普通推荐', () => {
+  it('健康异常模型保留能力分并把不可用解释放到悬停提示', () => {
     const unhealthyModels: ModelInfo[] = [
       {
         id: 'offline-model',
@@ -121,8 +130,12 @@ describe('ModelSelectorPanel', () => {
       />,
     );
 
-    expect(screen.getByText('不建议：当前不可用')).toBeInTheDocument();
-    expect(screen.getByText('能力 0')).toBeInTheDocument();
-    expect(screen.getByText('模型已下线')).toBeInTheDocument();
+    const offlineCard = screen.getByRole('button', { name: /Offline Model/ });
+
+    expect(within(offlineCard).getByText('能力 0')).toBeInTheDocument();
+    expect(screen.queryByText('不建议：当前不可用')).not.toBeInTheDocument();
+    expect(screen.queryByText('模型已下线')).not.toBeInTheDocument();
+    expect(offlineCard).toHaveAttribute('title', expect.stringContaining('不建议：当前不可用'));
+    expect(offlineCard).toHaveAttribute('title', expect.stringContaining('模型已下线'));
   });
 });

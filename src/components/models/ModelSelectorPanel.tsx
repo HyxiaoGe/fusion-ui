@@ -5,6 +5,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import {
   buildModelCapabilityLabels,
   buildModelCapabilityRecommendation,
+  buildModelCapabilityTooltip,
 } from "@/lib/models/modelCapabilityPresentation";
 import { CapabilityChipList } from "./CapabilityChip";
 import ProviderIcon from "./ProviderIcon";
@@ -170,10 +171,12 @@ const ModelCard = memo(
   }) => {
     const unhealthy = isUnhealthy(model);
     const recommendation = buildModelCapabilityRecommendation(model);
+    const tooltip = buildModelCapabilityTooltip(model);
     const card = (
       <button
         onClick={() => !unhealthy && onSelect()}
         disabled={unhealthy}
+        title={tooltip}
         className={cn(
           "text-left p-2.5 rounded-lg border transition-colors duration-100 w-full",
           unhealthy
@@ -187,31 +190,20 @@ const ModelCard = memo(
           <span className={cn("text-sm truncate", isSelected ? "font-semibold" : "font-medium")}>
             {model.name}
           </span>
+          <span className="shrink-0 text-[10px] text-muted-foreground">能力 {recommendation.score}</span>
           {isSelected && <Check size={14} className="shrink-0 text-primary" />}
           {unhealthy && <AlertCircle size={13} className="shrink-0 text-amber-600 dark:text-amber-500" />}
         </div>
         <CapabilityChipList labels={buildModelCapabilityLabels(model)} maxCount={5} />
-        <div className="mt-1.5 space-y-0.5">
-          <div className="flex items-center justify-between gap-2 text-[11px] font-medium text-foreground leading-snug">
-            <span className="min-w-0 truncate">{recommendation.headline}</span>
-            <span className="shrink-0 text-[10px] text-muted-foreground">能力 {recommendation.score}</span>
-          </div>
-          {recommendation.warnings.slice(0, 1).map((warning) => (
-            <div key={warning} className="text-[10px] text-muted-foreground leading-snug">
-              {warning}
-            </div>
-          ))}
-        </div>
       </button>
     );
-    if (!unhealthy) return card;
     return (
       <Tooltip>
         <TooltipTrigger asChild>
           <span className="block">{card}</span>
         </TooltipTrigger>
-        <TooltipContent side="top" className="max-w-xs text-xs">
-          {healthTooltip(model)}
+        <TooltipContent side="top" className="max-w-xs whitespace-pre-line text-xs">
+          {tooltip}
         </TooltipContent>
       </Tooltip>
     );
