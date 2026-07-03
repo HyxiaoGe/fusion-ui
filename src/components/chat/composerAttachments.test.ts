@@ -2,10 +2,10 @@ import { describe, expect, it } from 'vitest';
 import type { FileInfo } from '@/lib/api/files';
 
 import {
-  conversationFileToComposerAttachment,
   isComposerAttachmentError,
   isComposerAttachmentProcessing,
   toFileAttachment,
+  tryConversationFileToComposerAttachment,
   type ComposerAttachment,
 } from './composerAttachments';
 
@@ -29,7 +29,7 @@ describe('composerAttachments', () => {
   it('把 processed 会话资料映射为 composer attachment 并转成发送附件', () => {
     const file = createConversationFile();
 
-    const attachment = conversationFileToComposerAttachment(file);
+    const attachment = tryConversationFileToComposerAttachment(file);
 
     expect(attachment).not.toBeNull();
     if (!attachment) throw new Error('processed 会话资料应该可加入 composer');
@@ -56,17 +56,24 @@ describe('composerAttachments', () => {
     const parsingFile = createConversationFile({ id: 'file-parsing', status: 'parsing' });
     const errorFile = createConversationFile({ id: 'file-error', status: 'error' });
 
-    expect(conversationFileToComposerAttachment(parsingFile)).toBeNull();
-    expect(conversationFileToComposerAttachment(errorFile)).toBeNull();
+    expect(tryConversationFileToComposerAttachment(parsingFile)).toBeNull();
+    expect(tryConversationFileToComposerAttachment(errorFile)).toBeNull();
   });
 
-  it('upload 无 fileId 视为处理中，upload error 视为错误，会话资料不视为处理中或错误', () => {
+  it('按上传状态判断 processing/error，会话资料不视为处理中或错误', () => {
     const processingUpload: ComposerAttachment = {
       source: 'upload',
       localId: 'local-1',
       file: new File(['hello'], 'hello.txt', { type: 'text/plain' }),
       status: 'uploading',
       previewUrl: '',
+    };
+    const errorWithoutFileId: ComposerAttachment = {
+      source: 'upload',
+      localId: 'local-error-without-file-id',
+      file: new File(['bad'], 'bad-before-id.txt', { type: 'text/plain' }),
+      status: 'error',
+      errorMessage: '上传失败',
     };
     const errorUpload: ComposerAttachment = {
       source: 'upload',
@@ -76,13 +83,15 @@ describe('composerAttachments', () => {
       status: 'error',
       errorMessage: '上传失败',
     };
-    const conversationAttachment = conversationFileToComposerAttachment(createConversationFile());
+    const conversationAttachment = tryConversationFileToComposerAttachment(createConversationFile());
 
     expect(conversationAttachment).not.toBeNull();
     if (!conversationAttachment) throw new Error('processed 会话资料应该可加入 composer');
 
     expect(isComposerAttachmentProcessing(processingUpload)).toBe(true);
     expect(isComposerAttachmentError(processingUpload)).toBe(false);
+    expect(isComposerAttachmentProcessing(errorWithoutFileId)).toBe(false);
+    expect(isComposerAttachmentError(errorWithoutFileId)).toBe(true);
     expect(isComposerAttachmentProcessing(errorUpload)).toBe(false);
     expect(isComposerAttachmentError(errorUpload)).toBe(true);
     expect(isComposerAttachmentProcessing(conversationAttachment)).toBe(false);
@@ -113,8 +122,24 @@ describe('composerAttachments', () => {
       previewUrl: 'blob:local-image',
       thumbnailUrl: 'https://cdn.example.com/image-thumb.png',
     };
+    const parsingWithFileId: ComposerAttachment = {
+      source: 'upload',
+      localId: 'local-4',
+      file: new File(['parsing'], 'parsing.pdf', { type: 'application/pdf' }),
+      fileId: 'file-4',
+      status: 'parsing',
+    };
+    const errorWithFileId: ComposerAttachment = {
+      source: 'upload',
+      localId: 'local-5',
+      file: new File(['error'], 'error.pdf', { type: 'application/pdf' }),
+      fileId: 'file-5',
+      status: 'error',
+    };
 
     expect(toFileAttachment(uploadWithoutFileId)).toBeNull();
+    expect(toFileAttachment(parsingWithFileId)).toBeNull();
+    expect(toFileAttachment(errorWithFileId)).toBeNull();
     expect(toFileAttachment(uploadWithFileId)).toEqual({
       fileId: 'file-2',
       filename: 'ready.bin',

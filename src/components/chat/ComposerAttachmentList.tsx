@@ -4,7 +4,7 @@ import { FileIcon, ImageIcon, Loader2, PaperclipIcon, RotateCw, X } from 'lucide
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { formatFileSize } from '@/lib/utils/fileHelpers';
-import type { ComposerAttachment } from './composerAttachments';
+import type { ComposerAttachment, UploadComposerAttachment } from './composerAttachments';
 import { isComposerAttachmentProcessing } from './composerAttachments';
 
 export interface ComposerAttachmentListProps {
@@ -222,7 +222,7 @@ function isImageAttachment(attachment: ComposerAttachment): boolean {
   return mimeType.startsWith('image/');
 }
 
-function getUploadStatusText(status: ComposerAttachment['status']): string {
+function getUploadStatusText(status: UploadComposerAttachment['status']): string {
   switch (status) {
     case 'pending':
       return '等待上传';
@@ -234,7 +234,5 @@ function getUploadStatusText(status: ComposerAttachment['status']): string {
       return '已处理';
     case 'error':
       return '处理失败';
-    default:
-      return '等待上传';
   }
 }

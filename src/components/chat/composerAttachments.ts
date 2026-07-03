@@ -26,7 +26,7 @@ export interface ConversationComposerAttachment {
 
 export type ComposerAttachment = UploadComposerAttachment | ConversationComposerAttachment;
 
-export function conversationFileToComposerAttachment(file: FileInfo): ConversationComposerAttachment | null {
+export function tryConversationFileToComposerAttachment(file: FileInfo): ConversationComposerAttachment | null {
   if (file.status !== 'processed') {
     return null;
   }
@@ -43,17 +43,14 @@ export function conversationFileToComposerAttachment(file: FileInfo): Conversati
   };
 }
 
+export const conversationFileToComposerAttachment = tryConversationFileToComposerAttachment;
+
 export function isComposerAttachmentProcessing(attachment: ComposerAttachment): boolean {
   if (attachment.source === 'conversation') {
     return false;
   }
 
-  return (
-    !attachment.fileId ||
-    attachment.status === 'pending' ||
-    attachment.status === 'uploading' ||
-    attachment.status === 'parsing'
-  );
+  return attachment.status === 'pending' || attachment.status === 'uploading' || attachment.status === 'parsing';
 }
 
 export function isComposerAttachmentError(attachment: ComposerAttachment): boolean {
@@ -70,7 +67,7 @@ export function toFileAttachment(attachment: ComposerAttachment): FileAttachment
     };
   }
 
-  if (!attachment.fileId) {
+  if (!attachment.fileId || attachment.status !== 'processed') {
     return null;
   }
 
