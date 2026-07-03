@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const {
@@ -94,14 +94,6 @@ async function renderLoaded() {
   await screen.findByText('当前生效配置');
 }
 
-function fillCandidateForm(payload = '{"template":"新标题 prompt"}') {
-  fireEvent.change(screen.getByLabelText('命名空间'), { target: { value: 'prompt_template' } });
-  fireEvent.change(screen.getByLabelText('配置 Key'), { target: { value: 'generate_title' } });
-  fireEvent.change(screen.getByLabelText('版本号'), { target: { value: '2026-07-03.ui' } });
-  fireEvent.change(screen.getByLabelText('描述'), { target: { value: 'UI 候选版本' } });
-  fireEvent.change(screen.getByLabelText('JSON Payload'), { target: { value: payload } });
-}
-
 describe('RuntimeConfigManager', () => {
   beforeEach(() => {
     fetchRuntimeConfigSnapshotMock.mockReset();
@@ -127,105 +119,34 @@ describe('RuntimeConfigManager', () => {
     expect(screen.getByText('template 必须是非空字符串')).toBeInTheDocument();
   });
 
-  it('创建候选版本表单展示当前编辑配置的用途和风险', async () => {
+  it('版本记录说明这是只读观察面板', async () => {
     prepareSnapshot();
 
     await renderLoaded();
 
-    expect(screen.getByText('当前编辑：标题生成 Prompt')).toBeInTheDocument();
-    expect(screen.getAllByText('用于根据对话内容生成会话标题。').length).toBeGreaterThan(0);
-    expect(screen.getByText('错误配置会直接影响标题质量和历史会话可识别性。')).toBeInTheDocument();
+    expect(screen.getByText('配置版本记录')).toBeInTheDocument();
+    expect(
+      screen.getByText('这里只展示运行时配置的当前状态和历史记录；配置变更仍通过代码、Agent 和 CI/CD 流程完成。'),
+    ).toBeInTheDocument();
   });
 
-  it('payload 不是 JSON object 时不调用后端校验', async () => {
+  it('不暴露创建、校验、激活和禁用入口', async () => {
     prepareSnapshot();
     await renderLoaded();
 
-    fillCandidateForm('[]');
-    fireEvent.click(screen.getByRole('button', { name: '校验' }));
-
-    expect(await screen.findByText('payload 必须是 JSON 对象')).toBeInTheDocument();
+    expect(screen.queryByText('创建候选版本')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('命名空间')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('配置 Key')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('版本号')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('描述')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('JSON Payload')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '校验' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '创建候选' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '激活' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '禁用' })).not.toBeInTheDocument();
     expect(validateRuntimeConfigMock).not.toHaveBeenCalled();
-  });
-
-  it('点击校验后展示后端 issues', async () => {
-    prepareSnapshot();
-    validateRuntimeConfigMock.mockResolvedValue({
-      namespace: 'prompt_template',
-      key: 'generate_title',
-      valid: false,
-      issues: ['template 必须是非空字符串'],
-    });
-    await renderLoaded();
-
-    fillCandidateForm('{"template":""}');
-    fireEvent.click(screen.getByRole('button', { name: '校验' }));
-
-    expect(await screen.findByText('校验未通过')).toBeInTheDocument();
-    expect(screen.getAllByText('template 必须是非空字符串').length).toBeGreaterThan(0);
-  });
-
-  it('创建候选版本前先 validate，通过后 create 并刷新 snapshot', async () => {
-    prepareSnapshot();
-    validateRuntimeConfigMock.mockResolvedValue({
-      namespace: 'prompt_template',
-      key: 'generate_title',
-      valid: true,
-      issues: [],
-    });
-    createRuntimeConfigEntryMock.mockResolvedValue({
-      id: 'row-new',
-      namespace: 'prompt_template',
-      key: 'generate_title',
-      version: '2026-07-03.ui',
-      is_active: false,
-      valid: true,
-      issues: [],
-      payload: { template: '新标题 prompt' },
-    });
-    await renderLoaded();
-
-    fillCandidateForm();
-    fireEvent.click(screen.getByRole('button', { name: '创建候选' }));
-
-    await waitFor(() => expect(createRuntimeConfigEntryMock).toHaveBeenCalledTimes(1));
-    expect(validateRuntimeConfigMock.mock.invocationCallOrder[0]).toBeLessThan(
-      createRuntimeConfigEntryMock.mock.invocationCallOrder[0],
-    );
-    expect(createRuntimeConfigEntryMock).toHaveBeenCalledWith({
-      namespace: 'prompt_template',
-      key: 'generate_title',
-      version: '2026-07-03.ui',
-      description: 'UI 候选版本',
-      payload: { template: '新标题 prompt' },
-    });
-    expect(fetchRuntimeConfigSnapshotMock).toHaveBeenCalledTimes(2);
-    expect(await screen.findByText('候选版本已创建，尚未生效')).toBeInTheDocument();
-  });
-
-  it('激活候选版本需要确认，确认后调用 activate 并刷新 snapshot', async () => {
-    prepareSnapshot();
-    activateRuntimeConfigEntryMock.mockResolvedValue({ id: 'row-candidate', is_active: true });
-    await renderLoaded();
-
-    const row = screen.getByTestId('runtime-config-entry-row-candidate');
-    fireEvent.click(within(row).getByRole('button', { name: '激活' }));
-    fireEvent.click(await screen.findByRole('button', { name: '确认激活' }));
-
-    await waitFor(() => expect(activateRuntimeConfigEntryMock).toHaveBeenCalledWith('row-candidate'));
-    expect(fetchRuntimeConfigSnapshotMock).toHaveBeenCalledTimes(2);
-  });
-
-  it('禁用 active 版本需要确认，确认后调用 status=false 并刷新 snapshot', async () => {
-    prepareSnapshot();
-    setRuntimeConfigEntryActiveMock.mockResolvedValue({ id: 'row-active', is_active: false });
-    await renderLoaded();
-
-    const row = screen.getByTestId('runtime-config-entry-row-active');
-    fireEvent.click(within(row).getByRole('button', { name: '禁用' }));
-    fireEvent.click(await screen.findByRole('button', { name: '确认禁用' }));
-
-    await waitFor(() => expect(setRuntimeConfigEntryActiveMock).toHaveBeenCalledWith('row-active', false));
-    expect(fetchRuntimeConfigSnapshotMock).toHaveBeenCalledTimes(2);
+    expect(createRuntimeConfigEntryMock).not.toHaveBeenCalled();
+    expect(activateRuntimeConfigEntryMock).not.toHaveBeenCalled();
+    expect(setRuntimeConfigEntryActiveMock).not.toHaveBeenCalled();
   });
 });
