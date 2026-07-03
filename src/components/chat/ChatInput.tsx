@@ -16,13 +16,21 @@ import {
   updateFileStatus,
   type FileProcessingStatus,
 } from "@/redux/slices/fileUploadSlice";
-import { ArrowUp, Lightbulb, Loader2, PaperclipIcon, Square, X } from "lucide-react";
+import { ArrowUp, Lightbulb, PaperclipIcon, Square } from "lucide-react";
 import ImageViewer from "./ImageViewer";
 import ModelSelector from "@/components/models/ModelSelector";
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useToast } from "../ui/toast";
 import { v4 as uuidv4 } from "uuid";
 import { useRenderProbe } from "@/lib/debug/perfProbe";
+import ComposerAttachmentList from "./ComposerAttachmentList";
+import {
+  isComposerAttachmentError,
+  isComposerAttachmentProcessing,
+  toFileAttachment,
+  type ConversationComposerAttachment,
+  type UploadComposerAttachment,
+} from "./composerAttachments";
 
 interface ChatInputProps {
   onSendMessage: (
@@ -39,6 +47,10 @@ interface ChatInputProps {
   resetSignal?: string | number | null;
   autoFocus?: boolean;
   focusSignal?: string | number | null;
+  conversationAttachments?: ConversationComposerAttachment[];
+  onRemoveConversationAttachment?: (fileId: string) => void;
+  onClearConversationAttachments?: () => void;
+  onUploadComplete?: () => void;
 }
 
 interface LocalFileWithStatus {
@@ -50,6 +62,8 @@ interface LocalFileWithStatus {
   errorMessage?: string;
   thumbnailUrl?: string; // 后端返回的 presigned 缩略图 URL
 }
+
+const EMPTY_CONVERSATION_ATTACHMENTS: ConversationComposerAttachment[] = [];
 
 function getFileIdentity(file: File): string {
   return `${file.name}:${file.size}:${file.lastModified}`;
@@ -85,6 +99,10 @@ const ChatInput: React.FC<ChatInputProps> = ({
   resetSignal,
   autoFocus = false,
   focusSignal = null,
+  conversationAttachments = EMPTY_CONVERSATION_ATTACHMENTS,
+  onRemoveConversationAttachment,
+  onClearConversationAttachments,
+  onUploadComplete,
 }) => {
   useRenderProbe('ChatInput');
   const dispatch = useAppDispatch();
@@ -162,6 +180,24 @@ const ChatInput: React.FC<ChatInputProps> = ({
 
   const selectChatFileIds = useMemo(makeSelectChatFileIds, []);
   const fileIds = useAppSelector((state) => selectChatFileIds(state, chatId));
+  const uploadAttachments = useMemo<UploadComposerAttachment[]>(
+    () =>
+      localFiles.map((file) => ({
+        source: "upload",
+        localId: file.id,
+        file: file.file,
+        fileId: file.fileId,
+        status: file.status,
+        previewUrl: file.previewUrl,
+        thumbnailUrl: file.thumbnailUrl,
+        errorMessage: file.errorMessage,
+      })),
+    [localFiles],
+  );
+  const composerAttachments = useMemo(
+    () => [...uploadAttachments, ...conversationAttachments],
+    [conversationAttachments, uploadAttachments],
+  );
 
   const promptLogin = (messageText: string) => {
     toast({
@@ -339,6 +375,8 @@ const ChatInput: React.FC<ChatInputProps> = ({
           });
         });
       });
+
+      onUploadComplete?.();
     } catch (error) {
       const errorMessage = formatFileErrorMessage((error as Error).message || "文件上传失败，请重试");
 
@@ -476,7 +514,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
   };
 
   const handleSendMessage = () => {
-    if ((!message.trim() && localFiles.length === 0) || isComposerBlocked) {
+    if ((!message.trim() && composerAttachments.length === 0) || isComposerBlocked) {
       return;
     }
 
@@ -484,7 +522,11 @@ const ChatInput: React.FC<ChatInputProps> = ({
       return;
     }
 
-    if (localFiles.some((file) => file.status === "error")) {
+    if (hasProcessingFiles) {
+      return;
+    }
+
+    if (composerAttachments.some(isComposerAttachmentError)) {
       toast({
         message: "请先重试或移除失败文件",
         type: "warning",
@@ -493,17 +535,11 @@ const ChatInput: React.FC<ChatInputProps> = ({
       return;
     }
 
-    if (localFiles.length > 0) {
-      // 构建结构化的文件附件元数据
-      const attachments: FileAttachment[] = localFiles
-        .filter((item) => item.fileId)
-        .map((item) => ({
-          fileId: item.fileId!,
-          filename: item.file.name,
-          mimeType: item.file.type || 'application/octet-stream',
-          previewUrl: item.previewUrl || undefined,
-        }));
+    const attachments: FileAttachment[] = composerAttachments
+      .map(toFileAttachment)
+      .filter((attachment): attachment is FileAttachment => attachment !== null);
 
+    if (attachments.length > 0) {
       // 首页新对话时，传递文件上传使用的 pendingChatId，确保后端对话 ID 一致
       const pendingId = !activeChatId ? pendingChatIdRef.current : undefined;
       onSendMessage(message, attachments, pendingId);
@@ -521,6 +557,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
 
     setMessage("");
     setLocalFiles([]);
+    onClearConversationAttachments?.();
 
     if (textareaRef.current) {
       textareaRef.current.style.height = "auto";
@@ -557,8 +594,10 @@ const ChatInput: React.FC<ChatInputProps> = ({
 
   const hasProcessingFiles = useMemo(() => {
     if (
-      localFiles.some(
-        (file) => !file.fileId || file.status === "pending" || file.status === "uploading" || file.status === "parsing"
+      uploadAttachments.some(
+        (attachment) =>
+          (attachment.status !== "error" && !attachment.fileId) ||
+          isComposerAttachmentProcessing(attachment)
       )
     ) {
       return true;
@@ -568,109 +607,17 @@ const ChatInput: React.FC<ChatInputProps> = ({
       const status = processingFiles[fileId];
       return status === "pending" || status === "uploading" || status === "parsing";
     });
-  }, [fileIds, localFiles, processingFiles]);
-
-  const renderFileStatus = (file: LocalFileWithStatus) => {
-    switch (file.status) {
-      case "pending":
-        return (
-          <div className="flex items-center text-gray-500">
-            <span className="mr-2 text-xs font-medium">等待上传</span>
-            <div className="w-4 h-4 border-2 border-gray-300 border-t-blue-500 rounded-full animate-spin"></div>
-          </div>
-        );
-      case "uploading":
-        return (
-          <div className="flex flex-col w-full">
-            <div className="flex items-center justify-between mb-1">
-              <span className="text-xs font-medium text-blue-500">上传中</span>
-              <span className="text-xs text-blue-500">...</span>
-            </div>
-            <div className="w-full bg-blue-100 dark:bg-blue-900/30 h-1 rounded-full overflow-hidden">
-              <div className="bg-blue-500 h-full rounded-full animate-pulse" style={{ width: "100%" }}></div>
-            </div>
-          </div>
-        );
-      case "parsing":
-        return (
-          <div className="flex flex-col w-full">
-            <div className="flex items-center justify-between mb-1">
-              <span className="text-xs font-medium text-amber-500">AI解析中</span>
-              <span className="text-xs text-amber-500">...</span>
-            </div>
-            <div className="w-full bg-amber-100 dark:bg-amber-900/30 h-1 rounded-full overflow-hidden">
-              <div
-                className="bg-amber-500 h-full rounded-full animate-pulse"
-                style={{
-                  width: "60%",
-                }}
-              ></div>
-            </div>
-          </div>
-        );
-      case "processed":
-        return (
-          <div className="space-y-1">
-            <div className="flex items-center text-green-600 dark:text-green-500">
-              <svg className="w-4 h-4 mr-1.5" viewBox="0 0 20 20" fill="currentColor">
-                <path
-                  fillRule="evenodd"
-                  d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"
-                  clipRule="evenodd"
-                />
-              </svg>
-              <span className="text-xs font-medium">文件已就绪</span>
-            </div>
-            <p className="text-xs text-muted-foreground">发送消息时会自动附带这个文件</p>
-          </div>
-        );
-      case "error":
-        return (
-          <div className="space-y-2">
-            <div className="flex items-center text-red-600 dark:text-red-500">
-              <svg className="w-4 h-4 mr-1.5" viewBox="0 0 20 20" fill="currentColor">
-                <path
-                  fillRule="evenodd"
-                  d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z"
-                  clipRule="evenodd"
-                />
-              </svg>
-              <span className="text-xs font-medium">{formatFileErrorMessage(file.errorMessage)}</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                className="h-7 px-2 text-xs"
-                onClick={() => void handleRetryFile(file.id)}
-              >
-                重试上传
-              </Button>
-              <Button
-                type="button"
-                size="sm"
-                variant="ghost"
-                className="h-7 px-2 text-xs"
-                onClick={() => handleRemoveFile(file.id)}
-              >
-                移除文件
-              </Button>
-            </div>
-          </div>
-        );
-      default:
-        return <span className="text-xs text-gray-500">未知状态</span>;
-    }
-  };
+  }, [fileIds, processingFiles, uploadAttachments]);
 
   const renderProcessingMessage = () => {
-    const hasPendingFiles = localFiles.some((file) => file.status === "pending" || !file.fileId);
+    const hasPendingFiles = uploadAttachments.some(
+      (attachment) => attachment.status === "pending" || (attachment.status !== "error" && !attachment.fileId)
+    );
     const hasUploadingFiles =
-      localFiles.some((file) => file.status === "uploading") ||
+      uploadAttachments.some((attachment) => attachment.status === "uploading") ||
       fileIds.some((fileId) => processingFiles[fileId] === "uploading");
     const hasParsingFiles =
-      localFiles.some((file) => file.status === "parsing") ||
+      uploadAttachments.some((attachment) => attachment.status === "parsing") ||
       fileIds.some((fileId) => processingFiles[fileId] === "parsing");
 
     if (hasPendingFiles) {
@@ -700,7 +647,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
       );
     }
 
-    if (localFiles.some((file) => file.status === "error")) {
+    if (uploadAttachments.some(isComposerAttachmentError)) {
       return (
         <div className="flex items-center text-xs text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20 px-3 py-2 rounded-md">
           请先重试或移除失败文件后再发送消息
@@ -712,8 +659,8 @@ const ChatInput: React.FC<ChatInputProps> = ({
   };
 
   // 有图片但当前模型不支持 vision 时阻止发送
-  const hasFilesButNoVision = localFiles.length > 0 && !supportsFileUpload;
-  const canSend = (message.trim() || localFiles.length > 0) && !isComposerBlocked && !hasProcessingFiles && !hasFilesButNoVision;
+  const hasFilesButNoVision = uploadAttachments.length > 0 && !supportsFileUpload;
+  const canSend = (message.trim() || composerAttachments.length > 0) && !isComposerBlocked && !hasProcessingFiles && !hasFilesButNoVision;
 
   return (
     <div className="flex flex-col space-y-2">
@@ -730,92 +677,13 @@ const ChatInput: React.FC<ChatInputProps> = ({
         onDragLeave={() => setIsDragOver(false)}
         onDrop={handleDrop}
       >
-        {/* 文件预览区（卡片内部顶部） */}
-        {localFiles.length > 0 && (() => {
-          const imageFiles = localFiles.filter((f) => f.file.type.startsWith('image/'));
-          const otherFiles = localFiles.filter((f) => !f.file.type.startsWith('image/'));
-          return (
-            <div
-              role="list"
-              aria-label="已添加文件"
-              className="p-2.5 border-b border-border/40 space-y-2"
-            >
-              {/* 图片缩略图条：横排 + 水平滚动 */}
-              {imageFiles.length > 0 && (
-                <div className="flex gap-3 overflow-x-auto pt-1 pr-1 pb-1">
-                  {imageFiles.map((file) => {
-                    const isUploading = file.status === "uploading" || file.status === "pending";
-                    return (
-                      <div
-                        key={file.id}
-                        role="listitem"
-                        className="relative flex-shrink-0 w-[60px] h-[60px] mt-1 mr-1"
-                      >
-                        {/* 缩略图 */}
-                        <div
-                          className="w-full h-full rounded-lg overflow-hidden border border-border/50 bg-muted cursor-pointer"
-                          onClick={() => setViewingImageUrl(file.previewUrl || file.thumbnailUrl || null)}
-                        >
-                          {/* 本地 Blob 预览和后端临时缩略图需要直接交给浏览器渲染 */}
-                          {/* eslint-disable-next-line @next/next/no-img-element */}
-                          <img
-                            src={file.previewUrl || file.thumbnailUrl}
-                            alt={file.file.name}
-                            className="w-full h-full object-cover"
-                          />
-                        </div>
-                        {/* 上传中遮罩 + spinner */}
-                        {isUploading && (
-                          <div className="absolute inset-0 rounded-lg bg-black/40 flex items-center justify-center">
-                            <Loader2 className="h-5 w-5 animate-spin text-white" />
-                          </div>
-                        )}
-                        {/* 删除按钮（常驻显示） */}
-                        <button
-                          type="button"
-                          onClick={(e) => { e.stopPropagation(); handleRemoveFile(file.id); }}
-                          aria-label={`移除 ${file.file.name}`}
-                          className="absolute -top-1.5 -right-1.5 w-[18px] h-[18px] rounded-full bg-black/60 text-white flex items-center justify-center hover:bg-black/80 transition-colors"
-                        >
-                          <X className="h-3 w-3" />
-                        </button>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-              {/* 非图片文件列表 */}
-              {otherFiles.map((file) => (
-                <div
-                  key={file.id}
-                  role="listitem"
-                  className="flex flex-col gap-1.5 rounded-md border border-border/50 bg-muted/20 p-2"
-                >
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center">
-                      <div className="flex-shrink-0 w-8 h-8 bg-primary/10 rounded flex items-center justify-center mr-2">
-                        <PaperclipIcon className="w-4 h-4 text-primary" />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium text-foreground truncate">{file.file.name}</p>
-                        <p className="text-xs text-muted-foreground">{(file.file.size / 1024).toFixed(1)} KB</p>
-                      </div>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => handleRemoveFile(file.id)}
-                      aria-label={`移除文件 ${file.file.name}`}
-                      className="p-1 rounded-full hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
-                    >
-                      <X className="h-4 w-4" />
-                    </button>
-                  </div>
-                  <div className="pl-10 pr-1">{renderFileStatus(file)}</div>
-                </div>
-              ))}
-            </div>
-          );
-        })()}
+        <ComposerAttachmentList
+          attachments={composerAttachments}
+          onRemoveUploadAttachment={handleRemoveFile}
+          onRemoveConversationAttachment={(fileId) => onRemoveConversationAttachment?.(fileId)}
+          onRetryUploadAttachment={(localId) => void handleRetryFile(localId)}
+          onViewImage={(url) => setViewingImageUrl(url)}
+        />
 
         {/* 模型不支持 vision 但有文件时的内嵌提示 */}
         {hasFilesButNoVision && (

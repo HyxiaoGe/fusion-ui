@@ -11,6 +11,7 @@ const {
   toastMock,
   triggerLoginDialogMock,
   uploadFilesMock,
+  deleteFileMock,
   startPollingFileStatusMock,
   stopPollingFileStatusMock,
   setReasoningEnabledMock,
@@ -58,6 +59,7 @@ const {
     toastMock: vi.fn(),
     triggerLoginDialogMock: vi.fn(),
     uploadFilesMock: vi.fn(),
+    deleteFileMock: vi.fn(() => Promise.resolve()),
     startPollingFileStatusMock: vi.fn(),
     stopPollingFileStatusMock: vi.fn(),
     setReasoningEnabledMock: action('conversation/setReasoningEnabled'),
@@ -101,7 +103,7 @@ vi.mock('@/redux/slices/fileUploadSlice', () => ({
 
 vi.mock('@/lib/api/files', () => ({
   uploadFiles: uploadFilesMock,
-  deleteFile: vi.fn(() => Promise.resolve()),
+  deleteFile: deleteFileMock,
 }));
 
 vi.mock('@/lib/api/FileStatusPoller', () => ({
@@ -151,6 +153,7 @@ describe('ChatInput', () => {
     toastMock.mockReset();
     triggerLoginDialogMock.mockReset();
     uploadFilesMock.mockReset();
+    deleteFileMock.mockClear();
     startPollingFileStatusMock.mockReset();
     stopPollingFileStatusMock.mockReset();
     setReasoningEnabledMock.mockClear();
@@ -248,6 +251,148 @@ describe('ChatInput', () => {
         expect.any(Function)
       );
     });
+  });
+
+  it('calls onUploadComplete after local upload succeeds', async () => {
+    currentState.auth.isAuthenticated = true;
+    currentState.models.selectedModelId = 'model-1';
+    currentState.models.models = [
+      {
+        id: 'model-1',
+        provider: 'qwen',
+        capabilities: {
+          vision: true,
+          deepThinking: true,
+        },
+      },
+    ];
+    uploadFilesMock.mockResolvedValue([{ file_id: 'file-1' }]);
+    const onUploadComplete = vi.fn();
+
+    const { container } = render(
+      <ChatInput onSendMessage={vi.fn()} onUploadComplete={onUploadComplete} activeChatId="chat-1" />,
+    );
+    const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement;
+    const file = new File(['hello'], 'hello.txt', { type: 'text/plain' });
+
+    fireEvent.change(fileInput, {
+      target: {
+        files: [file],
+      },
+    });
+
+    await waitFor(() => {
+      expect(uploadFilesMock).toHaveBeenCalledWith('qwen', 'model-1', 'chat-1', [file]);
+      expect(onUploadComplete).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  it('sends selected conversation files without uploading them again', () => {
+    currentState.auth.isAuthenticated = true;
+    const onSendMessage = vi.fn();
+    const onClearConversationAttachments = vi.fn();
+
+    render(
+      <ChatInput
+        onSendMessage={onSendMessage}
+        activeChatId="chat-1"
+        conversationAttachments={[
+          {
+            source: 'conversation',
+            fileId: 'file-existing',
+            filename: '已有资料.png',
+            mimetype: 'image/png',
+            status: 'processed',
+            thumbnailUrl: 'https://cdn.example.com/existing-thumb.png',
+          },
+        ]}
+        onClearConversationAttachments={onClearConversationAttachments}
+      />,
+    );
+
+    fireEvent.change(screen.getByPlaceholderText('发消息给 Fusion AI（Enter 发送）'), {
+      target: {
+        value: '请总结这份资料',
+      },
+    });
+    fireEvent.click(screen.getByRole('button', { name: '发送消息' }));
+
+    expect(uploadFilesMock).not.toHaveBeenCalled();
+    expect(onSendMessage).toHaveBeenCalledTimes(1);
+    expect(onSendMessage.mock.calls[0][0]).toBe('请总结这份资料');
+    expect(onSendMessage.mock.calls[0][1]).toEqual([
+      {
+        fileId: 'file-existing',
+        filename: '已有资料.png',
+        mimeType: 'image/png',
+        previewUrl: 'https://cdn.example.com/existing-thumb.png',
+      },
+    ]);
+    expect(onClearConversationAttachments).toHaveBeenCalledTimes(1);
+  });
+
+  it('sends when only a selected conversation file is present', () => {
+    currentState.auth.isAuthenticated = true;
+    const onSendMessage = vi.fn();
+
+    render(
+      <ChatInput
+        onSendMessage={onSendMessage}
+        activeChatId="chat-1"
+        conversationAttachments={[
+          {
+            source: 'conversation',
+            fileId: 'file-existing',
+            filename: '仅资料.pdf',
+            mimetype: 'application/pdf',
+            status: 'processed',
+            thumbnailUrl: null,
+          },
+        ]}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: '发送消息' }));
+
+    expect(onSendMessage).toHaveBeenCalledTimes(1);
+    expect(onSendMessage.mock.calls[0][0]).toBe('');
+    expect(onSendMessage.mock.calls[0][1]).toEqual([
+      {
+        fileId: 'file-existing',
+        filename: '仅资料.pdf',
+        mimeType: 'application/pdf',
+        previewUrl: undefined,
+      },
+    ]);
+  });
+
+  it('removes selected conversation file from composer without deleting backend file', () => {
+    currentState.auth.isAuthenticated = true;
+    const onRemoveConversationAttachment = vi.fn();
+
+    render(
+      <ChatInput
+        onSendMessage={vi.fn()}
+        activeChatId="chat-1"
+        conversationAttachments={[
+          {
+            source: 'conversation',
+            fileId: 'file-existing',
+            filename: '保留后端资料.pdf',
+            mimetype: 'application/pdf',
+            status: 'processed',
+            thumbnailUrl: null,
+          },
+        ]}
+        onRemoveConversationAttachment={onRemoveConversationAttachment}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: '移除资料 保留后端资料.pdf' }));
+
+    expect(onRemoveConversationAttachment).toHaveBeenCalledTimes(1);
+    expect(onRemoveConversationAttachment).toHaveBeenCalledWith('file-existing');
+    expect(deleteFileMock).not.toHaveBeenCalled();
   });
 
   it('ignores an upload result when reset switches to another chat before it resolves', async () => {
@@ -409,7 +554,7 @@ describe('ChatInput', () => {
     });
 
     await waitFor(() => {
-      expect(screen.getByRole('list', { name: '已添加文件' })).toBeInTheDocument();
+      expect(screen.getByRole('list', { name: '已添加附件' })).toBeInTheDocument();
       expect(screen.getByText('hello.txt')).toBeInTheDocument();
     });
   });
@@ -608,7 +753,7 @@ describe('ChatInput', () => {
       });
     });
 
-    fireEvent.click(screen.getByRole('button', { name: '移除文件 remove-me.txt' }));
+    fireEvent.click(screen.getByRole('button', { name: '移除 remove-me.txt' }));
 
     expect(stopPollingFileStatusMock).toHaveBeenCalledWith('file-1');
     expect(screen.queryByText('remove-me.txt')).toBeNull();
@@ -656,8 +801,8 @@ describe('ChatInput', () => {
     });
 
     expect(screen.getByText('文件处理超时，请重新上传')).toBeTruthy();
-    expect(screen.getByRole('button', { name: '重试上传' })).toBeTruthy();
-    expect(screen.getByRole('button', { name: '移除文件' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: '重试上传 hello.txt' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: '移除 hello.txt' })).toBeTruthy();
   });
 
   it('retries a failed file upload from the inline action', async () => {
@@ -702,7 +847,7 @@ describe('ChatInput', () => {
       });
     });
 
-    fireEvent.click(screen.getByRole('button', { name: '重试上传' }));
+    fireEvent.click(screen.getByRole('button', { name: '重试上传 hello.txt' }));
 
     await waitFor(() => {
       expect(stopPollingFileStatusMock).toHaveBeenCalledWith('file-1');
