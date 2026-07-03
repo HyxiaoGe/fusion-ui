@@ -116,12 +116,25 @@ describe('RuntimeConfigManager', () => {
 
     await renderLoaded();
 
-    expect(screen.getAllByText('prompt_template / generate_title').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('标题生成 Prompt').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('影响新对话标题自动生成。').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('内部标识：prompt_template / generate_title').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('模板内容：11 字').length).toBeGreaterThan(0);
     expect(screen.getByText('2026-07-03.good')).toBeInTheDocument();
     expect(screen.getByText('跳过 1 个坏版本')).toBeInTheDocument();
     expect(screen.getAllByText('候选版本').length).toBeGreaterThan(0);
     expect(screen.getByText('2026-07-03.next')).toBeInTheDocument();
     expect(screen.getByText('template 必须是非空字符串')).toBeInTheDocument();
+  });
+
+  it('创建候选版本表单展示当前编辑配置的用途和风险', async () => {
+    prepareSnapshot();
+
+    await renderLoaded();
+
+    expect(screen.getByText('当前编辑：标题生成 Prompt')).toBeInTheDocument();
+    expect(screen.getAllByText('用于根据对话内容生成会话标题。').length).toBeGreaterThan(0);
+    expect(screen.getByText('错误配置会直接影响标题质量和历史会话可识别性。')).toBeInTheDocument();
   });
 
   it('payload 不是 JSON object 时不调用后端校验', async () => {

@@ -20,6 +20,10 @@ import {
   type RuntimeConfigSnapshot,
   type RuntimeConfigValidationResult,
 } from "@/lib/api/runtimeConfig";
+import {
+  getRuntimeConfigPresentation,
+  summarizeRuntimeConfigPayload,
+} from "./runtimeConfigPresentation";
 
 type PendingAction = {
   kind: "activate" | "disable";
@@ -63,6 +67,22 @@ function statusBadge(entry: RuntimeConfigEntry) {
   return <Badge variant="outline">候选版本</Badge>;
 }
 
+function sourceLabel(source: string): string {
+  return source === "db" ? "数据库" : "代码默认";
+}
+
+function PayloadSummary({ payload }: { payload: RuntimeConfigPayload }) {
+  return (
+    <ul className="mt-2 grid gap-1 text-xs text-muted-foreground sm:grid-cols-2">
+      {summarizeRuntimeConfigPayload(payload).map((item) => (
+        <li key={item} className="rounded-sm bg-muted/30 px-2 py-1">
+          {item}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 export default function RuntimeConfigManager() {
   const [snapshot, setSnapshot] = useState<RuntimeConfigSnapshot | null>(null);
   const [loading, setLoading] = useState(true);
@@ -99,6 +119,11 @@ export default function RuntimeConfigManager() {
     ].length;
     return { effectiveCount, entryCount, issueCount };
   }, [snapshot]);
+
+  const formPresentation = useMemo(
+    () => getRuntimeConfigPresentation(form.namespace.trim(), form.key.trim()),
+    [form.namespace, form.key],
+  );
 
   const updateForm = (field: keyof typeof form, value: string) => {
     setForm((current) => ({ ...current, [field]: value }));
@@ -276,6 +301,23 @@ export default function RuntimeConfigManager() {
               />
             </div>
           </div>
+          <div className="rounded-md border bg-muted/20 p-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge variant="outline">{formPresentation.category}</Badge>
+              <p className="font-medium">当前编辑：{formPresentation.title}</p>
+            </div>
+            <p className="mt-2 text-sm text-muted-foreground">{formPresentation.description}</p>
+            <div className="mt-3 grid gap-2 text-xs text-muted-foreground md:grid-cols-2">
+              <div className="rounded-sm bg-background/70 p-2">
+                <span className="font-medium text-foreground">影响范围</span>
+                <p className="mt-1">{formPresentation.impact}</p>
+              </div>
+              <div className="rounded-sm bg-background/70 p-2">
+                <span className="font-medium text-foreground">风险提示</span>
+                <p className="mt-1">{formPresentation.risk}</p>
+              </div>
+            </div>
+          </div>
           <div className="space-y-2">
             <Label htmlFor="runtime-config-payload">JSON Payload</Label>
             <Textarea
@@ -316,25 +358,35 @@ export default function RuntimeConfigManager() {
           <CardTitle className="text-base">当前生效配置</CardTitle>
         </CardHeader>
         <CardContent className="space-y-3 pt-4">
-          {(snapshot?.effective ?? []).map((item) => (
-            <div key={`${item.namespace}:${item.key}`} className="rounded-md border p-3">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <div>
-                  <p className="font-medium">{item.namespace} / {item.key}</p>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    {item.source === "db" ? "数据库" : "代码默认"} · {item.version}
-                  </p>
+          {(snapshot?.effective ?? []).map((item) => {
+            const presentation = getRuntimeConfigPresentation(item.namespace, item.key);
+            return (
+              <div key={`${item.namespace}:${item.key}`} className="rounded-md border p-3">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="font-medium">{presentation.title}</p>
+                      <Badge variant="outline">{presentation.category}</Badge>
+                    </div>
+                    <p className="mt-1 text-sm text-muted-foreground">{presentation.description}</p>
+                    <p className="mt-2 text-xs text-muted-foreground">{presentation.impact}</p>
+                    <p className="mt-1 text-xs text-muted-foreground">内部标识：{item.namespace} / {item.key}</p>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      当前来源：{sourceLabel(item.source)} · {item.version}
+                    </p>
+                  </div>
+                  <Badge variant={item.valid ? "outline" : "destructive"}>{item.valid ? "有效" : "异常"}</Badge>
                 </div>
-                <Badge variant={item.valid ? "outline" : "destructive"}>{item.valid ? "有效" : "异常"}</Badge>
+                <PayloadSummary payload={item.payload} />
+                {(item.skipped_versions?.length ?? 0) > 0 && (
+                  <p className="mt-2 text-xs text-amber-600">跳过 {item.skipped_versions?.length} 个坏版本</p>
+                )}
+                {item.issues.length > 0 && (
+                  <p className="mt-2 text-xs text-destructive">{item.issues.join("；")}</p>
+                )}
               </div>
-              {(item.skipped_versions?.length ?? 0) > 0 && (
-                <p className="mt-2 text-xs text-amber-600">跳过 {item.skipped_versions?.length} 个坏版本</p>
-              )}
-              {item.issues.length > 0 && (
-                <p className="mt-2 text-xs text-destructive">{item.issues.join("；")}</p>
-              )}
-            </div>
-          ))}
+            );
+          })}
         </CardContent>
       </Card>
 
@@ -346,40 +398,46 @@ export default function RuntimeConfigManager() {
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-3 pt-4">
-          {(snapshot?.entries ?? []).map((entry) => (
-            <div
-              key={entry.id}
-              data-testid={`runtime-config-entry-${entry.id}`}
-              className="rounded-md border p-3"
-            >
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <p className="font-medium">{entry.namespace} / {entry.key}</p>
-                    {statusBadge(entry)}
+          {(snapshot?.entries ?? []).map((entry) => {
+            const presentation = getRuntimeConfigPresentation(entry.namespace, entry.key);
+            return (
+              <div
+                key={entry.id}
+                data-testid={`runtime-config-entry-${entry.id}`}
+                className="rounded-md border p-3"
+              >
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="font-medium">{presentation.title}</p>
+                      {statusBadge(entry)}
+                      <Badge variant="outline">{presentation.category}</Badge>
+                    </div>
+                    <p className="mt-1 text-sm">{entry.version}</p>
+                    <p className="mt-1 text-sm text-muted-foreground">{entry.description || presentation.description}</p>
+                    <p className="mt-1 text-xs text-muted-foreground">内部标识：{entry.namespace} / {entry.key}</p>
+                    <p className="mt-1 text-xs text-muted-foreground">更新于 {formatDateTime(entry.updated_at || entry.created_at)}</p>
+                    <PayloadSummary payload={entry.payload} />
+                    {entry.issues.length > 0 && (
+                      <p className="mt-2 text-xs text-destructive">{entry.issues.join("；")}</p>
+                    )}
                   </div>
-                  <p className="mt-1 text-sm">{entry.version}</p>
-                  {entry.description && <p className="mt-1 text-sm text-muted-foreground">{entry.description}</p>}
-                  <p className="mt-1 text-xs text-muted-foreground">更新于 {formatDateTime(entry.updated_at || entry.created_at)}</p>
-                  {entry.issues.length > 0 && (
-                    <p className="mt-2 text-xs text-destructive">{entry.issues.join("；")}</p>
-                  )}
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  {!entry.is_active && entry.valid && (
-                    <Button size="sm" variant="outline" onClick={() => setPendingAction({ kind: "activate", entry })}>
-                      激活
-                    </Button>
-                  )}
-                  {entry.is_active && (
-                    <Button size="sm" variant="destructive" onClick={() => setPendingAction({ kind: "disable", entry })}>
-                      禁用
-                    </Button>
-                  )}
+                  <div className="flex flex-wrap gap-2">
+                    {!entry.is_active && entry.valid && (
+                      <Button size="sm" variant="outline" onClick={() => setPendingAction({ kind: "activate", entry })}>
+                        激活
+                      </Button>
+                    )}
+                    {entry.is_active && (
+                      <Button size="sm" variant="destructive" onClick={() => setPendingAction({ kind: "disable", entry })}>
+                        禁用
+                      </Button>
+                    )}
+                  </div>
                 </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </CardContent>
       </Card>
 
