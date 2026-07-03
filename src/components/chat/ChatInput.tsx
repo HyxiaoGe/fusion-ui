@@ -198,6 +198,11 @@ const ChatInput: React.FC<ChatInputProps> = ({
     () => [...uploadAttachments, ...conversationAttachments],
     [conversationAttachments, uploadAttachments],
   );
+  const hasImageAttachments = useMemo(
+    () => composerAttachments.some(isImageComposerAttachment),
+    [composerAttachments],
+  );
+  const hasImagesButNoVision = hasImageAttachments && !supportsFileUpload;
 
   const promptLogin = (messageText: string) => {
     toast({
@@ -373,6 +378,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
             type: success ? "success" : "error",
             duration: 3000,
           });
+          onUploadComplete?.();
         });
       });
 
@@ -526,6 +532,15 @@ const ChatInput: React.FC<ChatInputProps> = ({
       return;
     }
 
+    if (hasImagesButNoVision) {
+      toast({
+        message: "当前模型不支持图片理解，请切换到支持读图的模型或移除图片资料",
+        type: "warning",
+        duration: 3000,
+      });
+      return;
+    }
+
     if (composerAttachments.some(isComposerAttachmentError)) {
       toast({
         message: "请先重试或移除失败文件",
@@ -658,9 +673,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
     return null;
   };
 
-  // 有图片但当前模型不支持 vision 时阻止发送
-  const hasFilesButNoVision = uploadAttachments.length > 0 && !supportsFileUpload;
-  const canSend = (message.trim() || composerAttachments.length > 0) && !isComposerBlocked && !hasProcessingFiles && !hasFilesButNoVision;
+  const canSend = (message.trim() || composerAttachments.length > 0) && !isComposerBlocked && !hasProcessingFiles && !hasImagesButNoVision;
 
   return (
     <div className="flex flex-col space-y-2">
@@ -685,10 +698,10 @@ const ChatInput: React.FC<ChatInputProps> = ({
           onViewImage={(url) => setViewingImageUrl(url)}
         />
 
-        {/* 模型不支持 vision 但有文件时的内嵌提示 */}
-        {hasFilesButNoVision && (
+        {/* 模型不支持 vision 但有图片时的内嵌提示 */}
+        {hasImagesButNoVision && (
           <div className="mx-3 mt-1 text-xs text-amber-600 dark:text-amber-400">
-            当前模型不支持图片理解，请切换到支持读图的模型或移除已上传的文件
+            当前模型不支持图片理解，请切换到支持读图的模型或移除图片资料
           </div>
         )}
 
@@ -796,5 +809,10 @@ const ChatInput: React.FC<ChatInputProps> = ({
     </div>
   );
 };
+
+function isImageComposerAttachment(attachment: UploadComposerAttachment | ConversationComposerAttachment): boolean {
+  const mimeType = attachment.source === "conversation" ? attachment.mimetype : attachment.file.type;
+  return mimeType.startsWith("image/");
+}
 
 export default ChatInput;

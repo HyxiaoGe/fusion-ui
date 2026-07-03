@@ -174,6 +174,14 @@ describe('ChatInput', () => {
     currentState.fileUpload.isUploading = false;
     currentState.fileUpload.uploadProgress = 0;
     currentState.auth.isAuthenticated = false;
+    Object.defineProperty(URL, 'createObjectURL', {
+      writable: true,
+      value: vi.fn(() => 'blob:preview'),
+    });
+    Object.defineProperty(URL, 'revokeObjectURL', {
+      writable: true,
+      value: vi.fn(),
+    });
     vi.stubGlobal('triggerLoginDialog', triggerLoginDialogMock);
   });
 
@@ -287,8 +295,63 @@ describe('ChatInput', () => {
     });
   });
 
+  it('calls onUploadComplete again after non-image processing finishes', async () => {
+    currentState.auth.isAuthenticated = true;
+    currentState.models.selectedModelId = 'model-1';
+    currentState.models.models = [
+      {
+        id: 'model-1',
+        provider: 'qwen',
+        capabilities: {
+          vision: true,
+          deepThinking: true,
+        },
+      },
+    ];
+    uploadFilesMock.mockResolvedValue([{ file_id: 'file-1' }]);
+    const onUploadComplete = vi.fn();
+
+    const { container } = render(
+      <ChatInput onSendMessage={vi.fn()} onUploadComplete={onUploadComplete} activeChatId="chat-1" />,
+    );
+    const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement;
+    const file = new File(['hello'], 'hello.txt', { type: 'text/plain' });
+
+    fireEvent.change(fileInput, {
+      target: {
+        files: [file],
+      },
+    });
+
+    await waitFor(() => {
+      expect(startPollingFileStatusMock).toHaveBeenCalledTimes(1);
+      expect(onUploadComplete).toHaveBeenCalledTimes(1);
+    });
+
+    const onComplete = startPollingFileStatusMock.mock.calls[0][3] as (result: {
+      success: boolean;
+      errorMessage?: string;
+    }) => void;
+    await act(async () => {
+      onComplete({ success: true });
+    });
+
+    expect(onUploadComplete).toHaveBeenCalledTimes(2);
+  });
+
   it('sends selected conversation files without uploading them again', () => {
     currentState.auth.isAuthenticated = true;
+    currentState.models.selectedModelId = 'model-1';
+    currentState.models.models = [
+      {
+        id: 'model-1',
+        provider: 'qwen',
+        capabilities: {
+          vision: true,
+          deepThinking: true,
+        },
+      },
+    ];
     const onSendMessage = vi.fn();
     const onClearConversationAttachments = vi.fn();
 
@@ -916,6 +979,170 @@ describe('ChatInput', () => {
         message: '请先重试或移除失败文件',
         type: 'warning',
       })
+    );
+  });
+
+  it('blocks selected conversation images when the current model has no vision', () => {
+    currentState.auth.isAuthenticated = true;
+    currentState.models.selectedModelId = 'text-model';
+    currentState.models.models = [
+      {
+        id: 'text-model',
+        provider: 'qwen',
+        capabilities: {
+          vision: false,
+          deepThinking: false,
+        },
+      },
+    ];
+    const onSendMessage = vi.fn();
+
+    render(
+      <ChatInput
+        onSendMessage={onSendMessage}
+        activeChatId="chat-1"
+        conversationAttachments={[
+          {
+            source: 'conversation',
+            fileId: 'file-1',
+            filename: 'diagram.png',
+            mimetype: 'image/png',
+            status: 'processed',
+            thumbnailUrl: '/thumb.png',
+          },
+        ]}
+      />
+    );
+
+    fireEvent.change(screen.getByPlaceholderText('发消息给 Fusion AI（Enter 发送）'), {
+      target: {
+        value: '分析图片',
+      },
+    });
+
+    expect(screen.getByText('当前模型不支持图片理解，请切换到支持读图的模型或移除图片资料')).toBeTruthy();
+    expect(screen.getByRole('button', { name: '发送消息' })).toBeDisabled();
+
+    fireEvent.keyDown(screen.getByPlaceholderText('发消息给 Fusion AI（Enter 发送）'), {
+      key: 'Enter',
+      code: 'Enter',
+    });
+
+    expect(onSendMessage).not.toHaveBeenCalled();
+  });
+
+  it('blocks Enter sending for uploaded images after switching to a text-only model', async () => {
+    currentState.auth.isAuthenticated = true;
+    currentState.models.selectedModelId = 'vision-model';
+    currentState.models.models = [
+      {
+        id: 'vision-model',
+        provider: 'qwen',
+        capabilities: {
+          vision: true,
+          deepThinking: false,
+        },
+      },
+      {
+        id: 'text-model',
+        provider: 'qwen',
+        capabilities: {
+          vision: false,
+          deepThinking: false,
+        },
+      },
+    ];
+    uploadFilesMock.mockResolvedValue([{ file_id: 'file-1', thumbnail_url: '/thumb.png' }]);
+    const onSendMessage = vi.fn();
+
+    const { container, rerender } = render(<ChatInput onSendMessage={onSendMessage} activeChatId="chat-1" />);
+    const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement;
+    const file = new File(['image'], 'diagram.png', { type: 'image/png' });
+
+    fireEvent.change(fileInput, {
+      target: {
+        files: [file],
+      },
+    });
+
+    await waitFor(() => {
+      expect(uploadFilesMock).toHaveBeenCalledWith('qwen', 'vision-model', 'chat-1', [file]);
+      expect(screen.getByText('diagram.png')).toBeTruthy();
+    });
+
+    currentState.models.selectedModelId = 'text-model';
+    rerender(<ChatInput onSendMessage={onSendMessage} activeChatId="chat-1" />);
+
+    fireEvent.change(screen.getByPlaceholderText('发消息给 Fusion AI（Enter 发送）'), {
+      target: {
+        value: '分析图片',
+      },
+    });
+
+    expect(screen.getByRole('button', { name: '发送消息' })).toBeDisabled();
+    fireEvent.keyDown(screen.getByPlaceholderText('发消息给 Fusion AI（Enter 发送）'), {
+      key: 'Enter',
+      code: 'Enter',
+    });
+
+    expect(onSendMessage).not.toHaveBeenCalled();
+    expect(toastMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        message: '当前模型不支持图片理解，请切换到支持读图的模型或移除图片资料',
+        type: 'warning',
+      })
+    );
+  });
+
+  it('allows selected non-image conversation files on text-only models', () => {
+    currentState.auth.isAuthenticated = true;
+    currentState.models.selectedModelId = 'text-model';
+    currentState.models.models = [
+      {
+        id: 'text-model',
+        provider: 'qwen',
+        capabilities: {
+          vision: false,
+          deepThinking: false,
+        },
+      },
+    ];
+    const onSendMessage = vi.fn();
+
+    render(
+      <ChatInput
+        onSendMessage={onSendMessage}
+        activeChatId="chat-1"
+        conversationAttachments={[
+          {
+            source: 'conversation',
+            fileId: 'file-1',
+            filename: 'notes.txt',
+            mimetype: 'text/plain',
+            status: 'processed',
+          },
+        ]}
+      />
+    );
+
+    fireEvent.change(screen.getByPlaceholderText('发消息给 Fusion AI（Enter 发送）'), {
+      target: {
+        value: '总结资料',
+      },
+    });
+    fireEvent.click(screen.getByRole('button', { name: '发送消息' }));
+
+    expect(onSendMessage).toHaveBeenCalledWith(
+      '总结资料',
+      [
+        {
+          fileId: 'file-1',
+          filename: 'notes.txt',
+          mimeType: 'text/plain',
+          previewUrl: undefined,
+        },
+      ],
+      undefined
     );
   });
 
