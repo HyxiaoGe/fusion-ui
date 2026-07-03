@@ -140,6 +140,46 @@ describe('conversationHydration', () => {
     expect(chat.messages[1].content[1]).toMatchObject({ type: 'text', text: 'world' });
   });
 
+  it('preserves file thumbnail metadata while hydrating file blocks', () => {
+    const chat = buildChatFromServerConversation({
+      id: 'chat-files',
+      title: 'Server chat',
+      model_id: 'qwen-max-latest',
+      messages: [
+        {
+          id: 'user-1',
+          role: 'user',
+          content: [
+            {
+              type: 'file',
+              id: 'file-block-1',
+              file_id: 'file-1',
+              filename: 'diagram.png',
+              mime_type: 'image/png',
+              thumbnail_url: 'https://cdn.example.com/thumbs/file-1.png',
+              width: 640,
+              height: 360,
+            },
+          ],
+          created_at: '2026-03-14T08:00:00Z',
+        },
+      ],
+    });
+
+    expect(chat.messages[0].content).toEqual([
+      {
+        type: 'file',
+        id: 'file-block-1',
+        file_id: 'file-1',
+        filename: 'diagram.png',
+        mime_type: 'image/png',
+        thumbnail_url: 'https://cdn.example.com/thumbs/file-1.png',
+        width: 640,
+        height: 360,
+      },
+    ]);
+  });
+
   it('hydrates network source metadata from search and url_read blocks', () => {
     const chat = buildChatFromServerConversation({
       id: 'chat-4',

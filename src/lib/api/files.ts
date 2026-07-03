@@ -16,12 +16,13 @@ export interface FileInfo {
   filename: string;
   mimetype: string;
   size: number;
-  created_at: string;
+  created_at: string | null;
   status: FileProcessingStatus;
-  error_message: string;
-  thumbnail_key?: string;
-  width?: number;
-  height?: number;
+  error_message?: string | null;
+  thumbnail_url?: string | null;
+  thumbnail_key?: string | null;
+  width?: number | null;
+  height?: number | null;
 }
 
 export interface FileStatusResponse {

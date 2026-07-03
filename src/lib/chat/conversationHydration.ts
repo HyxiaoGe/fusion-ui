@@ -23,6 +23,9 @@ interface ServerBlock {
   file_id?: string;
   filename?: string;
   mime_type?: string;
+  thumbnail_url?: string | null;
+  width?: number | null;
+  height?: number | null;
   query?: string;
   tool_call_log_id?: string;
   sources?: SearchSourceSummary[];
@@ -145,6 +148,9 @@ function buildContentBlocks(serverBlocks: ServerBlock[]): ContentBlock[] {
         file_id: b.file_id,
         filename: b.filename ?? '',
         mime_type: b.mime_type ?? '',
+        ...(b.thumbnail_url != null ? { thumbnail_url: b.thumbnail_url } : {}),
+        ...(b.width != null ? { width: b.width } : {}),
+        ...(b.height != null ? { height: b.height } : {}),
       } satisfies FileBlock);
     } else if (b.type === 'search' && b.query != null) {
       blocks.push({

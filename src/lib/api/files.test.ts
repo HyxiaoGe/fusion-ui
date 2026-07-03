@@ -6,6 +6,7 @@ import {
   getFileStatus,
   uploadFiles,
 } from './files';
+import type { FileInfo } from './files';
 
 const fetchMock = vi.fn();
 const originalFetch = globalThis.fetch;
@@ -93,19 +94,25 @@ describe('files api client', () => {
   });
 
   it('returns conversation files from the authenticated endpoint', async () => {
+    const backendFiles = [
+      {
+        id: 'file-1',
+        filename: 'demo.png',
+        mimetype: 'image/png',
+        size: 12,
+        created_at: null,
+        status: 'processed',
+        error_message: null,
+        thumbnail_url: 'https://cdn.example.com/thumbs/file-1.png',
+        thumbnail_key: 'thumbs/file-1.png',
+        width: 640,
+        height: 360,
+      },
+    ] satisfies FileInfo[];
+
     fetchMock.mockResolvedValue(
       createEnvelopeResponse({
-        files: [
-          {
-            id: 'file-1',
-            filename: 'demo.txt',
-            mimetype: 'text/plain',
-            size: 12,
-            created_at: '2026-03-13T00:00:00Z',
-            status: 'processed',
-            error_message: '',
-          },
-        ],
+        files: backendFiles,
       })
     );
 
@@ -115,8 +122,18 @@ describe('files api client', () => {
       expect.stringContaining('/api/files/conversation/chat-3'),
       expect.anything()
     );
-    expect(files).toHaveLength(1);
-    expect(files[0].filename).toBe('demo.txt');
+    expect(files).toEqual([
+      expect.objectContaining({
+        id: 'file-1',
+        filename: 'demo.png',
+        thumbnail_url: 'https://cdn.example.com/thumbs/file-1.png',
+        thumbnail_key: 'thumbs/file-1.png',
+        width: 640,
+        height: 360,
+        created_at: null,
+        error_message: null,
+      }),
+    ]);
   });
 
   it('surfaces backend detail when file status lookup fails', async () => {
