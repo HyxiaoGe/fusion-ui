@@ -43,8 +43,6 @@ export function tryConversationFileToComposerAttachment(file: FileInfo): Convers
   };
 }
 
-export const conversationFileToComposerAttachment = tryConversationFileToComposerAttachment;
-
 export function isComposerAttachmentProcessing(attachment: ComposerAttachment): boolean {
   if (attachment.source === 'conversation') {
     return false;
