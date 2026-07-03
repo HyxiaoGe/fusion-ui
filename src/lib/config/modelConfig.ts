@@ -14,6 +14,29 @@ export interface ModelCapability {
   vision?: boolean; // 图片理解
 }
 
+export type CapabilityTone = 'success' | 'muted' | 'info' | 'warning' | 'danger';
+
+export interface CapabilityLabel {
+  key: string;
+  text: string;
+  tone: CapabilityTone;
+}
+
+export type ModelRecommendationLevel = 'recommended' | 'capable' | 'limited' | 'unavailable';
+
+export interface ModelCapabilityRecommendation {
+  score: number;
+  level: ModelRecommendationLevel;
+  headline: string;
+  reasons: string[];
+  warnings: string[];
+}
+
+export interface ModelCapabilityPresentation extends ModelCapabilityRecommendation {
+  labels: CapabilityLabel[];
+  tooltip: string;
+}
+
 // 模型健康状态（后台轮询 LiteLLM /health 得来）：
 // - healthy: 最近一次探测成功，可正常调用
 // - unhealthy: 最近一次探测失败（缺 key / 401 / 模型不存在等），FE 灰显
@@ -43,6 +66,7 @@ export interface ApiModelData {
   enabled: boolean;
   health?: ModelHealth;
   description?: string;
+  capabilityPresentation?: ModelCapabilityPresentation;
 }
 
 // API响应接口
@@ -64,6 +88,7 @@ export interface ModelInfo {
   enabled: boolean; // 是否在 LiteLLM 注册（true）；false 通常意味着已下架
   health?: ModelHealth; // 健康探测结果，unhealthy 时选择器灰显
   description?: string; // 模型简要描述，用于悬停提示
+  capabilityPresentation?: ModelCapabilityPresentation; // 后端派生的能力展示配置
 }
 
 export interface ProviderInfo {
@@ -85,7 +110,8 @@ export const convertApiModelToModelInfo = (apiModel: ApiModelData): ModelInfo =>
     capabilities: apiModel.capabilities,
     enabled: apiModel.enabled,
     health: apiModel.health,
-    description: apiModel.description
+    description: apiModel.description,
+    capabilityPresentation: apiModel.capabilityPresentation,
   };
 };
 

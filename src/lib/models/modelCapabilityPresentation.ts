@@ -1,22 +1,17 @@
-import type { ModelInfo } from '@/lib/config/modelConfig';
+import type {
+  CapabilityLabel,
+  CapabilityTone,
+  ModelCapabilityRecommendation,
+  ModelInfo,
+  ModelRecommendationLevel,
+} from '@/lib/config/modelConfig';
 
-export type CapabilityTone = 'success' | 'muted' | 'info' | 'warning' | 'danger';
-
-export interface CapabilityLabel {
-  key: string;
-  text: string;
-  tone: CapabilityTone;
-}
-
-export type ModelRecommendationLevel = 'recommended' | 'capable' | 'limited' | 'unavailable';
-
-export interface ModelCapabilityRecommendation {
-  score: number;
-  level: ModelRecommendationLevel;
-  headline: string;
-  reasons: string[];
-  warnings: string[];
-}
+export type {
+  CapabilityLabel,
+  CapabilityTone,
+  ModelCapabilityRecommendation,
+  ModelRecommendationLevel,
+} from '@/lib/config/modelConfig';
 
 function supportsAgentTools(model: Pick<ModelInfo, 'capabilities'>): boolean {
   const capabilities = model.capabilities || {};
@@ -44,6 +39,17 @@ function formatTokenLimit(tokens: number): string {
 }
 
 export function buildModelCapabilityRecommendation(model: ModelInfo): ModelCapabilityRecommendation {
+  if (model.capabilityPresentation) {
+    const { score, level, headline, reasons, warnings } = model.capabilityPresentation;
+    return {
+      score,
+      level,
+      headline,
+      reasons: [...reasons],
+      warnings: [...warnings],
+    };
+  }
+
   if (model.health?.status === 'unhealthy') {
     return {
       score: 0,
@@ -112,6 +118,10 @@ export function buildModelCapabilityRecommendation(model: ModelInfo): ModelCapab
 }
 
 export function buildModelCapabilityLabels(model: ModelInfo): CapabilityLabel[] {
+  if (model.capabilityPresentation?.labels?.length) {
+    return model.capabilityPresentation.labels.map((label) => ({ ...label }));
+  }
+
   const capabilities = model.capabilities || {};
   const labels: CapabilityLabel[] = [
     supportsAgentTools(model)
@@ -153,6 +163,10 @@ export function buildModelCapabilityLabels(model: ModelInfo): CapabilityLabel[] 
 export function buildModelCapabilityTooltip(model: ModelInfo | null): string {
   if (!model) {
     return '选择本次对话使用的模型';
+  }
+
+  if (model.capabilityPresentation?.tooltip) {
+    return model.capabilityPresentation.tooltip;
   }
 
   const capabilities = model.capabilities || {};

@@ -7,6 +7,42 @@ import {
 } from './modelCapabilityPresentation';
 
 describe('modelCapabilityPresentation', () => {
+  it('优先使用后端返回的能力展示配置', () => {
+    const model = {
+      id: 'runtime-model',
+      name: 'Runtime Model',
+      provider: 'deepseek',
+      temperature: 0.7,
+      enabled: true,
+      capabilities: {
+        searchCapable: false,
+        agentTools: false,
+        vision: false,
+      },
+      capabilityPresentation: {
+        score: 91,
+        level: 'recommended' as const,
+        headline: '后端配置标题',
+        reasons: ['后端配置原因'],
+        warnings: ['后端配置警告'],
+        tooltip: '后端配置 tooltip',
+        labels: [{ key: 'runtime-network', text: '后端联网', tone: 'success' as const }],
+      },
+    };
+
+    expect(buildModelCapabilityRecommendation(model)).toEqual({
+      score: 91,
+      level: 'recommended',
+      headline: '后端配置标题',
+      reasons: ['后端配置原因'],
+      warnings: ['后端配置警告'],
+    });
+    expect(buildModelCapabilityLabels(model)).toEqual([
+      { key: 'runtime-network', text: '后端联网', tone: 'success' },
+    ]);
+    expect(buildModelCapabilityTooltip(model)).toBe('后端配置 tooltip');
+  });
+
   it('为支持 agent tools 的模型展示可联网、读图、工具和深度任务标签', () => {
     const labels = buildModelCapabilityLabels({
       id: 'deepseek-v4-flash',
