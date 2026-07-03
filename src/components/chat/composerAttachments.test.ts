@@ -31,6 +31,9 @@ describe('composerAttachments', () => {
 
     const attachment = conversationFileToComposerAttachment(file);
 
+    expect(attachment).not.toBeNull();
+    if (!attachment) throw new Error('processed 会话资料应该可加入 composer');
+
     expect(attachment).toEqual({
       source: 'conversation',
       fileId: 'file-1',
@@ -74,6 +77,9 @@ describe('composerAttachments', () => {
       errorMessage: '上传失败',
     };
     const conversationAttachment = conversationFileToComposerAttachment(createConversationFile());
+
+    expect(conversationAttachment).not.toBeNull();
+    if (!conversationAttachment) throw new Error('processed 会话资料应该可加入 composer');
 
     expect(isComposerAttachmentProcessing(processingUpload)).toBe(true);
     expect(isComposerAttachmentError(processingUpload)).toBe(false);
