@@ -29,6 +29,10 @@ vi.mock('./SearchUsageMonitor', () => ({
   default: () => <div>Firecrawl 用量</div>,
 }));
 
+vi.mock('./RuntimeConfigManager', () => ({
+  default: () => <div>运行时配置管理面板</div>,
+}));
+
 import SettingsPage from './page';
 
 function setAdmin(isSuperuser: boolean) {
@@ -56,11 +60,27 @@ describe('SettingsPage 管理员页签', () => {
     expect(screen.queryByRole('tab', { name: /联网用量/ })).toBeNull();
   });
 
+  it('普通用户不显示运行时配置页签', () => {
+    setAdmin(false);
+
+    render(<SettingsPage />);
+
+    expect(screen.queryByRole('tab', { name: /运行时配置/ })).toBeNull();
+  });
+
   it('管理员显示联网用量页签', () => {
     setAdmin(true);
 
     render(<SettingsPage />);
 
     expect(screen.getByText('联网用量')).toBeInTheDocument();
+  });
+
+  it('管理员显示运行时配置页签', () => {
+    setAdmin(true);
+
+    render(<SettingsPage />);
+
+    expect(screen.getByRole('tab', { name: /运行时配置/ })).toBeInTheDocument();
   });
 });

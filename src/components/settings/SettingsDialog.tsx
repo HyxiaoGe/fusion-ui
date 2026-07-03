@@ -7,21 +7,29 @@ import { useAppDispatch, useAppSelector } from "@/redux/hooks";
 import { closeSettingsDialog, setActiveSettingsTab } from "@/redux/slices/settingsSlice";
 import { setThemeMode } from "@/redux/slices/themeSlice";
 import { motion } from "framer-motion";
-import { Activity, Database, Settings, Sun, Moon, Laptop } from "lucide-react";
+import { Activity, Database, Settings, Sun, Moon, Laptop, SlidersHorizontal } from "lucide-react";
 import DataManagement from "@/app/settings/DataManagement";
+import RuntimeConfigManager from "@/app/settings/RuntimeConfigManager";
 import SearchUsageMonitor from "@/app/settings/SearchUsageMonitor";
 import SystemPrompt from "@/app/settings/SystemPrompt";
+import { useEffect, useState } from "react";
 
 export const SettingsDialog = () => {
   const dispatch = useAppDispatch();
   const { isSettingsDialogOpen, activeSettingsTab } = useAppSelector((state) => state.settings);
   const { mode } = useAppSelector((state) => state.theme);
+  const [isMounted, setIsMounted] = useState(false);
   const isAdmin = useAppSelector((state) => Boolean(state.auth.user?.is_superuser));
-  const selectedSettingsTab = isAdmin || activeSettingsTab !== "usage" ? activeSettingsTab : "general";
+  const showAdminTabs = isMounted && isAdmin;
+  const selectedSettingsTab = showAdminTabs || !["usage", "runtime-config"].includes(activeSettingsTab) ? activeSettingsTab : "general";
 
   const handleClose = () => {
     dispatch(closeSettingsDialog());
   };
+
+  useEffect(() => {
+    setIsMounted(true);
+  }, []);
 
   const handleTabChange = (tab: string) => {
     dispatch(setActiveSettingsTab(tab));
@@ -44,7 +52,7 @@ export const SettingsDialog = () => {
         <div className="flex-1 overflow-hidden">
           <Tabs value={selectedSettingsTab} onValueChange={handleTabChange} className="h-full flex flex-col">
             <div className="bg-card/50 backdrop-blur-sm border rounded-lg shadow-sm p-1 flex-shrink-0">
-              <TabsList className={`w-full grid gap-1 bg-transparent ${isAdmin ? "grid-cols-3" : "grid-cols-2"}`}>
+              <TabsList className={`w-full grid gap-1 bg-transparent ${showAdminTabs ? "grid-cols-4" : "grid-cols-2"}`}>
                 <TabsTrigger value="general" className="flex gap-2 items-center justify-center">
                   <Settings className="h-4 w-4" />
                   <span className="hidden md:inline">常规设置</span>
@@ -55,12 +63,19 @@ export const SettingsDialog = () => {
                   <span className="hidden md:inline">数据管理</span>
                   <span className="md:hidden">数据</span>
                 </TabsTrigger>
-                {isAdmin && (
-                  <TabsTrigger value="usage" className="flex gap-2 items-center justify-center">
-                    <Activity className="h-4 w-4" />
-                    <span className="hidden md:inline">联网用量</span>
-                    <span className="md:hidden">用量</span>
-                  </TabsTrigger>
+                {showAdminTabs && (
+                  <>
+                    <TabsTrigger value="usage" className="flex gap-2 items-center justify-center">
+                      <Activity className="h-4 w-4" />
+                      <span className="hidden md:inline">联网用量</span>
+                      <span className="md:hidden">用量</span>
+                    </TabsTrigger>
+                    <TabsTrigger value="runtime-config" className="flex gap-2 items-center justify-center">
+                      <SlidersHorizontal className="h-4 w-4" />
+                      <span className="hidden md:inline">运行时配置</span>
+                      <span className="md:hidden">配置</span>
+                    </TabsTrigger>
+                  </>
                 )}
               </TabsList>
             </div>
@@ -147,10 +162,16 @@ export const SettingsDialog = () => {
               <DataManagement />
             </TabsContent>
 
-            {isAdmin && (
-              <TabsContent value="usage" className="flex-1 overflow-auto mt-4">
-                <SearchUsageMonitor />
-              </TabsContent>
+            {showAdminTabs && (
+              <>
+                <TabsContent value="usage" className="flex-1 overflow-auto mt-4">
+                  <SearchUsageMonitor />
+                </TabsContent>
+
+                <TabsContent value="runtime-config" className="flex-1 overflow-auto mt-4">
+                  <RuntimeConfigManager />
+                </TabsContent>
+              </>
             )}
           </Tabs>
         </div>
