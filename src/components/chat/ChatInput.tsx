@@ -428,7 +428,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
             );
           }
 
-          if (success && activeChatId && onUploadComplete) {
+          if (success && onUploadComplete) {
             const localId = filesToUpload[index]?.id;
             if (localId) {
               removeLocalUploadFiles(new Set([localId]));
@@ -439,7 +439,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
 
       onUploadComplete?.(uploadCompleteFiles, uploadChatId);
 
-      if (activeChatId && onUploadComplete) {
+      if (onUploadComplete) {
         const processedLocalIds = new Set(
           filesToUpload
             .filter((file) => file.file.type.startsWith('image/'))

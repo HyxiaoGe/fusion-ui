@@ -3,6 +3,12 @@ import { API_CONFIG } from '../config';
 import { apiRequest } from './fetchWithAuth';
 
 const API_BASE_URL = API_CONFIG.BASE_URL;
+const MIN_UPLOAD_TIMEOUT_MS = 120000;
+const MAX_UPLOAD_TIMEOUT_MS = 10 * 60 * 1000;
+const UPLOAD_TIMEOUT_BASE_MS = 30000;
+const UPLOAD_TIMEOUT_PER_MB_MS = 30000;
+const BYTES_PER_MB = 1024 * 1024;
+const UPLOAD_TIMEOUT_MESSAGE = '文件上传超时，请检查网络后重试';
 
 // 上传结果单项
 export interface UploadedFileInfo {
@@ -31,6 +37,19 @@ export interface FileStatusResponse {
   error_message?: string;
 }
 
+export function getUploadTimeoutMs(files: File[]): number {
+  const totalBytes = files.reduce((sum, file) => sum + file.size, 0);
+  const totalMb = Math.max(1, Math.ceil(totalBytes / BYTES_PER_MB));
+  const sizeBasedTimeout = UPLOAD_TIMEOUT_BASE_MS + totalMb * UPLOAD_TIMEOUT_PER_MB_MS;
+  return Math.min(MAX_UPLOAD_TIMEOUT_MS, Math.max(MIN_UPLOAD_TIMEOUT_MS, sizeBasedTimeout));
+}
+
+function isAbortError(error: unknown): boolean {
+  return error instanceof DOMException
+    ? error.name === 'AbortError'
+    : typeof error === 'object' && error !== null && (error as { name?: string }).name === 'AbortError';
+}
+
 // 上传文件
 export async function uploadFiles(
   provider: string,
@@ -57,20 +76,23 @@ export async function uploadFiles(
     const controller = abortController || new AbortController();
     const signal = controller.signal;
 
-    const timeoutMs = 15000 + files.length * 10000;
+    const timeoutMs = getUploadTimeoutMs(files);
     const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
-    const data = await apiRequest<{ files: UploadedFileInfo[] }>(`${API_BASE_URL}/api/files/upload`, {
-      method: 'POST',
-      body: formData,
-      signal
-    });
+    try {
+      const data = await apiRequest<{ files: UploadedFileInfo[] }>(`${API_BASE_URL}/api/files/upload`, {
+        method: 'POST',
+        body: formData,
+        signal
+      });
 
-    clearTimeout(timeoutId);
-    return data.files;
+      return data.files;
+    } finally {
+      clearTimeout(timeoutId);
+    }
   } catch (error) {
-    if ((error as any).name === 'AbortError') {
-      throw error;
+    if (isAbortError(error)) {
+      throw new Error(UPLOAD_TIMEOUT_MESSAGE);
     }
     console.error('上传文件失败:', error);
     if (retryCount > 0) {

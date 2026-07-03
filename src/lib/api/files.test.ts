@@ -4,6 +4,7 @@ import {
   deleteFile,
   getConversationFiles,
   getFileStatus,
+  getUploadTimeoutMs,
   uploadFiles,
 } from './files';
 import type { FileInfo } from './files';
@@ -18,6 +19,7 @@ beforeEach(() => {
 
 afterEach(() => {
   globalThis.fetch = originalFetch;
+  vi.useRealTimers();
 });
 
 function createEnvelopeResponse(
@@ -91,6 +93,31 @@ describe('files api client', () => {
 
     expect(uploaded).toEqual([{ file_id: 'file-2' }]);
     expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('computes a timeout that keeps large single-file uploads alive past the old 25 second limit', () => {
+    const largeFile = new File(
+      [new Uint8Array(2 * 1024 * 1024)],
+      'large-image.png',
+      { type: 'image/png' }
+    );
+
+    expect(getUploadTimeoutMs([largeFile])).toBeGreaterThan(25000);
+    expect(getUploadTimeoutMs([largeFile])).toBeGreaterThanOrEqual(120000);
+  });
+
+  it('surfaces a readable timeout message when upload aborts', async () => {
+    const abortError = new DOMException('signal is aborted without reason', 'AbortError');
+    fetchMock.mockRejectedValue(abortError);
+
+    await expect(
+      uploadFiles(
+        'qwen',
+        'qwen-max',
+        'chat-timeout',
+        [new File(['timeout'], 'timeout.png', { type: 'image/png' })]
+      )
+    ).rejects.toThrow('文件上传超时，请检查网络后重试');
   });
 
   it('returns conversation files from the authenticated endpoint', async () => {
