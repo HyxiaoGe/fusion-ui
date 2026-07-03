@@ -86,7 +86,7 @@ describe('useConversationFiles', () => {
 
     const { result, rerender } = renderHook(
       ({ conversationId }: { conversationId: string | null }) => useConversationFiles(conversationId),
-      { initialProps: { conversationId: 'chat-1' } },
+      { initialProps: { conversationId: 'chat-1' as string | null } },
     );
 
     await waitFor(() => {
@@ -107,7 +107,7 @@ describe('useConversationFiles', () => {
 
     const { result, rerender } = renderHook(
       ({ conversationId }: { conversationId: string | null }) => useConversationFiles(conversationId),
-      { initialProps: { conversationId: 'chat-1' } },
+      { initialProps: { conversationId: 'chat-1' as string | null } },
     );
 
     await waitFor(() => {
