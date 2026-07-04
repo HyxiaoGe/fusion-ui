@@ -34,11 +34,15 @@ describe('ImageViewer', () => {
     render(<ImageViewer fileBlock={imageBlock()} onClose={vi.fn()} />);
 
     const loadingStage = screen.getByLabelText('图片预览加载中');
+    const loadingCopy = screen.getByText('正在加载图片…');
     const closeButton = screen.getByRole('button', { name: '关闭图片预览' });
 
     expect(loadingStage).toBeInTheDocument();
-    expect(within(loadingStage).getByText('正在加载图片…')).toBeInTheDocument();
-    expect(within(loadingStage).getByText('diagram.png')).toBeInTheDocument();
+    expect(loadingStage).toHaveClass('relative', 'overflow-hidden');
+    expect(loadingStage).not.toHaveClass('border-white/10');
+    expect(within(loadingStage).getByText('正在加载图片…')).toBe(loadingCopy);
+    expect(loadingCopy.parentElement).not.toHaveClass('border');
+    expect(within(loadingStage).queryByText('diagram.png')).toBeNull();
     expect(closeButton).toHaveClass('fixed');
     expect(closeButton.closest('[aria-label="图片预览加载中"]')).toBeNull();
   });

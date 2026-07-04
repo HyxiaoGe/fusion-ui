@@ -179,13 +179,18 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ fileBlock, imageUrl, onClose 
           {isLoading ? (
             <div
               aria-label="图片预览加载中"
-              className="flex h-[min(78vh,640px)] w-[min(92vw,960px)] items-center justify-center rounded-lg border border-white/10 bg-black/25 text-white shadow-2xl backdrop-blur-sm"
+              className="relative flex h-[min(78vh,680px)] w-[min(92vw,1040px)] items-center justify-center overflow-hidden rounded-lg bg-white/[0.035] text-white shadow-[inset_0_0_0_1px_rgba(255,255,255,0.055),0_24px_80px_rgba(0,0,0,0.28)] backdrop-blur-sm"
               onClick={(event) => event.stopPropagation()}
             >
-              <div className="flex min-w-[220px] flex-col items-center gap-3 rounded-lg border border-white/15 bg-black/45 px-5 py-5">
-                <Loader2 className="h-6 w-6 animate-spin text-white/90" aria-hidden="true" />
-                <div className="text-sm font-medium">正在加载图片…</div>
-                <div className="max-w-[56vw] truncate text-xs text-white/65">{altText}</div>
+              <div className="absolute inset-0 animate-pulse bg-[radial-gradient(circle_at_center,rgba(255,255,255,0.10),transparent_42%)]" />
+              <div className="absolute inset-x-[12%] top-[16%] h-[58%] rounded-md bg-white/[0.035] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.035)]" />
+              <div className="absolute inset-x-[22%] bottom-[18%] h-2 rounded-full bg-white/[0.045]" />
+              <div className="absolute inset-x-[31%] bottom-[14%] h-1.5 rounded-full bg-white/[0.035]" />
+              <div className="absolute left-1/2 top-1/2 flex -translate-x-1/2 -translate-y-1/2 flex-col items-center gap-3">
+                <span className="flex h-10 w-10 items-center justify-center rounded-full bg-black/20 text-white shadow-[inset_0_0_0_1px_rgba(255,255,255,0.08)] backdrop-blur">
+                  <Loader2 className="h-5 w-5 animate-spin text-white/90" aria-hidden="true" />
+                </span>
+                <div className="text-sm font-medium text-white/85">正在加载图片…</div>
               </div>
             </div>
           ) : error ? (
