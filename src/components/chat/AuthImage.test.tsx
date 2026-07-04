@@ -67,4 +67,27 @@ describe('AuthImage', () => {
       );
     });
   });
+
+  it('fresh URL 的图片内容仍加载失败时显示文件不可用且不继续误导重试', async () => {
+    getFileUrlMock.mockResolvedValueOnce('/api/files/file-1/content?variant=thumbnail&token=fresh');
+
+    render(
+      <AuthImage
+        fileId="file-1"
+        src="/api/files/file-1/content?variant=thumbnail&token=expired"
+        alt="diagram.png"
+      />,
+    );
+
+    fireEvent.error(screen.getByAltText('diagram.png'));
+
+    const freshImage = await screen.findByAltText('diagram.png');
+    expect(freshImage).toHaveAttribute('src', '/api/files/file-1/content?variant=thumbnail&token=fresh');
+
+    fireEvent.error(freshImage);
+
+    expect(await screen.findByText('图片文件不可用')).toBeInTheDocument();
+    expect(screen.getByText('diagram.png')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '重新加载 diagram.png' })).not.toBeInTheDocument();
+  });
 });

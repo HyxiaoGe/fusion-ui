@@ -72,8 +72,7 @@ function UserMessage({
               return isImage ? (
                 <div
                   key={block.id}
-                  className="cursor-pointer group/img relative"
-                  onClick={() => onViewImage(block)}
+                  className="group/img relative"
                 >
                   <AuthImage
                     fileId={block.file_id}
@@ -81,6 +80,7 @@ function UserMessage({
                     alt={block.filename}
                     className="rounded-lg max-w-[240px] max-h-[240px] object-cover
                                border border-border/50 hover:border-primary/50 transition"
+                    onClick={() => onViewImage(block)}
                   />
                 </div>
               ) : (

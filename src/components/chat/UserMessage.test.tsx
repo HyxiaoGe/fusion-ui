@@ -1,9 +1,16 @@
 import { fireEvent, render, screen } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { ContentBlock, FileBlock, Message } from '@/types/conversation';
+import { getFileUrl } from '@/lib/api/files';
 
 import UserMessage from './UserMessage';
+
+vi.mock('@/lib/api/files', () => ({
+  getFileUrl: vi.fn(),
+}));
+
+const getFileUrlMock = vi.mocked(getFileUrl);
 
 function makeMessage(overrides: Partial<Message> = {}): Message {
   return {
@@ -45,6 +52,10 @@ function renderUserMessage({
 }
 
 describe('UserMessage', () => {
+  beforeEach(() => {
+    getFileUrlMock.mockReset();
+  });
+
   it('渲染普通用户文本', () => {
     renderUserMessage();
 
@@ -118,5 +129,28 @@ describe('UserMessage', () => {
     fireEvent.click(screen.getByAltText('diagram.png'));
 
     expect(onViewImage).toHaveBeenCalledWith(imageBlock);
+  });
+
+  it('图片失败卡片不可点击打开查看器', async () => {
+    getFileUrlMock.mockRejectedValueOnce(new Error('文件不存在'));
+    const imageBlock: FileBlock = {
+      type: 'file',
+      id: 'file-1',
+      file_id: 'img-1',
+      filename: 'diagram.png',
+      mime_type: 'image/png',
+      thumbnail_url: '/api/files/img-1/content?variant=thumbnail&token=expired',
+    };
+    const { onViewImage } = renderUserMessage({
+      blocksToRender: [imageBlock, { type: 'text', id: 'text-1', text: '看这张图' }],
+      messageText: '看这张图',
+    });
+
+    fireEvent.error(screen.getByAltText('diagram.png'));
+    const failedCard = await screen.findByLabelText('diagram.png 加载失败');
+
+    fireEvent.click(failedCard);
+
+    expect(onViewImage).not.toHaveBeenCalled();
   });
 });

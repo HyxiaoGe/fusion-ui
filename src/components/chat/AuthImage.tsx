@@ -5,6 +5,7 @@ import { ImageOff, Loader2, RefreshCw } from 'lucide-react';
 
 import { getFileUrl } from '@/lib/api/files';
 import { cn } from '@/lib/utils';
+import { ApiError } from '@/types/api';
 
 interface AuthImageProps {
   fileId: string;
@@ -32,7 +33,9 @@ const AuthImage: React.FC<AuthImageProps> = ({
   variant = 'thumbnail',
 }) => {
   const [src, setSrc] = useState(initialSrc || '');
-  const [status, setStatus] = useState<'loading' | 'ready' | 'failed'>(initialSrc ? 'ready' : 'loading');
+  const [status, setStatus] = useState<'loading' | 'ready' | 'failed' | 'unavailable'>(
+    initialSrc ? 'ready' : 'loading',
+  );
   const [source, setSource] = useState<'initial' | 'fetched' | null>(initialSrc ? 'initial' : null);
   const requestIdRef = useRef(0);
 
@@ -49,11 +52,11 @@ const AuthImage: React.FC<AuthImageProps> = ({
       setSrc(url);
       setSource('fetched');
       setStatus('ready');
-    } catch {
+    } catch (error) {
       if (requestIdRef.current !== requestId) return;
       setSrc('');
       setSource(null);
-      setStatus('failed');
+      setStatus(error instanceof ApiError && error.code === 'NOT_FOUND' ? 'unavailable' : 'failed');
     }
   }, [fileId, variant]);
 
@@ -78,7 +81,7 @@ const AuthImage: React.FC<AuthImageProps> = ({
 
     setSrc('');
     setSource(null);
-    setStatus('failed');
+    setStatus('unavailable');
   };
 
   const handleRetry = (event: React.MouseEvent<HTMLButtonElement>) => {
@@ -93,7 +96,7 @@ const AuthImage: React.FC<AuthImageProps> = ({
           'flex min-h-[96px] w-[180px] max-w-[240px] flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-border/70 bg-muted/20 px-3 py-4 text-center text-muted-foreground',
           className,
         )}
-        aria-label={`${alt} ${status === 'failed' ? '加载失败' : '加载中'}`}
+        aria-label={`${alt} ${status === 'unavailable' ? '不可用' : status === 'failed' ? '加载失败' : '加载中'}`}
       >
         {status === 'loading' ? (
           <>
@@ -103,17 +106,21 @@ const AuthImage: React.FC<AuthImageProps> = ({
         ) : (
           <>
             <ImageOff className="h-5 w-5" aria-hidden="true" />
-            <span className="text-xs font-medium text-foreground">图片加载失败</span>
+            <span className="text-xs font-medium text-foreground">
+              {status === 'unavailable' ? '图片文件不可用' : '图片加载失败'}
+            </span>
             <span className="max-w-full truncate text-[11px]">{alt}</span>
-            <button
-              type="button"
-              className="inline-flex h-7 items-center gap-1 rounded-md border border-border bg-background px-2 text-[11px] text-foreground transition-colors hover:bg-muted"
-              onClick={handleRetry}
-              aria-label={`重新加载 ${alt}`}
-            >
-              <RefreshCw className="h-3 w-3" aria-hidden="true" />
-              重试
-            </button>
+            {status === 'failed' ? (
+              <button
+                type="button"
+                className="inline-flex h-7 items-center gap-1 rounded-md border border-border bg-background px-2 text-[11px] text-foreground transition-colors hover:bg-muted"
+                onClick={handleRetry}
+                aria-label={`重新加载 ${alt}`}
+              >
+                <RefreshCw className="h-3 w-3" aria-hidden="true" />
+                重试
+              </button>
+            ) : null}
           </>
         )}
       </div>
