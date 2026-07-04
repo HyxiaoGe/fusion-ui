@@ -370,6 +370,21 @@ describe('HomeChatSurface 会话资料交互', () => {
     );
   });
 
+  it('没有会话资料和已选资料时隐藏资料入口', async () => {
+    render(<HomeChatSurface />);
+
+    expect(screen.queryByRole('button', { name: '打开会话资料' })).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: '上传已处理资料' }));
+    expect(screen.getByRole('button', { name: '打开会话资料' })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: '移除资料引用' }));
+
+    await waitFor(() => {
+      expect(screen.queryByRole('button', { name: '打开会话资料' })).toBeNull();
+    });
+  });
+
   it('再次点击会话资料按钮时关闭资料面板', async () => {
     useConversationFilesState.files = [createFile({ id: 'file-existing', filename: '已有资料.png' })];
 

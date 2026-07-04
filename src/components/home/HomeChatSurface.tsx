@@ -82,6 +82,12 @@ export default function HomeChatSurface() {
   const conversationAttachments = conversationAttachmentState.chatId === attachmentScopeId
     ? conversationAttachmentState.attachments
     : EMPTY_CONVERSATION_ATTACHMENTS;
+  const shouldShowFilesPanelButton =
+    filesPanelOpen ||
+    conversationFiles.length > 0 ||
+    conversationAttachments.length > 0 ||
+    conversationFilesLoading ||
+    Boolean(conversationFilesError);
 
   const resetNewChatDraft = useCallback(() => {
     setInputKey((current) => current + 1);
@@ -337,20 +343,22 @@ export default function HomeChatSurface() {
         <HomePage onSendMessage={handleSendMessage} onNewChat={handleNewChat} />
       </div>
       <div className="flex-shrink-0 p-4">
-        <div className="mb-2 flex items-center justify-end">
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            className="h-8 gap-1.5"
-            aria-label={filesPanelOpen ? '关闭会话资料' : '打开会话资料'}
-            aria-expanded={filesPanelOpen}
-            onClick={() => setFilesPanelOpen((open) => !open)}
-          >
-            <Files className="h-4 w-4" aria-hidden="true" />
-            资料
-          </Button>
-        </div>
+        {shouldShowFilesPanelButton ? (
+          <div className="mb-2 flex items-center justify-end">
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="h-8 gap-1.5"
+              aria-label={filesPanelOpen ? '关闭会话资料' : '打开会话资料'}
+              aria-expanded={filesPanelOpen}
+              onClick={() => setFilesPanelOpen((open) => !open)}
+            >
+              <Files className="h-4 w-4" aria-hidden="true" />
+              资料
+            </Button>
+          </div>
+        ) : null}
         <ChatInput
           key={inputKey}
           onSendMessage={handleSendMessage}

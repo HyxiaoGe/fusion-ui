@@ -375,6 +375,12 @@ export default function ChatPage() {
   const conversationAttachments = conversationAttachmentState.chatId === chatId
     ? conversationAttachmentState.attachments
     : EMPTY_CONVERSATION_ATTACHMENTS;
+  const shouldShowFilesPanelButton =
+    filesPanelOpen ||
+    conversationFiles.length > 0 ||
+    conversationAttachments.length > 0 ||
+    conversationFilesLoading ||
+    Boolean(conversationFilesError);
 
   const addConversationAttachment = useCallback((attachment: ConversationComposerAttachment) => {
     setConversationAttachmentState((currentState) => {
@@ -623,20 +629,22 @@ export default function ChatPage() {
           </div>
 
           <div ref={chatInputRef} tabIndex={-1} className="flex-shrink-0 px-4 pb-4 pt-2">
-            <div className="mb-2 flex items-center justify-end">
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                className="h-8 gap-1.5"
-                aria-label={filesPanelOpen ? '关闭会话资料' : '打开会话资料'}
-                aria-expanded={filesPanelOpen}
-                onClick={() => setFilesPanelOpen((open) => !open)}
-              >
-                <Files className="h-4 w-4" aria-hidden="true" />
-                资料
-              </Button>
-            </div>
+            {shouldShowFilesPanelButton ? (
+              <div className="mb-2 flex items-center justify-end">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-8 gap-1.5"
+                  aria-label={filesPanelOpen ? '关闭会话资料' : '打开会话资料'}
+                  aria-expanded={filesPanelOpen}
+                  onClick={() => setFilesPanelOpen((open) => !open)}
+                >
+                  <Files className="h-4 w-4" aria-hidden="true" />
+                  资料
+                </Button>
+              </div>
+            ) : null}
             <ChatInput
               onSendMessage={handleSendMessage}
               onClearMessage={handleClearChat}

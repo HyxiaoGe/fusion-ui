@@ -735,6 +735,24 @@ describe('ChatPage 会话切换体验', () => {
     expect(screen.getByTestId('conversation-files-panel')).toHaveAttribute('data-selected-ids', '');
   });
 
+  it('没有会话资料和已选资料时隐藏资料入口', async () => {
+    conversationsById.set('chat-a', createConversation('chat-a', [textMessage('message-a')]));
+    hydrationById.set('chat-a', { view: 'ready' });
+
+    render(<ChatPage />);
+
+    expect(screen.queryByRole('button', { name: '打开会话资料' })).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: '上传已处理资料' }));
+    expect(screen.getByRole('button', { name: '打开会话资料' })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: '移除已选资料' }));
+
+    await waitFor(() => {
+      expect(screen.queryByRole('button', { name: '打开会话资料' })).toBeNull();
+    });
+  });
+
   it('再次点击会话资料按钮时关闭资料面板', async () => {
     conversationsById.set('chat-a', createConversation('chat-a', [textMessage('message-a')]));
     hydrationById.set('chat-a', { view: 'ready' });
