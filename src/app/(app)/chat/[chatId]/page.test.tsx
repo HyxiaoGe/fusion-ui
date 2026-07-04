@@ -420,6 +420,7 @@ describe('ChatPage 会话切换体验', () => {
     useConversationFilesState.removeFile.mockClear();
     deleteFileMock.mockReset();
     deleteFileMock.mockResolvedValue(undefined);
+    window.sessionStorage.clear();
   });
 
   it('chatId 改变时不通过 key 重建 ChatInput', async () => {
@@ -852,6 +853,19 @@ describe('ChatPage 会话切换体验', () => {
     );
     expect(screen.getByTestId('conversation-files-panel')).toBeInTheDocument();
     expect(screen.getByTestId('conversation-files-panel')).toHaveAttribute('data-selected-ids', '');
+  });
+
+  it('从新对话发送资料后进入会话页时自动打开一次资料面板', async () => {
+    conversationsById.set('chat-a', createConversation('chat-a', [textMessage('message-a')]));
+    hydrationById.set('chat-a', { view: 'ready' });
+    window.sessionStorage.setItem('fusion:open-files-panel:chat-a', '1');
+
+    render(<ChatPage />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('conversation-files-panel')).toBeInTheDocument();
+    });
+    expect(window.sessionStorage.getItem('fusion:open-files-panel:chat-a')).toBeNull();
   });
 
   it('已有会话上传解析中文件后等待资料刷新为 processed 再加入本次提问', async () => {

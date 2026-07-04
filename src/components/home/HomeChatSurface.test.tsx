@@ -257,9 +257,10 @@ describe('HomeChatSurface 会话资料交互', () => {
     chatInputRenderMock.mockClear();
     routeState.pathname = '/chat/new';
     routeState.modelHint = 'model-vision';
+    window.sessionStorage.clear();
   });
 
-  it('上传已处理文件后打开资料面板并自动加入本次提问', async () => {
+  it('上传已处理文件后只加入本次提问，不自动打开资料面板', async () => {
     render(<HomeChatSurface />);
 
     fireEvent.click(screen.getByRole('button', { name: '上传已处理资料' }));
@@ -268,9 +269,44 @@ describe('HomeChatSurface 会话资料交互', () => {
       expect(useConversationFilesMock).toHaveBeenLastCalledWith('pending-chat-1');
     });
     expect(useConversationFilesState.refresh).toHaveBeenCalledTimes(1);
-    expect(screen.getByTestId('conversation-files-panel')).toBeInTheDocument();
+    expect(screen.queryByTestId('conversation-files-panel')).toBeNull();
     expect(screen.getByTestId('chat-input')).toHaveAttribute('data-attachment-count', '1');
-    expect(screen.getByTestId('conversation-files-panel')).toHaveAttribute('data-selected-ids', 'file-uploaded');
+  });
+
+  it('发送带资料的新对话时打开资料面板并把打开意图交给落库后的会话页', async () => {
+    sendMessageMock.mockImplementation((_content, options) => {
+      options.onMaterialized('server-chat-1');
+      return Promise.resolve();
+    });
+
+    render(<HomeChatSurface />);
+
+    fireEvent.click(screen.getByRole('button', { name: '上传已处理资料' }));
+    expect(screen.queryByTestId('conversation-files-panel')).toBeNull();
+    expect(screen.getByTestId('chat-input')).toHaveAttribute('data-attachment-count', '1');
+
+    fireEvent.click(screen.getByRole('button', { name: '发送资料提问' }));
+
+    expect(screen.getByTestId('conversation-files-panel')).toBeInTheDocument();
+    expect(sendMessageMock).toHaveBeenCalledWith(
+      '解读资料',
+      {
+        conversationId: 'pending-chat-1',
+        isDraft: true,
+        onDraftCreated: expect.any(Function),
+        onMaterialized: expect.any(Function),
+      },
+      [
+        {
+          fileId: 'file-uploaded',
+          filename: 'uploaded.png',
+          mimeType: 'image/png',
+          previewUrl: '/thumb.png',
+        },
+      ],
+    );
+    expect(routerReplaceMock).toHaveBeenCalledWith('/chat/server-chat-1');
+    expect(window.sessionStorage.getItem('fusion:open-files-panel:server-chat-1')).toBe('1');
   });
 
   it('从资料面板加入资料后发送时只传已有 fileId', async () => {

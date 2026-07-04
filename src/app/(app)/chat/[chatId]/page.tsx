@@ -43,6 +43,7 @@ import { useSuggestedQuestionContinuation } from '@/hooks/useSuggestedQuestionCo
 import { useTransientCompletionState } from '@/hooks/useTransientCompletionState';
 import { useConversationFiles } from '@/hooks/useConversationFiles';
 import { createAgentStreamEventHandlers } from '@/lib/agent/streamEventHandlers';
+import { consumeConversationFilesPanelOpen } from '@/lib/chat/filesPanelHandoff';
 import {
   recoverReasoningOnlyFinalBlocks,
   shouldRecoverReasoningOnlyFinalBlocks,
@@ -133,7 +134,7 @@ export default function ChatPage() {
   }, [chatId, clearQuestions]);
 
   useEffect(() => {
-    setFilesPanelOpen(false);
+    setFilesPanelOpen(consumeConversationFilesPanelOpen(chatId));
     setConversationAttachmentState((current) => {
       if (current.chatId === chatId && current.attachments.length === 0) {
         return current;

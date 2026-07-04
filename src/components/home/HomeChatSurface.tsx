@@ -19,6 +19,7 @@ import { useConversationFiles } from '@/hooks/useConversationFiles';
 import { getFirstEnabledModelId, getPreferredModelId } from '@/lib/models/modelPreference';
 import { CHAT_NEW_PATH, buildChatConversationPath, buildChatNewPath, isChatNewPath } from '@/lib/routes/chatRoutes';
 import type { FileAttachment } from '@/lib/utils/fileHelpers';
+import { markConversationFilesPanelOpen } from '@/lib/chat/filesPanelHandoff';
 
 const EMPTY_CONVERSATION_ATTACHMENTS: ConversationComposerAttachment[] = [];
 const NEW_CHAT_ATTACHMENT_SCOPE = 'new-chat';
@@ -166,7 +167,6 @@ export default function HomeChatSurface() {
     }
 
     void refreshConversationFiles();
-    setFilesPanelOpen(true);
 
     const uploadedFiles = Array.isArray(files) ? files : [];
     const pendingFileIds: string[] = [];
@@ -248,6 +248,11 @@ export default function HomeChatSurface() {
     attachments?: FileAttachment[],
     pendingConversationId?: string
   ) => {
+    const shouldOpenFilesPanel = Boolean(attachments && attachments.length > 0);
+    if (shouldOpenFilesPanel) {
+      setFilesPanelOpen(true);
+    }
+
     return sendMessage(
       content,
       {
@@ -255,9 +260,14 @@ export default function HomeChatSurface() {
         isDraft: true,
         onDraftCreated: () => {},
         onMaterialized: (serverConversationId) => {
+          if (shouldOpenFilesPanel) {
+            markConversationFilesPanelOpen(serverConversationId);
+          }
           router.replace(buildChatConversationPath(serverConversationId));
           setInputKey(Date.now());
-          setFilesPanelOpen(false);
+          if (!shouldOpenFilesPanel) {
+            setFilesPanelOpen(false);
+          }
           setFilesConversationId(null);
           setConversationAttachmentState({ chatId: NEW_CHAT_ATTACHMENT_SCOPE, attachments: [] });
           setPendingAutoAttachState({ chatId: NEW_CHAT_ATTACHMENT_SCOPE, fileIds: [] });
