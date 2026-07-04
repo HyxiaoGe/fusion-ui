@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import ImageViewer from './ImageViewer';
+import ImageViewer, { __clearImageViewerUrlCacheForTest } from './ImageViewer';
 import { getFileUrl } from '@/lib/api/files';
 import type { FileBlock } from '@/types/conversation';
 
@@ -25,6 +25,7 @@ function imageBlock(overrides: Partial<FileBlock> = {}): FileBlock {
 describe('ImageViewer', () => {
   beforeEach(() => {
     getFileUrlMock.mockReset();
+    __clearImageViewerUrlCacheForTest();
   });
 
   it('原图 URL 获取失败时尝试 fresh thumbnail 作为降级图', async () => {
@@ -102,5 +103,91 @@ describe('ImageViewer', () => {
       expect(screen.getByText('图片加载失败')).toBeInTheDocument();
     });
     expect(screen.queryByAltText('diagram.png')).toBeNull();
+  });
+
+  it('重新打开同一张消息图片时复用已获取的 processed URL', async () => {
+    getFileUrlMock.mockResolvedValueOnce('/api/files/file-cache/content?variant=processed&token=stable');
+    const fileBlock = imageBlock({
+      file_id: 'file-cache',
+      filename: 'cache.png',
+    });
+
+    const firstRender = render(<ImageViewer fileBlock={fileBlock} onClose={vi.fn()} />);
+
+    expect(await screen.findByAltText('cache.png')).toHaveAttribute(
+      'src',
+      '/api/files/file-cache/content?variant=processed&token=stable',
+    );
+
+    firstRender.unmount();
+    render(<ImageViewer fileBlock={fileBlock} onClose={vi.fn()} />);
+
+    expect(await screen.findByAltText('cache.png')).toHaveAttribute(
+      'src',
+      '/api/files/file-cache/content?variant=processed&token=stable',
+    );
+    expect(getFileUrlMock).toHaveBeenCalledTimes(1);
+    expect(getFileUrlMock).toHaveBeenCalledWith('file-cache', 'processed');
+  });
+
+  it('点击重试时绕过已缓存 URL 重新获取 processed URL', async () => {
+    getFileUrlMock
+      .mockResolvedValueOnce('/api/files/file-retry/content?variant=processed&token=old')
+      .mockRejectedValueOnce(new Error('thumbnail 不可用'))
+      .mockResolvedValueOnce('/api/files/file-retry/content?variant=processed&token=new');
+    const fileBlock = imageBlock({
+      file_id: 'file-retry',
+      filename: 'retry.png',
+    });
+
+    render(<ImageViewer fileBlock={fileBlock} onClose={vi.fn()} />);
+
+    const image = await screen.findByAltText('retry.png');
+    expect(image).toHaveAttribute('src', '/api/files/file-retry/content?variant=processed&token=old');
+
+    fireEvent.error(image);
+    fireEvent.click(await screen.findByRole('button', { name: '重试' }));
+
+    await waitFor(() => {
+      expect(screen.getByAltText('retry.png')).toHaveAttribute(
+        'src',
+        '/api/files/file-retry/content?variant=processed&token=new',
+      );
+    });
+    expect(getFileUrlMock).toHaveBeenNthCalledWith(1, 'file-retry', 'processed');
+    expect(getFileUrlMock).toHaveBeenNthCalledWith(2, 'file-retry', 'thumbnail');
+    expect(getFileUrlMock).toHaveBeenNthCalledWith(3, 'file-retry', 'processed');
+  });
+
+  it('缓存的 processed URL 内容加载失败时先刷新 processed URL', async () => {
+    getFileUrlMock
+      .mockResolvedValueOnce('/api/files/file-expired/content?variant=processed&token=old')
+      .mockResolvedValueOnce('/api/files/file-expired/content?variant=processed&token=new');
+    const fileBlock = imageBlock({
+      file_id: 'file-expired',
+      filename: 'expired.png',
+    });
+
+    const firstRender = render(<ImageViewer fileBlock={fileBlock} onClose={vi.fn()} />);
+    expect(await screen.findByAltText('expired.png')).toHaveAttribute(
+      'src',
+      '/api/files/file-expired/content?variant=processed&token=old',
+    );
+    firstRender.unmount();
+
+    render(<ImageViewer fileBlock={fileBlock} onClose={vi.fn()} />);
+    const cachedImage = await screen.findByAltText('expired.png');
+    expect(cachedImage).toHaveAttribute('src', '/api/files/file-expired/content?variant=processed&token=old');
+
+    fireEvent.error(cachedImage);
+
+    await waitFor(() => {
+      expect(screen.getByAltText('expired.png')).toHaveAttribute(
+        'src',
+        '/api/files/file-expired/content?variant=processed&token=new',
+      );
+    });
+    expect(getFileUrlMock).toHaveBeenNthCalledWith(1, 'file-expired', 'processed');
+    expect(getFileUrlMock).toHaveBeenNthCalledWith(2, 'file-expired', 'processed');
   });
 });

@@ -7,6 +7,46 @@ import { ImageOff, Loader2, RefreshCw, X } from 'lucide-react';
 import { getFileUrl } from '@/lib/api/files';
 import type { FileBlock } from '@/types/conversation';
 
+type FileVariant = 'processed' | 'thumbnail';
+type ImageCandidateResult = {
+  cacheKey?: string;
+  fromCache?: boolean;
+  url: string | null;
+};
+type ImageCandidate = {
+  load: () => Promise<ImageCandidateResult>;
+};
+
+const resolvedFileUrlCache = new Map<string, string>();
+
+function fileUrlCacheKey(fileId: string, variant: FileVariant) {
+  return `${fileId}:${variant}`;
+}
+
+async function getCachedFileUrl(
+  fileId: string,
+  variant: FileVariant,
+  bypassCache: boolean,
+): Promise<ImageCandidateResult> {
+  const cacheKey = fileUrlCacheKey(fileId, variant);
+  if (!bypassCache) {
+    const cachedUrl = resolvedFileUrlCache.get(cacheKey);
+    if (cachedUrl) {
+      return { cacheKey, fromCache: true, url: cachedUrl };
+    }
+  }
+
+  const url = await getFileUrl(fileId, variant);
+  if (url) {
+    resolvedFileUrlCache.set(cacheKey, url);
+  }
+  return { cacheKey, fromCache: false, url };
+}
+
+export function __clearImageViewerUrlCacheForTest() {
+  resolvedFileUrlCache.clear();
+}
+
 interface ImageViewerProps {
   /** 模式一：传入 FileBlock，自动加载原图（消息气泡中使用） */
   fileBlock?: FileBlock | null;
@@ -24,38 +64,43 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ fileBlock, imageUrl, onClose 
   const [fullImageUrl, setFullImageUrl] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(false);
-  const [reloadKey, setReloadKey] = useState(0);
   const [activeCandidateIndex, setActiveCandidateIndex] = useState(-1);
+  const activeCandidateRef = useRef<{ cacheKey?: string; fromCache: boolean; index: number } | null>(null);
   const requestIdRef = useRef(0);
 
   const isOpen = !!(fileBlock || imageUrl);
 
-  const loadCandidate = useCallback(async (startIndex: number) => {
+  const loadCandidate = useCallback(async (startIndex: number, bypassCache = false) => {
     const requestId = requestIdRef.current + 1;
     requestIdRef.current = requestId;
     setIsLoading(true);
     setError(false);
     setFullImageUrl(null);
 
-    const candidates: Array<() => Promise<string | null>> = imageUrl
+    const candidates: ImageCandidate[] = imageUrl
       ? [
-          async () => imageUrl,
+          { load: async () => ({ url: imageUrl }) },
         ]
       : fileBlock
         ? [
-            async () => getFileUrl(fileBlock.file_id, 'processed'),
-            async () => getFileUrl(fileBlock.file_id, 'thumbnail'),
-            async () => fileBlock.thumbnail_url || null,
+            { load: async () => getCachedFileUrl(fileBlock.file_id, 'processed', bypassCache) },
+            { load: async () => getCachedFileUrl(fileBlock.file_id, 'thumbnail', bypassCache) },
+            { load: async () => ({ url: fileBlock.thumbnail_url || null }) },
           ]
         : [];
 
     for (let index = startIndex; index < candidates.length; index += 1) {
       try {
-        const url = await candidates[index]();
+        const result = await candidates[index].load();
         if (requestIdRef.current !== requestId) return;
-        if (!url) continue;
+        if (!result.url) continue;
         setActiveCandidateIndex(index);
-        setFullImageUrl(url);
+        activeCandidateRef.current = {
+          cacheKey: result.cacheKey,
+          fromCache: result.fromCache === true,
+          index,
+        };
+        setFullImageUrl(result.url);
         setError(false);
         setIsLoading(false);
         return;
@@ -66,6 +111,7 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ fileBlock, imageUrl, onClose 
 
     if (requestIdRef.current === requestId) {
       setActiveCandidateIndex(-1);
+      activeCandidateRef.current = null;
       setFullImageUrl(null);
       setError(true);
       setIsLoading(false);
@@ -76,6 +122,7 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ fileBlock, imageUrl, onClose 
     if (!fileBlock && !imageUrl) {
       requestIdRef.current += 1;
       setActiveCandidateIndex(-1);
+      activeCandidateRef.current = null;
       setFullImageUrl(null);
       setError(false);
       setIsLoading(false);
@@ -87,11 +134,20 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ fileBlock, imageUrl, onClose 
     return () => {
       requestIdRef.current += 1;
     };
-  }, [fileBlock, imageUrl, loadCandidate, reloadKey]);
+  }, [fileBlock, imageUrl, loadCandidate]);
 
   const altText = fileBlock?.filename || '图片预览';
   const handleImageError = () => {
-    void loadCandidate(activeCandidateIndex + 1);
+    const activeCandidate = activeCandidateRef.current;
+    if (activeCandidate?.fromCache && activeCandidate.cacheKey) {
+      resolvedFileUrlCache.delete(activeCandidate.cacheKey);
+      void loadCandidate(activeCandidate.index, true);
+      return;
+    }
+    void loadCandidate(activeCandidateIndex + 1, true);
+  };
+  const handleRetry = () => {
+    void loadCandidate(0, true);
   };
 
   return (
@@ -126,7 +182,7 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ fileBlock, imageUrl, onClose 
                 <button
                   type="button"
                   className="inline-flex h-8 items-center gap-1 rounded-md border border-white/20 bg-white/10 px-3 text-xs text-white transition-colors hover:bg-white/20"
-                  onClick={() => setReloadKey((value) => value + 1)}
+                  onClick={handleRetry}
                 >
                   <RefreshCw className="h-3 w-3" aria-hidden="true" />
                   重试
