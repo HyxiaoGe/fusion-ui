@@ -4,6 +4,19 @@ import { describe, expect, it, vi } from 'vitest';
 import type { FileInfo } from '@/lib/api/files';
 import ConversationFilesPanel from './ConversationFilesPanel';
 
+vi.mock('./ImageViewer', () => ({
+  default: ({ fileBlock, onClose }: { fileBlock: { file_id: string; filename: string; mime_type: string } | null; onClose: () => void }) => (
+    fileBlock ? (
+      <div aria-label="图片预览查看器">
+        <span>{fileBlock.file_id}</span>
+        <span>{fileBlock.filename}</span>
+        <span>{fileBlock.mime_type}</span>
+        <button type="button" onClick={onClose}>关闭预览</button>
+      </div>
+    ) : null
+  ),
+}));
+
 function createFile(overrides: Partial<FileInfo> = {}): FileInfo {
   return {
     id: 'file-1',
@@ -178,5 +191,28 @@ describe('ConversationFilesPanel', () => {
 
     const thumbnail = screen.getByAltText('diagram.png 缩略图');
     expect(thumbnail).toHaveAttribute('src', 'https://static.example.com/diagram-thumb.png');
+  });
+
+  it('点击图片资料缩略图复用图片预览查看器', () => {
+    renderPanel({
+      files: [
+        createFile({
+          id: 'image-file',
+          filename: 'diagram.png',
+          mimetype: 'image/png',
+          thumbnail_url: 'https://static.example.com/diagram-thumb.png',
+        }),
+      ],
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: '预览资料图片 diagram.png' }));
+
+    const viewer = screen.getByLabelText('图片预览查看器');
+    expect(within(viewer).getByText('image-file')).toBeInTheDocument();
+    expect(within(viewer).getByText('diagram.png')).toBeInTheDocument();
+    expect(within(viewer).getByText('image/png')).toBeInTheDocument();
+
+    fireEvent.click(within(viewer).getByRole('button', { name: '关闭预览' }));
+    expect(screen.queryByLabelText('图片预览查看器')).not.toBeInTheDocument();
   });
 });

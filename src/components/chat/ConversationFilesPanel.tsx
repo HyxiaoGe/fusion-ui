@@ -1,10 +1,13 @@
 'use client';
 
 import { FileIcon, ImageIcon, Plus, RefreshCw, Trash2, X } from 'lucide-react';
+import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import type { FileInfo } from '@/lib/api/files';
 import { cn } from '@/lib/utils';
 import { formatFileSize } from '@/lib/utils/fileHelpers';
+import type { FileBlock } from '@/types/conversation';
+import ImageViewer from './ImageViewer';
 
 export interface ConversationFilesPanelProps {
   open: boolean;
@@ -36,70 +39,86 @@ export default function ConversationFilesPanel({
   onAddFile,
   onDeleteFile,
 }: ConversationFilesPanelProps) {
+  const [viewingImageFile, setViewingImageFile] = useState<FileInfo | null>(null);
+
   if (!open) {
     return null;
   }
 
-  return (
-    <section
-      aria-label="会话资料"
-      className="flex h-full min-h-0 w-full flex-col border-l border-border/60 bg-background"
-    >
-      <header className="flex shrink-0 items-center justify-between gap-2 border-b border-border/60 px-3 py-2">
-        <div className="min-w-0">
-          <h2 className="truncate text-sm font-medium text-foreground">会话资料</h2>
-          <p className="text-xs text-muted-foreground">{files.length} 个资料</p>
-        </div>
-        <div className="flex shrink-0 items-center gap-1">
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            className="h-8 w-8"
-            aria-label="刷新资料"
-            onClick={onRefresh}
-          >
-            <RefreshCw className={cn('h-4 w-4', isLoading && 'animate-spin')} aria-hidden="true" />
-          </Button>
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            className="h-8 w-8"
-            aria-label="关闭资料面板"
-            onClick={onClose}
-          >
-            <X className="h-4 w-4" aria-hidden="true" />
-          </Button>
-        </div>
-      </header>
+  const handleDeleteFile = (fileId: string) => {
+    if (viewingImageFile?.id === fileId) {
+      setViewingImageFile(null);
+    }
+    onDeleteFile(fileId);
+  };
 
-      <div className="min-h-0 flex-1 overflow-y-auto px-3 py-2">
-        {isLoading ? (
-          <p className="py-6 text-center text-sm text-muted-foreground" role="status">
-            正在加载资料
-          </p>
-        ) : error ? (
-          <p className="rounded-md border border-danger/20 bg-danger/10 px-3 py-2 text-sm text-danger" role="alert">
-            {error}
-          </p>
-        ) : files.length === 0 ? (
-          <p className="py-6 text-center text-sm text-muted-foreground">当前会话还没有资料</p>
-        ) : (
-          <ul className="space-y-2">
-            {files.map((file) => (
-              <ConversationFileItem
-                key={file.id}
-                file={file}
-                selected={selectedFileIds.has(file.id)}
-                onAddFile={onAddFile}
-                onDeleteFile={onDeleteFile}
-              />
-            ))}
-          </ul>
-        )}
-      </div>
-    </section>
+  return (
+    <>
+      <section
+        aria-label="会话资料"
+        className="flex h-full min-h-0 w-full flex-col border-l border-border/60 bg-background"
+      >
+        <header className="flex shrink-0 items-center justify-between gap-2 border-b border-border/60 px-3 py-2">
+          <div className="min-w-0">
+            <h2 className="truncate text-sm font-medium text-foreground">会话资料</h2>
+            <p className="text-xs text-muted-foreground">{files.length} 个资料</p>
+          </div>
+          <div className="flex shrink-0 items-center gap-1">
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8"
+              aria-label="刷新资料"
+              onClick={onRefresh}
+            >
+              <RefreshCw className={cn('h-4 w-4', isLoading && 'animate-spin')} aria-hidden="true" />
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8"
+              aria-label="关闭资料面板"
+              onClick={onClose}
+            >
+              <X className="h-4 w-4" aria-hidden="true" />
+            </Button>
+          </div>
+        </header>
+
+        <div className="min-h-0 flex-1 overflow-y-auto px-3 py-2">
+          {isLoading ? (
+            <p className="py-6 text-center text-sm text-muted-foreground" role="status">
+              正在加载资料
+            </p>
+          ) : error ? (
+            <p className="rounded-md border border-danger/20 bg-danger/10 px-3 py-2 text-sm text-danger" role="alert">
+              {error}
+            </p>
+          ) : files.length === 0 ? (
+            <p className="py-6 text-center text-sm text-muted-foreground">当前会话还没有资料</p>
+          ) : (
+            <ul className="space-y-2">
+              {files.map((file) => (
+                <ConversationFileItem
+                  key={file.id}
+                  file={file}
+                  selected={selectedFileIds.has(file.id)}
+                  onAddFile={onAddFile}
+                  onDeleteFile={handleDeleteFile}
+                  onViewImage={setViewingImageFile}
+                />
+              ))}
+            </ul>
+          )}
+        </div>
+      </section>
+      <ImageViewer
+        fileBlock={viewingImageFile ? toFileBlock(viewingImageFile) : null}
+        onClose={() => setViewingImageFile(null)}
+      />
+    </>
   );
 }
 
@@ -108,11 +127,13 @@ function ConversationFileItem({
   selected,
   onAddFile,
   onDeleteFile,
+  onViewImage,
 }: {
   file: FileInfo;
   selected: boolean;
   onAddFile: (file: FileInfo) => void;
   onDeleteFile: (fileId: string) => void;
+  onViewImage: (file: FileInfo) => void;
 }) {
   const addButtonState = getAddButtonState(file, selected);
   const statusText = getStatusText(file);
@@ -120,7 +141,7 @@ function ConversationFileItem({
   return (
     <li className="rounded-md border border-border/50 bg-muted/10 px-2.5 py-2">
       <div className="flex min-w-0 items-start gap-2.5">
-        <FileVisual file={file} />
+        <FileVisual file={file} onViewImage={onViewImage} />
         <div className="min-w-0 flex-1">
           <div className="flex min-w-0 items-start justify-between gap-2">
             <div className="min-w-0">
@@ -166,17 +187,28 @@ function ConversationFileItem({
   );
 }
 
-function FileVisual({ file }: { file: FileInfo }) {
+function FileVisual({ file, onViewImage }: { file: FileInfo; onViewImage: (file: FileInfo) => void }) {
   const isImage = isImageFile(file);
 
-  if (isImage && file.thumbnail_url) {
+  if (isImage) {
     return (
-      // eslint-disable-next-line @next/next/no-img-element -- 缩略图可能是已签名的本地代理或外部存储 URL，不能提前声明 next/image 域名。
-      <img
-        src={file.thumbnail_url}
-        alt={`${file.filename} 缩略图`}
-        className="h-10 w-10 shrink-0 rounded-md border border-border/50 object-cover"
-      />
+      <button
+        type="button"
+        aria-label={`预览资料图片 ${file.filename}`}
+        className="group flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-md border border-border/50 bg-background text-muted-foreground outline-none transition-colors hover:border-primary/40 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50"
+        onClick={() => onViewImage(file)}
+      >
+        {file.thumbnail_url ? (
+          // eslint-disable-next-line @next/next/no-img-element -- 缩略图可能是已签名的本地代理或外部存储 URL，不能提前声明 next/image 域名。
+          <img
+            src={file.thumbnail_url}
+            alt={`${file.filename} 缩略图`}
+            className="h-full w-full object-cover transition-transform group-hover:scale-105"
+          />
+        ) : (
+          <ImageIcon className="h-5 w-5" aria-hidden="true" />
+        )}
+      </button>
     );
   }
 
@@ -242,4 +274,17 @@ function getStatusText(file: FileInfo): string {
 
 function isImageFile(file: FileInfo): boolean {
   return file.mimetype.startsWith('image/');
+}
+
+function toFileBlock(file: FileInfo): FileBlock {
+  return {
+    type: 'file',
+    id: file.id,
+    file_id: file.id,
+    filename: file.filename,
+    mime_type: file.mimetype,
+    ...(file.thumbnail_url ? { thumbnail_url: file.thumbnail_url } : {}),
+    ...(file.width != null ? { width: file.width } : {}),
+    ...(file.height != null ? { height: file.height } : {}),
+  };
 }
