@@ -20,6 +20,7 @@ import { getFirstEnabledModelId, getPreferredModelId } from '@/lib/models/modelP
 import { CHAT_NEW_PATH, buildChatConversationPath, buildChatNewPath, isChatNewPath } from '@/lib/routes/chatRoutes';
 import type { FileAttachment } from '@/lib/utils/fileHelpers';
 import { markConversationFilesPanelOpen } from '@/lib/chat/filesPanelHandoff';
+import { subscribeNewChatDraftReset } from '@/lib/chat/newChatDraftReset';
 
 const EMPTY_CONVERSATION_ATTACHMENTS: ConversationComposerAttachment[] = [];
 const NEW_CHAT_ATTACHMENT_SCOPE = 'new-chat';
@@ -54,7 +55,7 @@ export default function HomeChatSurface() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const dispatch = useAppDispatch();
-  const [inputKey, setInputKey] = useState(() => Date.now());
+  const [inputKey, setInputKey] = useState(0);
   const [filesPanelOpen, setFilesPanelOpen] = useState(false);
   const [filesConversationId, setFilesConversationId] = useState<string | null>(null);
   const [conversationAttachmentState, setConversationAttachmentState] = useState<ConversationAttachmentState>({
@@ -80,6 +81,16 @@ export default function HomeChatSurface() {
   const conversationAttachments = conversationAttachmentState.chatId === attachmentScopeId
     ? conversationAttachmentState.attachments
     : EMPTY_CONVERSATION_ATTACHMENTS;
+
+  const resetNewChatDraft = useCallback(() => {
+    setInputKey((current) => current + 1);
+    setFilesPanelOpen(false);
+    setFilesConversationId(null);
+    setConversationAttachmentState({ chatId: NEW_CHAT_ATTACHMENT_SCOPE, attachments: [] });
+    setPendingAutoAttachState({ chatId: NEW_CHAT_ATTACHMENT_SCOPE, fileIds: [] });
+  }, []);
+
+  useEffect(() => subscribeNewChatDraftReset(resetNewChatDraft), [resetNewChatDraft]);
 
   useEffect(() => {
     if (!modelHint || appliedModelHintRef.current === modelHint) {
@@ -264,7 +275,7 @@ export default function HomeChatSurface() {
             markConversationFilesPanelOpen(serverConversationId);
           }
           router.replace(buildChatConversationPath(serverConversationId));
-          setInputKey(Date.now());
+          setInputKey((current) => current + 1);
           if (!shouldOpenFilesPanel) {
             setFilesPanelOpen(false);
           }
@@ -279,18 +290,14 @@ export default function HomeChatSurface() {
 
   const handleNewChat = useCallback(() => {
     if (isChatNewPath(pathname)) {
-      setInputKey(Date.now());
-      setFilesPanelOpen(false);
-      setFilesConversationId(null);
-      setConversationAttachmentState({ chatId: NEW_CHAT_ATTACHMENT_SCOPE, attachments: [] });
-      setPendingAutoAttachState({ chatId: NEW_CHAT_ATTACHMENT_SCOPE, fileIds: [] });
+      resetNewChatDraft();
       return;
     }
 
     const modelToUse = modelHint || getFirstEnabledModelId(models);
-    setInputKey(Date.now());
+    setInputKey((current) => current + 1);
     router.push(buildChatNewPath(modelToUse));
-  }, [modelHint, models, pathname, router]);
+  }, [modelHint, models, pathname, resetNewChatDraft, router]);
 
   return (
     <div className="h-full flex flex-col relative">

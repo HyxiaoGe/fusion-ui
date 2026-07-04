@@ -8,6 +8,7 @@ import { useAppSelector } from '@/redux/hooks';
 import { getFirstEnabledModelId } from '@/lib/models/modelPreference';
 import { buildChatNewPath, isChatNewPath } from '@/lib/routes/chatRoutes';
 import { PerfProbe, useRenderProbe } from '@/lib/debug/perfProbe';
+import { requestNewChatDraftReset } from '@/lib/chat/newChatDraftReset';
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   useRenderProbe('AppLayout');
@@ -19,8 +20,11 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   // ChatSidebar 内部自己根据 pathname 解析 activeChatId（不再需要 page 传 activeChatIdOverride）
   const handleNewChat = useCallback(() => {
     const modelToUse = getFirstEnabledModelId(models);
+    if (isChatNewPath(pathname)) {
+      requestNewChatDraftReset();
+    }
     router.push(buildChatNewPath(modelToUse));
-  }, [models, router]);
+  }, [models, pathname, router]);
 
   return (
     <MainLayout

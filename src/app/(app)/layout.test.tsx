@@ -3,12 +3,14 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const {
   routerPushMock,
+  requestNewChatDraftResetMock,
   useAppSelectorMock,
   usePathnameMock,
   homeChatSurfaceMock,
   chatSidebarMock,
 } = vi.hoisted(() => ({
   routerPushMock: vi.fn(),
+  requestNewChatDraftResetMock: vi.fn(),
   useAppSelectorMock: vi.fn(),
   usePathnameMock: vi.fn(),
   homeChatSurfaceMock: vi.fn(),
@@ -22,6 +24,10 @@ vi.mock('next/navigation', () => ({
 
 vi.mock('@/redux/hooks', () => ({
   useAppSelector: useAppSelectorMock,
+}));
+
+vi.mock('@/lib/chat/newChatDraftReset', () => ({
+  requestNewChatDraftReset: requestNewChatDraftResetMock,
 }));
 
 vi.mock('@/components/layouts/MainLayout', () => ({
@@ -56,6 +62,7 @@ import AppLayout from './layout';
 describe('AppLayout 新建对话过渡', () => {
   beforeEach(() => {
     routerPushMock.mockClear();
+    requestNewChatDraftResetMock.mockClear();
     homeChatSurfaceMock.mockClear();
     chatSidebarMock.mockClear();
     usePathnameMock.mockReturnValue('/chat/test');
@@ -98,5 +105,20 @@ describe('AppLayout 新建对话过渡', () => {
     expect(chatSidebarMock).toHaveBeenLastCalledWith({ isNewChatActive: true });
     expect(screen.getByRole('button', { name: '新对话' })).toHaveAttribute('aria-pressed', 'true');
     expect(screen.getByText('新建路由内容')).toBeInTheDocument();
+  });
+
+  it('pathname 已经是 /chat/new 时点击新建对话会广播草稿重置', () => {
+    usePathnameMock.mockReturnValue('/chat/new');
+
+    render(
+      <AppLayout>
+        <div>新建路由内容</div>
+      </AppLayout>
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: '新对话' }));
+
+    expect(requestNewChatDraftResetMock).toHaveBeenCalledTimes(1);
+    expect(routerPushMock).toHaveBeenCalledWith('/chat/new?model=model-1');
   });
 });

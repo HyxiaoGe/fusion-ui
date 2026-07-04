@@ -153,6 +153,7 @@ vi.mock('@/components/chat/ChatInput', () => ({
     onClearConversationAttachments,
     onUploadComplete,
   }: any) {
+    const [hasLocalUploadError, setHasLocalUploadError] = React.useState(false);
     chatInputRenderMock({ conversationAttachments });
 
     const sendSelectedAttachment = () => {
@@ -166,7 +167,11 @@ vi.mock('@/components/chat/ChatInput', () => ({
     };
 
     return (
-      <div data-testid="chat-input" data-attachment-count={conversationAttachments.length}>
+      <div
+        data-testid="chat-input"
+        data-attachment-count={conversationAttachments.length}
+        data-local-upload-error={hasLocalUploadError ? 'true' : 'false'}
+      >
         <button
           type="button"
           onClick={() =>
@@ -219,12 +224,16 @@ vi.mock('@/components/chat/ChatInput', () => ({
         <button type="button" onClick={onClearConversationAttachments}>
           清空资料引用
         </button>
+        <button type="button" onClick={() => setHasLocalUploadError(true)}>
+          模拟失败上传
+        </button>
       </div>
     );
   },
 }));
 
 import HomeChatSurface from './HomeChatSurface';
+import { requestNewChatDraftReset } from '@/lib/chat/newChatDraftReset';
 
 function createFile(overrides: Record<string, unknown> = {}) {
   return {
@@ -362,5 +371,23 @@ describe('HomeChatSurface 会话资料交互', () => {
     await waitFor(() => {
       expect(screen.getByTestId('chat-input')).toHaveAttribute('data-attachment-count', '0');
     });
+  });
+
+  it('收到全局新对话重置信号时重建输入框并清空资料引用', async () => {
+    render(<HomeChatSurface />);
+
+    fireEvent.click(screen.getByRole('button', { name: '上传已处理资料' }));
+    fireEvent.click(screen.getByRole('button', { name: '模拟失败上传' }));
+
+    expect(screen.getByTestId('chat-input')).toHaveAttribute('data-attachment-count', '1');
+    expect(screen.getByTestId('chat-input')).toHaveAttribute('data-local-upload-error', 'true');
+
+    requestNewChatDraftReset();
+
+    await waitFor(() => {
+      expect(screen.getByTestId('chat-input')).toHaveAttribute('data-attachment-count', '0');
+      expect(screen.getByTestId('chat-input')).toHaveAttribute('data-local-upload-error', 'false');
+    });
+    expect(screen.queryByTestId('conversation-files-panel')).toBeNull();
   });
 });
