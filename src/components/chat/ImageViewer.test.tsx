@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import ImageViewer, { __clearImageViewerUrlCacheForTest } from './ImageViewer';
@@ -26,6 +26,21 @@ describe('ImageViewer', () => {
   beforeEach(() => {
     getFileUrlMock.mockReset();
     __clearImageViewerUrlCacheForTest();
+  });
+
+  it('图片 URL 解析期间显示稳定的预览加载舞台', () => {
+    getFileUrlMock.mockReturnValue(new Promise(() => undefined));
+
+    render(<ImageViewer fileBlock={imageBlock()} onClose={vi.fn()} />);
+
+    const loadingStage = screen.getByLabelText('图片预览加载中');
+    const closeButton = screen.getByRole('button', { name: '关闭图片预览' });
+
+    expect(loadingStage).toBeInTheDocument();
+    expect(within(loadingStage).getByText('正在加载图片…')).toBeInTheDocument();
+    expect(within(loadingStage).getByText('diagram.png')).toBeInTheDocument();
+    expect(closeButton).toHaveClass('fixed');
+    expect(closeButton.closest('[aria-label="图片预览加载中"]')).toBeNull();
   });
 
   it('原图 URL 获取失败时尝试 fresh thumbnail 作为降级图', async () => {

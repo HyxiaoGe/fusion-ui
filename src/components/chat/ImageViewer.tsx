@@ -153,41 +153,53 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ fileBlock, imageUrl, onClose 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
       <DialogContent
-        className="max-w-[90vw] max-h-[90vh] sm:max-w-[90vw] p-0 border-none bg-transparent shadow-none flex items-center justify-center [&>button:last-child]:hidden"
+        className="inset-0 left-0 top-0 h-screen w-screen max-w-none translate-x-0 translate-y-0 rounded-none border-none bg-transparent p-0 shadow-none sm:max-w-none [&>button:last-child]:hidden"
         onClick={onClose}
       >
         <VisuallyHidden.Root>
           <DialogTitle>{altText}</DialogTitle>
           <DialogDescription>图片预览</DialogDescription>
         </VisuallyHidden.Root>
-        {/* 图片区域：阻止点击冒泡，避免点击图片时关闭 */}
+        <button
+          type="button"
+          aria-label="关闭图片预览"
+          onClick={onClose}
+          className="fixed right-4 top-4 z-[60] flex h-9 w-9 items-center justify-center rounded-full border border-white/25 bg-black/55 text-white shadow-lg backdrop-blur transition-colors hover:bg-black/75 focus:outline-none focus:ring-2 focus:ring-white/70"
+        >
+          <X className="h-4 w-4" aria-hidden="true" />
+        </button>
         <div
-          className="relative flex items-center justify-center min-h-[200px]"
+          className="flex h-full w-full items-center justify-center px-4 py-12"
           onClick={(e) => e.stopPropagation()}
         >
-          <button
-            onClick={onClose}
-            className="absolute top-2 right-2 z-10 w-8 h-8 rounded-full bg-black/50 text-white flex items-center justify-center hover:bg-black/70 transition-colors"
-          >
-            <X className="h-4 w-4" />
-          </button>
           {isLoading ? (
-            <Loader2 className="h-8 w-8 animate-spin text-white" />
+            <div
+              aria-label="图片预览加载中"
+              className="flex h-[min(78vh,640px)] w-[min(92vw,960px)] items-center justify-center rounded-lg border border-white/10 bg-black/25 text-white shadow-2xl backdrop-blur-sm"
+            >
+              <div className="flex min-w-[220px] flex-col items-center gap-3 rounded-lg border border-white/15 bg-black/45 px-5 py-5">
+                <Loader2 className="h-6 w-6 animate-spin text-white/90" aria-hidden="true" />
+                <div className="text-sm font-medium">正在加载图片…</div>
+                <div className="max-w-[56vw] truncate text-xs text-white/65">{altText}</div>
+              </div>
+            </div>
           ) : error ? (
-            <div className="flex min-w-[220px] flex-col items-center gap-3 rounded-lg border border-white/15 bg-black/50 px-5 py-6 text-white">
-              <ImageOff className="h-8 w-8" aria-hidden="true" />
-              <div className="text-sm">图片加载失败</div>
-              <div className="max-w-[70vw] truncate text-xs text-white/70">{altText}</div>
-              {fileBlock ? (
-                <button
-                  type="button"
-                  className="inline-flex h-8 items-center gap-1 rounded-md border border-white/20 bg-white/10 px-3 text-xs text-white transition-colors hover:bg-white/20"
-                  onClick={handleRetry}
-                >
-                  <RefreshCw className="h-3 w-3" aria-hidden="true" />
-                  重试
-                </button>
-              ) : null}
+            <div className="flex h-[min(78vh,640px)] w-[min(92vw,960px)] items-center justify-center rounded-lg border border-white/10 bg-black/25 text-white shadow-2xl backdrop-blur-sm">
+              <div className="flex min-w-[220px] flex-col items-center gap-3 rounded-lg border border-white/15 bg-black/50 px-5 py-6">
+                <ImageOff className="h-8 w-8" aria-hidden="true" />
+                <div className="text-sm">图片加载失败</div>
+                <div className="max-w-[70vw] truncate text-xs text-white/70">{altText}</div>
+                {fileBlock ? (
+                  <button
+                    type="button"
+                    className="inline-flex h-8 items-center gap-1 rounded-md border border-white/20 bg-white/10 px-3 text-xs text-white transition-colors hover:bg-white/20"
+                    onClick={handleRetry}
+                  >
+                    <RefreshCw className="h-3 w-3" aria-hidden="true" />
+                    重试
+                  </button>
+                ) : null}
+              </div>
             </div>
           ) : fullImageUrl ? (
             <img
