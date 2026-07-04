@@ -306,6 +306,9 @@ export default function ChatPage() {
 
   const handleSendMessage = useCallback((content: string, attachments?: FileAttachment[]) => {
     clearQuestions();
+    if (attachments && attachments.length > 0) {
+      setFilesPanelOpen(true);
+    }
     return sendMessage(
       content,
       {
@@ -446,8 +449,6 @@ export default function ChatPage() {
     if (uploadChatId !== chatId) {
       return;
     }
-
-    setFilesPanelOpen(true);
 
     const uploadedFiles = Array.isArray(files) ? files : [];
     const pendingFileIds: string[] = [];
