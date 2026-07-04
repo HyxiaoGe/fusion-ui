@@ -53,6 +53,7 @@ describe('ImageViewer', () => {
     const previewSurface = image.parentElement;
 
     expect(previewSurface).not.toBeNull();
+    expect(previewSurface).toHaveClass('absolute', 'inset-0');
     fireEvent.click(previewSurface!);
 
     expect(onClose).toHaveBeenCalledTimes(1);

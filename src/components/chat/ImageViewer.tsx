@@ -153,7 +153,7 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ fileBlock, imageUrl, onClose 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
       <DialogContent
-        className="inset-0 left-0 top-0 h-screen w-screen max-w-none translate-x-0 translate-y-0 rounded-none border-none bg-transparent p-0 shadow-none sm:max-w-none [&>button:last-child]:hidden"
+        className="inset-0 left-0 top-0 h-screen w-screen max-w-none translate-x-0 translate-y-0 overflow-hidden rounded-none border-none bg-transparent p-0 shadow-none sm:max-w-none [&>button:last-child]:hidden"
         onEscapeKeyDown={(event) => {
           event.preventDefault();
           onClose();
@@ -172,7 +172,8 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ fileBlock, imageUrl, onClose 
           <X className="h-4 w-4" aria-hidden="true" />
         </button>
         <div
-          className="flex h-full w-full items-center justify-center px-4 py-12"
+          data-testid="image-preview-dismiss-surface"
+          className="absolute inset-0 flex h-full w-full items-center justify-center px-4 py-12"
           onClick={onClose}
         >
           {isLoading ? (
