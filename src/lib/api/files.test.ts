@@ -42,11 +42,19 @@ function createEnvelopeResponse(
 
 describe('files api client', () => {
   it('deduplicates same-name files during upload and posts form data', async () => {
-    fetchMock.mockResolvedValue(
-      createEnvelopeResponse({
-        files: [{ file_id: 'file-1' }],
-      })
-    );
+    fetchMock
+      .mockResolvedValueOnce(
+        createEnvelopeResponse(null, {
+          code: 'DIRECT_UPLOAD_DISABLED',
+          message: 'direct upload disabled',
+          status: 400,
+        })
+      )
+      .mockResolvedValueOnce(
+        createEnvelopeResponse({
+          files: [{ file_id: 'file-1' }],
+        })
+      );
 
     const duplicateA = new File(['hello'], 'same-name.txt', { type: 'text/plain' });
     const duplicateB = new File(['world'], 'same-name.txt', { type: 'text/plain' });
@@ -54,9 +62,10 @@ describe('files api client', () => {
     const uploaded = await uploadFiles('qwen', 'qwen-max', 'chat-1', [duplicateA, duplicateB]);
 
     expect(uploaded).toEqual([{ file_id: 'file-1' }]);
-    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock.mock.calls[0][0]).toContain('/api/files/upload/init');
 
-    const [url, options] = fetchMock.mock.calls[0];
+    const [url, options] = fetchMock.mock.calls[1];
     expect(url).toContain('/api/files/upload');
     expect(options.method).toBe('POST');
     expect(options.body).toBeInstanceOf(FormData);
@@ -73,9 +82,215 @@ describe('files api client', () => {
     expect(postedFiles[0].name).toBe('same-name.txt');
   });
 
+  it('uploads through direct OSS flow when init returns a signed PUT URL', async () => {
+    fetchMock
+      .mockResolvedValueOnce(
+        createEnvelopeResponse({
+          upload: {
+            file_id: 'file-direct',
+            upload_url: 'https://fusion-file.oss-cn-shenzhen.aliyuncs.com/conv-1/file-direct/original/photo.png',
+            method: 'PUT',
+            headers: { 'Content-Type': 'image/png' },
+            expires_in: 600,
+          },
+        })
+      )
+      .mockResolvedValueOnce(new Response(null, { status: 200 }))
+      .mockResolvedValueOnce(
+        createEnvelopeResponse({
+          file: {
+            file_id: 'file-direct',
+            thumbnail_url: 'https://fusion-file.oss-cn-shenzhen.aliyuncs.com/conv-1/file-direct/thumbnail.jpg',
+            status: 'processed',
+          },
+        })
+      );
+
+    const file = new File(['image-bytes'], 'photo.png', { type: 'image/png' });
+    const uploaded = await uploadFiles('qwen', 'qwen-vl-max', 'conv-1', [file]);
+
+    expect(uploaded).toEqual([
+      {
+        file_id: 'file-direct',
+        thumbnail_url: 'https://fusion-file.oss-cn-shenzhen.aliyuncs.com/conv-1/file-direct/thumbnail.jpg',
+        status: 'processed',
+      },
+    ]);
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+
+    expect(fetchMock.mock.calls[0][0]).toContain('/api/files/upload/init');
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body as string)).toEqual({
+      provider: 'qwen',
+      model: 'qwen-vl-max',
+      conversation_id: 'conv-1',
+      filename: 'photo.png',
+      mimetype: 'image/png',
+      size: file.size,
+    });
+
+    expect(fetchMock.mock.calls[1][0]).toBe(
+      'https://fusion-file.oss-cn-shenzhen.aliyuncs.com/conv-1/file-direct/original/photo.png'
+    );
+    expect(fetchMock.mock.calls[1][1]).toEqual(
+      expect.objectContaining({
+        method: 'PUT',
+        body: file,
+      })
+    );
+    expect(new Headers(fetchMock.mock.calls[1][1].headers).get('Content-Type')).toBe('image/png');
+
+    expect(fetchMock.mock.calls[2][0]).toContain('/api/files/upload/complete');
+    expect(JSON.parse(fetchMock.mock.calls[2][1].body as string)).toEqual({
+      file_id: 'file-direct',
+    });
+  });
+
+  it('falls back to multipart upload when direct upload is disabled', async () => {
+    fetchMock
+      .mockResolvedValueOnce(
+        createEnvelopeResponse(null, {
+          code: 'DIRECT_UPLOAD_DISABLED',
+          message: 'direct upload disabled',
+          status: 400,
+        })
+      )
+      .mockResolvedValueOnce(
+        createEnvelopeResponse({
+          files: [{ file_id: 'file-legacy' }],
+        })
+      );
+
+    const file = new File(['hello'], 'note.txt', { type: 'text/plain' });
+    const uploaded = await uploadFiles('qwen', 'qwen-max', 'chat-legacy', [file]);
+
+    expect(uploaded).toEqual([{ file_id: 'file-legacy' }]);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock.mock.calls[0][0]).toContain('/api/files/upload/init');
+    expect(fetchMock.mock.calls[1][0]).toContain('/api/files/upload');
+    expect(fetchMock.mock.calls[1][1].body).toBeInstanceOf(FormData);
+  });
+
+  it('falls back to multipart upload when the direct init endpoint is missing', async () => {
+    fetchMock
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ detail: 'Not Found' }), {
+          status: 404,
+          headers: {
+            'Content-Type': 'application/json',
+          },
+        })
+      )
+      .mockResolvedValueOnce(
+        createEnvelopeResponse({
+          files: [{ file_id: 'file-old-backend' }],
+        })
+      );
+
+    const file = new File(['hello'], 'note.txt', { type: 'text/plain' });
+    const uploaded = await uploadFiles('qwen', 'qwen-max', 'chat-old-backend', [file]);
+
+    expect(uploaded).toEqual([{ file_id: 'file-old-backend' }]);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock.mock.calls[0][0]).toContain('/api/files/upload/init');
+    expect(fetchMock.mock.calls[1][0]).toContain('/api/files/upload');
+    expect(fetchMock.mock.calls[1][1].body).toBeInstanceOf(FormData);
+  });
+
+  it('cleans up the backend file record when direct OSS PUT fails', async () => {
+    fetchMock
+      .mockResolvedValueOnce(
+        createEnvelopeResponse({
+          upload: {
+            file_id: 'file-direct-failed',
+            upload_url: 'https://fusion-file.oss-cn-shenzhen.aliyuncs.com/conv-1/file-direct-failed/original/photo.png',
+            method: 'PUT',
+            headers: { 'Content-Type': 'image/png' },
+            expires_in: 600,
+          },
+        })
+      )
+      .mockResolvedValueOnce(new Response('upload failed', { status: 500 }))
+      .mockResolvedValueOnce(createEnvelopeResponse(null));
+
+    const file = new File(['image-bytes'], 'photo.png', { type: 'image/png' });
+
+    await expect(uploadFiles('qwen', 'qwen-vl-max', 'conv-1', [file])).rejects.toThrow('文件直传 OSS 失败 (500)');
+
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(fetchMock.mock.calls[0][0]).toContain('/api/files/upload/init');
+    expect(fetchMock.mock.calls[1][0]).toBe(
+      'https://fusion-file.oss-cn-shenzhen.aliyuncs.com/conv-1/file-direct-failed/original/photo.png'
+    );
+    expect(fetchMock.mock.calls[2][0]).toContain('/api/files/file-direct-failed');
+    expect(fetchMock.mock.calls[2][1]).toEqual(expect.objectContaining({ method: 'DELETE' }));
+  });
+
+  it('cleans up all initialized direct upload records when a later file fails', async () => {
+    fetchMock
+      .mockResolvedValueOnce(
+        createEnvelopeResponse({
+          upload: {
+            file_id: 'file-direct-1',
+            upload_url: 'https://fusion-file.oss-cn-shenzhen.aliyuncs.com/conv-1/file-direct-1/original/one.png',
+            method: 'PUT',
+            headers: { 'Content-Type': 'image/png' },
+            expires_in: 600,
+          },
+        })
+      )
+      .mockResolvedValueOnce(new Response(null, { status: 200 }))
+      .mockResolvedValueOnce(
+        createEnvelopeResponse({
+          file: {
+            file_id: 'file-direct-1',
+            status: 'processed',
+          },
+        })
+      )
+      .mockResolvedValueOnce(
+        createEnvelopeResponse({
+          upload: {
+            file_id: 'file-direct-2',
+            upload_url: 'https://fusion-file.oss-cn-shenzhen.aliyuncs.com/conv-1/file-direct-2/original/two.png',
+            method: 'PUT',
+            headers: { 'Content-Type': 'image/png' },
+            expires_in: 600,
+          },
+        })
+      )
+      .mockResolvedValueOnce(new Response('upload failed', { status: 500 }))
+      .mockResolvedValueOnce(createEnvelopeResponse(null))
+      .mockResolvedValueOnce(createEnvelopeResponse(null));
+
+    await expect(
+      uploadFiles(
+        'qwen',
+        'qwen-vl-max',
+        'conv-1',
+        [
+          new File(['one'], 'one.png', { type: 'image/png' }),
+          new File(['two'], 'two.png', { type: 'image/png' }),
+        ]
+      )
+    ).rejects.toThrow('文件直传 OSS 失败 (500)');
+
+    expect(fetchMock).toHaveBeenCalledTimes(7);
+    expect(fetchMock.mock.calls[5][0]).toContain('/api/files/file-direct-1');
+    expect(fetchMock.mock.calls[5][1]).toEqual(expect.objectContaining({ method: 'DELETE' }));
+    expect(fetchMock.mock.calls[6][0]).toContain('/api/files/file-direct-2');
+    expect(fetchMock.mock.calls[6][1]).toEqual(expect.objectContaining({ method: 'DELETE' }));
+  });
+
   it('retries upload once when the first request fails and retryCount is set', async () => {
     fetchMock
       .mockRejectedValueOnce(new Error('temporary failure'))
+      .mockResolvedValueOnce(
+        createEnvelopeResponse(null, {
+          code: 'DIRECT_UPLOAD_DISABLED',
+          message: 'direct upload disabled',
+          status: 400,
+        })
+      )
       .mockResolvedValueOnce(
         createEnvelopeResponse({
           files: [{ file_id: 'file-2' }],
@@ -92,7 +307,7 @@ describe('files api client', () => {
     );
 
     expect(uploaded).toEqual([{ file_id: 'file-2' }]);
-    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock).toHaveBeenCalledTimes(3);
   });
 
   it('computes a timeout that keeps large single-file uploads alive past the old 25 second limit', () => {
