@@ -41,7 +41,57 @@ describe('ImageViewer', () => {
     expect(getFileUrlMock).toHaveBeenNthCalledWith(2, 'file-1', 'thumbnail');
   });
 
-  it('所有图片 URL 都失败时显示明确错误而不是保留破图', async () => {
+  it('原图内容加载失败时继续尝试 fresh thumbnail', async () => {
+    getFileUrlMock
+      .mockResolvedValueOnce('/api/files/file-1/content?variant=processed&token=broken')
+      .mockResolvedValueOnce('/api/files/file-1/content?variant=thumbnail&token=fresh');
+
+    render(<ImageViewer fileBlock={imageBlock()} onClose={vi.fn()} />);
+
+    fireEvent.error(await screen.findByAltText('diagram.png'));
+
+    await waitFor(() => {
+      expect(screen.getByAltText('diagram.png')).toHaveAttribute(
+        'src',
+        '/api/files/file-1/content?variant=thumbnail&token=fresh',
+      );
+    });
+    expect(screen.queryByText('图片加载失败')).toBeNull();
+    expect(getFileUrlMock).toHaveBeenNthCalledWith(1, 'file-1', 'processed');
+    expect(getFileUrlMock).toHaveBeenNthCalledWith(2, 'file-1', 'thumbnail');
+  });
+
+  it('fresh thumbnail 内容也加载失败时复用消息里的历史 thumbnail URL', async () => {
+    getFileUrlMock
+      .mockResolvedValueOnce('/api/files/file-1/content?variant=processed&token=broken')
+      .mockResolvedValueOnce('/api/files/file-1/content?variant=thumbnail&token=broken');
+
+    render(
+      <ImageViewer
+        fileBlock={imageBlock({ thumbnail_url: '/api/files/file-1/content?variant=thumbnail&token=historical' })}
+        onClose={vi.fn()}
+      />,
+    );
+
+    fireEvent.error(await screen.findByAltText('diagram.png'));
+    await waitFor(() => {
+      expect(screen.getByAltText('diagram.png')).toHaveAttribute(
+        'src',
+        '/api/files/file-1/content?variant=thumbnail&token=broken',
+      );
+    });
+
+    fireEvent.error(screen.getByAltText('diagram.png'));
+    await waitFor(() => {
+      expect(screen.getByAltText('diagram.png')).toHaveAttribute(
+        'src',
+        '/api/files/file-1/content?variant=thumbnail&token=historical',
+      );
+    });
+    expect(screen.queryByText('图片加载失败')).toBeNull();
+  });
+
+  it('所有图片内容都失败时显示明确错误而不是保留破图', async () => {
     getFileUrlMock.mockResolvedValueOnce('/api/files/file-1/content?variant=processed&token=broken');
 
     render(<ImageViewer fileBlock={imageBlock()} onClose={vi.fn()} />);

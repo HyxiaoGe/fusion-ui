@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
 import * as VisuallyHidden from '@radix-ui/react-visually-hidden';
 import { ImageOff, Loader2, RefreshCw, X } from 'lucide-react';
@@ -25,71 +25,73 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ fileBlock, imageUrl, onClose 
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
+  const [activeCandidateIndex, setActiveCandidateIndex] = useState(-1);
+  const requestIdRef = useRef(0);
 
   const isOpen = !!(fileBlock || imageUrl);
 
+  const loadCandidate = useCallback(async (startIndex: number) => {
+    const requestId = requestIdRef.current + 1;
+    requestIdRef.current = requestId;
+    setIsLoading(true);
+    setError(false);
+    setFullImageUrl(null);
+
+    const candidates: Array<() => Promise<string | null>> = imageUrl
+      ? [
+          async () => imageUrl,
+        ]
+      : fileBlock
+        ? [
+            async () => getFileUrl(fileBlock.file_id, 'processed'),
+            async () => getFileUrl(fileBlock.file_id, 'thumbnail'),
+            async () => fileBlock.thumbnail_url || null,
+          ]
+        : [];
+
+    for (let index = startIndex; index < candidates.length; index += 1) {
+      try {
+        const url = await candidates[index]();
+        if (requestIdRef.current !== requestId) return;
+        if (!url) continue;
+        setActiveCandidateIndex(index);
+        setFullImageUrl(url);
+        setError(false);
+        setIsLoading(false);
+        return;
+      } catch {
+        // 继续尝试下一个候选 URL。
+      }
+    }
+
+    if (requestIdRef.current === requestId) {
+      setActiveCandidateIndex(-1);
+      setFullImageUrl(null);
+      setError(true);
+      setIsLoading(false);
+    }
+  }, [fileBlock, imageUrl]);
+
   useEffect(() => {
-    // 模式二：直接 URL，无需异步加载
-    if (imageUrl) {
-      setFullImageUrl(imageUrl);
+    if (!fileBlock && !imageUrl) {
+      requestIdRef.current += 1;
+      setActiveCandidateIndex(-1);
+      setFullImageUrl(null);
       setError(false);
       setIsLoading(false);
       return;
     }
 
-    if (!fileBlock) {
-      setFullImageUrl(null);
-      setError(false);
-      return;
-    }
-
-    let cancelled = false;
-
-    async function loadFileImage() {
-      setIsLoading(true);
-      setError(false);
-      setFullImageUrl(null);
-
-      try {
-        const processedUrl = await getFileUrl(fileBlock.file_id, 'processed');
-        if (cancelled) return;
-        setFullImageUrl(processedUrl);
-        return;
-      } catch {
-        // 原图不可用时，主动获取 fresh thumbnail，避免复用历史消息里已过期的签名 URL。
-      }
-
-      try {
-        const thumbnailUrl = await getFileUrl(fileBlock.file_id, 'thumbnail');
-        if (cancelled) return;
-        setFullImageUrl(thumbnailUrl);
-        return;
-      } catch {
-        if (cancelled) return;
-        if (fileBlock.thumbnail_url) {
-          setFullImageUrl(fileBlock.thumbnail_url);
-        } else {
-          setError(true);
-        }
-      }
-    }
-
-    void loadFileImage().finally(() => {
-      if (!cancelled) {
-        setIsLoading(false);
-      }
-    });
+    void loadCandidate(0);
 
     return () => {
-      cancelled = true;
+      requestIdRef.current += 1;
     };
-  }, [fileBlock, imageUrl, reloadKey]);
+  }, [fileBlock, imageUrl, loadCandidate, reloadKey]);
 
   const altText = fileBlock?.filename || '图片预览';
   const handleImageError = () => {
-    setFullImageUrl(null);
-    setError(true);
-    setIsLoading(false);
+    void loadCandidate(activeCandidateIndex + 1);
   };
 
   return (
