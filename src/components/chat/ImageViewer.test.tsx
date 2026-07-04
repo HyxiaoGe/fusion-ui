@@ -43,6 +43,44 @@ describe('ImageViewer', () => {
     expect(closeButton.closest('[aria-label="图片预览加载中"]')).toBeNull();
   });
 
+  it('点击图片外的预览空白区域会关闭查看器', async () => {
+    const onClose = vi.fn();
+    getFileUrlMock.mockResolvedValueOnce('/api/files/file-1/content?variant=processed&token=stable');
+
+    render(<ImageViewer fileBlock={imageBlock()} onClose={onClose} />);
+
+    const image = await screen.findByAltText('diagram.png');
+    const previewSurface = image.parentElement;
+
+    expect(previewSurface).not.toBeNull();
+    fireEvent.click(previewSurface!);
+
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('点击图片本身不会关闭查看器', async () => {
+    const onClose = vi.fn();
+    getFileUrlMock.mockResolvedValueOnce('/api/files/file-1/content?variant=processed&token=stable');
+
+    render(<ImageViewer fileBlock={imageBlock()} onClose={onClose} />);
+
+    fireEvent.click(await screen.findByAltText('diagram.png'));
+
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it('按 Esc 会关闭查看器', async () => {
+    const onClose = vi.fn();
+    getFileUrlMock.mockResolvedValueOnce('/api/files/file-1/content?variant=processed&token=stable');
+
+    render(<ImageViewer fileBlock={imageBlock()} onClose={onClose} />);
+
+    await screen.findByAltText('diagram.png');
+    fireEvent.keyDown(document, { key: 'Escape' });
+
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
   it('原图 URL 获取失败时尝试 fresh thumbnail 作为降级图', async () => {
     getFileUrlMock
       .mockRejectedValueOnce(new Error('processed 不可用'))

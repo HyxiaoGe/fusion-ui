@@ -154,7 +154,10 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ fileBlock, imageUrl, onClose 
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
       <DialogContent
         className="inset-0 left-0 top-0 h-screen w-screen max-w-none translate-x-0 translate-y-0 rounded-none border-none bg-transparent p-0 shadow-none sm:max-w-none [&>button:last-child]:hidden"
-        onClick={onClose}
+        onEscapeKeyDown={(event) => {
+          event.preventDefault();
+          onClose();
+        }}
       >
         <VisuallyHidden.Root>
           <DialogTitle>{altText}</DialogTitle>
@@ -170,12 +173,13 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ fileBlock, imageUrl, onClose 
         </button>
         <div
           className="flex h-full w-full items-center justify-center px-4 py-12"
-          onClick={(e) => e.stopPropagation()}
+          onClick={onClose}
         >
           {isLoading ? (
             <div
               aria-label="图片预览加载中"
               className="flex h-[min(78vh,640px)] w-[min(92vw,960px)] items-center justify-center rounded-lg border border-white/10 bg-black/25 text-white shadow-2xl backdrop-blur-sm"
+              onClick={(event) => event.stopPropagation()}
             >
               <div className="flex min-w-[220px] flex-col items-center gap-3 rounded-lg border border-white/15 bg-black/45 px-5 py-5">
                 <Loader2 className="h-6 w-6 animate-spin text-white/90" aria-hidden="true" />
@@ -184,7 +188,10 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ fileBlock, imageUrl, onClose 
               </div>
             </div>
           ) : error ? (
-            <div className="flex h-[min(78vh,640px)] w-[min(92vw,960px)] items-center justify-center rounded-lg border border-white/10 bg-black/25 text-white shadow-2xl backdrop-blur-sm">
+            <div
+              className="flex h-[min(78vh,640px)] w-[min(92vw,960px)] items-center justify-center rounded-lg border border-white/10 bg-black/25 text-white shadow-2xl backdrop-blur-sm"
+              onClick={(event) => event.stopPropagation()}
+            >
               <div className="flex min-w-[220px] flex-col items-center gap-3 rounded-lg border border-white/15 bg-black/50 px-5 py-6">
                 <ImageOff className="h-8 w-8" aria-hidden="true" />
                 <div className="text-sm">图片加载失败</div>
@@ -206,6 +213,7 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ fileBlock, imageUrl, onClose 
               src={fullImageUrl}
               alt={altText}
               className="max-w-[85vw] max-h-[85vh] object-contain rounded-lg"
+              onClick={(event) => event.stopPropagation()}
               onError={handleImageError}
             />
           ) : null}
