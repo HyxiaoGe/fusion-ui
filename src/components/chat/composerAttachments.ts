@@ -22,6 +22,7 @@ export interface ConversationComposerAttachment {
   thumbnailUrl?: string | null;
   width?: number | null;
   height?: number | null;
+  removeBehavior?: 'detach' | 'delete';
 }
 
 export type ComposerAttachment = UploadComposerAttachment | ConversationComposerAttachment;

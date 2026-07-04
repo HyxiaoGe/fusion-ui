@@ -47,6 +47,7 @@ function uploadResultToConversationAttachment(file: ChatUploadCompleteFile): Con
     mimetype: file.mimetype || 'application/octet-stream',
     status: 'processed',
     thumbnailUrl: file.thumbnailUrl ?? null,
+    removeBehavior: 'delete',
   };
 }
 
@@ -129,7 +130,7 @@ export default function HomeChatSurface() {
     addConversationAttachment(attachmentScopeId, attachment);
   }, [addConversationAttachment, attachmentScopeId]);
 
-  const handleRemoveConversationAttachment = useCallback((fileId: string) => {
+  const detachConversationAttachment = useCallback((fileId: string) => {
     setConversationAttachmentState((currentState) => {
       if (currentState.chatId !== attachmentScopeId) {
         return currentState;
@@ -140,6 +141,37 @@ export default function HomeChatSurface() {
         : { chatId: attachmentScopeId, attachments: nextAttachments };
     });
   }, [attachmentScopeId]);
+
+  const handleRemoveConversationAttachment = useCallback((fileId: string) => {
+    const targetAttachment = conversationAttachments.find((item) => item.fileId === fileId);
+    detachConversationAttachment(fileId);
+
+    if (targetAttachment?.removeBehavior === 'delete') {
+      void deleteFile(fileId)
+        .then(() => {
+          removeConversationFile(fileId);
+          setPendingAutoAttachState((currentState) => {
+            if (currentState.chatId !== attachmentScopeId || !currentState.fileIds.includes(fileId)) {
+              return currentState;
+            }
+            return {
+              chatId: attachmentScopeId,
+              fileIds: currentState.fileIds.filter((item) => item !== fileId),
+            };
+          });
+        })
+        .catch((error) => {
+          console.error('删除会话资料失败:', error);
+          void refreshConversationFiles();
+        });
+    }
+  }, [
+    attachmentScopeId,
+    conversationAttachments,
+    detachConversationAttachment,
+    refreshConversationFiles,
+    removeConversationFile,
+  ]);
 
   const handleClearConversationAttachments = useCallback(() => {
     setConversationAttachmentState((currentState) => {
@@ -154,7 +186,7 @@ export default function HomeChatSurface() {
     void deleteFile(fileId)
       .then(() => {
         removeConversationFile(fileId);
-        handleRemoveConversationAttachment(fileId);
+        detachConversationAttachment(fileId);
         setPendingAutoAttachState((currentState) => {
           if (currentState.chatId !== attachmentScopeId || !currentState.fileIds.includes(fileId)) {
             return currentState;
@@ -169,7 +201,7 @@ export default function HomeChatSurface() {
         console.error('删除会话资料失败:', error);
         void refreshConversationFiles();
       });
-  }, [attachmentScopeId, handleRemoveConversationAttachment, refreshConversationFiles, removeConversationFile]);
+  }, [attachmentScopeId, detachConversationAttachment, refreshConversationFiles, removeConversationFile]);
 
   const handleUploadComplete = useCallback((files: ChatUploadCompleteFile[] = [], uploadChatId?: string) => {
     const targetChatId = uploadChatId || filesConversationId || NEW_CHAT_ATTACHMENT_SCOPE;
@@ -240,7 +272,7 @@ export default function HomeChatSurface() {
         return;
       }
 
-      addConversationAttachment(attachmentScopeId, attachment);
+      addConversationAttachment(attachmentScopeId, { ...attachment, removeBehavior: 'delete' });
       remainingFileIds.delete(file.id);
     });
 

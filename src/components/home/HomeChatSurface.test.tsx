@@ -282,6 +282,23 @@ describe('HomeChatSurface 会话资料交互', () => {
     expect(screen.getByTestId('chat-input')).toHaveAttribute('data-attachment-count', '1');
   });
 
+  it('新对话上传已处理文件后移除附件会删除会话资料并更新本地列表', async () => {
+    render(<HomeChatSurface />);
+
+    fireEvent.click(screen.getByRole('button', { name: '上传已处理资料' }));
+    expect(screen.getByTestId('chat-input')).toHaveAttribute('data-attachment-count', '1');
+
+    fireEvent.click(screen.getByRole('button', { name: '移除资料引用' }));
+
+    await waitFor(() => {
+      expect(deleteFileMock).toHaveBeenCalledWith('file-uploaded');
+    });
+    expect(useConversationFilesState.removeFile).toHaveBeenCalledWith('file-uploaded');
+    await waitFor(() => {
+      expect(screen.getByTestId('chat-input')).toHaveAttribute('data-attachment-count', '0');
+    });
+  });
+
   it('发送带资料的新对话时打开资料面板并把打开意图交给落库后的会话页', async () => {
     sendMessageMock.mockImplementation((_content, options) => {
       options.onMaterialized('server-chat-1');
@@ -351,6 +368,22 @@ describe('HomeChatSurface 会话资料交互', () => {
         },
       ],
     );
+  });
+
+  it('从资料面板加入的既有资料移除时只取消引用不删除资料', async () => {
+    useConversationFilesState.files = [createFile({ id: 'file-existing', filename: '已有资料.png' })];
+
+    render(<HomeChatSurface />);
+
+    fireEvent.click(screen.getByRole('button', { name: '打开会话资料' }));
+    fireEvent.click(screen.getByRole('button', { name: '加入资料' }));
+    expect(screen.getByTestId('chat-input')).toHaveAttribute('data-attachment-count', '1');
+
+    fireEvent.click(screen.getByRole('button', { name: '移除资料引用' }));
+
+    expect(deleteFileMock).not.toHaveBeenCalled();
+    expect(useConversationFilesState.removeFile).not.toHaveBeenCalled();
+    expect(screen.getByTestId('chat-input')).toHaveAttribute('data-attachment-count', '0');
   });
 
   it('删除资料时同步移除 composer 中的同一引用', async () => {

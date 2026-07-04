@@ -727,6 +727,7 @@ describe('ChatPage 会话切换体验', () => {
     fireEvent.click(screen.getByText('移除已选资料'));
     expect(screen.getByTestId('chat-input')).toHaveAttribute('data-attachment-count', '0');
     expect(screen.getByTestId('conversation-files-panel')).toHaveAttribute('data-selected-ids', '');
+    expect(deleteFileMock).not.toHaveBeenCalled();
 
     fireEvent.click(screen.getByText('加入资料'));
     fireEvent.click(screen.getByText('清空已选资料'));
@@ -825,6 +826,26 @@ describe('ChatPage 会话切换体验', () => {
     expect(useConversationFilesState.refresh).toHaveBeenCalledTimes(1);
     expect(screen.queryByTestId('conversation-files-panel')).toBeNull();
     expect(screen.getByTestId('chat-input')).toHaveAttribute('data-attachment-count', '1');
+  });
+
+  it('已有会话上传已处理文件后移除附件会删除会话资料并更新本地列表', async () => {
+    conversationsById.set('chat-a', createConversation('chat-a', [textMessage('message-a')]));
+    hydrationById.set('chat-a', { view: 'ready' });
+
+    render(<ChatPage />);
+
+    fireEvent.click(screen.getByRole('button', { name: '上传已处理资料' }));
+    expect(screen.getByTestId('chat-input')).toHaveAttribute('data-attachment-count', '1');
+
+    fireEvent.click(screen.getByRole('button', { name: '移除已选资料' }));
+
+    await waitFor(() => {
+      expect(deleteFileMock).toHaveBeenCalledWith('file-uploaded');
+    });
+    expect(useConversationFilesState.removeFile).toHaveBeenCalledWith('file-uploaded');
+    await waitFor(() => {
+      expect(screen.getByTestId('chat-input')).toHaveAttribute('data-attachment-count', '0');
+    });
   });
 
   it('发送带资料消息时打开会话资料面板', async () => {

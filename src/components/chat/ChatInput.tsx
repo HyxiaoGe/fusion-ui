@@ -125,6 +125,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
   const previousResetSignalRef = useRef(resetSignal);
   const previousChatIdRef = useRef<string | null>(null);
   const uploadGenerationRef = useRef(0);
+  const cancelledUploadLocalIdsRef = useRef<Set<string>>(new Set());
 
   const isAuthenticated = useAppSelector(selectIsAuthenticated);
   const processingFiles = useAppSelector((state) => state.fileUpload.processingFiles);
@@ -158,6 +159,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
     }
 
     uploadGenerationRef.current += 1;
+    cancelledUploadLocalIdsRef.current.clear();
     setMessage("");
     setIsDragOver(false);
     setViewingImageUrl(null);
@@ -331,6 +333,18 @@ const ChatInput: React.FC<ChatInputProps> = ({
         filesToUpload.map((item) => item.file)
       );
 
+      const uploadResults: Array<{
+        uploaded: (typeof uploadedFiles)[number];
+        index: number;
+        localFile: LocalFileWithStatus;
+      }> = [];
+      uploadedFiles.forEach((uploaded, index) => {
+        const localFile = filesToUpload[index];
+        if (localFile) {
+          uploadResults.push({ uploaded, index, localFile });
+        }
+      });
+
       if (
         uploadGeneration !== uploadGenerationRef.current ||
         uploadChatId !== currentChatIdRef.current
@@ -343,14 +357,30 @@ const ChatInput: React.FC<ChatInputProps> = ({
         return;
       }
 
+      const activeUploadResults = uploadResults.filter(
+        ({ localFile }) => !cancelledUploadLocalIdsRef.current.has(localFile.id)
+      );
+      uploadResults
+        .filter(({ localFile }) => cancelledUploadLocalIdsRef.current.has(localFile.id))
+        .forEach(({ uploaded, localFile }) => {
+          cancelledUploadLocalIdsRef.current.delete(localFile.id);
+          deleteFile(uploaded.file_id).catch((err) =>
+            console.warn("清理已取消上传文件失败:", err)
+          );
+        });
+
+      if (activeUploadResults.length === 0) {
+        return;
+      }
+
       setLocalFiles((prev) =>
         prev.map((file) => {
-          const fileIndex = filesToUpload.findIndex((pendingFile) => pendingFile.id === file.id);
-          if (fileIndex === -1 || !uploadedFiles[fileIndex]) {
+          const activeResult = activeUploadResults.find(({ localFile }) => localFile.id === file.id);
+          if (!activeResult) {
             return file;
           }
 
-          const uploaded = uploadedFiles[fileIndex];
+          const uploaded = activeResult.uploaded;
           // 图片文件：后端直接返回 processed 状态（无需轮询）
           const isImage = file.file.type.startsWith('image/');
           return {
@@ -362,23 +392,22 @@ const ChatInput: React.FC<ChatInputProps> = ({
         })
       );
 
-      const uploadCompleteFiles: ChatUploadCompleteFile[] = uploadedFiles.map((uploaded, index) => {
-        const localFile = filesToUpload[index]?.file;
-        const isImage = localFile?.type.startsWith('image/') ?? false;
+      const uploadCompleteFiles: ChatUploadCompleteFile[] = activeUploadResults.map(({ uploaded, localFile }) => {
+        const isImage = localFile.file.type.startsWith('image/');
         return {
           fileId: uploaded.file_id,
-          filename: localFile?.name || '未命名文件',
-          mimetype: localFile?.type || 'application/octet-stream',
-          size: localFile?.size || 0,
+          filename: localFile.file.name || '未命名文件',
+          mimetype: localFile.file.type || 'application/octet-stream',
+          size: localFile.file.size || 0,
           thumbnailUrl: uploaded.thumbnail_url ?? null,
           status: isImage ? 'processed' : 'parsing',
         };
       });
 
-      uploadedFiles.forEach((uploaded, index) => {
+      activeUploadResults.forEach(({ uploaded, index, localFile }, activeIndex) => {
         const fileId = uploaded.file_id;
-        const isImage = filesToUpload[index]?.file.type.startsWith('image/');
-        const uploadCompleteFile = uploadCompleteFiles[index];
+        const isImage = localFile.file.type.startsWith('image/');
+        const uploadCompleteFile = uploadCompleteFiles[activeIndex];
         dispatch(addFileId({ chatId: uploadChatId, fileId, fileIndex: index }));
 
         if (isImage) {
@@ -429,10 +458,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
           }
 
           if (success && onUploadComplete) {
-            const localId = filesToUpload[index]?.id;
-            if (localId) {
-              removeLocalUploadFiles(new Set([localId]));
-            }
+            removeLocalUploadFiles(new Set([localFile.id]));
           }
         });
       });
@@ -441,18 +467,31 @@ const ChatInput: React.FC<ChatInputProps> = ({
 
       if (onUploadComplete) {
         const processedLocalIds = new Set(
-          filesToUpload
-            .filter((file) => file.file.type.startsWith('image/'))
-            .map((file) => file.id)
+          activeUploadResults
+            .filter(({ localFile }) => localFile.file.type.startsWith('image/'))
+            .map(({ localFile }) => localFile.id)
         );
         removeLocalUploadFiles(processedLocalIds);
       }
     } catch (error) {
+      const activeFilesToUpload = filesToUpload.filter(
+        (file) => !cancelledUploadLocalIdsRef.current.has(file.id)
+      );
+      filesToUpload.forEach((file) => {
+        if (cancelledUploadLocalIdsRef.current.has(file.id)) {
+          cancelledUploadLocalIdsRef.current.delete(file.id);
+        }
+      });
+
+      if (activeFilesToUpload.length === 0) {
+        return;
+      }
+
       const errorMessage = formatFileErrorMessage((error as Error).message || "文件上传失败，请重试");
 
       setLocalFiles((prev) =>
         prev.map((file) =>
-          filesToUpload.some((pendingFile) => pendingFile.id === file.id)
+          activeFilesToUpload.some((pendingFile) => pendingFile.id === file.id)
             ? { ...file, status: "error", errorMessage }
             : file
         )
@@ -541,6 +580,9 @@ const ChatInput: React.FC<ChatInputProps> = ({
   const handleRemoveFile = (id: string) => {
     setLocalFiles((prev) => {
       const targetFile = prev.find((file) => file.id === id);
+      if (targetFile && !targetFile.fileId && (targetFile.status === "pending" || targetFile.status === "uploading")) {
+        cancelledUploadLocalIdsRef.current.add(id);
+      }
       if (targetFile?.fileId) {
         stopPollingFileStatus(targetFile.fileId);
         dispatch(removeFileId({ chatId, fileId: targetFile.fileId }));
@@ -563,6 +605,8 @@ const ChatInput: React.FC<ChatInputProps> = ({
     if (!targetFile || !ensureCanUploadFiles()) {
       return;
     }
+
+    cancelledUploadLocalIdsRef.current.delete(id);
 
     if (targetFile.fileId) {
       stopPollingFileStatus(targetFile.fileId);
