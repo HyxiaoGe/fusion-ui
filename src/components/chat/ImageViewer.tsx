@@ -1,9 +1,9 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
 import * as VisuallyHidden from '@radix-ui/react-visually-hidden';
-import { Loader2, X } from 'lucide-react';
+import { ImageOff, Loader2, RefreshCw, X } from 'lucide-react';
 import { getFileUrl } from '@/lib/api/files';
 import type { FileBlock } from '@/types/conversation';
 
@@ -24,6 +24,7 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ fileBlock, imageUrl, onClose 
   const [fullImageUrl, setFullImageUrl] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(false);
+  const [reloadKey, setReloadKey] = useState(0);
 
   const isOpen = !!(fileBlock || imageUrl);
 
@@ -42,25 +43,54 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ fileBlock, imageUrl, onClose 
       return;
     }
 
-    // 模式一：从后端获取原图 URL
-    setIsLoading(true);
-    setError(false);
+    let cancelled = false;
 
-    getFileUrl(fileBlock.file_id, 'processed')
-      .then((url) => {
-        setFullImageUrl(url);
-      })
-      .catch(() => {
-        // 回退到缩略图
-        setFullImageUrl(fileBlock.thumbnail_url || null);
-        setError(true);
-      })
-      .finally(() => {
+    async function loadFileImage() {
+      setIsLoading(true);
+      setError(false);
+      setFullImageUrl(null);
+
+      try {
+        const processedUrl = await getFileUrl(fileBlock.file_id, 'processed');
+        if (cancelled) return;
+        setFullImageUrl(processedUrl);
+        return;
+      } catch {
+        // 原图不可用时，主动获取 fresh thumbnail，避免复用历史消息里已过期的签名 URL。
+      }
+
+      try {
+        const thumbnailUrl = await getFileUrl(fileBlock.file_id, 'thumbnail');
+        if (cancelled) return;
+        setFullImageUrl(thumbnailUrl);
+        return;
+      } catch {
+        if (cancelled) return;
+        if (fileBlock.thumbnail_url) {
+          setFullImageUrl(fileBlock.thumbnail_url);
+        } else {
+          setError(true);
+        }
+      }
+    }
+
+    void loadFileImage().finally(() => {
+      if (!cancelled) {
         setIsLoading(false);
-      });
-  }, [fileBlock, imageUrl]);
+      }
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [fileBlock, imageUrl, reloadKey]);
 
   const altText = fileBlock?.filename || '图片预览';
+  const handleImageError = () => {
+    setFullImageUrl(null);
+    setError(true);
+    setIsLoading(false);
+  };
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
@@ -70,6 +100,7 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ fileBlock, imageUrl, onClose 
       >
         <VisuallyHidden.Root>
           <DialogTitle>{altText}</DialogTitle>
+          <DialogDescription>图片预览</DialogDescription>
         </VisuallyHidden.Root>
         {/* 图片区域：阻止点击冒泡，避免点击图片时关闭 */}
         <div
@@ -84,15 +115,29 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ fileBlock, imageUrl, onClose 
           </button>
           {isLoading ? (
             <Loader2 className="h-8 w-8 animate-spin text-white" />
+          ) : error ? (
+            <div className="flex min-w-[220px] flex-col items-center gap-3 rounded-lg border border-white/15 bg-black/50 px-5 py-6 text-white">
+              <ImageOff className="h-8 w-8" aria-hidden="true" />
+              <div className="text-sm">图片加载失败</div>
+              <div className="max-w-[70vw] truncate text-xs text-white/70">{altText}</div>
+              {fileBlock ? (
+                <button
+                  type="button"
+                  className="inline-flex h-8 items-center gap-1 rounded-md border border-white/20 bg-white/10 px-3 text-xs text-white transition-colors hover:bg-white/20"
+                  onClick={() => setReloadKey((value) => value + 1)}
+                >
+                  <RefreshCw className="h-3 w-3" aria-hidden="true" />
+                  重试
+                </button>
+              ) : null}
+            </div>
           ) : fullImageUrl ? (
             <img
               src={fullImageUrl}
               alt={altText}
               className="max-w-[85vw] max-h-[85vh] object-contain rounded-lg"
-              onError={() => setError(true)}
+              onError={handleImageError}
             />
-          ) : error ? (
-            <div className="text-white text-sm">图片加载失败</div>
           ) : null}
         </div>
       </DialogContent>

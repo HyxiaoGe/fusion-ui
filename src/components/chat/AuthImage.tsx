@@ -1,7 +1,10 @@
 'use client';
 
-import React, { useState, useRef } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { ImageOff, Loader2, RefreshCw } from 'lucide-react';
+
 import { getFileUrl } from '@/lib/api/files';
+import { cn } from '@/lib/utils';
 
 interface AuthImageProps {
   fileId: string;
@@ -18,7 +21,7 @@ interface AuthImageProps {
  * 渲染逻辑：
  * 1. 优先使用 src（blob URL 或签名 URL），直接渲染
  * 2. 如果 src 缺失或加载失败，通过 getFileUrl() 获取签名 URL 重试
- * 3. 签名 URL 也失败则显示 null（由父组件处理 fallback）
+ * 3. 签名 URL 也失败则保留可见失败卡片，避免历史消息里的图片直接消失
  */
 const AuthImage: React.FC<AuthImageProps> = ({
   fileId,
@@ -29,42 +32,93 @@ const AuthImage: React.FC<AuthImageProps> = ({
   variant = 'thumbnail',
 }) => {
   const [src, setSrc] = useState(initialSrc || '');
-  const [failed, setFailed] = useState(false);
-  const triedFetchRef = useRef(false);
+  const [status, setStatus] = useState<'loading' | 'ready' | 'failed'>(initialSrc ? 'ready' : 'loading');
+  const [source, setSource] = useState<'initial' | 'fetched' | null>(initialSrc ? 'initial' : null);
+  const requestIdRef = useRef(0);
 
-  // initialSrc 变化时重置状态（切换消息/对话）
-  const prevSrcRef = useRef(initialSrc);
-  if (prevSrcRef.current !== initialSrc) {
-    prevSrcRef.current = initialSrc;
-    setSrc(initialSrc || '');
-    setFailed(false);
-    triedFetchRef.current = false;
-  }
+  const loadFreshUrl = useCallback(async () => {
+    const requestId = requestIdRef.current + 1;
+    requestIdRef.current = requestId;
+    setStatus('loading');
+    setSrc('');
+    setSource(null);
 
-  // 没有初始 src 且未尝试过获取 → 立即获取签名 URL
-  if (!src && !triedFetchRef.current && !failed) {
-    triedFetchRef.current = true;
-    getFileUrl(fileId, variant)
-      .then((url) => setSrc(url))
-      .catch(() => setFailed(true));
-  }
-
-  const handleError = async () => {
-    if (triedFetchRef.current) {
-      setFailed(true);
-      return;
-    }
-    // 首次加载失败（blob URL 过期等），尝试获取签名 URL
-    triedFetchRef.current = true;
     try {
       const url = await getFileUrl(fileId, variant);
+      if (requestIdRef.current !== requestId) return;
       setSrc(url);
+      setSource('fetched');
+      setStatus('ready');
     } catch {
-      setFailed(true);
+      if (requestIdRef.current !== requestId) return;
+      setSrc('');
+      setSource(null);
+      setStatus('failed');
     }
+  }, [fileId, variant]);
+
+  useEffect(() => {
+    requestIdRef.current += 1;
+
+    if (initialSrc) {
+      setSrc(initialSrc);
+      setSource('initial');
+      setStatus('ready');
+      return;
+    }
+
+    void loadFreshUrl();
+  }, [fileId, initialSrc, loadFreshUrl, variant]);
+
+  const handleError = () => {
+    if (source === 'initial') {
+      void loadFreshUrl();
+      return;
+    }
+
+    setSrc('');
+    setSource(null);
+    setStatus('failed');
   };
 
-  if (failed || !src) return null;
+  const handleRetry = (event: React.MouseEvent<HTMLButtonElement>) => {
+    event.stopPropagation();
+    void loadFreshUrl();
+  };
+
+  if (status !== 'ready' || !src) {
+    return (
+      <div
+        className={cn(
+          'flex min-h-[96px] w-[180px] max-w-[240px] flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-border/70 bg-muted/20 px-3 py-4 text-center text-muted-foreground',
+          className,
+        )}
+        aria-label={`${alt} ${status === 'failed' ? '加载失败' : '加载中'}`}
+      >
+        {status === 'loading' ? (
+          <>
+            <Loader2 className="h-5 w-5 animate-spin" aria-hidden="true" />
+            <span className="text-xs">图片加载中</span>
+          </>
+        ) : (
+          <>
+            <ImageOff className="h-5 w-5" aria-hidden="true" />
+            <span className="text-xs font-medium text-foreground">图片加载失败</span>
+            <span className="max-w-full truncate text-[11px]">{alt}</span>
+            <button
+              type="button"
+              className="inline-flex h-7 items-center gap-1 rounded-md border border-border bg-background px-2 text-[11px] text-foreground transition-colors hover:bg-muted"
+              onClick={handleRetry}
+              aria-label={`重新加载 ${alt}`}
+            >
+              <RefreshCw className="h-3 w-3" aria-hidden="true" />
+              重试
+            </button>
+          </>
+        )}
+      </div>
+    );
+  }
 
   return (
     <img
