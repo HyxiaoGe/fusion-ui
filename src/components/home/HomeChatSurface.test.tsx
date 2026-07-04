@@ -370,6 +370,21 @@ describe('HomeChatSurface 会话资料交互', () => {
     );
   });
 
+  it('再次点击会话资料按钮时关闭资料面板', async () => {
+    useConversationFilesState.files = [createFile({ id: 'file-existing', filename: '已有资料.png' })];
+
+    render(<HomeChatSurface />);
+
+    fireEvent.click(screen.getByRole('button', { name: '打开会话资料' }));
+    expect(screen.getByTestId('conversation-files-panel')).toBeInTheDocument();
+
+    const closeFilesPanelButton = screen.getByRole('button', { name: '关闭会话资料' });
+    expect(closeFilesPanelButton).toHaveAttribute('aria-expanded', 'true');
+
+    fireEvent.click(closeFilesPanelButton);
+    expect(screen.queryByTestId('conversation-files-panel')).toBeNull();
+  });
+
   it('从资料面板加入的既有资料移除时只取消引用不删除资料', async () => {
     useConversationFilesState.files = [createFile({ id: 'file-existing', filename: '已有资料.png' })];
 

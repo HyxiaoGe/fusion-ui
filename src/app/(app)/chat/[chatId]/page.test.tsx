@@ -735,6 +735,33 @@ describe('ChatPage 会话切换体验', () => {
     expect(screen.getByTestId('conversation-files-panel')).toHaveAttribute('data-selected-ids', '');
   });
 
+  it('再次点击会话资料按钮时关闭资料面板', async () => {
+    conversationsById.set('chat-a', createConversation('chat-a', [textMessage('message-a')]));
+    hydrationById.set('chat-a', { view: 'ready' });
+    useConversationFilesState.files = [
+      {
+        id: 'file-1',
+        filename: 'diagram.png',
+        mimetype: 'image/png',
+        size: 100,
+        created_at: '2026-07-03T10:00:00Z',
+        status: 'processed',
+        error_message: null,
+      },
+    ];
+
+    render(<ChatPage />);
+
+    fireEvent.click(screen.getByRole('button', { name: '打开会话资料' }));
+    expect(screen.getByTestId('conversation-files-panel')).toBeInTheDocument();
+
+    const closeFilesPanelButton = screen.getByRole('button', { name: '关闭会话资料' });
+    expect(closeFilesPanelButton).toHaveAttribute('aria-expanded', 'true');
+
+    fireEvent.click(closeFilesPanelButton);
+    expect(screen.queryByTestId('conversation-files-panel')).toBeNull();
+  });
+
   it('删除会话资料时同步移除 composer 已选资料', async () => {
     conversationsById.set('chat-a', createConversation('chat-a', [textMessage('message-a')]));
     hydrationById.set('chat-a', { view: 'ready' });

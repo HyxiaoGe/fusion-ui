@@ -343,8 +343,9 @@ export default function HomeChatSurface() {
             variant="ghost"
             size="sm"
             className="h-8 gap-1.5"
-            aria-label="打开会话资料"
-            onClick={() => setFilesPanelOpen(true)}
+            aria-label={filesPanelOpen ? '关闭会话资料' : '打开会话资料'}
+            aria-expanded={filesPanelOpen}
+            onClick={() => setFilesPanelOpen((open) => !open)}
           >
             <Files className="h-4 w-4" aria-hidden="true" />
             资料
