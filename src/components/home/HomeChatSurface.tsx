@@ -17,7 +17,7 @@ import { deleteFile, type FileInfo } from '@/lib/api/files';
 import { useSendMessage } from '@/hooks/useSendMessage';
 import { useConversationFiles } from '@/hooks/useConversationFiles';
 import { getFirstEnabledModelId, getPreferredModelId } from '@/lib/models/modelPreference';
-import { buildChatConversationPath, buildChatNewPath, isChatNewPath } from '@/lib/routes/chatRoutes';
+import { CHAT_NEW_PATH, buildChatConversationPath, buildChatNewPath, isChatNewPath } from '@/lib/routes/chatRoutes';
 import type { FileAttachment } from '@/lib/utils/fileHelpers';
 
 const EMPTY_CONVERSATION_ATTACHMENTS: ConversationComposerAttachment[] = [];
@@ -85,14 +85,18 @@ export default function HomeChatSurface() {
       return;
     }
 
-    const preferredModelId = getPreferredModelId(models, modelHint);
-    if (preferredModelId !== modelHint) {
+    if (models.length === 0) {
       return;
     }
 
+    const preferredModelId = getPreferredModelId(models, modelHint);
+    if (preferredModelId === modelHint) {
+      dispatch(setSelectedModel(modelHint));
+    }
+
     appliedModelHintRef.current = modelHint;
-    dispatch(setSelectedModel(modelHint));
-  }, [dispatch, modelHint, models]);
+    router.replace(CHAT_NEW_PATH);
+  }, [dispatch, modelHint, models, router]);
 
   const addConversationAttachment = useCallback((targetChatId: string, attachment: ConversationComposerAttachment) => {
     setConversationAttachmentState((currentState) => {

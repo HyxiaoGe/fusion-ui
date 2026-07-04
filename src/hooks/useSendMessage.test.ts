@@ -346,6 +346,52 @@ describe('useSendMessage', () => {
     });
   });
 
+  it('把图片尺寸不合规的模型原始错误转成可读提示', async () => {
+    const store = createStore();
+    const rawImageSizeError = "litellm.BadRequestError: Error code: 400 - {'error': {'message': 'litellm.BadRequestError: OpenAIException - <400> InternalError.Algo.InvalidParameter: The image length and width do not meet the model restrictions. [height:2 or width:2 must be larger than 10]. Received Model Group=qwen3.6-plus\\nAvailable Model Group Fallbacks=None', 'type': 'invalid_request_error', 'param': None, 'code': '400'}}";
+    const friendlyMessage = '图片尺寸过小，当前模型要求宽高都大于 10 像素，请换一张更大的图片后重试';
+
+    store.dispatch(
+      upsertConversation({
+        id: 'existing-conv',
+        title: 'Existing',
+        model_id: 'model-1',
+        messages: [],
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      })
+    );
+
+    sendMessageStreamMock.mockImplementationOnce(async (_payload: any, callbacks: StreamCallbacks) => {
+      callbacks.onReady({ messageId: 'assistant-1', conversationId: 'existing-conv' });
+      callbacks.onError(rawImageSizeError, { code: '400' });
+      throw new Error(rawImageSizeError);
+    });
+
+    const { result } = renderHook(() => useSendMessage(), {
+      wrapper: createWrapper(store),
+    });
+
+    await act(async () => {
+      await result.current.sendMessage('描述图片', { conversationId: 'existing-conv' }, [
+        {
+          fileId: 'file-small-image',
+          filename: 'tiny.png',
+          mimeType: 'image/png',
+        },
+      ]);
+    });
+
+    await waitFor(() => {
+      const state = store.getState();
+      expect(state.conversation.globalError).toBe(friendlyMessage);
+      expect(state.stream.lastError?.message).toBe(friendlyMessage);
+      expect(state.conversation.byId['existing-conv'].messages[0]).toEqual(
+        expect.objectContaining({ role: 'user', status: 'failed' })
+      );
+    });
+  });
+
   it('materializes draft on first streamed chunk before completion', async () => {
     const store = createStore();
     const onMaterialized = vi.fn();

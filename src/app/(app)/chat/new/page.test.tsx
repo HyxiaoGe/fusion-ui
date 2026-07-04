@@ -182,6 +182,21 @@ describe('NewChatPage', () => {
         payload: 'model-1',
       });
     });
+    expect(routerReplaceMock).toHaveBeenCalledWith('/chat/new');
+  });
+
+  it('清理不可用 model query，避免刷新时停留在旧参数 URL', async () => {
+    searchParamsGetMock.mockImplementation((key: string) => (key === 'model' ? 'model-2' : null));
+
+    render(<NewChatPage />);
+
+    await waitFor(() => {
+      expect(routerReplaceMock).toHaveBeenCalledWith('/chat/new');
+    });
+    expect(dispatchMock).not.toHaveBeenCalledWith({
+      type: 'models/setSelectedModel',
+      payload: 'model-2',
+    });
   });
 
   it('忽略 legacy new query，不读取 searchParams.new', () => {

@@ -49,6 +49,20 @@ type SendMessageOptions = {
   onStreamEnd?: (conversationId: string) => void;
 };
 
+const IMAGE_DIMENSION_ERROR_MESSAGE = '图片尺寸过小，当前模型要求宽高都大于 10 像素，请换一张更大的图片后重试';
+
+function normalizeSendErrorMessage(message: string): string {
+  if (
+    message.includes('image length and width do not meet the model restrictions') ||
+    message.includes('height:2 or width:2 must be larger than 10') ||
+    (message.includes('InternalError.Algo.InvalidParameter') && message.includes('image'))
+  ) {
+    return IMAGE_DIMENSION_ERROR_MESSAGE;
+  }
+
+  return message;
+}
+
 async function postStreamActions(conversationId: string, dispatch: ReturnType<typeof useAppDispatch>) {
   try {
     const title = await generateChatTitle(conversationId, undefined, { max_length: 20 });
@@ -418,8 +432,9 @@ export function useSendMessage() {
             // TODO: 遗漏1 — 网络抖动自动重连。当前网络断开直接报错，
             // 后续加 retry 计数器，失败 N 次内自动调 reconnectStream，超出则报错
             onError: (message, payload) => {
-              dispatch(setGlobalError(message));
-              dispatch(setStreamError({ message, code: payload?.code, data: payload?.data }));
+              const readableMessage = normalizeSendErrorMessage(message);
+              dispatch(setGlobalError(readableMessage));
+              dispatch(setStreamError({ message: readableMessage, code: payload?.code, data: payload?.data }));
             },
           },
           controller.signal
@@ -468,7 +483,7 @@ export function useSendMessage() {
         assistantMessageIdRef.current = null;
         serverMessageIdRef.current = null;
         assistantHasContentRef.current = false;
-        const message = error instanceof Error ? error.message : '发送失败，请重试';
+        const message = normalizeSendErrorMessage(error instanceof Error ? error.message : '发送失败，请重试');
         dispatch(setGlobalError(message));
       }
     },
