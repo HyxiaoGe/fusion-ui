@@ -27,6 +27,7 @@ import ComposerAttachmentList from "./ComposerAttachmentList";
 import {
   isComposerAttachmentError,
   isComposerAttachmentProcessing,
+  isImageMimeType,
   toFileAttachment,
   type ConversationComposerAttachment,
   type UploadComposerAttachment,
@@ -73,9 +74,14 @@ interface LocalFileWithStatus {
 }
 
 const EMPTY_CONVERSATION_ATTACHMENTS: ConversationComposerAttachment[] = [];
+const IMAGE_UPLOAD_ONLY_MESSAGE = "当前仅支持上传图片，文件对话后续开放";
 
 function getFileIdentity(file: File): string {
   return `${file.name}:${file.size}:${file.lastModified}`;
+}
+
+function isSupportedImageUpload(file: File): boolean {
+  return file.type.startsWith("image/");
 }
 
 function formatFileErrorMessage(errorMessage?: string): string {
@@ -205,9 +211,13 @@ const ChatInput: React.FC<ChatInputProps> = ({
       })),
     [localFiles],
   );
+  const supportedConversationAttachments = useMemo(
+    () => conversationAttachments.filter((attachment) => isImageMimeType(attachment.mimetype)),
+    [conversationAttachments],
+  );
   const composerAttachments = useMemo(
-    () => [...uploadAttachments, ...conversationAttachments],
-    [conversationAttachments, uploadAttachments],
+    () => [...uploadAttachments, ...supportedConversationAttachments],
+    [supportedConversationAttachments, uploadAttachments],
   );
   const hasImageAttachments = useMemo(
     () => composerAttachments.some(isImageComposerAttachment),
@@ -237,13 +247,13 @@ const ChatInput: React.FC<ChatInputProps> = ({
   };
 
   const ensureCanUploadFiles = () => {
-    if (!ensureAuthenticated("请先登录后再上传文件")) {
+    if (!ensureAuthenticated("请先登录后再上传图片")) {
       return false;
     }
 
     if (!selectedModel) {
       toast({
-        message: "请先选择可用模型再上传文件",
+        message: "请先选择可用模型再上传图片",
         type: "error",
         duration: 3000,
       });
@@ -265,7 +275,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
   const addPendingFiles = (selectedFiles: File[]) => {
     const pendingFiles = selectedFiles.map((file) => ({
       file,
-      previewUrl: file.type.startsWith('image/') ? URL.createObjectURL(file) : "",
+      previewUrl: URL.createObjectURL(file),
       id: uuidv4(),
       status: "pending" as FileProcessingStatus,
     }));
@@ -510,7 +520,23 @@ const ChatInput: React.FC<ChatInputProps> = ({
       return;
     }
 
-    const { acceptedFiles, skippedCount } = splitDedupedFiles(selectedFiles);
+    const imageFiles = selectedFiles.filter(isSupportedImageUpload);
+    const unsupportedCount = selectedFiles.length - imageFiles.length;
+    if (unsupportedCount > 0) {
+      toast({
+        message: unsupportedCount === selectedFiles.length
+          ? IMAGE_UPLOAD_ONLY_MESSAGE
+          : `已跳过 ${unsupportedCount} 个非图片文件，当前仅支持上传图片`,
+        type: "warning",
+        duration: 3000,
+      });
+    }
+
+    if (imageFiles.length === 0) {
+      return;
+    }
+
+    const { acceptedFiles, skippedCount } = splitDedupedFiles(imageFiles);
 
     if (skippedCount > 0) {
       toast({
@@ -834,6 +860,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
           type="file"
           ref={fileInputRef}
           onChange={handleFileChange}
+          accept="image/*"
           className="hidden"
           multiple
         />
@@ -846,15 +873,15 @@ const ChatInput: React.FC<ChatInputProps> = ({
         >
           {/* 左侧工具按钮组 */}
           <div className="flex items-center gap-1 flex-1">
-            {/* 文件上传按钮 */}
+            {/* 图片上传按钮 */}
             <Button
               onClick={handleFileSelect}
               disabled={isComposerBlocked || !supportsFileUpload}
               variant="ghost"
               size="sm"
               className="h-8 w-8 p-0 text-muted-foreground hover:text-foreground"
-              aria-label="上传文件"
-              title="上传文件"
+              aria-label="上传图片"
+              title="上传图片"
             >
               <PaperclipIcon className="h-4 w-4" />
             </Button>

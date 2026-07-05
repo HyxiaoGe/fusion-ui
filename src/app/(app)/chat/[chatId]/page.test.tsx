@@ -313,11 +313,11 @@ vi.mock('@/components/chat/ChatInput', () => ({
             onUploadComplete?.(
               [
                 {
-                  fileId: 'file-parsing',
-                  filename: 'report.pdf',
-                  mimetype: 'application/pdf',
+                  fileId: 'file-pending-image',
+                  filename: 'report.png',
+                  mimetype: 'image/png',
                   size: 240,
-                  thumbnailUrl: null,
+                  thumbnailUrl: '/pending-thumb.png',
                   status: 'parsing',
                 },
               ],
@@ -325,7 +325,7 @@ vi.mock('@/components/chat/ChatInput', () => ({
             )
           }
         >
-          上传解析中资料
+          上传待刷新图片资料
         </button>
       </div>
     );
@@ -934,13 +934,13 @@ describe('ChatPage 会话切换体验', () => {
     expect(window.sessionStorage.getItem('fusion:open-files-panel:chat-a')).toBeNull();
   });
 
-  it('已有会话上传解析中文件后等待资料刷新为 processed 再加入本次提问', async () => {
+  it('已有会话上传待刷新图片后等待资料刷新为 processed 再加入本次提问', async () => {
     conversationsById.set('chat-a', createConversation('chat-a', [textMessage('message-a')]));
     hydrationById.set('chat-a', { view: 'ready' });
 
     const { rerender } = render(<ChatPage />);
 
-    fireEvent.click(screen.getByRole('button', { name: '上传解析中资料' }));
+    fireEvent.click(screen.getByRole('button', { name: '上传待刷新图片资料' }));
 
     expect(useConversationFilesState.refresh).toHaveBeenCalledTimes(1);
     expect(screen.queryByTestId('conversation-files-panel')).toBeNull();
@@ -948,13 +948,14 @@ describe('ChatPage 会话切换体验', () => {
 
     useConversationFilesState.files = [
       {
-        id: 'file-parsing',
-        filename: 'report.pdf',
-        mimetype: 'application/pdf',
+        id: 'file-pending-image',
+        filename: 'report.png',
+        mimetype: 'image/png',
         size: 240,
         created_at: '2026-07-03T10:00:00Z',
         status: 'processed',
         error_message: null,
+        thumbnail_url: '/pending-thumb.png',
       },
     ];
     rerender(<ChatPage />);
@@ -963,7 +964,7 @@ describe('ChatPage 会话切换体验', () => {
       expect(screen.getByTestId('chat-input')).toHaveAttribute('data-attachment-count', '1');
     });
     fireEvent.click(screen.getByRole('button', { name: '打开会话资料' }));
-    expect(screen.getByTestId('conversation-files-panel')).toHaveAttribute('data-selected-ids', 'file-parsing');
+    expect(screen.getByTestId('conversation-files-panel')).toHaveAttribute('data-selected-ids', 'file-pending-image');
   });
 
   it('已有会话上传解析中文件失败后不会被旧 pending 状态再次自动加入', async () => {
@@ -972,7 +973,7 @@ describe('ChatPage 会话切换体验', () => {
 
     const { rerender } = render(<ChatPage />);
 
-    fireEvent.click(screen.getByRole('button', { name: '上传解析中资料' }));
+    fireEvent.click(screen.getByRole('button', { name: '上传待刷新图片资料' }));
 
     useConversationFilesState.files = [
       {
@@ -1007,19 +1008,19 @@ describe('ChatPage 会话切换体验', () => {
     expect(screen.queryByTestId('conversation-files-panel')).toBeNull();
   });
 
-  it('删除仍在解析的上传资料后不会被旧 pending 状态自动加入', async () => {
+  it('删除仍在刷新中的上传图片后不会被旧 pending 状态自动加入', async () => {
     conversationsById.set('chat-a', createConversation('chat-a', [textMessage('message-a')]));
     hydrationById.set('chat-a', { view: 'ready' });
 
     const { rerender } = render(<ChatPage />);
 
-    fireEvent.click(screen.getByRole('button', { name: '上传解析中资料' }));
+    fireEvent.click(screen.getByRole('button', { name: '上传待刷新图片资料' }));
 
     useConversationFilesState.files = [
       {
-        id: 'file-parsing',
-        filename: 'report.pdf',
-        mimetype: 'application/pdf',
+        id: 'file-pending-image',
+        filename: 'report.png',
+        mimetype: 'image/png',
         size: 240,
         created_at: '2026-07-03T10:00:00Z',
         status: 'parsing',
@@ -1032,15 +1033,15 @@ describe('ChatPage 会话切换体验', () => {
     fireEvent.click(screen.getByText('删除资料'));
 
     await waitFor(() => {
-      expect(deleteFileMock).toHaveBeenCalledWith('file-parsing');
+      expect(deleteFileMock).toHaveBeenCalledWith('file-pending-image');
     });
-    expect(useConversationFilesState.removeFile).toHaveBeenCalledWith('file-parsing');
+    expect(useConversationFilesState.removeFile).toHaveBeenCalledWith('file-pending-image');
 
     useConversationFilesState.files = [
       {
-        id: 'file-parsing',
-        filename: 'report.pdf',
-        mimetype: 'application/pdf',
+        id: 'file-pending-image',
+        filename: 'report.png',
+        mimetype: 'image/png',
         size: 240,
         created_at: '2026-07-03T10:00:00Z',
         status: 'processed',

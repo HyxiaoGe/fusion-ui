@@ -20,8 +20,8 @@ vi.mock('./ImageViewer', () => ({
 function createFile(overrides: Partial<FileInfo> = {}): FileInfo {
   return {
     id: 'file-1',
-    filename: 'notes.txt',
-    mimetype: 'text/plain',
+    filename: 'notes.png',
+    mimetype: 'image/png',
     size: 2048,
     created_at: '2026-07-03T00:00:00Z',
     status: 'processed',
@@ -83,17 +83,31 @@ describe('ConversationFilesPanel', () => {
   });
 
   it('processed 文件可加入，parsing 文件禁用', () => {
-    const processedFile = createFile({ id: 'processed-file', filename: 'done.pdf', mimetype: 'application/pdf' });
+    const processedFile = createFile({ id: 'processed-file', filename: 'done.png', mimetype: 'image/png' });
     const parsingFile = createFile({ id: 'parsing-file', filename: 'pending.txt', status: 'parsing' });
     const onAddFile = vi.fn();
 
     renderPanel({ files: [processedFile, parsingFile], onAddFile });
 
-    fireEvent.click(screen.getByRole('button', { name: '加入本次提问 done.pdf' }));
+    fireEvent.click(screen.getByRole('button', { name: '加入本次提问 done.png' }));
 
     expect(onAddFile).toHaveBeenCalledTimes(1);
     expect(onAddFile).toHaveBeenCalledWith(processedFile);
     expect(screen.getByRole('button', { name: '资料正在处理，暂不可加入 pending.txt' })).toBeDisabled();
+  });
+
+  it('processed 非图片资料暂停加入本次提问', () => {
+    const onAddFile = vi.fn();
+    renderPanel({
+      files: [createFile({ id: 'doc-file', filename: 'done.pdf', mimetype: 'application/pdf' })],
+      onAddFile,
+    });
+
+    const addButton = screen.getByRole('button', { name: '当前暂不支持加入文件资料 done.pdf' });
+    expect(addButton).toBeDisabled();
+    expect(addButton).toHaveTextContent('暂不支持');
+    fireEvent.click(addButton);
+    expect(onAddFile).not.toHaveBeenCalled();
   });
 
   it('selected 文件禁用且显示已加入', () => {
@@ -129,15 +143,15 @@ describe('ConversationFilesPanel', () => {
       files: [
         createFile({
           id: 'error-file',
-          filename: 'broken.pdf',
-          mimetype: 'application/pdf',
+          filename: 'broken.png',
+          mimetype: 'image/png',
           status: 'error',
           error_message: '解析失败',
         }),
         createFile({
           id: 'default-error-file',
-          filename: 'unknown.pdf',
-          mimetype: 'application/pdf',
+          filename: 'unknown.png',
+          mimetype: 'image/png',
           status: 'error',
           error_message: null,
         }),
@@ -145,11 +159,11 @@ describe('ConversationFilesPanel', () => {
     });
 
     expect(screen.getByText('解析失败')).toBeInTheDocument();
-    const defaultErrorItem = screen.getByText('unknown.pdf').closest('li');
+    const defaultErrorItem = screen.getByText('unknown.png').closest('li');
     expect(defaultErrorItem).not.toBeNull();
     expect(within(defaultErrorItem as HTMLElement).getAllByText('处理失败')).toHaveLength(2);
-    expect(screen.getByRole('button', { name: '处理失败，无法加入 broken.pdf' })).toBeDisabled();
-    expect(screen.getByRole('button', { name: '处理失败，无法加入 unknown.pdf' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: '处理失败，无法加入 broken.png' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: '处理失败，无法加入 unknown.png' })).toBeDisabled();
   });
 
   it('删除按钮回调传入文件 id', () => {

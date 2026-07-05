@@ -221,6 +221,15 @@ function FileVisual({ file, onViewImage }: { file: FileInfo; onViewImage: (file:
 }
 
 function getAddButtonState(file: FileInfo, selected: boolean): AddButtonState {
+  if (!isImageFile(file)) {
+    return {
+      disabled: true,
+      label: '暂不支持',
+      ariaLabel: `当前暂不支持加入文件资料 ${file.filename}`,
+      className: 'text-muted-foreground',
+    };
+  }
+
   if (selected) {
     return {
       disabled: true,

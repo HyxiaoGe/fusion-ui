@@ -27,8 +27,12 @@ export interface ConversationComposerAttachment {
 
 export type ComposerAttachment = UploadComposerAttachment | ConversationComposerAttachment;
 
+export function isImageMimeType(mimeType: string | null | undefined): boolean {
+  return Boolean(mimeType?.startsWith('image/'));
+}
+
 export function tryConversationFileToComposerAttachment(file: FileInfo): ConversationComposerAttachment | null {
-  if (file.status !== 'processed') {
+  if (file.status !== 'processed' || !isImageMimeType(file.mimetype)) {
     return null;
   }
 
@@ -66,7 +70,7 @@ export function toFileAttachment(attachment: ComposerAttachment): FileAttachment
     };
   }
 
-  if (!attachment.fileId || attachment.status !== 'processed') {
+  if (!attachment.fileId || attachment.status !== 'processed' || !isImageMimeType(attachment.file.type)) {
     return null;
   }
 

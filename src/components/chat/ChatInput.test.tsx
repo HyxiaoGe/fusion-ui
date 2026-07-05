@@ -185,7 +185,7 @@ describe('ChatInput', () => {
     vi.stubGlobal('triggerLoginDialog', triggerLoginDialogMock);
   });
 
-  it('blocks file upload button for unauthenticated users', () => {
+  it('blocks image upload button for unauthenticated users', () => {
     // 即使有可用模型，未登录用户点击上传按钮也应当被拦截并提示登录
     currentState.models.selectedModelId = 'model-1';
     currentState.models.models = [
@@ -198,11 +198,11 @@ describe('ChatInput', () => {
 
     render(<ChatInput onSendMessage={vi.fn()} />);
 
-    fireEvent.click(screen.getByLabelText('上传文件'));
+    fireEvent.click(screen.getByLabelText('上传图片'));
 
     expect(toastMock).toHaveBeenCalledWith(
       expect.objectContaining({
-        message: '请先登录后再上传文件',
+        message: '请先登录后再上传图片',
         type: 'warning',
       })
     );
@@ -215,7 +215,43 @@ describe('ChatInput', () => {
     expect(screen.getByPlaceholderText('发消息给 Fusion AI（Enter 发送）')).toHaveFocus();
   });
 
-  it('uploads selected files and starts polling when authenticated', async () => {
+  it('rejects selected non-image files while file conversation is paused', async () => {
+    currentState.auth.isAuthenticated = true;
+    currentState.models.selectedModelId = 'model-1';
+    currentState.models.models = [
+      {
+        id: 'model-1',
+        provider: 'qwen',
+        capabilities: {
+          vision: true,
+          deepThinking: true,
+        },
+      },
+    ];
+
+    const { container } = render(<ChatInput onSendMessage={vi.fn()} activeChatId="chat-1" />);
+    const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement;
+    const file = new File(['hello'], 'hello.txt', { type: 'text/plain' });
+
+    fireEvent.change(fileInput, {
+      target: {
+        files: [file],
+      },
+    });
+
+    await waitFor(() => {
+      expect(toastMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          message: '当前仅支持上传图片，文件对话后续开放',
+          type: 'warning',
+        }),
+      );
+    });
+    expect(uploadFilesMock).not.toHaveBeenCalled();
+    expect(screen.queryByText('hello.txt')).toBeNull();
+  });
+
+  it('uploads selected images and marks them processed when authenticated', async () => {
     currentState.auth.isAuthenticated = true;
     currentState.models.selectedModelId = 'model-1';
     currentState.models.models = [
@@ -232,7 +268,7 @@ describe('ChatInput', () => {
 
     const { container } = render(<ChatInput onSendMessage={vi.fn()} activeChatId="chat-1" />);
     const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement;
-    const file = new File(['hello'], 'hello.txt', { type: 'text/plain' });
+    const file = new File(['image'], 'diagram.png', { type: 'image/png' });
 
     fireEvent.change(fileInput, {
       target: {
@@ -250,14 +286,9 @@ describe('ChatInput', () => {
       expect(updateFileStatusMock).toHaveBeenCalledWith({
         fileId: 'file-1',
         chatId: 'chat-1',
-        status: 'parsing',
+        status: 'processed',
       });
-      expect(startPollingFileStatusMock).toHaveBeenCalledWith(
-        'file-1',
-        'chat-1',
-        dispatchMock,
-        expect.any(Function)
-      );
+      expect(startPollingFileStatusMock).not.toHaveBeenCalled();
     });
   });
 
@@ -281,7 +312,7 @@ describe('ChatInput', () => {
       <ChatInput onSendMessage={vi.fn()} onUploadComplete={onUploadComplete} activeChatId="chat-1" />,
     );
     const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement;
-    const file = new File(['hello'], 'hello.txt', { type: 'text/plain' });
+    const file = new File(['image'], 'diagram.png', { type: 'image/png' });
 
     fireEvent.change(fileInput, {
       target: {
@@ -296,10 +327,10 @@ describe('ChatInput', () => {
         [
           expect.objectContaining({
             fileId: 'file-1',
-            filename: 'hello.txt',
-            mimetype: 'text/plain',
+            filename: 'diagram.png',
+            mimetype: 'image/png',
             size: file.size,
-            status: 'parsing',
+            status: 'processed',
           }),
         ],
         'chat-1'
@@ -307,114 +338,6 @@ describe('ChatInput', () => {
     });
   });
 
-  it('calls onUploadComplete again after non-image processing finishes', async () => {
-    currentState.auth.isAuthenticated = true;
-    currentState.models.selectedModelId = 'model-1';
-    currentState.models.models = [
-      {
-        id: 'model-1',
-        provider: 'qwen',
-        capabilities: {
-          vision: true,
-          deepThinking: true,
-        },
-      },
-    ];
-    uploadFilesMock.mockResolvedValue([{ file_id: 'file-1' }]);
-    const onUploadComplete = vi.fn();
-
-    const { container } = render(
-      <ChatInput onSendMessage={vi.fn()} onUploadComplete={onUploadComplete} activeChatId="chat-1" />,
-    );
-    const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement;
-    const file = new File(['hello'], 'hello.txt', { type: 'text/plain' });
-
-    fireEvent.change(fileInput, {
-      target: {
-        files: [file],
-      },
-    });
-
-    await waitFor(() => {
-      expect(startPollingFileStatusMock).toHaveBeenCalledTimes(1);
-      expect(onUploadComplete).toHaveBeenCalledTimes(1);
-    });
-
-    const onComplete = startPollingFileStatusMock.mock.calls[0][3] as (result: {
-      success: boolean;
-      errorMessage?: string;
-    }) => void;
-    await act(async () => {
-      onComplete({ success: true });
-    });
-
-    expect(onUploadComplete).toHaveBeenCalledTimes(2);
-    expect(onUploadComplete).toHaveBeenLastCalledWith(
-      [
-        expect.objectContaining({
-          fileId: 'file-1',
-          filename: 'hello.txt',
-          mimetype: 'text/plain',
-          size: file.size,
-          status: 'processed',
-        }),
-      ],
-      'chat-1'
-    );
-  });
-
-  it('keeps existing-chat non-image uploads retryable until parsing succeeds', async () => {
-    currentState.auth.isAuthenticated = true;
-    currentState.models.selectedModelId = 'model-1';
-    currentState.models.models = [
-      {
-        id: 'model-1',
-        provider: 'qwen',
-        capabilities: {
-          vision: true,
-          deepThinking: true,
-        },
-      },
-    ];
-    uploadFilesMock.mockResolvedValue([{ file_id: 'file-1' }]);
-    const onUploadComplete = vi.fn();
-
-    const { container } = render(
-      <ChatInput onSendMessage={vi.fn()} onUploadComplete={onUploadComplete} activeChatId="chat-1" />,
-    );
-    const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement;
-    const file = new File(['hello'], 'hello.txt', { type: 'text/plain' });
-
-    fireEvent.change(fileInput, {
-      target: {
-        files: [file],
-      },
-    });
-
-    await waitFor(() => {
-      expect(screen.getByText('hello.txt')).toBeTruthy();
-      expect(startPollingFileStatusMock).toHaveBeenCalledTimes(1);
-    });
-
-    const onComplete = startPollingFileStatusMock.mock.calls[0][3] as (result: {
-      success: boolean;
-      errorMessage?: string;
-    }) => void;
-    await act(async () => {
-      onComplete({ success: false, errorMessage: '解析失败' });
-    });
-
-    expect(screen.getByRole('button', { name: '重试上传 hello.txt' })).toBeInTheDocument();
-    expect(onUploadComplete).toHaveBeenLastCalledWith(
-      [
-        expect.objectContaining({
-          fileId: 'file-1',
-          status: 'error',
-        }),
-      ],
-      'chat-1'
-    );
-  });
 
   it('turns processed existing-chat uploads into conversation references before sending', async () => {
     currentState.auth.isAuthenticated = true;
@@ -631,8 +554,19 @@ describe('ChatInput', () => {
     expect(onClearConversationAttachments).toHaveBeenCalledTimes(1);
   });
 
-  it('sends when only a selected conversation file is present', () => {
+  it('sends when only a selected conversation image is present', () => {
     currentState.auth.isAuthenticated = true;
+    currentState.models.selectedModelId = 'model-1';
+    currentState.models.models = [
+      {
+        id: 'model-1',
+        provider: 'qwen',
+        capabilities: {
+          vision: true,
+          deepThinking: true,
+        },
+      },
+    ];
     const onSendMessage = vi.fn();
 
     render(
@@ -643,10 +577,10 @@ describe('ChatInput', () => {
           {
             source: 'conversation',
             fileId: 'file-existing',
-            filename: '仅资料.pdf',
-            mimetype: 'application/pdf',
+            filename: '仅资料.png',
+            mimetype: 'image/png',
             status: 'processed',
-            thumbnailUrl: null,
+            thumbnailUrl: '/thumb.png',
           },
         ]}
       />,
@@ -659,9 +593,9 @@ describe('ChatInput', () => {
     expect(onSendMessage.mock.calls[0][1]).toEqual([
       {
         fileId: 'file-existing',
-        filename: '仅资料.pdf',
-        mimeType: 'application/pdf',
-        previewUrl: undefined,
+        filename: '仅资料.png',
+        mimeType: 'image/png',
+        previewUrl: '/thumb.png',
       },
     ]);
   });
@@ -678,17 +612,17 @@ describe('ChatInput', () => {
           {
             source: 'conversation',
             fileId: 'file-existing',
-            filename: '保留后端资料.pdf',
-            mimetype: 'application/pdf',
+            filename: '保留后端资料.png',
+            mimetype: 'image/png',
             status: 'processed',
-            thumbnailUrl: null,
+            thumbnailUrl: '/thumb.png',
           },
         ]}
         onRemoveConversationAttachment={onRemoveConversationAttachment}
       />,
     );
 
-    fireEvent.click(screen.getByRole('button', { name: '移除资料 保留后端资料.pdf' }));
+    fireEvent.click(screen.getByRole('button', { name: '移除资料 保留后端资料.png' }));
 
     expect(onRemoveConversationAttachment).toHaveBeenCalledTimes(1);
     expect(onRemoveConversationAttachment).toHaveBeenCalledWith('file-existing');
@@ -913,7 +847,7 @@ describe('ChatInput', () => {
       <ChatInput onSendMessage={vi.fn()} activeChatId="chat-a" resetSignal="chat-a" />
     );
     const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement;
-    const file = new File(['hello'], 'pending.txt', { type: 'text/plain' });
+    const file = new File(['image'], 'pending.png', { type: 'image/png' });
 
     fireEvent.change(fileInput, {
       target: {
@@ -976,7 +910,7 @@ describe('ChatInput', () => {
       />,
     );
 
-    expect(screen.getByRole('button', { name: '上传文件' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: '上传图片' })).toBeEnabled();
     expect(screen.getByRole('button', { name: '思考模式' })).toHaveAttribute('aria-pressed', 'false');
     expect(screen.getByRole('button', { name: '发送消息' })).toBeDisabled();
 
@@ -1038,7 +972,7 @@ describe('ChatInput', () => {
     expect(screen.getByRole('toolbar', { name: '消息工具栏' })).toBeInTheDocument();
 
     const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement;
-    const file = new File(['hello'], 'hello.txt', { type: 'text/plain' });
+    const file = new File(['image'], 'hello.png', { type: 'image/png' });
 
     fireEvent.change(fileInput, {
       target: {
@@ -1048,7 +982,7 @@ describe('ChatInput', () => {
 
     await waitFor(() => {
       expect(screen.getByRole('list', { name: '已添加附件' })).toBeInTheDocument();
-      expect(screen.getByText('hello.txt')).toBeInTheDocument();
+      expect(screen.getByText('hello.png')).toBeInTheDocument();
     });
   });
 
@@ -1083,7 +1017,7 @@ describe('ChatInput', () => {
 
     const { container } = render(<ChatInput onSendMessage={vi.fn()} activeChatId="chat-1" />);
     const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement;
-    const file = new File(['hello'], 'hello.txt', { type: 'text/plain' });
+    const file = new File(['image'], 'hello.png', { type: 'image/png' });
 
     fireEvent.change(fileInput, {
       target: {
@@ -1133,7 +1067,7 @@ describe('ChatInput', () => {
 
     const { container } = render(<ChatInput onSendMessage={vi.fn()} activeChatId={null} />);
     const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement;
-    const file = new File(['hello'], 'hello.txt', { type: 'text/plain' });
+    const file = new File(['image'], 'hello.png', { type: 'image/png' });
 
     fireEvent.change(fileInput, {
       target: {
@@ -1185,8 +1119,8 @@ describe('ChatInput', () => {
 
     const { container } = render(<ChatInput onSendMessage={vi.fn()} activeChatId="chat-1" />);
     const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement;
-    const duplicateA = new File(['hello'], 'same.txt', { type: 'text/plain', lastModified: 1 });
-    const duplicateB = new File(['hello'], 'same.txt', { type: 'text/plain', lastModified: 1 });
+    const duplicateA = new File(['image'], 'same.png', { type: 'image/png', lastModified: 1 });
+    const duplicateB = new File(['image'], 'same.png', { type: 'image/png', lastModified: 1 });
 
     fireEvent.change(fileInput, {
       target: {
@@ -1206,7 +1140,7 @@ describe('ChatInput', () => {
     );
   });
 
-  it('removes a failed file and clears its polling state', async () => {
+  it('removes a failed image upload', async () => {
     currentState.auth.isAuthenticated = true;
     currentState.models.selectedModelId = 'model-1';
     currentState.models.models = [
@@ -1219,11 +1153,11 @@ describe('ChatInput', () => {
         },
       },
     ];
-    uploadFilesMock.mockResolvedValue([{ file_id: 'file-1' }]);
+    uploadFilesMock.mockRejectedValue(new Error('文件处理失败，请重试'));
 
     const { container } = render(<ChatInput onSendMessage={vi.fn()} activeChatId="chat-1" />);
     const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement;
-    const file = new File(['hello'], 'remove-me.txt', { type: 'text/plain' });
+    const file = new File(['image'], 'remove-me.png', { type: 'image/png' });
 
     fireEvent.change(fileInput, {
       target: {
@@ -1232,27 +1166,16 @@ describe('ChatInput', () => {
     });
 
     await waitFor(() => {
-      expect(startPollingFileStatusMock).toHaveBeenCalledTimes(1);
+      expect(screen.getByRole('button', { name: '移除 remove-me.png' })).toBeInTheDocument();
     });
 
-    const onComplete = startPollingFileStatusMock.mock.calls[0][3] as (result: {
-      success: boolean;
-      errorMessage?: string;
-    }) => void;
-    await act(async () => {
-      onComplete({
-        success: false,
-        errorMessage: '文件处理失败，请重试',
-      });
-    });
+    fireEvent.click(screen.getByRole('button', { name: '移除 remove-me.png' }));
 
-    fireEvent.click(screen.getByRole('button', { name: '移除 remove-me.txt' }));
-
-    expect(stopPollingFileStatusMock).toHaveBeenCalledWith('file-1');
-    expect(screen.queryByText('remove-me.txt')).toBeNull();
+    expect(stopPollingFileStatusMock).not.toHaveBeenCalled();
+    expect(screen.queryByText('remove-me.png')).toBeNull();
   });
 
-  it('shows readable retry actions when file processing fails', async () => {
+  it('shows readable retry actions when image upload fails', async () => {
     currentState.auth.isAuthenticated = true;
     currentState.models.selectedModelId = 'model-1';
     currentState.models.models = [
@@ -1265,11 +1188,11 @@ describe('ChatInput', () => {
         },
       },
     ];
-    uploadFilesMock.mockResolvedValue([{ file_id: 'file-1' }]);
+    uploadFilesMock.mockRejectedValue(new Error('文件上传超时，请重试'));
 
     const { container } = render(<ChatInput onSendMessage={vi.fn()} activeChatId="chat-1" />);
     const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement;
-    const file = new File(['hello'], 'hello.txt', { type: 'text/plain' });
+    const file = new File(['image'], 'hello.png', { type: 'image/png' });
 
     fireEvent.change(fileInput, {
       target: {
@@ -1278,24 +1201,10 @@ describe('ChatInput', () => {
     });
 
     await waitFor(() => {
-      expect(startPollingFileStatusMock).toHaveBeenCalledTimes(1);
+      expect(screen.getByText('文件处理超时，请重新上传')).toBeTruthy();
     });
-
-    const onComplete = startPollingFileStatusMock.mock.calls[0][3] as (result: {
-      success: boolean;
-      errorMessage?: string;
-    }) => void;
-
-    await act(async () => {
-      onComplete({
-        success: false,
-        errorMessage: '文件处理超时，请重试',
-      });
-    });
-
-    expect(screen.getByText('文件处理超时，请重新上传')).toBeTruthy();
-    expect(screen.getByRole('button', { name: '重试上传 hello.txt' })).toBeTruthy();
-    expect(screen.getByRole('button', { name: '移除 hello.txt' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: '重试上传 hello.png' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: '移除 hello.png' })).toBeTruthy();
   });
 
   it('retries a failed file upload from the inline action', async () => {
@@ -1312,12 +1221,12 @@ describe('ChatInput', () => {
       },
     ];
     uploadFilesMock
-      .mockResolvedValueOnce([{ file_id: 'file-1' }])
+      .mockRejectedValueOnce(new Error('文件处理失败，请重试'))
       .mockResolvedValueOnce([{ file_id: 'file-2' }]);
 
     const { container } = render(<ChatInput onSendMessage={vi.fn()} activeChatId="chat-1" />);
     const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement;
-    const file = new File(['hello'], 'hello.txt', { type: 'text/plain' });
+    const file = new File(['image'], 'hello.png', { type: 'image/png' });
 
     fireEvent.change(fileInput, {
       target: {
@@ -1326,24 +1235,13 @@ describe('ChatInput', () => {
     });
 
     await waitFor(() => {
-      expect(startPollingFileStatusMock).toHaveBeenCalledTimes(1);
+      expect(screen.getByRole('button', { name: '重试上传 hello.png' })).toBeInTheDocument();
     });
 
-    const firstComplete = startPollingFileStatusMock.mock.calls[0][3] as (result: {
-      success: boolean;
-      errorMessage?: string;
-    }) => void;
-    await act(async () => {
-      firstComplete({
-        success: false,
-        errorMessage: '文件处理失败，请重试',
-      });
-    });
-
-    fireEvent.click(screen.getByRole('button', { name: '重试上传 hello.txt' }));
+    fireEvent.click(screen.getByRole('button', { name: '重试上传 hello.png' }));
 
     await waitFor(() => {
-      expect(stopPollingFileStatusMock).toHaveBeenCalledWith('file-1');
+      expect(stopPollingFileStatusMock).not.toHaveBeenCalled();
       expect(uploadFilesMock).toHaveBeenCalledTimes(2);
       expect(uploadFilesMock).toHaveBeenLastCalledWith('qwen', 'model-1', 'chat-1', [file]);
       expect(addFileIdMock).toHaveBeenLastCalledWith({
@@ -1367,12 +1265,12 @@ describe('ChatInput', () => {
         },
       },
     ];
-    uploadFilesMock.mockResolvedValue([{ file_id: 'file-1' }]);
+    uploadFilesMock.mockRejectedValue(new Error('文件处理失败，请重试'));
     const onSendMessage = vi.fn();
 
     const { container } = render(<ChatInput onSendMessage={onSendMessage} activeChatId="chat-1" />);
     const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement;
-    const file = new File(['hello'], 'hello.txt', { type: 'text/plain' });
+    const file = new File(['image'], 'hello.png', { type: 'image/png' });
 
     fireEvent.change(fileInput, {
       target: {
@@ -1381,18 +1279,7 @@ describe('ChatInput', () => {
     });
 
     await waitFor(() => {
-      expect(startPollingFileStatusMock).toHaveBeenCalledTimes(1);
-    });
-
-    const onComplete = startPollingFileStatusMock.mock.calls[0][3] as (result: {
-      success: boolean;
-      errorMessage?: string;
-    }) => void;
-    await act(async () => {
-      onComplete({
-        success: false,
-        errorMessage: '文件处理失败，请重试',
-      });
+      expect(screen.getByRole('button', { name: '重试上传 hello.png' })).toBeInTheDocument();
     });
 
     fireEvent.change(screen.getByPlaceholderText('发消息给 Fusion AI（Enter 发送）'), {
@@ -1524,7 +1411,7 @@ describe('ChatInput', () => {
     );
   });
 
-  it('allows selected non-image conversation files on text-only models', () => {
+  it('ignores stale non-image conversation files and sends only text', () => {
     currentState.auth.isAuthenticated = true;
     currentState.models.selectedModelId = 'text-model';
     currentState.models.models = [
@@ -1562,18 +1449,7 @@ describe('ChatInput', () => {
     });
     fireEvent.click(screen.getByRole('button', { name: '发送消息' }));
 
-    expect(onSendMessage).toHaveBeenCalledWith(
-      '总结资料',
-      [
-        {
-          fileId: 'file-1',
-          filename: 'notes.txt',
-          mimeType: 'text/plain',
-          previewUrl: undefined,
-        },
-      ],
-      undefined
-    );
+    expect(onSendMessage).toHaveBeenCalledWith('总结资料');
   });
 
   it('blocks send action for unauthenticated users', () => {

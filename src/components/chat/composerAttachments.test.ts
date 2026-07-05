@@ -60,6 +60,19 @@ describe('composerAttachments', () => {
     expect(tryConversationFileToComposerAttachment(errorFile)).toBeNull();
   });
 
+  it('非图片会话资料暂停映射为可发送附件', () => {
+    const pdfFile = createConversationFile({
+      id: 'file-pdf',
+      filename: 'report.pdf',
+      mimetype: 'application/pdf',
+      thumbnail_url: null,
+      width: null,
+      height: null,
+    });
+
+    expect(tryConversationFileToComposerAttachment(pdfFile)).toBeNull();
+  });
+
   it('按上传状态判断 processing/error，会话资料不视为处理中或错误', () => {
     const processingUpload: ComposerAttachment = {
       source: 'upload',
@@ -108,7 +121,7 @@ describe('composerAttachments', () => {
     const uploadWithFileId: ComposerAttachment = {
       source: 'upload',
       localId: 'local-2',
-      file: new File(['ready'], 'ready.bin', { type: '' }),
+      file: new File(['ready'], 'ready.png', { type: 'image/png' }),
       fileId: 'file-2',
       status: 'processed',
       thumbnailUrl: 'https://cdn.example.com/ready-thumb.png',
@@ -142,8 +155,8 @@ describe('composerAttachments', () => {
     expect(toFileAttachment(errorWithFileId)).toBeNull();
     expect(toFileAttachment(uploadWithFileId)).toEqual({
       fileId: 'file-2',
-      filename: 'ready.bin',
-      mimeType: 'application/octet-stream',
+      filename: 'ready.png',
+      mimeType: 'image/png',
       previewUrl: 'https://cdn.example.com/ready-thumb.png',
     });
     expect(toFileAttachment(imageUploadWithPreview)).toEqual({
