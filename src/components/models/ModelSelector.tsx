@@ -6,7 +6,6 @@ import { useAppDispatch, useAppSelector } from "@/redux/hooks";
 import { setSelectedModel } from "@/redux/slices/modelsSlice";
 import { updateConversationModel } from "@/redux/slices/conversationSlice";
 import { getPreferredModelId } from "@/lib/models/modelPreference";
-import { buildModelCapabilityTooltip } from "@/lib/models/modelCapabilityPresentation";
 import { getRecentModels, addRecentModel } from "@/lib/models/recentModels";
 import { getRouteConversationId } from "@/lib/routes/chatRoutes";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -41,10 +40,6 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({ onChange, modelId, disabl
   const currentModel = useMemo(
     () => models.find((m) => m.id === currentModelId) ?? null,
     [models, currentModelId],
-  );
-  const currentModelTooltip = useMemo(
-    () => buildModelCapabilityTooltip(currentModel),
-    [currentModel],
   );
 
   const modelsByProvider = useMemo(
@@ -100,7 +95,7 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({ onChange, modelId, disabl
   if (models.length === 0) return null;
 
   return (
-    <span className="inline-flex" title={currentModelTooltip}>
+    <span className="inline-flex">
       <Popover open={isOpen} onOpenChange={isDisabled ? undefined : setIsOpen}>
         <PopoverTrigger asChild>
           <ModelSelectorTrigger
@@ -108,10 +103,10 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({ onChange, modelId, disabl
             providers={providers}
             isOpen={isOpen}
             disabled={isDisabled}
-            title={currentModelTooltip}
           />
         </PopoverTrigger>
         <PopoverContent
+          data-testid="model-selector-panel"
           side="top"
           align="start"
           avoidCollisions={true}

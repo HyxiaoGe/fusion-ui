@@ -11,7 +11,6 @@ interface ModelSelectorTriggerProps {
   providers: ProviderInfo[];
   isOpen: boolean;
   disabled: boolean;
-  title?: string;
   onClick?: () => void;
 }
 
@@ -26,6 +25,7 @@ const ModelSelectorTrigger = forwardRef<HTMLButtonElement, ModelSelectorTriggerP
       <button
         ref={ref}
         disabled={disabled}
+        data-testid="model-selector-trigger"
         className={cn(
           "inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border border-border bg-bg-elevated hover:bg-muted text-sm text-foreground transition-colors duration-fast",
           disabled && "cursor-default opacity-60",

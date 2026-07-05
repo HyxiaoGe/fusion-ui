@@ -16,8 +16,8 @@ interface CapabilityChipProps {
 
 const CapabilityChip = memo(({ label }: CapabilityChipProps) => {
   return (
-    <span className={cn('rounded text-[10px] px-1.5 py-0.5 font-medium whitespace-nowrap', CHIP_TONE_CLASS[label.tone])}>
-      {label.text}
+    <span className={cn('inline-flex max-w-full min-w-0 rounded px-1.5 py-0.5 text-[10px] font-medium leading-none', CHIP_TONE_CLASS[label.tone])}>
+      <span className="truncate">{label.text}</span>
     </span>
   );
 });
@@ -27,16 +27,17 @@ CapabilityChip.displayName = 'CapabilityChip';
 interface CapabilityChipListProps {
   labels: CapabilityLabel[];
   maxCount?: number;
+  className?: string;
 }
 
 /** 按优先级渲染能力 chip，最多显示 maxCount 个 */
-export const CapabilityChipList = memo(({ labels, maxCount = 3 }: CapabilityChipListProps) => {
+export const CapabilityChipList = memo(({ labels, maxCount = 3, className }: CapabilityChipListProps) => {
   const visible = labels.slice(0, maxCount);
 
   if (visible.length === 0) return null;
 
   return (
-    <div className="flex gap-1 mt-1.5">
+    <div className={cn("mt-1.5 flex min-w-0 flex-wrap gap-1", className)}>
       {visible.map((label) => (
         <CapabilityChip key={label.key} label={label} />
       ))}

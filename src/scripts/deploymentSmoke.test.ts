@@ -1,4 +1,6 @@
 import { pathToFileURL } from 'node:url';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
@@ -11,6 +13,8 @@ import {
   resolveSmokeBaseUrl,
   validateDeploymentSmokeResult,
 } from '../../scripts/smoke-dev-deployment-helpers.mjs';
+
+const smokeScript = readFileSync(join(process.cwd(), 'scripts/smoke-dev-deployment.mjs'), 'utf8');
 
 describe('deployment smoke helpers', () => {
   it('优先使用命令行 base-url，其次使用 SMOKE_BASE_URL，最后回退 dev 本机地址', () => {
@@ -103,5 +107,11 @@ describe('deployment smoke helpers', () => {
         pageErrors: [],
       }),
     ).toThrow('页面跳转到非目标来源');
+  });
+
+  it('browser smoke 使用稳定测试标识定位模型选择器，不依赖原生 title tooltip', () => {
+    expect(smokeScript).toContain('MODEL_SELECTOR_TRIGGER_SELECTOR');
+    expect(smokeScript).toContain('MODEL_SELECTOR_PANEL_SELECTOR');
+    expect(smokeScript).not.toContain('[title');
   });
 });

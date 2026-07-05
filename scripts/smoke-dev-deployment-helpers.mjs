@@ -2,6 +2,10 @@ import { pathToFileURL } from 'node:url';
 
 const DEFAULT_BASE_URL = 'http://127.0.0.1:3004';
 
+export const MODEL_SELECTOR_TRIGGER_SELECTOR = '[data-testid="model-selector-trigger"]';
+export const MODEL_SELECTOR_PANEL_SELECTOR = '[data-testid="model-selector-panel"]';
+export const MODEL_CAPABILITY_LABEL_TEXTS = ['可联网', '不可联网', '读图', '工具', '长上下文', '深度任务'];
+
 export class DeploymentSmokeError extends Error {
   constructor(message, details = {}) {
     super(message);

@@ -125,11 +125,10 @@ describe('ModelSelector 路由语义', () => {
     });
   });
 
-  it('给模型按钮传递当前模型能力说明 tooltip 文案', () => {
+  it('不在触发按钮上挂原生 title，避免下拉时出现双重提示', () => {
     render(<ModelSelector />);
 
     const trigger = screen.getByRole('button', { name: '选择模型' });
-    expect(trigger).toHaveAttribute('title', expect.stringContaining('可按问题需要自主联网搜索和读取关键来源'));
-    expect(trigger).toHaveAttribute('title', expect.stringContaining('支持读图和图片理解'));
+    expect(trigger).not.toHaveAttribute('title');
   });
 });

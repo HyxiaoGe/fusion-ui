@@ -69,7 +69,7 @@ describe('ModelSelectorPanel', () => {
     expect(screen.getByText('工具')).toBeInTheDocument();
   });
 
-  it('在模型卡片中保留能力分但不内联展示推荐解释', () => {
+  it('在模型卡片中保留能力分但不内联展示推荐解释，也不挂原生 title', () => {
     render(
       <ModelSelectorPanel
         modelsByProvider={[{ ...provider, models }]}
@@ -91,11 +91,27 @@ describe('ModelSelectorPanel', () => {
     expect(screen.queryByText('适合：稳定知识与普通对话')).not.toBeInTheDocument();
     expect(screen.queryByText('不支持实时联网，涉及最新信息时会基于已有知识谨慎回答')).not.toBeInTheDocument();
 
-    expect(searchCard).toHaveAttribute('title', expect.stringContaining('推荐：实时资料、图片和长任务'));
-    expect(plainCard).toHaveAttribute(
-      'title',
-      expect.stringContaining('不支持实时联网，涉及最新信息时会基于已有知识谨慎回答'),
+    expect(searchCard).not.toHaveAttribute('title');
+    expect(plainCard).not.toHaveAttribute('title');
+  });
+
+  it('能力标签列表允许换行，避免深度任务等标签挤出模型卡片', () => {
+    render(
+      <ModelSelectorPanel
+        modelsByProvider={[{ ...provider, models }]}
+        selectedModelId="search-model"
+        recentModelIds={[]}
+        allModels={models}
+        activeProvider="provider-a"
+        onSelect={vi.fn()}
+        onProviderChange={vi.fn()}
+      />,
     );
+
+    const searchCard = screen.getByRole('button', { name: /Search Model/ });
+    const deepTaskChip = within(searchCard).getByText('深度任务');
+
+    expect(deepTaskChip.closest('div')).toHaveClass('flex-wrap');
   });
 
   it('健康异常模型保留能力分并把不可用解释放到悬停提示', () => {
@@ -135,7 +151,6 @@ describe('ModelSelectorPanel', () => {
     expect(within(offlineCard).getByText('能力 0')).toBeInTheDocument();
     expect(screen.queryByText('不建议：当前不可用')).not.toBeInTheDocument();
     expect(screen.queryByText('模型已下线')).not.toBeInTheDocument();
-    expect(offlineCard).toHaveAttribute('title', expect.stringContaining('不建议：当前不可用'));
-    expect(offlineCard).toHaveAttribute('title', expect.stringContaining('模型已下线'));
+    expect(offlineCard).not.toHaveAttribute('title');
   });
 });

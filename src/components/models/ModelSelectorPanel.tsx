@@ -176,7 +176,6 @@ const ModelCard = memo(
       <button
         onClick={() => !unhealthy && onSelect()}
         disabled={unhealthy}
-        title={tooltip}
         className={cn(
           "text-left p-2.5 rounded-lg border transition-colors duration-100 w-full",
           unhealthy
@@ -202,7 +201,13 @@ const ModelCard = memo(
         <TooltipTrigger asChild>
           <span className="block">{card}</span>
         </TooltipTrigger>
-        <TooltipContent side="top" className="max-w-xs whitespace-pre-line text-xs">
+        <TooltipContent
+          side="right"
+          align="start"
+          sideOffset={8}
+          collisionPadding={12}
+          className="max-w-xs whitespace-pre-line text-xs"
+        >
           {tooltip}
         </TooltipContent>
       </Tooltip>

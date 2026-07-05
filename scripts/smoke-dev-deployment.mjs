@@ -5,6 +5,9 @@ import {
   buildSmokeSessionStorageFlags,
   buildSmokeUrl,
   isSameOrigin,
+  MODEL_CAPABILITY_LABEL_TEXTS,
+  MODEL_SELECTOR_PANEL_SELECTOR,
+  MODEL_SELECTOR_TRIGGER_SELECTOR,
   resolveChromiumExecutablePath,
   resolvePlaywrightChromium,
   resolvePlaywrightModuleSpecifier,
@@ -14,6 +17,27 @@ import {
 
 function serializeErrors(entries) {
   return entries.map((entry) => String(entry).slice(0, 500));
+}
+
+async function waitForCapabilityLabelIn(page, selector, timeout) {
+  await page.waitForFunction(
+    ({ labels, selector: targetSelector }) => {
+      const root = document.querySelector(targetSelector);
+      const text = root?.textContent || '';
+      return labels.some((label) => text.includes(label));
+    },
+    { labels: MODEL_CAPABILITY_LABEL_TEXTS, selector },
+    { timeout },
+  );
+}
+
+async function hasVisibleCapabilityLabel(scope) {
+  for (const label of MODEL_CAPABILITY_LABEL_TEXTS) {
+    if (await scope.getByText(label, { exact: true }).first().isVisible().catch(() => false)) {
+      return true;
+    }
+  }
+  return false;
 }
 
 async function dismissBlockingDialog(page) {
@@ -66,32 +90,23 @@ export async function runDeploymentSmoke({ baseUrl = resolveSmokeBaseUrl(), chro
     await page.goto(smokeUrl, { waitUntil: 'domcontentloaded', timeout: 30_000 });
     await page.waitForLoadState('networkidle', { timeout: 15_000 }).catch(() => {});
     await page.waitForSelector('[placeholder*="发消息给 Fusion AI"]', { timeout: 20_000 });
-    await page.waitForFunction(
-      () =>
-        Array.from(document.querySelectorAll('[title]')).some((node) =>
-          node.getAttribute('title')?.includes('可按问题需要自主联网搜索和读取关键来源'),
-        ),
-      undefined,
-      { timeout: 20_000 },
-    );
+    await page.waitForSelector(MODEL_SELECTOR_TRIGGER_SELECTOR, { timeout: 20_000 });
+    await waitForCapabilityLabelIn(page, MODEL_SELECTOR_TRIGGER_SELECTOR, 20_000);
     await dismissBlockingDialog(page);
 
-    const modelTrigger = page.locator(
-      'button[title*="可按问题需要自主联网搜索和读取关键来源"], [title*="可按问题需要自主联网搜索和读取关键来源"] button',
-    );
-    await modelTrigger.first().click({ timeout: 10_000 });
-    await page.getByText('可联网', { exact: true }).first().waitFor({ state: 'visible', timeout: 10_000 });
+    const modelTrigger = page.locator(MODEL_SELECTOR_TRIGGER_SELECTOR).first();
+    await modelTrigger.click({ timeout: 10_000 });
+    const modelPanel = page.locator(MODEL_SELECTOR_PANEL_SELECTOR).first();
+    await modelPanel.waitFor({ state: 'visible', timeout: 10_000 });
+    await waitForCapabilityLabelIn(page, MODEL_SELECTOR_PANEL_SELECTOR, 10_000);
 
     const result = {
       currentUrl: page.url(),
       targetUrl: smokeUrl,
       hasApplicationError: await page.getByText('Application error', { exact: false }).isVisible().catch(() => false),
       inputVisible: await page.locator('[placeholder*="发消息给 Fusion AI"]').first().isVisible(),
-      modelCapabilityTextVisible: await page
-        .locator('[title*="可按问题需要自主联网搜索和读取关键来源"]')
-        .first()
-        .isVisible(),
-      capabilityLabelsVisible: await page.getByText('可联网', { exact: true }).first().isVisible(),
+      modelCapabilityTextVisible: await hasVisibleCapabilityLabel(modelTrigger),
+      capabilityLabelsVisible: await hasVisibleCapabilityLabel(modelPanel),
       sameOrigin: isSameOrigin(page.url(), smokeUrl),
       consoleErrors: serializeErrors(consoleErrors),
       pageErrors: serializeErrors(pageErrors),
