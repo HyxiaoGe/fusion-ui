@@ -68,13 +68,15 @@ describe('build-and-deploy workflow 发布门禁', () => {
     expect(buildBlock).not.toContain('run: npm run build');
     expect(buildBlock).not.toContain('run: npm test');
     expect(buildBlock).toContain('"--target", "test"');
+    expect(buildBlock).toContain('"--no-cache-filter", "test"');
     expect(buildBlock).toContain('"--target", "production"');
   });
 
-  it('Windows Docker builds 复用项目级共享缓存', () => {
-    expect(buildBlock).toContain('docker-buildx-cache\\fusion-ui\\shared');
-    expect(buildBlock).toContain('type=local,src=$cacheRoot');
-    expect(buildBlock).toContain('type=local,dest=$cacheNext,mode=max');
-    expect(buildBlock).not.toContain('docker-buildx-cache\\fusion-ui\\$refKey');
+  it('Windows Docker builds 复用 Runner 专属 builder 内部缓存', () => {
+    expect(buildBlock).toContain("$runnerKey = '${{ runner.name }}' -replace");
+    expect(buildBlock).toContain('$builder = "fusion-ui-ci-$runnerKey"');
+    expect(buildBlock).not.toContain('type=local,src=');
+    expect(buildBlock).not.toContain('type=local,dest=');
+    expect(buildBlock).not.toContain('fusion-ui-buildx-cache-next');
   });
 });

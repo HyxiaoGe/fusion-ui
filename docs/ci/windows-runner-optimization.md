@@ -14,14 +14,16 @@ Dockerfile 提供以下 target：
 - `production-deps`：安装生产依赖。
 - `production`：组装最终运行镜像。
 
-GitHub Actions 的 Windows Job 先构建 `test` target。测试通过后再构建、加载并推送 `production` target。两个阶段共享 `docker-buildx-cache\fusion-ui\shared` 项目级本地缓存。
+GitHub Actions 的 Windows Job 先构建 `test` target。测试通过后再构建、加载并推送 `production` target。每台 Runner 使用以 Runner 名称派生的持久 Buildx builder，并复用其内部缓存，避免不同 Runner 或并发任务共同写入同一个本地缓存目录。
+
+测试构建显式使用 `--no-cache-filter test`。因此依赖和源码层仍可复用缓存，但 `RUN npm test` 每次 CI 都会实际执行，不会因为相同源码命中构建缓存而跳过 Vitest。
 
 ## 本地验证
 
 在仓库根目录执行：
 
 ```powershell
-docker buildx build --target test --progress=plain .
+docker buildx build --target test --no-cache-filter test --progress=plain .
 
 docker buildx build `
   --load `
@@ -53,6 +55,9 @@ docker stop fusion-ui-ci-local
 - PR #18 第一次真实 Windows 冷缓存运行：组合测试/构建 216 秒，ACR Push 34 秒，Windows Job 总时长约 270 秒，结果成功。
 
 真实收益以 Pull Request 分支在 `windows-build-01` 上连续两次运行的数据为准。
+
+- PR #18 热缓存运行：组合测试/构建 137 秒，ACR Push 7 秒，Windows Job 总时长约 163 秒，低于 3.5 分钟目标。
+- 该次运行后的 Dev Preview 拉取、重启、HTTP Smoke 和 CI/CD 指标步骤均成功。
 
 ## 回滚
 
