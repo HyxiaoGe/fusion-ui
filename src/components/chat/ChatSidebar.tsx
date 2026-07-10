@@ -58,6 +58,9 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ onNewChat, activeChatIdOverri
   const { models } = useAppSelector((state) => state.models);
   const dispatch = useAppDispatch();
   const themeMode = useAppSelector((state) => state.theme.mode);
+  const streamingConversationId = useAppSelector((state) =>
+    state.stream.isStreaming ? state.stream.conversationId : null
+  );
   const resolvedTheme = useResolvedTheme(themeMode);
   const isDark = resolvedTheme === 'dark';
   const modelNameById = React.useMemo(() => {
@@ -268,6 +271,7 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ onNewChat, activeChatIdOverri
         chats={displayChats}
         sortedAndGroupedChats={isSearchMode ? EMPTY_GROUPED_CONVERSATIONS : sortedAndGroupedChats}
         activeChatId={activeChatId}
+        streamingConversationId={streamingConversationId}
         modelNameById={modelNameById}
         isLoadingServerList={isLoadingList}
         isLoadingMoreServer={isLoadingMore}

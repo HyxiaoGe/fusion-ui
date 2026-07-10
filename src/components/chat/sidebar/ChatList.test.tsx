@@ -8,8 +8,8 @@ const { mockChatItemRender } = vi.hoisted(() => ({
 }));
 
 vi.mock("./ChatItem", () => ({
-  default: ({ chat }: { chat: ConversationListItem }) => {
-    mockChatItemRender(chat.id);
+  default: ({ chat, isStreaming }: { chat: ConversationListItem; isStreaming?: boolean }) => {
+    mockChatItemRender(chat.id, isStreaming);
     return <div data-testid="chat-item">{chat.title}</div>;
   },
 }));
@@ -36,6 +36,7 @@ describe("ChatList", () => {
       chats,
       sortedAndGroupedChats: [{ groupLabel: "今天", groupChats: chats }],
       activeChatId: "chat-a",
+      streamingConversationId: null as string | null,
       modelNameById: new Map([["model-a", "测试模型"]]),
       isLoadingServerList: false,
       isLoadingMoreServer: false,
@@ -64,5 +65,13 @@ describe("ChatList", () => {
     rerender(<ChatList {...stableProps} />);
 
     expect(mockChatItemRender).toHaveBeenCalledTimes(1);
+  });
+
+  it("只把当前流式会话标记为正在输出", () => {
+    const stableProps = createStableProps();
+
+    render(<ChatList {...stableProps} streamingConversationId="chat-a" />);
+
+    expect(mockChatItemRender).toHaveBeenCalledWith("chat-a", true);
   });
 });

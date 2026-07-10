@@ -9,12 +9,18 @@ const {
   mockUsePathname,
   mockDispatch,
   mockChatListProps,
+  selectorState,
 } = vi.hoisted(() => ({
   mockUseConversationList: vi.fn(),
   mockUseSidebarActions: vi.fn(),
   mockUsePathname: vi.fn(),
   mockDispatch: vi.fn(),
   mockChatListProps: vi.fn(),
+  selectorState: {
+    models: { models: [{ id: 'model-a', name: '测试模型' }] },
+    theme: { mode: 'system' },
+    stream: { isStreaming: false, conversationId: null as string | null },
+  },
 }));
 
 vi.mock('next/navigation', () => ({
@@ -32,10 +38,7 @@ vi.mock('@/hooks/useSidebarActions', () => ({
 vi.mock('@/redux/hooks', () => ({
   useAppDispatch: () => mockDispatch,
   useAppSelector: (selector: (state: any) => unknown) =>
-    selector({
-      models: { models: [{ id: 'model-a', name: '测试模型' }] },
-      theme: { mode: 'system' },
-    }),
+    selector(selectorState),
 }));
 
 vi.mock('@/lib/hooks/useResolvedTheme', () => ({
@@ -70,6 +73,7 @@ vi.mock('./sidebar/ChatList', () => ({
     containerRef,
     sentinelRef,
     searchQuery,
+    streamingConversationId,
   }: {
     chats: ConversationListItem[];
     sortedAndGroupedChats: { groupLabel: string; groupChats: ConversationListItem[] }[];
@@ -77,11 +81,13 @@ vi.mock('./sidebar/ChatList', () => ({
     containerRef: React.RefObject<HTMLDivElement | null>;
     sentinelRef?: React.RefObject<HTMLDivElement | null>;
     searchQuery?: string;
+    streamingConversationId?: string | null;
   }) => {
     mockChatListProps({
       chats,
       sortedAndGroupedChats,
       searchQuery,
+      streamingConversationId,
     });
 
     return (
@@ -157,6 +163,8 @@ describe('ChatSidebar', () => {
       setRenameValue: vi.fn(),
     });
     mockChatListProps.mockClear();
+    selectorState.stream.isStreaming = false;
+    selectorState.stream.conversationId = null;
     Element.prototype.scrollIntoView = vi.fn();
   });
 
@@ -312,5 +320,19 @@ describe('ChatSidebar', () => {
     render(<ChatSidebar onNewChat={vi.fn()} />);
 
     expect(screen.getByText('真实 ID 为 new 的会话')).toHaveAttribute('data-active', 'false');
+  });
+
+  it('只在流式状态有效时把会话 ID 传给列表', () => {
+    selectorState.stream.isStreaming = true;
+    selectorState.stream.conversationId = 'chat-a';
+
+    const { rerender } = render(<ChatSidebar onNewChat={vi.fn()} />);
+
+    expect(mockChatListProps.mock.calls.at(-1)?.[0].streamingConversationId).toBe('chat-a');
+
+    selectorState.stream.isStreaming = false;
+    rerender(<ChatSidebar onNewChat={vi.fn()} />);
+
+    expect(mockChatListProps.mock.calls.at(-1)?.[0].streamingConversationId).toBeNull();
   });
 });

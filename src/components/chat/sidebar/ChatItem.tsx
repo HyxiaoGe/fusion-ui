@@ -1,5 +1,6 @@
 import React from "react";
 import {
+  Loader2,
   MessageSquareIcon,
   MoreVerticalIcon,
   PencilIcon,
@@ -18,6 +19,7 @@ import type { ConversationListItem } from "@/hooks/useConversationList";
 interface ChatItemProps {
   chat: ConversationListItem;
   isActive: boolean;
+  isStreaming?: boolean;
   modelNameById: Map<string, string>;
   onSelectChat: (chatId: string) => void;
   onPrefetchChat?: (chatId: string) => void;
@@ -46,6 +48,7 @@ const HighlightedText: React.FC<{ text: string; query: string }> = ({ text, quer
 const ChatItem: React.FC<ChatItemProps> = ({
   chat,
   isActive,
+  isStreaming = false,
   modelNameById,
   onSelectChat,
   onPrefetchChat,
@@ -91,7 +94,20 @@ const ChatItem: React.FC<ChatItemProps> = ({
           </div>
         </div>
       </div>
-      <div className="ml-2">
+      <div className="relative ml-2 h-6 w-6 shrink-0">
+        {isStreaming ? (
+          <span
+            role="status"
+            aria-label={`${chat.title || "新对话"} 正在输出`}
+            className="pointer-events-none absolute inset-0 flex items-center justify-center text-primary transition-opacity group-hover:opacity-0"
+          >
+            <Loader2
+              size={14}
+              className="animate-spin motion-reduce:animate-none"
+              aria-hidden="true"
+            />
+          </span>
+        ) : null}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button

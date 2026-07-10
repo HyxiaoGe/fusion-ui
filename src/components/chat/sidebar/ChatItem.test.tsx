@@ -57,4 +57,23 @@ describe("ChatItem", () => {
     expect(onPrefetchChat).toHaveBeenCalledTimes(2);
     expect(onSelectChat).toHaveBeenCalledWith("chat-a");
   });
+
+  it("流式输出时在右侧显示尊重减少动态偏好的旋转状态", () => {
+    const { rerender, container } = render(
+      <ChatItem
+        {...baseProps}
+        isStreaming
+      />
+    );
+
+    const status = screen.getByRole("status", { name: "待预取对话 正在输出" });
+    expect(status).toBeInTheDocument();
+    expect(status).toHaveClass("pointer-events-none");
+    expect(status.querySelector("svg")).toHaveClass("animate-spin", "motion-reduce:animate-none");
+    expect(container.querySelector('[title="更多操作"]')).toHaveClass("group-hover:opacity-60");
+
+    rerender(<ChatItem {...baseProps} isStreaming={false} />);
+
+    expect(screen.queryByRole("status", { name: "待预取对话 正在输出" })).toBeNull();
+  });
 });

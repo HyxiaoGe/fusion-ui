@@ -27,6 +27,7 @@ const {
   streamState,
   lastReadyConversationSnapshotState,
   transientCompletionState,
+  filesPanelRenderMock,
 } = vi.hoisted(() => ({
   currentRoute: { chatId: 'chat-a' },
   conversationsById: new Map<string, Conversation>(),
@@ -45,6 +46,7 @@ const {
   transientCompletionState: {
     visible: false,
   },
+  filesPanelRenderMock: vi.fn(),
   dispatchMock: vi.fn(),
   routerPushMock: vi.fn(),
   chatInputMountMock: vi.fn(),
@@ -161,6 +163,7 @@ vi.mock('@/components/chat/ConversationFilesPanel', () => ({
     if (!props.open) {
       return null;
     }
+    filesPanelRenderMock(currentRoute.chatId);
 
     return (
       <div
@@ -398,6 +401,7 @@ describe('ChatPage 会话切换体验', () => {
     chatInputUnmountMock.mockClear();
     chatInputRenderMock.mockClear();
     chatMessageListMock.mockClear();
+    filesPanelRenderMock.mockClear();
     retryHydrationMock.mockClear();
     sendMessageMock.mockClear();
     stopStreamingMock.mockClear();
@@ -751,6 +755,67 @@ describe('ChatPage 会话切换体验', () => {
     await waitFor(() => {
       expect(screen.queryByRole('button', { name: '打开会话资料' })).toBeNull();
     });
+  });
+
+  it('切换到资料仍在加载的空会话时不闪现资料入口', () => {
+    conversationsById.set('chat-a', createConversation('chat-a', [textMessage('message-a')]));
+    conversationsById.set('chat-b', createConversation('chat-b', [textMessage('message-b')]));
+    hydrationById.set('chat-a', { view: 'ready' });
+    hydrationById.set('chat-b', { view: 'ready' });
+    useConversationFilesState.files = [
+      {
+        id: 'file-a',
+        filename: 'chat-a.png',
+        mimetype: 'image/png',
+        size: 100,
+        created_at: '2026-07-03T10:00:00Z',
+        status: 'processed',
+        error_message: null,
+      },
+    ];
+
+    const { rerender } = render(<ChatPage />);
+
+    expect(screen.getByRole('button', { name: '打开会话资料' })).toBeInTheDocument();
+
+    currentRoute.chatId = 'chat-b';
+    useConversationFilesState.files = [];
+    useConversationFilesState.isLoading = true;
+    rerender(<ChatPage />);
+
+    expect(screen.queryByRole('button', { name: '打开会话资料' })).toBeNull();
+  });
+
+  it('资料面板打开时切换会话也不会渲染上一会话的入口或面板', () => {
+    conversationsById.set('chat-a', createConversation('chat-a', [textMessage('message-a')]));
+    conversationsById.set('chat-b', createConversation('chat-b', [textMessage('message-b')]));
+    hydrationById.set('chat-a', { view: 'ready' });
+    hydrationById.set('chat-b', { view: 'ready' });
+    useConversationFilesState.files = [
+      {
+        id: 'file-a',
+        filename: 'chat-a.png',
+        mimetype: 'image/png',
+        size: 100,
+        created_at: '2026-07-03T10:00:00Z',
+        status: 'processed',
+        error_message: null,
+      },
+    ];
+
+    const { rerender } = render(<ChatPage />);
+    fireEvent.click(screen.getByRole('button', { name: '打开会话资料' }));
+    expect(filesPanelRenderMock).toHaveBeenCalledWith('chat-a');
+    filesPanelRenderMock.mockClear();
+
+    currentRoute.chatId = 'chat-b';
+    useConversationFilesState.files = [];
+    useConversationFilesState.isLoading = true;
+    rerender(<ChatPage />);
+
+    expect(filesPanelRenderMock).not.toHaveBeenCalledWith('chat-b');
+    expect(screen.queryByTestId('conversation-files-panel')).toBeNull();
+    expect(screen.queryByRole('button', { name: '打开会话资料' })).toBeNull();
   });
 
   it('再次点击会话资料按钮时关闭资料面板', async () => {

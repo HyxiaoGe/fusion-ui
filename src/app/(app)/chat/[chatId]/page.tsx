@@ -94,7 +94,8 @@ export default function ChatPage() {
   const latestChatIdRef = useRef(chatId);
   latestChatIdRef.current = chatId;
   const [confirmDialogOpen, setConfirmDialogOpen] = useState(false);
-  const [filesPanelOpen, setFilesPanelOpen] = useState(false);
+  const [filesPanelConversationId, setFilesPanelConversationId] = useState<string | null>(null);
+  const filesPanelOpen = filesPanelConversationId === chatId;
   const [conversationAttachmentState, setConversationAttachmentState] = useState<ConversationAttachmentState>({
     chatId,
     attachments: [],
@@ -135,7 +136,7 @@ export default function ChatPage() {
   }, [chatId, clearQuestions]);
 
   useEffect(() => {
-    setFilesPanelOpen(consumeConversationFilesPanelOpen(chatId));
+    setFilesPanelConversationId(consumeConversationFilesPanelOpen(chatId) ? chatId : null);
     setConversationAttachmentState((current) => {
       if (current.chatId === chatId && current.attachments.length === 0) {
         return current;
@@ -309,7 +310,7 @@ export default function ChatPage() {
   const handleSendMessage = useCallback((content: string, attachments?: FileAttachment[]) => {
     clearQuestions();
     if (attachments && attachments.length > 0) {
-      setFilesPanelOpen(true);
+      setFilesPanelConversationId(chatId);
     }
     return sendMessage(
       content,
@@ -379,7 +380,6 @@ export default function ChatPage() {
     filesPanelOpen ||
     conversationFiles.length > 0 ||
     conversationAttachments.length > 0 ||
-    conversationFilesLoading ||
     Boolean(conversationFilesError);
 
   const addConversationAttachment = useCallback((attachment: ConversationComposerAttachment) => {
@@ -638,7 +638,7 @@ export default function ChatPage() {
                   className="h-8 gap-1.5"
                   aria-label={filesPanelOpen ? '关闭会话资料' : '打开会话资料'}
                   aria-expanded={filesPanelOpen}
-                  onClick={() => setFilesPanelOpen((open) => !open)}
+                  onClick={() => setFilesPanelConversationId((current) => current === chatId ? null : chatId)}
                 >
                   <Files className="h-4 w-4" aria-hidden="true" />
                   资料
@@ -668,7 +668,7 @@ export default function ChatPage() {
               isLoading={conversationFilesLoading}
               error={conversationFilesError}
               selectedFileIds={selectedConversationFileIds}
-              onClose={() => setFilesPanelOpen(false)}
+              onClose={() => setFilesPanelConversationId(null)}
               onRefresh={refreshConversationFiles}
               onAddFile={handleAddConversationFile}
               onDeleteFile={handleDeleteConversationFile}
