@@ -645,7 +645,230 @@ describe('ChatInput', () => {
         },
       },
     ];
-    let resolveUplo…1895 tokens truncated…ile-stale' }]);
+    let resolveUpload: (value: Array<{ file_id: string; thumbnail_url?: string }>) => void = () => {};
+    uploadFilesMock.mockImplementation(
+      () =>
+        new Promise<Array<{ file_id: string; thumbnail_url?: string }>>((resolve) => {
+          resolveUpload = resolve;
+        })
+    );
+    const onUploadComplete = vi.fn();
+
+    const { container } = render(
+      <ChatInput onSendMessage={vi.fn()} onUploadComplete={onUploadComplete} activeChatId="chat-1" />
+    );
+    const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement;
+    const file = new File(['image'], 'cancel-me.png', { type: 'image/png' });
+
+    fireEvent.change(fileInput, {
+      target: {
+        files: [file],
+      },
+    });
+
+    await waitFor(() => {
+      expect(uploadFilesMock).toHaveBeenCalledWith('qwen', 'model-1', 'chat-1', [file]);
+      expect(screen.getByRole('button', { name: '移除 cancel-me.png' })).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: '移除 cancel-me.png' }));
+    expect(screen.queryByText('cancel-me.png')).toBeNull();
+
+    await act(async () => {
+      resolveUpload([{ file_id: 'file-cancelled', thumbnail_url: '/cancelled-thumb.png' }]);
+    });
+
+    expect(onUploadComplete).not.toHaveBeenCalled();
+    expect(addFileIdMock).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        fileId: 'file-cancelled',
+      })
+    );
+    expect(updateFileStatusMock).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        fileId: 'file-cancelled',
+      })
+    );
+    expect(deleteFileMock).toHaveBeenCalledWith('file-cancelled');
+  });
+
+  it('does not surface an upload failure after the user removes the in-flight attachment', async () => {
+    currentState.auth.isAuthenticated = true;
+    currentState.models.selectedModelId = 'model-1';
+    currentState.models.models = [
+      {
+        id: 'model-1',
+        provider: 'qwen',
+        capabilities: {
+          vision: true,
+          deepThinking: true,
+        },
+      },
+    ];
+    let rejectUpload: (reason?: unknown) => void = () => {};
+    uploadFilesMock.mockImplementation(
+      () =>
+        new Promise<Array<{ file_id: string }>>((_resolve, reject) => {
+          rejectUpload = reject;
+        })
+    );
+
+    const { container } = render(<ChatInput onSendMessage={vi.fn()} activeChatId="chat-1" />);
+    const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement;
+    const file = new File(['image'], 'abort-me.png', { type: 'image/png' });
+
+    fireEvent.change(fileInput, {
+      target: {
+        files: [file],
+      },
+    });
+
+    await waitFor(() => {
+      expect(uploadFilesMock).toHaveBeenCalledWith('qwen', 'model-1', 'chat-1', [file]);
+      expect(screen.getByRole('button', { name: '移除 abort-me.png' })).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: '移除 abort-me.png' }));
+
+    await act(async () => {
+      rejectUpload(new Error('signal is aborted without reason'));
+    });
+
+    expect(screen.queryByText('abort-me.png')).toBeNull();
+    expect(toastMock).not.toHaveBeenCalled();
+  });
+
+  it('allows the same file to be uploaded again after cancelling the first in-flight upload', async () => {
+    currentState.auth.isAuthenticated = true;
+    currentState.models.selectedModelId = 'model-1';
+    currentState.models.models = [
+      {
+        id: 'model-1',
+        provider: 'qwen',
+        capabilities: {
+          vision: true,
+          deepThinking: true,
+        },
+      },
+    ];
+    const uploadResolvers: Array<(value: Array<{ file_id: string; thumbnail_url?: string }>) => void> = [];
+    uploadFilesMock.mockImplementation(
+      () =>
+        new Promise<Array<{ file_id: string; thumbnail_url?: string }>>((resolve) => {
+          uploadResolvers.push(resolve);
+        })
+    );
+    const onUploadComplete = vi.fn();
+
+    const { container } = render(
+      <ChatInput onSendMessage={vi.fn()} onUploadComplete={onUploadComplete} activeChatId="chat-1" />
+    );
+    const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement;
+    const file = new File(['image'], 'retry-after-cancel.png', { type: 'image/png' });
+
+    fireEvent.change(fileInput, {
+      target: {
+        files: [file],
+      },
+    });
+
+    await waitFor(() => {
+      expect(uploadFilesMock).toHaveBeenCalledTimes(1);
+      expect(screen.getByRole('button', { name: '移除 retry-after-cancel.png' })).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByRole('button', { name: '移除 retry-after-cancel.png' }));
+    await waitFor(() => {
+      expect(screen.queryByText('retry-after-cancel.png')).toBeNull();
+    });
+
+    fireEvent.change(fileInput, {
+      target: {
+        files: [file],
+      },
+    });
+
+    await waitFor(() => {
+      expect(uploadFilesMock).toHaveBeenCalledTimes(2);
+      expect(screen.getByRole('button', { name: '移除 retry-after-cancel.png' })).toBeInTheDocument();
+    });
+
+    await act(async () => {
+      uploadResolvers[1]([{ file_id: 'file-second', thumbnail_url: '/second-thumb.png' }]);
+    });
+
+    await waitFor(() => {
+      expect(onUploadComplete).toHaveBeenCalledTimes(1);
+      expect(onUploadComplete).toHaveBeenLastCalledWith(
+        [
+          expect.objectContaining({
+            fileId: 'file-second',
+            filename: 'retry-after-cancel.png',
+            mimetype: 'image/png',
+            thumbnailUrl: '/second-thumb.png',
+            status: 'processed',
+          }),
+        ],
+        'chat-1'
+      );
+    });
+
+    await act(async () => {
+      uploadResolvers[0]([{ file_id: 'file-first', thumbnail_url: '/first-thumb.png' }]);
+    });
+
+    expect(onUploadComplete).toHaveBeenCalledTimes(1);
+    expect(addFileIdMock).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        fileId: 'file-first',
+      })
+    );
+    expect(deleteFileMock).toHaveBeenCalledWith('file-first');
+  });
+
+  it('ignores an upload result when reset switches to another chat before it resolves', async () => {
+    currentState.auth.isAuthenticated = true;
+    currentState.models.selectedModelId = 'model-1';
+    currentState.models.models = [
+      {
+        id: 'model-1',
+        provider: 'qwen',
+        capabilities: {
+          vision: true,
+          deepThinking: true,
+        },
+      },
+    ];
+    let resolveUpload: (value: Array<{ file_id: string }>) => void = () => {};
+    uploadFilesMock.mockImplementation(
+      () =>
+        new Promise<Array<{ file_id: string }>>((resolve) => {
+          resolveUpload = resolve;
+        })
+    );
+
+    const { container, rerender } = render(
+      <ChatInput onSendMessage={vi.fn()} activeChatId="chat-a" resetSignal="chat-a" />
+    );
+    const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement;
+    const file = new File(['image'], 'pending.png', { type: 'image/png' });
+
+    fireEvent.change(fileInput, {
+      target: {
+        files: [file],
+      },
+    });
+
+    await waitFor(() => {
+      expect(uploadFilesMock).toHaveBeenCalledWith('qwen', 'model-1', 'chat-a', [file]);
+    });
+
+    rerender(<ChatInput onSendMessage={vi.fn()} activeChatId="chat-b" resetSignal="chat-b" />);
+    addFileIdMock.mockClear();
+    updateFileStatusMock.mockClear();
+    startPollingFileStatusMock.mockClear();
+
+    await act(async () => {
+      resolveUpload([{ file_id: 'file-stale' }]);
     });
 
     expect(addFileIdMock).not.toHaveBeenCalledWith(
