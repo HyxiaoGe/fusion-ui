@@ -50,6 +50,7 @@ docker stop fusion-ui-ci-local
 - 新 `production` target 首次构建和加载：约 90 秒。
 - 在源码/工作流变更导致测试和 Next.js 构建层失效、但依赖层命中的情况下，`test` 为 37.5 秒、`production` 为 69.4 秒，合计约 107 秒。
 - 新 production 容器 HTTP Smoke：状态码 200。
+- PR #18 第一次真实 Windows 冷缓存运行：组合测试/构建 216 秒，ACR Push 34 秒，Windows Job 总时长约 270 秒，结果成功。
 
 真实收益以 Pull Request 分支在 `windows-build-01` 上连续两次运行的数据为准。
 
