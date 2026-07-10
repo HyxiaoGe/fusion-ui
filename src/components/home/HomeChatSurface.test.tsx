@@ -92,6 +92,8 @@ vi.mock('@/redux/hooks', () => ({
       },
       auth: {
         isAuthenticated: true,
+        user: { id: 'user-a' },
+        token: 'token-a',
       },
     }),
 }));
@@ -124,8 +126,8 @@ vi.mock('@/components/lazy/LazyComponents', () => ({
 }));
 
 vi.mock('@/hooks/useConversationFiles', () => ({
-  useConversationFiles: (conversationId: string | null) => {
-    useConversationFilesMock(conversationId);
+  useConversationFiles: (conversationId: string | null, options?: unknown) => {
+    useConversationFilesMock(conversationId, options);
     return useConversationFilesState;
   },
 }));
@@ -485,9 +487,13 @@ describe('HomeChatSurface 会话资料交互', () => {
     fireEvent.click(screen.getByRole('button', { name: '上传已处理资料' }));
 
     await waitFor(() => {
-      expect(useConversationFilesMock).toHaveBeenLastCalledWith('pending-chat-1');
+      expect(useConversationFilesMock).toHaveBeenLastCalledWith(
+        'pending-chat-1',
+        { enabled: true, sessionKey: 'user-a' },
+      );
     });
     expect(useConversationFilesState.refresh).toHaveBeenCalledTimes(1);
+    expect(useConversationFilesState.refresh).toHaveBeenLastCalledWith('pending-chat-1');
     expect(screen.queryByTestId('conversation-files-panel')).toBeNull();
     expect(screen.getByTestId('chat-input')).toHaveAttribute('data-attachment-count', '1');
   });
@@ -503,7 +509,7 @@ describe('HomeChatSurface 会话资料交互', () => {
     await waitFor(() => {
       expect(deleteFileMock).toHaveBeenCalledWith('file-uploaded');
     });
-    expect(useConversationFilesState.removeFile).toHaveBeenCalledWith('file-uploaded');
+    expect(useConversationFilesState.removeFile).toHaveBeenCalledWith('file-uploaded', 'pending-chat-1');
     await waitFor(() => {
       expect(screen.getByTestId('chat-input')).toHaveAttribute('data-attachment-count', '0');
     });
@@ -640,7 +646,7 @@ describe('HomeChatSurface 会话资料交互', () => {
     await waitFor(() => {
       expect(deleteFileMock).toHaveBeenCalledWith('file-delete');
     });
-    expect(useConversationFilesState.removeFile).toHaveBeenCalledWith('file-delete');
+    expect(useConversationFilesState.removeFile).toHaveBeenCalledWith('file-delete', 'new-chat');
     await waitFor(() => {
       expect(screen.getByTestId('chat-input')).toHaveAttribute('data-attachment-count', '0');
     });

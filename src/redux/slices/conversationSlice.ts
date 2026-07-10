@@ -6,6 +6,48 @@ import type {
   Pagination,
 } from '@/types/conversation';
 
+export interface ConversationMetadataSnapshot {
+  title: string;
+  model_id: string;
+  updatedAt: number;
+}
+
+export type ConversationListRequestMetadata = Record<string, ConversationMetadataSnapshot>;
+
+function mergeListConversation(
+  existing: Conversation,
+  incoming: Conversation,
+  requestMetadata?: ConversationListRequestMetadata
+): Conversation {
+  if (requestMetadata === undefined) {
+    return {
+      ...existing,
+      title: incoming.title,
+      updatedAt: incoming.updatedAt,
+      model_id: incoming.model_id,
+      createdAt: incoming.createdAt,
+    };
+  }
+
+  const existedAtRequestStart = Object.prototype.hasOwnProperty.call(
+    requestMetadata,
+    incoming.id
+  );
+  if (!existedAtRequestStart) {
+    // 请求发出后才在本地创建/物化的同 ID 会话，远端旧分页不得覆盖其元数据。
+    return existing;
+  }
+
+  const requestSnapshot = requestMetadata[incoming.id];
+  return {
+    ...existing,
+    title: existing.title !== requestSnapshot.title ? existing.title : incoming.title,
+    model_id: existing.model_id !== requestSnapshot.model_id ? existing.model_id : incoming.model_id,
+    updatedAt: existing.updatedAt !== requestSnapshot.updatedAt ? existing.updatedAt : incoming.updatedAt,
+    createdAt: incoming.createdAt,
+  };
+}
+
 export interface ConversationState {
   byId: Record<string, Conversation>;
   lastReadyConversationSnapshot: {
@@ -18,6 +60,9 @@ export interface ConversationState {
   isLoadingMore: boolean;
   listError: string | null;
   conversationListVersion: number;
+  conversationListEpoch: number;
+  conversationListDirtyIds: string[];
+  conversationListDirtyRevisions: Record<string, number>;
   hydrationStatus: Record<string, HydrationStatus>;
   hydrationError: Record<string, string>;
   pendingConversationId: string | null;
@@ -38,6 +83,9 @@ const initialState: ConversationState = {
   isLoadingMore: false,
   listError: null,
   conversationListVersion: 0,
+  conversationListEpoch: 0,
+  conversationListDirtyIds: [],
+  conversationListDirtyRevisions: {},
   hydrationStatus: {},
   hydrationError: {},
   pendingConversationId: null,
@@ -55,21 +103,44 @@ const conversationSlice = createSlice({
   reducers: {
     setConversationList(
       state,
-      action: PayloadAction<{ conversations: Conversation[]; pagination: Pagination }>
+      action: PayloadAction<{
+        conversations: Conversation[];
+        pagination: Pagination;
+        requestMetadata?: ConversationListRequestMetadata;
+        requestListIds?: string[];
+      }>
     ) {
-      const { conversations, pagination } = action.payload;
-      state.listIds = conversations.map((conversation) => conversation.id);
-      conversations.forEach((conversation) => {
+      const { conversations, pagination, requestMetadata, requestListIds } = action.payload;
+      let visibleConversations = conversations;
+      if (requestListIds) {
+        const requestIdSet = new Set(requestListIds);
+        const currentIdSet = new Set(state.listIds);
+        const addedAfterRequest = state.listIds.filter((id) => !requestIdSet.has(id));
+        const addedAfterRequestSet = new Set(addedAfterRequest);
+        const removedAfterRequestSet = new Set(
+          requestListIds.filter((id) => !currentIdSet.has(id))
+        );
+        visibleConversations = conversations.filter(
+          (conversation) => !removedAfterRequestSet.has(conversation.id)
+        );
+        state.listIds = [
+          ...addedAfterRequest,
+          ...visibleConversations
+            .map((conversation) => conversation.id)
+            .filter((id) => !addedAfterRequestSet.has(id)),
+        ];
+      } else {
+        state.listIds = conversations.map((conversation) => conversation.id);
+      }
+      visibleConversations.forEach((conversation) => {
         const existing = state.byId[conversation.id];
         if (existing) {
           // 只更新元数据，永远不覆盖已有消息（保留 hydrated messages）
-          state.byId[conversation.id] = {
-            ...existing,
-            title: conversation.title,
-            updatedAt: conversation.updatedAt,
-            model_id: conversation.model_id,
-            createdAt: conversation.createdAt,
-          };
+          state.byId[conversation.id] = mergeListConversation(
+            existing,
+            conversation,
+            requestMetadata
+          );
         } else {
           state.byId[conversation.id] = conversation;
         }
@@ -80,23 +151,33 @@ const conversationSlice = createSlice({
     },
     appendConversationList(
       state,
-      action: PayloadAction<{ conversations: Conversation[]; pagination: Pagination }>
+      action: PayloadAction<{
+        conversations: Conversation[];
+        pagination: Pagination;
+        requestMetadata?: ConversationListRequestMetadata;
+        requestListIds?: string[];
+      }>
     ) {
-      const { conversations, pagination } = action.payload;
-      conversations.forEach((conversation) => {
+      const { conversations, pagination, requestMetadata, requestListIds } = action.payload;
+      const currentIdSet = new Set(state.listIds);
+      const removedAfterRequestSet = new Set(
+        requestListIds?.filter((id) => !currentIdSet.has(id)) ?? []
+      );
+      const visibleConversations = conversations.filter(
+        (conversation) => !removedAfterRequestSet.has(conversation.id)
+      );
+      visibleConversations.forEach((conversation) => {
         if (!state.listIds.includes(conversation.id)) {
           state.listIds.push(conversation.id);
         }
         const existing = state.byId[conversation.id];
         if (existing) {
           // 只更新元数据，保留本地消息
-          state.byId[conversation.id] = {
-            ...existing,
-            title: conversation.title,
-            updatedAt: conversation.updatedAt,
-            model_id: conversation.model_id,
-            createdAt: conversation.createdAt,
-          };
+          state.byId[conversation.id] = mergeListConversation(
+            existing,
+            conversation,
+            requestMetadata
+          );
         } else {
           state.byId[conversation.id] = conversation;
         }
@@ -104,8 +185,33 @@ const conversationSlice = createSlice({
       state.pagination = pagination;
       state.isLoadingMore = false;
     },
-    requestConversationListRefresh(state) {
+    requestConversationListRefresh(state, action: PayloadAction<string>) {
+      if (!state.conversationListDirtyIds.includes(action.payload)) {
+        state.conversationListDirtyIds.push(action.payload);
+      }
       state.conversationListVersion += 1;
+      state.conversationListDirtyRevisions[action.payload] = state.conversationListVersion;
+    },
+    acknowledgeConversationListRefresh(
+      state,
+      action: PayloadAction<Array<{ id: string; revision: number }>>
+    ) {
+      const acknowledgedRevisions = new Map(
+        action.payload.map((item) => [item.id, item.revision])
+      );
+      state.conversationListDirtyIds = state.conversationListDirtyIds.filter(
+        (id) => {
+          const acknowledgedRevision = acknowledgedRevisions.get(id);
+          if (
+            acknowledgedRevision === undefined ||
+            state.conversationListDirtyRevisions[id] !== acknowledgedRevision
+          ) {
+            return true;
+          }
+          delete state.conversationListDirtyRevisions[id];
+          return false;
+        }
+      );
     },
     updateConversationsMetadata(
       state,
@@ -114,18 +220,37 @@ const conversationSlice = createSlice({
         title: string;
         model_id: string;
         updatedAt: number;
+        requestMetadata?: ConversationMetadataSnapshot | null;
       }>>
     ) {
       // 仅更新 byId 中已存在的对话的元数据，不动 listIds / pagination / messages
       action.payload.forEach((item) => {
         const existing = state.byId[item.id];
         if (!existing) return;  // 不存在的 ID 直接忽略
+        const preserveLocalMetadata = item.requestMetadata === null;
+        const titleChangedAfterRequest = Boolean(
+          item.requestMetadata && existing.title !== item.requestMetadata.title
+        );
+        const modelChangedAfterRequest = Boolean(
+          item.requestMetadata && existing.model_id !== item.requestMetadata.model_id
+        );
+        const updatedAtChangedAfterRequest = Boolean(
+          item.requestMetadata && existing.updatedAt !== item.requestMetadata.updatedAt
+        );
         state.byId[item.id] = {
           ...existing,
-          title: item.title,
-          model_id: item.model_id,
-          updatedAt: item.updatedAt,
+          title: preserveLocalMetadata || titleChangedAfterRequest ? existing.title : item.title,
+          model_id: preserveLocalMetadata || modelChangedAfterRequest ? existing.model_id : item.model_id,
+          updatedAt: preserveLocalMetadata || updatedAtChangedAfterRequest ? existing.updatedAt : item.updatedAt,
         };
+      });
+    },
+    resetConversationListForAuthChange(state) {
+      const { reasoningEnabled, conversationListEpoch } = state;
+      Object.assign(state, {
+        ...initialState,
+        reasoningEnabled,
+        conversationListEpoch: conversationListEpoch + 1,
       });
     },
     setSearchLoading(state, action: PayloadAction<boolean>) {
@@ -386,13 +511,18 @@ const conversationSlice = createSlice({
       state.globalError = action.payload;
     },
     resetConversationState(state) {
-      const { reasoningEnabled } = state;
-      Object.assign(state, { ...initialState, reasoningEnabled });
+      const { reasoningEnabled, conversationListEpoch } = state;
+      Object.assign(state, {
+        ...initialState,
+        reasoningEnabled,
+        conversationListEpoch: conversationListEpoch + 1,
+      });
     },
   },
 });
 
 export const {
+  acknowledgeConversationListRefresh,
   appendConversationList,
   appendMessage,
   clearConversationMessages,
@@ -402,6 +532,7 @@ export const {
   removeConversation,
   removeMessage,
   requestConversationListRefresh,
+  resetConversationListForAuthChange,
   resetConversationState,
   setAllConversations,
   setAnimatingTitleId,

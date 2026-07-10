@@ -135,20 +135,8 @@ describe('FileStatusPoller', () => {
     await vi.runAllTimersAsync();
 
     expect(getFileStatusMock).toHaveBeenCalledTimes(2);
-    expect(firstDispatch).toHaveBeenCalledTimes(1);
-    expect(firstDispatch).toHaveBeenCalledWith({
-      type: 'fileUpload/updateFileStatus',
-      payload: {
-        fileId: 'file-3',
-        chatId: 'chat-a',
-        status: 'processed',
-        errorMessage: undefined,
-      },
-    });
-    expect(firstComplete).toHaveBeenCalledWith({
-      success: true,
-      errorMessage: undefined,
-    });
+    expect(firstDispatch).not.toHaveBeenCalled();
+    expect(firstComplete).not.toHaveBeenCalled();
     expect(secondDispatch).toHaveBeenCalledWith({
       type: 'fileUpload/updateFileStatus',
       payload: {
@@ -192,5 +180,32 @@ describe('FileStatusPoller', () => {
         errorMessage: undefined,
       },
     });
+  });
+
+  it('drops a late status response when the producer session is no longer active', async () => {
+    const dispatch = vi.fn();
+    const onComplete = vi.fn();
+    let active = true;
+    let resolveStatus!: (value: { status: string; error_message?: string }) => void;
+    getFileStatusMock.mockReturnValue(new Promise((resolve) => {
+      resolveStatus = resolve;
+    }));
+
+    const poller = new FileStatusPoller({
+      fileId: 'file-stale',
+      chatId: 'chat-a',
+      dispatch,
+      onComplete,
+      isActive: () => active,
+    });
+    poller.start();
+
+    active = false;
+    resolveStatus({ status: 'processed' });
+    await vi.runAllTimersAsync();
+
+    expect(updateFileStatusMock).not.toHaveBeenCalled();
+    expect(dispatch).not.toHaveBeenCalled();
+    expect(onComplete).not.toHaveBeenCalled();
   });
 });

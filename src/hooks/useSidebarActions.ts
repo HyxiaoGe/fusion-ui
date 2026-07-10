@@ -141,7 +141,7 @@ export function useSidebarActions() {
         dispatch(updateConversationTitle({ id: conversationId, title }));
         dispatch(setAnimatingTitleId(conversationId));
         setTimeout(() => dispatch(setAnimatingTitleId(null)), title.length * 200 + 1000);
-        dispatch(requestConversationListRefresh());
+        dispatch(requestConversationListRefresh(conversationId));
         toast({ message: '标题已更新', type: 'success' });
       } catch {
         toast({ message: '生成标题失败，请重试', type: 'error' });

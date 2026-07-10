@@ -5,7 +5,9 @@ import reducer, {
   materializeConversation,
   mergeHydratedConversation,
   removeConversation,
+  requestConversationListRefresh,
   resetConversationState,
+  acknowledgeConversationListRefresh,
   setConversationList,
   setHydrationStatus,
   setLastReadyConversationSnapshot,
@@ -37,6 +39,31 @@ function textMessage(id: string): Message {
 }
 
 describe('conversationSlice', () => {
+  it('会话列表 dirty id 去重排队，并只确认已完成的 id', () => {
+    let state = reducer(undefined, requestConversationListRefresh('conv-1'));
+    state = reducer(state, requestConversationListRefresh('conv-1'));
+    state = reducer(state, requestConversationListRefresh('conv-2'));
+
+    expect(state.conversationListDirtyIds).toEqual(['conv-1', 'conv-2']);
+    expect(state.conversationListVersion).toBe(3);
+    expect(state.conversationListDirtyRevisions).toEqual({
+      'conv-1': 2,
+      'conv-2': 3,
+    });
+
+    state = reducer(
+      state,
+      acknowledgeConversationListRefresh([{ id: 'conv-1', revision: 1 }])
+    );
+    expect(state.conversationListDirtyIds).toEqual(['conv-1', 'conv-2']);
+
+    state = reducer(
+      state,
+      acknowledgeConversationListRefresh([{ id: 'conv-1', revision: 2 }])
+    );
+    expect(state.conversationListDirtyIds).toEqual(['conv-2']);
+  });
+
   it('迟到的会话详情响应保留请求期间新增的本地消息并标记水合完成', () => {
     let state = reducer(
       undefined,
@@ -168,6 +195,9 @@ describe('conversationSlice', () => {
       isLoadingMore: false,
       listError: null,
       conversationListVersion: 0,
+      conversationListEpoch: 0,
+      conversationListDirtyIds: [],
+      conversationListDirtyRevisions: {},
       hydrationStatus: {},
       hydrationError: {},
       pendingConversationId: null,
@@ -224,6 +254,9 @@ describe('conversationSlice', () => {
       isLoadingMore: false,
       listError: null,
       conversationListVersion: 5,
+      conversationListEpoch: 0,
+      conversationListDirtyIds: [],
+      conversationListDirtyRevisions: {},
       hydrationStatus: {},
       hydrationError: {},
       pendingConversationId: null,
@@ -270,6 +303,9 @@ describe('conversationSlice', () => {
       isLoadingMore: false,
       listError: null,
       conversationListVersion: 0,
+      conversationListEpoch: 0,
+      conversationListDirtyIds: [],
+      conversationListDirtyRevisions: {},
       hydrationStatus: {},
       hydrationError: {},
       pendingConversationId: 'temp',
@@ -330,13 +366,20 @@ describe('conversationSlice', () => {
     expect(nextState.lastReadyConversationSnapshot).toBeNull();
   });
 
-  it('resetConversationState clears the ready snapshot', () => {
+  it('resetConversationState clears snapshot/dirty revisions and advances request epoch', () => {
     const messages = [textMessage('m1')];
-    const nextState = reducer(
+    const stateBeforeReset = reducer(
       reducer(undefined, setLastReadyConversationSnapshot({ chatId: 'conv-1', messages })),
+      requestConversationListRefresh('conv-1')
+    );
+    const nextState = reducer(
+      stateBeforeReset,
       resetConversationState()
     );
 
     expect(nextState.lastReadyConversationSnapshot).toBeNull();
+    expect(nextState.conversationListDirtyIds).toEqual([]);
+    expect(nextState.conversationListDirtyRevisions).toEqual({});
+    expect(nextState.conversationListEpoch).toBe(stateBeforeReset.conversationListEpoch + 1);
   });
 });

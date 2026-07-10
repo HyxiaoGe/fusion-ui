@@ -107,6 +107,10 @@ export default function HomeChatSurface() {
   const appliedModelHintRef = useRef<string | null>(null);
   const ownsNewChatNavigationRef = useRef(true);
   const navigationGenerationRef = useRef(0);
+  const isAuthenticated = useAppSelector((state) => state.auth.isAuthenticated);
+  const authSessionKey = useAppSelector(
+    (state) => state.auth.user?.id ?? state.auth.token ?? null,
+  );
   const models = useAppSelector((state) => state.models.models);
   const pendingConversationId = useAppSelector((state) => state.conversation.pendingConversationId);
   const displayConversationId = pendingConversationId ?? handoffConversationId;
@@ -127,7 +131,10 @@ export default function HomeChatSurface() {
     error: conversationFilesError,
     refresh: refreshConversationFiles,
     removeFile: removeConversationFile,
-  } = useConversationFiles(filesConversationId);
+  } = useConversationFiles(filesConversationId, {
+    enabled: isAuthenticated,
+    sessionKey: authSessionKey,
+  });
   const modelHint = searchParams?.get('model') ?? null;
   const attachmentScopeId = filesConversationId ?? NEW_CHAT_ATTACHMENT_SCOPE;
   const conversationAttachments = conversationAttachmentState.chatId === attachmentScopeId
@@ -227,7 +234,7 @@ export default function HomeChatSurface() {
     if (targetAttachment?.removeBehavior === 'delete') {
       void deleteFile(fileId)
         .then(() => {
-          removeConversationFile(fileId);
+          removeConversationFile(fileId, attachmentScopeId);
           setPendingAutoAttachState((currentState) => {
             if (currentState.chatId !== attachmentScopeId || !currentState.fileIds.includes(fileId)) {
               return currentState;
@@ -240,7 +247,7 @@ export default function HomeChatSurface() {
         })
         .catch((error) => {
           console.error('删除会话资料失败:', error);
-          void refreshConversationFiles();
+          void refreshConversationFiles(attachmentScopeId);
         });
     }
   }, [
@@ -263,7 +270,7 @@ export default function HomeChatSurface() {
   const handleDeleteConversationFile = useCallback((fileId: string) => {
     void deleteFile(fileId)
       .then(() => {
-        removeConversationFile(fileId);
+        removeConversationFile(fileId, attachmentScopeId);
         detachConversationAttachment(fileId);
         setPendingAutoAttachState((currentState) => {
           if (currentState.chatId !== attachmentScopeId || !currentState.fileIds.includes(fileId)) {
@@ -277,7 +284,7 @@ export default function HomeChatSurface() {
       })
       .catch((error) => {
         console.error('删除会话资料失败:', error);
-        void refreshConversationFiles();
+        void refreshConversationFiles(attachmentScopeId);
       });
   }, [attachmentScopeId, detachConversationAttachment, refreshConversationFiles, removeConversationFile]);
 
@@ -287,7 +294,9 @@ export default function HomeChatSurface() {
       setFilesConversationId(uploadChatId);
     }
 
-    void refreshConversationFiles();
+    if (targetChatId !== NEW_CHAT_ATTACHMENT_SCOPE) {
+      void refreshConversationFiles(targetChatId);
+    }
 
     const uploadedFiles = Array.isArray(files) ? files : [];
     const pendingFileIds: string[] = [];

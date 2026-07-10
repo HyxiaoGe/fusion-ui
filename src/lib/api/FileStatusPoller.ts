@@ -13,6 +13,7 @@ interface PollerConfig {
   chatId?: string;
   dispatch: AppDispatch;
   onComplete?: (result: { success: boolean; errorMessage?: string }) => void;
+  isActive?: () => boolean;
 }
 
 /**
@@ -27,19 +28,21 @@ export class FileStatusPoller {
   private timerId?: NodeJS.Timeout;
   private isPolling: boolean = false;
   private onComplete?: (result: { success: boolean; errorMessage?: string }) => void;
+  private isActive: () => boolean;
 
   constructor(config: PollerConfig) {
     this.fileId = config.fileId;
     this.chatId = config.chatId;
     this.dispatch = config.dispatch;
     this.onComplete = config.onComplete;
+    this.isActive = config.isActive ?? (() => true);
   }
 
   /**
    * 开始轮询文件状态
    */
   public start(): void {
-    if (this.isPolling) return;
+    if (this.isPolling || !this.isActive()) return;
     
     this.isPolling = true;
     
@@ -62,9 +65,9 @@ export class FileStatusPoller {
    * 轮询文件状态
    */
   private pollStatus = async (): Promise<void> => {
-    if (!this.isPolling || this.attempts >= MAX_RETRIES) {
+    if (!this.isPolling || !this.isActive() || this.attempts >= MAX_RETRIES) {
       // 如果已达到最大重试次数，标记为错误
-      if (this.attempts >= MAX_RETRIES) {
+      if (this.isActive() && this.attempts >= MAX_RETRIES) {
         this.dispatch(updateFileStatus({
           fileId: this.fileId,
           chatId: this.chatId,
@@ -84,6 +87,10 @@ export class FileStatusPoller {
 
     try {
       const statusResponse = await getFileStatus(this.fileId);
+      if (!this.isPolling || !this.isActive()) {
+        this.stop();
+        return;
+      }
       
       // 更新Redux状态
       this.dispatch(updateFileStatus({
@@ -118,6 +125,10 @@ export class FileStatusPoller {
       // 安排下一次轮询
       this.timerId = setTimeout(this.pollStatus, this.currentInterval);
     } catch (error) {
+      if (!this.isPolling || !this.isActive()) {
+        this.stop();
+        return;
+      }
       console.error(`轮询文件 ${this.fileId} 状态失败:`, error);
       
       // 增加失败计数
@@ -161,7 +172,8 @@ export function startPollingFileStatus(
   fileId: string,
   chatId: string,
   dispatch: AppDispatch,
-  onComplete?: (result: { success: boolean; errorMessage?: string }) => void
+  onComplete?: (result: { success: boolean; errorMessage?: string }) => void,
+  isActive?: () => boolean,
 ): void {
   // 如果已经在轮询，先停止
   if (pollers[fileId]) {
@@ -173,7 +185,8 @@ export function startPollingFileStatus(
     fileId,
     chatId,
     dispatch,
-    onComplete
+    onComplete,
+    isActive,
   });
   
   // 保存并启动轮询

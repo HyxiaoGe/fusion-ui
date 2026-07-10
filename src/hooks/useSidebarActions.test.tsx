@@ -13,6 +13,7 @@ const {
   isStaleConversationDetailRequestErrorMock,
   buildChatFromServerConversationMock,
   deleteConversationMock,
+  generateChatTitleMock,
 } = vi.hoisted(() => ({
   dispatchMock: vi.fn(),
   getStateMock: vi.fn(),
@@ -25,6 +26,7 @@ const {
   isStaleConversationDetailRequestErrorMock: vi.fn(),
   buildChatFromServerConversationMock: vi.fn(),
   deleteConversationMock: vi.fn(),
+  generateChatTitleMock: vi.fn(),
 }));
 
 vi.mock("next/navigation", () => ({
@@ -59,7 +61,7 @@ vi.mock("@/lib/chat/conversationDetailResource", () => ({
 }));
 
 vi.mock("@/lib/api/title", () => ({
-  generateChatTitle: vi.fn(),
+  generateChatTitle: generateChatTitleMock,
 }));
 
 vi.mock("@/lib/chat/conversationHydration", () => ({
@@ -83,6 +85,8 @@ describe("useSidebarActions", () => {
     isStaleConversationDetailRequestErrorMock.mockReturnValue(false);
     buildChatFromServerConversationMock.mockReset();
     deleteConversationMock.mockReset();
+    generateChatTitleMock.mockReset();
+    generateChatTitleMock.mockResolvedValue("生成后的标题");
   });
 
   it("prefetchConversation 在本地没有正文时拉取并写入 Redux", async () => {
@@ -229,5 +233,27 @@ describe("useSidebarActions", () => {
     expect(invalidateConversationDetailMock.mock.invocationCallOrder[0])
       .toBeLessThan(deleteConversationMock.mock.invocationCallOrder[0]);
     expect(routerPushMock).toHaveBeenCalledWith("/chat/new");
+  });
+
+  it("生成标题后只标记当前会话 metadata 为 dirty", async () => {
+    const { result } = renderHook(() => useSidebarActions());
+
+    await act(async () => {
+      await result.current.generateTitle("chat-a", [
+        {
+          id: "message-a",
+          role: "user",
+          content: [{ type: "text", id: "block-a", text: "你好" }],
+          timestamp: 1,
+        },
+      ]);
+    });
+
+    expect(dispatchMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "conversation/requestConversationListRefresh",
+        payload: "chat-a",
+      })
+    );
   });
 });

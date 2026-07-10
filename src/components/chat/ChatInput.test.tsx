@@ -8,6 +8,7 @@ const {
   useAppDispatchMock,
   useAppSelectorMock,
   reactReduxUseSelectorMock,
+  storeDispatchMock,
   toastMock,
   triggerLoginDialogMock,
   uploadFilesMock,
@@ -56,6 +57,7 @@ const {
     useAppDispatchMock: vi.fn(),
     useAppSelectorMock: vi.fn(),
     reactReduxUseSelectorMock: vi.fn(),
+    storeDispatchMock: vi.fn(),
     toastMock: vi.fn(),
     triggerLoginDialogMock: vi.fn(),
     uploadFilesMock: vi.fn(),
@@ -80,6 +82,10 @@ vi.mock('react-redux', async () => {
   return {
     ...actual,
     useSelector: reactReduxUseSelectorMock,
+    useStore: () => ({
+      dispatch: storeDispatchMock,
+      getState: () => currentState,
+    }),
   };
 });
 
@@ -144,12 +150,53 @@ vi.mock('./FilePreviewList', () => ({
 
 import ChatInput from './ChatInput';
 
+function configureAuthenticatedVisionModel(userId = 'user-a') {
+  currentState.auth.isAuthenticated = true;
+  currentState.auth.user = { id: userId };
+  currentState.auth.token = `token-${userId}`;
+  currentState.models.selectedModelId = 'model-1';
+  currentState.models.models = [
+    {
+      id: 'model-1',
+      provider: 'qwen',
+      capabilities: {
+        vision: true,
+        deepThinking: true,
+      },
+    },
+  ];
+}
+
+function createDeferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((promiseResolve, promiseReject) => {
+    resolve = promiseResolve;
+    reject = promiseReject;
+  });
+  return { promise, resolve, reject };
+}
+
 describe('ChatInput', () => {
   beforeEach(() => {
     dispatchMock.mockReset();
     useAppDispatchMock.mockReturnValue(dispatchMock);
     useAppSelectorMock.mockImplementation(selector => selector(currentState));
     reactReduxUseSelectorMock.mockImplementation(selector => selector(currentState));
+    storeDispatchMock.mockReset();
+    storeDispatchMock.mockImplementation((action: { type?: string; payload?: unknown }) => {
+      if (action.type === 'auth/logout') {
+        Object.assign(currentState.auth, { isAuthenticated: false, user: null, token: null });
+      } else if (action.type === 'auth/testSwitch') {
+        const userId = String(action.payload);
+        Object.assign(currentState.auth, {
+          isAuthenticated: true,
+          user: { id: userId },
+          token: `token-${userId}`,
+        });
+      }
+      return action;
+    });
     toastMock.mockReset();
     triggerLoginDialogMock.mockReset();
     uploadFilesMock.mockReset();
@@ -174,6 +221,8 @@ describe('ChatInput', () => {
     currentState.fileUpload.isUploading = false;
     currentState.fileUpload.uploadProgress = 0;
     currentState.auth.isAuthenticated = false;
+    currentState.auth.user = null;
+    currentState.auth.token = null;
     Object.defineProperty(URL, 'createObjectURL', {
       writable: true,
       value: vi.fn(() => 'blob:preview'),
@@ -884,6 +933,229 @@ describe('ChatInput', () => {
       expect.anything(),
       expect.anything()
     );
+  });
+
+  it.each([
+    ['logout', { isAuthenticated: false, user: null, token: null }],
+    ['A→B', { isAuthenticated: true, user: { id: 'user-b' }, token: 'token-user-b' }],
+  ])('invalidates a pending upload on auth %s and never carries the attachment forward', async (_label, nextAuth) => {
+    configureAuthenticatedVisionModel('user-a');
+    const uploadRequest = createDeferred<Array<{ file_id: string; thumbnail_url?: string }>>();
+    uploadFilesMock.mockReturnValue(uploadRequest.promise);
+    const onUploadComplete = vi.fn();
+    const onClearConversationAttachments = vi.fn();
+    const onSendMessage = vi.fn();
+
+    const { container, rerender } = render(
+      <ChatInput
+        onSendMessage={onSendMessage}
+        onUploadComplete={onUploadComplete}
+        onClearConversationAttachments={onClearConversationAttachments}
+        activeChatId="chat-a"
+      />,
+    );
+    const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement;
+    const file = new File(['image'], 'user-a.png', { type: 'image/png' });
+
+    fireEvent.change(fileInput, { target: { files: [file] } });
+    await waitFor(() => {
+      expect(uploadFilesMock).toHaveBeenCalledWith('qwen', 'model-1', 'chat-a', [file]);
+      expect(screen.getByText('user-a.png')).toBeInTheDocument();
+    });
+
+    Object.assign(currentState.auth, nextAuth);
+    rerender(
+      <ChatInput
+        onSendMessage={onSendMessage}
+        onUploadComplete={onUploadComplete}
+        onClearConversationAttachments={onClearConversationAttachments}
+        activeChatId="chat-a"
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.queryByText('user-a.png')).toBeNull();
+      expect(onClearConversationAttachments).toHaveBeenCalled();
+      expect(clearFilesMock).toHaveBeenCalledWith('chat-a');
+    });
+    addFileIdMock.mockClear();
+    updateFileStatusMock.mockClear();
+    startPollingFileStatusMock.mockClear();
+    toastMock.mockClear();
+
+    await act(async () => {
+      uploadRequest.resolve([{ file_id: 'file-user-a', thumbnail_url: '/user-a.png' }]);
+      await uploadRequest.promise;
+    });
+
+    expect(deleteFileMock).toHaveBeenCalledWith('file-user-a');
+    expect(addFileIdMock).not.toHaveBeenCalled();
+    expect(updateFileStatusMock).not.toHaveBeenCalled();
+    expect(startPollingFileStatusMock).not.toHaveBeenCalled();
+    expect(onUploadComplete).not.toHaveBeenCalled();
+    expect(toastMock).not.toHaveBeenCalled();
+    expect(onSendMessage).not.toHaveBeenCalled();
+    expect(screen.queryByText('user-a.png')).toBeNull();
+  });
+
+  it.each([
+    ['logout', { type: 'auth/logout' }],
+    ['A→B', { type: 'auth/testSwitch', payload: 'user-b' }],
+  ])('reads store identity after auth %s even before React rerender commits', async (_label, authAction) => {
+    configureAuthenticatedVisionModel('user-a');
+    const uploadRequest = createDeferred<Array<{ file_id: string }>>();
+    uploadFilesMock.mockReturnValue(uploadRequest.promise);
+    const onUploadComplete = vi.fn();
+
+    const { container } = render(
+      <ChatInput onSendMessage={vi.fn()} onUploadComplete={onUploadComplete} activeChatId="chat-a" />,
+    );
+    const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement;
+    const file = new File(['image'], 'store-window.png', { type: 'image/png' });
+
+    fireEvent.change(fileInput, { target: { files: [file] } });
+    await waitFor(() => {
+      expect(uploadFilesMock).toHaveBeenCalledTimes(1);
+    });
+
+    act(() => {
+      storeDispatchMock(authAction);
+    });
+    addFileIdMock.mockClear();
+    updateFileStatusMock.mockClear();
+    startPollingFileStatusMock.mockClear();
+    toastMock.mockClear();
+
+    await act(async () => {
+      uploadRequest.resolve([{ file_id: 'file-store-window' }]);
+      await uploadRequest.promise;
+    });
+
+    expect(deleteFileMock).toHaveBeenCalledWith('file-store-window');
+    expect(addFileIdMock).not.toHaveBeenCalled();
+    expect(updateFileStatusMock).not.toHaveBeenCalled();
+    expect(startPollingFileStatusMock).not.toHaveBeenCalled();
+    expect(onUploadComplete).not.toHaveBeenCalled();
+    expect(toastMock).not.toHaveBeenCalled();
+  });
+
+  it('invalidates a pending upload on unmount and best-effort deletes a late file_id', async () => {
+    configureAuthenticatedVisionModel('user-a');
+    const uploadRequest = createDeferred<Array<{ file_id: string }>>();
+    uploadFilesMock.mockReturnValue(uploadRequest.promise);
+    const onUploadComplete = vi.fn();
+
+    const { container, unmount } = render(
+      <ChatInput onSendMessage={vi.fn()} onUploadComplete={onUploadComplete} activeChatId="chat-a" />,
+    );
+    const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement;
+    const file = new File(['image'], 'unmount.png', { type: 'image/png' });
+
+    fireEvent.change(fileInput, { target: { files: [file] } });
+    await waitFor(() => {
+      expect(uploadFilesMock).toHaveBeenCalledWith('qwen', 'model-1', 'chat-a', [file]);
+    });
+
+    unmount();
+    addFileIdMock.mockClear();
+    updateFileStatusMock.mockClear();
+    startPollingFileStatusMock.mockClear();
+    toastMock.mockClear();
+
+    await act(async () => {
+      uploadRequest.resolve([{ file_id: 'file-after-unmount' }]);
+      await uploadRequest.promise;
+    });
+
+    expect(deleteFileMock).toHaveBeenCalledWith('file-after-unmount');
+    expect(addFileIdMock).not.toHaveBeenCalled();
+    expect(updateFileStatusMock).not.toHaveBeenCalled();
+    expect(startPollingFileStatusMock).not.toHaveBeenCalled();
+    expect(onUploadComplete).not.toHaveBeenCalled();
+    expect(toastMock).not.toHaveBeenCalled();
+  });
+
+  it('drops a late upload rejection after logout without local error or toast', async () => {
+    configureAuthenticatedVisionModel('user-a');
+    const uploadRequest = createDeferred<Array<{ file_id: string }>>();
+    uploadFilesMock.mockReturnValue(uploadRequest.promise);
+
+    const { container, rerender } = render(
+      <ChatInput onSendMessage={vi.fn()} activeChatId="chat-a" />,
+    );
+    const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement;
+    const file = new File(['image'], 'logout-error.png', { type: 'image/png' });
+
+    fireEvent.change(fileInput, { target: { files: [file] } });
+    await waitFor(() => {
+      expect(uploadFilesMock).toHaveBeenCalledTimes(1);
+    });
+
+    Object.assign(currentState.auth, { isAuthenticated: false, user: null, token: null });
+    rerender(<ChatInput onSendMessage={vi.fn()} activeChatId="chat-a" />);
+    toastMock.mockClear();
+
+    await act(async () => {
+      uploadRequest.reject(new Error('上传失败'));
+      await uploadRequest.promise.catch(() => undefined);
+    });
+
+    expect(screen.queryByText('logout-error.png')).toBeNull();
+    expect(screen.queryByText('上传失败')).toBeNull();
+    expect(toastMock).not.toHaveBeenCalled();
+  });
+
+  it('stops polling on auth switch and rejects a late poll callback before any producer side effect', async () => {
+    configureAuthenticatedVisionModel('user-a');
+    const uploadRequest = createDeferred<Array<{ file_id: string }>>();
+    uploadFilesMock.mockReturnValue(uploadRequest.promise);
+
+    const { container, rerender } = render(
+      <ChatInput onSendMessage={vi.fn()} activeChatId="chat-a" />,
+    );
+    const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement;
+    const file = new File(['image'], 'polling.png', { type: 'image/png' });
+
+    fireEvent.change(fileInput, { target: { files: [file] } });
+    await waitFor(() => {
+      expect(uploadFilesMock).toHaveBeenCalledTimes(1);
+    });
+    Object.defineProperty(file, 'type', {
+      configurable: true,
+      value: 'application/pdf',
+    });
+
+    await act(async () => {
+      uploadRequest.resolve([{ file_id: 'file-polling' }]);
+      await uploadRequest.promise;
+    });
+    await waitFor(() => {
+      expect(startPollingFileStatusMock).toHaveBeenCalledTimes(1);
+    });
+    const pollCallback = startPollingFileStatusMock.mock.calls[0][3];
+    const isProducerActive = startPollingFileStatusMock.mock.calls[0][4];
+    expect(isProducerActive()).toBe(true);
+
+    Object.assign(currentState.auth, {
+      isAuthenticated: true,
+      user: { id: 'user-b' },
+      token: 'token-user-b',
+    });
+    rerender(<ChatInput onSendMessage={vi.fn()} activeChatId="chat-a" />);
+
+    expect(isProducerActive()).toBe(false);
+    expect(stopPollingFileStatusMock).toHaveBeenCalledWith('file-polling');
+    expect(deleteFileMock).toHaveBeenCalledWith('file-polling');
+    updateFileStatusMock.mockClear();
+    toastMock.mockClear();
+
+    act(() => {
+      pollCallback({ success: true });
+    });
+
+    expect(updateFileStatusMock).not.toHaveBeenCalled();
+    expect(toastMock).not.toHaveBeenCalled();
+    expect(screen.queryByText('polling.png')).toBeNull();
   });
 
   it('uses stable accessible actions for upload, reasoning, send and stop', () => {

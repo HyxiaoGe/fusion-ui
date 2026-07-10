@@ -4,11 +4,11 @@ import { Provider } from 'react-redux';
 import { configureStore } from '@reduxjs/toolkit';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import authReducer from '@/redux/slices/authSlice';
+import authReducer, { logout } from '@/redux/slices/authSlice';
 import conversationReducer from '@/redux/slices/conversationSlice';
 import modelsReducer from '@/redux/slices/modelsSlice';
 import streamReducer from '@/redux/slices/streamSlice';
-import { upsertConversation } from '@/redux/slices/conversationSlice';
+import { resetConversationState, upsertConversation } from '@/redux/slices/conversationSlice';
 import { useSendMessage } from './useSendMessage';
 import type { StreamCallbacks } from '@/lib/api/chat';
 
@@ -42,6 +42,19 @@ vi.mock('uuid', () => ({
   v4: uuidMock,
 }));
 
+function createUser(id: string) {
+  return {
+    id,
+    username: id,
+    email: null,
+    nickname: null,
+    avatar: null,
+    mobile: null,
+    system_prompt: '',
+    is_superuser: false,
+  };
+}
+
 function createStore() {
   return configureStore({
     reducer: {
@@ -57,10 +70,10 @@ function createStore() {
     preloadedState: {
       auth: {
         isAuthenticated: true,
-        token: null,
+        token: 'token-user-a',
         status: 'idle' as const,
         error: null,
-        user: null,
+        user: createUser('user-a'),
       },
       models: {
         models: [
@@ -186,8 +199,241 @@ describe('useSendMessage', () => {
           expect.objectContaining({ type: 'text' }),
         ])
       );
+      expect(state.conversation.conversationListDirtyIds).toEqual(['server-conv']);
       expect(state.stream.isStreaming).toBe(false);
     });
+  });
+
+  it.each(['logout', 'switch-account', 'reset'] as const)(
+    'draft pending send 在 %s 后忽略迟到 onReady/onDone',
+    async (boundary) => {
+      const store = createStore();
+      const onMaterialized = vi.fn();
+      const onStreamEnd = vi.fn();
+      let callbacks: StreamCallbacks | undefined;
+      let signal: AbortSignal | undefined;
+      let releaseStream: (() => void) | undefined;
+      sendMessageStreamMock.mockImplementationOnce(
+        async (_payload: unknown, nextCallbacks: StreamCallbacks, nextSignal: AbortSignal) => {
+          callbacks = nextCallbacks;
+          signal = nextSignal;
+          await new Promise<void>((resolve) => {
+            releaseStream = resolve;
+          });
+        }
+      );
+      const { result } = renderHook(() => useSendMessage(), {
+        wrapper: createWrapper(store),
+      });
+
+      await act(async () => {
+        void result.current.sendMessage('旧会话请求', {
+          conversationId: null,
+          onMaterialized,
+          onStreamEnd,
+        });
+      });
+      await waitFor(() => expect(sendMessageStreamMock).toHaveBeenCalledTimes(1));
+
+      act(() => {
+        if (boundary === 'logout') {
+          store.dispatch(logout());
+        } else if (boundary === 'switch-account') {
+          store.dispatch({
+            type: 'auth/fetchUserProfile/fulfilled',
+            payload: createUser('user-b'),
+          });
+        } else {
+          store.dispatch(resetConversationState());
+        }
+      });
+      expect(signal?.aborted).toBe(true);
+
+      await act(async () => {
+        callbacks?.onReady({ messageId: 'server-assistant', conversationId: 'server-conv' });
+        callbacks?.onAnswering({ block_id: 'answer', delta: '迟到正文' });
+        callbacks?.onDone({ messageId: 'server-assistant', conversationId: 'server-conv' });
+        tickIntervals(8);
+        releaseStream?.();
+      });
+
+      expect(onMaterialized).not.toHaveBeenCalled();
+      expect(onStreamEnd).not.toHaveBeenCalled();
+      expect(store.getState().conversation.byId['server-conv']).toBeUndefined();
+      expect(store.getState().conversation.conversationListDirtyIds).toEqual([]);
+      expect(store.getState().stream.isStreaming).toBe(false);
+    }
+  );
+
+  it('普通会话 pending send 在 logout 后忽略迟到 done/error 与 metadata refresh', async () => {
+    const store = createStore();
+    store.dispatch(upsertConversation({
+      id: 'existing-conv',
+      title: 'Existing',
+      model_id: 'model-1',
+      messages: [],
+      createdAt: 1,
+      updatedAt: 1,
+    }));
+    const onStreamEnd = vi.fn();
+    let callbacks: StreamCallbacks | undefined;
+    let signal: AbortSignal | undefined;
+    let rejectStream: ((error: Error) => void) | undefined;
+    sendMessageStreamMock.mockImplementationOnce(
+      async (_payload: unknown, nextCallbacks: StreamCallbacks, nextSignal: AbortSignal) => {
+        callbacks = nextCallbacks;
+        signal = nextSignal;
+        await new Promise<void>((_resolve, reject) => {
+          rejectStream = reject;
+        });
+      }
+    );
+    const { result } = renderHook(() => useSendMessage(), {
+      wrapper: createWrapper(store),
+    });
+
+    await act(async () => {
+      void result.current.sendMessage('旧账号普通会话', {
+        conversationId: 'existing-conv',
+        onStreamEnd,
+      });
+    });
+    await waitFor(() => expect(sendMessageStreamMock).toHaveBeenCalledTimes(1));
+    act(() => {
+      store.dispatch(logout());
+    });
+    expect(signal?.aborted).toBe(true);
+
+    await act(async () => {
+      callbacks?.onAnswering({ block_id: 'answer', delta: '迟到正文' });
+      callbacks?.onDone({ messageId: 'assistant-1', conversationId: 'existing-conv' });
+      callbacks?.onError('迟到错误', { code: 'LATE' });
+      rejectStream?.(new Error('迟到异常'));
+      tickIntervals(8);
+    });
+
+    expect(onStreamEnd).not.toHaveBeenCalled();
+    expect(store.getState().conversation.globalError).toBeNull();
+    expect(store.getState().conversation.conversationListDirtyIds).toEqual([]);
+    expect(store.getState().stream.lastError).toBeNull();
+  });
+
+  it('同 session 路由 handoff unmount 后继续消费 draft ready/done', async () => {
+    const store = createStore();
+    const onMaterialized = vi.fn();
+    const onStreamEnd = vi.fn();
+    let callbacks: StreamCallbacks | undefined;
+    let signal: AbortSignal | undefined;
+    let releaseStream: (() => void) | undefined;
+    sendMessageStreamMock.mockImplementationOnce(
+      async (_payload: unknown, nextCallbacks: StreamCallbacks, nextSignal: AbortSignal) => {
+        callbacks = nextCallbacks;
+        signal = nextSignal;
+        await new Promise<void>((resolve) => {
+          releaseStream = resolve;
+        });
+      }
+    );
+    const { result, unmount } = renderHook(() => useSendMessage(), {
+      wrapper: createWrapper(store),
+    });
+    await act(async () => {
+      void result.current.sendMessage('即将卸载', {
+        conversationId: null,
+        onMaterialized,
+        onStreamEnd,
+      });
+    });
+    await waitFor(() => expect(sendMessageStreamMock).toHaveBeenCalledTimes(1));
+
+    unmount();
+    expect(signal?.aborted).toBe(false);
+    await act(async () => {
+      callbacks?.onReady({ messageId: 'server-assistant', conversationId: 'server-conv' });
+      callbacks?.onAnswering({ block_id: 'answer', delta: '继续输出' });
+      callbacks?.onDone({ messageId: 'server-assistant', conversationId: 'server-conv' });
+      releaseStream?.();
+      tickIntervals(4);
+    });
+
+    expect(onMaterialized).toHaveBeenCalledWith('server-conv');
+    expect(onStreamEnd).toHaveBeenCalledWith('server-conv');
+    expect(store.getState().conversation.byId['server-conv']).toBeDefined();
+    expect(store.getState().stream.isStreaming).toBe(false);
+  });
+
+  it('auth reset 与 unmount 同批发生时中止旧 session 并拒绝迟到回调', async () => {
+    const store = createStore();
+    const onMaterialized = vi.fn();
+    let callbacks: StreamCallbacks | undefined;
+    let signal: AbortSignal | undefined;
+    let releaseStream: (() => void) | undefined;
+    sendMessageStreamMock.mockImplementationOnce(
+      async (_payload: unknown, nextCallbacks: StreamCallbacks, nextSignal: AbortSignal) => {
+        callbacks = nextCallbacks;
+        signal = nextSignal;
+        await new Promise<void>((resolve) => {
+          releaseStream = resolve;
+        });
+      }
+    );
+    const { result, unmount } = renderHook(() => useSendMessage(), {
+      wrapper: createWrapper(store),
+    });
+    await act(async () => {
+      void result.current.sendMessage('旧 session', {
+        conversationId: null,
+        onMaterialized,
+      });
+    });
+    await waitFor(() => expect(sendMessageStreamMock).toHaveBeenCalledTimes(1));
+
+    act(() => {
+      store.dispatch(resetConversationState());
+      unmount();
+    });
+    expect(signal?.aborted).toBe(true);
+    await act(async () => {
+      callbacks?.onReady({ messageId: 'server-assistant', conversationId: 'server-conv' });
+      callbacks?.onDone({ messageId: 'server-assistant', conversationId: 'server-conv' });
+      releaseStream?.();
+    });
+
+    expect(onMaterialized).not.toHaveBeenCalled();
+    expect(store.getState().conversation.byId['server-conv']).toBeUndefined();
+  });
+
+  it('postStreamActions 等待标题期间 reset，迟到标题不得写回或刷新 metadata', async () => {
+    const store = createStore();
+    let resolveTitle: ((title: string) => void) | undefined;
+    generateChatTitleMock.mockImplementationOnce(() => new Promise((resolve) => {
+      resolveTitle = resolve;
+    }));
+    sendMessageStreamMock.mockImplementationOnce(
+      async (_payload: unknown, callbacks: StreamCallbacks) => {
+        callbacks.onReady({ messageId: 'assistant-1', conversationId: 'server-conv' });
+        callbacks.onDone({ messageId: 'assistant-1', conversationId: 'server-conv' });
+      }
+    );
+    const { result } = renderHook(() => useSendMessage(), {
+      wrapper: createWrapper(store),
+    });
+
+    await act(async () => {
+      await result.current.sendMessage('生成标题', { conversationId: null });
+    });
+    await waitFor(() => expect(generateChatTitleMock).toHaveBeenCalledTimes(1));
+    act(() => {
+      store.dispatch(resetConversationState());
+    });
+    await act(async () => {
+      resolveTitle?.('迟到标题');
+      await Promise.resolve();
+    });
+
+    expect(store.getState().conversation.animatingTitleId).toBeNull();
+    expect(store.getState().conversation.conversationListDirtyIds).toEqual([]);
+    expect(store.getState().conversation.byId['server-conv']).toBeUndefined();
   });
 
   it('uses completion time as assistant timestamp so long first replies can still fetch suggestions', async () => {

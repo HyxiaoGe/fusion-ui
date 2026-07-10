@@ -106,6 +106,10 @@ export default function ChatPage() {
   });
   const chatInputRef = useRef<HTMLDivElement>(null);
   const fetchQuestionsRef = useRef<((force?: boolean) => Promise<void>) | undefined>(undefined);
+  const isAuthenticated = useAppSelector(selectIsAuthenticated);
+  const authSessionKey = useAppSelector(
+    (state) => state.auth.user?.id ?? state.auth.token ?? null,
+  );
   const { conversation, hydrationView, hydrationError, retryHydration } = useConversation(chatId);
   const { sendMessage, stopStreaming, retryMessage } = useSendMessage();
   const { continueAgentRun, stopContinueAgentRun } = useContinueAgentRun();
@@ -121,7 +125,10 @@ export default function ChatPage() {
     error: conversationFilesError,
     refresh: refreshConversationFiles,
     removeFile: removeConversationFile,
-  } = useConversationFiles(chatId);
+  } = useConversationFiles(chatId, {
+    enabled: isAuthenticated,
+    sessionKey: authSessionKey,
+  });
   fetchQuestionsRef.current = fetchQuestions;
   const conversationError = useAppSelector((state) => state.conversation.globalError);
   const isStreaming = useAppSelector((state) => state.stream.isStreaming);
@@ -165,7 +172,6 @@ export default function ChatPage() {
   // 页面 mount / hydration 完成后检查是否有未完成的流 → 断线重连
   // TODO(遗漏1): 网络抖动自动重连需要独立实现，不能复用 checkAndReconnect，
   // 因为 reconnectAttemptedRef 在首次 mount 后已为 true，会阻止二次重连。
-  const isAuthenticated = useAppSelector(selectIsAuthenticated);
   const hydrationDone = hydrationView === 'ready';
   const reconnectAttemptedRef = useRef(false);
   // chatId 变化时重置
@@ -317,10 +323,15 @@ export default function ChatPage() {
       {
         conversationId: chatId,
         onStreamEnd: (conversationId) => {
+          if (attachments && attachments.length > 0) {
+            void refreshConversationFiles(conversationId);
+          }
           if (conversationId === latestChatIdRef.current) {
             // 用 ref 避免闭包过期（长时间 agent 流结束后 hook 可能已切到新会话）
             fetchQuestionsRef.current?.(true);
-            void refreshConversationFiles();
+            if (!attachments || attachments.length === 0) {
+              void refreshConversationFiles(conversationId);
+            }
           }
         },
       },
@@ -416,7 +427,7 @@ export default function ChatPage() {
     if (targetAttachment?.removeBehavior === 'delete') {
       void deleteFile(fileId)
         .then(() => {
-          removeConversationFile(fileId);
+          removeConversationFile(fileId, chatId);
           setPendingAutoAttachState((currentState) => {
             if (currentState.chatId !== chatId || !currentState.fileIds.includes(fileId)) {
               return currentState;
@@ -429,7 +440,7 @@ export default function ChatPage() {
         })
         .catch((error) => {
           console.error('删除会话资料失败:', error);
-          void refreshConversationFiles();
+          void refreshConversationFiles(chatId);
         });
     }
   }, [chatId, conversationAttachments, refreshConversationFiles, removeConversationFile]);
@@ -446,7 +457,7 @@ export default function ChatPage() {
   const handleDeleteConversationFile = useCallback((fileId: string) => {
     void deleteFile(fileId)
       .then(() => {
-        removeConversationFile(fileId);
+        removeConversationFile(fileId, chatId);
         setConversationAttachmentState((currentState) => {
           if (currentState.chatId !== chatId) {
             return currentState;
@@ -468,12 +479,12 @@ export default function ChatPage() {
       })
       .catch((error) => {
         console.error('删除会话资料失败:', error);
-        void refreshConversationFiles();
+        void refreshConversationFiles(chatId);
       });
   }, [chatId, refreshConversationFiles, removeConversationFile]);
 
   const handleUploadComplete = useCallback((files: ChatUploadCompleteFile[] = [], uploadChatId = chatId) => {
-    void refreshConversationFiles();
+    void refreshConversationFiles(uploadChatId);
 
     if (uploadChatId !== chatId) {
       return;

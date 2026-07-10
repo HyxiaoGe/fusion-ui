@@ -6,6 +6,7 @@ import type { FileAttachment } from "@/lib/utils/fileHelpers";
 import { uploadFiles, deleteFile } from "@/lib/api/files";
 import { startPollingFileStatus, stopPollingFileStatus } from "@/lib/api/FileStatusPoller";
 import { useAppDispatch, useAppSelector } from "@/redux/hooks";
+import type { RootState } from "@/redux/store";
 import { selectChatModel, selectIsAuthenticated } from "@/redux/selectors";
 import { setReasoningEnabled } from "@/redux/slices/conversationSlice";
 import {
@@ -19,7 +20,8 @@ import {
 import { ArrowUp, Lightbulb, PaperclipIcon, Square } from "lucide-react";
 import ImageViewer from "./ImageViewer";
 import ModelSelector from "@/components/models/ModelSelector";
-import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useStore } from "react-redux";
 import { useToast } from "../ui/toast";
 import { v4 as uuidv4 } from "uuid";
 import { useRenderProbe } from "@/lib/debug/perfProbe";
@@ -84,6 +86,11 @@ function isSupportedImageUpload(file: File): boolean {
   return file.type.startsWith("image/");
 }
 
+function selectUploadAuthIdentity(state: RootState): string | null {
+  if (!state.auth.isAuthenticated) return null;
+  return state.auth.user?.id ?? state.auth.token ?? "authenticated";
+}
+
 function formatFileErrorMessage(errorMessage?: string): string {
   if (!errorMessage) {
     return "文件处理失败，请重试";
@@ -121,6 +128,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
 }) => {
   useRenderProbe('ChatInput');
   const dispatch = useAppDispatch();
+  const store = useStore<RootState>();
   const { toast } = useToast();
   const [message, setMessage] = useState("");
   const [localFiles, setLocalFiles] = useState<LocalFileWithStatus[]>([]);
@@ -132,8 +140,16 @@ const ChatInput: React.FC<ChatInputProps> = ({
   const previousChatIdRef = useRef<string | null>(null);
   const uploadGenerationRef = useRef(0);
   const cancelledUploadLocalIdsRef = useRef<Set<string>>(new Set());
+  const mountedRef = useRef(true);
+  const localFilesRef = useRef<LocalFileWithStatus[]>([]);
+  const fileIdsRef = useRef<string[]>([]);
+  const ownedUploadFileIdsRef = useRef<Set<string>>(new Set());
+  const onClearConversationAttachmentsRef = useRef(onClearConversationAttachments);
+  const activeChatIdRef = useRef(activeChatId);
 
   const isAuthenticated = useAppSelector(selectIsAuthenticated);
+  const authIdentity = useAppSelector(selectUploadAuthIdentity);
+  const previousAuthIdentityRef = useRef<string | null>(authIdentity);
   const processingFiles = useAppSelector((state) => state.fileUpload.processingFiles);
   const reasoningEnabled = useAppSelector((state) => state.conversation.reasoningEnabled);
   const isStreaming = useAppSelector((state) => state.stream.isStreaming);
@@ -166,6 +182,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
 
     uploadGenerationRef.current += 1;
     cancelledUploadLocalIdsRef.current.clear();
+    ownedUploadFileIdsRef.current.clear();
     setMessage("");
     setIsDragOver(false);
     setViewingImageUrl(null);
@@ -197,6 +214,71 @@ const ChatInput: React.FC<ChatInputProps> = ({
 
   const selectChatFileIds = useMemo(makeSelectChatFileIds, []);
   const fileIds = useAppSelector((state) => selectChatFileIds(state, chatId));
+  onClearConversationAttachmentsRef.current = onClearConversationAttachments;
+  activeChatIdRef.current = activeChatId;
+
+  useLayoutEffect(() => {
+    localFilesRef.current = localFiles;
+  }, [localFiles]);
+
+  useLayoutEffect(() => {
+    fileIdsRef.current = fileIds;
+  }, [fileIds]);
+
+  const invalidateUploadSession = useCallback((clearMountedState: boolean, rotatePendingChatId: boolean) => {
+    uploadGenerationRef.current += 1;
+    cancelledUploadLocalIdsRef.current.clear();
+
+    const pollingFileIds = new Set<string>([
+      ...fileIdsRef.current,
+      ...localFilesRef.current.flatMap((file) => file.fileId ? [file.fileId] : []),
+    ]);
+    pollingFileIds.forEach((fileId) => stopPollingFileStatus(fileId));
+
+    ownedUploadFileIdsRef.current.forEach((fileId) => {
+      void deleteFile(fileId).catch((error) => {
+        console.warn("清理失效会话上传文件失败:", error);
+      });
+    });
+    ownedUploadFileIdsRef.current.clear();
+
+    localFilesRef.current.forEach((file) => {
+      if (file.previewUrl) {
+        URL.revokeObjectURL(file.previewUrl);
+      }
+    });
+    localFilesRef.current = [];
+    fileIdsRef.current = [];
+    dispatch(clearFiles(currentChatIdRef.current));
+    onClearConversationAttachmentsRef.current?.();
+
+    if (rotatePendingChatId && !activeChatIdRef.current) {
+      pendingChatIdRef.current = uuidv4();
+    }
+
+    if (clearMountedState && mountedRef.current) {
+      setLocalFiles([]);
+      setViewingImageUrl(null);
+      setIsDragOver(false);
+    }
+  }, [dispatch]);
+
+  useLayoutEffect(() => {
+    const previousAuthIdentity = previousAuthIdentityRef.current;
+    previousAuthIdentityRef.current = authIdentity;
+
+    if (previousAuthIdentity !== authIdentity) {
+      invalidateUploadSession(true, true);
+    }
+  }, [authIdentity, invalidateUploadSession]);
+
+  useLayoutEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      invalidateUploadSession(false, false);
+    };
+  }, [invalidateUploadSession]);
   const uploadAttachments = useMemo<UploadComposerAttachment[]>(
     () =>
       localFiles.map((file) => ({
@@ -326,6 +408,14 @@ const ChatInput: React.FC<ChatInputProps> = ({
 
     const uploadGeneration = uploadGenerationRef.current;
     const uploadChatId = chatId;
+    const uploadAuthIdentity = selectUploadAuthIdentity(store.getState());
+    const isUploadContextActive = () => (
+      mountedRef.current &&
+      uploadAuthIdentity !== null &&
+      uploadGeneration === uploadGenerationRef.current &&
+      uploadChatId === currentChatIdRef.current &&
+      uploadAuthIdentity === selectUploadAuthIdentity(store.getState())
+    );
 
     try {
       setLocalFiles((prev) =>
@@ -355,10 +445,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
         }
       });
 
-      if (
-        uploadGeneration !== uploadGenerationRef.current ||
-        uploadChatId !== currentChatIdRef.current
-      ) {
+      if (!isUploadContextActive()) {
         uploadedFiles.forEach((uploaded) => {
           deleteFile(uploaded.file_id).catch((err) =>
             console.warn("清理已失效上传文件失败:", err)
@@ -382,6 +469,10 @@ const ChatInput: React.FC<ChatInputProps> = ({
       if (activeUploadResults.length === 0) {
         return;
       }
+
+      activeUploadResults.forEach(({ uploaded }) => {
+        ownedUploadFileIdsRef.current.add(uploaded.file_id);
+      });
 
       setLocalFiles((prev) =>
         prev.map((file) => {
@@ -415,6 +506,9 @@ const ChatInput: React.FC<ChatInputProps> = ({
       });
 
       activeUploadResults.forEach(({ uploaded, index, localFile }, activeIndex) => {
+        if (!isUploadContextActive()) {
+          return;
+        }
         const fileId = uploaded.file_id;
         const isImage = localFile.file.type.startsWith('image/');
         const uploadCompleteFile = uploadCompleteFiles[activeIndex];
@@ -429,10 +523,13 @@ const ChatInput: React.FC<ChatInputProps> = ({
         dispatch(updateFileStatus({ fileId, chatId: uploadChatId, status: "parsing" }));
 
         startPollingFileStatus(fileId, uploadChatId, dispatch, ({ success, errorMessage }) => {
-          if (
-            uploadGeneration !== uploadGenerationRef.current ||
-            uploadChatId !== currentChatIdRef.current
-          ) {
+          if (!isUploadContextActive()) {
+            stopPollingFileStatus(fileId);
+            if (ownedUploadFileIdsRef.current.delete(fileId)) {
+              void deleteFile(fileId).catch((error) => {
+                console.warn("清理失效轮询上传文件失败:", error);
+              });
+            }
             return;
           }
 
@@ -456,6 +553,9 @@ const ChatInput: React.FC<ChatInputProps> = ({
             duration: 3000,
           });
           if (uploadCompleteFile) {
+            if (onUploadComplete) {
+              ownedUploadFileIdsRef.current.delete(fileId);
+            }
             onUploadComplete?.(
               [
                 {
@@ -470,10 +570,24 @@ const ChatInput: React.FC<ChatInputProps> = ({
           if (success && onUploadComplete) {
             removeLocalUploadFiles(new Set([localFile.id]));
           }
-        });
+        }, isUploadContextActive);
       });
 
-      onUploadComplete?.(uploadCompleteFiles, uploadChatId);
+      if (!isUploadContextActive()) {
+        uploadCompleteFiles.forEach((file) => {
+          if (ownedUploadFileIdsRef.current.delete(file.fileId)) {
+            void deleteFile(file.fileId).catch((error) => {
+              console.warn("清理失效上传完成文件失败:", error);
+            });
+          }
+        });
+        return;
+      }
+
+      if (onUploadComplete) {
+        uploadCompleteFiles.forEach((file) => ownedUploadFileIdsRef.current.delete(file.fileId));
+        onUploadComplete(uploadCompleteFiles, uploadChatId);
+      }
 
       if (onUploadComplete) {
         const processedLocalIds = new Set(
@@ -484,6 +598,9 @@ const ChatInput: React.FC<ChatInputProps> = ({
         removeLocalUploadFiles(processedLocalIds);
       }
     } catch (error) {
+      if (!isUploadContextActive()) {
+        return;
+      }
       const activeFilesToUpload = filesToUpload.filter(
         (file) => !cancelledUploadLocalIdsRef.current.has(file.id)
       );
@@ -611,6 +728,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
       }
       if (targetFile?.fileId) {
         stopPollingFileStatus(targetFile.fileId);
+        ownedUploadFileIdsRef.current.delete(targetFile.fileId);
         dispatch(removeFileId({ chatId, fileId: targetFile.fileId }));
         // 同步删除后端文件记录，释放对话文件数量配额
         deleteFile(targetFile.fileId).catch((err) =>
@@ -691,6 +809,11 @@ const ChatInput: React.FC<ChatInputProps> = ({
     if (attachments.length > 0) {
       // 首页新对话时，传递文件上传使用的 pendingChatId，确保后端对话 ID 一致
       const pendingId = !activeChatId ? pendingChatIdRef.current : undefined;
+      localFiles.forEach((file) => {
+        if (file.fileId) {
+          ownedUploadFileIdsRef.current.delete(file.fileId);
+        }
+      });
       onSendMessage(message, attachments, pendingId);
 
       localFiles.forEach((file) => {

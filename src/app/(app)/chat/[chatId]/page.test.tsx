@@ -80,7 +80,11 @@ vi.mock('@/redux/hooks', () => ({
   useAppDispatch: () => dispatchMock,
   useAppSelector: (selector: (state: any) => unknown) =>
     selector({
-      auth: { isAuthenticated: true },
+      auth: {
+        isAuthenticated: true,
+        user: { id: 'user-a' },
+        token: 'token-a',
+      },
       conversation: {
         globalError: null,
         lastReadyConversationSnapshot: lastReadyConversationSnapshotState.value,
@@ -869,7 +873,7 @@ describe('ChatPage 会话切换体验', () => {
     await waitFor(() => {
       expect(deleteFileMock).toHaveBeenCalledWith('file-1');
     });
-    expect(useConversationFilesState.removeFile).toHaveBeenCalledWith('file-1');
+    expect(useConversationFilesState.removeFile).toHaveBeenCalledWith('file-1', 'chat-a');
     await waitFor(() => {
       expect(screen.getByTestId('chat-input')).toHaveAttribute('data-attachment-count', '0');
     });
@@ -917,12 +921,14 @@ describe('ChatPage 会话切换体验', () => {
 
     fireEvent.click(screen.getByRole('button', { name: '上传完成' }));
     expect(useConversationFilesState.refresh).toHaveBeenCalledTimes(1);
+    expect(useConversationFilesState.refresh).toHaveBeenLastCalledWith('chat-a');
 
     fireEvent.click(screen.getByRole('button', { name: '发送消息' }));
     const sendOptions = sendMessageMock.mock.calls.at(-1)?.[1];
     sendOptions.onStreamEnd('chat-a');
 
     expect(useConversationFilesState.refresh).toHaveBeenCalledTimes(2);
+    expect(useConversationFilesState.refresh).toHaveBeenLastCalledWith('chat-a');
   });
 
   it('已有会话上传已处理文件后只加入本次提问，不自动打开资料面板', async () => {
@@ -952,7 +958,7 @@ describe('ChatPage 会话切换体验', () => {
     await waitFor(() => {
       expect(deleteFileMock).toHaveBeenCalledWith('file-uploaded');
     });
-    expect(useConversationFilesState.removeFile).toHaveBeenCalledWith('file-uploaded');
+    expect(useConversationFilesState.removeFile).toHaveBeenCalledWith('file-uploaded', 'chat-a');
     await waitFor(() => {
       expect(screen.getByTestId('chat-input')).toHaveAttribute('data-attachment-count', '0');
     });
@@ -1100,7 +1106,7 @@ describe('ChatPage 会话切换体验', () => {
     await waitFor(() => {
       expect(deleteFileMock).toHaveBeenCalledWith('file-pending-image');
     });
-    expect(useConversationFilesState.removeFile).toHaveBeenCalledWith('file-pending-image');
+    expect(useConversationFilesState.removeFile).toHaveBeenCalledWith('file-pending-image', 'chat-a');
 
     useConversationFilesState.files = [
       {
@@ -1138,6 +1144,30 @@ describe('ChatPage 会话切换体验', () => {
     sendOptions.onStreamEnd('chat-a');
 
     expect(useConversationFilesState.refresh).not.toHaveBeenCalled();
+    expect(fetchQuestionsMock).not.toHaveBeenCalled();
+  });
+
+  it('旧会话带附件的流结束时只刷新原会话资料缓存', async () => {
+    conversationsById.set('chat-a', createConversation('chat-a', [textMessage('message-a')]));
+    conversationsById.set('chat-b', createConversation('chat-b', [textMessage('message-b')]));
+    hydrationById.set('chat-a', { view: 'ready' });
+    hydrationById.set('chat-b', { view: 'ready' });
+
+    const { rerender } = render(<ChatPage />);
+
+    fireEvent.click(screen.getByRole('button', { name: '上传已处理资料' }));
+    fireEvent.click(screen.getByRole('button', { name: '发送带资料消息' }));
+    const sendOptions = sendMessageMock.mock.calls.at(-1)?.[1];
+    useConversationFilesState.refresh.mockClear();
+    fetchQuestionsMock.mockClear();
+
+    currentRoute.chatId = 'chat-b';
+    rerender(<ChatPage />);
+
+    sendOptions.onStreamEnd('chat-a');
+
+    expect(useConversationFilesState.refresh).toHaveBeenCalledTimes(1);
+    expect(useConversationFilesState.refresh).toHaveBeenCalledWith('chat-a');
     expect(fetchQuestionsMock).not.toHaveBeenCalled();
   });
 

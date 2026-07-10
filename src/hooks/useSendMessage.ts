@@ -1,4 +1,4 @@
-import { useCallback, useRef } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import { useAppDispatch, useAppSelector } from '@/redux/hooks';
 import { useStore } from 'react-redux';
@@ -38,6 +38,7 @@ import type { Message, ContentBlock } from '@/types/conversation';
 import type { FileAttachment } from '@/lib/utils/fileHelpers';
 import { useTypewriter } from './useTypewriter';
 import { useRetryMessage } from './useRetryMessage';
+import type { RootState } from '@/redux/store';
 
 type SendMessageOptions = {
   conversationId: string | null;
@@ -51,6 +52,37 @@ type SendMessageOptions = {
 
 const STOP_BEFORE_READY_RETRY_DELAYS_MS = [50, 150] as const;
 const STOP_OPERATION_TIMEOUT_MS = 500;
+
+interface SendSessionContext {
+  authSessionKey: string;
+  conversationEpoch: number;
+  generation: number;
+}
+
+function selectAuthSessionKey(state: RootState): string | null {
+  if (!state.auth.isAuthenticated) return null;
+  return state.auth.user?.id ?? state.auth.token ?? null;
+}
+
+function captureSendSessionContext(
+  state: RootState,
+  generation: number
+): SendSessionContext | null {
+  const authSessionKey = selectAuthSessionKey(state);
+  if (!authSessionKey) return null;
+  return {
+    authSessionKey,
+    conversationEpoch: state.conversation.conversationListEpoch,
+    generation,
+  };
+}
+
+function isSendSessionCurrent(state: RootState, context: SendSessionContext): boolean {
+  return (
+    selectAuthSessionKey(state) === context.authSessionKey &&
+    state.conversation.conversationListEpoch === context.conversationEpoch
+  );
+}
 
 function stopAbortError(): Error {
   const error = new Error('停止请求已超时');
@@ -89,24 +121,40 @@ function normalizeSendErrorMessage(message: string): string {
   return message;
 }
 
-async function postStreamActions(conversationId: string, dispatch: ReturnType<typeof useAppDispatch>) {
+async function postStreamActions(
+  conversationId: string,
+  dispatch: ReturnType<typeof useAppDispatch>,
+  isSessionCurrent: () => boolean
+) {
+  if (!isSessionCurrent()) return;
   try {
     const title = await generateChatTitle(conversationId, undefined, { max_length: 20 });
+    if (!isSessionCurrent()) return;
     dispatch(updateConversationTitle({ id: conversationId, title }));
     dispatch(setAnimatingTitleId(conversationId));
-    setTimeout(() => dispatch(setAnimatingTitleId(null)), title.length * 200 + 1000);
+    setTimeout(() => {
+      if (isSessionCurrent()) {
+        dispatch(setAnimatingTitleId(null));
+      }
+    }, title.length * 200 + 1000);
   } catch {
     // ignore title failures
   }
-  dispatch(requestConversationListRefresh());
+  if (isSessionCurrent()) {
+    dispatch(requestConversationListRefresh(conversationId));
+  }
 }
 
 export function useSendMessage() {
   const dispatch = useAppDispatch();
-  const store = useStore();
+  const store = useStore<RootState>();
   const models = useAppSelector((state) => state.models.models);
   const selectedModelId = useAppSelector((state) => state.models.selectedModelId);
   const reasoningEnabled = useAppSelector((state) => state.conversation.reasoningEnabled);
+  const authSessionKey = useAppSelector(selectAuthSessionKey);
+  const conversationEpoch = useAppSelector(
+    (state) => state.conversation.conversationListEpoch
+  );
   const abortControllerRef = useRef<AbortController | null>(null);
   const stopInFlightPromiseRef = useRef<Promise<void> | null>(null);
   const activeConvIdRef = useRef<string | null>(null);
@@ -116,7 +164,50 @@ export function useSendMessage() {
   // 不复用 assistantMessageIdRef（那是 placeholder，streaming 期渲染匹配仍要用）
   const serverMessageIdRef = useRef<string | null>(null);
   const assistantHasContentRef = useRef(false);
+  const sendGenerationRef = useRef(0);
+  const activeSendContextRef = useRef<SendSessionContext | null>(null);
   const typewriter = useTypewriter();
+  const typewriterRef = useRef(typewriter);
+  typewriterRef.current = typewriter;
+  const sendBoundaryRef = useRef({ authSessionKey, conversationEpoch });
+
+  const invalidateFrontendSend = useCallback(() => {
+    sendGenerationRef.current += 1;
+    abortControllerRef.current?.abort();
+    abortControllerRef.current = null;
+    typewriterRef.current.stop();
+    stopInFlightPromiseRef.current = null;
+    activeConvIdRef.current = null;
+    userMessageIdRef.current = null;
+    assistantMessageIdRef.current = null;
+    serverMessageIdRef.current = null;
+    assistantHasContentRef.current = false;
+    activeSendContextRef.current = null;
+    dispatch(endStream());
+  }, [dispatch]);
+
+  useEffect(() => {
+    const previousBoundary = sendBoundaryRef.current;
+    sendBoundaryRef.current = { authSessionKey, conversationEpoch };
+    if (
+      previousBoundary.authSessionKey !== authSessionKey ||
+      previousBoundary.conversationEpoch !== conversationEpoch
+    ) {
+      invalidateFrontendSend();
+    }
+  }, [authSessionKey, conversationEpoch, invalidateFrontendSend]);
+
+  useEffect(() => {
+    return () => {
+      const activeSendContext = activeSendContextRef.current;
+      if (
+        activeSendContext &&
+        !isSendSessionCurrent(store.getState(), activeSendContext)
+      ) {
+        invalidateFrontendSend();
+      }
+    };
+  }, [invalidateFrontendSend, store]);
 
   // 获取当前流式会话 ID：优先用 ref（sendMessage 设置），fallback 到 Redux（reconnect 设置）
   const getStreamingConvId = useCallback(() => {
@@ -141,7 +232,7 @@ export function useSendMessage() {
         convId && pendingConversationId === convId
       );
 
-      typewriter.stop();
+      typewriterRef.current.stop();
 
       abortControllerRef.current?.abort();
       abortControllerRef.current = null;
@@ -175,6 +266,8 @@ export function useSendMessage() {
       }
 
       dispatch(endStream());
+      sendGenerationRef.current += 1;
+      activeSendContextRef.current = null;
       activeConvIdRef.current = null;
       userMessageIdRef.current = null;
       assistantMessageIdRef.current = null;
@@ -250,6 +343,17 @@ export function useSendMessage() {
         return;
       }
 
+      const nextGeneration = sendGenerationRef.current + 1;
+      const sendContext = captureSendSessionContext(store.getState(), nextGeneration);
+      if (!sendContext) return;
+      sendGenerationRef.current = nextGeneration;
+      activeSendContextRef.current = sendContext;
+      const isSessionCurrent = () => isSendSessionCurrent(store.getState(), sendContext);
+      const isActiveSendCurrent = () => (
+        sendGenerationRef.current === sendContext.generation &&
+        isSessionCurrent()
+      );
+
       const isDraft = options.isDraft ?? (options.conversationId === null);
       const tempConvId = isDraft && !options.conversationId ? uuidv4() : options.conversationId!;
 
@@ -315,7 +419,7 @@ export function useSendMessage() {
       dispatch(appendMessage({ conversationId: tempConvId, message: userMessage }));
       dispatch(appendMessage({ conversationId: tempConvId, message: assistantPlaceholder }));
       dispatch(startStream({ conversationId: tempConvId, messageId: assistantMessageId }));
-      if (isDraft) {
+      if (isDraft && isActiveSendCurrent()) {
         options.onDraftCreated?.(tempConvId);
       }
 
@@ -330,7 +434,12 @@ export function useSendMessage() {
       let donePayload: { incomingConvId: string } | null = null;
 
       const materializeIfNeeded = (incomingConvId?: string) => {
-        if (!isDraft || !incomingConvId || materializedOnce) return;
+        if (
+          !isActiveSendCurrent() ||
+          !isDraft ||
+          !incomingConvId ||
+          materializedOnce
+        ) return;
 
         materializedOnce = true;
         serverConvId = incomingConvId;
@@ -357,8 +466,10 @@ export function useSendMessage() {
       };
 
       const doCompleteStream = (payload: NonNullable<typeof donePayload>) => {
+        if (!isActiveSendCurrent()) return;
         const { incomingConvId } = payload;
         materializeIfNeeded(incomingConvId);
+        if (!isActiveSendCurrent()) return;
 
         const effectiveConvId = activeConvIdRef.current;
         if (!effectiveConvId) return;
@@ -402,6 +513,8 @@ export function useSendMessage() {
           })
         );
         dispatch(endStream());
+        sendGenerationRef.current += 1;
+        activeSendContextRef.current = null;
         abortControllerRef.current = null;
         activeConvIdRef.current = null;
         userMessageIdRef.current = null;
@@ -411,16 +524,20 @@ export function useSendMessage() {
         options.onStreamEnd?.(finalConvId);
         // 仅新对话的第一轮生成标题，后续轮次不再更新
         if (isDraft) {
-          void postStreamActions(finalConvId, dispatch);
+          void postStreamActions(finalConvId, dispatch, isSessionCurrent);
         } else {
-          dispatch(requestConversationListRefresh());
+          if (isSessionCurrent()) {
+            dispatch(requestConversationListRefresh(finalConvId));
+          }
         }
 
         // Agent 模式：streamSlice 无法完整跟踪多步数据，从 DB 重新拉取完整消息内容
         if (isAgentMode) {
           void (async () => {
             try {
+              if (!isSessionCurrent()) return;
               const conv = await getConversation(finalConvId) as any;
+              if (!isSessionCurrent()) return;
               const dbMessages = conv?.messages;
               if (!dbMessages) return;
 
@@ -462,6 +579,7 @@ export function useSendMessage() {
           },
           {
             onReady: ({ messageId: incomingMessageId, conversationId: incomingConvId }) => {
+              if (!isActiveSendCurrent()) return;
               // 记录 BE 真实 message_id 供 stop 用（不污染 assistantMessageIdRef，
               // streaming 期渲染匹配仍然依赖本地 placeholder）
               serverMessageIdRef.current = incomingMessageId;
@@ -469,7 +587,7 @@ export function useSendMessage() {
             },
 
             onAnswering: (payload) => {
-              if (!activeConvIdRef.current) return;
+              if (!isActiveSendCurrent() || !activeConvIdRef.current) return;
               // 收到第一个 text delta 且还在推理阶段 → 标记推理结束
               const streamState = (store.getState() as { stream: import('@/redux/slices/streamSlice').StreamState }).stream;
               if (streamState.isStreamingReasoning) {
@@ -482,13 +600,13 @@ export function useSendMessage() {
                 runId: payload.run_id,
                 stepId: payload.step_id,
               }));
-              typewriter.start(() => {
-                if (donePayload) doCompleteStream(donePayload);
+              typewriterRef.current.start(() => {
+                if (donePayload && isActiveSendCurrent()) doCompleteStream(donePayload);
               });
             },
 
             onReasoning: (payload) => {
-              if (!activeConvIdRef.current) return;
+              if (!isActiveSendCurrent() || !activeConvIdRef.current) return;
               dispatch(appendThinkingDelta({
                 blockId: payload.block_id,
                 delta: payload.delta,
@@ -499,27 +617,31 @@ export function useSendMessage() {
 
             ...createAgentStreamEventHandlers({
               dispatch,
-              isActive: () => Boolean(activeConvIdRef.current),
+              isActive: () => Boolean(activeConvIdRef.current) && isActiveSendCurrent(),
               // 优先本地 placeholder（streaming 期 message.id 是它），ref 为 null 时兜底用后端 ID。
               resolveMessageId: ev => assistantMessageIdRef.current ?? ev.message_id,
               setServerMessageId: messageId => {
-                serverMessageIdRef.current = messageId;
+                if (isActiveSendCurrent()) {
+                  serverMessageIdRef.current = messageId;
+                }
               },
             }),
 
             onDone: ({ conversationId: incomingConvId }) => {
+              if (!isActiveSendCurrent()) return;
               donePayload = { incomingConvId };
               if (!assistantHasContentRef.current) {
                 // 没有文本内容，直接完成（打字机从未启动）
                 doCompleteStream(donePayload);
               } else {
-                typewriter.markNetworkDone();
+                typewriterRef.current.markNetworkDone();
               }
             },
 
             // TODO: 遗漏1 — 网络抖动自动重连。当前网络断开直接报错，
             // 后续加 retry 计数器，失败 N 次内自动调 reconnectStream，超出则报错
             onError: (message, payload) => {
+              if (!isActiveSendCurrent()) return;
               const readableMessage = normalizeSendErrorMessage(message);
               dispatch(setGlobalError(readableMessage));
               dispatch(setStreamError({ message: readableMessage, code: payload?.code, data: payload?.data }));
@@ -528,8 +650,8 @@ export function useSendMessage() {
           controller.signal
         );
       } catch (error) {
-        typewriter.stop();
-        if (controller.signal.aborted) return;
+        typewriterRef.current.stop();
+        if (controller.signal.aborted || !isActiveSendCurrent()) return;
 
         const effectiveConvIdOnError = activeConvIdRef.current ?? tempConvId;
         if ((materializedOnce || !isDraft) && assistantHasContentRef.current) {
@@ -565,6 +687,8 @@ export function useSendMessage() {
           dispatch(setPendingConversationId(null));
         }
         dispatch(endStream());
+        sendGenerationRef.current += 1;
+        activeSendContextRef.current = null;
         abortControllerRef.current = null;
         activeConvIdRef.current = null;
         userMessageIdRef.current = null;

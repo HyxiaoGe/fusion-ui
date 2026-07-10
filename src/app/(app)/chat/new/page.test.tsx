@@ -11,6 +11,11 @@ const {
   sendMessageMock,
 } = vi.hoisted(() => ({
   appState: {
+    auth: {
+      isAuthenticated: true,
+      user: { id: 'user-a' },
+      token: 'token-a',
+    },
     models: {
       models: [
         { id: 'model-1', enabled: true },

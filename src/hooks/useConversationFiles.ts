@@ -1,15 +1,30 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useSyncExternalStore } from 'react';
 
 import { getConversationFiles, type FileInfo } from '@/lib/api/files';
+import {
+  getConversationFilesCacheEntry,
+  getConversationFilesResourceEpoch,
+  getConversationFilesSnapshot,
+  getOrStartConversationFilesRequest,
+  invalidateConversationFilesCache,
+  isConversationFilesCacheFresh,
+  resetConversationFilesResource,
+  subscribeConversationFiles,
+} from '@/lib/chat/conversationFilesResource';
 
 const DEFAULT_LOAD_ERROR = '资料列表加载失败';
+
+export interface UseConversationFilesOptions {
+  enabled?: boolean;
+  sessionKey?: string | null;
+}
 
 export interface UseConversationFilesResult {
   files: FileInfo[];
   isLoading: boolean;
   error: string | null;
-  refresh: () => Promise<void>;
-  removeFile: (fileId: string) => void;
+  refresh: (targetConversationId?: string | null) => Promise<void>;
+  removeFile: (fileId: string, targetConversationId?: string | null) => void;
 }
 
 function getReadableError(error: unknown): string {
@@ -19,102 +34,102 @@ function getReadableError(error: unknown): string {
   return DEFAULT_LOAD_ERROR;
 }
 
-export function useConversationFiles(conversationId: string | null): UseConversationFilesResult {
-  const [stateConversationId, setStateConversationId] = useState<string | null>(conversationId);
-  const [files, setFiles] = useState<FileInfo[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const requestIdRef = useRef(0);
-  const mountedRef = useRef(true);
+export function __resetConversationFilesCacheForTest(): void {
+  resetConversationFilesResource();
+}
+
+export function useConversationFiles(
+  conversationId: string | null,
+  options: UseConversationFilesOptions = {},
+): UseConversationFilesResult {
+  const { enabled = true, sessionKey = null } = options;
   const latestConversationIdRef = useRef<string | null>(conversationId);
+  const latestEnabledRef = useRef(enabled);
+  const latestResourceEpochRef = useRef(getConversationFilesResourceEpoch());
+  const resourceEpoch = getConversationFilesResourceEpoch();
+  const subscribe = useCallback(
+    (listener: () => void) => subscribeConversationFiles(conversationId, listener),
+    [conversationId],
+  );
+  const getSnapshot = useCallback(
+    () => getConversationFilesSnapshot(conversationId),
+    [conversationId],
+  );
+  const snapshot = useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
 
   useLayoutEffect(() => {
     latestConversationIdRef.current = conversationId;
-  }, [conversationId]);
+    latestEnabledRef.current = enabled;
+    latestResourceEpochRef.current = resourceEpoch;
+  }, [conversationId, enabled, resourceEpoch]);
 
-  const clearState = useCallback((targetConversationId: string | null = latestConversationIdRef.current) => {
-    requestIdRef.current += 1;
-    setStateConversationId(targetConversationId);
-    setFiles([]);
-    setError(null);
-    setIsLoading(false);
-  }, []);
+  useEffect(() => {
+    if (!enabled || !conversationId) return;
 
-  const loadFiles = useCallback(async (targetConversationId: string | null) => {
-    if (!targetConversationId) {
-      clearState();
+    const cachedEntry = getConversationFilesCacheEntry(conversationId);
+    if (cachedEntry && isConversationFilesCacheFresh(cachedEntry)) {
       return;
     }
 
-    const requestId = requestIdRef.current + 1;
-    requestIdRef.current = requestId;
-    setStateConversationId(targetConversationId);
-    setFiles([]);
-    setError(null);
-    setIsLoading(true);
+    void getOrStartConversationFilesRequest(
+      conversationId,
+      false,
+      getConversationFiles,
+    ).promise.catch(() => {
+      // 错误已进入共享 resource snapshot，由所有订阅 hook 同步展示。
+    });
+  }, [conversationId, enabled, sessionKey]);
+
+  const refresh = useCallback(async (targetConversationId?: string | null) => {
+    if (
+      !latestEnabledRef.current ||
+      latestResourceEpochRef.current !== getConversationFilesResourceEpoch()
+    ) {
+      return;
+    }
+
+    const resolvedConversationId = targetConversationId === undefined
+      ? latestConversationIdRef.current
+      : targetConversationId;
+    if (!resolvedConversationId) return;
 
     try {
-      const nextFiles = await getConversationFiles(targetConversationId);
-      if (
-        !mountedRef.current ||
-        requestId !== requestIdRef.current ||
-        targetConversationId !== latestConversationIdRef.current
-      ) {
-        return;
-      }
-      setStateConversationId(targetConversationId);
-      setFiles(nextFiles);
-      setError(null);
-    } catch (loadError) {
-      if (
-        !mountedRef.current ||
-        requestId !== requestIdRef.current ||
-        targetConversationId !== latestConversationIdRef.current
-      ) {
-        return;
-      }
-      setStateConversationId(targetConversationId);
-      setFiles([]);
-      setError(getReadableError(loadError));
-    } finally {
-      if (mountedRef.current && requestId === requestIdRef.current) {
-        setIsLoading(false);
-      }
+      await getOrStartConversationFilesRequest(
+        resolvedConversationId,
+        true,
+        getConversationFiles,
+      ).promise;
+    } catch {
+      // 错误已进入目标 conversation 的共享 snapshot。
     }
-  }, [clearState]);
+  }, []);
 
-  useEffect(() => {
-    mountedRef.current = true;
+  const removeFile = useCallback((fileId: string, targetConversationId?: string | null) => {
+    const resolvedConversationId = targetConversationId === undefined
+      ? latestConversationIdRef.current
+      : targetConversationId;
+    if (!resolvedConversationId) return;
 
-    if (!conversationId) {
-      clearState(null);
-      return;
-    }
+    invalidateConversationFilesCache(
+      resolvedConversationId,
+      (cachedFiles) => cachedFiles.filter((file) => file.id !== fileId),
+    );
+  }, []);
 
-    void loadFiles(conversationId);
-  }, [clearState, conversationId, loadFiles]);
-
-  useEffect(() => {
-    return () => {
-      mountedRef.current = false;
-      requestIdRef.current += 1;
+  if (!enabled || !conversationId) {
+    return {
+      files: [],
+      isLoading: false,
+      error: null,
+      refresh,
+      removeFile,
     };
-  }, []);
-
-  const refresh = useCallback(async () => {
-    await loadFiles(latestConversationIdRef.current);
-  }, [loadFiles]);
-
-  const removeFile = useCallback((fileId: string) => {
-    setFiles((currentFiles) => currentFiles.filter((file) => file.id !== fileId));
-  }, []);
-
-  const isCurrentConversationState = stateConversationId === conversationId;
+  }
 
   return {
-    files: isCurrentConversationState ? files : [],
-    isLoading: conversationId ? (isCurrentConversationState ? isLoading : true) : false,
-    error: isCurrentConversationState ? error : null,
+    files: snapshot.files,
+    isLoading: snapshot.isLoading,
+    error: snapshot.error == null ? null : getReadableError(snapshot.error),
     refresh,
     removeFile,
   };
