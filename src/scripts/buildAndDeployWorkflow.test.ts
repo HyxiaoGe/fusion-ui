@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 const workflow = readFileSync(join(process.cwd(), '.github/workflows/build-and-deploy.yml'), 'utf8');
+const buildBlock = workflow.slice(workflow.indexOf('  build:'), workflow.indexOf('  deploy-preview:'));
 const deployDevBlock = workflow.slice(workflow.indexOf('  deploy-dev:'));
 
 describe('build-and-deploy workflow 发布门禁', () => {
@@ -59,5 +60,21 @@ describe('build-and-deploy workflow 发布门禁', () => {
     expect(workflow).toContain('for ($attempt = 1; $attempt -le 3; $attempt++)');
     expect(workflow).toContain('docker @buildArgs');
     expect(workflow).toContain('docker build 失败，第 $attempt 次');
+  });
+
+  it('Windows 构建只在 Docker targets 中安装依赖、测试和构建', () => {
+    expect(buildBlock).not.toContain('Setup Node.js');
+    expect(buildBlock).not.toContain('npm ci --no-audit --no-fund --cache');
+    expect(buildBlock).not.toContain('run: npm run build');
+    expect(buildBlock).not.toContain('run: npm test');
+    expect(buildBlock).toContain('"--target", "test"');
+    expect(buildBlock).toContain('"--target", "production"');
+  });
+
+  it('Windows Docker builds 复用项目级共享缓存', () => {
+    expect(buildBlock).toContain('docker-buildx-cache\\fusion-ui\\shared');
+    expect(buildBlock).toContain('type=local,src=$cacheRoot');
+    expect(buildBlock).toContain('type=local,dest=$cacheNext,mode=max');
+    expect(buildBlock).not.toContain('docker-buildx-cache\\fusion-ui\\$refKey');
   });
 });
