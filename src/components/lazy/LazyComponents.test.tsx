@@ -18,4 +18,15 @@ describe('LazyWrapper', () => {
     expect(screen.queryByTestId('chat-loading-user-bubble')).toBeNull();
     expect(screen.queryByText('加载中...')).toBeNull();
   });
+
+  it('允许消息场景提供真实内容作为 suspense fallback', () => {
+    render(
+      <LazyWrapper fallback={<div aria-label="用户消息内容">即时消息</div>}>
+        <SuspendedChild />
+      </LazyWrapper>
+    );
+
+    expect(screen.getByLabelText('用户消息内容')).toHaveTextContent('即时消息');
+    expect(screen.queryByTestId('chat-loading-surface')).toBeNull();
+  });
 });

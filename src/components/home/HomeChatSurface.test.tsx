@@ -17,6 +17,7 @@ const {
   pendingConversationState,
   streamState,
   chatMessageListMock,
+  chatMessageListState,
 } = vi.hoisted(() => ({
   dispatchMock: vi.fn(),
   routerPushMock: vi.fn(),
@@ -56,6 +57,9 @@ const {
     conversationId: null as string | null,
   },
   chatMessageListMock: vi.fn(),
+  chatMessageListState: {
+    suspended: false,
+  },
 }));
 
 vi.mock('next/navigation', () => ({
@@ -106,6 +110,9 @@ vi.mock('@/hooks/useSendMessage', () => ({
 vi.mock('@/components/lazy/LazyComponents', () => ({
   ChatMessageListLazy: (props: any) => {
     chatMessageListMock(props);
+    if (chatMessageListState.suspended) {
+      return props.fallback;
+    }
     return (
       <div
         data-testid="pending-message-list"
@@ -301,6 +308,7 @@ describe('HomeChatSurface 会话资料交互', () => {
     deleteFileMock.mockResolvedValue(undefined);
     chatInputRenderMock.mockClear();
     chatMessageListMock.mockClear();
+    chatMessageListState.suspended = false;
     routeState.pathname = '/chat/new';
     routeState.modelHint = 'model-vision';
     pendingConversationState.id = null;
@@ -364,6 +372,44 @@ describe('HomeChatSurface 会话资料交互', () => {
     await waitFor(() => {
       expect(screen.getByTestId('home-page')).toBeInTheDocument();
     });
+  });
+
+  it('消息列表代码尚未加载完成时也立即显示真实用户消息', () => {
+    routeState.modelHint = null;
+    chatMessageListState.suspended = true;
+    pendingConversationState.id = 'draft-chat-fallback';
+    pendingConversationState.byId = {
+      'draft-chat-fallback': {
+        id: 'draft-chat-fallback',
+        title: '即时草稿',
+        model_id: 'model-vision',
+        createdAt: 1,
+        updatedAt: 1,
+        messages: [
+          {
+            id: 'user-fallback',
+            role: 'user',
+            content: [{ type: 'text', id: 'user-block', text: '这条消息必须立即出现' }],
+            status: 'pending',
+            timestamp: 1,
+          },
+          {
+            id: 'assistant-fallback',
+            role: 'assistant',
+            content: [],
+            timestamp: 1,
+          },
+        ],
+      },
+    };
+    streamState.isStreaming = true;
+    streamState.conversationId = 'draft-chat-fallback';
+
+    render(<HomeChatSurface />);
+
+    expect(screen.getByLabelText('用户消息内容')).toHaveTextContent('这条消息必须立即出现');
+    expect(screen.getByRole('status', { name: '正在准备完整对话视图' })).toBeInTheDocument();
+    expect(screen.queryByTestId('chat-loading-surface')).toBeNull();
   });
 
   it('materialized 到路由完成前持续显示服务端接管后的会话', async () => {

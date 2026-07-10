@@ -22,9 +22,44 @@ import { CHAT_NEW_PATH, buildChatConversationPath, buildChatNewPath, isChatNewPa
 import type { FileAttachment } from '@/lib/utils/fileHelpers';
 import { markConversationFilesPanelOpen } from '@/lib/chat/filesPanelHandoff';
 import { subscribeNewChatDraftReset } from '@/lib/chat/newChatDraftReset';
+import { extractTextFromBlocks, type Message } from '@/types/conversation';
 
 const EMPTY_CONVERSATION_ATTACHMENTS: ConversationComposerAttachment[] = [];
 const NEW_CHAT_ATTACHMENT_SCOPE = 'new-chat';
+
+function PendingConversationFallback({ messages }: { messages: Message[] }) {
+  const userMessages = messages.filter((message) => message.role === 'user');
+
+  return (
+    <div
+      role="status"
+      aria-label="正在准备完整对话视图"
+      className="flex min-h-full flex-col px-4 pb-[120px]"
+    >
+      <div className="flex-1" />
+      {userMessages.map((message) => {
+        const text = extractTextFromBlocks(message.content);
+        const fileNames = message.content
+          .filter((block) => block.type === 'file')
+          .map((block) => block.filename);
+        const preview = text || (fileNames.length > 0 ? `已附加：${fileNames.join('、')}` : '消息已发送');
+
+        return (
+          <div key={message.id} className="flex w-full justify-end gap-3 px-4 py-2">
+            <div className="flex w-full flex-col items-end space-y-1">
+              <div
+                aria-label="用户消息内容"
+                className="rounded-xl border border-border/60 bg-primary/10 px-4 py-2.5 text-foreground shadow-sm shadow-black/5 dark:border-border/50 dark:bg-primary/15 dark:shadow-black/20"
+              >
+                {preview}
+              </div>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
 
 interface ConversationAttachmentState {
   chatId: string;
@@ -393,6 +428,7 @@ export default function HomeChatSurface() {
         {shouldShowPendingConversation && displayConversationId && displayConversation ? (
           <div className="h-full px-4 pt-4" data-testid="pending-conversation-surface">
             <ChatMessageListLazy
+              fallback={<PendingConversationFallback messages={displayConversation.messages} />}
               messages={displayConversation.messages}
               conversationId={displayConversationId}
               isStreaming={isDisplayConversationStreaming}

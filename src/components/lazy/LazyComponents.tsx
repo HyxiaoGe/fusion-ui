@@ -35,8 +35,8 @@ export const LazyWrapper: React.FC<LazyWrapperProps> = ({
 };
 
 // 具体的懒加载组件包装器
-export const ChatMessageListLazy: React.FC<any> = (props) => (
-  <LazyWrapper>
+export const ChatMessageListLazy: React.FC<any> = ({ fallback, ...props }) => (
+  <LazyWrapper fallback={fallback}>
     <LazyChatMessageList {...props} />
   </LazyWrapper>
 );
