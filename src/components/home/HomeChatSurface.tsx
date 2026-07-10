@@ -5,6 +5,7 @@ import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { Files } from 'lucide-react';
 import ChatInput, { type ChatUploadCompleteFile } from '@/components/chat/ChatInput';
 import ConversationFilesPanel from '@/components/chat/ConversationFilesPanel';
+import { ChatMessageListLazy } from '@/components/lazy/LazyComponents';
 import {
   tryConversationFileToComposerAttachment,
   type ConversationComposerAttachment,
@@ -59,6 +60,7 @@ export default function HomeChatSurface() {
   const [inputKey, setInputKey] = useState(0);
   const [filesPanelOpen, setFilesPanelOpen] = useState(false);
   const [filesConversationId, setFilesConversationId] = useState<string | null>(null);
+  const [handoffConversationId, setHandoffConversationId] = useState<string | null>(null);
   const [conversationAttachmentState, setConversationAttachmentState] = useState<ConversationAttachmentState>({
     chatId: NEW_CHAT_ATTACHMENT_SCOPE,
     attachments: [],
@@ -68,8 +70,22 @@ export default function HomeChatSurface() {
     fileIds: [],
   });
   const appliedModelHintRef = useRef<string | null>(null);
+  const ownsNewChatNavigationRef = useRef(true);
+  const navigationGenerationRef = useRef(0);
   const models = useAppSelector((state) => state.models.models);
-  const { sendMessage } = useSendMessage();
+  const pendingConversationId = useAppSelector((state) => state.conversation.pendingConversationId);
+  const displayConversationId = pendingConversationId ?? handoffConversationId;
+  const displayConversation = useAppSelector((state) =>
+    displayConversationId ? state.conversation.byId[displayConversationId] : undefined
+  );
+  const isDisplayConversationStreaming = useAppSelector((state) =>
+    Boolean(
+      displayConversationId &&
+      state.stream.isStreaming &&
+      state.stream.conversationId === displayConversationId
+    )
+  );
+  const { sendMessage, stopStreaming } = useSendMessage();
   const {
     files: conversationFiles,
     isLoading: conversationFilesLoading,
@@ -88,16 +104,37 @@ export default function HomeChatSurface() {
     conversationAttachments.length > 0 ||
     conversationFilesLoading ||
     Boolean(conversationFilesError);
+  const shouldShowPendingConversation = Boolean(
+    displayConversationId && displayConversation && displayConversation.messages.length > 0
+  );
+
+  useEffect(() => {
+    ownsNewChatNavigationRef.current = true;
+    return () => {
+      ownsNewChatNavigationRef.current = false;
+    };
+  }, []);
 
   const resetNewChatDraft = useCallback(() => {
+    navigationGenerationRef.current += 1;
+    if (displayConversationId && isDisplayConversationStreaming) {
+      void stopStreaming();
+    }
     setInputKey((current) => current + 1);
+    setHandoffConversationId(null);
     setFilesPanelOpen(false);
     setFilesConversationId(null);
     setConversationAttachmentState({ chatId: NEW_CHAT_ATTACHMENT_SCOPE, attachments: [] });
     setPendingAutoAttachState({ chatId: NEW_CHAT_ATTACHMENT_SCOPE, fileIds: [] });
-  }, []);
+  }, [displayConversationId, isDisplayConversationStreaming, stopStreaming]);
 
   useEffect(() => subscribeNewChatDraftReset(resetNewChatDraft), [resetNewChatDraft]);
+
+  const handleStopPendingConversation = useCallback(() => {
+    navigationGenerationRef.current += 1;
+    setHandoffConversationId(null);
+    return stopStreaming();
+  }, [stopStreaming]);
 
   useEffect(() => {
     if (!modelHint || appliedModelHintRef.current === modelHint) {
@@ -297,6 +334,8 @@ export default function HomeChatSurface() {
     attachments?: FileAttachment[],
     pendingConversationId?: string
   ) => {
+    const navigationGeneration = navigationGenerationRef.current + 1;
+    navigationGenerationRef.current = navigationGeneration;
     const shouldOpenFilesPanel = Boolean(attachments && attachments.length > 0);
     if (shouldOpenFilesPanel) {
       setFilesPanelOpen(true);
@@ -307,8 +346,19 @@ export default function HomeChatSurface() {
       {
         conversationId: pendingConversationId ?? null,
         isDraft: true,
-        onDraftCreated: () => {},
+        onDraftCreated: () => {
+          if (navigationGenerationRef.current === navigationGeneration) {
+            setHandoffConversationId(null);
+          }
+        },
         onMaterialized: (serverConversationId) => {
+          if (
+            !ownsNewChatNavigationRef.current ||
+            navigationGenerationRef.current !== navigationGeneration
+          ) {
+            return;
+          }
+          setHandoffConversationId(serverConversationId);
           if (shouldOpenFilesPanel) {
             markConversationFilesPanelOpen(serverConversationId);
           }
@@ -340,7 +390,17 @@ export default function HomeChatSurface() {
   return (
     <div className="h-full flex flex-col relative">
       <div className="flex-1 overflow-y-auto">
-        <HomePage onSendMessage={handleSendMessage} onNewChat={handleNewChat} />
+        {shouldShowPendingConversation && displayConversationId && displayConversation ? (
+          <div className="h-full px-4 pt-4" data-testid="pending-conversation-surface">
+            <ChatMessageListLazy
+              messages={displayConversation.messages}
+              conversationId={displayConversationId}
+              isStreaming={isDisplayConversationStreaming}
+            />
+          </div>
+        ) : (
+          <HomePage onSendMessage={handleSendMessage} onNewChat={handleNewChat} />
+        )}
       </div>
       <div className="flex-shrink-0 p-4">
         {shouldShowFilesPanelButton ? (
@@ -362,7 +422,8 @@ export default function HomeChatSurface() {
         <ChatInput
           key={inputKey}
           onSendMessage={handleSendMessage}
-          activeChatId={null}
+          onStopStreaming={shouldShowPendingConversation ? handleStopPendingConversation : undefined}
+          activeChatId={shouldShowPendingConversation ? displayConversationId : null}
           autoFocus
           focusSignal={inputKey}
           conversationAttachments={conversationAttachments}

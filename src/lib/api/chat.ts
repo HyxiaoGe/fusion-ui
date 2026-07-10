@@ -482,14 +482,21 @@ export async function reconnectStream(
   return { entryId };
 }
 
-export async function stopStream(conversationId: string, messageId?: string): Promise<boolean> {
+export async function stopStream(
+  conversationId: string,
+  messageId?: string,
+  signal?: AbortSignal,
+): Promise<boolean> {
   try {
     const data = await apiRequest<{ cancelled: boolean }>(
       `${API_BASE_URL}/api/chat/stop/${conversationId}${messageId ? `?message_id=${encodeURIComponent(messageId)}` : ''}`,
-      { method: 'POST' },
+      { method: 'POST', signal },
     );
     return data.cancelled ?? false;
-  } catch {
+  } catch (error) {
+    if (signal?.aborted) {
+      throw error;
+    }
     return false;
   }
 }

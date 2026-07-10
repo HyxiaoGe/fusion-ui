@@ -949,6 +949,17 @@ describe('ChatInput', () => {
 
     fireEvent.click(screen.getByRole('button', { name: '停止生成' }));
     expect(onStopStreaming).toHaveBeenCalledTimes(1);
+
+    onSendMessage.mockClear();
+    fireEvent.change(screen.getByPlaceholderText('发消息给 Fusion AI（Enter 发送）'), {
+      target: { value: '不应在生成中发送' },
+    });
+    fireEvent.keyDown(screen.getByPlaceholderText('发消息给 Fusion AI（Enter 发送）'), {
+      key: 'Enter',
+      code: 'Enter',
+    });
+    expect(onStopStreaming).toHaveBeenCalledTimes(2);
+    expect(onSendMessage).not.toHaveBeenCalled();
   });
 
   it('renders composer as a structured input panel with toolbar and attachment status area', async () => {

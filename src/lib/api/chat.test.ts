@@ -13,7 +13,34 @@ vi.mock('./fetchWithAuth', () => ({
   apiRequest: apiRequestMock,
 }));
 
-import { continueAgentRunStream, getConversation, reconnectStream, sendMessageStream } from './chat';
+import { continueAgentRunStream, getConversation, reconnectStream, sendMessageStream, stopStream } from './chat';
+
+describe('stopStream', () => {
+  beforeEach(() => {
+    apiRequestMock.mockReset();
+  });
+
+  it('向停止请求透传 AbortSignal', async () => {
+    const controller = new AbortController();
+    apiRequestMock.mockResolvedValue({ cancelled: true });
+
+    await expect(stopStream('conv-1', undefined, controller.signal)).resolves.toBe(true);
+    expect(apiRequestMock).toHaveBeenCalledWith(
+      expect.stringContaining('/api/chat/stop/conv-1'),
+      { method: 'POST', signal: controller.signal },
+    );
+  });
+
+  it('请求被主动取消时保留 AbortError 供上层释放停止屏障', async () => {
+    const controller = new AbortController();
+    const abortError = new Error('aborted');
+    abortError.name = 'AbortError';
+    controller.abort();
+    apiRequestMock.mockRejectedValue(abortError);
+
+    await expect(stopStream('conv-1', undefined, controller.signal)).rejects.toBe(abortError);
+  });
+});
 
 function createStreamResponse(chunks: string[]) {
   const encoder = new TextEncoder();

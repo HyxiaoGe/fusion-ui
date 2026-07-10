@@ -14,11 +14,13 @@ import type { StreamCallbacks } from '@/lib/api/chat';
 
 const {
   sendMessageStreamMock,
+  stopStreamMock,
   getConversationMock,
   generateChatTitleMock,
   uuidMock,
 } = vi.hoisted(() => ({
   sendMessageStreamMock: vi.fn(),
+  stopStreamMock: vi.fn(),
   getConversationMock: vi.fn(),
   generateChatTitleMock: vi.fn(),
   uuidMock: vi.fn(),
@@ -29,7 +31,7 @@ vi.mock('@/lib/api/chat', () => ({
   getConversation: getConversationMock,
   // useSendMessage 内部 dynamic import('@/lib/api/chat') 取 stopStream，
   // 必须在 mock 里也提供 stub，避免「No "stopStream" export」错误
-  stopStream: vi.fn().mockResolvedValue(undefined),
+  stopStream: stopStreamMock,
 }));
 
 vi.mock('@/lib/api/title', () => ({
@@ -101,6 +103,8 @@ function tickIntervals(times = 1) {
 describe('useSendMessage', () => {
   beforeEach(() => {
     sendMessageStreamMock.mockReset();
+    stopStreamMock.mockReset();
+    stopStreamMock.mockResolvedValue(undefined);
     getConversationMock.mockReset();
     generateChatTitleMock.mockReset();
     generateChatTitleMock.mockResolvedValue('Generated Title');
@@ -251,10 +255,262 @@ describe('useSendMessage', () => {
 
     const state = store.getState();
     expect(state.conversation.byId['temp-conv']?.messages).toHaveLength(2);
+    expect(state.conversation.byId['temp-conv']?.messages[0]).toEqual(
+      expect.objectContaining({ role: 'user', status: 'pending' })
+    );
+    expect(state.conversation.byId['temp-conv']?.messages[1]).toEqual(
+      expect.objectContaining({ role: 'assistant', content: [] })
+    );
     expect(state.stream.conversationId).toBe('temp-conv');
     expect(sendMessageStreamMock).toHaveBeenCalledTimes(1);
 
     releaseStream?.();
+  });
+
+  it('服务端接管前失败时移除本地草稿并回到新建页状态', async () => {
+    const store = createStore();
+
+    sendMessageStreamMock.mockRejectedValueOnce(new Error('发送失败'));
+
+    const { result } = renderHook(() => useSendMessage(), {
+      wrapper: createWrapper(store),
+    });
+
+    await act(async () => {
+      await result.current.sendMessage('hello', {
+        conversationId: null,
+      } as any);
+    });
+
+    expect(store.getState().conversation.byId['temp-conv']).toBeUndefined();
+    expect(store.getState().conversation.pendingConversationId).toBeNull();
+  });
+
+  it('带附件草稿始终复用上传阶段的 pending conversation ID', async () => {
+    const store = createStore();
+    const onDraftCreated = vi.fn();
+    let releaseStream: (() => void) | undefined;
+
+    sendMessageStreamMock.mockImplementationOnce(async () => {
+      await new Promise<void>((resolve) => {
+        releaseStream = resolve;
+      });
+    });
+
+    const { result } = renderHook(() => useSendMessage(), {
+      wrapper: createWrapper(store),
+    });
+
+    await act(async () => {
+      void result.current.sendMessage(
+        '看图',
+        {
+          conversationId: 'pending-upload-conv',
+          isDraft: true,
+          onDraftCreated,
+        },
+        [{ fileId: 'file-1', filename: 'image.png', mimeType: 'image/png' }]
+      );
+    });
+
+    await waitFor(() => expect(onDraftCreated).toHaveBeenCalledWith('pending-upload-conv'));
+    expect(sendMessageStreamMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        conversation_id: 'pending-upload-conv',
+        file_ids: ['file-1'],
+      }),
+      expect.any(Object),
+      expect.any(AbortSignal)
+    );
+    expect(store.getState().conversation.byId['pending-upload-conv']?.messages).toHaveLength(2);
+
+    releaseStream?.();
+  });
+
+  it('首个 SSE 前停止生成会清理本地草稿并回到新建页状态', async () => {
+    const store = createStore();
+    let releaseStop: ((cancelled: boolean) => void) | undefined;
+    stopStreamMock.mockImplementationOnce(
+      () => new Promise<boolean>((resolve) => {
+        releaseStop = resolve;
+      })
+    );
+    sendMessageStreamMock.mockImplementationOnce(async () => {
+      await new Promise<void>(() => {});
+    });
+
+    const { result } = renderHook(() => useSendMessage(), {
+      wrapper: createWrapper(store),
+    });
+
+    await act(async () => {
+      void result.current.sendMessage('hello', {
+        conversationId: null,
+      });
+    });
+
+    await waitFor(() => {
+      expect(store.getState().conversation.pendingConversationId).toBe('temp-conv');
+    });
+
+    let stopPromise: Promise<void> | undefined;
+    await act(async () => {
+      stopPromise = result.current.stopStreaming();
+      await Promise.resolve();
+    });
+
+    expect(store.getState().conversation.pendingConversationId).toBeNull();
+    expect(store.getState().conversation.byId['temp-conv']).toBeUndefined();
+    expect(store.getState().stream.isStreaming).toBe(false);
+
+    await waitFor(() => {
+      expect(stopStreamMock).toHaveBeenCalledWith(
+        'temp-conv',
+        undefined,
+        expect.any(AbortSignal)
+      );
+    });
+    releaseStop?.(true);
+    await act(async () => {
+      await stopPromise;
+    });
+    expect(stopStreamMock).toHaveBeenCalledWith(
+      'temp-conv',
+      undefined,
+      expect.any(AbortSignal)
+    );
+  });
+
+  it('首个 SSE 前取消早于 Redis 初始化时会有限重试', async () => {
+    const store = createStore();
+    stopStreamMock
+      .mockResolvedValueOnce(false)
+      .mockResolvedValueOnce(true);
+    sendMessageStreamMock.mockImplementationOnce(async () => {
+      await new Promise<void>(() => {});
+    });
+
+    const { result } = renderHook(() => useSendMessage(), {
+      wrapper: createWrapper(store),
+    });
+
+    await act(async () => {
+      void result.current.sendMessage('hello', {
+        conversationId: null,
+      });
+    });
+    await waitFor(() => {
+      expect(store.getState().conversation.pendingConversationId).toBe('temp-conv');
+    });
+
+    await act(async () => {
+      await result.current.stopStreaming();
+    });
+
+    expect(stopStreamMock).toHaveBeenCalledTimes(2);
+    expect(stopStreamMock.mock.calls).toEqual([
+      ['temp-conv', undefined, expect.any(AbortSignal)],
+      ['temp-conv', undefined, expect.any(AbortSignal)],
+    ]);
+  });
+
+  it('外部停止尚未完成时新发送会等待取消屏障', async () => {
+    const store = createStore();
+    let releaseStop: ((cancelled: boolean) => void) | undefined;
+    stopStreamMock.mockImplementationOnce(
+      () => new Promise<boolean>((resolve) => {
+        releaseStop = resolve;
+      })
+    );
+    sendMessageStreamMock
+      .mockImplementationOnce(async () => {
+        await new Promise<void>(() => {});
+      })
+      .mockImplementationOnce(async (_payload: any, callbacks: StreamCallbacks) => {
+        callbacks.onReady({ messageId: 'assistant-2', conversationId: 'server-conv-2' });
+        callbacks.onAnswering({ block_id: 'blk_second', delta: 'second answer' });
+        callbacks.onDone({ messageId: 'assistant-2', conversationId: 'server-conv-2' });
+      });
+
+    const { result } = renderHook(() => useSendMessage(), {
+      wrapper: createWrapper(store),
+    });
+
+    await act(async () => {
+      void result.current.sendMessage('first', { conversationId: null });
+    });
+    await waitFor(() => {
+      expect(sendMessageStreamMock).toHaveBeenCalledTimes(1);
+    });
+
+    let stopPromise: Promise<void> | undefined;
+    let secondSendPromise: Promise<void> | undefined;
+    await act(async () => {
+      stopPromise = result.current.stopStreaming();
+      secondSendPromise = result.current.sendMessage('second', { conversationId: null });
+      await Promise.resolve();
+    });
+
+    expect(sendMessageStreamMock).toHaveBeenCalledTimes(1);
+    releaseStop?.(true);
+    await act(async () => {
+      await stopPromise;
+      await secondSendPromise;
+    });
+
+    expect(sendMessageStreamMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('远端停止超时后会释放取消屏障并允许新发送', async () => {
+    const store = createStore();
+    stopStreamMock.mockImplementationOnce(
+      (_conversationId: string, _messageId?: string, signal?: AbortSignal) =>
+        new Promise<boolean>((_resolve, reject) => {
+          signal?.addEventListener('abort', () => {
+            const error = new Error('aborted');
+            error.name = 'AbortError';
+            reject(error);
+          }, { once: true });
+        })
+    );
+    sendMessageStreamMock
+      .mockImplementationOnce(async () => {
+        await new Promise<void>(() => {});
+      })
+      .mockImplementationOnce(async (_payload: any, callbacks: StreamCallbacks) => {
+        callbacks.onReady({ messageId: 'assistant-2', conversationId: 'server-conv-2' });
+        callbacks.onAnswering({ block_id: 'blk_second', delta: 'second answer' });
+        callbacks.onDone({ messageId: 'assistant-2', conversationId: 'server-conv-2' });
+      });
+
+    const { result } = renderHook(() => useSendMessage(), {
+      wrapper: createWrapper(store),
+    });
+
+    await act(async () => {
+      void result.current.sendMessage('first', { conversationId: null });
+    });
+    await waitFor(() => {
+      expect(sendMessageStreamMock).toHaveBeenCalledTimes(1);
+    });
+
+    let stopPromise: Promise<void> | undefined;
+    let secondSendPromise: Promise<void> | undefined;
+    await act(async () => {
+      stopPromise = result.current.stopStreaming();
+      secondSendPromise = result.current.sendMessage('second', { conversationId: null });
+      await Promise.resolve();
+    });
+
+    expect(sendMessageStreamMock).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      await stopPromise;
+      await secondSendPromise;
+    });
+
+    expect(stopStreamMock.mock.calls[0]?.[2]).toEqual(expect.any(AbortSignal));
+    expect((stopStreamMock.mock.calls[0]?.[2] as AbortSignal).aborted).toBe(true);
+    expect(sendMessageStreamMock).toHaveBeenCalledTimes(2);
   });
 
   it('stops the previous stream before sending a new message', async () => {

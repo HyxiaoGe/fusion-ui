@@ -737,6 +737,10 @@ const ChatInput: React.FC<ChatInputProps> = ({
   const handleKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (event.key === "Enter" && !event.shiftKey) {
       event.preventDefault();
+      if (isStreaming && onStopStreaming) {
+        onStopStreaming();
+        return;
+      }
       handleSendMessage();
     }
   };

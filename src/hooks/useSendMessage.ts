@@ -49,6 +49,32 @@ type SendMessageOptions = {
   onStreamEnd?: (conversationId: string) => void;
 };
 
+const STOP_BEFORE_READY_RETRY_DELAYS_MS = [50, 150] as const;
+const STOP_OPERATION_TIMEOUT_MS = 500;
+
+function stopAbortError(): Error {
+  const error = new Error('停止请求已超时');
+  error.name = 'AbortError';
+  return error;
+}
+
+async function waitForStopRetry(delayMs: number, signal: AbortSignal): Promise<void> {
+  if (signal.aborted) {
+    throw stopAbortError();
+  }
+  await new Promise<void>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      signal.removeEventListener('abort', onAbort);
+      resolve();
+    }, delayMs);
+    const onAbort = () => {
+      clearTimeout(timer);
+      reject(stopAbortError());
+    };
+    signal.addEventListener('abort', onAbort, { once: true });
+  });
+}
+
 const IMAGE_DIMENSION_ERROR_MESSAGE = '图片尺寸过小，当前模型要求宽高都大于 10 像素，请换一张更大的图片后重试';
 
 function normalizeSendErrorMessage(message: string): string {
@@ -82,6 +108,7 @@ export function useSendMessage() {
   const selectedModelId = useAppSelector((state) => state.models.selectedModelId);
   const reasoningEnabled = useAppSelector((state) => state.conversation.reasoningEnabled);
   const abortControllerRef = useRef<AbortController | null>(null);
+  const stopInFlightPromiseRef = useRef<Promise<void> | null>(null);
   const activeConvIdRef = useRef<string | null>(null);
   const userMessageIdRef = useRef<string | null>(null);
   const assistantMessageIdRef = useRef<string | null>(null);
@@ -97,60 +124,121 @@ export function useSendMessage() {
       || (store.getState() as { stream: { conversationId: string | null } }).stream.conversationId;
   }, [store]);
 
-  const stopStreaming = useCallback(async () => {
-    const convId = getStreamingConvId();
-    const userMsgId = userMessageIdRef.current;
-    const assistantMsgId = assistantMessageIdRef.current;
+  const stopStreaming = useCallback((): Promise<void> => {
+    if (stopInFlightPromiseRef.current) {
+      return stopInFlightPromiseRef.current;
+    }
 
-    typewriter.stop();
-
-    abortControllerRef.current?.abort();
-    abortControllerRef.current = null;
-
-    if (convId && userMsgId) {
-      dispatch(
-        updateMessage({
-          conversationId: convId,
-          messageId: userMsgId,
-          patch: { status: null },
-        })
+    const stopOperation = (async () => {
+      const convId = getStreamingConvId();
+      const userMsgId = userMessageIdRef.current;
+      const assistantMsgId = assistantMessageIdRef.current;
+      const serverMsgId = serverMessageIdRef.current;
+      const pendingConversationId = (
+        store.getState() as { conversation: { pendingConversationId: string | null } }
+      ).conversation.pendingConversationId;
+      const shouldDiscardPendingDraft = Boolean(
+        convId && pendingConversationId === convId
       );
-    }
 
-    // 把 streamSlice 已有内容写回 assistant 消息，防止 endStream 清空后丢失
-    if (convId && assistantMsgId) {
-      const streamState = (store.getState() as { stream: import('@/redux/slices/streamSlice').StreamState }).stream;
-      const partialBlocks = selectFullStreamContentBlocks(streamState);
-      if (partialBlocks.length > 0) {
-        dispatch(updateMessage({
-          conversationId: convId,
-          messageId: assistantMsgId,
-          patch: { content: partialBlocks },
-        }));
+      typewriter.stop();
+
+      abortControllerRef.current?.abort();
+      abortControllerRef.current = null;
+
+      if (convId && userMsgId) {
+        dispatch(
+          updateMessage({
+            conversationId: convId,
+            messageId: userMsgId,
+            patch: { status: null },
+          })
+        );
       }
-    }
 
-    // 通知后端取消后台任务：优先用 BE 在 run_started 给的真实 message_id；
-    // fallback 到本地 placeholder（极少触发，仅在 run_started 还没到就被 stop 时）
-    if (convId) {
-      const { stopStream } = await import('@/lib/api/chat');
-      await stopStream(convId, serverMessageIdRef.current || assistantMsgId || undefined);
-    }
+      // 把 streamSlice 已有内容写回 assistant 消息，防止 endStream 清空后丢失
+      if (convId && assistantMsgId) {
+        const streamState = (store.getState() as { stream: import('@/redux/slices/streamSlice').StreamState }).stream;
+        const partialBlocks = selectFullStreamContentBlocks(streamState);
+        if (partialBlocks.length > 0) {
+          dispatch(updateMessage({
+            conversationId: convId,
+            messageId: assistantMsgId,
+            patch: { content: partialBlocks },
+          }));
+        }
+      }
 
-    dispatch(endStream());
-    activeConvIdRef.current = null;
-    userMessageIdRef.current = null;
-    assistantMessageIdRef.current = null;
-    serverMessageIdRef.current = null;
-    assistantHasContentRef.current = false;
+      if (shouldDiscardPendingDraft && convId) {
+        dispatch(removeConversation(convId));
+        dispatch(setPendingConversationId(null));
+      }
+
+      dispatch(endStream());
+      activeConvIdRef.current = null;
+      userMessageIdRef.current = null;
+      assistantMessageIdRef.current = null;
+      serverMessageIdRef.current = null;
+      assistantHasContentRef.current = false;
+
+      // 本地先完成停止；远端按真实服务端 message_id 精确取消。
+      // run_started 尚未到达时不传 placeholder，允许 Redis 按 conversation 跨 worker 取消。
+      if (convId) {
+        const stopController = new AbortController();
+        const stopTimeout = setTimeout(
+          () => stopController.abort(),
+          STOP_OPERATION_TIMEOUT_MS
+        );
+        try {
+          const { stopStream } = await import('@/lib/api/chat');
+          let cancelled = await stopStream(
+            convId,
+            serverMsgId || undefined,
+            stopController.signal
+          );
+          if (!serverMsgId) {
+            for (const delayMs of STOP_BEFORE_READY_RETRY_DELAYS_MS) {
+              if (cancelled) break;
+              await waitForStopRetry(delayMs, stopController.signal);
+              cancelled = await stopStream(convId, undefined, stopController.signal);
+            }
+          }
+        } catch (error) {
+          if (!stopController.signal.aborted) {
+            console.warn('停止后台生成失败，已完成本地停止', error);
+          }
+        } finally {
+          clearTimeout(stopTimeout);
+        }
+      }
+    })();
+
+    stopInFlightPromiseRef.current = stopOperation;
+    void stopOperation.then(
+      () => {
+        if (stopInFlightPromiseRef.current === stopOperation) {
+          stopInFlightPromiseRef.current = null;
+        }
+      },
+      () => {
+        if (stopInFlightPromiseRef.current === stopOperation) {
+          stopInFlightPromiseRef.current = null;
+        }
+      }
+    );
+    return stopOperation;
   }, [dispatch, store, getStreamingConvId]);
 
   const sendMessage = useCallback(
     async (content: string, options: SendMessageOptions, attachments?: FileAttachment[]) => {
       if (!content.trim() && (!attachments || attachments.length === 0)) return;
 
+      if (stopInFlightPromiseRef.current) {
+        await stopInFlightPromiseRef.current;
+      }
+
       if (abortControllerRef.current) {
-        stopStreaming();
+        await stopStreaming();
       }
 
       const enabledModel =

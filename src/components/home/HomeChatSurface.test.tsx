@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import React from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -7,17 +7,22 @@ const {
   routerPushMock,
   routerReplaceMock,
   sendMessageMock,
+  stopStreamingMock,
   useConversationFilesMock,
   useConversationFilesState,
   deleteFileMock,
   chatInputRenderMock,
   modelState,
   routeState,
+  pendingConversationState,
+  streamState,
+  chatMessageListMock,
 } = vi.hoisted(() => ({
   dispatchMock: vi.fn(),
   routerPushMock: vi.fn(),
   routerReplaceMock: vi.fn(),
   sendMessageMock: vi.fn(),
+  stopStreamingMock: vi.fn(),
   useConversationFilesMock: vi.fn(),
   useConversationFilesState: {
     files: [] as any[],
@@ -40,8 +45,17 @@ const {
   },
   routeState: {
     pathname: '/chat/new',
-    modelHint: 'model-vision',
+    modelHint: 'model-vision' as string | null,
   },
+  pendingConversationState: {
+    id: null as string | null,
+    byId: {} as Record<string, any>,
+  },
+  streamState: {
+    isStreaming: false,
+    conversationId: null as string | null,
+  },
+  chatMessageListMock: vi.fn(),
 }));
 
 vi.mock('next/navigation', () => ({
@@ -62,12 +76,11 @@ vi.mock('@/redux/hooks', () => ({
         selectedModelId: 'model-vision',
       },
       conversation: {
-        byId: {},
+        byId: pendingConversationState.byId,
+        pendingConversationId: pendingConversationState.id,
         reasoningEnabled: false,
       },
-      stream: {
-        isStreaming: false,
-      },
+      stream: streamState,
       fileUpload: {
         files: {},
         fileIds: {},
@@ -86,7 +99,21 @@ vi.mock('@/redux/slices/modelsSlice', () => ({
 vi.mock('@/hooks/useSendMessage', () => ({
   useSendMessage: () => ({
     sendMessage: sendMessageMock,
+    stopStreaming: stopStreamingMock,
   }),
+}));
+
+vi.mock('@/components/lazy/LazyComponents', () => ({
+  ChatMessageListLazy: (props: any) => {
+    chatMessageListMock(props);
+    return (
+      <div
+        data-testid="pending-message-list"
+        data-message-ids={props.messages.map((message: any) => message.id).join(',')}
+        data-streaming={props.isStreaming ? 'true' : 'false'}
+      />
+    );
+  },
 }));
 
 vi.mock('@/hooks/useConversationFiles', () => ({
@@ -152,6 +179,8 @@ vi.mock('@/components/chat/ChatInput', () => ({
     onRemoveConversationAttachment,
     onClearConversationAttachments,
     onUploadComplete,
+    onStopStreaming,
+    activeChatId,
   }: any) {
     const [hasLocalUploadError, setHasLocalUploadError] = React.useState(false);
     chatInputRenderMock({ conversationAttachments });
@@ -171,7 +200,13 @@ vi.mock('@/components/chat/ChatInput', () => ({
         data-testid="chat-input"
         data-attachment-count={conversationAttachments.length}
         data-local-upload-error={hasLocalUploadError ? 'true' : 'false'}
+        data-active-chat-id={activeChatId ?? ''}
       >
+        {onStopStreaming ? (
+          <button type="button" onClick={onStopStreaming}>
+            停止生成
+          </button>
+        ) : null}
         <button
           type="button"
           onClick={() =>
@@ -255,6 +290,7 @@ describe('HomeChatSurface 会话资料交互', () => {
     routerPushMock.mockClear();
     routerReplaceMock.mockClear();
     sendMessageMock.mockReset();
+    stopStreamingMock.mockReset();
     useConversationFilesMock.mockClear();
     useConversationFilesState.files = [];
     useConversationFilesState.isLoading = false;
@@ -264,9 +300,137 @@ describe('HomeChatSurface 会话资料交互', () => {
     deleteFileMock.mockReset();
     deleteFileMock.mockResolvedValue(undefined);
     chatInputRenderMock.mockClear();
+    chatMessageListMock.mockClear();
     routeState.pathname = '/chat/new';
     routeState.modelHint = 'model-vision';
+    pendingConversationState.id = null;
+    pendingConversationState.byId = {};
+    streamState.isStreaming = false;
+    streamState.conversationId = null;
     window.sessionStorage.clear();
+  });
+
+  it('/chat/new 在首个 SSE 前立即渲染本地草稿并保留停止能力', async () => {
+    routeState.modelHint = null;
+    pendingConversationState.id = 'draft-chat-1';
+    pendingConversationState.byId = {
+      'draft-chat-1': {
+        id: 'draft-chat-1',
+        title: '即时草稿',
+        model_id: 'model-vision',
+        createdAt: 1,
+        updatedAt: 1,
+        messages: [
+          {
+            id: 'user-1',
+            role: 'user',
+            content: [{ type: 'text', id: 'user-block', text: '你好' }],
+            status: 'pending',
+            timestamp: 1,
+          },
+          {
+            id: 'assistant-1',
+            role: 'assistant',
+            content: [],
+            timestamp: 1,
+          },
+        ],
+      },
+    };
+    streamState.isStreaming = true;
+    streamState.conversationId = 'draft-chat-1';
+
+    const { rerender } = render(<HomeChatSurface />);
+
+    expect(screen.queryByTestId('home-page')).toBeNull();
+    expect(screen.getByTestId('pending-conversation-surface')).toBeInTheDocument();
+    expect(screen.getByTestId('pending-message-list')).toHaveAttribute(
+      'data-message-ids',
+      'user-1,assistant-1'
+    );
+    expect(screen.getByTestId('pending-message-list')).toHaveAttribute('data-streaming', 'true');
+    expect(screen.getByTestId('chat-input')).toHaveAttribute('data-active-chat-id', 'draft-chat-1');
+    expect(routerReplaceMock).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole('button', { name: '停止生成' }));
+    expect(stopStreamingMock).toHaveBeenCalledTimes(1);
+
+    pendingConversationState.id = null;
+    pendingConversationState.byId = {};
+    streamState.isStreaming = false;
+    streamState.conversationId = null;
+    rerender(<HomeChatSurface />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('home-page')).toBeInTheDocument();
+    });
+  });
+
+  it('materialized 到路由完成前持续显示服务端接管后的会话', async () => {
+    routeState.modelHint = null;
+    let materialize: ((conversationId: string) => void) | undefined;
+    sendMessageMock.mockImplementation((_content, options) => {
+      options.onDraftCreated('draft-chat-1');
+      materialize = options.onMaterialized;
+      return new Promise(() => {});
+    });
+
+    const { rerender } = render(<HomeChatSurface />);
+    fireEvent.click(screen.getByRole('button', { name: '首页发送' }));
+    await waitFor(() => expect(sendMessageMock).toHaveBeenCalledTimes(1));
+
+    pendingConversationState.id = 'draft-chat-1';
+    pendingConversationState.byId = {
+      'draft-chat-1': {
+        id: 'draft-chat-1',
+        title: '草稿',
+        model_id: 'model-vision',
+        createdAt: 1,
+        updatedAt: 1,
+        messages: [
+          {
+            id: 'user-draft',
+            role: 'user',
+            content: [{ type: 'text', id: 'draft-block', text: '你好' }],
+            timestamp: 1,
+          },
+        ],
+      },
+    };
+    streamState.isStreaming = true;
+    streamState.conversationId = 'draft-chat-1';
+    rerender(<HomeChatSurface />);
+    expect(screen.getByTestId('pending-message-list')).toHaveAttribute(
+      'data-message-ids',
+      'user-draft'
+    );
+
+    pendingConversationState.id = null;
+    pendingConversationState.byId = {
+      'server-chat-1': {
+        ...pendingConversationState.byId['draft-chat-1'],
+        id: 'server-chat-1',
+        messages: [
+          {
+            id: 'user-server',
+            role: 'user',
+            content: [{ type: 'text', id: 'server-block', text: '你好' }],
+            timestamp: 1,
+          },
+        ],
+      },
+    };
+    streamState.conversationId = 'server-chat-1';
+    act(() => {
+      materialize?.('server-chat-1');
+    });
+
+    expect(routerReplaceMock).toHaveBeenCalledWith('/chat/server-chat-1');
+    expect(screen.queryByTestId('home-page')).toBeNull();
+    expect(screen.getByTestId('pending-message-list')).toHaveAttribute(
+      'data-message-ids',
+      'user-server'
+    );
   });
 
   it('上传已处理文件后只加入本次提问，不自动打开资料面板', async () => {

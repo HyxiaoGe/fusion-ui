@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const {
@@ -17,6 +17,14 @@ const {
         { id: 'model-2', enabled: false },
       ],
       selectedModelId: null,
+    },
+    conversation: {
+      byId: {},
+      pendingConversationId: null,
+    },
+    stream: {
+      isStreaming: false,
+      conversationId: null,
     },
   },
   dispatchMock: vi.fn(),
@@ -106,6 +114,7 @@ vi.mock('@/components/chat/ChatInput', () => ({
 }));
 
 import NewChatPage from './page';
+import { requestNewChatDraftReset } from '@/lib/chat/newChatDraftReset';
 
 describe('NewChatPage', () => {
   beforeEach(() => {
@@ -119,11 +128,10 @@ describe('NewChatPage', () => {
     sendMessageMock.mockResolvedValue(undefined);
   });
 
-  it('点击首页示例问题时发送草稿并只在 materialized 后跳转服务端会话', async () => {
+  it('首个 SSE 未到时保留 /chat/new，由页面内本地草稿负责即时展示', async () => {
     sendMessageMock.mockImplementation((_content, options) => {
       options.onDraftCreated('draft-conv');
-      options.onMaterialized('server-conv');
-      return Promise.resolve();
+      return new Promise(() => {});
     });
 
     render(<NewChatPage />);
@@ -139,12 +147,83 @@ describe('NewChatPage', () => {
       }),
       undefined
     );
+    expect(routerReplaceMock).not.toHaveBeenCalled();
+  });
+
+  it('服务端 materialized 后只跳转一次真实会话 URL', async () => {
+    sendMessageMock.mockImplementation((_content, options) => {
+      options.onDraftCreated('shared-conv');
+      options.onMaterialized('shared-conv');
+      return Promise.resolve();
+    });
+
+    render(<NewChatPage />);
+
+    fireEvent.click(screen.getByRole('button', { name: '示例问题' }));
+
+    await waitFor(() => expect(sendMessageMock).toHaveBeenCalledTimes(1));
     expect(routerReplaceMock).toHaveBeenCalledTimes(1);
-    expect(routerReplaceMock).toHaveBeenCalledWith('/chat/server-conv');
+    expect(routerReplaceMock).toHaveBeenCalledWith('/chat/shared-conv');
+  });
+
+  it('服务端返回不同 ID 时也只进入真实会话 URL', async () => {
+    sendMessageMock.mockImplementation((_content, options) => {
+      options.onDraftCreated('draft-conv');
+      options.onMaterialized('server-conv');
+      return Promise.resolve();
+    });
+
+    render(<NewChatPage />);
+
+    fireEvent.click(screen.getByRole('button', { name: '示例问题' }));
+
+    await waitFor(() => expect(sendMessageMock).toHaveBeenCalledTimes(1));
+    expect(routerReplaceMock.mock.calls).toEqual([['/chat/server-conv']]);
+  });
+
+  it('用户已离开新建页时忽略迟到的 materialized 导航', async () => {
+    let materialize: ((conversationId: string) => void) | undefined;
+    sendMessageMock.mockImplementation((_content, options) => {
+      options.onDraftCreated('draft-conv');
+      materialize = options.onMaterialized;
+      return new Promise(() => {});
+    });
+
+    const { unmount } = render(<NewChatPage />);
+    fireEvent.click(screen.getByRole('button', { name: '示例问题' }));
+    await waitFor(() => expect(sendMessageMock).toHaveBeenCalledTimes(1));
+
+    unmount();
+    act(() => {
+      materialize?.('server-conv');
+    });
+
+    expect(routerReplaceMock).not.toHaveBeenCalled();
+  });
+
+  it('同页重置新对话后忽略旧请求迟到的 materialized 导航', async () => {
+    let materialize: ((conversationId: string) => void) | undefined;
+    sendMessageMock.mockImplementation((_content, options) => {
+      options.onDraftCreated('draft-conv');
+      materialize = options.onMaterialized;
+      return new Promise(() => {});
+    });
+
+    render(<NewChatPage />);
+    fireEvent.click(screen.getByRole('button', { name: '示例问题' }));
+    await waitFor(() => expect(sendMessageMock).toHaveBeenCalledTimes(1));
+
+    act(() => {
+      requestNewChatDraftReset();
+      materialize?.('server-conv');
+    });
+
+    expect(routerReplaceMock).not.toHaveBeenCalled();
   });
 
   it('新建页带文件发送时复用上传使用的 pending 会话 ID', async () => {
     sendMessageMock.mockImplementation((_content, options) => {
+      options.onDraftCreated('pending-upload-conv');
       options.onMaterialized('pending-upload-conv');
       return Promise.resolve();
     });
@@ -168,6 +247,7 @@ describe('NewChatPage', () => {
         }),
       ]
     );
+    expect(routerReplaceMock).toHaveBeenCalledTimes(1);
     expect(routerReplaceMock).toHaveBeenCalledWith('/chat/pending-upload-conv');
   });
 
