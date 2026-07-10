@@ -80,11 +80,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v6
-        with:
-          node-version: 20
-
       - name: Verify Docker access
         shell: powershell -NoProfile -ExecutionPolicy Bypass -Command ". '{0}'"
         run: |
@@ -147,30 +142,19 @@ jobs:
           docker ps
           exit 1
 
-      - name: Install dependencies
-        run: npm ci --no-audit --no-fund --cache "%RUNNER_TEMP%\npm-cache"
-
       - name: Configure preview public env
         run: |
           if not "%GITHUB_REF_NAME%"=="master" (
             echo NEXT_PUBLIC_AUTH_CALLBACK_URL=http://fusion-ui-preview.dev.seanfield.org/auth/callback>>%GITHUB_ENV%
           )
 
-      - name: Build
-        run: npm run build
-
-      - name: Run tests
-        run: npm test
-
-      - name: Build Docker image
+      - name: Test and build Docker image
         shell: powershell -NoProfile -ExecutionPolicy Bypass -Command ". '{0}'"
         run: |
           $ErrorActionPreference = "Stop"
-          $refKey = $env:GITHUB_REF_NAME -replace '[^A-Za-z0-9_.-]', '-'
-          if (-not $refKey) { $refKey = "ref" }
-          $builder = "fusion-ui-ci-$refKey"
+          $builder = "fusion-ui-ci"
           $cacheBase = if ($env:RUNNER_TOOL_CACHE) { $env:RUNNER_TOOL_CACHE } else { $env:RUNNER_TEMP }
-          $cacheRoot = Join-Path $cacheBase "docker-buildx-cache\fusion-ui\$refKey"
+          $cacheRoot = Join-Path $cacheBase "docker-buildx-cache\fusion-ui\shared"
           $cacheNext = Join-Path $env:RUNNER_TEMP "fusion-ui-buildx-cache-next"
           $image = "${env:IMAGE_NAME}:${env:GITHUB_SHA}"
 
@@ -190,10 +174,27 @@ jobs:
           docker buildx inspect --builder $builder --bootstrap
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
+          $testArgs = @(
+            "buildx", "build",
+            "--builder", $builder,
+            "--target", "test",
+            "--progress", "plain",
+            "--provenance=false"
+          )
+          if (Test-Path $cacheRoot) {
+            $testArgs += @("--cache-from", "type=local,src=$cacheRoot")
+          }
+          $testArgs += "."
+
+          docker @testArgs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
           $buildArgs = @(
             "buildx", "build",
             "--builder", $builder,
+            "--target", "production",
             "--load",
+            "--progress", "plain",
             "--provenance=false",
             "--build-arg", "NEXT_PUBLIC_AUTH_SERVICE_BASE_URL=$env:NEXT_PUBLIC_AUTH_SERVICE_BASE_URL",
             "--build-arg", "NEXT_PUBLIC_AUTH_SERVICE_CLIENT_ID=$env:NEXT_PUBLIC_AUTH_SERVICE_CLIENT_ID",
