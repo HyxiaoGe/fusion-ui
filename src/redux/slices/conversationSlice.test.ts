@@ -3,10 +3,15 @@ import { describe, expect, it } from 'vitest';
 import reducer, {
   clearConversationMessages,
   materializeConversation,
+  mergeHydratedConversation,
   removeConversation,
   resetConversationState,
   setConversationList,
+  setHydrationStatus,
   setLastReadyConversationSnapshot,
+  upsertConversation,
+  updateConversationModel,
+  updateConversationTitle,
   updateConversationsMetadata,
 } from './conversationSlice';
 import type { Conversation, Message } from '@/types/conversation';
@@ -32,6 +37,120 @@ function textMessage(id: string): Message {
 }
 
 describe('conversationSlice', () => {
+  it('迟到的会话详情响应保留请求期间新增的本地消息并标记水合完成', () => {
+    let state = reducer(
+      undefined,
+      upsertConversation(createConversation({
+        id: 'conv-1',
+        messages: [textMessage('server-existing'), textMessage('local-new')],
+      }))
+    );
+    state = reducer(state, setHydrationStatus({ id: 'conv-1', status: 'loading' }));
+
+    const next = reducer(
+      state,
+      mergeHydratedConversation({
+        conversation: createConversation({
+          id: 'conv-1',
+          messages: [textMessage('server-existing')],
+        }),
+      })
+    );
+
+    expect(next.byId['conv-1'].messages.map((message) => message.id)).toEqual([
+      'server-existing',
+      'local-new',
+    ]);
+    expect(next.hydrationStatus['conv-1']).toBe('done');
+  });
+
+  it('安全合并时不覆盖当前流式消息的本地内容', () => {
+    const localStreamingMessage: Message = {
+      id: 'assistant-local',
+      role: 'assistant',
+      content: [{ type: 'text', id: 'local-block', text: '本地流式内容' }],
+      timestamp: 2,
+    };
+    let state = reducer(
+      undefined,
+      upsertConversation(createConversation({ id: 'conv-1', messages: [localStreamingMessage] }))
+    );
+
+    state = reducer(
+      state,
+      mergeHydratedConversation({
+        conversation: createConversation({
+          id: 'conv-1',
+          messages: [{
+            ...localStreamingMessage,
+            content: [{ type: 'text', id: 'server-block', text: '迟到的服务端旧内容' }],
+          }],
+        }),
+        preserveMessageIds: ['assistant-local'],
+      })
+    );
+
+    expect(state.byId['conv-1'].messages[0].content).toEqual(localStreamingMessage.content);
+  });
+
+  it('请求期间本地重命名或切换模型时迟到响应不覆盖新元数据', () => {
+    const requestMetadata = {
+      title: '请求开始标题',
+      model_id: 'model-old',
+      updatedAt: 1,
+    };
+    let state = reducer(
+      undefined,
+      upsertConversation(createConversation({
+        id: 'conv-1',
+        title: requestMetadata.title,
+        model_id: requestMetadata.model_id,
+        updatedAt: requestMetadata.updatedAt,
+      }))
+    );
+    state = reducer(state, updateConversationTitle({ id: 'conv-1', title: '本地新标题' }));
+    state = reducer(state, updateConversationModel({ id: 'conv-1', model_id: 'model-new' }));
+
+    state = reducer(state, mergeHydratedConversation({
+      conversation: createConversation({
+        id: 'conv-1',
+        title: '服务端迟到旧标题',
+        model_id: 'model-old',
+        updatedAt: 2,
+      }),
+      requestMetadata,
+    }));
+
+    expect(state.byId['conv-1'].title).toBe('本地新标题');
+    expect(state.byId['conv-1'].model_id).toBe('model-new');
+  });
+
+  it('请求期间元数据未改变时正常接受服务端刷新值', () => {
+    const requestMetadata = {
+      title: '请求开始标题',
+      model_id: 'model-old',
+      updatedAt: 1,
+    };
+    let state = reducer(
+      undefined,
+      upsertConversation(createConversation({ id: 'conv-1', ...requestMetadata }))
+    );
+
+    state = reducer(state, mergeHydratedConversation({
+      conversation: createConversation({
+        id: 'conv-1',
+        title: '服务端新标题',
+        model_id: 'model-server-new',
+        updatedAt: 3,
+      }),
+      requestMetadata,
+    }));
+
+    expect(state.byId['conv-1'].title).toBe('服务端新标题');
+    expect(state.byId['conv-1'].model_id).toBe('model-server-new');
+    expect(state.byId['conv-1'].updatedAt).toBe(3);
+  });
+
   it('keeps hydrated messages when refreshing the visible list', () => {
     const initialState = {
       byId: {

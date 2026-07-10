@@ -1,28 +1,30 @@
 import { useCallback, useEffect, useRef } from 'react';
+import { useStore } from 'react-redux';
 import { useAppDispatch, useAppSelector } from '@/redux/hooks';
-import { upsertConversation, setHydrationStatus } from '@/redux/slices/conversationSlice';
-import { getConversation } from '@/lib/api/chat';
-import { buildChatFromServerConversation } from '@/lib/chat/conversationHydration';
-import { store } from '@/redux/store';
+import {
+  mergeHydratedConversation,
+  setHydrationStatus,
+} from '@/redux/slices/conversationSlice';
+import {
+  getConversationDetailRequestMetadata,
+  isStaleConversationDetailRequestError,
+  loadConversationDetail,
+} from '@/lib/chat/conversationDetailResource';
+import {
+  getConversationHydrationMetadata,
+  getProtectedHydrationMessageIds,
+} from '@/lib/chat/conversationHydrationMerge';
+import type { RootState } from '@/redux/store';
 
 export type ConversationHydrationView = 'loading' | 'error' | 'ready';
 
-function isAbortError(error: unknown): boolean {
-  return (
-    typeof error === 'object' &&
-    error !== null &&
-    (error as { name?: string }).name === 'AbortError'
-  );
-}
-
 export function useConversation(conversationId: string | null | undefined) {
   const dispatch = useAppDispatch();
-  const hydrationRequestRef = useRef<{
-    id: string;
-    controller: AbortController;
-    settled: boolean;
+  const reduxStore = useStore<RootState>();
+  const attachedRequestRef = useRef<{
+    conversationId: string;
+    promise: ReturnType<typeof loadConversationDetail>;
   } | null>(null);
-
   const conversation = useAppSelector((state) =>
     conversationId ? state.conversation.byId[conversationId] : undefined
   );
@@ -35,67 +37,57 @@ export function useConversation(conversationId: string | null | undefined) {
     conversationId ? state.conversation.hydrationError[conversationId] : undefined
   );
 
-  const needsHydration =
-    !!conversationId && (!conversation || conversation.messages.length === 0);
+  const hydrateConversation = useCallback(() => {
+    if (!conversationId) {
+      return;
+    }
+    if (attachedRequestRef.current?.conversationId === conversationId) {
+      return;
+    }
 
-  useEffect(() => {
-    if (!conversationId || !needsHydration || hydrationStatus !== 'idle') return;
-
-    const controller = new AbortController();
-    const request = { id: conversationId, controller, settled: false };
-    hydrationRequestRef.current = request;
+    const request = loadConversationDetail(conversationId, {
+      requestMetadata: getConversationHydrationMetadata(reduxStore.getState(), conversationId),
+    });
+    const requestMetadata = getConversationDetailRequestMetadata(request);
+    attachedRequestRef.current = { conversationId, promise: request };
     dispatch(setHydrationStatus({ id: conversationId, status: 'loading' }));
-
-    void getConversation(conversationId, controller.signal)
-      .then((data) => {
-        if (controller.signal.aborted) return;
-        const serverChat = buildChatFromServerConversation(data);
-        // 合并：保留本地已有但服务端还没落库的消息（如刚 append 的用户消息）
-        const existing = store.getState().conversation.byId[conversationId];
-        if (existing && existing.messages.length > 0) {
-          const serverIds = new Set(serverChat.messages.map(m => m.id));
-          const localOnlyMessages = existing.messages.filter(m => !serverIds.has(m.id));
-          if (localOnlyMessages.length > 0) {
-            serverChat.messages = [...serverChat.messages, ...localOnlyMessages]
-              .sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
-          }
-        }
-        dispatch(upsertConversation(serverChat));
-        dispatch(setHydrationStatus({ id: conversationId, status: 'done' }));
-        request.settled = true;
-        if (hydrationRequestRef.current === request) {
-          hydrationRequestRef.current = null;
-        }
+    void request
+      .then((serverConversation) => {
+        const state = reduxStore.getState();
+        dispatch(mergeHydratedConversation({
+          conversation: serverConversation,
+          preserveMessageIds: getProtectedHydrationMessageIds(state, conversationId),
+          requestMetadata,
+        }));
       })
       .catch((error) => {
-        if (isAbortError(error)) return;
+        if (isStaleConversationDetailRequestError(error)) {
+          return;
+        }
         const message = error instanceof Error ? error.message : '加载对话失败';
         dispatch(setHydrationStatus({ id: conversationId, status: 'error', error: message }));
-        request.settled = true;
-        if (hydrationRequestRef.current === request) {
-          hydrationRequestRef.current = null;
+      })
+      .finally(() => {
+        if (attachedRequestRef.current?.promise === request) {
+          attachedRequestRef.current = null;
         }
       });
-  }, [conversationId, dispatch, hydrationStatus, needsHydration]);
+  }, [conversationId, dispatch, reduxStore]);
 
   useEffect(() => {
-    return () => {
-      const request = hydrationRequestRef.current;
-      if (!request || request.id !== conversationId || request.settled) return;
-      request.controller.abort();
-      hydrationRequestRef.current = null;
-      dispatch(setHydrationStatus({ id: request.id, status: 'idle' }));
-    };
-  }, [conversationId, dispatch]);
+    if (!conversationId || (hydrationStatus !== 'idle' && hydrationStatus !== 'loading')) {
+      return;
+    }
+    hydrateConversation();
+  }, [conversationId, hydrateConversation, hydrationStatus]);
 
   const retryHydration = useCallback(() => {
-    if (!conversationId) return;
-    dispatch(setHydrationStatus({ id: conversationId, status: 'idle' }));
-  }, [conversationId, dispatch]);
+    hydrateConversation();
+  }, [hydrateConversation]);
 
   const hydrationView: ConversationHydrationView = (() => {
-    if (!conversationId) return 'ready';
-    if (!needsHydration) return 'ready';
+    if (!conversationId || hydrationStatus === 'done') return 'ready';
+    if (conversation && conversation.messages.length > 0) return 'ready';
     if (hydrationStatus === 'error') return 'error';
     return 'loading';
   })();

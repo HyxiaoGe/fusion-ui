@@ -164,6 +164,69 @@ const conversationSlice = createSlice({
         state.listIds.unshift(conversation.id);
       }
     },
+    mergeHydratedConversation(
+      state,
+      action: PayloadAction<{
+        conversation: Conversation;
+        preserveMessageIds?: string[];
+        requestMetadata?: {
+          title: string;
+          model_id: string;
+          updatedAt: number;
+        } | null;
+      }>
+    ) {
+      const { conversation, preserveMessageIds = [], requestMetadata = null } = action.payload;
+      const existing = state.byId[conversation.id];
+      const existingMessagesById = new Map(
+        (existing?.messages ?? []).map((message) => [message.id, message])
+      );
+      const preservedIds = new Set(preserveMessageIds);
+      const serverIds = new Set(conversation.messages.map((message) => message.id));
+      const mergedServerMessages = conversation.messages.map((serverMessage) => {
+        const localMessage = existingMessagesById.get(serverMessage.id);
+        if (!localMessage) {
+          return serverMessage;
+        }
+        if (preservedIds.has(serverMessage.id)) {
+          return localMessage;
+        }
+        return {
+          ...serverMessage,
+          status: localMessage.status ?? serverMessage.status,
+          isReasoningVisible: localMessage.isReasoningVisible ?? serverMessage.isReasoningVisible,
+          shouldSyncToDb: localMessage.shouldSyncToDb ?? serverMessage.shouldSyncToDb,
+          suggestedQuestions: serverMessage.suggestedQuestions ?? localMessage.suggestedQuestions,
+        };
+      });
+      const localOnlyMessages = (existing?.messages ?? []).filter(
+        (message) => !serverIds.has(message.id)
+      );
+      const messages = [...mergedServerMessages, ...localOnlyMessages]
+        .sort((left, right) => (left.timestamp ?? 0) - (right.timestamp ?? 0));
+      const titleChangedAfterRequest = Boolean(
+        existing && requestMetadata && existing.title !== requestMetadata.title
+      );
+      const modelChangedAfterRequest = Boolean(
+        existing && requestMetadata && existing.model_id !== requestMetadata.model_id
+      );
+      const updatedAtChangedAfterRequest = Boolean(
+        existing && requestMetadata && existing.updatedAt !== requestMetadata.updatedAt
+      );
+
+      state.byId[conversation.id] = {
+        ...conversation,
+        title: titleChangedAfterRequest ? existing!.title : conversation.title,
+        model_id: modelChangedAfterRequest ? existing!.model_id : conversation.model_id,
+        updatedAt: updatedAtChangedAfterRequest ? existing!.updatedAt : conversation.updatedAt,
+        messages,
+      };
+      if (!state.listIds.includes(conversation.id)) {
+        state.listIds.unshift(conversation.id);
+      }
+      state.hydrationStatus[conversation.id] = 'done';
+      delete state.hydrationError[conversation.id];
+    },
     setAllConversations(state, action: PayloadAction<Conversation[]>) {
       state.byId = {};
       state.listIds = action.payload.map((conversation) => conversation.id);
@@ -213,6 +276,8 @@ const conversationSlice = createSlice({
       if (state.lastReadyConversationSnapshot?.chatId === action.payload) {
         state.lastReadyConversationSnapshot = null;
       }
+      state.hydrationStatus[action.payload] = 'done';
+      delete state.hydrationError[action.payload];
     },
     appendMessage(
       state,
@@ -333,6 +398,7 @@ export const {
   clearConversationMessages,
   clearSearch,
   materializeConversation,
+  mergeHydratedConversation,
   removeConversation,
   removeMessage,
   requestConversationListRefresh,

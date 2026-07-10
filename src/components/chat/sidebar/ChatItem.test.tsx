@@ -1,5 +1,5 @@
-import { fireEvent, render, screen } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { act, fireEvent, render, screen } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import ChatItem from "./ChatItem";
 import type { ConversationListItem } from "@/hooks/useConversationList";
 
@@ -34,7 +34,67 @@ const baseProps = {
 };
 
 describe("ChatItem", () => {
-  it("在 hover 和按下时预取会话正文但不阻塞点击选择", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("pointer 或 focus 短暂停留后离开不会预取", () => {
+    const onPrefetchChat = vi.fn();
+
+    render(
+      <ChatItem
+        {...baseProps}
+        onPrefetchChat={onPrefetchChat}
+      />
+    );
+
+    const item = screen.getByText("待预取对话").closest("[data-conversation-id]");
+    expect(item).toBeTruthy();
+
+    fireEvent.pointerEnter(item!, { pointerType: "mouse" });
+    act(() => vi.advanceTimersByTime(149));
+    fireEvent.pointerLeave(item!);
+    act(() => vi.advanceTimersByTime(1));
+
+    fireEvent.focus(item!);
+    act(() => vi.advanceTimersByTime(149));
+    fireEvent.blur(item!, { relatedTarget: document.body });
+    act(() => vi.advanceTimersByTime(1));
+
+    expect(onPrefetchChat).not.toHaveBeenCalled();
+  });
+
+  it("pointer 或 focus 明确停留 150ms 后预取一次", () => {
+    const onPrefetchChat = vi.fn();
+
+    render(<ChatItem {...baseProps} onPrefetchChat={onPrefetchChat} />);
+
+    const item = screen.getByText("待预取对话").closest("[data-conversation-id]");
+    fireEvent.pointerEnter(item!, { pointerType: "mouse" });
+    act(() => vi.advanceTimersByTime(150));
+
+    expect(onPrefetchChat).toHaveBeenCalledTimes(1);
+    expect(onPrefetchChat).toHaveBeenCalledWith("chat-a");
+  });
+
+  it("focus 明确停留 150ms 后预取一次", () => {
+    const onPrefetchChat = vi.fn();
+
+    render(<ChatItem {...baseProps} onPrefetchChat={onPrefetchChat} />);
+
+    const item = screen.getByText("待预取对话").closest("[data-conversation-id]");
+    fireEvent.focus(item!);
+    act(() => vi.advanceTimersByTime(150));
+
+    expect(onPrefetchChat).toHaveBeenCalledTimes(1);
+    expect(onPrefetchChat).toHaveBeenCalledWith("chat-a");
+  });
+
+  it("pointerdown 立即预取且点击选择不等待", () => {
     const onPrefetchChat = vi.fn();
     const onSelectChat = vi.fn();
 
@@ -47,15 +107,35 @@ describe("ChatItem", () => {
     );
 
     const item = screen.getByText("待预取对话").closest("[data-conversation-id]");
-    expect(item).toBeTruthy();
-
-    fireEvent.mouseEnter(item!);
-    fireEvent.mouseDown(item!);
+    fireEvent.pointerDown(item!, { pointerType: "mouse" });
     fireEvent.click(item!);
 
-    expect(onPrefetchChat).toHaveBeenCalledWith("chat-a");
-    expect(onPrefetchChat).toHaveBeenCalledTimes(2);
+    expect(onPrefetchChat).toHaveBeenCalledTimes(1);
     expect(onSelectChat).toHaveBeenCalledWith("chat-a");
+  });
+
+  it("更多操作 trigger 不会冒泡触发会话预取或选择", () => {
+    const onPrefetchChat = vi.fn();
+    const onSelectChat = vi.fn();
+
+    render(
+      <ChatItem
+        {...baseProps}
+        onSelectChat={onSelectChat}
+        onPrefetchChat={onPrefetchChat}
+      />
+    );
+
+    const moreButton = screen.getByTitle("更多操作");
+    const item = screen.getByText("待预取对话").closest("[data-conversation-id]");
+    fireEvent.pointerEnter(item!, { pointerType: "mouse" });
+    act(() => vi.advanceTimersByTime(100));
+    fireEvent.pointerDown(moreButton, { pointerType: "mouse" });
+    fireEvent.click(moreButton);
+    act(() => vi.advanceTimersByTime(50));
+
+    expect(onPrefetchChat).not.toHaveBeenCalled();
+    expect(onSelectChat).not.toHaveBeenCalled();
   });
 
   it("流式输出时在右侧显示尊重减少动态偏好的旋转状态", () => {

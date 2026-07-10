@@ -45,6 +45,8 @@ const HighlightedText: React.FC<{ text: string; query: string }> = ({ text, quer
   );
 };
 
+const PREFETCH_INTENT_DELAY_MS = 150;
+
 const ChatItem: React.FC<ChatItemProps> = ({
   chat,
   isActive,
@@ -59,17 +61,64 @@ const ChatItem: React.FC<ChatItemProps> = ({
   searchQuery,
 }) => {
   const modelName = chat.model_id ? modelNameById.get(chat.model_id) : undefined;
+  const prefetchIntentTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+  const cancelPendingPrefetch = React.useCallback(() => {
+    if (prefetchIntentTimerRef.current) {
+      clearTimeout(prefetchIntentTimerRef.current);
+      prefetchIntentTimerRef.current = null;
+    }
+  }, []);
+  const prefetchImmediately = React.useCallback(() => {
+    cancelPendingPrefetch();
+    onPrefetchChat?.(chat.id);
+  }, [cancelPendingPrefetch, chat.id, onPrefetchChat]);
+  const schedulePrefetch = React.useCallback(() => {
+    if (!onPrefetchChat || prefetchIntentTimerRef.current) {
+      return;
+    }
+    prefetchIntentTimerRef.current = setTimeout(() => {
+      prefetchIntentTimerRef.current = null;
+      onPrefetchChat(chat.id);
+    }, PREFETCH_INTENT_DELAY_MS);
+  }, [chat.id, onPrefetchChat]);
+
+  React.useEffect(() => cancelPendingPrefetch, [cancelPendingPrefetch]);
 
   return (
     <div
       data-conversation-id={chat.id}
+      tabIndex={0}
       className={`flex items-center group rounded-lg p-3 text-sm cursor-pointer transition-all duration-200 ${
         isActive
           ? "relative pl-4 bg-muted/50 before:absolute before:left-0 before:top-2 before:bottom-2 before:w-0.5 before:rounded-full before:bg-primary"
           : "hover:bg-black/5 dark:hover:bg-white/10 hover:text-foreground"
       }`}
-      onMouseEnter={() => onPrefetchChat?.(chat.id)}
-      onMouseDown={() => onPrefetchChat?.(chat.id)}
+      onPointerEnter={(event) => {
+        if (!event.pointerType || event.pointerType === "mouse" || event.pointerType === "pen") {
+          schedulePrefetch();
+        }
+      }}
+      onPointerLeave={cancelPendingPrefetch}
+      onPointerDown={prefetchImmediately}
+      onFocus={(event) => {
+        if (event.target === event.currentTarget) {
+          schedulePrefetch();
+        }
+      }}
+      onBlur={(event) => {
+        const nextTarget = event.relatedTarget;
+        if (!(nextTarget instanceof Node) || !event.currentTarget.contains(nextTarget)) {
+          cancelPendingPrefetch();
+        }
+      }}
+      onKeyDown={(event) => {
+        if (event.target !== event.currentTarget || (event.key !== "Enter" && event.key !== " ")) {
+          return;
+        }
+        event.preventDefault();
+        prefetchImmediately();
+        onSelectChat(chat.id);
+      }}
       onClick={() => onSelectChat(chat.id)}
     >
       <div className="flex-1 min-w-0 relative">
@@ -115,6 +164,11 @@ const ChatItem: React.FC<ChatItemProps> = ({
               size="icon"
               className="h-6 w-6 p-0 rounded opacity-0 group-hover:opacity-60 hover:!opacity-100"
               title="更多操作"
+              onPointerDown={(event) => {
+                cancelPendingPrefetch();
+                event.stopPropagation();
+              }}
+              onClick={(event) => event.stopPropagation()}
             >
               <MoreVerticalIcon size={14} />
             </Button>

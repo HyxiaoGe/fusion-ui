@@ -4,14 +4,25 @@ import { useAppDispatch } from '@/redux/hooks';
 import { store } from '@/redux/store';
 import {
   removeConversation,
+  mergeHydratedConversation,
   requestConversationListRefresh,
   setAnimatingTitleId,
-  upsertConversation,
+  setHydrationStatus,
   updateConversationTitle,
 } from '@/redux/slices/conversationSlice';
 import { deleteConversation, getConversation, renameConversation } from '@/lib/api/chat';
 import { generateChatTitle } from '@/lib/api/title';
 import { buildChatFromServerConversation } from '@/lib/chat/conversationHydration';
+import {
+  getConversationDetailRequestMetadata,
+  invalidateConversationDetail,
+  isStaleConversationDetailRequestError,
+  loadConversationDetail,
+} from '@/lib/chat/conversationDetailResource';
+import {
+  getConversationHydrationMetadata,
+  getProtectedHydrationMessageIds,
+} from '@/lib/chat/conversationHydrationMerge';
 import { CHAT_NEW_PATH } from '@/lib/routes/chatRoutes';
 import { useToast } from '@/components/ui/toast';
 import type { Message } from '@/types/conversation';
@@ -25,39 +36,58 @@ export function useSidebarActions() {
   const [renameTargetId, setRenameTargetId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState('');
 
-  const selectConversation = useCallback(
-    (id: string) => router.push(`/chat/${id}`),
-    [router]
-  );
-
   const prefetchConversation = useCallback(async (id: string) => {
-    const existing = store.getState().conversation.byId[id];
-    if (existing?.messages?.length > 0) return;
+    const currentState = store.getState();
+    if (currentState.conversation.hydrationStatus[id] === 'done') return;
     if (prefetchingConversationIdsRef.current.has(id)) return;
 
     prefetchingConversationIdsRef.current.add(id);
+    dispatch(setHydrationStatus({ id, status: 'loading' }));
     try {
-      const serverData = await getConversation(id);
-      const serverChat = buildChatFromServerConversation(serverData);
-      dispatch(upsertConversation(serverChat));
-    } catch {
+      const request = loadConversationDetail(id, {
+        requestMetadata: getConversationHydrationMetadata(currentState, id),
+      });
+      const requestMetadata = getConversationDetailRequestMetadata(request);
+      const serverChat = await request;
+      dispatch(mergeHydratedConversation({
+        conversation: serverChat,
+        preserveMessageIds: getProtectedHydrationMessageIds(store.getState(), id),
+        requestMetadata,
+      }));
+    } catch (error) {
+      if (isStaleConversationDetailRequestError(error)) {
+        return;
+      }
       // 预取失败不打断点击导航；进入会话后仍由 useConversation 正常水合/报错。
+      dispatch(setHydrationStatus({ id, status: 'idle' }));
     } finally {
       prefetchingConversationIdsRef.current.delete(id);
     }
   }, [dispatch]);
+
+  const selectConversation = useCallback(
+    (id: string) => {
+      void prefetchConversation(id);
+      router.push(`/chat/${id}`);
+    },
+    [prefetchConversation, router]
+  );
 
   const openDeleteDialog = useCallback((id: string) => setDeleteTargetId(id), []);
   const closeDeleteDialog = useCallback(() => setDeleteTargetId(null), []);
 
   const confirmDelete = useCallback(async () => {
     if (!deleteTargetId) return;
+    const id = deleteTargetId;
+    invalidateConversationDetail(id);
     try {
-      await deleteConversation(deleteTargetId);
-      dispatch(removeConversation(deleteTargetId));
+      await deleteConversation(id);
+      invalidateConversationDetail(id);
+      dispatch(removeConversation(id));
       toast({ message: '对话已删除', type: 'success' });
       router.push(CHAT_NEW_PATH);
     } catch {
+      dispatch(setHydrationStatus({ id, status: 'idle' }));
       toast({ message: '删除失败，请重试', type: 'error' });
     } finally {
       setDeleteTargetId(null);
@@ -94,7 +124,9 @@ export function useSidebarActions() {
       let messages = localMessages;
       if (!messages || messages.length === 0) {
         const serverData = await getConversation(conversationId);
-        messages = buildChatFromServerConversation(serverData).messages;
+        messages = buildChatFromServerConversation(
+          serverData as Parameters<typeof buildChatFromServerConversation>[0]
+        ).messages;
       }
 
       if (!messages || messages.length === 0) {
