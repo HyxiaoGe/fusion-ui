@@ -88,6 +88,8 @@ const streamSlice = createSlice({
       state.reasoningStartTime = null;
       state.reasoningEndTime = undefined;
       state.searchSources = [];
+      state.lastEntryId = '0';
+      state.streamStatus = 'streaming';
       state.currentRun = null;
       // 新一轮发送清空上一次的错误卡片
       state.lastError = null;

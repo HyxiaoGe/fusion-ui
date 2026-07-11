@@ -54,7 +54,77 @@ export interface StreamErrorPayload {
   data?: Record<string, unknown>;
 }
 
+export class StreamRequestError extends Error {
+  readonly recoverable: boolean;
+  readonly statusCode?: number;
+  readonly code?: string;
+
+  constructor(
+    message: string,
+    options: { recoverable: boolean; statusCode?: number; code?: string; cause?: unknown },
+  ) {
+    super(message);
+    this.name = 'StreamRequestError';
+    this.recoverable = options.recoverable;
+    this.statusCode = options.statusCode;
+    this.code = options.code;
+    if (options.cause !== undefined) {
+      Object.defineProperty(this, 'cause', {
+        configurable: true,
+        value: options.cause,
+      });
+    }
+  }
+}
+
+export function isRecoverableStreamError(error: unknown): boolean {
+  return error instanceof StreamRequestError && error.recoverable;
+}
+
+function isAbortError(error: unknown): boolean {
+  return error instanceof Error && error.name === 'AbortError';
+}
+
+function isRecoverableHttpStatus(status: number): boolean {
+  return status === 408 || status === 429 || status >= 500;
+}
+
+async function fetchStreamResponse(
+  url: string,
+  init: RequestInit,
+  fallbackMessage: string,
+): Promise<Response> {
+  let response: Response;
+  try {
+    response = await fetchWithAuth(url, init);
+  } catch (error) {
+    if (isAbortError(error) || init.signal?.aborted) throw error;
+    throw new StreamRequestError('网络连接中断', {
+      recoverable: true,
+      cause: error,
+    });
+  }
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    const body = errorData as { code?: string; message?: string; detail?: string };
+    throw new StreamRequestError(body.message || body.detail || fallbackMessage, {
+      recoverable:
+        body.code !== 'STREAM_UNAVAILABLE' && isRecoverableHttpStatus(response.status),
+      statusCode: response.status,
+      code: body.code,
+    });
+  }
+
+  if (!response.body) {
+    throw new StreamRequestError('响应体为空', { recoverable: true });
+  }
+  return response;
+}
+
 export interface StreamCallbacks {
+  /** 当前 data frame 完整处理后确认的 Redis Stream entry id。 */
+  onEntryId?: (entryId: string) => void;
   /**
    * 流首次握手：从 agent_event.run_started 拿到 messageId 时触发。
    *
@@ -212,7 +282,7 @@ export interface StreamCallbacks {
 // ============================================================
 
 interface SseStreamContext {
-  /** 是否消费 SSE `id:` 行（reconnectStream 需要游标） */
+  /** 是否消费 SSE `id:` 行（发送与重连都需要游标） */
   trackEntryId?: boolean;
   /** 触发 onReady 时用的 conversationId 兜底 */
   fallbackConversationId: string;
@@ -240,12 +310,20 @@ async function parseSseEnvelopeStream(
   let buffer = '';
   let receivedDone = false;
   let entryId = '0';
+  let pendingEntryId: string | null = null;
   let messageId = '';
   let conversationId = ctx.fallbackConversationId;
   let readyFired = false;
 
   // sequence dedup: per run_id 单调防重（spec §6.8）
   const lastSequenceByRun = new Map<string, number>();
+
+  const commitPendingEntryId = () => {
+    if (!pendingEntryId) return;
+    entryId = pendingEntryId;
+    pendingEntryId = null;
+    callbacks.onEntryId?.(entryId);
+  };
 
   const dispatchAgentEvent = (
     ev: AgentEventEnvelope & Record<string, unknown>,
@@ -307,7 +385,7 @@ async function parseSseEnvelopeStream(
       if (done) {
         if (!receivedDone) {
           callbacks.onError('流异常结束');
-          throw new Error('流异常结束');
+          throw new StreamRequestError('流异常结束', { recoverable: true });
         }
         break;
       }
@@ -320,7 +398,7 @@ async function parseSseEnvelopeStream(
         const trimmed = line.trim();
 
         if (ctx.trackEntryId && trimmed.startsWith('id:')) {
-          entryId = trimmed.slice(3).trim();
+          pendingEntryId = trimmed.slice(3).trim();
           continue;
         }
 
@@ -329,6 +407,7 @@ async function parseSseEnvelopeStream(
         const raw = trimmed.slice(5).trim();
         if (raw === '[DONE]') {
           receivedDone = true;
+          commitPendingEntryId();
           continue;
         }
 
@@ -337,6 +416,7 @@ async function parseSseEnvelopeStream(
           envelope = JSON.parse(raw) as SseEnvelope<unknown>;
         } catch {
           console.warn('[chat] SSE 帧 JSON 解析失败，跳过', raw);
+          commitPendingEntryId();
           continue;
         }
 
@@ -373,14 +453,28 @@ async function parseSseEnvelopeStream(
           case 'error': {
             const errPayload = envelope.data as StreamErrorPayload;
             const msg = errPayload?.message ?? '模型调用失败';
-            callbacks.onError(msg, errPayload);
-            throw new Error(msg);
+            const recoverable = errPayload?.code === 'redis_read_failed';
+            if (!recoverable) {
+              callbacks.onError(msg, errPayload);
+            }
+            throw new StreamRequestError(msg, {
+              recoverable,
+              code: errPayload?.code,
+            });
           }
           default:
             console.warn('[chat] 未知 chunk_type，已忽略', envelope.chunk_type);
         }
+        commitPendingEntryId();
       }
     }
+  } catch (error) {
+    if (error instanceof StreamRequestError || isAbortError(error)) throw error;
+    callbacks.onError('网络连接中断');
+    throw new StreamRequestError('网络连接中断', {
+      recoverable: true,
+      cause: error,
+    });
   } finally {
     reader.releaseLock();
   }
@@ -397,25 +491,17 @@ export async function sendMessageStream(
   callbacks: StreamCallbacks,
   signal?: AbortSignal,
 ): Promise<void> {
-  const response = await fetchWithAuth(`${API_BASE_URL}/api/chat/send`, {
+  const response = await fetchStreamResponse(`${API_BASE_URL}/api/chat/send`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     signal,
     body: JSON.stringify({ ...data, stream: true }),
-  });
+  }, '请求失败');
 
-  if (!response.ok) {
-    const errorData = await response.json().catch(() => ({}));
-    const body = errorData as { code?: string; message?: string; detail?: string };
-    throw new Error(body.message || body.detail || '请求失败');
-  }
-
-  if (!response.body) throw new Error('响应体为空');
-
-  const reader = response.body.getReader();
+  const reader = response.body!.getReader();
   await parseSseEnvelopeStream(reader, callbacks, {
     fallbackConversationId: data.conversation_id ?? '',
-    // sendMessageStream 不消费 id 行（不做断线续传游标）
+    trackEntryId: true,
   });
 }
 
@@ -424,7 +510,7 @@ export async function continueAgentRunStream(
   callbacks: StreamCallbacks,
   signal?: AbortSignal,
 ): Promise<void> {
-  const response = await fetchWithAuth(
+  const response = await fetchStreamResponse(
     `${API_BASE_URL}/api/chat/conversations/${encodeURIComponent(data.conversationId)}/messages/${encodeURIComponent(data.messageId)}/continue`,
     {
       method: 'POST',
@@ -435,19 +521,13 @@ export async function continueAgentRunStream(
         stream: true,
       }),
     },
+    '继续执行失败',
   );
 
-  if (!response.ok) {
-    const errorData = await response.json().catch(() => ({}));
-    const body = errorData as { code?: string; message?: string; detail?: string };
-    throw new Error(body.message || body.detail || '继续执行失败');
-  }
-
-  if (!response.body) throw new Error('响应体为空');
-
-  const reader = response.body.getReader();
+  const reader = response.body!.getReader();
   await parseSseEnvelopeStream(reader, callbacks, {
     fallbackConversationId: data.conversationId,
+    trackEntryId: true,
     doneConversationId: () => data.conversationId,
   });
 }
@@ -462,17 +542,13 @@ export async function reconnectStream(
   callbacks: StreamCallbacks,
   signal?: AbortSignal,
 ): Promise<{ entryId: string }> {
-  const response = await fetchWithAuth(
+  const response = await fetchStreamResponse(
     `${API_BASE_URL}/api/chat/stream/${conversationId}?last_entry_id=${encodeURIComponent(lastEntryId)}`,
     { signal },
+    '重连失败',
   );
 
-  if (!response.ok) {
-    throw new Error('重连失败');
-  }
-  if (!response.body) throw new Error('响应体为空');
-
-  const reader = response.body.getReader();
+  const reader = response.body!.getReader();
   const { entryId } = await parseSseEnvelopeStream(reader, callbacks, {
     fallbackConversationId: conversationId,
     trackEntryId: true,

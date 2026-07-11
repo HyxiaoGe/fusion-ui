@@ -13,7 +13,15 @@ vi.mock('./fetchWithAuth', () => ({
   apiRequest: apiRequestMock,
 }));
 
-import { continueAgentRunStream, getConversation, reconnectStream, sendMessageStream, stopStream } from './chat';
+import {
+  StreamRequestError,
+  continueAgentRunStream,
+  getConversation,
+  isRecoverableStreamError,
+  reconnectStream,
+  sendMessageStream,
+  stopStream,
+} from './chat';
 
 describe('stopStream', () => {
   beforeEach(() => {
@@ -56,6 +64,21 @@ function createStreamResponse(chunks: string[]) {
     headers: {
       'Content-Type': 'text/event-stream',
     },
+  });
+}
+
+function createInterruptedStreamResponse(firstChunk: string, error = new TypeError('network disconnected')) {
+  const encoder = new TextEncoder();
+  const stream = new ReadableStream<Uint8Array>({
+    start(controller) {
+      controller.enqueue(encoder.encode(firstChunk));
+      queueMicrotask(() => controller.error(error));
+    },
+  });
+
+  return new Response(stream, {
+    status: 200,
+    headers: { 'Content-Type': 'text/event-stream' },
   });
 }
 
@@ -133,6 +156,53 @@ describe('sendMessageStream — 新 envelope 协议', () => {
       messageId: 'msg-1',
       conversationId: 'conv-1',
     });
+  });
+
+  it('初次 send 也在完整 data frame 处理后递增上报 SSE entry cursor', async () => {
+    fetchWithAuthMock.mockResolvedValue(
+      createStreamResponse([
+        'id: 100-1\n',
+        envelope('answering', { block_id: 'answer', delta: '第一段' }),
+        'id: 100-2\n',
+        envelope('done', {}),
+        'data: [DONE]\n\n',
+      ]),
+    );
+    const order: string[] = [];
+
+    await sendMessageStream(
+      { model_id: 'g', message: 'q', conversation_id: 'conv-1' },
+      {
+        onReady: vi.fn(),
+        onEntryId: (entryId) => order.push(`cursor:${entryId}`),
+        onReasoning: vi.fn(),
+        onAnswering: () => order.push('answer'),
+        onDone: () => order.push('done'),
+        onError: vi.fn(),
+      },
+    );
+
+    expect(order).toEqual(['answer', 'cursor:100-1', 'done', 'cursor:100-2']);
+  });
+
+  it('仅收到 id 行就断线时不推进 cursor，避免重连跳过未处理 data frame', async () => {
+    fetchWithAuthMock.mockResolvedValue(createInterruptedStreamResponse('id: 100-9\n'));
+    const onEntryId = vi.fn();
+
+    const error = await sendMessageStream(
+      { model_id: 'g', message: 'q', conversation_id: 'conv-1' },
+      {
+        onReady: vi.fn(),
+        onEntryId,
+        onReasoning: vi.fn(),
+        onAnswering: vi.fn(),
+        onDone: vi.fn(),
+        onError: vi.fn(),
+      },
+    ).catch((caught) => caught);
+
+    expect(isRecoverableStreamError(error)).toBe(true);
+    expect(onEntryId).not.toHaveBeenCalled();
   });
 
   it('reasoning / answering 透传 run_id / step_id', async () => {
@@ -537,18 +607,19 @@ describe('sendMessageStream — 新 envelope 协议', () => {
       ]),
     );
     const onError = vi.fn();
-    await expect(
-      sendMessageStream(
-        { model_id: 'g', message: 'q' },
-        {
-          onReady: vi.fn(),
-          onReasoning: vi.fn(),
-          onAnswering: vi.fn(),
-          onDone: vi.fn(),
-          onError,
-        },
-      ),
-    ).rejects.toThrow('流异常结束');
+    const error = await sendMessageStream(
+      { model_id: 'g', message: 'q' },
+      {
+        onReady: vi.fn(),
+        onReasoning: vi.fn(),
+        onAnswering: vi.fn(),
+        onDone: vi.fn(),
+        onError,
+      },
+    ).catch((caught) => caught);
+
+    expect(error).toEqual(expect.objectContaining({ message: '流异常结束' }));
+    expect(isRecoverableStreamError(error)).toBe(true);
     expect(onError).toHaveBeenCalledWith('流异常结束');
   });
 
@@ -654,6 +725,114 @@ describe('reconnectStream — 新 envelope 协议', () => {
       expect.any(Object),
     );
     warn.mockRestore();
+  });
+
+  it('404 视为不可恢复，503 视为可退避重试', async () => {
+    fetchWithAuthMock.mockResolvedValueOnce(new Response(null, { status: 404 }));
+    await expect(reconnectStream('c', '10-1', {
+      onReady: vi.fn(),
+      onReasoning: vi.fn(),
+      onAnswering: vi.fn(),
+      onDone: vi.fn(),
+      onError: vi.fn(),
+    })).rejects.toEqual(expect.objectContaining({ recoverable: false, statusCode: 404 }));
+
+    fetchWithAuthMock.mockResolvedValueOnce(new Response(null, { status: 503 }));
+    const error = await reconnectStream('c', '10-1', {
+      onReady: vi.fn(),
+      onReasoning: vi.fn(),
+      onAnswering: vi.fn(),
+      onDone: vi.fn(),
+      onError: vi.fn(),
+    }).catch((caught) => caught);
+    expect(error).toBeInstanceOf(StreamRequestError);
+    expect(error).toEqual(expect.objectContaining({ recoverable: true, statusCode: 503 }));
+  });
+
+  it('503 STREAM_UNAVAILABLE 表示 Redis 初始化失败，不可重连且保留后端提示', async () => {
+    fetchWithAuthMock.mockResolvedValueOnce(new Response(JSON.stringify({
+      code: 'STREAM_UNAVAILABLE',
+      message: '生成服务暂时不可用，请稍后重试',
+    }), {
+      status: 503,
+      headers: { 'Content-Type': 'application/json' },
+    }));
+
+    const error = await sendMessageStream(
+      { model_id: 'g', message: 'q', conversation_id: 'conv-1' },
+      {
+        onReady: vi.fn(),
+        onReasoning: vi.fn(),
+        onAnswering: vi.fn(),
+        onDone: vi.fn(),
+        onError: vi.fn(),
+      },
+    ).catch((caught) => caught);
+
+    expect(error).toEqual(expect.objectContaining({
+      message: '生成服务暂时不可用，请稍后重试',
+      recoverable: false,
+      statusCode: 503,
+      code: 'STREAM_UNAVAILABLE',
+    }));
+  });
+
+  it('SSE redis_read_failed 是可恢复读故障，不提前触发终态 onError', async () => {
+    fetchWithAuthMock.mockResolvedValue(createStreamResponse([
+      'id: 400-1\n',
+      envelope('error', {
+        code: 'redis_read_failed',
+        message: 'Redis 暂时不可访问',
+      }),
+    ]));
+    const onError = vi.fn();
+
+    const error = await sendMessageStream(
+      { model_id: 'g', message: 'q', conversation_id: 'conv-1' },
+      {
+        onReady: vi.fn(),
+        onReasoning: vi.fn(),
+        onAnswering: vi.fn(),
+        onDone: vi.fn(),
+        onError,
+      },
+    ).catch((caught) => caught);
+
+    expect(error).toEqual(expect.objectContaining({
+      code: 'redis_read_failed',
+      recoverable: true,
+      message: 'Redis 暂时不可访问',
+    }));
+    expect(onError).not.toHaveBeenCalled();
+  });
+
+  it('SSE stream_interrupted 保持不可恢复并立即触发终态 onError', async () => {
+    fetchWithAuthMock.mockResolvedValue(createStreamResponse([
+      envelope('error', {
+        code: 'stream_interrupted',
+        message: '生成已中断',
+      }),
+    ]));
+    const onError = vi.fn();
+
+    const error = await sendMessageStream(
+      { model_id: 'g', message: 'q', conversation_id: 'conv-1' },
+      {
+        onReady: vi.fn(),
+        onReasoning: vi.fn(),
+        onAnswering: vi.fn(),
+        onDone: vi.fn(),
+        onError,
+      },
+    ).catch((caught) => caught);
+
+    expect(error).toEqual(expect.objectContaining({
+      code: 'stream_interrupted',
+      recoverable: false,
+    }));
+    expect(onError).toHaveBeenCalledWith('生成已中断', expect.objectContaining({
+      code: 'stream_interrupted',
+    }));
   });
 });
 

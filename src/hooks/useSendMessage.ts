@@ -25,9 +25,16 @@ import {
   selectFullStreamContentBlocks,
   selectStreamContentBlocks,
   setStreamError,
+  setStreamStatus,
   startStream,
 } from '@/redux/slices/streamSlice';
-import { sendMessageStream, getConversation } from '@/lib/api/chat';
+import {
+  getConversation,
+  isRecoverableStreamError,
+  reconnectStream,
+  sendMessageStream,
+} from '@/lib/api/chat';
+import type { StreamCallbacks } from '@/lib/api/chat';
 import { generateChatTitle } from '@/lib/api/title';
 import { createAgentStreamEventHandlers } from '@/lib/agent/streamEventHandlers';
 import {
@@ -52,6 +59,7 @@ type SendMessageOptions = {
 
 const STOP_BEFORE_READY_RETRY_DELAYS_MS = [50, 150] as const;
 const STOP_OPERATION_TIMEOUT_MS = 500;
+const STREAM_RECONNECT_RETRY_DELAYS_MS = [0, 250, 750] as const;
 
 interface SendSessionContext {
   authSessionKey: string;
@@ -94,6 +102,21 @@ async function waitForStopRetry(delayMs: number, signal: AbortSignal): Promise<v
   if (signal.aborted) {
     throw stopAbortError();
   }
+  await new Promise<void>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      signal.removeEventListener('abort', onAbort);
+      resolve();
+    }, delayMs);
+    const onAbort = () => {
+      clearTimeout(timer);
+      reject(stopAbortError());
+    };
+    signal.addEventListener('abort', onAbort, { once: true });
+  });
+}
+
+async function waitForStreamReconnect(delayMs: number, signal: AbortSignal): Promise<void> {
+  if (signal.aborted) throw stopAbortError();
   await new Promise<void>((resolve, reject) => {
     const timer = setTimeout(() => {
       signal.removeEventListener('abort', onAbort);
@@ -577,19 +600,24 @@ export function useSendMessage() {
         }
       };
 
-      try {
-        await sendMessageStream(
-          {
-            model_id: enabledModel.id,
-            message: content.trim(),
-            conversation_id: tempConvId,
-            stream: true,
-            options: { use_reasoning: useReasoning },
-            file_ids: fileIds,
-          },
-          {
+      let lastEntryId = '0';
+      let reconnectRetriesExhausted = false;
+      let reconnecting = false;
+      const markStreamResumed = () => {
+        if (!reconnecting || !isActiveSendCurrent()) return;
+        reconnecting = false;
+        dispatch(setStreamStatus('streaming'));
+      };
+      const streamCallbacks: StreamCallbacks = {
+            onEntryId: (entryId) => {
+              if (!isActiveSendCurrent()) return;
+              markStreamResumed();
+              lastEntryId = entryId;
+            },
+
             onReady: ({ messageId: incomingMessageId, conversationId: incomingConvId }) => {
               if (!isActiveSendCurrent()) return;
+              markStreamResumed();
               // 记录 BE 真实 message_id 供 stop 用（不污染 assistantMessageIdRef，
               // streaming 期渲染匹配仍然依赖本地 placeholder）
               serverMessageIdRef.current = incomingMessageId;
@@ -598,6 +626,7 @@ export function useSendMessage() {
 
             onAnswering: (payload) => {
               if (!isActiveSendCurrent() || !activeConvIdRef.current) return;
+              markStreamResumed();
               // 收到第一个 text delta 且还在推理阶段 → 标记推理结束
               const streamState = (store.getState() as { stream: import('@/redux/slices/streamSlice').StreamState }).stream;
               if (streamState.isStreamingReasoning) {
@@ -617,6 +646,7 @@ export function useSendMessage() {
 
             onReasoning: (payload) => {
               if (!isActiveSendCurrent() || !activeConvIdRef.current) return;
+              markStreamResumed();
               dispatch(appendThinkingDelta({
                 blockId: payload.block_id,
                 delta: payload.delta,
@@ -655,26 +685,83 @@ export function useSendMessage() {
               }
             },
 
-            // TODO: 遗漏1 — 网络抖动自动重连。当前网络断开直接报错，
-            // 后续加 retry 计数器，失败 N 次内自动调 reconnectStream，超出则报错
             onError: (message, payload) => {
               if (!isActiveSendCurrent()) return;
+              // 没有结构化 payload 的 error 来自 EOF/网络传输层，会进入有限自动续传；
+              // 续传成功前不向用户闪现全局错误。
+              if (!payload) return;
               const readableMessage = normalizeSendErrorMessage(message);
               dispatch(setGlobalError(readableMessage));
               dispatch(setStreamError({ message: readableMessage, code: payload?.code, data: payload?.data }));
             },
-          },
-          controller.signal
-        );
+          };
+
+      try {
+        let streamFailure: unknown;
+        try {
+          await sendMessageStream(
+            {
+              model_id: enabledModel.id,
+              message: content.trim(),
+              conversation_id: tempConvId,
+              stream: true,
+              options: { use_reasoning: useReasoning },
+              file_ids: fileIds,
+            },
+            streamCallbacks,
+            controller.signal,
+          );
+          return;
+        } catch (error) {
+          streamFailure = error;
+        }
+
+        if (
+          controller.signal.aborted ||
+          !isActiveSendCurrent() ||
+          !isRecoverableStreamError(streamFailure)
+        ) {
+          throw streamFailure;
+        }
+
+        for (const delayMs of STREAM_RECONNECT_RETRY_DELAYS_MS) {
+          await waitForStreamReconnect(delayMs, controller.signal);
+          if (!isActiveSendCurrent()) return;
+          reconnecting = true;
+          dispatch(setStreamStatus('reconnecting'));
+          try {
+            await reconnectStream(
+              activeConvIdRef.current ?? tempConvId,
+              lastEntryId,
+              streamCallbacks,
+              controller.signal,
+            );
+            return;
+          } catch (error) {
+            streamFailure = error;
+            if (
+              controller.signal.aborted ||
+              !isActiveSendCurrent() ||
+              !isRecoverableStreamError(error)
+            ) {
+              throw error;
+            }
+          }
+        }
+
+        reconnectRetriesExhausted = true;
+        throw streamFailure;
       } catch (error) {
         typewriterRef.current.stop();
         if (controller.signal.aborted || !isActiveSendCurrent()) return;
 
         const effectiveConvIdOnError = activeConvIdRef.current ?? tempConvId;
-        if ((materializedOnce || !isDraft) && assistantHasContentRef.current) {
+        if (assistantHasContentRef.current) {
           // 保留已有的 stream content blocks
           const streamState = (store.getState() as { stream: import('@/redux/slices/streamSlice').StreamState }).stream;
-          const partialBlocks = selectStreamContentBlocks(streamState);
+          const partialBlocks = reconnectRetriesExhausted
+            ? selectFullStreamContentBlocks(streamState)
+            : selectStreamContentBlocks(streamState);
           dispatch(
             updateMessage({
               conversationId: effectiveConvIdOnError,
@@ -684,11 +771,20 @@ export function useSendMessage() {
           );
         }
 
+        const preservePartialResponse = reconnectRetriesExhausted && assistantHasContentRef.current;
         if (isDraft && serverConvId && !materializedOnce) {
           materializedOnce = true;
         }
         const effectiveConvId = activeConvIdRef.current ?? tempConvId;
-        if (materializedOnce || !isDraft) {
+        if (preservePartialResponse) {
+          dispatch(
+            updateMessage({
+              conversationId: effectiveConvId,
+              messageId: userMessageId,
+              patch: { status: null },
+            }),
+          );
+        } else if (materializedOnce || !isDraft) {
           dispatch(
             updateMessage({
               conversationId: effectiveConvId,
@@ -714,6 +810,9 @@ export function useSendMessage() {
         assistantHasContentRef.current = false;
         const message = normalizeSendErrorMessage(error instanceof Error ? error.message : '发送失败，请重试');
         dispatch(setGlobalError(message));
+        if (reconnectRetriesExhausted) {
+          dispatch(setStreamError({ message }));
+        }
       }
     },
     [dispatch, models, reasoningEnabled, selectedModelId, stopStreaming, store]

@@ -18,6 +18,8 @@ import streamSliceReducer, {
   appendThinkingDelta,
   endStream,
   selectFullStreamContentBlocks,
+  setLastEntryId,
+  setStreamStatus,
 } from './streamSlice';
 
 const reducer = streamSliceReducer;
@@ -416,11 +418,15 @@ describe('streamSlice — agent run timeline', () => {
     expect(s.thinkingBlocks['b1']).toBe('裸 thinking');
   });
 
-  it('startStream 清空 currentRun', () => {
+  it('startStream 清空 currentRun 和上一轮续传游标，并进入 streaming', () => {
     let s = reducer(initial(), initRun({ runId: 'r1', messageId: 'm1', config: baseConfig, sequence: 0 }));
     s = reducer(s, pushStep({ runId: 'r1', stepId: 's1', stepNumber: 1, sequence: 1 }));
+    s = reducer(s, setLastEntryId('99-1'));
+    s = reducer(s, setStreamStatus('reconnecting'));
     s = reducer(s, startStream({ conversationId: 'c2', messageId: 'm2' }));
     expect(s.currentRun).toBeNull();
+    expect(s.lastEntryId).toBe('0');
+    expect(s.streamStatus).toBe('streaming');
   });
 
   it('appendTextDelta 带 stepId 时挂到 step.contentBlockIds', () => {

@@ -14,12 +14,14 @@ import type { StreamCallbacks } from '@/lib/api/chat';
 
 const {
   sendMessageStreamMock,
+  reconnectStreamMock,
   stopStreamMock,
   getConversationMock,
   generateChatTitleMock,
   uuidMock,
 } = vi.hoisted(() => ({
   sendMessageStreamMock: vi.fn(),
+  reconnectStreamMock: vi.fn(),
   stopStreamMock: vi.fn(),
   getConversationMock: vi.fn(),
   generateChatTitleMock: vi.fn(),
@@ -28,6 +30,8 @@ const {
 
 vi.mock('@/lib/api/chat', () => ({
   sendMessageStream: sendMessageStreamMock,
+  reconnectStream: reconnectStreamMock,
+  isRecoverableStreamError: (error: unknown) => Boolean((error as { recoverable?: boolean })?.recoverable),
   getConversation: getConversationMock,
   // useSendMessage 内部 dynamic import('@/lib/api/chat') 取 stopStream，
   // 必须在 mock 里也提供 stub，避免「No "stopStream" export」错误
@@ -113,9 +117,14 @@ function tickIntervals(times = 1) {
   }
 }
 
+function streamError(message: string, recoverable: boolean) {
+  return Object.assign(new Error(message), { recoverable });
+}
+
 describe('useSendMessage', () => {
   beforeEach(() => {
     sendMessageStreamMock.mockReset();
+    reconnectStreamMock.mockReset();
     stopStreamMock.mockReset();
     stopStreamMock.mockResolvedValue(undefined);
     getConversationMock.mockReset();
@@ -979,6 +988,308 @@ describe('useSendMessage', () => {
         expect.objectContaining({ role: 'user', status: 'failed' })
       );
     });
+  });
+
+  it('网络中断后从最后确认的 entry cursor 续传，复用同一占位消息且只生成一次标题', async () => {
+    const store = createStore();
+    const dispatchSpy = vi.spyOn(store, 'dispatch');
+
+    sendMessageStreamMock.mockImplementationOnce(
+      async (_payload: unknown, callbacks: StreamCallbacks) => {
+        callbacks.onReady({ messageId: 'server-assistant', conversationId: 'server-conv' });
+        callbacks.onAnswering({ block_id: 'answer', delta: '前半段' });
+        callbacks.onEntryId?.('100-1');
+        throw streamError('网络连接中断', true);
+      },
+    );
+    reconnectStreamMock.mockImplementationOnce(
+      async (_conversationId: string, _lastEntryId: string, callbacks: StreamCallbacks) => {
+        callbacks.onAnswering({ block_id: 'answer', delta: '后半段' });
+        callbacks.onEntryId?.('100-2');
+        callbacks.onDone({ messageId: 'server-assistant', conversationId: 'server-conv' });
+        return { entryId: '100-2' };
+      },
+    );
+
+    const { result } = renderHook(() => useSendMessage(), {
+      wrapper: createWrapper(store),
+    });
+
+    await act(async () => {
+      await result.current.sendMessage('hello', { conversationId: null });
+      tickIntervals(8);
+    });
+
+    await waitFor(() => {
+      const state = store.getState();
+      const assistant = state.conversation.byId['server-conv'].messages.find(
+        (message: { role: string }) => message.role === 'assistant',
+      );
+      expect(sendMessageStreamMock).toHaveBeenCalledTimes(1);
+      expect(reconnectStreamMock).toHaveBeenCalledWith(
+        'server-conv',
+        '100-1',
+        expect.any(Object),
+        expect.any(AbortSignal),
+      );
+      expect(assistant?.id).toBe('assistant-1');
+      expect(assistant?.content).toEqual([
+        expect.objectContaining({ type: 'text', text: '前半段后半段' }),
+      ]);
+      expect(generateChatTitleMock).toHaveBeenCalledTimes(1);
+      expect(state.stream.isStreaming).toBe(false);
+      expect(
+        dispatchSpy.mock.calls
+          .map(([action]) => action)
+          .filter((action) => action.type === 'stream/setLastEntryId'),
+      ).toEqual([]);
+      expect(
+        dispatchSpy.mock.calls
+          .map(([action]) => action)
+          .filter((action) => action.type === 'stream/setStreamStatus'),
+      ).toEqual([
+        expect.objectContaining({ payload: 'reconnecting' }),
+        expect.objectContaining({ payload: 'streaming' }),
+      ]);
+    });
+  });
+
+  it('redis_read_failed 自动续传期间不闪全局错误并保留 partial placeholder', async () => {
+    const store = createStore();
+    store.dispatch(
+      upsertConversation({
+        id: 'existing-conv',
+        title: 'Existing',
+        model_id: 'model-1',
+        messages: [],
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      }),
+    );
+    let globalErrorDuringReconnect: string | null = null;
+    let assistantCountDuringReconnect = 0;
+
+    sendMessageStreamMock.mockImplementationOnce(
+      async (_payload: unknown, callbacks: StreamCallbacks) => {
+        callbacks.onReady({ messageId: 'server-assistant', conversationId: 'existing-conv' });
+        callbacks.onAnswering({ block_id: 'answer', delta: '已有内容' });
+        callbacks.onEntryId?.('410-1');
+        throw Object.assign(new Error('Redis 暂时不可访问'), {
+          code: 'redis_read_failed',
+          recoverable: true,
+        });
+      },
+    );
+    reconnectStreamMock.mockImplementationOnce(
+      async (_conversationId: string, lastEntryId: string, callbacks: StreamCallbacks) => {
+        expect(lastEntryId).toBe('410-1');
+        const state = store.getState();
+        globalErrorDuringReconnect = state.conversation.globalError;
+        assistantCountDuringReconnect = state.conversation.byId['existing-conv'].messages.filter(
+          (message: { role: string }) => message.role === 'assistant',
+        ).length;
+        callbacks.onAnswering({ block_id: 'answer', delta: '恢复内容' });
+        callbacks.onDone({ messageId: 'server-assistant', conversationId: 'existing-conv' });
+        return { entryId: '410-2' };
+      },
+    );
+
+    const { result } = renderHook(() => useSendMessage(), {
+      wrapper: createWrapper(store),
+    });
+
+    await act(async () => {
+      await result.current.sendMessage('hello', { conversationId: 'existing-conv' });
+      tickIntervals(8);
+    });
+
+    expect(globalErrorDuringReconnect).toBeNull();
+    expect(assistantCountDuringReconnect).toBe(1);
+    expect(reconnectStreamMock).toHaveBeenCalledTimes(1);
+    const assistant = store.getState().conversation.byId['existing-conv'].messages.find(
+      (message: { role: string }) => message.role === 'assistant',
+    );
+    expect(assistant?.content).toEqual([
+      expect.objectContaining({ type: 'text', text: '已有内容恢复内容' }),
+    ]);
+  });
+
+  it('结构化终态错误和用户取消都不会触发自动重连', async () => {
+    const store = createStore();
+    store.dispatch(
+      upsertConversation({
+        id: 'existing-conv',
+        title: 'Existing',
+        model_id: 'model-1',
+        messages: [],
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      }),
+    );
+
+    sendMessageStreamMock.mockImplementationOnce(
+      async (_payload: unknown, callbacks: StreamCallbacks) => {
+        callbacks.onError('额度不足', { code: 'quota_exceeded' });
+        throw streamError('额度不足', false);
+      },
+    );
+
+    const { result } = renderHook(() => useSendMessage(), {
+      wrapper: createWrapper(store),
+    });
+
+    await act(async () => {
+      await result.current.sendMessage('hello', { conversationId: 'existing-conv' });
+    });
+    expect(reconnectStreamMock).not.toHaveBeenCalled();
+
+    sendMessageStreamMock.mockImplementationOnce(
+      async (_payload: unknown, _callbacks: StreamCallbacks, signal: AbortSignal) => {
+        await new Promise<void>((_resolve, reject) => {
+          signal.addEventListener('abort', () => {
+            const error = new Error('aborted');
+            error.name = 'AbortError';
+            reject(error);
+          }, { once: true });
+        });
+      },
+    );
+
+    await act(async () => {
+      void result.current.sendMessage('second', { conversationId: 'existing-conv' });
+    });
+    await waitFor(() => expect(sendMessageStreamMock).toHaveBeenCalledTimes(2));
+    await act(async () => {
+      await result.current.stopStreaming();
+    });
+
+    expect(reconnectStreamMock).not.toHaveBeenCalled();
+  });
+
+  it('发送端返回 STREAM_UNAVAILABLE 时不发起 GET 重连并保留服务端提示', async () => {
+    const store = createStore();
+    store.dispatch(
+      upsertConversation({
+        id: 'existing-conv',
+        title: 'Existing',
+        model_id: 'model-1',
+        messages: [],
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      }),
+    );
+    sendMessageStreamMock.mockRejectedValueOnce(Object.assign(
+      new Error('生成服务暂时不可用，请稍后重试'),
+      {
+        recoverable: false,
+        statusCode: 503,
+        code: 'STREAM_UNAVAILABLE',
+      },
+    ));
+
+    const { result } = renderHook(() => useSendMessage(), {
+      wrapper: createWrapper(store),
+    });
+
+    await act(async () => {
+      await result.current.sendMessage('hello', { conversationId: 'existing-conv' });
+    });
+
+    expect(reconnectStreamMock).not.toHaveBeenCalled();
+    expect(store.getState().conversation.globalError).toBe('生成服务暂时不可用，请稍后重试');
+  });
+
+  it('自动续传达到有限重试上限后保留已显示的 assistant 内容', async () => {
+    const store = createStore();
+    store.dispatch(
+      upsertConversation({
+        id: 'existing-conv',
+        title: 'Existing',
+        model_id: 'model-1',
+        messages: [],
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      }),
+    );
+
+    sendMessageStreamMock.mockImplementationOnce(
+      async (_payload: unknown, callbacks: StreamCallbacks) => {
+        callbacks.onReady({ messageId: 'server-assistant', conversationId: 'existing-conv' });
+        callbacks.onAnswering({ block_id: 'answer', delta: '已显示内容' });
+        callbacks.onEntryId?.('200-1');
+        tickIntervals(8);
+        throw streamError('网络连接中断', true);
+      },
+    );
+    reconnectStreamMock.mockRejectedValue(streamError('仍未恢复', true));
+
+    const { result } = renderHook(() => useSendMessage(), {
+      wrapper: createWrapper(store),
+    });
+
+    await act(async () => {
+      await result.current.sendMessage('hello', { conversationId: 'existing-conv' });
+    });
+
+    const state = store.getState();
+    const [userMessage, assistantMessage] = state.conversation.byId['existing-conv'].messages;
+    expect(sendMessageStreamMock).toHaveBeenCalledTimes(1);
+    expect(reconnectStreamMock).toHaveBeenCalledTimes(3);
+    expect(reconnectStreamMock.mock.calls.every((call) => call[1] === '200-1')).toBe(true);
+    expect(userMessage).toEqual(expect.objectContaining({ role: 'user', status: null }));
+    expect(assistantMessage).toEqual(expect.objectContaining({
+      role: 'assistant',
+      content: [expect.objectContaining({ type: 'text', text: '已显示内容' })],
+    }));
+    expect(state.stream.lastError?.message).toContain('仍未恢复');
+  });
+
+  it('续传再次中断时使用该次已确认的新 cursor 继续，而不是回退到旧位置', async () => {
+    const store = createStore();
+    store.dispatch(
+      upsertConversation({
+        id: 'existing-conv',
+        title: 'Existing',
+        model_id: 'model-1',
+        messages: [],
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      }),
+    );
+
+    sendMessageStreamMock.mockImplementationOnce(
+      async (_payload: unknown, callbacks: StreamCallbacks) => {
+        callbacks.onReady({ messageId: 'server-assistant', conversationId: 'existing-conv' });
+        callbacks.onEntryId?.('300-1');
+        throw streamError('首次断线', true);
+      },
+    );
+    reconnectStreamMock
+      .mockImplementationOnce(
+        async (_conversationId: string, lastEntryId: string, callbacks: StreamCallbacks) => {
+          expect(lastEntryId).toBe('300-1');
+          callbacks.onEntryId?.('300-2');
+          throw streamError('续传再次断线', true);
+        },
+      )
+      .mockImplementationOnce(
+        async (_conversationId: string, lastEntryId: string, callbacks: StreamCallbacks) => {
+          expect(lastEntryId).toBe('300-2');
+          callbacks.onDone({ messageId: 'server-assistant', conversationId: 'existing-conv' });
+          return { entryId: '300-2' };
+        },
+      );
+
+    const { result } = renderHook(() => useSendMessage(), {
+      wrapper: createWrapper(store),
+    });
+
+    await act(async () => {
+      await result.current.sendMessage('hello', { conversationId: 'existing-conv' });
+    });
+
+    expect(sendMessageStreamMock).toHaveBeenCalledTimes(1);
+    expect(reconnectStreamMock).toHaveBeenCalledTimes(2);
   });
 
   it('把图片尺寸不合规的模型原始错误转成可读提示', async () => {
