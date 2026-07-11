@@ -433,7 +433,7 @@ export default function HomeChatSurface() {
 
   return (
     <div className="h-full flex flex-col relative">
-      <div className="flex-1 overflow-y-auto">
+      <div className="flex-1 overflow-y-auto" data-chat-scroll-container="true">
         {shouldShowPendingConversation && displayConversationId && displayConversation ? (
           <div className="h-full px-4 pt-4" data-testid="pending-conversation-surface">
             <ChatMessageListLazy

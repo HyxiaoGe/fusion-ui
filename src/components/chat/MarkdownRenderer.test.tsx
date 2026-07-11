@@ -220,6 +220,73 @@ describe('MarkdownRenderer — code/table 行为', () => {
     expect(screen.getByTestId('code-block').textContent).toBe('const a = 1;\nconst b = 2;');
   });
 
+  it('单行 fenced code 在首个流式片段就使用 CodeBlock 渲染', () => {
+    render(
+      <MarkdownRenderer
+        content={'```ts\nconst a = 1;\n```'}
+        sources={[]}
+      />
+    );
+
+    expect(screen.getByTestId('code-block').textContent).toBe('const a = 1;');
+  });
+
+  it('流式增量更新 fenced code 时保留同一个 CodeBlock 实例', () => {
+    const { rerender } = render(
+      <MarkdownRenderer
+        content={'```ts\nconst a = 1;\nconst b = 2;\n```'}
+        sources={[]}
+      />
+    );
+    const firstCodeBlock = screen.getByTestId('code-block');
+
+    rerender(
+      <MarkdownRenderer
+        content={'```ts\nconst a = 1;\nconst b = 2;\nconst c = 3;\n```'}
+        sources={[]}
+      />
+    );
+
+    expect(screen.getByTestId('code-block').textContent).toBe('const a = 1;\nconst b = 2;\nconst c = 3;');
+    expect(screen.getByTestId('code-block')).toBe(firstCodeBlock);
+  });
+
+  it('列表项内 fenced code 流式增量和引用更新时不重挂 CodeBlock', () => {
+    const firstCitationClick = vi.fn();
+    const nextCitationClick = vi.fn();
+    const initialContent = '- 参考 [1]\n\n  ```ts\n  const a = 1;\n  const b = 2;\n  ```';
+    const nextContent = '- 参考 [1]\n\n  ```ts\n  const a = 1;\n  const b = 2;\n  const c = 3;\n  ```';
+    const { rerender } = render(
+      <MarkdownRenderer
+        content={initialContent}
+        sources={mockSources}
+        onCitationClick={firstCitationClick}
+      />
+    );
+    const firstCodeBlock = screen.getByTestId('code-block');
+
+    fireEvent.click(screen.getByRole('button', { name: /参考资料 1/ }));
+    expect(firstCitationClick).toHaveBeenCalledWith(0);
+
+    const nextSources = [
+      { url: 'https://updated.example.com', title: 'Updated Source', favicon: '' },
+      mockSources[1],
+    ];
+    rerender(
+      <MarkdownRenderer
+        content={nextContent}
+        sources={nextSources}
+        onCitationClick={nextCitationClick}
+      />
+    );
+
+    expect(screen.getByTestId('code-block')).toBe(firstCodeBlock);
+    expect(screen.getByTestId('code-block').textContent).toContain('const c = 3;');
+    fireEvent.click(screen.getByRole('button', { name: /Updated Source/ }));
+    expect(nextCitationClick).toHaveBeenCalledWith(0);
+    expect(firstCitationClick).toHaveBeenCalledTimes(1);
+  });
+
   it('table 保留横向滚动容器和单元格边框样式', () => {
     const { container } = render(
       <MarkdownRenderer

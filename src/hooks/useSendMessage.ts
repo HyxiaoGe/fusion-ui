@@ -137,11 +137,14 @@ async function postStreamActions(
         dispatch(setAnimatingTitleId(null));
       }
     }, title.length * 200 + 1000);
-  } catch {
-    // ignore title failures
-  }
-  if (isSessionCurrent()) {
-    dispatch(requestConversationListRefresh(conversationId));
+  } catch (error) {
+    if (isSessionCurrent()) {
+      console.warn('自动生成会话标题失败', error);
+    }
+  } finally {
+    if (isSessionCurrent()) {
+      dispatch(requestConversationListRefresh(conversationId));
+    }
   }
 }
 
@@ -429,6 +432,7 @@ export function useSendMessage() {
       const useReasoning = reasoningEnabled && supportsReasoning;
       let serverConvId: string | null = null;
       let materializedOnce = false;
+      let postStreamActionsStarted = false;
       // usage 不再随 done 事件下发（spec 缺口，未来可能扩 RunCompleted.usage）；
       // 当前路径：agent 模式从 GET conversation 拉，普通模式暂留 undefined
       let donePayload: { incomingConvId: string } | null = null;
@@ -463,6 +467,12 @@ export function useSendMessage() {
         );
         dispatch(migrateStreamConversation(incomingConvId));
         options.onMaterialized?.(incomingConvId);
+      };
+
+      const startPostStreamActions = (conversationId: string) => {
+        if (!isDraft || postStreamActionsStarted || !isSessionCurrent()) return;
+        postStreamActionsStarted = true;
+        void postStreamActions(conversationId, dispatch, isSessionCurrent);
       };
 
       const doCompleteStream = (payload: NonNullable<typeof donePayload>) => {
@@ -524,7 +534,7 @@ export function useSendMessage() {
         options.onStreamEnd?.(finalConvId);
         // 仅新对话的第一轮生成标题，后续轮次不再更新
         if (isDraft) {
-          void postStreamActions(finalConvId, dispatch, isSessionCurrent);
+          startPostStreamActions(finalConvId);
         } else {
           if (isSessionCurrent()) {
             dispatch(requestConversationListRefresh(finalConvId));
@@ -630,6 +640,13 @@ export function useSendMessage() {
             onDone: ({ conversationId: incomingConvId }) => {
               if (!isActiveSendCurrent()) return;
               donePayload = { incomingConvId };
+              // 标题生成只依赖后端已完成首轮持久化，不应等待视觉打字机排空。
+              // 这里先确保草稿已 materialize，再启动独立于 send generation 的一次性任务。
+              materializeIfNeeded(incomingConvId);
+              const titleConversationId = serverConvId ?? incomingConvId ?? activeConvIdRef.current;
+              if (titleConversationId) {
+                startPostStreamActions(titleConversationId);
+              }
               if (!assistantHasContentRef.current) {
                 // 没有文本内容，直接完成（打字机从未启动）
                 doCompleteStream(donePayload);

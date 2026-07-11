@@ -412,6 +412,7 @@ describe('useSendMessage', () => {
     sendMessageStreamMock.mockImplementationOnce(
       async (_payload: unknown, callbacks: StreamCallbacks) => {
         callbacks.onReady({ messageId: 'assistant-1', conversationId: 'server-conv' });
+        callbacks.onAnswering({ block_id: 'answer', delta: '尚未排空的正文' });
         callbacks.onDone({ messageId: 'assistant-1', conversationId: 'server-conv' });
       }
     );
@@ -434,6 +435,138 @@ describe('useSendMessage', () => {
     expect(store.getState().conversation.animatingTitleId).toBeNull();
     expect(store.getState().conversation.conversationListDirtyIds).toEqual([]);
     expect(store.getState().conversation.byId['server-conv']).toBeUndefined();
+  });
+
+  it('新会话网络完成后立即且只启动一次标题生成，不等待打字机排空', async () => {
+    const store = createStore();
+    let callbacks: StreamCallbacks | undefined;
+    sendMessageStreamMock.mockImplementationOnce(
+      async (_payload: unknown, nextCallbacks: StreamCallbacks) => {
+        callbacks = nextCallbacks;
+        nextCallbacks.onReady({ messageId: 'assistant-1', conversationId: 'server-conv' });
+        nextCallbacks.onAnswering({ block_id: 'answer', delta: '这是一段尚未播放完的长回答' });
+        nextCallbacks.onDone({ messageId: 'assistant-1', conversationId: 'server-conv' });
+      }
+    );
+    const { result } = renderHook(() => useSendMessage(), {
+      wrapper: createWrapper(store),
+    });
+
+    await act(async () => {
+      await result.current.sendMessage('立即生成标题', { conversationId: null });
+    });
+
+    expect(store.getState().stream.isStreaming).toBe(true);
+    expect(generateChatTitleMock).toHaveBeenCalledTimes(1);
+    expect(generateChatTitleMock).toHaveBeenCalledWith(
+      'server-conv',
+      undefined,
+      { max_length: 20 }
+    );
+
+    act(() => {
+      callbacks?.onDone({ messageId: 'assistant-1', conversationId: 'server-conv' });
+      tickIntervals(20);
+    });
+
+    await waitFor(() => expect(store.getState().stream.isStreaming).toBe(false));
+    expect(generateChatTitleMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('标题生成已启动后，同 session 路由 handoff 不取消标题写回', async () => {
+    const store = createStore();
+    let resolveTitle: ((title: string) => void) | undefined;
+    generateChatTitleMock.mockImplementationOnce(() => new Promise((resolve) => {
+      resolveTitle = resolve;
+    }));
+    sendMessageStreamMock.mockImplementationOnce(
+      async (_payload: unknown, callbacks: StreamCallbacks) => {
+        callbacks.onReady({ messageId: 'assistant-1', conversationId: 'server-conv' });
+        callbacks.onAnswering({ block_id: 'answer', delta: '尚未排空' });
+        callbacks.onDone({ messageId: 'assistant-1', conversationId: 'server-conv' });
+      }
+    );
+    const { result, unmount } = renderHook(() => useSendMessage(), {
+      wrapper: createWrapper(store),
+    });
+
+    await act(async () => {
+      await result.current.sendMessage('路由切换标题', { conversationId: null });
+    });
+    await waitFor(() => expect(generateChatTitleMock).toHaveBeenCalledTimes(1));
+    unmount();
+
+    await act(async () => {
+      resolveTitle?.('切换后标题');
+      await Promise.resolve();
+    });
+
+    expect(store.getState().conversation.byId['server-conv']?.title).toBe('切换后标题');
+    expect(store.getState().conversation.conversationListDirtyIds).toEqual(['server-conv']);
+  });
+
+  it('标题生成已启动后，同 session 后续发送不取消标题写回', async () => {
+    const store = createStore();
+    let resolveTitle: ((title: string) => void) | undefined;
+    generateChatTitleMock.mockImplementationOnce(() => new Promise((resolve) => {
+      resolveTitle = resolve;
+    }));
+    sendMessageStreamMock
+      .mockImplementationOnce(async (_payload: unknown, callbacks: StreamCallbacks) => {
+        callbacks.onReady({ messageId: 'assistant-1', conversationId: 'server-conv' });
+        callbacks.onAnswering({ block_id: 'answer', delta: '第一轮尚未排空' });
+        callbacks.onDone({ messageId: 'assistant-1', conversationId: 'server-conv' });
+      })
+      .mockImplementationOnce(async (_payload: unknown, callbacks: StreamCallbacks) => {
+        callbacks.onReady({ messageId: 'assistant-2', conversationId: 'server-conv' });
+        callbacks.onDone({ messageId: 'assistant-2', conversationId: 'server-conv' });
+      });
+    const { result } = renderHook(() => useSendMessage(), {
+      wrapper: createWrapper(store),
+    });
+
+    await act(async () => {
+      await result.current.sendMessage('第一轮', { conversationId: null });
+    });
+    await waitFor(() => expect(generateChatTitleMock).toHaveBeenCalledTimes(1));
+
+    await act(async () => {
+      await result.current.sendMessage('第二轮', { conversationId: 'server-conv' });
+    });
+    await act(async () => {
+      resolveTitle?.('首轮生成标题');
+      await Promise.resolve();
+    });
+
+    expect(generateChatTitleMock).toHaveBeenCalledTimes(1);
+    expect(store.getState().conversation.byId['server-conv']?.title).toBe('首轮生成标题');
+  });
+
+  it('标题生成失败会记录告警并继续定向刷新会话 metadata', async () => {
+    const store = createStore();
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    generateChatTitleMock.mockRejectedValueOnce(new Error('title service unavailable'));
+    sendMessageStreamMock.mockImplementationOnce(
+      async (_payload: unknown, callbacks: StreamCallbacks) => {
+        callbacks.onReady({ messageId: 'assistant-1', conversationId: 'server-conv' });
+        callbacks.onDone({ messageId: 'assistant-1', conversationId: 'server-conv' });
+      }
+    );
+    const { result } = renderHook(() => useSendMessage(), {
+      wrapper: createWrapper(store),
+    });
+
+    await act(async () => {
+      await result.current.sendMessage('标题失败', { conversationId: null });
+    });
+
+    await waitFor(() => {
+      expect(warnSpy).toHaveBeenCalledWith(
+        '自动生成会话标题失败',
+        expect.any(Error)
+      );
+      expect(store.getState().conversation.conversationListDirtyIds).toEqual(['server-conv']);
+    });
   });
 
   it('uses completion time as assistant timestamp so long first replies can still fetch suggestions', async () => {

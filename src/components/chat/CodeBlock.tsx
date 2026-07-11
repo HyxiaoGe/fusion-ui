@@ -3,102 +3,90 @@
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { Check, ClipboardCopy, FileText, Hash, ChevronDown, ChevronUp } from 'lucide-react';
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useMemo, useState } from 'react';
 import hljs from 'highlight.js';
 
 interface CodeBlockProps {
   language: string;
   value: string;
-  children?: React.ReactNode;
   showLineNumbers?: boolean;
   className?: string;
   maxLines?: number; // 最大显示行数，超过则可折叠
 }
 
+const LANGUAGE_MAP: Record<string, string> = {
+  js: 'javascript',
+  jsx: 'javascript',
+  ts: 'typescript',
+  tsx: 'typescript',
+  py: 'python',
+  rb: 'ruby',
+  sh: 'bash',
+  yml: 'yaml',
+  md: 'markdown',
+  html: 'xml',
+  vue: 'xml',
+  svelte: 'xml',
+};
+
+const DISPLAY_LANGUAGE_MAP: Record<string, string> = {
+  javascript: 'JavaScript',
+  typescript: 'TypeScript',
+  python: 'Python',
+  java: 'Java',
+  cpp: 'C++',
+  csharp: 'C#',
+  php: 'PHP',
+  ruby: 'Ruby',
+  go: 'Go',
+  rust: 'Rust',
+  swift: 'Swift',
+  kotlin: 'Kotlin',
+  html: 'HTML',
+  css: 'CSS',
+  scss: 'SCSS',
+  less: 'LESS',
+  xml: 'XML',
+  json: 'JSON',
+  yaml: 'YAML',
+  yml: 'YAML',
+  toml: 'TOML',
+  ini: 'INI',
+  bash: 'Bash',
+  shell: 'Shell',
+  powershell: 'PowerShell',
+  sql: 'SQL',
+  markdown: 'Markdown',
+  text: 'Plain Text',
+  plaintext: 'Plain Text',
+};
+
+function getDisplayLanguage(language: string): string {
+  return DISPLAY_LANGUAGE_MAP[language.toLowerCase()] || language.toUpperCase();
+}
+
+function highlightCode(value: string, language: string): string {
+  const actualLanguage = LANGUAGE_MAP[language.toLowerCase()] || language.toLowerCase();
+
+  try {
+    if (hljs.getLanguage(actualLanguage)) {
+      return hljs.highlight(value, { language: actualLanguage }).value;
+    }
+    return hljs.highlightAuto(value).value;
+  } catch {
+    return hljs.highlight(value, { language: 'plaintext' }).value;
+  }
+}
+
 const CodeBlock: React.FC<CodeBlockProps> = ({ 
   language, 
   value, 
-  children,
   showLineNumbers = true,
   className,
   maxLines = 15 // 默认最大显示15行
 }) => {
   const [copied, setCopied] = useState(false);
-  const [highlightedCode, setHighlightedCode] = useState('');
-  const [isCollapsed, setIsCollapsed] = useState(false);
-  const codeRef = useRef<HTMLElement>(null);
-
-  // 语言映射表
-  const languageMap: Record<string, string> = {
-    'js': 'javascript',
-    'jsx': 'javascript',
-    'ts': 'typescript',
-    'tsx': 'typescript',
-    'py': 'python',
-    'rb': 'ruby',
-    'sh': 'bash',
-    'yml': 'yaml',
-    'md': 'markdown',
-    'html': 'xml',
-    'vue': 'xml',
-    'svelte': 'xml'
-  };
-
-  // 获取显示用的语言名称
-  const getDisplayLanguage = (lang: string): string => {
-    const langMap: Record<string, string> = {
-      'javascript': 'JavaScript',
-      'typescript': 'TypeScript',
-      'python': 'Python',
-      'java': 'Java',
-      'cpp': 'C++',
-      'csharp': 'C#',
-      'php': 'PHP',
-      'ruby': 'Ruby',
-      'go': 'Go',
-      'rust': 'Rust',
-      'swift': 'Swift',
-      'kotlin': 'Kotlin',
-      'html': 'HTML',
-      'css': 'CSS',
-      'scss': 'SCSS',
-      'less': 'LESS',
-      'xml': 'XML',
-      'json': 'JSON',
-      'yaml': 'YAML',
-      'yml': 'YAML',
-      'toml': 'TOML',
-      'ini': 'INI',
-      'bash': 'Bash',
-      'shell': 'Shell',
-      'powershell': 'PowerShell',
-      'sql': 'SQL',
-      'markdown': 'Markdown',
-      'text': 'Plain Text',
-      'plaintext': 'Plain Text'
-    };
-    
-    return langMap[lang.toLowerCase()] || lang.toUpperCase();
-  };
-
-  // 处理语法高亮
-  useEffect(() => {
-    const actualLanguage = languageMap[language.toLowerCase()] || language.toLowerCase();
-    
-    try {
-      if (hljs.getLanguage(actualLanguage)) {
-        const result = hljs.highlight(value, { language: actualLanguage });
-        setHighlightedCode(result.value);
-      } else {
-        // 如果语言不支持，使用自动检测
-        const result = hljs.highlightAuto(value);
-        setHighlightedCode(result.value);
-      }
-    } catch (error) {
-      // 如果高亮失败，使用原始代码
-      setHighlightedCode(hljs.highlight(value, { language: 'plaintext' }).value);
-    }
-  }, [language, value]);
+  const [isExpanded, setIsExpanded] = useState(false);
 
   const handleCopy = async () => {
     try {
@@ -115,52 +103,20 @@ const CodeBlock: React.FC<CodeBlockProps> = ({
     return code.split('\n').map((_, index) => (index + 1).toString());
   };
 
-  const lineNumbers = generateLineNumbers(value);
+  const lineNumbers = useMemo(() => generateLineNumbers(value), [value]);
   const maxLineNumberWidth = lineNumbers.length.toString().length;
   const totalLines = lineNumbers.length;
   const shouldShowCollapse = totalLines > maxLines;
-
-  // 初始化折叠状态
-  useEffect(() => {
-    if (shouldShowCollapse && !isCollapsed) {
-      setIsCollapsed(true);
-    }
-  }, [shouldShowCollapse]);
-
-  // 获取显示的代码内容（折叠时只显示前几行）
-  const getDisplayCode = () => {
-    if (!isCollapsed || !shouldShowCollapse) {
-      return highlightedCode;
-    }
-    
-    const lines = value.split('\n');
-    const displayLines = lines.slice(0, maxLines).join('\n');
-    
-    // 对截取的代码重新进行语法高亮
-    const actualLanguage = languageMap[language.toLowerCase()] || language.toLowerCase();
-    try {
-      if (hljs.getLanguage(actualLanguage)) {
-        const result = hljs.highlight(displayLines, { language: actualLanguage });
-        return result.value;
-      } else {
-        const result = hljs.highlightAuto(displayLines);
-        return result.value;
-      }
-    } catch (error) {
-      return hljs.highlight(displayLines, { language: 'plaintext' }).value;
-    }
-  };
-
-  // 获取显示的行号
-  const getDisplayLineNumbers = () => {
-    if (!isCollapsed || !shouldShowCollapse) {
-      return lineNumbers;
-    }
-    return lineNumbers.slice(0, maxLines);
-  };
-
-  const displayCode = getDisplayCode();
-  const displayLineNumbers = getDisplayLineNumbers();
+  const isCollapsed = shouldShowCollapse && !isExpanded;
+  const displayValue = useMemo(
+    () => isCollapsed ? value.split('\n').slice(0, maxLines).join('\n') : value,
+    [isCollapsed, maxLines, value],
+  );
+  const displayCode = useMemo(
+    () => highlightCode(displayValue, language),
+    [displayValue, language],
+  );
+  const displayLineNumbers = isCollapsed ? lineNumbers.slice(0, maxLines) : lineNumbers;
 
   return (
     <div className={cn("relative group my-4", className)}>
@@ -187,7 +143,7 @@ const CodeBlock: React.FC<CodeBlockProps> = ({
               variant="ghost"
               size="sm"
               className="h-6 w-6 p-0 text-slate-600 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
-              onClick={() => setIsCollapsed(!isCollapsed)}
+              onClick={() => setIsExpanded(isCollapsed)}
               title={isCollapsed ? "展开代码" : "折叠代码"}
             >
               {isCollapsed ? (
@@ -239,7 +195,6 @@ const CodeBlock: React.FC<CodeBlockProps> = ({
             <div className="flex-1 min-w-0">
               <pre className="text-sm leading-6 text-slate-700 dark:text-slate-300 p-4 m-0 font-mono overflow-visible">
                 <code 
-                  ref={codeRef}
                   className={cn(
                     "block min-w-full",
                     `language-${language}`
@@ -256,7 +211,7 @@ const CodeBlock: React.FC<CodeBlockProps> = ({
                       variant="outline"
                       size="sm"
                       className="h-9 px-4 text-sm text-slate-700 dark:text-slate-300 border-slate-300 dark:border-slate-600 hover:bg-slate-100 dark:hover:bg-slate-800 hover:border-slate-400 dark:hover:border-slate-500 transition-all"
-                      onClick={() => setIsCollapsed(false)}
+                      onClick={() => setIsExpanded(true)}
                     >
                       <ChevronDown className="h-4 w-4 mr-2" />
                       显示剩余 {totalLines - maxLines} 行代码

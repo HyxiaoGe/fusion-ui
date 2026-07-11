@@ -6,8 +6,8 @@ import React, { useRef, useEffect, useMemo, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import rehypeRaw from 'rehype-raw';
 import remarkGfm from 'remark-gfm';
-import CodeBlock from './CodeBlock';
 import { normalizeBareUrlsForMarkdown } from '@/lib/chat/markdownLinks';
+import { MarkdownPreRenderer, ReasoningCodeRenderer } from './markdownCodeComponents';
 
 interface ReasoningContentProps {
   content: string;
@@ -47,6 +47,11 @@ const ReasoningContent: React.FC<ReasoningContentProps> = ({
     }
   }, [content, isStreaming, actuallyVisible]);
 
+  const renderedContent = useMemo(
+    () => normalizeBareUrlsForMarkdown(content.trim()),
+    [content],
+  );
+
   if (!isStreaming && (!content || !content.trim())) {
     return null;
   }
@@ -60,11 +65,6 @@ const ReasoningContent: React.FC<ReasoningContentProps> = ({
     }
     return null;
   })();
-  const renderedContent = useMemo(
-    () => normalizeBareUrlsForMarkdown(content.trim()),
-    [content],
-  );
-
   return (
     <div className={cn(
       "rounded-lg border mb-2 overflow-hidden transition-all duration-300",
@@ -117,26 +117,8 @@ const ReasoningContent: React.FC<ReasoningContentProps> = ({
                   remarkPlugins={[remarkGfm]}
                   rehypePlugins={[rehypeRaw]}
                   components={{
-                    pre: ({ children }) => <>{children}</>,
-                    code: ({ className, children, ...props }) => {
-                      const match = /language-(\w+)/.exec(className || '');
-                      const codeContent = String(children).replace(/\n$/, '');
-                      if (match && codeContent.includes('\n')) {
-                        return (
-                          <CodeBlock
-                            language={match[1]}
-                            value={codeContent}
-                            showLineNumbers={false}
-                            maxLines={10}
-                          />
-                        );
-                      }
-                      return (
-                        <code className="bg-muted px-1 py-0.5 rounded text-xs font-mono" {...props}>
-                          {children}
-                        </code>
-                      );
-                    },
+                    pre: MarkdownPreRenderer,
+                    code: ReasoningCodeRenderer,
                   }}
                 >
                   {renderedContent}

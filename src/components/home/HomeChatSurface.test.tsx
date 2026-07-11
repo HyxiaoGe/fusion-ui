@@ -354,6 +354,8 @@ describe('HomeChatSurface 会话资料交互', () => {
 
     expect(screen.queryByTestId('home-page')).toBeNull();
     expect(screen.getByTestId('pending-conversation-surface')).toBeInTheDocument();
+    expect(screen.getByTestId('pending-conversation-surface').closest('[data-chat-scroll-container="true"]'))
+      .toBeInTheDocument();
     expect(screen.getByTestId('pending-message-list')).toHaveAttribute(
       'data-message-ids',
       'user-1,assistant-1'

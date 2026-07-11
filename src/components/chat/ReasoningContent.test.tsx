@@ -2,6 +2,12 @@ import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import ReasoningContent from './ReasoningContent';
 
+vi.mock('./CodeBlock', () => ({
+  default: ({ language, value }: { language: string; value: string }) => (
+    <pre data-testid="reasoning-code-block" data-language={language}>{value}</pre>
+  ),
+}));
+
 describe('ReasoningContent', () => {
   it('完成态使用低权重透明容器并保留折叠与耗时文案', () => {
     const onToggle = vi.fn();
@@ -64,5 +70,30 @@ describe('ReasoningContent', () => {
     const link = screen.getByRole('link', { name: 'https://example.com/a?froms=ggmp' });
     expect(link.getAttribute('href')).toBe('https://example.com/a?froms=ggmp');
     expect(container.textContent).toContain('，原因是需要核验。');
+  });
+
+  it('流式 reasoning 的 fenced code 增量更新时不重挂代码块', () => {
+    const { rerender } = render(
+      <ReasoningContent
+        content={'```ts\nconst a = 1;\nconst b = 2;\n```'}
+        isStreaming={true}
+        isVisible={true}
+        onToggle={vi.fn()}
+      />,
+    );
+    const firstCodeBlock = screen.getByTestId('reasoning-code-block');
+
+    rerender(
+      <ReasoningContent
+        content={'```ts\nconst a = 1;\nconst b = 2;\nconst c = 3;\n```'}
+        isStreaming={true}
+        isVisible={true}
+        onToggle={vi.fn()}
+      />,
+    );
+
+    expect(firstCodeBlock).toBeTruthy();
+    expect(screen.getByTestId('reasoning-code-block')).toBe(firstCodeBlock);
+    expect(screen.getByTestId('reasoning-code-block').textContent).toContain('const c = 3;');
   });
 });

@@ -1,10 +1,12 @@
 'use client';
 
 import type { Message } from '@/types/conversation';
-import React, { useEffect, useMemo, useRef } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { ArrowDown } from 'lucide-react';
 import { useAppDispatch, useAppSelector } from '@/redux/hooks';
 import { clearStreamError } from '@/redux/slices/streamSlice';
 import LoadingIndicator from '../ui/loading-indicator';
+import { Button } from '../ui/button';
 import ChatMessage from './ChatMessage';
 import StreamErrorCard from './StreamErrorCard';
 import ChatLoadingSurface from './ChatLoadingSurface';
@@ -31,6 +33,16 @@ interface ChatMessageListProps {
     title: string;
     description: string;
   };
+}
+
+interface JumpButtonPosition {
+  right: number;
+  bottom: number;
+}
+
+interface AwayFromBottomState {
+  conversationId: string | null;
+  isAway: boolean;
 }
 
 // 定义角色排序优先级
@@ -154,10 +166,28 @@ const ChatMessageList: React.FC<ChatMessageListProps> = ({
   emptyState = DEFAULT_EMPTY_STATE,
 }) => {
   useRenderProbe('ChatMessageList');
+  const messageListRef = useRef<HTMLDivElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const scrollContainerRef = useRef<HTMLElement | null>(null);
   const shouldStickToBottomRef = useRef(true);
   const previousConversationIdRef = useRef<string | null | undefined>(undefined);
-  const shouldJumpToBottomRef = useRef(true);
+  const previousScrollTopRef = useRef<number | null>(null);
+  const [awayFromBottomState, setAwayFromBottomState] = useState<AwayFromBottomState>({
+    conversationId,
+    isAway: false,
+  });
+  const [jumpButtonPosition, setJumpButtonPosition] = useState<JumpButtonPosition | null>(null);
+  const hasMessages = messages.length > 0;
+  const isAwayFromBottom = awayFromBottomState.conversationId === conversationId
+    && awayFromBottomState.isAway;
+
+  const setIsAwayFromBottom = useCallback((isAway: boolean) => {
+    setAwayFromBottomState((current) => (
+      current.conversationId === conversationId && current.isAway === isAway
+        ? current
+        : { conversationId, isAway }
+    ));
+  }, [conversationId]);
 
   // 按时间戳排序消息 - 确保使用完整毫秒精度
   const sortedMessages = useMemo(() => {
@@ -193,39 +223,98 @@ const ChatMessageList: React.FC<ChatMessageListProps> = ({
   }, [sortedMessages]);
 
   // 滚动到底部
-  const scrollToBottom = (behavior: ScrollBehavior = 'smooth') => {
+  const scrollToBottom = useCallback((behavior: ScrollBehavior = 'auto') => {
     messagesEndRef.current?.scrollIntoView({ behavior });
-  };
+  }, []);
+
+  const updateJumpButtonPosition = useCallback(() => {
+    const scrollContainer = scrollContainerRef.current;
+    if (!scrollContainer) {
+      setJumpButtonPosition(null);
+      return;
+    }
+
+    const rect = scrollContainer.getBoundingClientRect();
+    const nextPosition = {
+      right: Math.max(16, window.innerWidth - rect.right + 16),
+      bottom: Math.max(16, window.innerHeight - rect.bottom + 16),
+    };
+    setJumpButtonPosition((current) => (
+      current?.right === nextPosition.right && current.bottom === nextPosition.bottom
+        ? current
+        : nextPosition
+    ));
+  }, []);
 
   useEffect(() => {
     if (previousConversationIdRef.current !== conversationId) {
       previousConversationIdRef.current = conversationId;
       shouldStickToBottomRef.current = true;
-      shouldJumpToBottomRef.current = true;
+      previousScrollTopRef.current = null;
+      setIsAwayFromBottom(false);
     }
-  }, [conversationId]);
+  }, [conversationId, setIsAwayFromBottom]);
+
+  useEffect(() => {
+    if (hasMessages) {
+      return;
+    }
+
+    shouldStickToBottomRef.current = true;
+    previousScrollTopRef.current = null;
+    setIsAwayFromBottom(false);
+  }, [hasMessages, setIsAwayFromBottom]);
 
   useEffect(() => {
     const scrollContainer = messagesEndRef.current?.closest('[data-chat-scroll-container="true"]') as HTMLElement | null;
 
     if (!scrollContainer) {
+      scrollContainerRef.current = null;
       shouldStickToBottomRef.current = true;
+      previousScrollTopRef.current = null;
+      setIsAwayFromBottom(false);
+      setJumpButtonPosition(null);
       return;
     }
 
+    scrollContainerRef.current = scrollContainer;
+    updateJumpButtonPosition();
+
     const updateStickiness = () => {
       const nearBottom = isNearBottom(scrollContainer);
-      shouldStickToBottomRef.current = nearBottom;
+      const previousScrollTop = previousScrollTopRef.current;
+      const currentScrollTop = scrollContainer.scrollTop;
+
+      if (nearBottom) {
+        shouldStickToBottomRef.current = true;
+        setIsAwayFromBottom(false);
+      } else if (
+        previousScrollTop !== null
+        && currentScrollTop < previousScrollTop
+      ) {
+        // 只有向上滚动才视为用户主动离开底部；程序滚动始终向下，不会误伤 sticky 状态。
+        shouldStickToBottomRef.current = false;
+        setIsAwayFromBottom(true);
+      } else if (!shouldStickToBottomRef.current) {
+        setIsAwayFromBottom(true);
+      }
+
+      previousScrollTopRef.current = currentScrollTop;
     };
 
+    previousScrollTopRef.current = scrollContainer.scrollTop;
     scrollContainer.addEventListener('scroll', updateStickiness, { passive: true });
+    window.addEventListener('resize', updateJumpButtonPosition);
 
     return () => {
       scrollContainer.removeEventListener('scroll', updateStickiness);
+      window.removeEventListener('resize', updateJumpButtonPosition);
+      if (scrollContainerRef.current === scrollContainer) {
+        scrollContainerRef.current = null;
+      }
     };
-  }, [sortedMessages.length]);
+  }, [conversationId, hasMessages, setIsAwayFromBottom, updateJumpButtonPosition]);
 
-  // 流式内容信号：打字机推进字符数 + 块数量，覆盖 token 追加和新块出现两种情况
   const dispatch = useAppDispatch();
   const streamError = useAppSelector(state => state.stream.lastError);
   const currentRun = useAppSelector(state => state.stream.currentRun);
@@ -233,10 +322,6 @@ const ChatMessageList: React.FC<ChatMessageListProps> = ({
   const model = useAppSelector(state => selectChatModel(state, conversationId));
   const providerId = model?.provider;
   const modelName = model?.name ?? 'AI助手';
-  const streamScrollSignal = useAppSelector(
-    state => isStreaming ? state.stream.displayedTextLength + state.stream.blockOrder.length : 0
-  );
-
   const isStreamingForMessage = (message: Message, index: number): boolean => {
     if (!isStreaming || message.role !== 'assistant') {
       return false;
@@ -255,24 +340,37 @@ const ChatMessageList: React.FC<ChatMessageListProps> = ({
     }
 
     if (shouldStickToBottomRef.current) {
-      const behavior = shouldJumpToBottomRef.current ? 'auto' : 'smooth';
-      scrollToBottom(behavior);
-      shouldJumpToBottomRef.current = false;
+      scrollToBottom('auto');
     }
-  }, [messages.length, isStreaming]);
+  }, [conversationId, messages.length, isStreaming, scrollToBottom]);
 
-  // 流式期间：内容增长时自动滚动（节流，避免过于频繁）
-  const lastScrollTimeRef = useRef(0);
+  // 直接观察消息列表高度，覆盖正文、思考过程、Agent 卡片和异步高亮等任意内容增长。
   useEffect(() => {
-    if (!isStreaming || streamScrollSignal === 0) return;
-    if (!shouldStickToBottomRef.current) return;
+    const messageList = messageListRef.current;
+    const scrollContainer = scrollContainerRef.current;
+    if (!messageList || !scrollContainer || typeof ResizeObserver === 'undefined') {
+      return;
+    }
 
-    const now = Date.now();
-    if (now - lastScrollTimeRef.current < 300) return; // 最多 300ms 滚一次
-    lastScrollTimeRef.current = now;
+    const resizeObserver = new ResizeObserver((entries) => {
+      if (shouldStickToBottomRef.current) {
+        scrollToBottom('auto');
+      }
+      if (entries.some((entry) => entry.target === scrollContainer)) {
+        updateJumpButtonPosition();
+      }
+    });
+    resizeObserver.observe(messageList);
+    resizeObserver.observe(scrollContainer);
 
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [isStreaming, streamScrollSignal]);
+    return () => resizeObserver.disconnect();
+  }, [conversationId, hasMessages, scrollToBottom, updateJumpButtonPosition]);
+
+  const handleJumpToBottom = useCallback(() => {
+    shouldStickToBottomRef.current = true;
+    setIsAwayFromBottom(false);
+    scrollToBottom('auto');
+  }, [scrollToBottom, setIsAwayFromBottom]);
 
   const statusText = useMemo(() => {
     if (sortedMessages.length === 0) return null;
@@ -320,7 +418,7 @@ const ChatMessageList: React.FC<ChatMessageListProps> = ({
   }
 
   return (
-    <div className="flex flex-col min-h-full px-4 pb-[120px]">
+    <div ref={messageListRef} className="flex flex-col min-h-full px-4 pb-[120px]">
       {/* spacer 把消息推到底部，但不阻止向上滚动 */}
       <div className="flex-1" />
       {sortedMessages.map((message, index) => {
@@ -363,6 +461,23 @@ const ChatMessageList: React.FC<ChatMessageListProps> = ({
         <div className="px-4 pb-2 text-xs text-muted-foreground">
           {statusText}
         </div>
+      ) : null}
+
+      {isAwayFromBottom && jumpButtonPosition ? (
+        <Button
+          type="button"
+          variant="outline"
+          size="icon"
+          className="fixed z-10 rounded-full bg-background/95 shadow-lg backdrop-blur"
+          style={{
+            right: jumpButtonPosition.right,
+            bottom: jumpButtonPosition.bottom,
+          }}
+          aria-label={isStreaming ? '查看最新回复' : '回到底部'}
+          onClick={handleJumpToBottom}
+        >
+          <ArrowDown aria-hidden="true" />
+        </Button>
       ) : null}
 
       <div ref={messagesEndRef} />

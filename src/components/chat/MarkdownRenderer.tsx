@@ -1,12 +1,12 @@
 'use client';
 
-import React, { useMemo } from 'react';
-import ReactMarkdown from 'react-markdown';
+import React, { useContext, useMemo } from 'react';
+import ReactMarkdown, { type Components } from 'react-markdown';
 import rehypeRaw from 'rehype-raw';
 import remarkGfm from 'remark-gfm';
-import CodeBlock from './CodeBlock';
 import type { SearchSourceSummary } from '@/types/conversation';
 import { normalizeBareUrlsForMarkdown } from '@/lib/chat/markdownLinks';
+import { MarkdownCodeRenderer, MarkdownPreRenderer } from './markdownCodeComponents';
 
 interface MarkdownRendererProps {
   content: string;
@@ -14,6 +14,19 @@ interface MarkdownRendererProps {
   sources?: SearchSourceSummary[];
   onCitationClick?: (index: number) => void;
 }
+
+interface CitationRenderContextValue {
+  hasSources: boolean;
+  sources: SearchSourceSummary[];
+  onCitationClick?: (index: number) => void;
+}
+
+const EMPTY_CITATION_CONTEXT: CitationRenderContextValue = {
+  hasSources: false,
+  sources: [],
+};
+
+const CitationRenderContext = React.createContext<CitationRenderContextValue>(EMPTY_CITATION_CONTEXT);
 
 // 占位符字符对（Unicode 数学角括号，正文中不会出现）
 const CITE_OPEN = '\u27E6';   // ⟦
@@ -125,6 +138,83 @@ function processChildren(
   });
 }
 
+type MarkdownElementProps<Tag extends keyof React.JSX.IntrinsicElements> =
+  React.ComponentPropsWithoutRef<Tag> & { node?: unknown };
+
+function useCitationChildren(children: React.ReactNode): React.ReactNode {
+  const { hasSources, sources, onCitationClick } = useContext(CitationRenderContext);
+  return hasSources ? processChildren(children, sources, onCitationClick) : children;
+}
+
+const MarkdownParagraphRenderer = ({ node, children, ...props }: MarkdownElementProps<'p'>) => {
+  void node;
+  return <p {...props}>{useCitationChildren(children)}</p>;
+};
+
+const MarkdownListItemRenderer = ({ node, children, ...props }: MarkdownElementProps<'li'>) => {
+  void node;
+  return <li {...props}>{useCitationChildren(children)}</li>;
+};
+
+const MarkdownStrongRenderer = ({ node, children, ...props }: MarkdownElementProps<'strong'>) => {
+  void node;
+  return <strong {...props}>{useCitationChildren(children)}</strong>;
+};
+
+const MarkdownEmphasisRenderer = ({ node, children, ...props }: MarkdownElementProps<'em'>) => {
+  void node;
+  return <em {...props}>{useCitationChildren(children)}</em>;
+};
+
+const MarkdownHeading1Renderer = ({ node, children, ...props }: MarkdownElementProps<'h1'>) => {
+  void node;
+  return <h1 {...props}>{useCitationChildren(children)}</h1>;
+};
+
+const MarkdownHeading2Renderer = ({ node, children, ...props }: MarkdownElementProps<'h2'>) => {
+  void node;
+  return <h2 {...props}>{useCitationChildren(children)}</h2>;
+};
+
+const MarkdownHeading3Renderer = ({ node, children, ...props }: MarkdownElementProps<'h3'>) => {
+  void node;
+  return <h3 {...props}>{useCitationChildren(children)}</h3>;
+};
+
+const MarkdownTableRenderer = ({ node, ...props }: MarkdownElementProps<'table'>) => {
+  void node;
+  return (
+    <div className="overflow-x-auto my-4">
+      <table className="border-collapse w-full" {...props} />
+    </div>
+  );
+};
+
+const MarkdownTableHeaderRenderer = ({ node, ...props }: MarkdownElementProps<'th'>) => {
+  void node;
+  return <th className="border border-border px-4 py-2 text-left" {...props} />;
+};
+
+const MarkdownTableCellRenderer = ({ node, ...props }: MarkdownElementProps<'td'>) => {
+  void node;
+  return <td className="border border-border px-4 py-2" {...props} />;
+};
+
+const MARKDOWN_COMPONENTS: Components = {
+  pre: MarkdownPreRenderer,
+  code: MarkdownCodeRenderer,
+  p: MarkdownParagraphRenderer,
+  li: MarkdownListItemRenderer,
+  strong: MarkdownStrongRenderer,
+  em: MarkdownEmphasisRenderer,
+  h1: MarkdownHeading1Renderer,
+  h2: MarkdownHeading2Renderer,
+  h3: MarkdownHeading3Renderer,
+  table: MarkdownTableRenderer,
+  th: MarkdownTableHeaderRenderer,
+  td: MarkdownTableCellRenderer,
+};
+
 const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({ content, className, sources = [], onCitationClick }) => {
   const hasSources = sources.length > 0;
 
@@ -132,95 +222,22 @@ const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({ content, className,
     () => normalizeBareUrlsForMarkdown(hasSources ? preprocessCitations(content) : content),
     [content, hasSources]
   );
+  const citationContextValue = useMemo<CitationRenderContextValue>(
+    () => hasSources ? { hasSources, sources, onCitationClick } : EMPTY_CITATION_CONTEXT,
+    [hasSources, onCitationClick, sources],
+  );
 
   return (
     <div className={`prose prose-neutral dark:prose-invert max-w-none ${className || ''}`}>
-      <ReactMarkdown
-        remarkPlugins={[remarkGfm]}
-        rehypePlugins={[rehypeRaw]}
-        components={{
-          pre: ({ node, children }) => {
-            void node;
-            return <>{children}</>;
-          },
-          code: ({ node, className, children, ...props }) => {
-            void node;
-            const match = /language-(\w+)/.exec(className || '');
-            const codeContent = String(children).replace(/\n$/, '');
-
-            if (match && codeContent.includes('\n')) {
-              return (
-                <CodeBlock
-                  language={match[1]}
-                  value={codeContent}
-                  showLineNumbers={true}
-                  maxLines={12}
-                />
-              );
-            }
-
-            return (
-              <code className="bg-muted px-1 py-0.5 rounded text-sm font-mono" {...props}>
-                {children}
-              </code>
-            );
-          },
-          // 拦截各种文本容器标签，处理 ⟦n⟧ 引用占位符
-          p: ({ node, children, ...props }) => {
-            void node;
-            if (!hasSources) return <p {...props}>{children}</p>;
-            return <p {...props}>{processChildren(children, sources, onCitationClick)}</p>;
-          },
-          li: ({ node, children, ...props }) => {
-            void node;
-            if (!hasSources) return <li {...props}>{children}</li>;
-            return <li {...props}>{processChildren(children, sources, onCitationClick)}</li>;
-          },
-          strong: ({ node, children, ...props }) => {
-            void node;
-            if (!hasSources) return <strong {...props}>{children}</strong>;
-            return <strong {...props}>{processChildren(children, sources, onCitationClick)}</strong>;
-          },
-          em: ({ node, children, ...props }) => {
-            void node;
-            if (!hasSources) return <em {...props}>{children}</em>;
-            return <em {...props}>{processChildren(children, sources, onCitationClick)}</em>;
-          },
-          h1: ({ node, children, ...props }) => {
-            void node;
-            if (!hasSources) return <h1 {...props}>{children}</h1>;
-            return <h1 {...props}>{processChildren(children, sources, onCitationClick)}</h1>;
-          },
-          h2: ({ node, children, ...props }) => {
-            void node;
-            if (!hasSources) return <h2 {...props}>{children}</h2>;
-            return <h2 {...props}>{processChildren(children, sources, onCitationClick)}</h2>;
-          },
-          h3: ({ node, children, ...props }) => {
-            void node;
-            if (!hasSources) return <h3 {...props}>{children}</h3>;
-            return <h3 {...props}>{processChildren(children, sources, onCitationClick)}</h3>;
-          },
-          table: ({ node, ...props }) => {
-            void node;
-            return (
-              <div className="overflow-x-auto my-4">
-                <table className="border-collapse w-full" {...props} />
-              </div>
-            );
-          },
-          th: ({ node, ...props }) => {
-            void node;
-            return <th className="border border-border px-4 py-2 text-left" {...props} />;
-          },
-          td: ({ node, ...props }) => {
-            void node;
-            return <td className="border border-border px-4 py-2" {...props} />;
-          },
-        }}
-      >
-        {processedContent}
-      </ReactMarkdown>
+      <CitationRenderContext.Provider value={citationContextValue}>
+        <ReactMarkdown
+          remarkPlugins={[remarkGfm]}
+          rehypePlugins={[rehypeRaw]}
+          components={MARKDOWN_COMPONENTS}
+        >
+          {processedContent}
+        </ReactMarkdown>
+      </CitationRenderContext.Provider>
     </div>
   );
 };
