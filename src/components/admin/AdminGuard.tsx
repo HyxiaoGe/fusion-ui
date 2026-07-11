@@ -3,16 +3,18 @@
 import type { ReactNode } from 'react';
 import { ShieldAlert, ShieldCheck } from 'lucide-react';
 import { useAppSelector } from '@/redux/hooks';
+import { useHasMounted } from '@/hooks/useHasMounted';
 
 interface AdminGuardProps {
   children: ReactNode;
 }
 
 export default function AdminGuard({ children }: AdminGuardProps) {
+  const hasMounted = useHasMounted();
   const { isAuthenticated, sessionResolved, status, user } = useAppSelector(state => state.auth);
   const isProfilePending = isAuthenticated && status !== 'succeeded' && status !== 'failed';
 
-  if (!sessionResolved || isProfilePending) {
+  if (!hasMounted || !sessionResolved || isProfilePending) {
     return (
       <div className="flex min-h-[50vh] items-center justify-center" role="status">
         <div className="flex items-center gap-2 text-sm text-muted-foreground">

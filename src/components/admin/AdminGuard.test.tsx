@@ -2,9 +2,14 @@ import { render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const authState = vi.hoisted(() => ({ current: {} as Record<string, unknown> }));
+const useHasMountedMock = vi.hoisted(() => vi.fn(() => true));
 
 vi.mock('@/redux/hooks', () => ({
   useAppSelector: (selector: (state: unknown) => unknown) => selector({ auth: authState.current }),
+}));
+
+vi.mock('@/hooks/useHasMounted', () => ({
+  useHasMounted: useHasMountedMock,
 }));
 
 import AdminGuard from './AdminGuard';
@@ -14,7 +19,25 @@ function setAuth(auth: Record<string, unknown>) {
 }
 
 describe('AdminGuard', () => {
-  beforeEach(() => { authState.current = {}; });
+  beforeEach(() => {
+    authState.current = {};
+    useHasMountedMock.mockReturnValue(true);
+  });
+
+  it('hydration 首帧即使客户端已预载管理员也只显示权限确认占位', () => {
+    useHasMountedMock.mockReturnValue(false);
+    setAuth({
+      isAuthenticated: true,
+      sessionResolved: true,
+      status: 'succeeded',
+      user: { is_superuser: true },
+    });
+
+    render(<AdminGuard><div>敏感内容</div></AdminGuard>);
+
+    expect(screen.getByRole('status')).toHaveTextContent('正在确认管理员权限');
+    expect(screen.queryByText('敏感内容')).toBeNull();
+  });
 
   it('会话尚未定论时不泄露管理员内容或未登录终态', () => {
     setAuth({ isAuthenticated: false, sessionResolved: false, status: 'idle', user: null });
