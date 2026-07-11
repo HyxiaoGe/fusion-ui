@@ -1,54 +1,79 @@
-# 构建阶段
-FROM node:20-alpine AS builder
+# syntax=docker/dockerfile:1.7
+
+FROM node:20-alpine AS deps
 
 WORKDIR /app
 
-# NEXT_PUBLIC_* 烤进浏览器 bundle
+ENV ELECTRON_SKIP_BINARY_DOWNLOAD=1 \
+    PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 \
+    NPM_CONFIG_AUDIT=false \
+    NPM_CONFIG_FUND=false
+
+COPY package.json package-lock.json ./
+
+RUN --mount=type=cache,target=/root/.npm \
+    npm ci --ignore-scripts --no-audit --no-fund
+
+
+FROM deps AS source
+
+COPY . .
+
+
+FROM source AS test
+
+ENV NODE_ENV=test
+
+RUN npm test
+
+
+FROM source AS builder
+
+# NEXT_PUBLIC_* 会在构建时写入浏览器 bundle。
 ARG NEXT_PUBLIC_AUTH_SERVICE_BASE_URL
 ARG NEXT_PUBLIC_AUTH_SERVICE_CLIENT_ID
 ARG NEXT_PUBLIC_AUTH_CALLBACK_URL
-ENV NEXT_PUBLIC_AUTH_SERVICE_BASE_URL=${NEXT_PUBLIC_AUTH_SERVICE_BASE_URL}
-ENV NEXT_PUBLIC_AUTH_SERVICE_CLIENT_ID=${NEXT_PUBLIC_AUTH_SERVICE_CLIENT_ID}
-ENV NEXT_PUBLIC_AUTH_CALLBACK_URL=${NEXT_PUBLIC_AUTH_CALLBACK_URL}
 
-# API_BACKEND_URL 必须 build-time 注入：Next.js rewrites() destination 在 build 时
-# 被烤进 routes-manifest，不读运行时 env
+# Next.js rewrites() 在构建时读取 API_BACKEND_URL。
 ARG API_BACKEND_URL=http://fusion-api:8000
-ENV API_BACKEND_URL=${API_BACKEND_URL}
 
-# 复制依赖文件
-COPY package*.json ./
+ENV NEXT_PUBLIC_AUTH_SERVICE_BASE_URL=${NEXT_PUBLIC_AUTH_SERVICE_BASE_URL} \
+    NEXT_PUBLIC_AUTH_SERVICE_CLIENT_ID=${NEXT_PUBLIC_AUTH_SERVICE_CLIENT_ID} \
+    NEXT_PUBLIC_AUTH_CALLBACK_URL=${NEXT_PUBLIC_AUTH_CALLBACK_URL} \
+    API_BACKEND_URL=${API_BACKEND_URL}
 
-# 安装依赖，但带上--ignore-scripts参数避免electron安装问题
-RUN npm ci --ignore-scripts
-
-# 复制所有文件
-COPY . .
-
-# 构建应用
 RUN npm run build
 
-# 生产阶段
+
+FROM node:20-alpine AS production-deps
+
+WORKDIR /app
+
+ENV NODE_ENV=production \
+    ELECTRON_SKIP_BINARY_DOWNLOAD=1 \
+    PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 \
+    NPM_CONFIG_AUDIT=false \
+    NPM_CONFIG_FUND=false
+
+COPY package.json package-lock.json ./
+
+RUN --mount=type=cache,target=/root/.npm \
+    npm ci --ignore-scripts --omit=dev --no-audit --no-fund
+
+
 FROM node:20-alpine AS production
 
 WORKDIR /app
 
-# 复制package.json和package-lock.json
-COPY package*.json ./
-
-# 仅安装生产依赖，排除electron等开发工具
 ENV NODE_ENV=production
-RUN npm ci --ignore-scripts --omit=dev
 
-# 从构建阶段复制.next文件夹和静态资源
+COPY --from=production-deps /app/node_modules ./node_modules
+COPY --from=builder /app/package.json ./package.json
 COPY --from=builder /app/.next ./.next
 COPY --from=builder /app/public ./public
-COPY --from=builder /app/next.config.js ./
-# 确保复制src目录（对于Next.js 12+使用src目录结构）
+COPY --from=builder /app/next.config.js ./next.config.js
 COPY --from=builder /app/src ./src
 
-# 暴露端口
 EXPOSE 3000
 
-# 启动应用
-CMD ["npm", "run", "start"] 
+CMD ["npm", "run", "start"]

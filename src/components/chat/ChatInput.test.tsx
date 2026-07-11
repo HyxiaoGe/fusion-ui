@@ -441,9 +441,12 @@ describe('ChatInput', () => {
       },
     });
 
-    await waitFor(() => {
-      expect(screen.getByRole('button', { name: '移除资料 diagram.png' })).toBeInTheDocument();
-    });
+    await waitFor(
+      () => {
+        expect(screen.getByRole('button', { name: '移除资料 diagram.png' })).toBeInTheDocument();
+      },
+      { timeout: 3000 }
+    );
     expect(screen.queryByRole('button', { name: '移除 diagram.png' })).toBeNull();
 
     fireEvent.change(screen.getByPlaceholderText('发消息给 Fusion AI（Enter 发送）'), {

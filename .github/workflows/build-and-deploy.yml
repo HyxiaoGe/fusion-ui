@@ -80,11 +80,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v6
-        with:
-          node-version: 20
-
       - name: Verify Docker access
         shell: powershell -NoProfile -ExecutionPolicy Bypass -Command ". '{0}'"
         run: |
@@ -147,64 +142,62 @@ jobs:
           docker ps
           exit 1
 
-      - name: Install dependencies
-        run: npm ci --no-audit --no-fund --cache "%RUNNER_TEMP%\npm-cache"
-
       - name: Configure preview public env
         run: |
           if not "%GITHUB_REF_NAME%"=="master" (
             echo NEXT_PUBLIC_AUTH_CALLBACK_URL=http://fusion-ui-preview.dev.seanfield.org/auth/callback>>%GITHUB_ENV%
           )
 
-      - name: Build
-        run: npm run build
-
-      - name: Run tests
-        run: npm test
-
-      - name: Build Docker image
+      - name: Test and build Docker image
         shell: powershell -NoProfile -ExecutionPolicy Bypass -Command ". '{0}'"
         run: |
           $ErrorActionPreference = "Stop"
-          $refKey = $env:GITHUB_REF_NAME -replace '[^A-Za-z0-9_.-]', '-'
-          if (-not $refKey) { $refKey = "ref" }
-          $builder = "fusion-ui-ci-$refKey"
-          $cacheBase = if ($env:RUNNER_TOOL_CACHE) { $env:RUNNER_TOOL_CACHE } else { $env:RUNNER_TEMP }
-          $cacheRoot = Join-Path $cacheBase "docker-buildx-cache\fusion-ui\$refKey"
-          $cacheNext = Join-Path $env:RUNNER_TEMP "fusion-ui-buildx-cache-next"
+          $runnerKey = '${{ runner.name }}' -replace '[^A-Za-z0-9_.-]', '-'
+          if (-not $runnerKey) { $runnerKey = "runner" }
+          $builder = "fusion-ui-ci-$runnerKey"
           $image = "${env:IMAGE_NAME}:${env:GITHUB_SHA}"
-
-          if (Test-Path $cacheNext) {
-            Remove-Item $cacheNext -Recurse -Force
-          }
 
           cmd /c "docker buildx inspect $builder >NUL 2>NUL"
           if ($LASTEXITCODE -ne 0) {
             docker buildx create --name $builder --driver docker-container --use
-            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          } else {
-            docker buildx use $builder
-            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            if ($LASTEXITCODE -ne 0) {
+              cmd /c "docker buildx inspect $builder >NUL 2>NUL"
+              if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            }
           }
+          docker buildx use $builder
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
           docker buildx inspect --builder $builder --bootstrap
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+          $testArgs = @(
+            "buildx", "build",
+            "--builder", $builder,
+            "--target", "test",
+            "--no-cache-filter", "test",
+            "--progress", "plain",
+            "--provenance=false",
+            "."
+          )
+
+          docker @testArgs
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
           $buildArgs = @(
             "buildx", "build",
             "--builder", $builder,
+            "--target", "production",
             "--load",
+            "--progress", "plain",
             "--provenance=false",
             "--build-arg", "NEXT_PUBLIC_AUTH_SERVICE_BASE_URL=$env:NEXT_PUBLIC_AUTH_SERVICE_BASE_URL",
             "--build-arg", "NEXT_PUBLIC_AUTH_SERVICE_CLIENT_ID=$env:NEXT_PUBLIC_AUTH_SERVICE_CLIENT_ID",
             "--build-arg", "NEXT_PUBLIC_AUTH_CALLBACK_URL=$env:NEXT_PUBLIC_AUTH_CALLBACK_URL",
             "--build-arg", "API_BACKEND_URL=http://fusion-api:8000",
-            "-t", $image
+            "-t", $image,
+            "."
           )
-          if (Test-Path $cacheRoot) {
-            $buildArgs += @("--cache-from", "type=local,src=$cacheRoot")
-          }
-          $buildArgs += @("--cache-to", "type=local,dest=$cacheNext,mode=max", ".")
 
           for ($attempt = 1; $attempt -le 3; $attempt++) {
             docker @buildArgs
@@ -221,21 +214,6 @@ jobs:
             $delay = 20 * $attempt
             Write-Host "docker build 失败，第 $attempt 次，${delay}s 后重试..."
             Start-Sleep -Seconds $delay
-          }
-
-          if (Test-Path $cacheNext) {
-            $cacheOld = "$cacheRoot-old"
-            if (Test-Path $cacheOld) {
-              Remove-Item $cacheOld -Recurse -Force
-            }
-            if (Test-Path $cacheRoot) {
-              Move-Item $cacheRoot $cacheOld -Force
-            }
-            New-Item -ItemType Directory -Force -Path (Split-Path $cacheRoot) | Out-Null
-            Move-Item $cacheNext $cacheRoot -Force
-            if (Test-Path $cacheOld) {
-              Remove-Item $cacheOld -Recurse -Force
-            }
           }
 
       - name: Login to ACR
@@ -272,7 +250,6 @@ jobs:
         run: |
           docker image inspect "%IMAGE_NAME%:%GITHUB_SHA%" >NUL 2>NUL
           if %ERRORLEVEL% EQU 0 docker image rm "%IMAGE_NAME%:%GITHUB_SHA%"
-          if exist "%RUNNER_TEMP%\fusion-ui-buildx-cache-next" rmdir /s /q "%RUNNER_TEMP%\fusion-ui-buildx-cache-next"
           exit /b 0
 
   deploy-preview:

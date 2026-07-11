@@ -3,6 +3,9 @@ node_modules
 .next
 .env*
 coverage
+dist
+out
+npm-debug.log*
 *.md
 .vscode
 .idea
