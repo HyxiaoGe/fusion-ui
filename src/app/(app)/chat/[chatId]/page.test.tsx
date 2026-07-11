@@ -31,6 +31,7 @@ const {
   filesPanelRenderMock,
   fetchStreamStatusMock,
   reconnectStreamMock,
+  stopRecoveredStreamMock,
 } = vi.hoisted(() => ({
   currentRoute: { chatId: 'chat-a' },
   conversationsById: new Map<string, Conversation>(),
@@ -59,6 +60,7 @@ const {
   filesPanelRenderMock: vi.fn(),
   fetchStreamStatusMock: vi.fn(),
   reconnectStreamMock: vi.fn(),
+  stopRecoveredStreamMock: vi.fn(),
   dispatchMock: vi.fn(),
   routerPushMock: vi.fn(),
   chatInputMountMock: vi.fn(),
@@ -201,6 +203,7 @@ vi.mock('@/lib/api/streamStatus', () => ({
 
 vi.mock('@/lib/api/chat', () => ({
   reconnectStream: reconnectStreamMock,
+  stopStream: stopRecoveredStreamMock,
   isRecoverableStreamError: (error: unknown) => (
     typeof error === 'object' && error !== null && (error as { recoverable?: boolean }).recoverable === true
   ),
@@ -447,6 +450,8 @@ describe('ChatPage 会话切换体验', () => {
     fetchStreamStatusMock.mockReset();
     fetchStreamStatusMock.mockResolvedValue({ status: 'not_found' });
     reconnectStreamMock.mockReset();
+    stopRecoveredStreamMock.mockReset();
+    stopRecoveredStreamMock.mockResolvedValue(true);
     window.sessionStorage.clear();
   });
 
@@ -608,7 +613,7 @@ describe('ChatPage 会话切换体验', () => {
     expect(reconnectStreamMock).toHaveBeenCalledTimes(1);
   });
 
-  it('停止页面恢复流时先保留 partial 内容，再调用普通 stop 取消后端', async () => {
+  it('停止页面恢复流时等待后端停止并持久化 partial 后才结束本地 stream', async () => {
     const partialBlocks = [{ type: 'text', id: 'answer-1', text: '部分回答' }];
     conversationsById.set('chat-a', createConversation('chat-a', [textMessage('user-1')]));
     hydrationById.set('chat-a', { view: 'ready' });
@@ -617,20 +622,48 @@ describe('ChatPage 会话切换体验', () => {
     storeStreamState.conversationId = 'chat-a';
     storeStreamState.messageId = 'assistant-1';
     storeStreamState.contentBlocks = partialBlocks;
-    reconnectStreamMock.mockImplementation((_chatId, _cursor, _callbacks, signal) => (
+    let recoverySignal: AbortSignal | undefined;
+    let recoveryCallbacks: any;
+    reconnectStreamMock.mockImplementation((_chatId, _cursor, callbacks, signal) => (
       new Promise((_resolve, reject) => {
+        recoveryCallbacks = callbacks;
+        recoverySignal = signal;
         signal.addEventListener('abort', () => {
           reject(Object.assign(new Error('aborted'), { name: 'AbortError' }));
         }, { once: true });
       })
     ));
     stopContinueAgentRunMock.mockResolvedValue(false);
+    let releaseStop: ((cancelled: boolean) => void) | undefined;
+    stopRecoveredStreamMock.mockImplementationOnce(() => new Promise<boolean>((resolve) => {
+      releaseStop = resolve;
+    }));
 
     render(<ChatPage />);
     await waitFor(() => expect(reconnectStreamMock).toHaveBeenCalledTimes(1));
+    const hydrationCallsBeforeStop = retryHydrationMock.mock.calls.length;
     fireEvent.click(screen.getByRole('button', { name: '停止生成' }));
 
-    await waitFor(() => expect(stopStreamingMock).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(stopRecoveredStreamMock).toHaveBeenCalledWith(
+      'chat-a',
+      'assistant-1',
+      undefined,
+      partialBlocks,
+    ));
+    recoveryCallbacks.onAnswering({ block_id: 'late-answer', delta: '等待期正文' });
+    recoveryCallbacks.onReasoning({ block_id: 'late-thinking', delta: '等待期推理' });
+    recoveryCallbacks.onError('用户中止', { code: 'stream_interrupted' });
+    expect(recoverySignal?.aborted).toBe(false);
+    expect(dispatchMock.mock.calls.some(([action]) => action?.type === 'stream/endStream')).toBe(false);
+    expect(dispatchMock.mock.calls.some(([action]) => action?.type === 'stream/appendTextDelta')).toBe(false);
+    expect(dispatchMock.mock.calls.some(([action]) => action?.type === 'stream/appendThinkingDelta')).toBe(false);
+    expect(retryHydrationMock).toHaveBeenCalledTimes(hydrationCallsBeforeStop);
+
+    releaseStop?.(true);
+    await waitFor(() => expect(recoverySignal?.aborted).toBe(true));
+    await waitFor(() => expect(
+      dispatchMock.mock.calls.some(([action]) => action?.type === 'stream/endStream'),
+    ).toBe(true));
     expect(dispatchMock).toHaveBeenCalledWith({
       type: 'conversation/updateMessage',
       payload: {
@@ -639,6 +672,223 @@ describe('ChatPage 会话切换体验', () => {
         patch: { content: partialBlocks },
       },
     });
+    const stopOrder = stopRecoveredStreamMock.mock.invocationCallOrder[0];
+    const endIndex = dispatchMock.mock.calls.findIndex(([action]) => action?.type === 'stream/endStream');
+    expect(dispatchMock.mock.invocationCallOrder[endIndex]).toBeGreaterThan(stopOrder);
+    expect(dispatchMock.mock.calls.some(([action]) => action?.type === 'stream/appendTextDelta')).toBe(false);
+    expect(dispatchMock.mock.calls.some(([action]) => action?.type === 'stream/appendThinkingDelta')).toBe(false);
+    expect(stopStreamingMock).not.toHaveBeenCalled();
+    expect(retryHydrationMock).toHaveBeenCalledTimes(hydrationCallsBeforeStop + 1);
+  });
+
+  it('preparing/tool 阶段无正文时仍以空 partial 数组执行 atomic stop', async () => {
+    conversationsById.set('chat-a', createConversation('chat-a', [textMessage('user-1')]));
+    hydrationById.set('chat-a', { view: 'ready' });
+    fetchStreamStatusMock.mockResolvedValue({ status: 'streaming', message_id: 'assistant-1' });
+    storeStreamState.isStreaming = true;
+    storeStreamState.conversationId = 'chat-a';
+    storeStreamState.messageId = 'assistant-1';
+    storeStreamState.contentBlocks = [];
+    let recoverySignal: AbortSignal | undefined;
+    reconnectStreamMock.mockImplementation((_chatId, _cursor, _callbacks, signal) => {
+      recoverySignal = signal;
+      return new Promise((_resolve, reject) => {
+        signal.addEventListener('abort', () => {
+          reject(Object.assign(new Error('aborted'), { name: 'AbortError' }));
+        }, { once: true });
+      });
+    });
+    stopRecoveredStreamMock.mockResolvedValueOnce(true);
+
+    render(<ChatPage />);
+    await waitFor(() => expect(reconnectStreamMock).toHaveBeenCalledTimes(1));
+    const hydrationCallsBeforeStop = retryHydrationMock.mock.calls.length;
+    fireEvent.click(screen.getByRole('button', { name: '停止生成' }));
+
+    await waitFor(() => expect(stopRecoveredStreamMock).toHaveBeenCalledWith(
+      'chat-a',
+      'assistant-1',
+      undefined,
+      [],
+    ));
+    await waitFor(() => expect(recoverySignal?.aborted).toBe(true));
+    expect(dispatchMock.mock.calls.some(([action]) => action?.type === 'stream/endStream')).toBe(true);
+    expect(retryHydrationMock).toHaveBeenCalledTimes(hydrationCallsBeforeStop + 1);
+  });
+
+  it('atomic stop 返回 cancelled=false 且流仍活跃时回放 buffer 并继续 SSE', async () => {
+    const partialBlocks = [{ type: 'text', id: 'answer-1', text: '较短的本地部分回答' }];
+    conversationsById.set('chat-a', createConversation('chat-a', [textMessage('user-1')]));
+    hydrationById.set('chat-a', { view: 'ready' });
+    fetchStreamStatusMock.mockResolvedValue({ status: 'streaming', message_id: 'assistant-1' });
+    storeStreamState.isStreaming = true;
+    storeStreamState.conversationId = 'chat-a';
+    storeStreamState.messageId = 'assistant-1';
+    storeStreamState.contentBlocks = partialBlocks;
+    let recoverySignal: AbortSignal | undefined;
+    let recoveryCallbacks: any;
+    reconnectStreamMock.mockImplementation((_chatId, _cursor, callbacks, signal) => {
+      recoveryCallbacks = callbacks;
+      recoverySignal = signal;
+      return new Promise((_resolve, reject) => {
+        signal.addEventListener('abort', () => {
+          reject(Object.assign(new Error('aborted'), { name: 'AbortError' }));
+        }, { once: true });
+      });
+    });
+    let releaseStop: ((cancelled: boolean) => void) | undefined;
+    stopRecoveredStreamMock.mockImplementationOnce(() => new Promise<boolean>((resolve) => {
+      releaseStop = resolve;
+    }));
+
+    render(<ChatPage />);
+    await waitFor(() => expect(reconnectStreamMock).toHaveBeenCalledTimes(1));
+    const hydrationCallsBeforeStop = retryHydrationMock.mock.calls.length;
+    fireEvent.click(screen.getByRole('button', { name: '停止生成' }));
+
+    await waitFor(() => expect(stopRecoveredStreamMock).toHaveBeenCalledTimes(1));
+    recoveryCallbacks.onAnswering({ block_id: 'late-answer', delta: '应继续显示' });
+    expect(dispatchMock.mock.calls.some(([action]) => action?.type === 'stream/appendTextDelta')).toBe(false);
+    releaseStop?.(false);
+
+    await waitFor(() => expect(
+      dispatchMock.mock.calls.some(([action]) => action?.type === 'stream/appendTextDelta'),
+    ).toBe(true));
+    expect(recoverySignal?.aborted).toBe(false);
+    expect(dispatchMock.mock.calls.some(([action]) => action?.type === 'stream/endStream')).toBe(false);
+    expect(retryHydrationMock).toHaveBeenCalledTimes(hydrationCallsBeforeStop);
+  });
+
+  it('恢复流 atomic stop 失败时不 abort、不 end，保留 SSE 供重试或接收终态', async () => {
+    const partialBlocks = [{ type: 'text', id: 'answer-1', text: '部分回答' }];
+    conversationsById.set('chat-a', createConversation('chat-a', [textMessage('user-1')]));
+    hydrationById.set('chat-a', { view: 'ready' });
+    fetchStreamStatusMock.mockResolvedValue({ status: 'streaming', message_id: 'assistant-1' });
+    storeStreamState.isStreaming = true;
+    storeStreamState.conversationId = 'chat-a';
+    storeStreamState.messageId = 'assistant-1';
+    storeStreamState.contentBlocks = partialBlocks;
+    let recoverySignal: AbortSignal | undefined;
+    let recoveryCallbacks: any;
+    reconnectStreamMock.mockImplementation((_chatId, _cursor, callbacks, signal) => {
+      recoveryCallbacks = callbacks;
+      recoverySignal = signal;
+      return new Promise((_resolve, reject) => {
+        signal.addEventListener('abort', () => {
+          reject(Object.assign(new Error('aborted'), { name: 'AbortError' }));
+        }, { once: true });
+      });
+    });
+    let rejectStop: ((error: Error) => void) | undefined;
+    stopRecoveredStreamMock.mockImplementationOnce(() => new Promise<boolean>((_resolve, reject) => {
+      rejectStop = reject;
+    }));
+
+    render(<ChatPage />);
+    await waitFor(() => expect(reconnectStreamMock).toHaveBeenCalledTimes(1));
+    const hydrationCallsBeforeStop = retryHydrationMock.mock.calls.length;
+    fireEvent.click(screen.getByRole('button', { name: '停止生成' }));
+
+    await waitFor(() => expect(stopRecoveredStreamMock).toHaveBeenCalledTimes(1));
+    recoveryCallbacks.onReasoning({ block_id: 'late-thinking', delta: '应回放推理' });
+    recoveryCallbacks.onAnswering({ block_id: 'late-answer', delta: '应回放正文' });
+    expect(recoverySignal?.aborted).toBe(false);
+    expect(dispatchMock.mock.calls.some(([action]) => action?.type === 'stream/endStream')).toBe(false);
+    expect(dispatchMock.mock.calls.some(([action]) => action?.type === 'stream/appendTextDelta')).toBe(false);
+    expect(dispatchMock.mock.calls.some(([action]) => action?.type === 'stream/appendThinkingDelta')).toBe(false);
+
+    rejectStop?.(new Error('stop unavailable'));
+    await waitFor(() => expect(
+      dispatchMock.mock.calls.some(([action]) => action?.type === 'stream/appendTextDelta'),
+    ).toBe(true));
+    const thinkingIndex = dispatchMock.mock.calls.findIndex(([action]) => action?.type === 'stream/appendThinkingDelta');
+    const answerIndex = dispatchMock.mock.calls.findIndex(([action]) => action?.type === 'stream/appendTextDelta');
+    expect(thinkingIndex).toBeGreaterThanOrEqual(0);
+    expect(answerIndex).toBeGreaterThan(thinkingIndex);
+    expect(stopStreamingMock).not.toHaveBeenCalled();
+    expect(retryHydrationMock).toHaveBeenCalledTimes(hydrationCallsBeforeStop);
+  });
+
+  it('stop pending 已收到终态 error 后请求失败时丢弃 buffer，不向已结束 stream 回放', async () => {
+    const partialBlocks = [{ type: 'text', id: 'answer-1', text: '点击时快照' }];
+    conversationsById.set('chat-a', createConversation('chat-a', [textMessage('user-1')]));
+    hydrationById.set('chat-a', { view: 'ready' });
+    fetchStreamStatusMock.mockResolvedValue({ status: 'streaming', message_id: 'assistant-1' });
+    storeStreamState.isStreaming = true;
+    storeStreamState.conversationId = 'chat-a';
+    storeStreamState.messageId = 'assistant-1';
+    storeStreamState.contentBlocks = partialBlocks;
+    let recoveryCallbacks: any;
+    let rejectRecovery: ((error: Error) => void) | undefined;
+    reconnectStreamMock.mockImplementation((_chatId, _cursor, callbacks) => {
+      recoveryCallbacks = callbacks;
+      return new Promise((_resolve, reject) => {
+        rejectRecovery = reject;
+      });
+    });
+    let rejectStop: ((error: Error) => void) | undefined;
+    stopRecoveredStreamMock.mockImplementationOnce(() => new Promise<boolean>((_resolve, reject) => {
+      rejectStop = reject;
+    }));
+
+    render(<ChatPage />);
+    await waitFor(() => expect(reconnectStreamMock).toHaveBeenCalledTimes(1));
+    const hydrationCallsBeforeStop = retryHydrationMock.mock.calls.length;
+    fireEvent.click(screen.getByRole('button', { name: '停止生成' }));
+    await waitFor(() => expect(stopRecoveredStreamMock).toHaveBeenCalledTimes(1));
+
+    recoveryCallbacks.onAnswering({ block_id: 'late-answer', delta: '不应回放' });
+    recoveryCallbacks.onError('用户中止', { code: 'stream_interrupted' });
+    rejectRecovery?.(Object.assign(new Error('用户中止'), { recoverable: false }));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    rejectStop?.(new Error('stop response failed'));
+
+    await waitFor(() => expect(
+      dispatchMock.mock.calls.some(([action]) => action?.type === 'stream/endStream'),
+    ).toBe(true));
+    expect(dispatchMock.mock.calls.some(([action]) => action?.type === 'stream/appendTextDelta')).toBe(false);
+    expect(retryHydrationMock).toHaveBeenCalledTimes(hydrationCallsBeforeStop);
+  });
+
+  it('cancelled=false 且 stream 已终态时丢弃 buffer 并按错误终态收口', async () => {
+    const partialBlocks = [{ type: 'text', id: 'answer-1', text: '点击时快照' }];
+    conversationsById.set('chat-a', createConversation('chat-a', [textMessage('user-1')]));
+    hydrationById.set('chat-a', { view: 'ready' });
+    fetchStreamStatusMock.mockResolvedValue({ status: 'streaming', message_id: 'assistant-1' });
+    storeStreamState.isStreaming = true;
+    storeStreamState.conversationId = 'chat-a';
+    storeStreamState.messageId = 'assistant-1';
+    storeStreamState.contentBlocks = partialBlocks;
+    let recoveryCallbacks: any;
+    let rejectRecovery: ((error: Error) => void) | undefined;
+    reconnectStreamMock.mockImplementation((_chatId, _cursor, callbacks) => {
+      recoveryCallbacks = callbacks;
+      return new Promise((_resolve, reject) => {
+        rejectRecovery = reject;
+      });
+    });
+    let releaseStop: ((cancelled: boolean) => void) | undefined;
+    stopRecoveredStreamMock.mockImplementationOnce(() => new Promise<boolean>((resolve) => {
+      releaseStop = resolve;
+    }));
+
+    render(<ChatPage />);
+    await waitFor(() => expect(reconnectStreamMock).toHaveBeenCalledTimes(1));
+    const hydrationCallsBeforeStop = retryHydrationMock.mock.calls.length;
+    fireEvent.click(screen.getByRole('button', { name: '停止生成' }));
+    await waitFor(() => expect(stopRecoveredStreamMock).toHaveBeenCalledTimes(1));
+
+    recoveryCallbacks.onAnswering({ block_id: 'late-answer', delta: '不应回放' });
+    recoveryCallbacks.onError('用户中止', { code: 'stream_interrupted' });
+    rejectRecovery?.(Object.assign(new Error('用户中止'), { recoverable: false }));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    releaseStop?.(false);
+
+    await waitFor(() => expect(
+      dispatchMock.mock.calls.some(([action]) => action?.type === 'stream/endStream'),
+    ).toBe(true));
+    expect(dispatchMock.mock.calls.some(([action]) => action?.type === 'stream/appendTextDelta')).toBe(false);
+    expect(retryHydrationMock).toHaveBeenCalledTimes(hydrationCallsBeforeStop);
   });
 
   it('页面恢复收到终态错误时先保留 partial，再结束 stream', async () => {

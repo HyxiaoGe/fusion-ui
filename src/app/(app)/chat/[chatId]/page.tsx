@@ -35,7 +35,7 @@ import {
 } from '@/redux/slices/streamSlice';
 import type { StreamState } from '@/redux/slices/streamSlice';
 import { fetchStreamStatus } from '@/lib/api/streamStatus';
-import { reconnectStream, type StreamCallbacks } from '@/lib/api/chat';
+import { reconnectStream, stopStream, type StreamCallbacks } from '@/lib/api/chat';
 import { runResumableStream } from '@/lib/api/resumableStream';
 import { useConversation } from '@/hooks/useConversation';
 import { useContinueAgentRun } from '@/hooks/useContinueAgentRun';
@@ -140,6 +140,11 @@ export default function ChatPage() {
   });
   const chatInputRef = useRef<HTMLDivElement>(null);
   const reconnectControllerRef = useRef<AbortController | null>(null);
+  const recoveryStopPendingRef = useRef<{
+    controller: AbortController;
+    bufferedActions: Array<() => void>;
+    streamTerminated: boolean;
+  } | null>(null);
   const fetchQuestionsRef = useRef<((force?: boolean) => Promise<void>) | undefined>(undefined);
   const isAuthenticated = useAppSelector(selectIsAuthenticated);
   const authSessionKey = useAppSelector(
@@ -267,8 +272,29 @@ export default function ChatPage() {
 
         let reachedTerminalState = false;
         let failureFinalized = false;
+        const dispatchOrBufferRecoveryAction = (action: () => void) => {
+          const pendingStop = recoveryStopPendingRef.current;
+          if (pendingStop?.controller === controller) {
+            pendingStop.bufferedActions.push(action);
+            return;
+          }
+          action();
+        };
+        const flushBufferedRecoveryActions = () => {
+          const pendingStop = recoveryStopPendingRef.current;
+          if (pendingStop?.controller !== controller) return;
+          recoveryStopPendingRef.current = null;
+          pendingStop.bufferedActions.forEach((action) => action());
+        };
         const finalizeRecoveryFailure = () => {
           if (cancelled || failureFinalized) return;
+          const pendingStop = recoveryStopPendingRef.current;
+          if (pendingStop?.controller === controller) {
+            pendingStop.streamTerminated = true;
+            reachedTerminalState = true;
+            return;
+          }
+          flushBufferedRecoveryActions();
           failureFinalized = true;
           const streamState = (store.getState() as { stream: StreamState }).stream;
           const partialBlocks = selectFullStreamContentBlocks(streamState);
@@ -288,26 +314,30 @@ export default function ChatPage() {
           onReady: () => {},
           onAnswering: (payload) => {
             if (cancelled) return;
-            const streamState = (store.getState() as { stream: StreamState }).stream;
-            if (streamState.isStreamingReasoning) {
-              dispatch(completeThinkingPhase());
-            }
-            dispatch(appendTextDelta({
-              blockId: payload.block_id,
-              delta: payload.delta,
-              runId: payload.run_id,
-              stepId: payload.step_id,
-            }));
-            dispatch(advanceTypewriter(payload.delta.length));
+            dispatchOrBufferRecoveryAction(() => {
+              const streamState = (store.getState() as { stream: StreamState }).stream;
+              if (streamState.isStreamingReasoning) {
+                dispatch(completeThinkingPhase());
+              }
+              dispatch(appendTextDelta({
+                blockId: payload.block_id,
+                delta: payload.delta,
+                runId: payload.run_id,
+                stepId: payload.step_id,
+              }));
+              dispatch(advanceTypewriter(payload.delta.length));
+            });
           },
           onReasoning: (payload) => {
             if (cancelled) return;
-            dispatch(appendThinkingDelta({
-              blockId: payload.block_id,
-              delta: payload.delta,
-              runId: payload.run_id,
-              stepId: payload.step_id,
-            }));
+            dispatchOrBufferRecoveryAction(() => {
+              dispatch(appendThinkingDelta({
+                blockId: payload.block_id,
+                delta: payload.delta,
+                runId: payload.run_id,
+                stepId: payload.step_id,
+              }));
+            });
           },
           ...createAgentStreamEventHandlers({
             dispatch,
@@ -316,6 +346,7 @@ export default function ChatPage() {
           }),
           onDone: () => {
             if (cancelled) return;
+            flushBufferedRecoveryActions();
             reachedTerminalState = true;
             const streamState = (store.getState() as { stream: StreamState }).stream;
             const rawBlocks = selectFullStreamContentBlocks(streamState);
@@ -338,6 +369,13 @@ export default function ChatPage() {
           },
           onError: () => {
             if (cancelled) return;
+            const pendingStop = recoveryStopPendingRef.current;
+            if (pendingStop?.controller === controller) {
+              pendingStop.streamTerminated = true;
+              reachedTerminalState = true;
+              return;
+            }
+            flushBufferedRecoveryActions();
             reachedTerminalState = true;
             finalizeRecoveryFailure();
           },
@@ -381,6 +419,9 @@ export default function ChatPage() {
     checkAndReconnect();
     return () => {
       cancelled = true;
+      if (recoveryStopPendingRef.current?.controller === controller) {
+        recoveryStopPendingRef.current = null;
+      }
       controller.abort();
       if (reconnectControllerRef.current === controller) {
         reconnectControllerRef.current = null;
@@ -464,7 +505,31 @@ export default function ChatPage() {
   }, [chatId, continueAgentRun, isStreaming]);
 
   const handleStopStreaming = useCallback(async () => {
-    if (reconnectControllerRef.current) {
+    const recoveryController = reconnectControllerRef.current;
+    if (recoveryController) {
+      if (recoveryStopPendingRef.current?.controller === recoveryController) {
+        return;
+      }
+      const stopBoundary = {
+        controller: recoveryController,
+        bufferedActions: [] as Array<() => void>,
+        streamTerminated: false,
+      };
+      recoveryStopPendingRef.current = stopBoundary;
+      const handleRecoveryStopNotApplied = () => {
+        if (recoveryStopPendingRef.current !== stopBoundary) return;
+        recoveryStopPendingRef.current = null;
+        if (
+          reconnectControllerRef.current === recoveryController &&
+          !recoveryController.signal.aborted &&
+          !stopBoundary.streamTerminated
+        ) {
+          stopBoundary.bufferedActions.forEach((action) => action());
+          return;
+        }
+        dispatch(endStream());
+        dispatch(setStreamStatus('error'));
+      };
       const streamState = (store.getState() as { stream: StreamState }).stream;
       const partialBlocks = selectFullStreamContentBlocks(streamState);
       if (streamState.messageId && partialBlocks.length > 0) {
@@ -474,14 +539,38 @@ export default function ChatPage() {
           patch: { content: partialBlocks },
         }));
       }
+      try {
+        const cancelled = await stopStream(
+          chatId,
+          streamState.messageId ?? undefined,
+          undefined,
+          partialBlocks,
+        );
+        if (!cancelled) {
+          handleRecoveryStopNotApplied();
+          return;
+        }
+        if (recoveryStopPendingRef.current !== stopBoundary) {
+          return;
+        }
+        recoveryStopPendingRef.current = null;
+        recoveryController.abort();
+        if (reconnectControllerRef.current === recoveryController) {
+          reconnectControllerRef.current = null;
+        }
+        dispatch(endStream());
+        retryHydration();
+      } catch (error) {
+        console.warn('[chat] 停止恢复流并持久化部分内容失败', error);
+        handleRecoveryStopNotApplied();
+      }
+      return;
     }
-    reconnectControllerRef.current?.abort();
-    reconnectControllerRef.current = null;
     if (await stopContinueAgentRun()) {
       return;
     }
     await stopStreaming();
-  }, [chatId, dispatch, stopContinueAgentRun, stopStreaming, store]);
+  }, [chatId, dispatch, retryHydration, stopContinueAgentRun, stopStreaming, store]);
 
   const handleClearChat = () => {
     if (!chatId) return;

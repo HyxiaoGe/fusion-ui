@@ -48,6 +48,52 @@ describe('stopStream', () => {
 
     await expect(stopStream('conv-1', undefined, controller.signal)).rejects.toBe(abortError);
   });
+
+  it('停止恢复流时在同一请求透传 partial content 供后端原子持久化', async () => {
+    const partialContent = [{ type: 'text' as const, id: 'answer-1', text: '部分回答' }];
+    apiRequestMock.mockResolvedValue({ cancelled: true });
+
+    await expect(stopStream('conv-1', 'msg-1', undefined, partialContent)).resolves.toBe(true);
+
+    expect(apiRequestMock).toHaveBeenCalledWith(
+      expect.stringContaining('/api/chat/stop/conv-1?message_id=msg-1'),
+      {
+        method: 'POST',
+        signal: undefined,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ partial_content: partialContent }),
+      },
+    );
+  });
+
+  it('partial 原子停止失败时向页面抛错，旧无 body 调用仍保持 false 降级', async () => {
+    const failure = new Error('persist failed');
+    apiRequestMock.mockRejectedValue(failure);
+
+    await expect(stopStream('conv-1')).resolves.toBe(false);
+    await expect(stopStream(
+      'conv-1',
+      'msg-1',
+      undefined,
+      [{ type: 'text', id: 'answer-1', text: '部分回答' }],
+    )).rejects.toBe(failure);
+  });
+
+  it('preparing/tool 阶段也显式发送空 partial_content，不退回 legacy 无 body 请求', async () => {
+    apiRequestMock.mockResolvedValue({ cancelled: true });
+
+    await expect(stopStream('conv-1', 'msg-1', undefined, [])).resolves.toBe(true);
+
+    expect(apiRequestMock).toHaveBeenCalledWith(
+      expect.stringContaining('/api/chat/stop/conv-1?message_id=msg-1'),
+      {
+        method: 'POST',
+        signal: undefined,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ partial_content: [] }),
+      },
+    );
+  });
 });
 
 function createStreamResponse(chunks: string[]) {

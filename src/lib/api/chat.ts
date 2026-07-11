@@ -8,6 +8,7 @@ import type {
   AgentProgressPhase,
   SseEnvelope,
 } from '@/types/agentRun';
+import type { ContentBlock } from '@/types/conversation';
 
 const API_BASE_URL = API_CONFIG.BASE_URL;
 
@@ -559,15 +560,21 @@ export async function stopStream(
   conversationId: string,
   messageId?: string,
   signal?: AbortSignal,
+  partialContent?: ContentBlock[],
 ): Promise<boolean> {
   try {
+    const options: RequestInit = { method: 'POST', signal };
+    if (partialContent !== undefined) {
+      options.headers = { 'Content-Type': 'application/json' };
+      options.body = JSON.stringify({ partial_content: partialContent });
+    }
     const data = await apiRequest<{ cancelled: boolean }>(
       `${API_BASE_URL}/api/chat/stop/${conversationId}${messageId ? `?message_id=${encodeURIComponent(messageId)}` : ''}`,
-      { method: 'POST', signal },
+      options,
     );
     return data.cancelled ?? false;
   } catch (error) {
-    if (signal?.aborted) {
+    if (signal?.aborted || partialContent !== undefined) {
       throw error;
     }
     return false;
