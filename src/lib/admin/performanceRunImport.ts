@@ -6,9 +6,27 @@ const TOP_LEVEL_SUMMARY_KEYS = new Set([
   'p50_ms', 'p90_ms', 'p95_ms', 'p99_ms', 'max_ms', 'ttft_ms', 'error_rate',
 ]);
 const STAGE_KEYS = new Set([
-  'kind', 'concurrency', 'requests', 'flows', 'successful', 'failed',
+  'scenario', 'kind', 'concurrency', 'duration_seconds', 'elapsed_seconds',
+  'cadence_seconds', 'window_seconds', 'success_rate',
+  'requests', 'flows', 'total', 'successful', 'failed', 'duplicate_events',
+  'lost_events', 'ordering_errors',
+  'executed_ticks', 'skipped_ticks', 'flows_with_output', 'output_chunks',
+  'reasoning_chunks', 'answering_chunks', 'visible_chars',
+  'reasoning_visible_chars', 'answering_visible_chars', 'approx_tokens',
   'requests_per_second', 'rps', 'p50_ms', 'p90_ms', 'p95_ms', 'p99_ms', 'max_ms',
   'p50_ttft_ms', 'p95_ttft_ms', 'p99_ttft_ms', 'p95_total_ms',
+  'first_output_p50_ms', 'first_output_p95_ms', 'first_output_max_ms',
+  'chunk_interval_count',
+  'chunk_interval_p50_ms', 'chunk_interval_p95_ms', 'chunk_interval_max_ms',
+  'output_window_p50_ms', 'output_window_p95_ms', 'output_window_max_ms',
+  'tokens_per_second', 'tokens_per_second_p50', 'tokens_per_second_p95',
+  'tokens_per_second_max', 'initial_events', 'recovered_events',
+  'recovery_latency_ms', 'recovery_latency_p50_ms',
+  'recovery_latency_p95_ms', 'recovery_latency_max_ms',
+  'stop_attempted', 'cancelled', 'persistence_verified',
+  'stop_attempts', 'cancelled_count', 'persistence_verified_count',
+  'stop_latency_ms', 'stop_latency_p50_ms', 'stop_latency_p95_ms',
+  'stop_latency_max_ms', 'window_count', 'consecutive_failures',
   'error_rate', 'timeout_rate', 'error_frames',
 ]);
 const CLEANUP_KEYS = new Set([
