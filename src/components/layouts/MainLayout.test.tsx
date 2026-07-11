@@ -15,6 +15,7 @@ vi.mock('@/redux/hooks', () => ({
 
 vi.mock('next/navigation', () => ({
   usePathname: usePathnameMock,
+  useRouter: () => ({ push: vi.fn() }),
 }));
 
 vi.mock('./Header', () => ({

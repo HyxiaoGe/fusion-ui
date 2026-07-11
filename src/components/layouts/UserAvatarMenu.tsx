@@ -15,7 +15,8 @@ import { logoutWithSso } from "@/redux/slices/authSlice";
 import { resetConversationState } from "@/redux/slices/conversationSlice";
 import { resetFileUploadState } from "@/redux/slices/fileUploadSlice";
 import { endStream } from "@/redux/slices/streamSlice";
-import { Settings, LogOut, LogIn } from "lucide-react";
+import { Settings, LogOut, LogIn, ShieldCheck } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { LoginDialog } from "@/components/auth/LoginDialog";
 import { proxiedAvatar } from "@/lib/auth/avatar";
@@ -23,7 +24,8 @@ import { useHasMounted } from "@/hooks/useHasMounted";
 
 export function UserAvatarMenu() {
   const dispatch = useAppDispatch();
-  const { isAuthenticated, user, sessionResolved } = useAppSelector((state) => state.auth);
+  const router = useRouter();
+  const { isAuthenticated, user, sessionResolved, status: authStatus } = useAppSelector((state) => state.auth);
   const [isLoginDialogOpen, setIsLoginDialogOpen] = useState(false);
   // 登录态来自 localStorage，SSR 与首个 hydration 帧都无从得知 → getInitialAuthState 返回未登录，
   // 会先画死「登录」按钮再翻成头像（闪一帧）。hydration 完成前不渲染任何终态，只占同尺寸中性位。
@@ -62,6 +64,10 @@ export function UserAvatarMenu() {
 
   const handleOpenSettings = () => {
     dispatch(openSettingsDialog({}));
+  };
+
+  const handleOpenAdmin = () => {
+    router.push('/admin');
   };
 
   const handleLogout = () => {
@@ -157,6 +163,13 @@ export function UserAvatarMenu() {
             <Settings className="mr-2 h-4 w-4" />
             <span>设置</span>
           </DropdownMenuItem>
+
+          {authStatus === 'succeeded' && user?.is_superuser ? (
+            <DropdownMenuItem onClick={handleOpenAdmin} className="flex items-center cursor-pointer">
+              <ShieldCheck className="mr-2 h-4 w-4" />
+              <span>管理中心</span>
+            </DropdownMenuItem>
+          ) : null}
           
           <DropdownMenuSeparator />
           

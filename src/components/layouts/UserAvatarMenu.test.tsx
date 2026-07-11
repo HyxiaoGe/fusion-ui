@@ -13,6 +13,12 @@ import streamReducer from '@/redux/slices/streamSlice';
 import { useHasMounted } from '@/hooks/useHasMounted';
 import { UserAvatarMenu } from './UserAvatarMenu';
 
+const pushMock = vi.hoisted(() => vi.fn());
+
+vi.mock('next/navigation', () => ({
+  useRouter: () => ({ push: pushMock }),
+}));
+
 vi.mock('@/components/auth/LoginDialog', () => ({
   LoginDialog: () => null,
 }));
@@ -56,6 +62,7 @@ function renderMenu(preloadedAuth: unknown) {
 describe('UserAvatarMenu', () => {
   beforeEach(() => {
     vi.mocked(useHasMounted).mockReturnValue(true);
+    pushMock.mockReset();
   });
 
   // #4 root fix: SSR has no localStorage, so getInitialAuthState() yields isAuthenticated=false
@@ -150,5 +157,41 @@ describe('UserAvatarMenu', () => {
     fireEvent.click(screen.getByText('设置'));
 
     expect(store.getState().settings.isSettingsDialogOpen).toBe(true);
+  });
+
+  it('已确认管理员显示管理中心入口并导航到独立页面', () => {
+    renderMenu({
+      isAuthenticated: true,
+      token: 'token',
+      status: 'succeeded',
+      error: null,
+      sessionResolved: true,
+      user: {
+        id: 'admin-1', username: 'admin', nickname: '管理员', avatar: null,
+        email: 'admin@example.com', mobile: null, system_prompt: '', is_superuser: true,
+      },
+    });
+
+    fireEvent.pointerDown(screen.getByRole('button'), { button: 0, ctrlKey: false });
+    fireEvent.click(screen.getByText('管理中心'));
+
+    expect(pushMock).toHaveBeenCalledWith('/admin');
+  });
+
+  it('普通用户不显示管理中心入口', () => {
+    renderMenu({
+      isAuthenticated: true,
+      token: 'token',
+      status: 'succeeded',
+      error: null,
+      sessionResolved: true,
+      user: {
+        id: 'user-1', username: 'user', nickname: '普通用户', avatar: null,
+        email: 'user@example.com', mobile: null, system_prompt: '', is_superuser: false,
+      },
+    });
+
+    fireEvent.pointerDown(screen.getByRole('button'), { button: 0, ctrlKey: false });
+    expect(screen.queryByText('管理中心')).toBeNull();
   });
 });

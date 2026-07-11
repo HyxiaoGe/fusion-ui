@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-require-imports */
 /** @type {import('next').NextConfig} */
 // 只在需要分析时加载 bundle analyzer
 const withBundleAnalyzer = process.env.ANALYZE === 'true' 
@@ -5,6 +6,8 @@ const withBundleAnalyzer = process.env.ANALYZE === 'true'
       enabled: true,
     })
   : (config) => config
+
+const baseContentSecurityPolicy = "default-src * 'unsafe-inline' 'unsafe-eval'; img-src * data: blob:; font-src * data:; style-src * 'unsafe-inline';"
 
 const nextConfig = {
   reactStrictMode: true,
@@ -57,7 +60,7 @@ const nextConfig = {
         headers: [
           {
             key: 'Content-Security-Policy',
-            value: "default-src * 'unsafe-inline' 'unsafe-eval'; img-src * data: blob:; font-src * data:; style-src * 'unsafe-inline';"
+            value: baseContentSecurityPolicy
           },
           // 启用压缩
           {
@@ -68,6 +71,21 @@ const nextConfig = {
           {
             key: 'X-DNS-Prefetch-Control',
             value: 'on'
+          }
+        ],
+      },
+      // 管理中心包含跨用户敏感数据与压测导入，禁止第三方页面通过 iframe 点击劫持。
+      // 此规则放在全局规则之后，并带完整 CSP，避免同名响应头覆盖时丢失既有指令。
+      {
+        source: '/admin/:path*',
+        headers: [
+          {
+            key: 'Content-Security-Policy',
+            value: `${baseContentSecurityPolicy} frame-ancestors 'none';`
+          },
+          {
+            key: 'X-Frame-Options',
+            value: 'DENY'
           }
         ],
       },
