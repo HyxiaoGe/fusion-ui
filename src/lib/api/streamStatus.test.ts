@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { ApiError } from '@/types/api';
 
 const { apiRequestMock } = vi.hoisted(() => ({
   apiRequestMock: vi.fn(),
@@ -8,7 +9,7 @@ vi.mock('./fetchWithAuth', () => ({
   apiRequest: apiRequestMock,
 }));
 
-import { fetchStreamStatus } from './streamStatus';
+import { fetchStreamStatus, StreamStatusRequestError } from './streamStatus';
 
 describe('fetchStreamStatus', () => {
   beforeEach(() => {
@@ -36,11 +37,49 @@ describe('fetchStreamStatus', () => {
     });
   });
 
-  it('keeps treating normal request failures as not found', async () => {
-    apiRequestMock.mockRejectedValue(new Error('network'));
+  it('keeps a real backend not_found status', async () => {
+    apiRequestMock.mockResolvedValue({ status: 'not_found' });
 
     await expect(fetchStreamStatus('chat-1')).resolves.toEqual({
       status: 'not_found',
     });
+  });
+
+  it('preserves continuation stream mode from backend', async () => {
+    apiRequestMock.mockResolvedValue({
+      status: 'streaming',
+      message_id: 'assistant-1',
+      stream_mode: 'continuation',
+    });
+
+    await expect(fetchStreamStatus('chat-1')).resolves.toEqual({
+      status: 'streaming',
+      message_id: 'assistant-1',
+      stream_mode: 'continuation',
+    });
+  });
+
+  it('wraps network failures as typed recoverable errors instead of not_found', async () => {
+    apiRequestMock.mockRejectedValue(new Error('network'));
+
+    await expect(fetchStreamStatus('chat-1')).rejects.toEqual(
+      expect.objectContaining({
+        name: 'StreamStatusRequestError',
+        recoverable: true,
+      }),
+    );
+  });
+
+  it('wraps authentication failures as typed nonrecoverable errors', async () => {
+    apiRequestMock.mockRejectedValue(new ApiError('UNAUTHORIZED', '请重新登录', 'req-1'));
+
+    const promise = fetchStreamStatus('chat-1');
+    await expect(promise).rejects.toBeInstanceOf(StreamStatusRequestError);
+    await expect(promise).rejects.toEqual(
+      expect.objectContaining({
+        recoverable: false,
+        code: 'UNAUTHORIZED',
+      }),
+    );
   });
 });

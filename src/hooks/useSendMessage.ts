@@ -35,6 +35,7 @@ import {
   sendMessageStream,
 } from '@/lib/api/chat';
 import type { StreamCallbacks } from '@/lib/api/chat';
+import { runResumableStream } from '@/lib/api/resumableStream';
 import { generateChatTitle } from '@/lib/api/title';
 import { createAgentStreamEventHandlers } from '@/lib/agent/streamEventHandlers';
 import {
@@ -59,7 +60,6 @@ type SendMessageOptions = {
 
 const STOP_BEFORE_READY_RETRY_DELAYS_MS = [50, 150] as const;
 const STOP_OPERATION_TIMEOUT_MS = 500;
-const STREAM_RECONNECT_RETRY_DELAYS_MS = [0, 250, 750] as const;
 
 interface SendSessionContext {
   authSessionKey: string;
@@ -102,21 +102,6 @@ async function waitForStopRetry(delayMs: number, signal: AbortSignal): Promise<v
   if (signal.aborted) {
     throw stopAbortError();
   }
-  await new Promise<void>((resolve, reject) => {
-    const timer = setTimeout(() => {
-      signal.removeEventListener('abort', onAbort);
-      resolve();
-    }, delayMs);
-    const onAbort = () => {
-      clearTimeout(timer);
-      reject(stopAbortError());
-    };
-    signal.addEventListener('abort', onAbort, { once: true });
-  });
-}
-
-async function waitForStreamReconnect(delayMs: number, signal: AbortSignal): Promise<void> {
-  if (signal.aborted) throw stopAbortError();
   await new Promise<void>((resolve, reject) => {
     const timer = setTimeout(() => {
       signal.removeEventListener('abort', onAbort);
@@ -600,24 +585,9 @@ export function useSendMessage() {
         }
       };
 
-      let lastEntryId = '0';
-      let reconnectRetriesExhausted = false;
-      let reconnecting = false;
-      const markStreamResumed = () => {
-        if (!reconnecting || !isActiveSendCurrent()) return;
-        reconnecting = false;
-        dispatch(setStreamStatus('streaming'));
-      };
       const streamCallbacks: StreamCallbacks = {
-            onEntryId: (entryId) => {
-              if (!isActiveSendCurrent()) return;
-              markStreamResumed();
-              lastEntryId = entryId;
-            },
-
             onReady: ({ messageId: incomingMessageId, conversationId: incomingConvId }) => {
               if (!isActiveSendCurrent()) return;
-              markStreamResumed();
               // 记录 BE 真实 message_id 供 stop 用（不污染 assistantMessageIdRef，
               // streaming 期渲染匹配仍然依赖本地 placeholder）
               serverMessageIdRef.current = incomingMessageId;
@@ -626,7 +596,6 @@ export function useSendMessage() {
 
             onAnswering: (payload) => {
               if (!isActiveSendCurrent() || !activeConvIdRef.current) return;
-              markStreamResumed();
               // 收到第一个 text delta 且还在推理阶段 → 标记推理结束
               const streamState = (store.getState() as { stream: import('@/redux/slices/streamSlice').StreamState }).stream;
               if (streamState.isStreamingReasoning) {
@@ -646,7 +615,6 @@ export function useSendMessage() {
 
             onReasoning: (payload) => {
               if (!isActiveSendCurrent() || !activeConvIdRef.current) return;
-              markStreamResumed();
               dispatch(appendThinkingDelta({
                 blockId: payload.block_id,
                 delta: payload.delta,
@@ -697,9 +665,10 @@ export function useSendMessage() {
           };
 
       try {
-        let streamFailure: unknown;
-        try {
-          await sendMessageStream(
+        await runResumableStream({
+          callbacks: streamCallbacks,
+          signal: controller.signal,
+          openInitial: (wrappedCallbacks, signal) => sendMessageStream(
             {
               model_id: enabledModel.id,
               message: content.trim(),
@@ -708,52 +677,28 @@ export function useSendMessage() {
               options: { use_reasoning: useReasoning },
               file_ids: fileIds,
             },
-            streamCallbacks,
-            controller.signal,
-          );
-          return;
-        } catch (error) {
-          streamFailure = error;
-        }
-
-        if (
-          controller.signal.aborted ||
-          !isActiveSendCurrent() ||
-          !isRecoverableStreamError(streamFailure)
-        ) {
-          throw streamFailure;
-        }
-
-        for (const delayMs of STREAM_RECONNECT_RETRY_DELAYS_MS) {
-          await waitForStreamReconnect(delayMs, controller.signal);
-          if (!isActiveSendCurrent()) return;
-          reconnecting = true;
-          dispatch(setStreamStatus('reconnecting'));
-          try {
+            wrappedCallbacks,
+            signal,
+          ),
+          openReconnect: async (lastEntryId, wrappedCallbacks, signal) => {
             await reconnectStream(
               activeConvIdRef.current ?? tempConvId,
               lastEntryId,
-              streamCallbacks,
-              controller.signal,
+              wrappedCallbacks,
+              signal,
             );
-            return;
-          } catch (error) {
-            streamFailure = error;
-            if (
-              controller.signal.aborted ||
-              !isActiveSendCurrent() ||
-              !isRecoverableStreamError(error)
-            ) {
-              throw error;
-            }
-          }
-        }
-
-        reconnectRetriesExhausted = true;
-        throw streamFailure;
+          },
+          onPhaseChange: phase => {
+            if (!isActiveSendCurrent()) return;
+            dispatch(setStreamStatus(phase));
+          },
+        });
+        return;
       } catch (error) {
         typewriterRef.current.stop();
         if (controller.signal.aborted || !isActiveSendCurrent()) return;
+
+        const reconnectRetriesExhausted = isRecoverableStreamError(error);
 
         const effectiveConvIdOnError = activeConvIdRef.current ?? tempConvId;
         if (assistantHasContentRef.current) {

@@ -19,6 +19,7 @@ import { useStore } from 'react-redux';
 import {
   appendMessage,
   clearConversationMessages,
+  removeMessage,
   setLastReadyConversationSnapshot,
   updateMessage,
 } from '@/redux/slices/conversationSlice';
@@ -34,7 +35,8 @@ import {
 } from '@/redux/slices/streamSlice';
 import type { StreamState } from '@/redux/slices/streamSlice';
 import { fetchStreamStatus } from '@/lib/api/streamStatus';
-import { reconnectStream } from '@/lib/api/chat';
+import { reconnectStream, type StreamCallbacks } from '@/lib/api/chat';
+import { runResumableStream } from '@/lib/api/resumableStream';
 import { useConversation } from '@/hooks/useConversation';
 import { useContinueAgentRun } from '@/hooks/useContinueAgentRun';
 import { useSendMessage } from '@/hooks/useSendMessage';
@@ -58,6 +60,38 @@ const CHAT_EMPTY_STATE = {
 };
 
 const EMPTY_CONVERSATION_ATTACHMENTS: ConversationComposerAttachment[] = [];
+const STREAM_STATUS_MAX_ATTEMPTS = 3;
+const STREAM_STATUS_RETRY_BASE_DELAY_MS = 50;
+
+function isAbortError(error: unknown): boolean {
+  return typeof error === 'object' && error !== null && (error as { name?: string }).name === 'AbortError';
+}
+
+function isRecoverableStreamStatusError(error: unknown): boolean {
+  if (typeof error !== 'object' || error === null) return false;
+  const candidate = error as { recoverable?: boolean; code?: string; statusCode?: number };
+  return candidate.recoverable === true ||
+    candidate.code === 'redis_read_failed' ||
+    (typeof candidate.statusCode === 'number' && candidate.statusCode >= 500);
+}
+
+function waitForStreamStatusRetry(delayMs: number, signal: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (signal.aborted) {
+      reject(new DOMException('Aborted', 'AbortError'));
+      return;
+    }
+    const timeoutId = window.setTimeout(() => {
+      signal.removeEventListener('abort', handleAbort);
+      resolve();
+    }, delayMs);
+    const handleAbort = () => {
+      window.clearTimeout(timeoutId);
+      reject(new DOMException('Aborted', 'AbortError'));
+    };
+    signal.addEventListener('abort', handleAbort, { once: true });
+  });
+}
 
 interface ConversationAttachmentState {
   chatId: string;
@@ -105,6 +139,7 @@ export default function ChatPage() {
     fileIds: [],
   });
   const chatInputRef = useRef<HTMLDivElement>(null);
+  const reconnectControllerRef = useRef<AbortController | null>(null);
   const fetchQuestionsRef = useRef<((force?: boolean) => Promise<void>) | undefined>(undefined);
   const isAuthenticated = useAppSelector(selectIsAuthenticated);
   const authSessionKey = useAppSelector(
@@ -169,9 +204,7 @@ export default function ChatPage() {
     }));
   }, [chatId, conversationMessages, dispatch, hydrationView]);
 
-  // 页面 mount / hydration 完成后检查是否有未完成的流 → 断线重连
-  // TODO(遗漏1): 网络抖动自动重连需要独立实现，不能复用 checkAndReconnect，
-  // 因为 reconnectAttemptedRef 在首次 mount 后已为 true，会阻止二次重连。
+  // 页面 mount / hydration 完成后检查是否有未完成的流，并在可恢复中断时有限重连。
   const hydrationDone = hydrationView === 'ready';
   const reconnectAttemptedRef = useRef(false);
   // chatId 变化时重置
@@ -184,27 +217,41 @@ export default function ChatPage() {
 
     let cancelled = false;
     const controller = new AbortController();
+    reconnectControllerRef.current?.abort();
+    reconnectControllerRef.current = controller;
     const checkAndReconnect = async () => {
       try {
         // 直接查后端流状态，由后端 meta 决定是否重连
         // 用户点停止 → 后端 cancel_stream 设 meta=cancelled → 这里不会返回 streaming
         // 用户切换对话再切回来 → 后台任务仍在跑 → meta=streaming → 自动重连
-        const status = await fetchStreamStatus(chatId, controller.signal);
-        if (cancelled || status.status !== 'streaming') return;
+        let status: Awaited<ReturnType<typeof fetchStreamStatus>> | null = null;
+        for (let attempt = 1; attempt <= STREAM_STATUS_MAX_ATTEMPTS; attempt += 1) {
+          try {
+            status = await fetchStreamStatus(chatId, controller.signal);
+            break;
+          } catch (error) {
+            if (isAbortError(error) || controller.signal.aborted || cancelled) return;
+            if (!isRecoverableStreamStatusError(error) || attempt === STREAM_STATUS_MAX_ATTEMPTS) {
+              throw error;
+            }
+            await waitForStreamStatusRetry(STREAM_STATUS_RETRY_BASE_DELAY_MS * attempt, controller.signal);
+          }
+        }
+        if (cancelled || !status || status.status !== 'streaming') return;
 
         const messageId = status.message_id || '';
-
-        // 页面刷新后前端没有任何已有内容，从头（"0"）读取全部 Stream 内容
-        // last_entry_id 仅用于「SSE 连接中途断开后自动重连」的场景（未来实现）
-        const reconnectFromId = '0';
 
         // 有进行中的流 → 建立 SSE 重连，从头读取
         dispatch(setStreamStatus('reconnecting'));
 
         // 确保有 assistant 消息占位
         const conv = conversation;
-        const hasAssistant = conv?.messages?.some((m) => m.role === 'assistant' && m.id === messageId);
-        if (!hasAssistant && messageId) {
+        const existingAssistant = conv?.messages?.find((m) => m.role === 'assistant' && m.id === messageId);
+        const continuationStaticBlocks = status.stream_mode === 'continuation'
+          ? existingAssistant?.content
+          : undefined;
+        const insertedPlaceholder = !existingAssistant && Boolean(messageId);
+        if (insertedPlaceholder) {
           dispatch(appendMessage({
             conversationId: chatId,
             message: { id: messageId, role: 'assistant', content: [], timestamp: Date.now() },
@@ -212,12 +259,32 @@ export default function ChatPage() {
         }
 
         // 启动流式状态
-        dispatch(startStream({ conversationId: chatId, messageId }));
+        dispatch(startStream({
+          conversationId: chatId,
+          messageId,
+          ...(continuationStaticBlocks ? { staticBlocks: continuationStaticBlocks } : {}),
+        }));
 
-        // TODO: 遗漏3 — 重连 SSE 请求没有挂 abort controller，
-        // stopStreaming 无法立即取消。后续加 signal 支持让 stop 能中断重连读取
-        // 从 Redis Stream 读取（从头读取已有内容 + 实时新增内容）
-        await reconnectStream(chatId, reconnectFromId, {
+        let reachedTerminalState = false;
+        let failureFinalized = false;
+        const finalizeRecoveryFailure = () => {
+          if (cancelled || failureFinalized) return;
+          failureFinalized = true;
+          const streamState = (store.getState() as { stream: StreamState }).stream;
+          const partialBlocks = selectFullStreamContentBlocks(streamState);
+          if (messageId && partialBlocks.length > 0) {
+            dispatch(updateMessage({
+              conversationId: chatId,
+              messageId,
+              patch: { content: partialBlocks },
+            }));
+          } else if (insertedPlaceholder && messageId) {
+            dispatch(removeMessage({ conversationId: chatId, messageId }));
+          }
+          dispatch(endStream());
+          dispatch(setStreamStatus('error'));
+        };
+        const callbacks: StreamCallbacks = {
           onReady: () => {},
           onAnswering: (payload) => {
             if (cancelled) return;
@@ -231,7 +298,6 @@ export default function ChatPage() {
               runId: payload.run_id,
               stepId: payload.step_id,
             }));
-            // 重连不需要打字机效果，立即推进显示长度
             dispatch(advanceTypewriter(payload.delta.length));
           },
           onReasoning: (payload) => {
@@ -246,12 +312,11 @@ export default function ChatPage() {
           ...createAgentStreamEventHandlers({
             dispatch,
             isActive: () => !cancelled,
-            // reconnect 路径：messageId 来自 stream-status，已是后端真实 ID。
             resolveMessageId: () => messageId,
           }),
           onDone: () => {
             if (cancelled) return;
-            // 把 streamSlice 的内容写入 conversation 消息，防止 endStream 清空后内容丢失
+            reachedTerminalState = true;
             const streamState = (store.getState() as { stream: StreamState }).stream;
             const rawBlocks = selectFullStreamContentBlocks(streamState);
             const blocks = shouldRecoverReasoningOnlyFinalBlocks({
@@ -269,19 +334,46 @@ export default function ChatPage() {
             }
             dispatch(endStream());
             dispatch(setStreamStatus('completed'));
-            // 消息已落库，刷新 hydration 获取完整数据（含 usage 等）
             retryHydration();
           },
           onError: () => {
             if (cancelled) return;
-            dispatch(endStream());
-            dispatch(setStreamStatus('error'));
+            reachedTerminalState = true;
+            finalizeRecoveryFailure();
           },
-        }, controller.signal);
+        };
+
+        try {
+          await runResumableStream({
+            callbacks,
+            signal: controller.signal,
+            retryDelaysMs: [250, 750],
+            openInitial: async (wrappedCallbacks, signal) => {
+              await reconnectStream(chatId, '0', wrappedCallbacks, signal);
+            },
+            openReconnect: (lastEntryId, wrappedCallbacks, signal) => (
+              reconnectStream(chatId, lastEntryId, wrappedCallbacks, signal)
+            ),
+            onPhaseChange: (phase) => dispatch(setStreamStatus(phase)),
+          });
+        } catch (error) {
+          if (isAbortError(error) || controller.signal.aborted || cancelled) return;
+          finalizeRecoveryFailure();
+          return;
+        }
+
+        if (!reachedTerminalState && !cancelled) {
+          finalizeRecoveryFailure();
+        }
       } catch (error) {
-        if ((error as { name?: string })?.name === 'AbortError') return;
+        if (isAbortError(error)) return;
         if (!cancelled) {
           dispatch(endStream());
+          dispatch(setStreamStatus('error'));
+        }
+      } finally {
+        if (reconnectControllerRef.current === controller) {
+          reconnectControllerRef.current = null;
         }
       }
     };
@@ -290,6 +382,9 @@ export default function ChatPage() {
     return () => {
       cancelled = true;
       controller.abort();
+      if (reconnectControllerRef.current === controller) {
+        reconnectControllerRef.current = null;
+      }
       // 切换对话时清理流状态，否则 isStreaming 残留为 true 阻止重连
       dispatch(endStream());
     };
@@ -369,11 +464,24 @@ export default function ChatPage() {
   }, [chatId, continueAgentRun, isStreaming]);
 
   const handleStopStreaming = useCallback(async () => {
+    if (reconnectControllerRef.current) {
+      const streamState = (store.getState() as { stream: StreamState }).stream;
+      const partialBlocks = selectFullStreamContentBlocks(streamState);
+      if (streamState.messageId && partialBlocks.length > 0) {
+        dispatch(updateMessage({
+          conversationId: chatId,
+          messageId: streamState.messageId,
+          patch: { content: partialBlocks },
+        }));
+      }
+    }
+    reconnectControllerRef.current?.abort();
+    reconnectControllerRef.current = null;
     if (await stopContinueAgentRun()) {
       return;
     }
     await stopStreaming();
-  }, [stopContinueAgentRun, stopStreaming]);
+  }, [chatId, dispatch, stopContinueAgentRun, stopStreaming, store]);
 
   const handleClearChat = () => {
     if (!chatId) return;

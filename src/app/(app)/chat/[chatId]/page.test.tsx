@@ -25,9 +25,12 @@ const {
   deleteFileMock,
   suggestedQuestionsState,
   streamState,
+  storeStreamState,
   lastReadyConversationSnapshotState,
   transientCompletionState,
   filesPanelRenderMock,
+  fetchStreamStatusMock,
+  reconnectStreamMock,
 } = vi.hoisted(() => ({
   currentRoute: { chatId: 'chat-a' },
   conversationsById: new Map<string, Conversation>(),
@@ -43,10 +46,19 @@ const {
     isStreaming: false,
     conversationId: null as string | null,
   },
+  storeStreamState: {
+    isStreaming: false,
+    conversationId: null as string | null,
+    messageId: null as string | null,
+    isStreamingReasoning: false,
+    contentBlocks: [] as any[],
+  },
   transientCompletionState: {
     visible: false,
   },
   filesPanelRenderMock: vi.fn(),
+  fetchStreamStatusMock: vi.fn(),
+  reconnectStreamMock: vi.fn(),
   dispatchMock: vi.fn(),
   routerPushMock: vi.fn(),
   chatInputMountMock: vi.fn(),
@@ -96,12 +108,7 @@ vi.mock('@/redux/hooks', () => ({
 vi.mock('react-redux', () => ({
   useStore: () => ({
     getState: () => ({
-      stream: {
-        isStreaming: false,
-        conversationId: null,
-        isStreamingReasoning: false,
-        contentBlocks: [],
-      },
+      stream: storeStreamState,
     }),
   }),
 }));
@@ -189,11 +196,14 @@ vi.mock('@/lib/chat/suggestedQuestionTiming', () => ({
 }));
 
 vi.mock('@/lib/api/streamStatus', () => ({
-  fetchStreamStatus: vi.fn(),
+  fetchStreamStatus: fetchStreamStatusMock,
 }));
 
 vi.mock('@/lib/api/chat', () => ({
-  reconnectStream: vi.fn(),
+  reconnectStream: reconnectStreamMock,
+  isRecoverableStreamError: (error: unknown) => (
+    typeof error === 'object' && error !== null && (error as { recoverable?: boolean }).recoverable === true
+  ),
 }));
 
 vi.mock('@/lib/agent/finishReason', () => ({
@@ -207,6 +217,7 @@ vi.mock('@/redux/slices/conversationSlice', () => ({
     type: 'conversation/setLastReadyConversationSnapshot',
     payload,
   })),
+  removeMessage: vi.fn((payload?: unknown) => ({ type: 'conversation/removeMessage', payload })),
   updateMessage: vi.fn((payload?: unknown) => ({ type: 'conversation/updateMessage', payload })),
 }));
 
@@ -224,7 +235,7 @@ vi.mock('@/redux/slices/streamSlice', () => ({
   mergeToolCallDelta: vi.fn((payload?: unknown) => ({ type: 'stream/mergeToolCallDelta', payload })),
   pushStep: vi.fn((payload?: unknown) => ({ type: 'stream/pushStep', payload })),
   pushToolCall: vi.fn((payload?: unknown) => ({ type: 'stream/pushToolCall', payload })),
-  selectFullStreamContentBlocks: () => [],
+  selectFullStreamContentBlocks: (state: { contentBlocks?: any[] }) => state.contentBlocks ?? [],
   setStreamStatus: vi.fn((payload?: unknown) => ({ type: 'stream/setStreamStatus', payload })),
   startStream: vi.fn((payload?: unknown) => ({ type: 'stream/startStream', payload })),
 }));
@@ -419,6 +430,11 @@ describe('ChatPage 会话切换体验', () => {
     suggestedQuestionsState.isLoading = false;
     streamState.isStreaming = false;
     streamState.conversationId = null;
+    storeStreamState.isStreaming = false;
+    storeStreamState.conversationId = null;
+    storeStreamState.messageId = null;
+    storeStreamState.isStreamingReasoning = false;
+    storeStreamState.contentBlocks = [];
     lastReadyConversationSnapshotState.value = null;
     transientCompletionState.visible = false;
     useConversationFilesState.files = [];
@@ -428,7 +444,388 @@ describe('ChatPage 会话切换体验', () => {
     useConversationFilesState.removeFile.mockClear();
     deleteFileMock.mockReset();
     deleteFileMock.mockResolvedValue(undefined);
+    fetchStreamStatusMock.mockReset();
+    fetchStreamStatusMock.mockResolvedValue({ status: 'not_found' });
+    reconnectStreamMock.mockReset();
     window.sessionStorage.clear();
+  });
+
+  it('mount 发现 streaming 后自动恢复，并在终态后不重试', async () => {
+    conversationsById.set('chat-a', createConversation('chat-a', [textMessage('user-1')]));
+    hydrationById.set('chat-a', { view: 'ready' });
+    fetchStreamStatusMock.mockResolvedValue({ status: 'streaming', message_id: 'assistant-1' });
+    reconnectStreamMock.mockImplementation(async (_chatId, _cursor, callbacks) => {
+      callbacks.onDone();
+      return { entryId: '9-0' };
+    });
+
+    render(<ChatPage />);
+
+    await waitFor(() => expect(reconnectStreamMock).toHaveBeenCalledTimes(1));
+    await new Promise((resolve) => setTimeout(resolve, 120));
+    expect(reconnectStreamMock).toHaveBeenCalledTimes(1);
+    expect(reconnectStreamMock.mock.calls[0][0]).toBe('chat-a');
+    expect(reconnectStreamMock.mock.calls[0][1]).toBe('0');
+  });
+
+  it('流状态查询临时失败时有限重试，最终 streaming 后继续恢复', async () => {
+    conversationsById.set('chat-a', createConversation('chat-a', [textMessage('user-1')]));
+    hydrationById.set('chat-a', { view: 'ready' });
+    fetchStreamStatusMock
+      .mockRejectedValueOnce(Object.assign(new Error('network'), { recoverable: true }))
+      .mockRejectedValueOnce(Object.assign(new Error('503'), { recoverable: true }))
+      .mockResolvedValueOnce({ status: 'streaming', message_id: 'assistant-1' });
+    reconnectStreamMock.mockImplementation(async (_chatId, _cursor, callbacks) => {
+      callbacks.onDone();
+      return { entryId: '9-0' };
+    });
+
+    render(<ChatPage />);
+
+    await waitFor(() => expect(fetchStreamStatusMock).toHaveBeenCalledTimes(3));
+    expect(reconnectStreamMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('流状态查询鉴权失败不重试', async () => {
+    conversationsById.set('chat-a', createConversation('chat-a', [textMessage('user-1')]));
+    hydrationById.set('chat-a', { view: 'ready' });
+    fetchStreamStatusMock.mockRejectedValue(
+      Object.assign(new Error('unauthorized'), { recoverable: false, code: 'UNAUTHORIZED' }),
+    );
+
+    render(<ChatPage />);
+
+    await waitFor(() => expect(fetchStreamStatusMock).toHaveBeenCalledTimes(1));
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    expect(fetchStreamStatusMock).toHaveBeenCalledTimes(1);
+    expect(reconnectStreamMock).not.toHaveBeenCalled();
+  });
+
+  it('可恢复中断有限重试，使用最新 entry 游标且不重复 placeholder 和内容', async () => {
+    conversationsById.set('chat-a', createConversation('chat-a', [textMessage('user-1')]));
+    hydrationById.set('chat-a', { view: 'ready' });
+    fetchStreamStatusMock.mockResolvedValue({ status: 'streaming', message_id: 'assistant-1' });
+    reconnectStreamMock
+      .mockImplementationOnce(async (_chatId, _cursor, callbacks) => {
+        callbacks.onAnswering({ block_id: 'answer-1', delta: '你好' });
+        callbacks.onEntryId('7-0');
+        throw Object.assign(new Error('redis read failed'), { recoverable: true, code: 'redis_read_failed' });
+      })
+      .mockImplementationOnce(async (_chatId, _cursor, callbacks) => {
+        callbacks.onDone();
+        return { entryId: '8-0' };
+      });
+
+    render(<ChatPage />);
+
+    await waitFor(() => expect(reconnectStreamMock).toHaveBeenCalledTimes(2));
+    expect(reconnectStreamMock.mock.calls[1][1]).toBe('7-0');
+    expect(dispatchMock.mock.calls.filter(([action]) => action?.type === 'conversation/appendMessage')).toHaveLength(1);
+    expect(dispatchMock.mock.calls.filter(([action]) => action?.type === 'stream/appendTextDelta')).toHaveLength(1);
+  });
+
+  it('可恢复 EOF 会从当前游标重新打开 GET', async () => {
+    conversationsById.set('chat-a', createConversation('chat-a', [textMessage('user-1')]));
+    hydrationById.set('chat-a', { view: 'ready' });
+    fetchStreamStatusMock.mockResolvedValue({ status: 'streaming', message_id: 'assistant-1' });
+    reconnectStreamMock
+      .mockRejectedValueOnce(Object.assign(new Error('流异常结束'), { recoverable: true }))
+      .mockImplementationOnce(async (_chatId, _cursor, callbacks) => {
+        callbacks.onDone();
+        return { entryId: '1-0' };
+      });
+
+    render(<ChatPage />);
+
+    await waitFor(() => expect(reconnectStreamMock).toHaveBeenCalledTimes(2));
+    expect(reconnectStreamMock.mock.calls[1][1]).toBe('0');
+  });
+
+  it('连续可恢复 5xx 只做有限次数重试', async () => {
+    conversationsById.set('chat-a', createConversation('chat-a', [textMessage('user-1')]));
+    hydrationById.set('chat-a', { view: 'ready' });
+    fetchStreamStatusMock.mockResolvedValue({ status: 'streaming', message_id: 'assistant-1' });
+    reconnectStreamMock.mockRejectedValue(
+      Object.assign(new Error('service unavailable'), { recoverable: true, statusCode: 503 }),
+    );
+
+    render(<ChatPage />);
+
+    await waitFor(() => expect(reconnectStreamMock).toHaveBeenCalledTimes(3), { timeout: 2500 });
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    expect(reconnectStreamMock).toHaveBeenCalledTimes(3);
+  });
+
+  it.each(['stop', 'switch', 'unmount'] as const)('%s 会 abort 当前恢复 GET 和重试等待', async (mode) => {
+    conversationsById.set('chat-a', createConversation('chat-a', [textMessage('user-1')]));
+    conversationsById.set('chat-b', createConversation('chat-b', [textMessage('user-b')]));
+    hydrationById.set('chat-a', { view: 'ready' });
+    hydrationById.set('chat-b', { view: 'ready' });
+    fetchStreamStatusMock.mockImplementation(async (chatId) => (
+      chatId === 'chat-a'
+        ? { status: 'streaming', message_id: 'assistant-1' }
+        : { status: 'not_found' }
+    ));
+    let reconnectSignal: AbortSignal | undefined;
+    reconnectStreamMock.mockImplementation((_chatId, _cursor, _callbacks, signal) => {
+      reconnectSignal = signal;
+      return new Promise((_resolve, reject) => {
+        signal.addEventListener('abort', () => {
+          reject(Object.assign(new Error('aborted'), { name: 'AbortError' }));
+        }, { once: true });
+      });
+    });
+
+    const view = render(<ChatPage />);
+    await waitFor(() => expect(reconnectStreamMock).toHaveBeenCalledTimes(1));
+    const callsBeforeAbort = reconnectStreamMock.mock.calls.length;
+
+    if (mode === 'stop') {
+      fireEvent.click(screen.getByRole('button', { name: '停止生成' }));
+    } else if (mode === 'switch') {
+      currentRoute.chatId = 'chat-b';
+      view.rerender(<ChatPage />);
+    } else {
+      view.unmount();
+    }
+
+    await waitFor(() => expect(reconnectSignal?.aborted).toBe(true));
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    expect(reconnectStreamMock).toHaveBeenCalledTimes(callsBeforeAbort);
+  });
+
+  it('停止生成会 abort 已进入的重试等待', async () => {
+    conversationsById.set('chat-a', createConversation('chat-a', [textMessage('user-1')]));
+    hydrationById.set('chat-a', { view: 'ready' });
+    fetchStreamStatusMock.mockResolvedValue({ status: 'streaming', message_id: 'assistant-1' });
+    reconnectStreamMock.mockRejectedValue(Object.assign(new Error('temporary eof'), { recoverable: true }));
+
+    render(<ChatPage />);
+    await waitFor(() => expect(reconnectStreamMock).toHaveBeenCalledTimes(1));
+    fireEvent.click(screen.getByRole('button', { name: '停止生成' }));
+
+    await new Promise((resolve) => setTimeout(resolve, 350));
+    expect(reconnectStreamMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('停止页面恢复流时先保留 partial 内容，再调用普通 stop 取消后端', async () => {
+    const partialBlocks = [{ type: 'text', id: 'answer-1', text: '部分回答' }];
+    conversationsById.set('chat-a', createConversation('chat-a', [textMessage('user-1')]));
+    hydrationById.set('chat-a', { view: 'ready' });
+    fetchStreamStatusMock.mockResolvedValue({ status: 'streaming', message_id: 'assistant-1' });
+    storeStreamState.isStreaming = true;
+    storeStreamState.conversationId = 'chat-a';
+    storeStreamState.messageId = 'assistant-1';
+    storeStreamState.contentBlocks = partialBlocks;
+    reconnectStreamMock.mockImplementation((_chatId, _cursor, _callbacks, signal) => (
+      new Promise((_resolve, reject) => {
+        signal.addEventListener('abort', () => {
+          reject(Object.assign(new Error('aborted'), { name: 'AbortError' }));
+        }, { once: true });
+      })
+    ));
+    stopContinueAgentRunMock.mockResolvedValue(false);
+
+    render(<ChatPage />);
+    await waitFor(() => expect(reconnectStreamMock).toHaveBeenCalledTimes(1));
+    fireEvent.click(screen.getByRole('button', { name: '停止生成' }));
+
+    await waitFor(() => expect(stopStreamingMock).toHaveBeenCalledTimes(1));
+    expect(dispatchMock).toHaveBeenCalledWith({
+      type: 'conversation/updateMessage',
+      payload: {
+        conversationId: 'chat-a',
+        messageId: 'assistant-1',
+        patch: { content: partialBlocks },
+      },
+    });
+  });
+
+  it('页面恢复收到终态错误时先保留 partial，再结束 stream', async () => {
+    const partialBlocks = [{ type: 'text', id: 'answer-1', text: '已恢复的部分回答' }];
+    conversationsById.set('chat-a', createConversation('chat-a', [textMessage('user-1')]));
+    hydrationById.set('chat-a', { view: 'ready' });
+    fetchStreamStatusMock.mockResolvedValue({ status: 'streaming', message_id: 'assistant-1' });
+    storeStreamState.messageId = 'assistant-1';
+    storeStreamState.contentBlocks = partialBlocks;
+    reconnectStreamMock.mockImplementation(async (_chatId, _cursor, callbacks) => {
+      callbacks.onError('生成已中断', { code: 'stream_interrupted' });
+      throw Object.assign(new Error('生成已中断'), { recoverable: false, code: 'stream_interrupted' });
+    });
+
+    render(<ChatPage />);
+
+    await waitFor(() => {
+      expect(dispatchMock).toHaveBeenCalledWith({
+        type: 'conversation/updateMessage',
+        payload: {
+          conversationId: 'chat-a',
+          messageId: 'assistant-1',
+          patch: { content: partialBlocks },
+        },
+      });
+    });
+    const updateIndex = dispatchMock.mock.calls.findIndex(([action]) => action?.type === 'conversation/updateMessage');
+    const endIndex = dispatchMock.mock.calls.findIndex(([action]) => action?.type === 'stream/endStream');
+    expect(updateIndex).toBeGreaterThanOrEqual(0);
+    expect(endIndex).toBeGreaterThan(updateIndex);
+  });
+
+  it('页面恢复重试耗尽且无 partial 时只移除本次插入的空 placeholder', async () => {
+    conversationsById.set('chat-a', createConversation('chat-a', [textMessage('user-1')]));
+    hydrationById.set('chat-a', { view: 'ready' });
+    fetchStreamStatusMock.mockResolvedValue({ status: 'streaming', message_id: 'assistant-1' });
+    reconnectStreamMock.mockRejectedValue(Object.assign(new Error('temporary eof'), { recoverable: true }));
+
+    render(<ChatPage />);
+
+    await waitFor(() => expect(reconnectStreamMock).toHaveBeenCalledTimes(3), { timeout: 2500 });
+    await waitFor(() => {
+      expect(dispatchMock).toHaveBeenCalledWith({
+        type: 'conversation/removeMessage',
+        payload: { conversationId: 'chat-a', messageId: 'assistant-1' },
+      });
+    });
+  });
+
+  it('页面恢复失败且无 partial 时不删除历史已有 assistant', async () => {
+    conversationsById.set('chat-a', createConversation('chat-a', [
+      textMessage('user-1'),
+      { id: 'assistant-1', role: 'assistant', content: [], timestamp: 2 },
+    ]));
+    hydrationById.set('chat-a', { view: 'ready' });
+    fetchStreamStatusMock.mockResolvedValue({ status: 'streaming', message_id: 'assistant-1' });
+    reconnectStreamMock.mockImplementation(async (_chatId, _cursor, callbacks) => {
+      callbacks.onError('生成已中断', { code: 'stream_interrupted' });
+      throw Object.assign(new Error('生成已中断'), { recoverable: false });
+    });
+
+    render(<ChatPage />);
+
+    await waitFor(() => expect(reconnectStreamMock).toHaveBeenCalledTimes(1));
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(dispatchMock.mock.calls.some(([action]) => action?.type === 'conversation/removeMessage')).toBe(false);
+  });
+
+  it('刷新恢复 continuation 成功时以旧回答作为 staticBlocks 并合并新内容', async () => {
+    const oldBlocks = [{ type: 'text', id: 'old-answer', text: '旧回答' }];
+    const mergedBlocks = [...oldBlocks, { type: 'text', id: 'new-answer', text: '新回答' }];
+    conversationsById.set('chat-a', createConversation('chat-a', [
+      textMessage('user-1'),
+      { id: 'assistant-1', role: 'assistant', content: oldBlocks, timestamp: 2 },
+    ]));
+    hydrationById.set('chat-a', { view: 'ready' });
+    fetchStreamStatusMock.mockResolvedValue({
+      status: 'streaming',
+      message_id: 'assistant-1',
+      stream_mode: 'continuation',
+    });
+    reconnectStreamMock.mockImplementation(async (_chatId, _cursor, callbacks) => {
+      storeStreamState.contentBlocks = mergedBlocks;
+      callbacks.onDone();
+      return { entryId: '2-0' };
+    });
+
+    render(<ChatPage />);
+
+    await waitFor(() => {
+      expect(dispatchMock).toHaveBeenCalledWith({
+        type: 'stream/startStream',
+        payload: {
+          conversationId: 'chat-a',
+          messageId: 'assistant-1',
+          staticBlocks: oldBlocks,
+        },
+      });
+    });
+    expect(dispatchMock).toHaveBeenCalledWith({
+      type: 'conversation/updateMessage',
+      payload: {
+        conversationId: 'chat-a',
+        messageId: 'assistant-1',
+        patch: { content: mergedBlocks },
+      },
+    });
+  });
+
+  it('刷新恢复 continuation 失败时 partial 仍合并保留旧回答', async () => {
+    const oldBlocks = [{ type: 'text', id: 'old-answer', text: '旧回答' }];
+    const mergedBlocks = [...oldBlocks, { type: 'text', id: 'partial-answer', text: '半截新增' }];
+    conversationsById.set('chat-a', createConversation('chat-a', [
+      textMessage('user-1'),
+      { id: 'assistant-1', role: 'assistant', content: oldBlocks, timestamp: 2 },
+    ]));
+    hydrationById.set('chat-a', { view: 'ready' });
+    fetchStreamStatusMock.mockResolvedValue({
+      status: 'streaming',
+      message_id: 'assistant-1',
+      stream_mode: 'continuation',
+    });
+    reconnectStreamMock.mockImplementation(async (_chatId, _cursor, callbacks) => {
+      storeStreamState.contentBlocks = mergedBlocks;
+      callbacks.onError('生成已中断', { code: 'stream_interrupted' });
+      throw Object.assign(new Error('生成已中断'), { recoverable: false });
+    });
+
+    render(<ChatPage />);
+
+    await waitFor(() => {
+      expect(dispatchMock).toHaveBeenCalledWith({
+        type: 'conversation/updateMessage',
+        payload: {
+          conversationId: 'chat-a',
+          messageId: 'assistant-1',
+          patch: { content: mergedBlocks },
+        },
+      });
+    });
+    expect(dispatchMock).toHaveBeenCalledWith({
+      type: 'stream/startStream',
+      payload: {
+        conversationId: 'chat-a',
+        messageId: 'assistant-1',
+        staticBlocks: oldBlocks,
+      },
+    });
+  });
+
+  it('普通 initial 恢复即使 DB 有 checkpoint 也从空 blocks 重放，避免重复旧内容', async () => {
+    const checkpointBlocks = [{ type: 'text', id: 'checkpoint-answer', text: '已落库 checkpoint' }];
+    const replayedBlocks = [{ type: 'text', id: 'replayed-answer', text: '重放后的完整回答' }];
+    conversationsById.set('chat-a', createConversation('chat-a', [
+      textMessage('user-1'),
+      { id: 'assistant-1', role: 'assistant', content: checkpointBlocks, timestamp: 2 },
+    ]));
+    hydrationById.set('chat-a', { view: 'ready' });
+    // 兼容旧后端：缺失 stream_mode 必须按 initial 处理。
+    fetchStreamStatusMock.mockResolvedValue({ status: 'streaming', message_id: 'assistant-1' });
+    reconnectStreamMock.mockImplementation(async (_chatId, _cursor, callbacks) => {
+      storeStreamState.contentBlocks = replayedBlocks;
+      callbacks.onDone();
+      return { entryId: '3-0' };
+    });
+
+    render(<ChatPage />);
+
+    await waitFor(() => expect(reconnectStreamMock).toHaveBeenCalledTimes(1));
+    const startAction = dispatchMock.mock.calls
+      .map(([action]) => action)
+      .find((action) => action?.type === 'stream/startStream');
+    expect(startAction).toEqual({
+      type: 'stream/startStream',
+      payload: {
+        conversationId: 'chat-a',
+        messageId: 'assistant-1',
+      },
+    });
+    expect(dispatchMock).toHaveBeenCalledWith({
+      type: 'conversation/updateMessage',
+      payload: {
+        conversationId: 'chat-a',
+        messageId: 'assistant-1',
+        patch: { content: replayedBlocks },
+      },
+    });
   });
 
   it('chatId 改变时不通过 key 重建 ChatInput', async () => {

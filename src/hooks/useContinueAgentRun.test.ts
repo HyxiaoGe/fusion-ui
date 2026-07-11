@@ -1,10 +1,20 @@
-import { act, renderHook } from '@testing-library/react';
+import { act, renderHook, waitFor } from '@testing-library/react';
+import { configureStore } from '@reduxjs/toolkit';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { useContinueAgentRun } from './useContinueAgentRun';
-import { continueAgentRunStream, getConversation, stopStream } from '@/lib/api/chat';
+import {
+  continueAgentRunStream,
+  getConversation,
+  reconnectStream,
+  stopStream,
+} from '@/lib/api/chat';
+import conversationReducer, { upsertConversation } from '@/redux/slices/conversationSlice';
+import streamReducer from '@/redux/slices/streamSlice';
 
 vi.mock('@/lib/api/chat', () => ({
   continueAgentRunStream: vi.fn(),
+  reconnectStream: vi.fn(),
+  isRecoverableStreamError: (error: unknown) => Boolean((error as { recoverable?: boolean })?.recoverable),
   getConversation: vi.fn(),
   stopStream: vi.fn(),
 }));
@@ -19,9 +29,42 @@ vi.mock('react-redux', () => ({
   }),
 }));
 
+function recoverableError(message: string, code?: string) {
+  return Object.assign(new Error(message), { recoverable: true, code });
+}
+
+function terminalError(message: string, code = 'stream_interrupted') {
+  return Object.assign(new Error(message), { recoverable: false, code });
+}
+
+function createReducerBackedHarness() {
+  const store = configureStore({
+    reducer: {
+      conversation: conversationReducer,
+      stream: streamReducer,
+    },
+  });
+  store.dispatch(upsertConversation({
+    id: 'conv-1',
+    title: '会话',
+    model_id: 'deepseek-chat',
+    messages: [{
+      id: 'msg-1',
+      role: 'assistant',
+      content: [{ type: 'text', id: 'old-text', text: '旧回答' }],
+      timestamp: 1,
+    }],
+    createdAt: 1,
+    updatedAt: 1,
+  }));
+  const dispatch = vi.spyOn(store, 'dispatch');
+  return { store, dispatch };
+}
+
 describe('useContinueAgentRun', () => {
   beforeEach(() => {
     vi.mocked(continueAgentRunStream).mockReset();
+    vi.mocked(reconnectStream).mockReset();
     vi.mocked(getConversation).mockReset();
     vi.mocked(stopStream).mockReset();
     vi.mocked(stopStream).mockResolvedValue(true);
@@ -91,6 +134,219 @@ describe('useContinueAgentRun', () => {
       expect.any(Object),
       expect.any(AbortSignal),
     );
+  });
+
+  it.each([
+    ['异常 EOF', recoverableError('流异常结束')],
+    ['redis_read_failed', recoverableError('Redis 暂时不可访问', 'redis_read_failed')],
+    ['可恢复 503', Object.assign(recoverableError('网关暂时不可用'), { statusCode: 503 })],
+  ])('%s 只 POST 一次并从安全 cursor 续传，期间复用同一 assistant 与 partial', async (_label, failure) => {
+    const { store, dispatch } = createReducerBackedHarness();
+    let initialCallbacks: Parameters<typeof continueAgentRunStream>[1] | undefined;
+    let partialSnapshot: ReturnType<typeof store.getState> | undefined;
+
+    vi.mocked(continueAgentRunStream).mockImplementationOnce(async (_payload, callbacks) => {
+      initialCallbacks = callbacks;
+      callbacks.onEntryId?.('500-1');
+      callbacks.onAnswering({ block_id: 'answer', delta: '补充前半段' });
+      throw failure;
+    });
+    vi.mocked(reconnectStream).mockImplementationOnce(
+      async (_conversationId, lastEntryId, callbacks) => {
+        expect(lastEntryId).toBe('500-1');
+        expect(callbacks).toBe(initialCallbacks);
+        partialSnapshot = store.getState();
+        callbacks.onAnswering({ block_id: 'answer', delta: '后半段' });
+        callbacks.onDone({ messageId: 'msg-1', conversationId: 'conv-1' });
+        return { entryId: '500-2' };
+      },
+    );
+
+    const { result } = renderHook(() => useContinueAgentRun({
+      dispatch: dispatch as never,
+      store: store as never,
+    }));
+
+    await act(async () => {
+      await result.current.continueAgentRun({
+        conversationId: 'conv-1',
+        assistantMessageId: 'msg-1',
+        previousRunId: 'run-1',
+      });
+    });
+
+    expect(continueAgentRunStream).toHaveBeenCalledTimes(1);
+    expect(reconnectStream).toHaveBeenCalledTimes(1);
+    expect(partialSnapshot?.stream.textBlocks.answer).toBe('补充前半段');
+    expect(partialSnapshot?.conversation.byId['conv-1'].messages).toHaveLength(1);
+    expect(partialSnapshot?.conversation.byId['conv-1'].messages[0].id).toBe('msg-1');
+    const assistant = store.getState().conversation.byId['conv-1'].messages[0];
+    expect(assistant.id).toBe('msg-1');
+    expect(assistant.content).toEqual([
+      { type: 'text', id: 'old-text', text: '旧回答' },
+      expect.objectContaining({ type: 'text', id: 'answer', text: '补充前半段后半段' }),
+    ]);
+  });
+
+  it('可恢复错误最多发起 3 次 GET，耗尽后仍保存同一 assistant 的 partial', async () => {
+    const { store, dispatch } = createReducerBackedHarness();
+
+    vi.mocked(continueAgentRunStream).mockImplementationOnce(async (_payload, callbacks) => {
+      callbacks.onEntryId?.('600-1');
+      callbacks.onAnswering({ block_id: 'answer', delta: '已生成部分' });
+      throw recoverableError('流异常结束');
+    });
+    vi.mocked(reconnectStream).mockRejectedValue(recoverableError('仍未恢复'));
+
+    const { result } = renderHook(() => useContinueAgentRun({
+      dispatch: dispatch as never,
+      store: store as never,
+    }));
+
+    await act(async () => {
+      await result.current.continueAgentRun({
+        conversationId: 'conv-1',
+        assistantMessageId: 'msg-1',
+      });
+    });
+
+    expect(continueAgentRunStream).toHaveBeenCalledTimes(1);
+    expect(reconnectStream).toHaveBeenCalledTimes(3);
+    expect(vi.mocked(reconnectStream).mock.calls.every((call) => call[1] === '600-1')).toBe(true);
+    const messages = store.getState().conversation.byId['conv-1'].messages;
+    expect(messages).toHaveLength(1);
+    expect(messages[0]).toEqual(expect.objectContaining({
+      id: 'msg-1',
+      content: [
+        { type: 'text', id: 'old-text', text: '旧回答' },
+        expect.objectContaining({ type: 'text', id: 'answer', text: '已生成部分' }),
+      ],
+    }));
+  });
+
+  it('终态错误不发起 GET 重连', async () => {
+    const { store, dispatch } = createReducerBackedHarness();
+    vi.mocked(continueAgentRunStream).mockRejectedValueOnce(
+      terminalError('生成已中断'),
+    );
+
+    const { result } = renderHook(() => useContinueAgentRun({
+      dispatch: dispatch as never,
+      store: store as never,
+    }));
+
+    await act(async () => {
+      await result.current.continueAgentRun({
+        conversationId: 'conv-1',
+        assistantMessageId: 'msg-1',
+      });
+    });
+
+    expect(reconnectStream).not.toHaveBeenCalled();
+    expect(store.getState().stream.lastError?.message).toBe('生成已中断');
+  });
+
+  it('结构化终态 onError 已落 code/data 后，外层 catch 不再用 message-only 覆盖', async () => {
+    const { store, dispatch } = createReducerBackedHarness();
+    vi.mocked(continueAgentRunStream).mockImplementationOnce(async (_payload, callbacks) => {
+      callbacks.onError('生成已中断', {
+        code: 'stream_interrupted',
+        data: { reason: 'worker_shutdown' },
+      });
+      throw terminalError('生成已中断');
+    });
+
+    const { result } = renderHook(() => useContinueAgentRun({
+      dispatch: dispatch as never,
+      store: store as never,
+    }));
+
+    await act(async () => {
+      await result.current.continueAgentRun({
+        conversationId: 'conv-1',
+        assistantMessageId: 'msg-1',
+      });
+    });
+
+    expect(store.getState().stream.lastError).toEqual({
+      message: '生成已中断',
+      code: 'stream_interrupted',
+      data: { reason: 'worker_shutdown' },
+    });
+    expect(
+      dispatch.mock.calls
+        .map(([action]) => action)
+        .filter((action) => action.type === 'stream/setStreamError'),
+    ).toHaveLength(1);
+  });
+
+  it('stop 能中断正在等待退避的重连且不再发起后续 GET', async () => {
+    const { store, dispatch } = createReducerBackedHarness();
+    vi.mocked(continueAgentRunStream).mockRejectedValueOnce(recoverableError('流异常结束'));
+    vi.mocked(reconnectStream).mockRejectedValueOnce(recoverableError('首次重连失败'));
+
+    const { result } = renderHook(() => useContinueAgentRun({
+      dispatch: dispatch as never,
+      store: store as never,
+    }));
+
+    let continuation: Promise<void> | undefined;
+    await act(async () => {
+      continuation = result.current.continueAgentRun({
+        conversationId: 'conv-1',
+        assistantMessageId: 'msg-1',
+      });
+    });
+    await waitFor(() => expect(reconnectStream).toHaveBeenCalledTimes(1));
+
+    await act(async () => {
+      expect(await result.current.stopContinueAgentRun()).toBe(true);
+      await continuation;
+    });
+
+    await new Promise(resolve => setTimeout(resolve, 300));
+    expect(reconnectStream).toHaveBeenCalledTimes(1);
+  });
+
+  it('stop 能中断正在进行的 GET 重连，abort 不会触发下一次重试', async () => {
+    const { store, dispatch } = createReducerBackedHarness();
+    let reconnectSignal: AbortSignal | undefined;
+    vi.mocked(continueAgentRunStream).mockRejectedValueOnce(recoverableError('流异常结束'));
+    vi.mocked(reconnectStream).mockImplementationOnce(
+      async (_conversationId, _lastEntryId, _callbacks, signal) => {
+        reconnectSignal = signal;
+        await new Promise<void>((_resolve, reject) => {
+          signal?.addEventListener('abort', () => {
+            const error = new Error('aborted');
+            error.name = 'AbortError';
+            reject(error);
+          }, { once: true });
+        });
+        return { entryId: '0' };
+      },
+    );
+
+    const { result } = renderHook(() => useContinueAgentRun({
+      dispatch: dispatch as never,
+      store: store as never,
+    }));
+
+    let continuation: Promise<void> | undefined;
+    await act(async () => {
+      continuation = result.current.continueAgentRun({
+        conversationId: 'conv-1',
+        assistantMessageId: 'msg-1',
+      });
+    });
+    await waitFor(() => expect(reconnectStream).toHaveBeenCalledTimes(1));
+
+    await act(async () => {
+      expect(await result.current.stopContinueAgentRun()).toBe(true);
+      await continuation;
+    });
+
+    expect(reconnectSignal?.aborted).toBe(true);
+    expect(reconnectStream).toHaveBeenCalledTimes(1);
   });
 
   it('完成后刷新会话失败时不产生未处理的 stream error', async () => {

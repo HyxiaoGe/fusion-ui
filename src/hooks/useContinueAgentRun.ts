@@ -1,8 +1,14 @@
 import { useCallback, useRef } from 'react';
 import { useStore } from 'react-redux';
 import { useAppDispatch } from '@/redux/hooks';
-import { continueAgentRunStream, getConversation, stopStream } from '@/lib/api/chat';
+import {
+  continueAgentRunStream,
+  getConversation,
+  reconnectStream,
+  stopStream,
+} from '@/lib/api/chat';
 import type { StreamCallbacks } from '@/lib/api/chat';
+import { runResumableStream } from '@/lib/api/resumableStream';
 import { createAgentStreamEventHandlers } from '@/lib/agent/streamEventHandlers';
 import {
   recoverReasoningOnlyFinalBlocks,
@@ -18,6 +24,7 @@ import {
   endStream,
   selectFullStreamContentBlocks,
   setStreamError,
+  setStreamStatus,
   startStream,
 } from '@/redux/slices/streamSlice';
 import type { StreamState } from '@/redux/slices/streamSlice';
@@ -48,6 +55,7 @@ interface ContinuationCallbackDeps {
   store: ReturnType<typeof useStore>;
   isActive: () => boolean;
   setServerMessageId: (messageId: string) => void;
+  markTerminalErrorHandled: () => void;
 }
 
 interface ActiveContinuation {
@@ -95,6 +103,7 @@ function buildContinuationStreamCallbacks({
   store,
   isActive,
   setServerMessageId,
+  markTerminalErrorHandled,
 }: ContinuationCallbackDeps): StreamCallbacks {
   return {
     onReady: () => {},
@@ -150,6 +159,7 @@ function buildContinuationStreamCallbacks({
     },
     onError: (message, payload) => {
       if (!isActive()) return;
+      markTerminalErrorHandled();
       dispatch(setStreamError({ message, code: payload?.code, data: payload?.data }));
     },
   };
@@ -190,29 +200,63 @@ export function useContinueAgentRun(deps: HookDeps = {}) {
       staticBlocks,
     }));
 
-    try {
-      await continueAgentRunStream(
-        { conversationId, messageId: assistantMessageId, previousRunId },
-        buildContinuationStreamCallbacks({
+    let terminalErrorHandled = false;
+    const isActive = () => activeContinuationRef.current?.token === token;
+    const callbacks = buildContinuationStreamCallbacks({
           conversationId,
           assistantMessageId,
           dispatch,
           store,
-          isActive: () => activeContinuationRef.current?.token === token,
+          isActive,
+          markTerminalErrorHandled: () => {
+            terminalErrorHandled = true;
+          },
           setServerMessageId: messageId => {
             const active = activeContinuationRef.current;
             if (active?.token === token) {
               active.serverMessageId = messageId;
             }
           },
-        }),
-        controller.signal,
-      );
+        });
+
+    try {
+      await runResumableStream({
+        callbacks,
+        signal: controller.signal,
+        openInitial: (wrappedCallbacks, signal) => continueAgentRunStream(
+          { conversationId, messageId: assistantMessageId, previousRunId },
+          wrappedCallbacks,
+          signal,
+        ),
+        openReconnect: async (lastEntryId, wrappedCallbacks, signal) => {
+          await reconnectStream(
+            conversationId,
+            lastEntryId,
+            wrappedCallbacks,
+            signal,
+          );
+        },
+        onPhaseChange: phase => {
+          if (!isActive()) return;
+          dispatch(setStreamStatus(phase));
+        },
+      });
     } catch (error) {
       if (!controller.signal.aborted) {
-        dispatch(setStreamError({
-          message: error instanceof Error ? error.message : '继续执行失败',
-        }));
+        const streamState = (store.getState() as RootStateForContinuation).stream;
+        const partialBlocks = selectFullStreamContentBlocks(streamState);
+        if (partialBlocks.length > 0) {
+          dispatch(updateMessage({
+            conversationId,
+            messageId: assistantMessageId,
+            patch: { content: partialBlocks },
+          }));
+        }
+        if (!terminalErrorHandled) {
+          dispatch(setStreamError({
+            message: error instanceof Error ? error.message : '继续执行失败',
+          }));
+        }
         dispatch(endStream());
       }
     } finally {

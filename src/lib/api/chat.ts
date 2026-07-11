@@ -384,7 +384,6 @@ async function parseSseEnvelopeStream(
       const { done, value } = await reader.read();
       if (done) {
         if (!receivedDone) {
-          callbacks.onError('流异常结束');
           throw new StreamRequestError('流异常结束', { recoverable: true });
         }
         break;
@@ -415,9 +414,8 @@ async function parseSseEnvelopeStream(
         try {
           envelope = JSON.parse(raw) as SseEnvelope<unknown>;
         } catch {
-          console.warn('[chat] SSE 帧 JSON 解析失败，跳过', raw);
-          commitPendingEntryId();
-          continue;
+          console.warn('[chat] SSE 帧 JSON 解析失败，将从上一游标重连', raw);
+          throw new StreamRequestError('SSE 数据解析失败', { recoverable: true });
         }
 
         switch (envelope.chunk_type) {
@@ -470,7 +468,6 @@ async function parseSseEnvelopeStream(
     }
   } catch (error) {
     if (error instanceof StreamRequestError || isAbortError(error)) throw error;
-    callbacks.onError('网络连接中断');
     throw new StreamRequestError('网络连接中断', {
       recoverable: true,
       cause: error,

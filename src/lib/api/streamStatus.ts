@@ -1,5 +1,6 @@
 import { API_CONFIG } from '../config';
 import { apiRequest } from './fetchWithAuth';
+import { ApiError } from '@/types/api';
 
 const API_BASE_URL = API_CONFIG.BASE_URL;
 
@@ -21,6 +22,7 @@ export function markStreaming(conversationId: string): void {
 
 /** 流结束时（正常完成或手动停止）清除标记 */
 export function clearStreamingMark(_conversationId?: string): void {
+  void _conversationId;
   localStorage.removeItem(STREAMING_KEY);
 }
 
@@ -52,6 +54,22 @@ export interface StreamStatusData {
   status: 'streaming' | 'done' | 'error' | 'not_found';
   last_entry_id?: string;
   message_id?: string;
+  stream_mode?: 'initial' | 'continuation';
+}
+
+export class StreamStatusRequestError extends Error {
+  readonly recoverable: boolean;
+  readonly code?: string;
+
+  constructor(message: string, options: { recoverable: boolean; code?: string; cause?: unknown }) {
+    super(message);
+    this.name = 'StreamStatusRequestError';
+    this.recoverable = options.recoverable;
+    this.code = options.code;
+    if (options.cause !== undefined) {
+      Object.defineProperty(this, 'cause', { configurable: true, value: options.cause });
+    }
+  }
 }
 
 function isAbortError(error: unknown): boolean {
@@ -73,6 +91,16 @@ export async function fetchStreamStatus(
       : apiRequest<StreamStatusData>(url));
   } catch (error) {
     if (isAbortError(error)) throw error;
-    return { status: 'not_found' };
+    const code = error instanceof ApiError ? error.code : undefined;
+    const unauthorized = code === 'UNAUTHORIZED' || code === 'FORBIDDEN' ||
+      (error instanceof Error && error.message === 'Unauthorized');
+    throw new StreamStatusRequestError(
+      error instanceof Error ? error.message : '流状态查询失败',
+      {
+        recoverable: !unauthorized && code !== 'NOT_FOUND',
+        code,
+        cause: error,
+      },
+    );
   }
 }

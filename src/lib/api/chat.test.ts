@@ -188,6 +188,33 @@ describe('sendMessageStream — 新 envelope 协议', () => {
   it('仅收到 id 行就断线时不推进 cursor，避免重连跳过未处理 data frame', async () => {
     fetchWithAuthMock.mockResolvedValue(createInterruptedStreamResponse('id: 100-9\n'));
     const onEntryId = vi.fn();
+    const onError = vi.fn();
+
+    const error = await sendMessageStream(
+      { model_id: 'g', message: 'q', conversation_id: 'conv-1' },
+      {
+        onReady: vi.fn(),
+        onEntryId,
+        onReasoning: vi.fn(),
+        onAnswering: vi.fn(),
+        onDone: vi.fn(),
+        onError,
+      },
+    ).catch((caught) => caught);
+
+    expect(isRecoverableStreamError(error)).toBe(true);
+    expect(onEntryId).not.toHaveBeenCalled();
+    expect(onError).not.toHaveBeenCalled();
+  });
+
+  it('JSON 解析失败时不提交 pending entry cursor，避免跳过坏 frame', async () => {
+    fetchWithAuthMock.mockResolvedValue(createStreamResponse([
+      'id: 101-1\n',
+      'data: {bad-json}\n\n',
+      'data: [DONE]\n\n',
+    ]));
+    const onEntryId = vi.fn();
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
 
     const error = await sendMessageStream(
       { model_id: 'g', message: 'q', conversation_id: 'conv-1' },
@@ -201,8 +228,12 @@ describe('sendMessageStream — 新 envelope 协议', () => {
       },
     ).catch((caught) => caught);
 
-    expect(isRecoverableStreamError(error)).toBe(true);
+    expect(error).toEqual(expect.objectContaining({
+      message: 'SSE 数据解析失败',
+      recoverable: true,
+    }));
     expect(onEntryId).not.toHaveBeenCalled();
+    warn.mockRestore();
   });
 
   it('reasoning / answering 透传 run_id / step_id', async () => {
@@ -620,7 +651,7 @@ describe('sendMessageStream — 新 envelope 协议', () => {
 
     expect(error).toEqual(expect.objectContaining({ message: '流异常结束' }));
     expect(isRecoverableStreamError(error)).toBe(true);
-    expect(onError).toHaveBeenCalledWith('流异常结束');
+    expect(onError).not.toHaveBeenCalled();
   });
 
   it('done chunk 在 run_started 之前到达 → onDone 收到空 messageId（容错路径）', async () => {
