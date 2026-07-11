@@ -79,4 +79,13 @@ describe('build-and-deploy workflow 发布门禁', () => {
     expect(buildBlock).not.toContain('type=local,dest=');
     expect(buildBlock).not.toContain('fusion-ui-buildx-cache-next');
   });
+  it('Windows 构建记录阶段耗时并在失败时上传诊断日志', () => {
+    expect(buildBlock).toContain('scripts/ci/run_windows_build.ps1');
+    expect(buildBlock).toContain('Write Windows build summary');
+    expect(buildBlock).toContain('$env:GITHUB_STEP_SUMMARY');
+    expect(buildBlock).toContain('Upload Windows build diagnostics');
+    expect(buildBlock).toContain('actions/upload-artifact@v4');
+    expect(buildBlock).toContain('retention-days: 7');
+    expect(buildBlock).toContain('if: failure()');
+  });
 });

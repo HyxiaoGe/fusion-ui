@@ -157,6 +157,9 @@ jobs:
           $builder = "fusion-ui-ci-$runnerKey"
           $image = "${env:IMAGE_NAME}:${env:GITHUB_SHA}"
 
+          & ./scripts/ci/run_windows_build.ps1 -Builder $builder -Image $image
+          exit $LASTEXITCODE
+
           cmd /c "docker buildx inspect $builder >NUL 2>NUL"
           if ($LASTEXITCODE -ne 0) {
             docker buildx create --name $builder --driver docker-container --use
@@ -244,6 +247,30 @@ jobs:
             Write-Host "docker push 失败，第 $attempt 次，${delay}s 后重试..."
             Start-Sleep -Seconds $delay
           }
+
+      - name: Write Windows build summary
+        if: always()
+        shell: powershell -NoProfile -ExecutionPolicy Bypass -Command ". '{0}'"
+        run: |
+          "## Windows build stages" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+          ('Runner: `{0}`' -f '${{ runner.name }}') | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+          "| Stage | Status | Duration (s) |" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+          "|---|---:|---:|" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+          if (Test-Path _ci-logs/stages.json) {
+            $parsed = ConvertFrom-Json (Get-Content -Raw _ci-logs/stages.json)
+            foreach ($stage in $parsed) {
+              "| $($stage.display_name) | $($stage.status) | $($stage.duration_seconds) |" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+            }
+          }
+
+      - name: Upload Windows build diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fusion-ui-windows-build-${{ github.run_id }}-${{ github.run_attempt }}
+          path: _ci-logs
+          retention-days: 7
+          if-no-files-found: warn
 
       - name: Cleanup local Docker artifacts
         if: always()
