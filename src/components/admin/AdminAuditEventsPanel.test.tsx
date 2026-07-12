@@ -47,12 +47,12 @@ describe('AdminAuditEventsPanel', () => {
 
     const admin = await screen.findByLabelText('审计管理员 event-11111111-1111-1111-1111-111111111111');
     expect(admin).toHaveTextContent('@ops-admin');
-    expect(admin).toHaveTextContent('o***@example.com');
+    expect(admin).not.toHaveTextContent('o***@example.com');
     expect(screen.getByLabelText('审计操作 event-11111111-1111-1111-1111-111111111111')).toHaveTextContent('查看对话详情');
     const object = screen.getByLabelText('审计对象 event-11111111-1111-1111-1111-111111111111');
     expect(object).toHaveTextContent('对话');
     expect(object).toHaveTextContent('当前用户：目标昵称 @target-user');
-    expect(object).toHaveTextContent('t***@example.com');
+    expect(object).not.toHaveTextContent('t***@example.com');
     expect(object).not.toHaveTextContent('user-44444444-4444-4444-4444-444444444444');
     expect(admin.closest('table')).toHaveClass('min-w-[860px]');
 
@@ -64,7 +64,8 @@ describe('AdminAuditEventsPanel', () => {
     expect(details).toHaveTextContent('admin-22222222-2222-2222-2222-222222222222');
     expect(details).toHaveTextContent('conv-33333333-3333-3333-3333-333333333333');
     expect(details).toHaveTextContent('user-44444444-4444-4444-4444-444444444444');
-    expect(details).toHaveTextContent('目标用户当前身份目标昵称 @target-user · t***@example.com');
+    expect(details).toHaveTextContent('目标用户当前身份目标昵称 @target-user');
+    expect(details).not.toHaveTextContent('t***@example.com');
     expect(details).toHaveTextContent('req-55555555-5555-5555-5555-555555555555');
     expect(details).toHaveTextContent('admin.audit.conversation.view');
     expect(details).toHaveTextContent('排查用户反馈');
@@ -109,5 +110,16 @@ describe('AdminAuditEventsPanel', () => {
     fireEvent.click(within(table).getByRole('button', { name: '查看审计详情 event-missing' }));
     expect(await screen.findByRole('dialog', { name: '审计事件详情' })).toBeInTheDocument();
     expect(table.querySelector('.min-w-\\[420px\\]')).toBeNull();
+  });
+
+  it('访问审计主表和详情任何位置都不展示管理员或目标用户邮箱', async () => {
+    render(<AdminAuditEventsPanel onForbidden={vi.fn()} />);
+    await screen.findByRole('table', { name: '管理员访问审计记录' });
+    expect(screen.queryByText('o***@example.com')).toBeNull();
+    expect(screen.queryByText('t***@example.com')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: '查看审计详情 event-11111111-1111-1111-1111-111111111111' }));
+    await screen.findByRole('dialog', { name: '审计事件详情' });
+    expect(screen.queryByText('o***@example.com')).toBeNull();
+    expect(screen.queryByText('t***@example.com')).toBeNull();
   });
 });

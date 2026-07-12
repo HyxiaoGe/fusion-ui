@@ -45,11 +45,11 @@ export default function AdminAuditEventsPanel({ onForbidden }: { onForbidden: ()
         return (
           <tr key={event.id} className="border-t border-border/60 align-top">
             <td className="whitespace-nowrap p-3">{formatAdminDate(event.created_at)}</td>
-            <td aria-label={`审计管理员 ${event.id}`}><div className="font-medium">{admin.primary}</div>{admin.secondary ? <div className="mt-1 text-xs text-muted-foreground">{admin.secondary}</div> : null}</td>
+            <td aria-label={`审计管理员 ${event.id}`}><div className="font-medium">{admin.primary}</div></td>
             <td aria-label={`审计操作 ${event.id}`}>{adminAuditActionLabel(event.action)}</td>
             <td aria-label={`审计对象 ${event.id}`}>
               <div className="font-medium">{adminAuditResourceLabel(event.resource_type)}</div>
-              {targetUser ? <><div className="mt-1 text-xs text-muted-foreground">{targetUser.primary}</div>{targetUser.secondary ? <div className="mt-1 text-xs text-muted-foreground">{targetUser.secondary}</div> : null}</> : null}
+              {targetUser ? <div className="mt-1 text-xs text-muted-foreground">{targetUser.primary}</div> : null}
             </td>
             <td className="pr-3 text-right">
               <Button

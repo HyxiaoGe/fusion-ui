@@ -152,7 +152,7 @@ export interface AdminAuditEventRecord {
   resource_type: string;
   resource_id: string | null;
   target_user_id: string | null;
-  target_user?: Pick<AdminUserSummary, 'id' | 'username' | 'nickname' | 'email_masked'> | null;
+  target_user?: Pick<AdminUserSummary, 'id' | 'username' | 'nickname'> | null;
   request_id: string | null;
   reason: string | null;
   metadata: AdminJsonValue;

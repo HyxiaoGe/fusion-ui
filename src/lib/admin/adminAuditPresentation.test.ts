@@ -17,7 +17,7 @@ describe('adminAuditPresentation', () => {
     expect(adminAuditResourceLabel('future_private_resource')).toBe('其他访问对象');
     expect(formatAdminAuditAdmin(null)).toEqual({ primary: '管理员信息未记录' });
     expect(formatAdminAuditAdmin({ username: 'ops', email_masked: 'o***@example.com' })).toEqual({
-      primary: '@ops', secondary: 'o***@example.com',
+      primary: '@ops',
     });
   });
 
@@ -39,8 +39,7 @@ describe('adminAuditPresentation', () => {
       id: 'user-current', username: 'target', nickname: '目标用户', email_masked: 't***@example.com',
     }, 'user-current')).toEqual({
       primary: '当前用户：目标用户 @target',
-      secondary: 't***@example.com',
-      detail: '目标用户 @target · t***@example.com',
+      detail: '目标用户 @target',
     });
     expect(formatAdminAuditTargetUser(null, 'user-deleted-12345678')).toEqual({
       primary: '用户记录已不存在（…12345678）',

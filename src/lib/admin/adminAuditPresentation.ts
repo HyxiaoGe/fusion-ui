@@ -1,4 +1,4 @@
-import type { AdminAuditEventRecord, AdminJsonValue } from '@/types/adminAudit';
+import type { AdminJsonValue } from '@/types/adminAudit';
 
 const ACTION_LABELS: Record<string, string> = {
   'admin.audit.users.list': '查询用户列表',
@@ -28,7 +28,6 @@ const RESOURCE_LABELS: Record<string, string> = {
 
 export interface AdminAuditAdminPresentation {
   primary: string;
-  secondary?: string;
 }
 
 export function adminAuditActionLabel(action: string): string {
@@ -44,35 +43,26 @@ export function formatAdminAuditAdmin(snapshot: AdminJsonValue): AdminAuditAdmin
     return { primary: '管理员信息未记录' };
   }
   const username = typeof snapshot.username === 'string' ? snapshot.username.trim().slice(0, 80) : '';
-  const email = typeof snapshot.email_masked === 'string' ? snapshot.email_masked.trim().slice(0, 120) : '';
-  if (!username && !email) return { primary: '管理员信息未记录' };
-  return {
-    primary: username ? `@${username}` : '管理员账号未记录',
-    ...(email ? { secondary: email } : {}),
-  };
+  if (!username) return { primary: '管理员信息未记录' };
+  return { primary: `@${username}` };
 }
 
 export interface AdminAuditTargetUserPresentation {
   primary: string;
-  secondary?: string;
   detail: string;
 }
 
-type AdminAuditTargetUser = AdminAuditEventRecord['target_user'];
-
 export function formatAdminAuditTargetUser(
-  targetUser: AdminAuditTargetUser,
+  targetUser: AdminJsonValue | undefined,
   targetUserId: string | null,
 ): AdminAuditTargetUserPresentation | null {
   if (targetUser && typeof targetUser === 'object') {
     const nickname = typeof targetUser.nickname === 'string' ? targetUser.nickname.trim().slice(0, 80) : '';
     const username = typeof targetUser.username === 'string' ? targetUser.username.trim().slice(0, 80) : '';
-    const email = typeof targetUser.email_masked === 'string' ? targetUser.email_masked.trim().slice(0, 120) : '';
     const identity = [nickname, username ? `@${username}` : ''].filter(Boolean).join(' ') || '身份信息不完整';
     return {
       primary: `当前用户：${identity}`,
-      ...(email ? { secondary: email } : {}),
-      detail: [identity, email].filter(Boolean).join(' · '),
+      detail: identity,
     };
   }
   if (!targetUserId) return null;
