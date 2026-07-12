@@ -28,6 +28,7 @@
 | 图片文件解析链路修复 | 已完成 | `fusion-api` commit `21c2cf5` |
 | 流式展示与断线续传可靠性 | 已完成一轮 | `fusion-ui` commit `e7d596d`；自适应打字机、安全 SSE 游标、普通发送有限自动重连与部分回答保留 |
 | 流式续传统一与页面恢复 | 已完成 P2 收尾 | `fusion-api` commits `70f391d`, `6d05512` / `fusion-ui` commits `d4f66a9`, `765974c`；普通发送、Agent continuation 与页面恢复统一有限重连、安全游标、原子停止和部分输出持久化 |
+| 管理员模型运营中心 | 已完成 v1 | `fusion-api` commits `5624241`, `1a2b456`、`fusion-ui` commit `3097c6b`；模型列表/详情、健康与能力、持久化统计、历史/降级状态、模型到对话 URL 联动；生产真实登录态 Chrome 验收通过 |
 
 ## 不要重复建议
 
@@ -54,6 +55,7 @@
 
 | 日期 | 仓库 | commit | 内容 | 验证 |
 |---|---|---|---|---|
+| 2026-07-12 | `fusion-api` / `fusion-ui` | `api:5624241+1a2b456 / ui:3097c6b` | 管理员模型运营中心 v1：增加第 5 个“模型”Tab、列表/详情、URL history、健康时间、中文能力/状态、模型到对话筛选及目录降级提示 | 前端 `1085 tests`、目标 ESLint、build；后端 `977 passed + 98 subtests`；Actions `29190231438` / `29190141564`；生产 Chrome 验证列表、当前/历史详情、18 条关联对话、浏览器返回、刷新恢复和 console 0 |
 | 2026-07-11 | `fusion-api` / `fusion-ui` | `api:70f391d+6d05512 / ui:d4f66a9+765974c` | 流式可靠性 P2：显式 `initial/continuation` 模式、严格 Redis 状态判定、共享可恢复流执行器、页面刷新恢复、stop guard/task CAS 与部分输出原子持久化 | 前端 `985 tests`、`npm run build`、目标文件 ESLint；后端 `850 tests + 69 subtests`、Ruff、架构检查；GitHub Actions 与部署后真实登录态 Chrome 新会话回归纳入发布门禁 |
 | 2026-07-11 | `fusion-api` / `fusion-ui` | `api:363233f / ui:e7d596d` | 流式可靠性 P1：自适应追赶、发送自动重连、Redis fail-fast/就绪检查、孤儿流终态和 task/message fencing | 前端 `944 tests`、`npm run build`、目标文件 ESLint；后端 `806 tests + 69 subtests`、Ruff、架构检查；GitHub Actions 与部署后真实登录态 Chrome 新会话回归 |
 | 2026-07-03 | `fusion-api` / `fusion-ui` | `api:aae8e87 / ui:c9d6eda` | 会话资料/文件体验 v1：同会话资料面板、资料复用、文件权限校验和历史附件元数据保真 | `.venv311/bin/python -m pytest test/test_file_service.py test/test_chat_service.py test/services/chat/test_message_builder.py -q`、`/opt/homebrew/bin/ruff check app test`、本次改动文件 `ruff format --check`、前端 `npm test`、`npm run build`；CI/CD 和真实 Chrome 回归待本次 push 后完成 |
