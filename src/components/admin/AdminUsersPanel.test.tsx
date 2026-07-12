@@ -160,6 +160,25 @@ describe('AdminUsersPanel', () => {
     expect(apiMocks.getAdminUser).toHaveBeenCalledTimes(2);
   });
 
+  it.each([null, '', '   '])('提示词为 %p 时完全隐藏区块', async systemPrompt => {
+    apiMocks.getAdminUser.mockResolvedValueOnce({
+      ...users[0], email: 'alpha@example.com', system_prompt: systemPrompt,
+    });
+    render(<ControlledUsersPanel initialUserId="user-alpha" />);
+    await screen.findByText('alpha@example.com');
+    expect(screen.queryByText('自定义提示词')).toBeNull();
+    expect(screen.queryByText('自定义 system prompt')).toBeNull();
+  });
+
+  it('非空提示词使用中文标题展示', async () => {
+    apiMocks.getAdminUser.mockResolvedValueOnce({
+      ...users[0], email: 'alpha@example.com', system_prompt: '请使用简洁中文回答',
+    });
+    render(<ControlledUsersPanel initialUserId="user-alpha" />);
+    expect(await screen.findByText('自定义提示词')).toBeInTheDocument();
+    expect(screen.getByText('请使用简洁中文回答')).toBeInTheDocument();
+  });
+
   it('关闭详情后刷新列表会清空详情状态，并支持列表失败重试', async () => {
     let resolveDetail!: (value: Record<string, unknown>) => void;
     apiMocks.getAdminUser.mockReturnValue(new Promise(resolve => { resolveDetail = resolve; }));
