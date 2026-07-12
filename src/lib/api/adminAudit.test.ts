@@ -14,6 +14,8 @@ import {
   getAdminConversationToolCalls,
   getAdminPerformanceRun,
   getAdminPerformanceRuns,
+  getAdminModel,
+  getAdminModels,
   getAdminUsers,
   importAdminPerformanceRun,
 } from './adminAudit';
@@ -103,6 +105,16 @@ describe('管理员审计 API', () => {
     expect(apiRequestMock.mock.calls.map(call => call[0])).toEqual([
       '/api/admin/audit/conversations/conv%2Fa/agent-runs?page=2&page_size=25',
       '/api/admin/audit/conversations/conv%2Fa/tool-calls?page=3&page_size=10',
+    ]);
+  });
+
+  it('模型运营列表和详情使用安全筛选与编码 ID', async () => {
+    const signal = new AbortController().signal;
+    await getAdminModels({ page: 2, page_size: 25, q: ' kimi ', provider: 'moonshot', catalog_status: 'active' }, signal);
+    await getAdminModel('model/a b', signal);
+    expect(apiRequestMock.mock.calls).toEqual([
+      ['/api/admin/audit/models?page=2&page_size=25&q=kimi&provider=moonshot&catalog_status=active', { signal }],
+      ['/api/admin/audit/models/model%2Fa%20b', { signal }],
     ]);
   });
 });

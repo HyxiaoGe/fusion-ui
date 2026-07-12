@@ -1,13 +1,14 @@
-export type AdminAuditTab = 'users' | 'conversations' | 'performance' | 'events';
+export type AdminAuditTab = 'users' | 'conversations' | 'models' | 'performance' | 'events';
 
 export interface AdminAuditRoute {
   tab: AdminAuditTab;
   userId?: string;
   conversationId?: string;
   runId?: string;
+  modelId?: string;
 }
 
-const ADMIN_TABS = new Set<AdminAuditTab>(['users', 'conversations', 'performance', 'events']);
+const ADMIN_TABS = new Set<AdminAuditTab>(['users', 'conversations', 'models', 'performance', 'events']);
 const MAX_ROUTE_ID_LENGTH = 200;
 const CONTROL_CHARACTER_PATTERN = /[\u0000-\u001f\u007f]/;
 
@@ -33,11 +34,17 @@ export function parseAdminAuditRoute(searchParams: URLSearchParams): AdminAuditR
   if (tab === 'conversations') {
     const userId = normalizeAdminAuditRouteId(searchParams.get('user_id'));
     const conversationId = normalizeAdminAuditRouteId(searchParams.get('conversation_id'));
+    const modelId = normalizeAdminAuditRouteId(searchParams.get('model_id'));
     return {
       tab,
       ...(userId ? { userId } : {}),
       ...(conversationId ? { conversationId } : {}),
+      ...(modelId ? { modelId } : {}),
     };
+  }
+  if (tab === 'models') {
+    const modelId = normalizeAdminAuditRouteId(searchParams.get('model_id'));
+    return modelId ? { tab, modelId } : { tab };
   }
   if (tab === 'performance') {
     const runId = normalizeAdminAuditRouteId(searchParams.get('run_id'));
@@ -51,12 +58,15 @@ export function buildAdminAuditUrl(route: AdminAuditRoute): string {
   const userId = normalizeAdminAuditRouteId(route.userId);
   const conversationId = normalizeAdminAuditRouteId(route.conversationId);
   const runId = normalizeAdminAuditRouteId(route.runId);
+  const modelId = normalizeAdminAuditRouteId(route.modelId);
   if (route.tab !== 'users' || userId) params.set('tab', route.tab);
   if (route.tab === 'users' && userId) params.set('user_id', userId);
   if (route.tab === 'conversations') {
     if (userId) params.set('user_id', userId);
     if (conversationId) params.set('conversation_id', conversationId);
+    if (modelId) params.set('model_id', modelId);
   }
+  if (route.tab === 'models' && modelId) params.set('model_id', modelId);
   if (route.tab === 'performance' && runId) params.set('run_id', runId);
   const query = params.toString();
   return query ? `/admin?${query}` : '/admin';

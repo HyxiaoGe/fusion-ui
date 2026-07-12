@@ -14,6 +14,8 @@ const apiMocks = vi.hoisted(() => ({
   getAdminPerformanceRuns: vi.fn(),
   getAdminPerformanceRun: vi.fn(),
   getAdminAuditEvents: vi.fn(),
+  getAdminModels: vi.fn(),
+  getAdminModel: vi.fn(),
 }));
 
 const navigationMocks = vi.hoisted(() => ({
@@ -94,14 +96,75 @@ describe('AdminAuditCenter', () => {
     navigationMocks.seed('/admin');
   });
 
-  it('提供四个独立管理页签并默认加载用户列表', async () => {
+  it('提供五个独立管理页签并默认加载用户列表', async () => {
     render(<AdminAuditCenter />);
 
     expect(screen.getByRole('tab', { name: '用户' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: '对话' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: '模型' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: '压测' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: '访问审计' })).toBeInTheDocument();
     await waitFor(() => expect(apiMocks.getAdminUsers).toHaveBeenCalled());
+  });
+
+  it('模型详情使用 URL/history，并可把 model_id 关联到对话筛选', async () => {
+    const model = {
+      model_id: 'model-a', name: '模型 A', provider: 'provider-a', provider_display: '提供商 A',
+      catalog_status: 'active', health: { status: 'healthy' }, capabilities: { vision: true },
+      conversation_count: 1, user_count: 1, assistant_message_count: 2, input_tokens: 3, output_tokens: 4,
+      last_used_at: null, agent_run_count: 0, agent_error_count: 0, latest_performance_run: null,
+    };
+    apiMocks.getAdminModels.mockResolvedValue({ ...emptyPage, total: 1, total_pages: 1, items: [model] });
+    apiMocks.getAdminModel.mockResolvedValue({
+      ...model, context_window_tokens: 1000, max_output_tokens: 100, knowledge_cutoff: null,
+      description: null, cost_tier: null, recommended_for: [], pricing: null,
+    });
+    navigationMocks.seed('/admin?tab=models');
+    render(<AdminAuditCenter />);
+    await screen.findByText('模型 A');
+    fireEvent.click(screen.getByRole('button', { name: '查看模型详情 model-a' }));
+    expect(navigationMocks.push).toHaveBeenLastCalledWith('/admin?tab=models&model_id=model-a', { scroll: false });
+    const detail = await screen.findByLabelText('模型详情 model-a');
+    fireEvent.click(within(detail).getByRole('button', { name: '查看该模型的对话' }));
+    expect(navigationMocks.push).toHaveBeenLastCalledWith('/admin?tab=conversations&model_id=model-a', { scroll: false });
+    expect(await screen.findByLabelText('模型 ID')).toHaveValue('model-a');
+    expect(apiMocks.getAdminConversations).toHaveBeenCalledWith(expect.objectContaining({ model_id: 'model-a' }), expect.any(AbortSignal));
+    act(() => navigationMocks.backUrl());
+    expect(await screen.findByLabelText('模型详情 model-a')).toBeInTheDocument();
+  });
+
+  it('模型详情在 UI 打开时返回走 back，直接深链返回规范化到模型列表', async () => {
+    const model = {
+      model_id: 'model-history', name: '历史测试模型', provider: 'p', provider_display: 'P',
+      catalog_status: 'historical', health: { status: 'unknown' }, capabilities: {},
+      conversation_count: 0, user_count: 0, assistant_message_count: 0, input_tokens: 0, output_tokens: 0,
+      last_used_at: null, agent_run_count: 0, agent_error_count: 0, latest_performance_run: null,
+    };
+    apiMocks.getAdminModels.mockResolvedValue({ ...emptyPage, total: 1, total_pages: 1, items: [model] });
+    apiMocks.getAdminModel.mockResolvedValue({ ...model, context_window_tokens: null, max_output_tokens: null, knowledge_cutoff: null, description: null, cost_tier: null, recommended_for: [], pricing: null });
+    navigationMocks.seed('/admin?tab=models');
+    const { unmount } = render(<AdminAuditCenter />);
+    await screen.findByText('历史测试模型');
+    fireEvent.click(screen.getByRole('button', { name: '查看模型详情 model-history' }));
+    fireEvent.click(within(await screen.findByLabelText('模型详情 model-history')).getByRole('button', { name: '返回模型列表' }));
+    expect(navigationMocks.back).toHaveBeenCalledTimes(1);
+    expect(await screen.findByRole('button', { name: '查看模型详情 model-history' })).toBeInTheDocument();
+    expect(navigationMocks.search).toBe('tab=models');
+    unmount();
+
+    navigationMocks.seed('/admin?tab=models&model_id=model-history');
+    render(<AdminAuditCenter />);
+    fireEvent.click(within(await screen.findByLabelText('模型详情 model-history')).getByRole('button', { name: '返回模型列表' }));
+    expect(navigationMocks.replace).toHaveBeenLastCalledWith('/admin?tab=models', { scroll: false });
+  });
+
+  it('模型详情返回 403 时清理 model_id 并卸载运营内容', async () => {
+    apiMocks.getAdminModel.mockRejectedValue(new ApiError('FORBIDDEN', '需要管理员权限', 'req-model'));
+    navigationMocks.seed('/admin?tab=models&model_id=model-sensitive');
+    render(<AdminAuditCenter />);
+    expect(await screen.findByText('管理员权限已失效')).toBeInTheDocument();
+    expect(navigationMocks.replace).toHaveBeenLastCalledWith('/admin', { scroll: false });
+    expect(screen.queryByLabelText('模型详情 model-sensitive')).toBeNull();
   });
 
   it('切换到对话页后加载全局对话，不读取普通聊天状态', async () => {

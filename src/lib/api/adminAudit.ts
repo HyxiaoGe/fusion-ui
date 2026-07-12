@@ -13,6 +13,9 @@ import type {
   AdminPerformanceRunDetail,
   AdminPerformanceRunSummary,
   AdminPerformanceRunsQuery,
+  AdminModelDetail,
+  AdminModelsPage,
+  AdminModelsQuery,
   AdminToolCallRecord,
   AdminUserDetail,
   AdminUsersQuery,
@@ -123,6 +126,14 @@ export function getAdminPerformanceRuns(query: AdminPerformanceRunsQuery = {}, s
 
 export function getAdminPerformanceRun(runId: string, signal?: AbortSignal) {
   return get<AdminPerformanceRunDetail>(`/performance-runs/${encodedId(runId)}`, signal);
+}
+
+export function getAdminModels(query: AdminModelsQuery = {}, signal?: AbortSignal) {
+  return get<AdminModelsPage>(`/models${buildQuery(query)}`, signal);
+}
+
+export function getAdminModel(modelId: string, signal?: AbortSignal) {
+  return get<AdminModelDetail>(`/models/${encodedId(modelId)}`, signal);
 }
 
 export function importAdminPerformanceRun(payload: PerformanceRunImportPayload) {

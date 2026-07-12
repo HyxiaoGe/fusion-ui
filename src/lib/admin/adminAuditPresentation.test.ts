@@ -10,6 +10,9 @@ describe('adminAuditPresentation', () => {
     expect(adminAuditActionLabel('admin.audit.performance_run.import')).toBe('导入压测记录');
     expect(adminAuditResourceLabel('conversation_tool_calls')).toBe('工具调用');
     expect(adminAuditResourceLabel('performance_run')).toBe('压测记录');
+    expect(adminAuditActionLabel('admin.audit.models.list')).toBe('查询模型列表');
+    expect(adminAuditActionLabel('admin.audit.model.view')).toBe('查看模型详情');
+    expect(adminAuditResourceLabel('model')).toBe('模型');
   });
 
   it('未知动作、未知资源和缺失管理员快照使用安全兜底', () => {

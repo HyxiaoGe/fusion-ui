@@ -229,6 +229,54 @@ export interface AdminPerformanceRunDetail extends AdminPerformanceRunSummary {
   imported_by_user_id: string;
 }
 
+export interface AdminModelHealthSummary {
+  status: string;
+  error?: string | null;
+  checked_at?: string | number | null;
+}
+
+export interface AdminModelPerformanceRunSummary {
+  run_id: string;
+  status: string;
+  environment: string;
+  started_at: string | null;
+  finished_at: string | null;
+}
+
+export interface AdminModelSummary {
+  model_id: string;
+  name: string;
+  provider: string | null;
+  provider_display: string | null;
+  catalog_status: 'active' | 'historical' | 'unknown';
+  catalog_availability: 'available' | 'degraded';
+  health: AdminModelHealthSummary | null;
+  capabilities: Record<string, boolean>;
+  conversation_count: number;
+  user_count: number;
+  assistant_message_count: number;
+  input_tokens: number;
+  output_tokens: number;
+  last_used_at: string | null;
+  agent_run_count: number;
+  agent_error_count: number;
+  latest_performance_run: AdminModelPerformanceRunSummary | null;
+}
+
+export interface AdminModelDetail extends AdminModelSummary {
+  context_window_tokens: number | null;
+  max_output_tokens: number | null;
+  knowledge_cutoff: string | null;
+  description: string | null;
+  cost_tier: string | null;
+  recommended_for: string[];
+}
+
+export interface AdminModelsPage extends AdminPage<AdminModelSummary> {
+  catalog_availability: 'available' | 'degraded';
+  excluded_invalid_model_count: number;
+}
+
 export interface PerformanceRunImportPayload {
   schema_version: number;
   run_id: string;
@@ -281,4 +329,11 @@ export interface AdminPerformanceRunsQuery extends AdminConversationSectionQuery
   environment?: string;
   status?: string;
   model_id?: string;
+}
+
+export interface AdminModelsQuery extends AdminConversationSectionQuery {
+  q?: string;
+  provider?: string;
+  catalog_status?: string;
+  health_status?: string;
 }

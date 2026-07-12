@@ -38,19 +38,22 @@ const EMPTY_FILTER: ConversationFilterDraft = { q: '', user_id: '', model_id: ''
 interface AdminConversationsPanelProps {
   onForbidden: () => void;
   userIdFilter?: string;
+  modelIdFilter?: string;
   selectedConversationId: string | null;
   onUserFilterChange: (userId?: string) => void;
+  onFiltersChange?: (filters: { userId?: string; modelId?: string }) => void;
   onOpen: (conversationId: string) => void;
   onBack: () => void;
 }
 
 export default function AdminConversationsPanel({
-  onForbidden, userIdFilter, selectedConversationId, onUserFilterChange, onOpen, onBack,
+  onForbidden, userIdFilter, modelIdFilter, selectedConversationId, onUserFilterChange, onFiltersChange, onOpen, onBack,
 }: AdminConversationsPanelProps) {
   const [page, setPage] = useState(1);
-  const [draft, setDraft] = useState<ConversationFilterDraft>(() => ({ ...EMPTY_FILTER, user_id: userIdFilter ?? '' }));
-  const [filters, setFilters] = useState<AdminConversationsQuery>(() => (userIdFilter ? { user_id: userIdFilter } : {}));
+  const [draft, setDraft] = useState<ConversationFilterDraft>(() => ({ ...EMPTY_FILTER, user_id: userIdFilter ?? '', model_id: modelIdFilter ?? '' }));
+  const [filters, setFilters] = useState<AdminConversationsQuery>(() => ({ ...(userIdFilter ? { user_id: userIdFilter } : {}), ...(modelIdFilter ? { model_id: modelIdFilter } : {}) }));
   const previousUserIdFilterRef = useRef(userIdFilter);
+  const previousModelIdFilterRef = useRef(modelIdFilter);
   const loader = useCallback(
     (signal: AbortSignal) => getAdminConversations({ page, page_size: 25, ...filters }, signal),
     [filters, page],
@@ -68,6 +71,15 @@ export default function AdminConversationsPanel({
       : { ...current, user_id: nextUserId || undefined });
   }, [userIdFilter]);
 
+  useEffect(() => {
+    if (previousModelIdFilterRef.current === modelIdFilter) return;
+    previousModelIdFilterRef.current = modelIdFilter;
+    const nextModelId = modelIdFilter ?? '';
+    setPage(1);
+    setDraft(current => current.model_id === nextModelId ? current : { ...current, model_id: nextModelId });
+    setFilters(current => current.model_id === (nextModelId || undefined) ? current : { ...current, model_id: nextModelId || undefined });
+  }, [modelIdFilter]);
+
   if (selectedConversationId) {
     return (
       <AdminConversationDetailView
@@ -82,17 +94,19 @@ export default function AdminConversationsPanel({
   const applyFilters = (event: React.FormEvent) => {
     event.preventDefault();
     const nextUserId = normalizeAdminAuditRouteId(draft.user_id);
+    const nextModelId = normalizeAdminAuditRouteId(draft.model_id);
     setPage(1);
     setFilters({
       q: draft.q,
       user_id: nextUserId,
-      model_id: draft.model_id,
+      model_id: nextModelId,
       has_tools: parseBoolean(draft.has_tools),
       has_files: parseBoolean(draft.has_files),
       created_from: draft.created_from,
       created_to: draft.created_to,
     });
-    onUserFilterChange(nextUserId);
+    if (onFiltersChange) onFiltersChange({ userId: nextUserId, modelId: nextModelId });
+    else onUserFilterChange(nextUserId);
   };
 
   return (

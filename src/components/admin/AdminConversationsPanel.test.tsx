@@ -30,14 +30,16 @@ const conversations = ['alpha', 'beta'].map((username, index) => ({
 const noop = () => undefined;
 
 function ControlledConversationsPanel({
-  userIdFilter, onUserFilterChange = noop,
-}: { userIdFilter?: string; onUserFilterChange?: (userId?: string) => void }) {
+  userIdFilter, modelIdFilter, onUserFilterChange = noop, onFiltersChange,
+}: { userIdFilter?: string; modelIdFilter?: string; onUserFilterChange?: (userId?: string) => void; onFiltersChange?: (filters: { userId?: string; modelId?: string }) => void }) {
   const [selectedConversationId, setSelectedConversationId] = useState<string | null>(null);
   return (
     <AdminConversationsPanel
       onForbidden={noop}
       userIdFilter={userIdFilter}
+      modelIdFilter={modelIdFilter}
       onUserFilterChange={onUserFilterChange}
+      onFiltersChange={onFiltersChange}
       selectedConversationId={selectedConversationId}
       onOpen={setSelectedConversationId}
       onBack={() => setSelectedConversationId(null)}
@@ -179,5 +181,17 @@ describe('AdminConversationsPanel', () => {
       expect.objectContaining({ user_id: 'user-b' }),
       expect.any(AbortSignal),
     ));
+  });
+
+  it('外部 model_id 同步到控件和请求，手动组合筛选一次通知路由', async () => {
+    const onFiltersChange = vi.fn();
+    render(<ControlledConversationsPanel userIdFilter="user-a" modelIdFilter="model-a" onFiltersChange={onFiltersChange} />);
+    await waitFor(() => expect(apiMocks.getAdminConversations).toHaveBeenCalledWith(
+      expect.objectContaining({ user_id: 'user-a', model_id: 'model-a' }), expect.any(AbortSignal),
+    ));
+    expect(screen.getByLabelText('模型 ID')).toHaveValue('model-a');
+    fireEvent.change(screen.getByLabelText('模型 ID'), { target: { value: ' model-b ' } });
+    fireEvent.click(screen.getByRole('button', { name: '应用筛选' }));
+    expect(onFiltersChange).toHaveBeenCalledWith({ userId: 'user-a', modelId: 'model-b' });
   });
 });

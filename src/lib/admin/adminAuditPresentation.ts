@@ -13,6 +13,8 @@ const ACTION_LABELS: Record<string, string> = {
   'admin.audit.performance_run.import': '导入压测记录',
   'admin.audit.performance_runs.list': '查询压测记录',
   'admin.audit.performance_run.view': '查看压测详情',
+  'admin.audit.models.list': '查询模型列表',
+  'admin.audit.model.view': '查看模型详情',
 };
 
 const RESOURCE_LABELS: Record<string, string> = {
@@ -24,6 +26,7 @@ const RESOURCE_LABELS: Record<string, string> = {
   conversation_files: '关联文件',
   admin_audit_event: '访问审计',
   performance_run: '压测记录',
+  model: '模型',
 };
 
 export interface AdminAuditAdminPresentation {

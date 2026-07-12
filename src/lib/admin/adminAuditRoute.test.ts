@@ -13,6 +13,12 @@ describe('adminAuditRoute', () => {
     expect(parseAdminAuditRoute(new URLSearchParams('tab=performance&run_id=perf-1'))).toEqual({
       tab: 'performance', runId: 'perf-1',
     });
+    expect(parseAdminAuditRoute(new URLSearchParams('tab=models&model_id=%20model-1%20'))).toEqual({
+      tab: 'models', modelId: 'model-1',
+    });
+    expect(parseAdminAuditRoute(new URLSearchParams('tab=conversations&model_id=model-1'))).toEqual({
+      tab: 'conversations', modelId: 'model-1',
+    });
     expect(parseAdminAuditRoute(new URLSearchParams('tab=events'))).toEqual({ tab: 'events' });
   });
 
@@ -31,6 +37,8 @@ describe('adminAuditRoute', () => {
     expect(buildAdminAuditUrl({ tab: 'performance', runId: 'perf-1' }))
       .toBe('/admin?tab=performance&run_id=perf-1');
     expect(buildAdminAuditUrl({ tab: 'events' })).toBe('/admin?tab=events');
+    expect(buildAdminAuditUrl({ tab: 'models', modelId: 'model / 1' })).toBe('/admin?tab=models&model_id=model+%2F+1');
+    expect(buildAdminAuditUrl({ tab: 'conversations', modelId: 'model-1' })).toBe('/admin?tab=conversations&model_id=model-1');
     expect(buildAdminAuditUrl({ tab: 'users', userId: 'unsafe\nvalue' })).toBe('/admin');
   });
 });
