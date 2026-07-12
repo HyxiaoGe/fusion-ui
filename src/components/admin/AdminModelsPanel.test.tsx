@@ -1,9 +1,12 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { useState } from 'react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const apiMocks = vi.hoisted(() => ({ getAdminModels: vi.fn(), getAdminModel: vi.fn() }));
 vi.mock('@/lib/api/adminAudit', () => apiMocks);
+vi.mock('@/components/models/ProviderIcon', () => ({
+  default: ({ providerId }: { providerId: string }) => <span data-testid="provider-icon">{providerId}</span>,
+}));
 
 import AdminModelsPanel, { formatModelHealthCheckedAt } from './AdminModelsPanel';
 
@@ -17,7 +20,11 @@ const model = {
   agent_run_count: 7, agent_error_count: 1,
   latest_performance_run: { run_id: 'perf-1', status: 'completed', environment: 'production', started_at: '2026-07-11T00:00:00Z', finished_at: '2026-07-11T00:10:00Z' },
 };
-const page = { items: [model], total: 1, page: 1, page_size: 25, total_pages: 1, has_next: false, has_prev: false, catalog_availability: 'available', excluded_invalid_model_count: 0 };
+const page = {
+  items: [model], total: 1, page: 1, page_size: 25, total_pages: 1, has_next: false, has_prev: false,
+  catalog_availability: 'available', excluded_invalid_model_count: 0,
+  provider_options: [{ value: 'moonshot', label: 'Moonshot' }, { value: 'openai', label: 'OpenAI' }],
+};
 const detail = {
   ...model,
   context_window_tokens: 131072,
@@ -38,6 +45,10 @@ function ControlledModelsPanel({ onViewConversations = noop, initialModelId = nu
 }
 
 describe('AdminModelsPanel', () => {
+  beforeAll(() => {
+    Object.defineProperty(Element.prototype, 'scrollIntoView', { configurable: true, value: vi.fn() });
+  });
+
   beforeEach(() => {
     apiMocks.getAdminModels.mockReset().mockResolvedValue(page);
     apiMocks.getAdminModel.mockReset().mockResolvedValue(detail);
@@ -48,6 +59,7 @@ describe('AdminModelsPanel', () => {
     const row = (await screen.findByText('Kimi K2.5')).closest('tr') as HTMLElement;
     const table = row.closest('table') as HTMLElement;
     expect(within(row).getByText('Moonshot')).toBeInTheDocument();
+    expect(within(row).getByTestId('provider-icon')).toHaveTextContent('moonshot');
     expect(within(row).getByText('健康')).toBeInTheDocument();
     expect(within(row).getByText('2026-07-12 12:00')).toBeInTheDocument();
     expect(within(row).getByLabelText('检测时间 2026/7/12 12:00:00（北京时间）')).toHaveAttribute('title', '2026/7/12 12:00:00（北京时间）');
@@ -58,7 +70,7 @@ describe('AdminModelsPanel', () => {
     expect(within(row).getByLabelText('用户 5')).toHaveTextContent('5');
     expect(within(row).getByLabelText('回复 34')).toHaveTextContent('34');
     expect(within(row).getByLabelText('持久化 Token 2,000')).toHaveTextContent('2,000');
-    expect(within(row).getByLabelText('Agent 7')).toHaveTextContent('7');
+    expect(within(row).getByLabelText('Agent 运行 7')).toHaveTextContent('7');
     expect(within(row).getByLabelText('错误 1')).toHaveTextContent('1');
     const recentActivity = within(row).getByLabelText('最近活动 2026/7/12 08:00:00（北京时间）');
     expect(recentActivity).toHaveAttribute('title', '2026/7/12 08:00:00（北京时间）');
@@ -72,6 +84,60 @@ describe('AdminModelsPanel', () => {
     expect(within(table).queryByRole('columnheader', { name: '提供商' })).toBeNull();
     expect(within(table).queryByRole('columnheader', { name: 'Token' })).toBeNull();
     expect(screen.getByText(/Token 仅为当前已持久化助手消息用量，不等同平台全部调用或计费账单。/)).toBeInTheDocument();
+  });
+
+  it('提供商筛选使用后端全量选项，支持选择与恢复不限', async () => {
+    render(<ControlledModelsPanel />);
+    await screen.findByText('Kimi K2.5');
+    expect(screen.queryByRole('textbox', { name: '模型提供商' })).toBeNull();
+    const providerSelect = screen.getByRole('combobox', { name: '模型提供商' });
+
+    fireEvent.click(providerSelect);
+    expect(await screen.findByRole('option', { name: '不限' })).toBeInTheDocument();
+    expect(within(screen.getByRole('option', { name: 'Moonshot' })).getByTestId('provider-icon')).toHaveTextContent('moonshot');
+    fireEvent.click(screen.getByRole('option', { name: 'OpenAI' }));
+    expect(within(providerSelect).getByTestId('provider-icon')).toHaveTextContent('openai');
+    fireEvent.click(screen.getByRole('button', { name: '筛选' }));
+    await waitFor(() => expect(apiMocks.getAdminModels).toHaveBeenLastCalledWith(expect.objectContaining({ page: 1, provider: 'openai' }), expect.any(AbortSignal)));
+
+    fireEvent.click(providerSelect);
+    fireEvent.click(await screen.findByRole('option', { name: '不限' }));
+    fireEvent.click(screen.getByRole('button', { name: '筛选' }));
+    await waitFor(() => expect(apiMocks.getAdminModels).toHaveBeenLastCalledWith(expect.objectContaining({ page: 1, provider: '' }), expect.any(AbortSignal)));
+  });
+
+  it('翻页后继续使用不受分页影响的全量提供商选项', async () => {
+    apiMocks.getAdminModels.mockImplementation(({ page: requestedPage }: { page: number }) => Promise.resolve({
+      ...page,
+      page: requestedPage,
+      total: 26,
+      total_pages: 2,
+      has_next: requestedPage === 1,
+      has_prev: requestedPage === 2,
+    }));
+    render(<ControlledModelsPanel />);
+    await screen.findByText('Kimi K2.5');
+    fireEvent.click(screen.getByRole('button', { name: '下一页' }));
+    await waitFor(() => expect(apiMocks.getAdminModels).toHaveBeenLastCalledWith(expect.objectContaining({ page: 2 }), expect.any(AbortSignal)));
+    fireEvent.click(screen.getByRole('combobox', { name: '模型提供商' }));
+    expect(await screen.findByRole('option', { name: 'Moonshot' })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: 'OpenAI' })).toBeInTheDocument();
+  });
+
+  it('目录降级导致选项为空时保留已选提供商 canonical id', async () => {
+    apiMocks.getAdminModels.mockImplementation(({ provider }: { provider: string }) => Promise.resolve(provider === 'openai'
+      ? { ...page, provider_options: [], catalog_availability: 'degraded' }
+      : page));
+    render(<ControlledModelsPanel />);
+    await screen.findByText('Kimi K2.5');
+    const providerSelect = screen.getByRole('combobox', { name: '模型提供商' });
+    fireEvent.click(providerSelect);
+    fireEvent.click(await screen.findByRole('option', { name: 'OpenAI' }));
+    fireEvent.click(screen.getByRole('button', { name: '筛选' }));
+    await screen.findByText('模型目录暂时不可用，当前信息可能来自缓存或仅包含历史数据。');
+    expect(providerSelect).toHaveTextContent('openai');
+    fireEvent.click(providerSelect);
+    expect(await screen.findByRole('option', { name: 'openai' })).toBeInTheDocument();
   });
 
   it('历史模型缺少提供商、健康时间和能力时保持紧凑且信息完整', async () => {
@@ -92,6 +158,7 @@ describe('AdminModelsPanel', () => {
     render(<ControlledModelsPanel />);
     const row = (await screen.findByRole('button', { name: '查看模型详情 retired-model' })).closest('tr') as HTMLElement;
     expect(within(row).getByText('未记录')).toBeInTheDocument();
+    expect(within(row).queryByTestId('provider-icon')).toBeNull();
     expect(within(row).getByText('历史')).toBeInTheDocument();
     expect(within(row).getByText('尚未检测')).toBeInTheDocument();
     expect(within(row).getByText('未标注能力')).toBeInTheDocument();

@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { ArrowLeft, Filter, RefreshCw } from 'lucide-react';
 import { getAdminModel, getAdminModels } from '@/lib/api/adminAudit';
 import { useAdminAuditResource } from '@/hooks/useAdminAuditResource';
@@ -8,6 +8,8 @@ import { Badge, badgeVariants } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Select, SelectContent, SelectItem, SelectTrigger } from '@/components/ui/select';
+import ProviderIcon from '@/components/models/ProviderIcon';
 import { cn } from '@/lib/utils';
 import type { AdminModelDetail, AdminModelSummary } from '@/types/adminAudit';
 import {
@@ -23,6 +25,7 @@ interface AdminModelsPanelProps {
 }
 
 const CATALOG_DEGRADED_MESSAGE = '模型目录暂时不可用，当前信息可能来自缓存或仅包含历史数据。';
+const ALL_PROVIDERS_VALUE = '__all_providers__';
 
 export default function AdminModelsPanel({
   onForbidden, selectedModelId, onOpen, onBack, onViewConversations,
@@ -30,10 +33,22 @@ export default function AdminModelsPanel({
   const [page, setPage] = useState(1);
   const [draft, setDraft] = useState({ q: '', provider: '', catalog_status: '' });
   const [filters, setFilters] = useState({ q: '', provider: '', catalog_status: '' });
+  const [providerOptions, setProviderOptions] = useState<Array<{ value: string; label: string }>>([]);
   const loader = useCallback((signal: AbortSignal) => getAdminModels({
     page, page_size: 25, ...filters,
   }, signal), [filters, page]);
   const resource = useAdminAuditResource(loader, onForbidden);
+
+  useEffect(() => {
+    if (resource.data) setProviderOptions(resource.data.provider_options ?? []);
+  }, [resource.data]);
+
+  const selectedProvider = draft.provider
+    ? providerOptions.find(option => option.value === draft.provider) || { value: draft.provider, label: draft.provider }
+    : undefined;
+  const renderedProviderOptions = selectedProvider && !providerOptions.some(option => option.value === selectedProvider.value)
+    ? [selectedProvider, ...providerOptions]
+    : providerOptions;
 
   if (selectedModelId) {
     return <AdminModelDetailView key={selectedModelId} modelId={selectedModelId} onBack={onBack} onForbidden={onForbidden} onViewConversations={onViewConversations} />;
@@ -52,7 +67,7 @@ export default function AdminModelsPanel({
         setFilters({ q: draft.q.trim(), provider: draft.provider.trim(), catalog_status: draft.catalog_status });
       }}>
         <Input aria-label="搜索模型" placeholder="模型名称或 ID" value={draft.q} onChange={event => setDraft(current => ({ ...current, q: event.target.value }))} />
-        <Input aria-label="模型提供商" placeholder="提供商" value={draft.provider} onChange={event => setDraft(current => ({ ...current, provider: event.target.value }))} />
+        <Select value={draft.provider || ALL_PROVIDERS_VALUE} onValueChange={value => setDraft(current => ({ ...current, provider: value === ALL_PROVIDERS_VALUE ? '' : value }))}><SelectTrigger aria-label="模型提供商">{selectedProvider ? <span className="flex min-w-0 items-center gap-2"><span aria-hidden="true"><ProviderIcon providerId={selectedProvider.value} size={18} /></span><span className="truncate">{selectedProvider.label}</span></span> : <span>不限</span>}</SelectTrigger><SelectContent><SelectItem value={ALL_PROVIDERS_VALUE}>不限</SelectItem>{renderedProviderOptions.map(option => <SelectItem key={option.value} value={option.value} textValue={option.label}><span aria-hidden="true"><ProviderIcon providerId={option.value} size={18} /></span><span>{option.label}</span></SelectItem>)}</SelectContent></Select>
         <select aria-label="模型目录状态" className="h-9 rounded-md border border-input bg-background px-3 text-sm" value={draft.catalog_status} onChange={event => setDraft(current => ({ ...current, catalog_status: event.target.value }))}><option value="">目录状态不限</option><option value="active">当前模型</option><option value="historical">历史模型</option><option value="unknown">状态未知</option></select>
         <Button type="submit"><Filter />筛选</Button>
       </form>
@@ -72,12 +87,13 @@ function ModelRow({ model, onOpen }: { model: AdminModelSummary; onOpen: (modelI
   const recentActivity = formatCompactAdminDate(model.last_used_at);
   const recentActivityFull = formatAdminDate(model.last_used_at);
   const providerLabel = model.provider_display?.trim() || model.provider?.trim() || '未记录';
+  const providerId = model.provider?.trim() || '';
   return (
     <tr className="border-t border-border/60 align-top">
-      <td className="px-3 py-3"><div className="truncate font-medium" title={model.name || model.model_id}>{model.name || model.model_id}</div><div className="mt-1 break-all text-xs text-muted-foreground">{model.model_id}</div><div className="mt-1 truncate text-xs text-muted-foreground" title={providerLabel}>{providerLabel}</div></td>
+      <td className="px-3 py-3"><div className="truncate font-medium" title={model.name || model.model_id}>{model.name || model.model_id}</div><div className="mt-1 break-all text-xs text-muted-foreground">{model.model_id}</div><div className="mt-1 flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">{providerId ? <span aria-hidden="true"><ProviderIcon providerId={providerId} size={16} /></span> : null}<span className="truncate" title={providerLabel}>{providerLabel}</span></div></td>
       <td className="px-3 py-3"><div className="flex flex-wrap gap-1"><Badge variant="outline">{catalogStatusLabel(model.catalog_status, 'badge')}</Badge><Badge variant="outline">{healthLabel(model.health?.status)}</Badge></div></td>
       <td className="px-3 py-3"><CapabilityBadges capabilities={model.capabilities} maxVisible={2} /></td>
-      <td className="px-3 py-3"><dl className="grid grid-cols-3 gap-x-3 gap-y-2 text-xs"><Statistic label="对话" value={formatNumber(model.conversation_count)} /><Statistic label="用户" value={formatNumber(model.user_count)} /><Statistic label="回复" value={formatNumber(model.assistant_message_count)} /><Statistic label="持久化 Token" value={formatNumber(model.input_tokens + model.output_tokens)} /><Statistic label="Agent" value={formatNumber(model.agent_run_count)} /><Statistic label="错误" value={formatNumber(model.agent_error_count)} /></dl></td>
+      <td className="px-3 py-3"><dl className="grid grid-cols-3 gap-x-3 gap-y-2 text-xs"><Statistic label="对话" value={formatNumber(model.conversation_count)} /><Statistic label="用户" value={formatNumber(model.user_count)} /><Statistic label="回复" value={formatNumber(model.assistant_message_count)} /><Statistic label="持久化 Token" value={formatNumber(model.input_tokens + model.output_tokens)} /><Statistic label="Agent 运行" value={formatNumber(model.agent_run_count)} /><Statistic label="错误" value={formatNumber(model.agent_error_count)} /></dl></td>
       <td className="px-3 py-3 text-xs"><div className="text-muted-foreground">最近活动</div>{recentActivity.dateTime ? <time className="mt-0.5 block whitespace-nowrap" dateTime={recentActivity.dateTime} title={recentActivityFull} aria-label={`最近活动 ${recentActivityFull}`}>{recentActivity.text}</time> : <div className="mt-0.5 whitespace-nowrap" aria-label={`最近活动 ${recentActivityFull}`}>{recentActivity.text}</div>}<div className="mt-2 text-muted-foreground">健康检测</div>{checkedAt === '尚未检测' ? <div className="mt-0.5 whitespace-nowrap">尚未检测</div> : <time className="mt-0.5 block whitespace-nowrap" dateTime={checkedAtCompact.dateTime} title={checkedAt} aria-label={`检测时间 ${checkedAt}`}>{checkedAtCompact.text}</time>}</td>
       <td className="px-3 py-3 text-right"><Button variant="ghost" size="sm" className="whitespace-nowrap" aria-label={`查看模型详情 ${model.model_id}`} onClick={() => onOpen(model.model_id)}>查看详情</Button></td>
     </tr>

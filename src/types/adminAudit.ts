@@ -275,6 +275,7 @@ export interface AdminModelDetail extends AdminModelSummary {
 export interface AdminModelsPage extends AdminPage<AdminModelSummary> {
   catalog_availability: 'available' | 'degraded';
   excluded_invalid_model_count: number;
+  provider_options: Array<{ value: string; label: string }>;
 }
 
 export interface PerformanceRunImportPayload {

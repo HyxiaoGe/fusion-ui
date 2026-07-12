@@ -21,9 +21,9 @@ const ProviderIcon: React.FC<ProviderIconProps> = ({
   const fallbackLabel = (normalizedProviderId[0] || '?').toUpperCase();
   
   return (
-    <div
+    <span
       className={cn(
-        "relative flex-shrink-0 overflow-hidden rounded-full bg-muted text-muted-foreground",
+        "relative inline-flex flex-shrink-0 items-center justify-center overflow-hidden rounded-full bg-muted text-muted-foreground",
         className,
       )}
       style={{ width: size, height: size }}
@@ -48,7 +48,7 @@ const ProviderIcon: React.FC<ProviderIconProps> = ({
           {fallbackLabel}
         </span>
       )}
-    </div>
+    </span>
   );
 };
 

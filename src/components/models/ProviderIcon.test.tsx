@@ -25,9 +25,12 @@ vi.mock('next/image', () => ({
 
 describe('ProviderIcon', () => {
   it('将常见 provider 别名映射到已有 svg 文件', () => {
-    render(<ProviderIcon providerId="gemini" />);
+    render(<ProviderIcon providerId="gemini" size={18} />);
 
-    expect(screen.getByTestId('provider-image')).toHaveAttribute('src', '/assets/providers/google.svg');
+    const image = screen.getByTestId('provider-image');
+    expect(image).toHaveAttribute('src', '/assets/providers/google.svg');
+    expect(image.parentElement).toHaveClass('inline-flex', 'items-center', 'justify-center');
+    expect(image.parentElement).toHaveStyle({ width: '18px', height: '18px' });
   });
 
   it('未知 provider 显示可见兜底，不让图标区域空白', () => {
