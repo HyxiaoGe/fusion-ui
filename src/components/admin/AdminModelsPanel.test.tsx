@@ -5,7 +5,7 @@ import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 const apiMocks = vi.hoisted(() => ({ getAdminModels: vi.fn(), getAdminModel: vi.fn() }));
 vi.mock('@/lib/api/adminAudit', () => apiMocks);
 vi.mock('@/components/models/ProviderIcon', () => ({
-  default: ({ providerId }: { providerId: string }) => <span data-testid="provider-icon">{providerId}</span>,
+  default: ({ providerId, size }: { providerId: string; size?: number }) => <span data-testid="provider-icon" data-size={size}>{providerId}</span>,
 }));
 
 import AdminModelsPanel, { formatModelHealthCheckedAt } from './AdminModelsPanel';
@@ -104,6 +104,24 @@ describe('AdminModelsPanel', () => {
     fireEvent.click(await screen.findByRole('option', { name: '不限' }));
     fireEvent.click(screen.getByRole('button', { name: '筛选' }));
     await waitFor(() => expect(apiMocks.getAdminModels).toHaveBeenLastCalledWith(expect.objectContaining({ page: 1, provider: '' }), expect.any(AbortSignal)));
+  });
+
+  it('提供商下拉使用舒展宽度和行距，长名称截断且不改变可访问名称', async () => {
+    const longProvider = { value: 'long-provider', label: '这是一个非常非常长的模型提供商名称' };
+    apiMocks.getAdminModels.mockResolvedValue({ ...page, provider_options: [...page.provider_options, longProvider] });
+    render(<ControlledModelsPanel />);
+    await screen.findByText('Kimi K2.5');
+    const providerSelect = screen.getByRole('combobox', { name: '模型提供商' });
+    expect(providerSelect).toHaveClass('h-9', 'w-full');
+    fireEvent.click(providerSelect);
+
+    const moonshotOption = await screen.findByRole('option', { name: 'Moonshot' });
+    expect(moonshotOption).toHaveClass('min-h-10', 'py-2', '*:[span]:last:gap-3');
+    expect(within(moonshotOption).getByTestId('provider-icon')).toHaveAttribute('data-size', '20');
+    expect(moonshotOption.closest('[data-slot="select-content"]')).toHaveClass('w-[max(232px,var(--radix-select-trigger-width))]', 'max-w-[calc(100vw-2rem)]');
+
+    const longOption = screen.getByRole('option', { name: longProvider.label });
+    expect(within(longOption).getByText(longProvider.label)).toHaveClass('min-w-0', 'flex-1', 'truncate');
   });
 
   it('翻页后继续使用不受分页影响的全量提供商选项', async () => {
