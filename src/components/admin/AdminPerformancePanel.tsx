@@ -30,12 +30,28 @@ export default function AdminPerformancePanel({ onForbidden }: { onForbidden: ()
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
   const loader = useCallback((signal: AbortSignal) => getAdminPerformanceRuns({ page, page_size: 25, environment, status }, signal), [environment, page, status]);
   const resource = useAdminAuditResource(loader, onForbidden);
+  const refreshList = () => {
+    setSelectedRunId(null);
+    resource.reload();
+  };
+  const changePage = (nextPage: number) => {
+    setSelectedRunId(null);
+    setPage(nextPage);
+  };
+  const applyFilters = (event: React.FormEvent) => {
+    event.preventDefault();
+    setSelectedRunId(null);
+    setPage(1);
+    setEnvironment(environmentDraft.trim());
+    setStatus(statusDraft.trim());
+    resource.reload();
+  };
 
   return (
     <section>
-      <AdminPanelHeader title="压测记录" description="压测聊天清理后，脱敏汇总仍独立保留在这里。" action={<Button variant="outline" size="sm" onClick={resource.reload}><RefreshCw />刷新</Button>} />
-      <PerformanceRunImport onImported={resource.reload} onForbidden={onForbidden} />
-      <form className="my-4 grid max-w-2xl gap-2 sm:grid-cols-[1fr_1fr_auto]" onSubmit={event => { event.preventDefault(); setPage(1); setEnvironment(environmentDraft.trim()); setStatus(statusDraft.trim()); }}><Input aria-label="压测环境" placeholder="环境，例如 production" value={environmentDraft} onChange={event => setEnvironmentDraft(event.target.value)} /><Input aria-label="压测状态" placeholder="状态，例如 completed" value={statusDraft} onChange={event => setStatusDraft(event.target.value)} /><Button type="submit" variant="outline">筛选</Button></form>
+      <AdminPanelHeader title="压测记录" description="压测聊天清理后，脱敏汇总仍独立保留在这里。" action={<Button variant="outline" size="sm" aria-label="刷新压测列表" onClick={refreshList}><RefreshCw />刷新</Button>} />
+      <PerformanceRunImport onImported={refreshList} onForbidden={onForbidden} />
+      <form className="my-4 grid max-w-2xl gap-2 sm:grid-cols-[1fr_1fr_auto]" onSubmit={applyFilters}><Input aria-label="压测环境" placeholder="环境，例如 production" value={environmentDraft} onChange={event => setEnvironmentDraft(event.target.value)} /><Input aria-label="压测状态" placeholder="状态，例如 completed" value={statusDraft} onChange={event => setStatusDraft(event.target.value)} /><Button type="submit" variant="outline">筛选</Button></form>
       {resource.loading ? <AdminLoading /> : resource.error ? <AdminError message={resource.error} onRetry={resource.reload} /> : null}
       {resource.data && resource.data.items.length === 0 ? <AdminEmpty>暂无压测记录</AdminEmpty> : null}
       {resource.data && resource.data.items.length > 0 ? <><div className="space-y-3">{resource.data.items.map(run => {
@@ -68,7 +84,7 @@ export default function AdminPerformancePanel({ onForbidden }: { onForbidden: ()
             {selected ? <AdminPerformanceRunDetail id={detailId} runId={run.run_id} onForbidden={onForbidden} /> : null}
           </article>
         );
-      })}</div><AdminPagination page={resource.data} onPageChange={setPage} /></> : null}
+      })}</div><AdminPagination page={resource.data} onPageChange={changePage} /></> : null}
     </section>
   );
 }

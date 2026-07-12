@@ -9,6 +9,35 @@ const withBundleAnalyzer = process.env.ANALYZE === 'true'
 
 const baseContentSecurityPolicy = "default-src * 'unsafe-inline' 'unsafe-eval'; img-src * data: blob:; font-src * data:; style-src * 'unsafe-inline';"
 
+function configuredAuthOrigin() {
+  const raw = process.env.NEXT_PUBLIC_AUTH_SERVICE_BASE_URL
+  if (!raw) return null
+  try {
+    const parsed = new URL(raw)
+    if (!['http:', 'https:'].includes(parsed.protocol) || parsed.username || parsed.password) return null
+    return parsed.origin
+  } catch {
+    return null
+  }
+}
+
+function buildAdminContentSecurityPolicy() {
+  const authOrigin = configuredAuthOrigin()
+  const authCapableSources = ["'self'", ...(authOrigin ? [authOrigin] : [])].join(' ')
+  return [
+    "default-src 'self'",
+    "object-src 'none'",
+    "base-uri 'none'",
+    `form-action ${authCapableSources}`,
+    "frame-ancestors 'none'",
+    `connect-src ${authCapableSources}`,
+    "script-src 'self' 'unsafe-inline'",
+    "style-src 'self' 'unsafe-inline'",
+    "img-src 'self' data: blob: https:",
+    "font-src 'self' data: https://fonts.gstatic.com",
+  ].join('; ')
+}
+
 const nextConfig = {
   reactStrictMode: true,
   // 实验性功能 - 移除不支持的选项
@@ -81,7 +110,7 @@ const nextConfig = {
         headers: [
           {
             key: 'Content-Security-Policy',
-            value: `${baseContentSecurityPolicy} frame-ancestors 'none';`
+            value: `${buildAdminContentSecurityPolicy()};`
           },
           {
             key: 'X-Frame-Options',

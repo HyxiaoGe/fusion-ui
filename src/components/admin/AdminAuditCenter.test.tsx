@@ -67,14 +67,14 @@ describe('AdminAuditCenter', () => {
       }],
     });
     const { rerender } = render(<AdminAuditCenter />);
-    expect(await screen.findByText('secret-user')).toBeInTheDocument();
+    expect(await screen.findByText('@secret-user')).toBeInTheDocument();
 
     apiMocks.getAdminUsers.mockRejectedValue(new ApiError('FORBIDDEN', 'Forbidden', 'req-1'));
     fireEvent.click(screen.getByRole('button', { name: '刷新用户列表' }));
     rerender(<AdminAuditCenter />);
 
     expect(await screen.findByText('管理员权限已失效')).toBeInTheDocument();
-    expect(screen.queryByText('secret-user')).toBeNull();
+    expect(screen.queryByText('@secret-user')).toBeNull();
   });
 
   it('敏感用户详情返回 403 时同样卸载并清空已加载列表', async () => {
@@ -89,12 +89,12 @@ describe('AdminAuditCenter', () => {
     });
     apiMocks.getAdminUser.mockRejectedValue(new ApiError('FORBIDDEN', '需要管理员权限', 'req-detail'));
     render(<AdminAuditCenter />);
-    expect(await screen.findByText('secret-user')).toBeInTheDocument();
+    expect(await screen.findByText('@secret-user')).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('button', { name: '查看详情' }));
+    fireEvent.click(screen.getByRole('button', { name: '查看用户详情 user-1' }));
 
     expect(await screen.findByText('管理员权限已失效')).toBeInTheDocument();
-    expect(screen.queryByText('secret-user')).toBeNull();
+    expect(screen.queryByText('@secret-user')).toBeNull();
   });
 
   it('压测详情返回 403 时卸载整个审计中心并清空压测列表', async () => {

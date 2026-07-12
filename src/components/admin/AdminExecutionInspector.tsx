@@ -35,6 +35,11 @@ export default function AdminExecutionInspector({ runs, toolCalls }: AdminExecut
                     <span className="font-medium">步骤 {step.step_number}</span>
                     <span className="text-muted-foreground">{step.status} · {formatDuration(step.duration_ms)}</span>
                   </div>
+                  {step.tool_calls.length > 0 ? (
+                    <div className="mt-1 text-muted-foreground">
+                      关联工具：{step.tool_calls.map(call => `${call.tool_name}（${call.status}）`).join('、')}
+                    </div>
+                  ) : null}
                 </div>
               ))}
             </div>

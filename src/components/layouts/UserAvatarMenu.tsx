@@ -16,7 +16,6 @@ import { resetConversationState } from "@/redux/slices/conversationSlice";
 import { resetFileUploadState } from "@/redux/slices/fileUploadSlice";
 import { endStream } from "@/redux/slices/streamSlice";
 import { Settings, LogOut, LogIn, ShieldCheck } from "lucide-react";
-import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { LoginDialog } from "@/components/auth/LoginDialog";
 import { proxiedAvatar } from "@/lib/auth/avatar";
@@ -24,7 +23,6 @@ import { useHasMounted } from "@/hooks/useHasMounted";
 
 export function UserAvatarMenu() {
   const dispatch = useAppDispatch();
-  const router = useRouter();
   const { isAuthenticated, user, sessionResolved, status: authStatus } = useAppSelector((state) => state.auth);
   const [isLoginDialogOpen, setIsLoginDialogOpen] = useState(false);
   // 登录态来自 localStorage，SSR 与首个 hydration 帧都无从得知 → getInitialAuthState 返回未登录，
@@ -64,10 +62,6 @@ export function UserAvatarMenu() {
 
   const handleOpenSettings = () => {
     dispatch(openSettingsDialog({}));
-  };
-
-  const handleOpenAdmin = () => {
-    router.push('/admin');
   };
 
   const handleLogout = () => {
@@ -165,9 +159,12 @@ export function UserAvatarMenu() {
           </DropdownMenuItem>
 
           {authStatus === 'succeeded' && user?.is_superuser ? (
-            <DropdownMenuItem onClick={handleOpenAdmin} className="flex items-center cursor-pointer">
-              <ShieldCheck className="mr-2 h-4 w-4" />
-              <span>管理中心</span>
+            <DropdownMenuItem asChild>
+              {/* 管理中心使用独立 CSP，必须整页导航才能让 document 策略生效。 */}
+              <a href="/admin" className="flex cursor-pointer items-center">
+                <ShieldCheck className="mr-2 h-4 w-4" />
+                <span>管理中心</span>
+              </a>
             </DropdownMenuItem>
           ) : null}
           

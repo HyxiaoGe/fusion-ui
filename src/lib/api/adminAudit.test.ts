@@ -9,7 +9,9 @@ vi.mock('./fetchWithAuth', () => ({
 import {
   getAdminAuditEvents,
   getAdminConversation,
+  getAdminConversationAgentRuns,
   getAdminConversations,
+  getAdminConversationToolCalls,
   getAdminPerformanceRun,
   getAdminPerformanceRuns,
   getAdminUsers,
@@ -91,6 +93,16 @@ describe('管理员审计 API', () => {
     expect(apiRequestMock.mock.calls.map(call => call[0])).toEqual([
       '/api/admin/audit/events?page=3&page_size=100&action=conversation.view',
       '/api/admin/audit/performance-runs?page=1&page_size=25&environment=prod',
+    ]);
+  });
+
+  it('Agent runs 与 tool calls 分别编码各自页码', async () => {
+    await getAdminConversationAgentRuns('conv/a', { page: 2, page_size: 25 });
+    await getAdminConversationToolCalls('conv/a', { page: 3, page_size: 10 });
+
+    expect(apiRequestMock.mock.calls.map(call => call[0])).toEqual([
+      '/api/admin/audit/conversations/conv%2Fa/agent-runs?page=2&page_size=25',
+      '/api/admin/audit/conversations/conv%2Fa/tool-calls?page=3&page_size=10',
     ]);
   });
 });

@@ -16,7 +16,13 @@ describe('/admin 防点击劫持响应头', () => {
 
     expect(adminRule).toBeDefined();
     expect(headers['content-security-policy']).toContain("frame-ancestors 'none'");
-    expect(headers['content-security-policy']).toContain('default-src');
+    expect(headers['content-security-policy']).toContain("default-src 'self'");
+    expect(headers['content-security-policy']).toContain("object-src 'none'");
+    expect(headers['content-security-policy']).toContain("base-uri 'none'");
+    expect(headers['content-security-policy']).toContain("form-action 'self'");
+    expect(headers['content-security-policy']).toContain("connect-src 'self'");
+    expect(headers['content-security-policy']).toContain("script-src 'self' 'unsafe-inline'");
+    expect(headers['content-security-policy']).not.toContain("'unsafe-eval'");
     expect(headers['x-frame-options']).toBe('DENY');
   });
 
@@ -36,5 +42,32 @@ describe('/admin 防点击劫持响应头', () => {
     const globalRule = rules.find(rule => rule.source === '/:path*');
 
     expect(globalRule?.headers.some(header => header.key === 'X-Frame-Options')).toBe(false);
+  });
+
+  it('仅把配置的 auth-service origin 加入 connect-src 与 form-action', async () => {
+    const previous = process.env.NEXT_PUBLIC_AUTH_SERVICE_BASE_URL;
+    try {
+      delete process.env.NEXT_PUBLIC_AUTH_SERVICE_BASE_URL;
+      const withoutAuth = await nextConfig.headers();
+      const withoutAuthCsp = withoutAuth
+        .find(rule => rule.source === '/admin/:path*')
+        ?.headers.find(header => header.key === 'Content-Security-Policy')?.value;
+      expect(withoutAuthCsp).toContain("connect-src 'self';");
+      expect(withoutAuthCsp).toContain("form-action 'self';");
+
+      process.env.NEXT_PUBLIC_AUTH_SERVICE_BASE_URL = 'https://auth.seanfield.org/oauth/path?ignored=1';
+      const withAuth = await nextConfig.headers();
+      const withAuthCsp = withAuth
+        .find(rule => rule.source === '/admin/:path*')
+        ?.headers.find(header => header.key === 'Content-Security-Policy')?.value;
+      expect(withAuthCsp).toContain("connect-src 'self' https://auth.seanfield.org;");
+      expect(withAuthCsp).toContain("form-action 'self' https://auth.seanfield.org;");
+      expect(withAuthCsp).not.toContain('/oauth/path');
+      expect(withAuthCsp).not.toContain("connect-src 'self' https:;");
+      expect(withAuthCsp).not.toContain("form-action 'self' https:;");
+    } finally {
+      if (previous === undefined) delete process.env.NEXT_PUBLIC_AUTH_SERVICE_BASE_URL;
+      else process.env.NEXT_PUBLIC_AUTH_SERVICE_BASE_URL = previous;
+    }
   });
 });

@@ -159,7 +159,7 @@ describe('UserAvatarMenu', () => {
     expect(store.getState().settings.isSettingsDialogOpen).toBe(true);
   });
 
-  it('已确认管理员显示管理中心入口并导航到独立页面', () => {
+  it('已确认管理员通过普通链接硬导航到管理中心', () => {
     renderMenu({
       isAuthenticated: true,
       token: 'token',
@@ -173,9 +173,10 @@ describe('UserAvatarMenu', () => {
     });
 
     fireEvent.pointerDown(screen.getByRole('button'), { button: 0, ctrlKey: false });
-    fireEvent.click(screen.getByText('管理中心'));
-
-    expect(pushMock).toHaveBeenCalledWith('/admin');
+    const adminLink = screen.getByRole('menuitem', { name: '管理中心' });
+    expect(adminLink.tagName).toBe('A');
+    expect(adminLink).toHaveAttribute('href', '/admin');
+    expect(pushMock).not.toHaveBeenCalled();
   });
 
   it('普通用户不显示管理中心入口', () => {

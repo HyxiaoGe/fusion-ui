@@ -83,7 +83,10 @@ describe('AdminPerformancePanel', () => {
         error_rate: 0.01,
         stages: [
           { scenario: 'conversation_list', kind: 'http', concurrency: 10, requests: 100, failed: 0, p95_ms: null },
-          { scenario: 'sse_short', kind: 'sse', concurrency: 2, flows: 10, p95_ttft_ms: 900 },
+          {
+            scenario: 'sse_short', kind: 'sse', concurrency: 2, duration_seconds: 12.5,
+            flows: 10, p95_ttft_ms: 900,
+          },
           {
             scenario: 'disconnect_reconnect', kind: 'recovery', success_rate: 0.98,
             recovery_latency_p95_ms: 500, lost_events: 0, ordering_errors: 0,
@@ -91,6 +94,8 @@ describe('AdminPerformancePanel', () => {
           { scenario: 'cancel_stream', kind: 'stop', stop_attempted: true, stop_latency_p95_ms: 160 },
           {
             scenario: 'steady_chat', kind: 'soak', duration_seconds: 1800,
+            concurrency: 2, total: 30, successful: 29, failed: 1,
+            p50_ms: 1200, p95_ms: 3200, timeout_rate: 0.03,
             skipped_ticks: 2, tokens_per_second_p95: 23.5,
           },
         ],
@@ -115,10 +120,18 @@ describe('AdminPerformancePanel', () => {
     expect(detail).toHaveTextContent('断线恢复 P95');
     expect(detail).toHaveTextContent('500 ms');
     expect(detail).toHaveTextContent('首次可见输出 P95');
+    expect(detail).toHaveTextContent('实际墙钟耗时12.5 秒');
     expect(detail).toHaveTextContent('未覆盖事件下界');
     expect(detail).toHaveTextContent('顺序错误');
     expect(detail).toHaveTextContent('未覆盖事件下界0');
     expect(detail).toHaveTextContent('估算 Token/秒 P95');
+    expect(detail).toHaveTextContent('每 Tick flow 数2');
+    expect(detail).toHaveTextContent('Tick 样本30');
+    expect(detail).toHaveTextContent('成功 Tick29');
+    expect(detail).toHaveTextContent('失败 Tick1');
+    expect(detail).toHaveTextContent('各窗口 P50 的 P501,200 ms');
+    expect(detail).toHaveTextContent('各窗口 P95 的 P953,200 ms');
+    expect(detail).toHaveTextContent('Tick 超时率3%');
     expect(detail).toHaveTextContent('停止场景耗时 P95');
     expect(detail).toHaveTextContent('耗时 P95未采集');
     expect(detail).toHaveTextContent('API');
@@ -185,5 +198,81 @@ describe('AdminPerformancePanel', () => {
     fireEvent.click(screen.getByRole('button', { name: `收起压测详情 ${anotherRun.run_id}` }));
     await waitFor(() => expect(secondSignal.aborted).toBe(true));
     expect(screen.queryByLabelText(`压测详情 ${anotherRun.run_id}`)).toBeNull();
+  });
+
+  it('未知 schema 只显示不支持提示且不解释当前指标', async () => {
+    const unknownRun = { ...listRun, run_id: 'perf-future', schema_version: 99 };
+    apiMocks.getAdminPerformanceRuns.mockResolvedValue({ ...emptyPage, items: [unknownRun], total: 1, total_pages: 1 });
+    apiMocks.getAdminPerformanceRun.mockResolvedValue({
+      ...unknownRun,
+      imported_by_user_id: 'admin-1',
+      safe_summary: {
+        stages: [{ kind: 'http', p95_ms: 123 }],
+        resources: { api: { cpu_percent: 99 } },
+        cleanup: { conversations_deleted: 8 },
+      },
+    });
+    render(<AdminPerformancePanel onForbidden={vi.fn()} />);
+    await screen.findByText(unknownRun.run_id);
+
+    fireEvent.click(screen.getByRole('button', { name: `查看压测详情 ${unknownRun.run_id}` }));
+
+    const detail = await screen.findByLabelText(`压测详情 ${unknownRun.run_id}`);
+    expect(detail).toHaveTextContent('暂不支持 Schema v99');
+    expect(detail).not.toHaveTextContent('HTTP 基线');
+    expect(detail).not.toHaveTextContent('CPU 窗口峰值');
+    expect(detail).not.toHaveTextContent('清理对话');
+  });
+
+  it('刷新、筛选、翻页和导入成功都会清除详情且各触发一次列表请求', async () => {
+    const page = { ...emptyPage, items: [listRun], total: 26, total_pages: 2 };
+    const detail = {
+      ...listRun,
+      imported_by_user_id: 'admin-1',
+      safe_summary: { stages: [], resources: null },
+    };
+    apiMocks.getAdminPerformanceRuns.mockResolvedValue(page);
+    apiMocks.getAdminPerformanceRun.mockResolvedValue(detail);
+    render(<AdminPerformancePanel onForbidden={vi.fn()} />);
+    await screen.findByText(listRun.run_id);
+
+    const openDetail = async () => {
+      fireEvent.click(screen.getByRole('button', { name: `查看压测详情 ${listRun.run_id}` }));
+      await screen.findByLabelText(`压测详情 ${listRun.run_id}`);
+    };
+
+    await openDetail();
+    fireEvent.click(screen.getByRole('button', { name: '刷新压测列表' }));
+    await waitFor(() => expect(apiMocks.getAdminPerformanceRuns).toHaveBeenCalledTimes(2));
+    expect(screen.queryByLabelText(`压测详情 ${listRun.run_id}`)).toBeNull();
+
+    await screen.findByText(listRun.run_id);
+    await openDetail();
+    fireEvent.change(screen.getByLabelText('压测环境'), { target: { value: 'production' } });
+    fireEvent.click(screen.getByRole('button', { name: '筛选' }));
+    await waitFor(() => expect(apiMocks.getAdminPerformanceRuns).toHaveBeenCalledTimes(3));
+    expect(screen.queryByLabelText(`压测详情 ${listRun.run_id}`)).toBeNull();
+
+    await screen.findByText(listRun.run_id);
+    await openDetail();
+    fireEvent.click(screen.getByRole('button', { name: '下一页' }));
+    await waitFor(() => expect(apiMocks.getAdminPerformanceRuns).toHaveBeenCalledTimes(4));
+    expect(screen.queryByLabelText(`压测详情 ${listRun.run_id}`)).toBeNull();
+
+    await screen.findByText(listRun.run_id);
+    await openDetail();
+    fireEvent.change(screen.getByLabelText('压测结果 JSON'), {
+      target: {
+        value: JSON.stringify({
+          schema_version: 2,
+          run_id: 'perf-imported',
+          environment: 'production',
+          safe_summary: {},
+        }),
+      },
+    });
+    fireEvent.click(screen.getByRole('button', { name: '导入压测结果' }));
+    await waitFor(() => expect(apiMocks.getAdminPerformanceRuns).toHaveBeenCalledTimes(5));
+    expect(screen.queryByLabelText(`压测详情 ${listRun.run_id}`)).toBeNull();
   });
 });

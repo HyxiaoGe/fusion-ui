@@ -5,6 +5,7 @@ import { Bot, CheckCircle, ChevronDown, FileText, User } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import type { AdminJsonValue, AdminKnownContentBlock, AdminMessageRecord } from '@/types/adminAudit';
 import AdminSafeMarkdown from './AdminSafeMarkdown';
+import { formatAdminDate } from './AdminPanelPrimitives';
 
 const KNOWN_BLOCK_TYPES = new Set(['text', 'thinking', 'file', 'search', 'url_read']);
 
@@ -30,7 +31,7 @@ export default function AdminMessageCard({ message }: { message: AdminMessageRec
           {message.model_id ? <Badge variant="outline">{message.model_id}</Badge> : null}
         </div>
         <div className="text-xs text-muted-foreground">
-          {formatDateTime(message.created_at)}
+          {formatAdminDate(message.created_at)}
         </div>
       </header>
 
@@ -84,15 +85,15 @@ function MetadataBlock({ block }: { block: AdminKnownContentBlock }) {
   }
 
   if (block.type === 'search') {
-    return <SafeProjection title="联网搜索" value={block.query || toSafeJsonValue(block)} />;
+    return <SafeProjection title="联网搜索" value={block.query || '内容已隐藏'} />;
   }
 
   if (block.type === 'url_read') {
-    return <SafeProjection title="网页读取" value={block.title || block.url || toSafeJsonValue(block)} />;
+    return <SafeProjection title="网页读取" value={block.title || block.url || '内容已隐藏'} />;
   }
 
   if (!KNOWN_BLOCK_TYPES.has(block.type)) {
-    return <SafeProjection title={`未知内容块：${block.type}`} value={toSafeJsonValue(block)} />;
+    return <SafeProjection title={`未知内容块：${block.type}`} value="内容已隐藏" />;
   }
 
   return null;
@@ -112,16 +113,4 @@ function SafeProjection({ title, value }: { title: string; value: AdminJsonValue
 function formatSafeJson(value: AdminJsonValue | undefined): string {
   if (typeof value === 'string') return value;
   return JSON.stringify(value ?? null, null, 2);
-}
-
-function toSafeJsonValue(block: AdminKnownContentBlock): AdminJsonValue {
-  return Object.fromEntries(
-    Object.entries(block).filter((entry): entry is [string, AdminJsonValue] => entry[1] !== undefined),
-  );
-}
-
-function formatDateTime(value: string | null): string {
-  if (!value) return '时间未知';
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? value : date.toLocaleString('zh-CN', { hour12: false });
 }

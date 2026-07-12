@@ -15,7 +15,7 @@ vi.mock('@/lib/db/chatStore', () => ({
 import AdminMessageCard from './AdminMessageCard';
 
 describe('AdminMessageCard 只读边界', () => {
-  it('渲染已知与未知 block，但不提供任何聊天 mutation 操作', () => {
+  it('未知 block 只显示隐藏占位，不透传 JSON 内容', () => {
     render(<AdminMessageCard message={{
       id: 'msg-1',
       role: 'assistant',
@@ -25,13 +25,15 @@ describe('AdminMessageCard 只读边界', () => {
       content: [
         { type: 'thinking', id: 'b1', thinking: '内部推理摘要' },
         { type: 'text', id: 'b2', text: '最终回答' },
-        { type: 'future_block', id: 'b3', safe: '保留内容' },
+        { type: 'future_block', id: 'b3', safe: 'private-future-value' },
       ],
     }} />);
 
     expect(screen.getByText('最终回答')).toBeInTheDocument();
     expect(screen.getByText('未知内容块：future_block')).toBeInTheDocument();
-    expect(screen.getByText(/保留内容/)).toBeInTheDocument();
+    expect(screen.getByText('内容已隐藏')).toBeInTheDocument();
+    expect(screen.queryByText(/private-future-value/)).toBeNull();
+    expect(screen.getByTestId('admin-message-msg-1')).toHaveTextContent('2026/7/11 18:00:00（北京时间）');
     for (const name of ['编辑', '重新发送', '重新生成', '继续执行', '停止', '删除', '导出']) {
       expect(screen.queryByRole('button', { name })).toBeNull();
     }

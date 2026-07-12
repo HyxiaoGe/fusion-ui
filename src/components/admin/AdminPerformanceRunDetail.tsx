@@ -31,6 +31,23 @@ const STAGE_KIND_LABEL: Record<string, string> = {
   soak: '稳定性压测',
 };
 
+const SUPPORTED_SCHEMA_VERSIONS = new Set([1, 2]);
+
+const STAGE_METRIC_LABELS_BY_KIND: Record<string, Record<string, string>> = {
+  sse: {
+    duration_seconds: '实际墙钟耗时',
+  },
+  soak: {
+    concurrency: '每 Tick flow 数',
+    total: 'Tick 样本',
+    successful: '成功 Tick',
+    failed: '失败 Tick',
+    p50_ms: '各窗口 P50 的 P50',
+    p95_ms: '各窗口 P95 的 P95',
+    timeout_rate: 'Tick 超时率',
+  },
+};
+
 const STAGE_METRICS: MetricDefinition[] = [
   ['concurrency', '并发数'],
   ['duration_seconds', '计划时长', 'seconds'],
@@ -174,6 +191,11 @@ function MetricGrid({ source, definitions }: { source: object; definitions: Metr
 
 function StageCard({ stage, index }: { stage: AdminPerformanceStageSummary; index: number }) {
   const kind = typeof stage.kind === 'string' ? stage.kind : '';
+  const definitions = STAGE_METRICS.map(([key, label, format]): MetricDefinition => [
+    key,
+    STAGE_METRIC_LABELS_BY_KIND[kind]?.[key] || label,
+    format,
+  ]);
   return (
     <article className="min-w-0 rounded-xl border border-border/70 bg-card p-3 sm:p-4">
       <header className="mb-3 flex min-w-0 flex-wrap items-center gap-2">
@@ -181,7 +203,7 @@ function StageCard({ stage, index }: { stage: AdminPerformanceStageSummary; inde
         <h4 className="font-medium">{STAGE_KIND_LABEL[kind] || kind || `阶段 ${index + 1}`}</h4>
         {typeof stage.scenario === 'string' ? <span className="min-w-0 break-all text-xs text-muted-foreground">{stage.scenario}</span> : null}
       </header>
-      <MetricGrid source={stage} definitions={STAGE_METRICS} />
+      <MetricGrid source={stage} definitions={definitions} />
     </article>
   );
 }
@@ -235,50 +257,57 @@ function RunContent({ run }: { run: AdminPerformanceRunDetailData }) {
       </div>
       <p className="text-xs text-muted-foreground">状态仅表示压测流程结果，不等同于零错误或服务崩溃。</p>
 
-      <MetricGrid source={summary} definitions={SUMMARY_METRICS} />
+      {!SUPPORTED_SCHEMA_VERSIONS.has(run.schema_version) ? (
+        <AdminEmpty>暂不支持 Schema v{run.schema_version}，为避免误读已隐藏当前指标</AdminEmpty>
+      ) : (
+        <>
 
-      <section>
-        <h3 className="mb-2 text-sm font-semibold">停止原因</h3>
-        {stopReasons.length > 0 ? (
-          <ul className="flex flex-wrap gap-2">{stopReasons.map(reason => <li key={reason}><Badge variant="outline" className="break-all">{reason}</Badge></li>)}</ul>
-        ) : <p className="text-sm text-muted-foreground">未报告停止原因</p>}
-      </section>
+          <MetricGrid source={summary} definitions={SUMMARY_METRICS} />
 
-      <section>
-        <h3 className="mb-2 text-sm font-semibold">L1-L4 阶段</h3>
-        {stages.length > 0 ? (
-          <div data-testid="performance-stage-grid" className="grid grid-cols-1 gap-3 xl:grid-cols-2">
-            {stages.map((stage, index) => <StageCard key={`${stage.scenario || stage.kind || 'stage'}-${index}`} stage={stage} index={index} />)}
-          </div>
-        ) : <AdminEmpty>暂无阶段汇总</AdminEmpty>}
-      </section>
+          <section>
+            <h3 className="mb-2 text-sm font-semibold">停止原因</h3>
+            {stopReasons.length > 0 ? (
+              <ul className="flex flex-wrap gap-2">{stopReasons.map(reason => <li key={reason}><Badge variant="outline" className="break-all">{reason}</Badge></li>)}</ul>
+            ) : <p className="text-sm text-muted-foreground">未报告停止原因</p>}
+          </section>
 
-      <section>
-        <h3 className="mb-2 text-sm font-semibold">资源快照</h3>
-        <Resources resources={summary.resources} />
-      </section>
+          <section>
+            <h3 className="mb-2 text-sm font-semibold">L1-L4 阶段</h3>
+            {stages.length > 0 ? (
+              <div data-testid="performance-stage-grid" className="grid grid-cols-1 gap-3 xl:grid-cols-2">
+                {stages.map((stage, index) => <StageCard key={`${stage.scenario || stage.kind || 'stage'}-${index}`} stage={stage} index={index} />)}
+              </div>
+            ) : <AdminEmpty>暂无阶段汇总</AdminEmpty>}
+          </section>
 
-      <section>
-        <h3 className="mb-2 text-sm font-semibold">清理结果</h3>
-        {cleanup ? (
-          <div className="space-y-2">
-            <MetricGrid source={{
-              conversations_deleted: cleanup.conversations_deleted,
-              tokens_revoked: cleanup.tokens_revoked,
-              users_deleted: cleanup.users_deleted,
-              agent_steps_deleted: cleanup.agent_steps_deleted,
-            }} definitions={[
-              ['conversations_deleted', '清理对话'],
-              ['tokens_revoked', '撤销令牌'],
-              ['users_deleted', '清理用户'],
-              ['agent_steps_deleted', '清理 Agent 步骤'],
-            ]} />
-            {cleanup.errors && cleanup.errors.length > 0 ? (
-              <p className="break-words text-xs text-muted-foreground">清理提示：{cleanup.errors.join('、')}</p>
-            ) : <p className="text-xs text-muted-foreground">未报告清理错误</p>}
-          </div>
-        ) : <AdminEmpty>暂无清理汇总</AdminEmpty>}
-      </section>
+          <section>
+            <h3 className="mb-2 text-sm font-semibold">资源快照</h3>
+            <Resources resources={summary.resources} />
+          </section>
+
+          <section>
+            <h3 className="mb-2 text-sm font-semibold">清理结果</h3>
+            {cleanup ? (
+              <div className="space-y-2">
+                <MetricGrid source={{
+                  conversations_deleted: cleanup.conversations_deleted,
+                  tokens_revoked: cleanup.tokens_revoked,
+                  users_deleted: cleanup.users_deleted,
+                  agent_steps_deleted: cleanup.agent_steps_deleted,
+                }} definitions={[
+                  ['conversations_deleted', '清理对话'],
+                  ['tokens_revoked', '撤销令牌'],
+                  ['users_deleted', '清理用户'],
+                  ['agent_steps_deleted', '清理 Agent 步骤'],
+                ]} />
+                {cleanup.errors && cleanup.errors.length > 0 ? (
+                  <p className="break-words text-xs text-muted-foreground">清理提示：{cleanup.errors.join('、')}</p>
+                ) : <p className="text-xs text-muted-foreground">未报告清理错误</p>}
+              </div>
+            ) : <AdminEmpty>暂无清理汇总</AdminEmpty>}
+          </section>
+        </>
+      )}
     </div>
   );
 }

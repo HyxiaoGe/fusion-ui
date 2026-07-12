@@ -17,6 +17,7 @@ import { Input } from '@/components/ui/input';
 import type { AdminConversationsQuery } from '@/types/adminAudit';
 import AdminExecutionInspector from './AdminExecutionInspector';
 import AdminMessageCard from './AdminMessageCard';
+import AdminUserIdentity from './AdminUserIdentity';
 import {
   AdminEmpty, AdminError, AdminLoading, AdminPagination, AdminPanelHeader, formatAdminDate, formatNumber,
 } from './AdminPanelPrimitives';
@@ -92,11 +93,11 @@ export default function AdminConversationsPanel({ onForbidden }: { onForbidden: 
               <tbody>{resource.data.items.map(conversation => (
                 <tr key={conversation.id} className="border-t border-border/60">
                   <td className="p-3"><div className="max-w-xs truncate font-medium" title={conversation.title}>{conversation.title || '未命名对话'}</div><div className="mt-1 text-xs text-muted-foreground">{conversation.id}</div></td>
-                  <td>{conversation.user.nickname || conversation.user.username}<div className="text-xs text-muted-foreground">{conversation.user.email_masked || conversation.user.id}</div></td>
+                  <td><AdminUserIdentity user={conversation.user} /></td>
                   <td>{conversation.model_id || '—'}</td><td>{conversation.message_count}</td><td>{conversation.tool_call_count}</td><td>{conversation.file_count}</td>
                   <td>{conversation.latest_agent_status ? <Badge variant="outline">{conversation.latest_agent_status}</Badge> : '—'}</td>
                   <td>{formatNumber(conversation.input_tokens + conversation.output_tokens)}</td>
-                  <td className="pr-3 text-right"><Button variant="ghost" size="sm" onClick={() => setSelectedConversationId(conversation.id)}>查看详情</Button></td>
+                  <td className="pr-3 text-right"><Button variant="ghost" size="sm" aria-label={`查看对话详情 ${conversation.id}`} onClick={() => setSelectedConversationId(conversation.id)}>查看详情</Button></td>
                 </tr>
               ))}</tbody>
             </table>
@@ -110,12 +111,13 @@ export default function AdminConversationsPanel({ onForbidden }: { onForbidden: 
 
 function AdminConversationDetailView({ conversationId, onBack, onForbidden }: { conversationId: string; onBack: () => void; onForbidden: () => void }) {
   const [messagePage, setMessagePage] = useState(1);
-  const [executionPage, setExecutionPage] = useState(1);
+  const [runPage, setRunPage] = useState(1);
+  const [toolPage, setToolPage] = useState(1);
   const [filePage, setFilePage] = useState(1);
   const detailLoader = useCallback((signal: AbortSignal) => getAdminConversation(conversationId, signal), [conversationId]);
   const messageLoader = useCallback((signal: AbortSignal) => getAdminConversationMessages(conversationId, { page: messagePage, page_size: 25 }, signal), [conversationId, messagePage]);
-  const toolLoader = useCallback((signal: AbortSignal) => getAdminConversationToolCalls(conversationId, { page: executionPage, page_size: 25 }, signal), [conversationId, executionPage]);
-  const runLoader = useCallback((signal: AbortSignal) => getAdminConversationAgentRuns(conversationId, { page: executionPage, page_size: 25 }, signal), [conversationId, executionPage]);
+  const toolLoader = useCallback((signal: AbortSignal) => getAdminConversationToolCalls(conversationId, { page: toolPage, page_size: 25 }, signal), [conversationId, toolPage]);
+  const runLoader = useCallback((signal: AbortSignal) => getAdminConversationAgentRuns(conversationId, { page: runPage, page_size: 25 }, signal), [conversationId, runPage]);
   const fileLoader = useCallback((signal: AbortSignal) => getAdminConversationFiles(conversationId, { page: filePage, page_size: 25 }, signal), [conversationId, filePage]);
   const detail = useAdminAuditResource(detailLoader, onForbidden);
   const messages = useAdminAuditResource(messageLoader, onForbidden);
@@ -124,12 +126,12 @@ function AdminConversationDetailView({ conversationId, onBack, onForbidden }: { 
   const files = useAdminAuditResource(fileLoader, onForbidden);
 
   return (
-    <section>
+    <section aria-label={`对话详情 ${conversationId}`}>
       <Button variant="ghost" size="sm" className="mb-3" onClick={onBack}><ArrowLeft />返回对话列表</Button>
       {detail.loading ? <AdminLoading /> : detail.error ? <AdminError message={detail.error} onRetry={detail.reload} /> : detail.data ? (
         <div className="mb-4 rounded-xl border border-border bg-card p-4">
           <h1 className="text-lg font-semibold">{detail.data.title || '未命名对话'}</h1>
-          <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground"><span>{detail.data.id}</span><span>用户：{detail.data.user.nickname || detail.data.user.username}</span><span>模型：{detail.data.model_id || '—'}</span><span>更新时间：{formatAdminDate(detail.data.updated_at)}</span></div>
+          <div className="mt-2 grid gap-3 text-xs text-muted-foreground sm:grid-cols-2"><div><span>对话 ID：{detail.data.id}</span><div className="mt-1">模型：{detail.data.model_id || '—'}</div><div>更新时间：{formatAdminDate(detail.data.updated_at)}</div></div><AdminUserIdentity user={detail.data.user} /></div>
         </div>
       ) : null}
 
@@ -142,13 +144,17 @@ function AdminConversationDetailView({ conversationId, onBack, onForbidden }: { 
         </div>
 
         <div className="space-y-6">
-          <div><h2 className="mb-3 font-semibold">Agent 与工具</h2>
-            {runs.loading || tools.loading ? <AdminLoading /> : runs.error || tools.error ? <AdminError message={runs.error || tools.error || '执行记录读取失败'} onRetry={() => { runs.reload(); tools.reload(); }} /> : (
-              runs.data && tools.data && (runs.data.items.length > 0 || tools.data.items.length > 0)
-                ? <><AdminExecutionInspector runs={runs.data.items} toolCalls={tools.data.items} /><AdminPagination page={runs.data.total >= tools.data.total ? runs.data : tools.data} onPageChange={setExecutionPage} /></>
-                : <AdminEmpty>没有 Agent 或工具记录</AdminEmpty>
-            )}
-          </div>
+          <section aria-label="Agent 运行记录"><h2 className="mb-3 font-semibold">Agent 运行</h2>
+            {runs.loading ? <AdminLoading /> : runs.error ? <AdminError message={runs.error} onRetry={runs.reload} /> : runs.data?.items.length ? (
+              <><AdminExecutionInspector runs={runs.data.items} toolCalls={[]} /><AdminPagination page={runs.data} onPageChange={setRunPage} /></>
+            ) : <AdminEmpty>没有 Agent 运行记录</AdminEmpty>}
+          </section>
+
+          <section aria-label="工具调用记录"><h2 className="mb-3 font-semibold">工具调用</h2>
+            {tools.loading ? <AdminLoading /> : tools.error ? <AdminError message={tools.error} onRetry={tools.reload} /> : tools.data?.items.length ? (
+              <><AdminExecutionInspector runs={[]} toolCalls={tools.data.items} /><AdminPagination page={tools.data} onPageChange={setToolPage} /></>
+            ) : <AdminEmpty>没有工具调用记录</AdminEmpty>}
+          </section>
 
           <div><h2 className="mb-3 font-semibold">文件元数据</h2>
             {files.loading ? <AdminLoading /> : files.error ? <AdminError message={files.error} onRetry={files.reload} /> : files.data?.items.length ? (
