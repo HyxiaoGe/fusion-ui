@@ -86,6 +86,14 @@ const nextConfig = {
           {
             key: 'X-Frame-Options',
             value: 'DENY'
+          },
+          {
+            key: 'Cache-Control',
+            value: 'private, no-store'
+          },
+          {
+            key: 'Pragma',
+            value: 'no-cache'
           }
         ],
       },

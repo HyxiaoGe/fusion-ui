@@ -4,6 +4,8 @@ import type {
   AdminConversationSummary,
   AdminFileRecord,
   AdminMessageRecord,
+  AdminPerformanceRunDetail,
+  AdminPerformanceRunSummary,
   AdminToolCallRecord,
   AdminUserSummary,
 } from './adminAudit';
@@ -48,13 +50,24 @@ describe('管理员审计后端 DTO 契约', () => {
       id: 'file-1', original_filename: 'report.pdf', mimetype: 'application/pdf', size: 100,
       status: 'processed', width: null, height: null, created_at: null,
     } satisfies AdminFileRecord;
+    const performanceSummary = {
+      run_id: 'perf-1', environment: 'production', model_id: null, status: 'completed', schema_version: 2,
+      started_at: null, finished_at: null, created_at: '2026-07-12T00:00:00Z',
+    } satisfies AdminPerformanceRunSummary;
+    const performanceDetail = {
+      ...performanceSummary,
+      imported_by_user_id: 'admin-1',
+      safe_summary: { stages: [{ kind: 'sse', p95_ttft_ms: 900 }], resources: null },
+    } satisfies AdminPerformanceRunDetail;
 
-    expect({ user, conversation, message, run, toolFixture, file }).toMatchObject({
+    expect({ user, conversation, message, run, toolFixture, file, performanceSummary, performanceDetail }).toMatchObject({
       user: { input_tokens: 10 },
       conversation: { output_tokens: 20 },
       run: { total_duration_ms: 42 },
       toolFixture: { trace_id: 'run-1', step_number: 1 },
       file: { original_filename: 'report.pdf', mimetype: 'application/pdf' },
+      performanceSummary: { run_id: 'perf-1' },
+      performanceDetail: { safe_summary: { resources: null } },
     });
   });
 });

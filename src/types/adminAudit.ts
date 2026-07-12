@@ -158,17 +158,74 @@ export interface AdminAuditEventRecord {
   created_at: string;
 }
 
-export interface AdminPerformanceRunRecord {
+export type AdminPerformanceStageKind = 'http' | 'sse' | 'recovery' | 'stop' | 'soak' | string;
+
+export interface AdminPerformanceStageSummary {
+  [key: string]: AdminJsonValue | undefined;
+  scenario?: string;
+  kind?: AdminPerformanceStageKind;
+  concurrency?: number;
+}
+
+export interface AdminPerformanceCleanupSummary {
+  conversations_deleted?: number;
+  tokens_revoked?: number;
+  users_deleted?: number;
+  agent_steps_deleted?: number;
+  errors?: string[];
+}
+
+export interface AdminPerformanceResourceMetrics {
+  [key: string]: AdminJsonValue | undefined;
+  cpu_percent?: number;
+  memory_mib?: number;
+  memory_percent?: number;
+  connections?: number;
+  restarts?: number;
+  rejected_connections?: number;
+  evicted_keys?: number;
+  oom?: boolean;
+}
+
+export interface AdminPerformanceResourcesSummary {
+  api?: AdminPerformanceResourceMetrics | null;
+  postgres?: AdminPerformanceResourceMetrics | null;
+  redis?: AdminPerformanceResourceMetrics | null;
+  host?: AdminPerformanceResourceMetrics | null;
+  nginx?: AdminPerformanceResourceMetrics | null;
+  litellm?: AdminPerformanceResourceMetrics | null;
+}
+
+export interface AdminPerformanceSafeSummary {
+  stages?: AdminPerformanceStageSummary[];
+  stopped?: boolean;
+  stop_reasons?: string[];
+  cleanup?: AdminPerformanceCleanupSummary;
+  resources?: AdminPerformanceResourcesSummary | null;
+  rps?: number;
+  p50_ms?: number;
+  p90_ms?: number;
+  p95_ms?: number;
+  p99_ms?: number;
+  max_ms?: number;
+  ttft_ms?: number;
+  error_rate?: number;
+}
+
+export interface AdminPerformanceRunSummary {
   run_id: string;
   environment: string;
   model_id: string | null;
   status: string;
   schema_version: number;
-  safe_summary: AdminJsonValue;
-  imported_by_user_id: string;
   started_at: string | null;
   finished_at: string | null;
   created_at: string;
+}
+
+export interface AdminPerformanceRunDetail extends AdminPerformanceRunSummary {
+  safe_summary: AdminPerformanceSafeSummary;
+  imported_by_user_id: string;
 }
 
 export interface PerformanceRunImportPayload {

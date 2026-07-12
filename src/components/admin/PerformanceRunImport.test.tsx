@@ -34,4 +34,15 @@ describe('PerformanceRunImport', () => {
     expect(onImported).toHaveBeenCalled();
     expect(screen.getByText('压测结果已导入')).toBeInTheDocument();
   });
+
+  it('重复导入时明确提示记录已存在', async () => {
+    importMock.mockResolvedValue({ run_id: 'perf-1', created: false });
+    render(<PerformanceRunImport onImported={vi.fn()} onForbidden={vi.fn()} />);
+    fireEvent.change(screen.getByLabelText('压测结果 JSON'), {
+      target: { value: JSON.stringify({ schema_version: 1, run_id: 'perf-1', environment: 'prod', safe_summary: {} }) },
+    });
+    fireEvent.click(screen.getByRole('button', { name: '导入压测结果' }));
+
+    expect(await screen.findByText('压测记录已存在')).toBeInTheDocument();
+  });
 });

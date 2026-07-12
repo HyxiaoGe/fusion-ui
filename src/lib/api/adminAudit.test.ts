@@ -10,6 +10,7 @@ import {
   getAdminAuditEvents,
   getAdminConversation,
   getAdminConversations,
+  getAdminPerformanceRun,
   getAdminPerformanceRuns,
   getAdminUsers,
   importAdminPerformanceRun,
@@ -64,7 +65,11 @@ describe('管理员审计 API', () => {
 
   it('安全编码详情资源 ID', async () => {
     await getAdminConversation('conv/a b');
-    expect(apiRequestMock).toHaveBeenCalledWith('/api/admin/audit/conversations/conv%2Fa%20b', {});
+    await getAdminPerformanceRun('perf/a b');
+    expect(apiRequestMock.mock.calls).toEqual([
+      ['/api/admin/audit/conversations/conv%2Fa%20b', {}],
+      ['/api/admin/audit/performance-runs/perf%2Fa%20b', {}],
+    ]);
   });
 
   it('压测导入只发送 JSON 请求体', async () => {

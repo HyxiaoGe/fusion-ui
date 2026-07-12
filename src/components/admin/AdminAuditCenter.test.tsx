@@ -96,4 +96,26 @@ describe('AdminAuditCenter', () => {
     expect(await screen.findByText('管理员权限已失效')).toBeInTheDocument();
     expect(screen.queryByText('secret-user')).toBeNull();
   });
+
+  it('压测详情返回 403 时卸载整个审计中心并清空压测列表', async () => {
+    apiMocks.getAdminPerformanceRuns.mockResolvedValue({
+      ...emptyPage,
+      total: 1,
+      total_pages: 1,
+      items: [{
+        run_id: 'perf-sensitive', environment: 'production', model_id: null, status: 'completed',
+        schema_version: 2, started_at: null, finished_at: null, created_at: '2026-07-12T00:00:00Z',
+      }],
+    });
+    apiMocks.getAdminPerformanceRun.mockRejectedValue(new ApiError('FORBIDDEN', '需要管理员权限', 'req-perf'));
+    render(<AdminAuditCenter initialTab="performance" />);
+    expect(await screen.findByText('perf-sensitive')).toBeInTheDocument();
+    expect(screen.getByText('完整执行')).toBeInTheDocument();
+    expect(screen.getByText(/模型未采集/)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: '查看压测详情 perf-sensitive' }));
+
+    expect(await screen.findByText('管理员权限已失效')).toBeInTheDocument();
+    expect(screen.queryByText('perf-sensitive')).toBeNull();
+  });
 });

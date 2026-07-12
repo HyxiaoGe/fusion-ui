@@ -46,9 +46,11 @@ export function AdminPagination({ page, onPageChange }: { page: Pick<AdminPage<u
 }
 
 export function formatAdminDate(value: string | null): string {
-  if (!value) return '—';
+  if (!value) return '未采集';
   const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? value : date.toLocaleString('zh-CN', { hour12: false });
+  return Number.isNaN(date.getTime())
+    ? value
+    : `${date.toLocaleString('zh-CN', { hour12: false, timeZone: 'Asia/Shanghai' })}（北京时间）`;
 }
 
 export function formatNumber(value: number | null | undefined): string {

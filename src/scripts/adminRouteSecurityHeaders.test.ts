@@ -20,6 +20,17 @@ describe('/admin 防点击劫持响应头', () => {
     expect(headers['x-frame-options']).toBe('DENY');
   });
 
+  it('禁止管理员页面及详情响应被浏览器或中间缓存保存', async () => {
+    const rules = await nextConfig.headers();
+    const adminRule = rules.find(rule => rule.source === '/admin/:path*');
+    const headers = Object.fromEntries(
+      adminRule?.headers.map(header => [header.key.toLowerCase(), header.value]) ?? [],
+    );
+
+    expect(headers['cache-control']).toBe('private, no-store');
+    expect(headers.pragma).toBe('no-cache');
+  });
+
   it('不会把 X-Frame-Options 全局扩散到普通页面规则', async () => {
     const rules = await nextConfig.headers();
     const globalRule = rules.find(rule => rule.source === '/:path*');

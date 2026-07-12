@@ -27,9 +27,9 @@ export default function PerformanceRunImport({ onImported, onForbidden }: { onIm
     setStatus('loading');
     setMessage('');
     try {
-      await importAdminPerformanceRun(candidate);
+      const result = await importAdminPerformanceRun(candidate);
       setStatus('success');
-      setMessage('压测结果已导入');
+      setMessage(result.created ? '压测结果已导入' : '压测记录已存在');
       setRaw('');
       onImported();
     } catch (error) {

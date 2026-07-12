@@ -10,7 +10,8 @@ import type {
   AdminFileRecord,
   AdminMessageRecord,
   AdminPage,
-  AdminPerformanceRunRecord,
+  AdminPerformanceRunDetail,
+  AdminPerformanceRunSummary,
   AdminPerformanceRunsQuery,
   AdminToolCallRecord,
   AdminUserDetail,
@@ -117,11 +118,11 @@ export function getAdminAuditEvents(query: AdminAuditEventsQuery = {}, signal?: 
 }
 
 export function getAdminPerformanceRuns(query: AdminPerformanceRunsQuery = {}, signal?: AbortSignal) {
-  return get<AdminPage<AdminPerformanceRunRecord>>(`/performance-runs${buildQuery(query)}`, signal);
+  return get<AdminPage<AdminPerformanceRunSummary>>(`/performance-runs${buildQuery(query)}`, signal);
 }
 
 export function getAdminPerformanceRun(runId: string, signal?: AbortSignal) {
-  return get<AdminPerformanceRunRecord>(`/performance-runs/${encodedId(runId)}`, signal);
+  return get<AdminPerformanceRunDetail>(`/performance-runs/${encodedId(runId)}`, signal);
 }
 
 export function importAdminPerformanceRun(payload: PerformanceRunImportPayload) {
