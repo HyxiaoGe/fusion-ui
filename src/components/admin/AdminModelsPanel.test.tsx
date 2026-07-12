@@ -17,7 +17,7 @@ const model = {
   agent_run_count: 7, agent_error_count: 1,
   latest_performance_run: { run_id: 'perf-1', status: 'completed', environment: 'production', started_at: '2026-07-11T00:00:00Z', finished_at: '2026-07-11T00:10:00Z' },
 };
-const page = { items: [model], total: 1, page: 1, page_size: 25, total_pages: 1, has_next: false, has_prev: false };
+const page = { items: [model], total: 1, page: 1, page_size: 25, total_pages: 1, has_next: false, has_prev: false, catalog_availability: 'available', excluded_invalid_model_count: 0 };
 const detail = {
   ...model,
   context_window_tokens: 131072,
@@ -46,19 +46,94 @@ describe('AdminModelsPanel', () => {
   it('列表紧凑展示模型健康、能力和使用摘要，不泄露配置凭据', async () => {
     render(<ControlledModelsPanel />);
     const row = (await screen.findByText('Kimi K2.5')).closest('tr') as HTMLElement;
+    const table = row.closest('table') as HTMLElement;
     expect(within(row).getByText('Moonshot')).toBeInTheDocument();
     expect(within(row).getByText('健康')).toBeInTheDocument();
-    expect(within(row).getByText(/检测于 .*北京时间/)).toBeInTheDocument();
+    expect(within(row).getByText('2026-07-12 12:00')).toBeInTheDocument();
+    expect(within(row).getByLabelText('检测时间 2026/7/12 12:00:00（北京时间）')).toHaveAttribute('title', '2026/7/12 12:00:00（北京时间）');
     expect(within(row).getByText('深度思考')).toBeInTheDocument();
-    expect(within(row).getByText(/12 个对话/)).toBeInTheDocument();
-    expect(within(row).getByText(/5 位用户/)).toBeInTheDocument();
-    expect(within(row).getByText(/34 条回复/)).toBeInTheDocument();
-    expect(row).toHaveTextContent('2,000');
+    const conversationStatistic = within(row).getByLabelText('对话 12');
+    expect(conversationStatistic).toHaveTextContent('12');
+    expect(conversationStatistic.querySelector('dd')).toHaveClass('text-sm');
+    expect(within(row).getByLabelText('用户 5')).toHaveTextContent('5');
+    expect(within(row).getByLabelText('回复 34')).toHaveTextContent('34');
+    expect(within(row).getByLabelText('持久化 Token 2,000')).toHaveTextContent('2,000');
+    expect(within(row).getByLabelText('Agent 7')).toHaveTextContent('7');
+    expect(within(row).getByLabelText('错误 1')).toHaveTextContent('1');
+    const recentActivity = within(row).getByLabelText('最近活动 2026/7/12 08:00:00（北京时间）');
+    expect(recentActivity).toHaveAttribute('title', '2026/7/12 08:00:00（北京时间）');
+    expect(recentActivity).toHaveAttribute('dateTime', '2026-07-12T00:00:00.000Z');
+    expect(recentActivity).toHaveTextContent('2026-07-12 08:00');
+    expect(within(row).queryByText('总 Token')).toBeNull();
     expect(row).not.toHaveTextContent('secretKey');
-    expect(row.closest('table')).toHaveClass('min-w-[1050px]');
-    expect(within(row.closest('table') as HTMLElement).getByText('最近活动')).toBeInTheDocument();
-    expect(within(row.closest('table') as HTMLElement).queryByText('最近使用')).toBeNull();
+    expect(table).toHaveClass('table-fixed', 'min-w-[960px]');
+    expect(within(table).getAllByRole('columnheader')).toHaveLength(6);
+    expect(within(table).getByRole('columnheader', { name: '时间（北京时间）' })).toBeInTheDocument();
+    expect(within(table).queryByRole('columnheader', { name: '提供商' })).toBeNull();
+    expect(within(table).queryByRole('columnheader', { name: 'Token' })).toBeNull();
     expect(screen.getByText(/Token 仅为当前已持久化助手消息用量，不等同平台全部调用或计费账单。/)).toBeInTheDocument();
+  });
+
+  it('历史模型缺少提供商、健康时间和能力时保持紧凑且信息完整', async () => {
+    apiMocks.getAdminModels.mockResolvedValue({
+      ...page,
+      items: [{
+        ...model,
+        model_id: 'retired-model',
+        name: '历史模型',
+        provider: null,
+        provider_display: null,
+        catalog_status: 'historical',
+        health: { status: 'unknown', error: null, checked_at: null },
+        capabilities: {},
+        last_used_at: null,
+      }],
+    });
+    render(<ControlledModelsPanel />);
+    const row = (await screen.findByRole('button', { name: '查看模型详情 retired-model' })).closest('tr') as HTMLElement;
+    expect(within(row).getByText('未记录')).toBeInTheDocument();
+    expect(within(row).getByText('历史')).toBeInTheDocument();
+    expect(within(row).getByText('尚未检测')).toBeInTheDocument();
+    expect(within(row).getByText('未标注能力')).toBeInTheDocument();
+    expect(within(row).getByLabelText('最近活动 未采集')).toHaveTextContent('未采集');
+  });
+
+  it('列表能力最多展示两项并通过弹层提供完整溢出能力，详情仍展示全部', async () => {
+    const capabilities = {
+      imageGen: true,
+      deepThinking: true,
+      fileSupport: true,
+      functionCalling: true,
+      searchCapable: true,
+      agentTools: true,
+    };
+    apiMocks.getAdminModels.mockResolvedValue({ ...page, items: [{ ...model, capabilities }] });
+    apiMocks.getAdminModel.mockResolvedValue({ ...detail, capabilities });
+    render(<ControlledModelsPanel />);
+    const row = (await screen.findByText('Kimi K2.5')).closest('tr') as HTMLElement;
+    expect(within(row).getByText('图像生成')).toBeInTheDocument();
+    expect(within(row).getByText('深度思考')).toBeInTheDocument();
+    expect(within(row).queryByText('文件处理')).toBeNull();
+    expect(within(row).queryByText('工具调用')).toBeNull();
+    expect(within(row).queryByText('联网搜索')).toBeNull();
+    expect(within(row).queryByText('Agent 工具')).toBeNull();
+    const overflowButton = within(row).getByRole('button', { name: '显示另外 4 项能力：文件处理、工具调用、联网搜索、Agent 工具' });
+    expect(overflowButton).toHaveTextContent('+4项');
+    expect(within(row).getByRole('group', { name: '模型能力：图像生成、深度思考、文件处理、工具调用、联网搜索、Agent 工具' })).toBeInTheDocument();
+    fireEvent.click(overflowButton);
+    const popover = await screen.findByLabelText('其余模型能力');
+    expect(within(popover).getByText('文件处理')).toBeInTheDocument();
+    expect(within(popover).getByText('Agent 工具')).toBeInTheDocument();
+    expect(apiMocks.getAdminModel).not.toHaveBeenCalled();
+    expect(screen.queryByLabelText('模型详情 kimi-k2.5')).toBeNull();
+    fireEvent.keyDown(document, { key: 'Escape' });
+    await waitFor(() => expect(screen.queryByLabelText('其余模型能力')).toBeNull());
+
+    fireEvent.click(within(row).getByRole('button', { name: '查看模型详情 kimi-k2.5' }));
+    const view = await screen.findByLabelText('模型详情 kimi-k2.5');
+    expect(view).toHaveTextContent('联网搜索');
+    expect(view).toHaveTextContent('Agent 工具');
+    expect(view).not.toHaveTextContent('+4项');
   });
 
   it('列表提示被安全跳过的异常历史模型数量，但不展示脏模型 ID', async () => {

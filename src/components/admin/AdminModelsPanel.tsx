@@ -4,9 +4,11 @@ import { useCallback, useState } from 'react';
 import { ArrowLeft, Filter, RefreshCw } from 'lucide-react';
 import { getAdminModel, getAdminModels } from '@/lib/api/adminAudit';
 import { useAdminAuditResource } from '@/hooks/useAdminAuditResource';
-import { Badge } from '@/components/ui/badge';
+import { Badge, badgeVariants } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { cn } from '@/lib/utils';
 import type { AdminModelDetail, AdminModelSummary } from '@/types/adminAudit';
 import {
   AdminEmpty, AdminError, AdminLoading, AdminPagination, AdminPanelHeader, formatAdminDate, formatNumber,
@@ -58,7 +60,7 @@ export default function AdminModelsPanel({
       {resource.data?.catalog_availability === 'degraded' || (resource.data?.excluded_invalid_model_count ?? 0) > 0 ? <div className="mb-3 space-y-1 text-xs text-muted-foreground">{resource.data?.catalog_availability === 'degraded' ? <p>{CATALOG_DEGRADED_MESSAGE}</p> : null}{(resource.data?.excluded_invalid_model_count ?? 0) > 0 ? <p>有 {resource.data?.excluded_invalid_model_count} 条异常模型记录未展示，请检查历史数据</p> : null}</div> : null}
       {resource.data?.items.length === 0 ? <AdminEmpty>没有匹配的模型</AdminEmpty> : null}
       {resource.data?.items.length ? (
-        <><div className="overflow-x-auto rounded-xl border border-border"><table className="w-full min-w-[1050px] text-left text-sm"><caption className="sr-only">模型运营列表</caption><thead className="bg-muted/30 text-xs text-muted-foreground"><tr><th scope="col" className="p-3">模型</th><th scope="col">提供商</th><th scope="col">状态</th><th scope="col">能力</th><th scope="col">使用摘要</th><th scope="col">Token</th><th scope="col">最近活动</th><th scope="col" className="pr-3 text-right">操作</th></tr></thead><tbody>{resource.data.items.map(model => <ModelRow key={model.model_id} model={model} onOpen={onOpen} />)}</tbody></table></div><AdminPagination page={resource.data} onPageChange={setPage} /></>
+        <><div className="overflow-x-auto rounded-xl border border-border"><table className="w-full min-w-[960px] table-fixed text-left text-sm"><caption className="sr-only">模型运营列表</caption><colgroup><col className="w-[20%]" /><col className="w-[13%]" /><col className="w-[16%]" /><col className="w-[28%]" /><col className="w-[13%]" /><col className="w-[10%]" /></colgroup><thead className="bg-muted/30 text-xs text-muted-foreground"><tr><th scope="col" className="px-3 py-3">模型</th><th scope="col" className="px-3 py-3">状态</th><th scope="col" className="px-3 py-3">能力</th><th scope="col" className="px-3 py-3">运营统计</th><th scope="col" className="px-3 py-3">时间（北京时间）</th><th scope="col" className="px-3 py-3 text-right">操作</th></tr></thead><tbody>{resource.data.items.map(model => <ModelRow key={model.model_id} model={model} onOpen={onOpen} />)}</tbody></table></div><AdminPagination page={resource.data} onPageChange={setPage} /></>
       ) : null}
     </section>
   );
@@ -66,16 +68,18 @@ export default function AdminModelsPanel({
 
 function ModelRow({ model, onOpen }: { model: AdminModelSummary; onOpen: (modelId: string) => void }) {
   const checkedAt = formatModelHealthCheckedAt(model.health?.checked_at);
+  const checkedAtCompact = formatCompactAdminDate(model.health?.checked_at);
+  const recentActivity = formatCompactAdminDate(model.last_used_at);
+  const recentActivityFull = formatAdminDate(model.last_used_at);
+  const providerLabel = model.provider_display?.trim() || model.provider?.trim() || '未记录';
   return (
     <tr className="border-t border-border/60 align-top">
-      <td className="p-3"><div className="font-medium">{model.name || model.model_id}</div><div className="mt-1 break-all text-xs text-muted-foreground">{model.model_id}</div></td>
-      <td>{model.provider_display || model.provider || '未记录'}</td>
-      <td><div className="flex flex-wrap gap-1"><Badge variant="outline">{catalogStatusLabel(model.catalog_status, 'badge')}</Badge><Badge variant="outline">{healthLabel(model.health?.status)}</Badge></div><div className="mt-1 whitespace-nowrap text-xs text-muted-foreground">{checkedAt === '尚未检测' ? checkedAt : `检测于 ${checkedAt}`}</div></td>
-      <td><CapabilityBadges capabilities={model.capabilities} /></td>
-      <td className="text-xs"><div>{formatNumber(model.conversation_count)} 个对话 · {formatNumber(model.user_count)} 位用户</div><div className="mt-1 text-muted-foreground">{formatNumber(model.assistant_message_count)} 条回复</div></td>
-      <td>{formatNumber(model.input_tokens + model.output_tokens)}</td>
-      <td className="whitespace-nowrap text-xs">{formatAdminDate(model.last_used_at)}</td>
-      <td className="pr-3 text-right"><Button variant="ghost" size="sm" aria-label={`查看模型详情 ${model.model_id}`} onClick={() => onOpen(model.model_id)}>查看详情</Button></td>
+      <td className="px-3 py-3"><div className="truncate font-medium" title={model.name || model.model_id}>{model.name || model.model_id}</div><div className="mt-1 break-all text-xs text-muted-foreground">{model.model_id}</div><div className="mt-1 truncate text-xs text-muted-foreground" title={providerLabel}>{providerLabel}</div></td>
+      <td className="px-3 py-3"><div className="flex flex-wrap gap-1"><Badge variant="outline">{catalogStatusLabel(model.catalog_status, 'badge')}</Badge><Badge variant="outline">{healthLabel(model.health?.status)}</Badge></div></td>
+      <td className="px-3 py-3"><CapabilityBadges capabilities={model.capabilities} maxVisible={2} /></td>
+      <td className="px-3 py-3"><dl className="grid grid-cols-3 gap-x-3 gap-y-2 text-xs"><Statistic label="对话" value={formatNumber(model.conversation_count)} /><Statistic label="用户" value={formatNumber(model.user_count)} /><Statistic label="回复" value={formatNumber(model.assistant_message_count)} /><Statistic label="持久化 Token" value={formatNumber(model.input_tokens + model.output_tokens)} /><Statistic label="Agent" value={formatNumber(model.agent_run_count)} /><Statistic label="错误" value={formatNumber(model.agent_error_count)} /></dl></td>
+      <td className="px-3 py-3 text-xs"><div className="text-muted-foreground">最近活动</div>{recentActivity.dateTime ? <time className="mt-0.5 block whitespace-nowrap" dateTime={recentActivity.dateTime} title={recentActivityFull} aria-label={`最近活动 ${recentActivityFull}`}>{recentActivity.text}</time> : <div className="mt-0.5 whitespace-nowrap" aria-label={`最近活动 ${recentActivityFull}`}>{recentActivity.text}</div>}<div className="mt-2 text-muted-foreground">健康检测</div>{checkedAt === '尚未检测' ? <div className="mt-0.5 whitespace-nowrap">尚未检测</div> : <time className="mt-0.5 block whitespace-nowrap" dateTime={checkedAtCompact.dateTime} title={checkedAt} aria-label={`检测时间 ${checkedAt}`}>{checkedAtCompact.text}</time>}</td>
+      <td className="px-3 py-3 text-right"><Button variant="ghost" size="sm" className="whitespace-nowrap" aria-label={`查看模型详情 ${model.model_id}`} onClick={() => onOpen(model.model_id)}>查看详情</Button></td>
     </tr>
   );
 }
@@ -121,6 +125,10 @@ function Metric({ label, value }: { label: string; value: string }) {
   return <div className="flex items-start justify-between gap-4 text-sm"><span className="text-muted-foreground">{label}</span><span className="text-right">{value}</span></div>;
 }
 
+function Statistic({ label, value }: { label: string; value: string }) {
+  return <div className="min-w-0" aria-label={`${label} ${value}`}><dt className="truncate text-muted-foreground">{label}</dt><dd className="mt-0.5 truncate text-sm font-medium" title={`${label} ${value}`}>{value}</dd></div>;
+}
+
 const CAPABILITY_LABELS: Record<string, string> = { imageGen: '图像生成', deepThinking: '深度思考', fileSupport: '文件处理', functionCalling: '工具调用', searchCapable: '联网搜索', agentTools: 'Agent 工具', vision: '图片理解', image_gen: '图像生成', deep_thinking: '深度思考', file_support: '文件处理', function_calling: '工具调用' };
 
 const COST_TIER_LABELS: Record<string, string> = { low: '低', mid: '中', medium: '中', high: '高' };
@@ -128,9 +136,11 @@ const RECOMMENDED_FOR_LABELS: Record<string, string> = { agent: 'Agent', coding:
 const PERFORMANCE_STATUS_LABELS: Record<string, string> = { completed: '已完成', failed: '失败', running: '运行中', stopped: '已停止' };
 const PERFORMANCE_ENVIRONMENT_LABELS: Record<string, string> = { production: '生产环境', prod: '生产环境', staging: '预发布环境', development: '开发环境', dev: '开发环境' };
 
-function CapabilityBadges({ capabilities }: { capabilities: Record<string, boolean> }) {
+function CapabilityBadges({ capabilities, maxVisible }: { capabilities: Record<string, boolean>; maxVisible?: number }) {
   const labels = Object.entries(CAPABILITY_LABELS).filter(([key]) => capabilities[key]).map(([, label]) => label).filter((label, index, all) => all.indexOf(label) === index);
-  return labels.length ? <div className="flex max-w-sm flex-wrap gap-1">{labels.map(label => <Badge key={label} variant="outline">{label}</Badge>)}</div> : <span className="text-xs text-muted-foreground">未标注能力</span>;
+  const visibleLabels = maxVisible === undefined ? labels : labels.slice(0, maxVisible);
+  const hiddenLabels = labels.slice(visibleLabels.length);
+  return labels.length ? <div className="flex max-w-sm flex-wrap gap-1" role="group" aria-label={`模型能力：${labels.join('、')}`}>{visibleLabels.map(label => <Badge key={label} variant="outline">{label}</Badge>)}{hiddenLabels.length ? <Popover><PopoverTrigger asChild><button type="button" className={cn(badgeVariants({ variant: 'outline' }), 'cursor-pointer')} aria-label={`显示另外 ${hiddenLabels.length} 项能力：${hiddenLabels.join('、')}`}>+{hiddenLabels.length}项</button></PopoverTrigger><PopoverContent align="start" className="w-auto max-w-xs p-3" aria-label="其余模型能力"><div className="flex flex-wrap gap-1">{hiddenLabels.map(label => <Badge key={label} variant="outline">{label}</Badge>)}</div></PopoverContent></Popover> : null}</div> : <span className="text-xs text-muted-foreground">未标注能力</span>;
 }
 
 function healthLabel(status: string | null | undefined): string {
@@ -150,6 +160,18 @@ export function formatModelHealthCheckedAt(value: string | number | null | undef
   const date = new Date(typeof value === 'number' && value < 1_000_000_000_000 ? value * 1000 : value);
   if (Number.isNaN(date.getTime())) return '尚未检测';
   return formatAdminDate(date.toISOString());
+}
+
+function formatCompactAdminDate(value: string | number | null | undefined): { text: string; dateTime?: string } {
+  if (value === null || value === undefined || value === '') return { text: '未采集' };
+  const date = new Date(typeof value === 'number' && value < 1_000_000_000_000 ? value * 1000 : value);
+  if (Number.isNaN(date.getTime())) return { text: '未采集' };
+  const parts = new Intl.DateTimeFormat('zh-CN', {
+    timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+  }).formatToParts(date);
+  const get = (type: Intl.DateTimeFormatPartTypes) => parts.find(part => part.type === type)?.value || '';
+  return { text: `${get('year')}-${get('month')}-${get('day')} ${get('hour')}:${get('minute')}`, dateTime: date.toISOString() };
 }
 
 function costTierLabel(value: string | null): string {
