@@ -101,4 +101,21 @@ describe('AdminConversationsPanel', () => {
     expect(apiMocks.getAdminConversationToolCalls.mock.calls[1][1]).toMatchObject({ page: 2, page_size: 25 });
     expect(await within(toolsSection).findByText('tool_2')).toBeInTheDocument();
   });
+
+  it('外部用户 ID 同时同步到筛选输入和实际列表请求', async () => {
+    const { rerender } = render(<AdminConversationsPanel onForbidden={vi.fn()} userIdFilter="user-alpha" />);
+
+    await waitFor(() => expect(apiMocks.getAdminConversations).toHaveBeenCalledWith(
+      expect.objectContaining({ user_id: 'user-alpha' }),
+      expect.any(AbortSignal),
+    ));
+    expect(screen.getByLabelText('用户 ID')).toHaveValue('user-alpha');
+
+    rerender(<AdminConversationsPanel onForbidden={vi.fn()} userIdFilter="user-beta" />);
+    await waitFor(() => expect(apiMocks.getAdminConversations).toHaveBeenLastCalledWith(
+      expect.objectContaining({ user_id: 'user-beta' }),
+      expect.any(AbortSignal),
+    ));
+    expect(screen.getByLabelText('用户 ID')).toHaveValue('user-beta');
+  });
 });

@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { ArrowLeft, Filter, RefreshCw } from 'lucide-react';
 import {
   getAdminConversation,
@@ -34,16 +34,32 @@ interface ConversationFilterDraft {
 
 const EMPTY_FILTER: ConversationFilterDraft = { q: '', user_id: '', model_id: '', has_tools: '', has_files: '', created_from: '', created_to: '' };
 
-export default function AdminConversationsPanel({ onForbidden }: { onForbidden: () => void }) {
+interface AdminConversationsPanelProps {
+  onForbidden: () => void;
+  userIdFilter?: string;
+}
+
+export default function AdminConversationsPanel({ onForbidden, userIdFilter }: AdminConversationsPanelProps) {
   const [page, setPage] = useState(1);
-  const [draft, setDraft] = useState(EMPTY_FILTER);
-  const [filters, setFilters] = useState<AdminConversationsQuery>({});
+  const [draft, setDraft] = useState<ConversationFilterDraft>(() => ({ ...EMPTY_FILTER, user_id: userIdFilter ?? '' }));
+  const [filters, setFilters] = useState<AdminConversationsQuery>(() => (userIdFilter ? { user_id: userIdFilter } : {}));
   const [selectedConversationId, setSelectedConversationId] = useState<string | null>(null);
+  const previousUserIdFilterRef = useRef(userIdFilter);
   const loader = useCallback(
     (signal: AbortSignal) => getAdminConversations({ page, page_size: 25, ...filters }, signal),
     [filters, page],
   );
   const resource = useAdminAuditResource(loader, onForbidden);
+
+  useEffect(() => {
+    if (previousUserIdFilterRef.current === userIdFilter) return;
+    previousUserIdFilterRef.current = userIdFilter;
+    const nextUserId = userIdFilter ?? '';
+    setPage(1);
+    setSelectedConversationId(null);
+    setDraft(current => ({ ...current, user_id: nextUserId }));
+    setFilters(current => ({ ...current, user_id: nextUserId || undefined }));
+  }, [userIdFilter]);
 
   if (selectedConversationId) {
     return (

@@ -6,6 +6,9 @@ import { getAdminUser, getAdminUsers } from '@/lib/api/adminAudit';
 import { useAdminAuditResource } from '@/hooks/useAdminAuditResource';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import {
+  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
+} from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import type { AdminUserDetail } from '@/types/adminAudit';
 import { isAdminAccessError } from '@/lib/admin/adminAccess';
@@ -14,7 +17,12 @@ import {
   AdminEmpty, AdminError, AdminLoading, AdminPagination, AdminPanelHeader, formatAdminDate, formatNumber,
 } from './AdminPanelPrimitives';
 
-export default function AdminUsersPanel({ onForbidden }: { onForbidden: () => void }) {
+interface AdminUsersPanelProps {
+  onForbidden: () => void;
+  onViewConversations: (userId: string) => void;
+}
+
+export default function AdminUsersPanel({ onForbidden, onViewConversations }: AdminUsersPanelProps) {
   const [page, setPage] = useState(1);
   const [searchDraft, setSearchDraft] = useState('');
   const [query, setQuery] = useState('');
@@ -22,6 +30,8 @@ export default function AdminUsersPanel({ onForbidden }: { onForbidden: () => vo
   const [createdFrom, setCreatedFrom] = useState('');
   const [createdTo, setCreatedTo] = useState('');
   const [selectedUser, setSelectedUser] = useState<AdminUserDetail | null>(null);
+  const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
+  const [detailOpen, setDetailOpen] = useState(false);
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState<string | null>(null);
   const detailControllerRef = useRef<AbortController | null>(null);
@@ -39,6 +49,8 @@ export default function AdminUsersPanel({ onForbidden }: { onForbidden: () => vo
     detailControllerRef.current?.abort();
     detailControllerRef.current = null;
     setSelectedUser(null);
+    setSelectedUserId(null);
+    setDetailOpen(false);
     setDetailError(null);
     setDetailLoading(false);
   }, []);
@@ -65,6 +77,8 @@ export default function AdminUsersPanel({ onForbidden }: { onForbidden: () => vo
     const controller = new AbortController();
     detailControllerRef.current = controller;
     setSelectedUser(null);
+    setSelectedUserId(userId);
+    setDetailOpen(true);
     setDetailError(null);
     setDetailLoading(true);
     try {
@@ -78,6 +92,13 @@ export default function AdminUsersPanel({ onForbidden }: { onForbidden: () => vo
     } finally {
       if (!controller.signal.aborted) setDetailLoading(false);
     }
+  };
+
+  const viewUserConversations = () => {
+    const userId = selectedUser?.id ?? selectedUserId;
+    if (!userId) return;
+    clearUserDetail();
+    onViewConversations(userId);
   };
 
   return (
@@ -119,15 +140,34 @@ export default function AdminUsersPanel({ onForbidden }: { onForbidden: () => vo
         </>
       ) : null}
 
-      {detailError ? <div className="mt-4 text-sm text-danger">{detailError}</div> : null}
-      {detailLoading ? <div role="status" className="mt-4 rounded-xl border border-border bg-card p-4 text-sm text-muted-foreground">正在读取用户详情…</div> : null}
-      {selectedUser ? (
-        <aside aria-label={`用户详情 ${selectedUser.id}`} className="mt-4 rounded-xl border border-border bg-card p-4">
-          <AdminUserIdentity user={selectedUser} />
-          <dl className="mt-3 grid gap-3 text-sm sm:grid-cols-2"><div><dt className="text-xs text-muted-foreground">完整邮箱</dt><dd>{selectedUser.email || '未采集'}</dd></div><div><dt className="text-xs text-muted-foreground">注册时间</dt><dd>{formatAdminDate(selectedUser.created_at)}</dd></div></dl>
-          <details className="mt-4 rounded-md border border-border/60 p-3"><summary className="cursor-pointer text-sm font-medium">自定义 system prompt</summary><pre className="mt-2 max-h-64 overflow-auto whitespace-pre-wrap break-all text-xs text-muted-foreground">{selectedUser.system_prompt || '未设置'}</pre></details>
-        </aside>
-      ) : null}
+      <Dialog open={detailOpen} onOpenChange={open => { if (!open) clearUserDetail(); }}>
+        <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>用户详情</DialogTitle>
+            <DialogDescription>查看用户身份、注册信息和管理员可见配置。</DialogDescription>
+          </DialogHeader>
+          {detailLoading ? <div role="status" className="rounded-xl border border-border bg-card p-4 text-sm text-muted-foreground">正在读取用户详情…</div> : null}
+          {detailError ? (
+            <AdminError
+              message={detailError}
+              onRetry={() => { if (selectedUserId) void openUser(selectedUserId); }}
+              retryLabel="重试用户详情"
+            />
+          ) : null}
+          {selectedUser ? (
+            <aside aria-label={`用户详情 ${selectedUser.id}`} className="rounded-xl border border-border bg-card p-4">
+              <AdminUserIdentity user={selectedUser} />
+              <dl className="mt-3 grid gap-3 text-sm sm:grid-cols-2"><div><dt className="text-xs text-muted-foreground">完整邮箱</dt><dd>{selectedUser.email || '未采集'}</dd></div><div><dt className="text-xs text-muted-foreground">注册时间</dt><dd>{formatAdminDate(selectedUser.created_at)}</dd></div></dl>
+              <details className="mt-4 rounded-md border border-border/60 p-3"><summary className="cursor-pointer text-sm font-medium">自定义 system prompt</summary><pre className="mt-2 max-h-64 overflow-auto whitespace-pre-wrap break-all text-xs text-muted-foreground">{selectedUser.system_prompt || '未设置'}</pre></details>
+            </aside>
+          ) : null}
+          {selectedUser ? (
+            <DialogFooter>
+              <Button onClick={viewUserConversations}>查看该用户的对话</Button>
+            </DialogFooter>
+          ) : null}
+        </DialogContent>
+      </Dialog>
     </section>
   );
 }

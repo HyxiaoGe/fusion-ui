@@ -12,7 +12,20 @@ export type AdminAuditTab = 'users' | 'conversations' | 'performance' | 'events'
 
 export default function AdminAuditCenter({ initialTab = 'users' }: { initialTab?: AdminAuditTab }) {
   const [accessRevoked, setAccessRevoked] = useState(false);
-  const handleForbidden = useCallback(() => setAccessRevoked(true), []);
+  const [activeTab, setActiveTab] = useState<AdminAuditTab>(initialTab);
+  const [conversationUserId, setConversationUserId] = useState<string>();
+  const handleForbidden = useCallback(() => {
+    setConversationUserId(undefined);
+    setAccessRevoked(true);
+  }, []);
+  const handleTabChange = useCallback((value: string) => {
+    setConversationUserId(undefined);
+    setActiveTab(value as AdminAuditTab);
+  }, []);
+  const handleViewConversations = useCallback((userId: string) => {
+    setConversationUserId(userId);
+    setActiveTab('conversations');
+  }, []);
 
   if (accessRevoked) {
     return (
@@ -27,7 +40,7 @@ export default function AdminAuditCenter({ initialTab = 'users' }: { initialTab?
 
   return (
     <div className="mx-auto w-full max-w-[1600px] p-4 lg:p-6">
-      <Tabs defaultValue={initialTab} className="min-h-0">
+      <Tabs value={activeTab} onValueChange={handleTabChange} className="min-h-0">
         <TabsList className="grid h-auto w-full grid-cols-2 gap-1 lg:w-fit lg:grid-cols-4">
           <TabsTrigger value="users"><Users />用户</TabsTrigger>
           <TabsTrigger value="conversations"><MessagesSquare />对话</TabsTrigger>
@@ -35,10 +48,10 @@ export default function AdminAuditCenter({ initialTab = 'users' }: { initialTab?
           <TabsTrigger value="events"><ScrollText />访问审计</TabsTrigger>
         </TabsList>
         <TabsContent value="users" className="mt-4">
-          <AdminUsersPanel onForbidden={handleForbidden} />
+          <AdminUsersPanel onForbidden={handleForbidden} onViewConversations={handleViewConversations} />
         </TabsContent>
         <TabsContent value="conversations" className="mt-4">
-          <AdminConversationsPanel onForbidden={handleForbidden} />
+          <AdminConversationsPanel onForbidden={handleForbidden} userIdFilter={conversationUserId} />
         </TabsContent>
         <TabsContent value="performance" className="mt-4">
           <AdminPerformancePanel onForbidden={handleForbidden} />

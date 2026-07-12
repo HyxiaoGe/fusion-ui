@@ -56,6 +56,133 @@ describe('AdminAuditCenter', () => {
     expect(apiMocks.getAdminConversations).toHaveBeenCalled();
   });
 
+  it('从用户详情跳转到对话页并立即应用该用户 ID 筛选', async () => {
+    apiMocks.getAdminUsers.mockResolvedValue({
+      ...emptyPage,
+      total: 1,
+      total_pages: 1,
+      items: [{
+        id: 'user-1', username: 'tester', nickname: '测试用户', email_masked: 't***@example.com',
+        is_superuser: false, created_at: null, updated_at: null, last_active_at: null,
+        conversation_count: 1, message_count: 2, tool_call_count: 3, input_tokens: 4, output_tokens: 5,
+      }],
+    });
+    apiMocks.getAdminUser.mockResolvedValue({
+      id: 'user-1', username: 'tester', nickname: '测试用户', email: 'tester@example.com',
+      email_masked: 't***@example.com', is_superuser: false, created_at: null, updated_at: null,
+      last_active_at: null, conversation_count: 1, message_count: 2, tool_call_count: 3,
+      input_tokens: 4, output_tokens: 5, system_prompt: null,
+    });
+    render(<AdminAuditCenter />);
+    await screen.findByText('@tester');
+
+    fireEvent.click(screen.getByRole('button', { name: '查看用户详情 user-1' }));
+    fireEvent.click(await screen.findByRole('button', { name: '查看该用户的对话' }));
+
+    await waitFor(() => expect(apiMocks.getAdminConversations).toHaveBeenCalledWith(
+      expect.objectContaining({ user_id: 'user-1' }),
+      expect.any(AbortSignal),
+    ));
+    expect(screen.getByRole('tab', { name: '对话' })).toHaveAttribute('data-state', 'active');
+    expect(screen.getByLabelText('用户 ID')).toHaveValue('user-1');
+  });
+
+  it('关联用户筛选只服务本次导航，离开后普通进入对话不复用旧用户', async () => {
+    apiMocks.getAdminUsers.mockResolvedValue({
+      ...emptyPage,
+      total: 1,
+      total_pages: 1,
+      items: [{
+        id: 'user-a', username: 'user-a', nickname: '用户 A', email_masked: 'a***@example.com',
+        is_superuser: false, created_at: null, updated_at: null, last_active_at: null,
+        conversation_count: 1, message_count: 2, tool_call_count: 3, input_tokens: 4, output_tokens: 5,
+      }],
+    });
+    apiMocks.getAdminUser.mockResolvedValue({
+      id: 'user-a', username: 'user-a', nickname: '用户 A', email: 'a@example.com',
+      email_masked: 'a***@example.com', is_superuser: false, created_at: null, updated_at: null,
+      last_active_at: null, conversation_count: 1, message_count: 2, tool_call_count: 3,
+      input_tokens: 4, output_tokens: 5, system_prompt: null,
+    });
+    render(<AdminAuditCenter />);
+    await screen.findByText('@user-a');
+    fireEvent.click(screen.getByRole('button', { name: '查看用户详情 user-a' }));
+    fireEvent.click(await screen.findByRole('button', { name: '查看该用户的对话' }));
+    await waitFor(() => expect(apiMocks.getAdminConversations).toHaveBeenLastCalledWith(
+      expect.objectContaining({ user_id: 'user-a' }),
+      expect.any(AbortSignal),
+    ));
+
+    fireEvent.mouseDown(screen.getByRole('tab', { name: '用户' }), { button: 0, ctrlKey: false });
+    await waitFor(() => expect(screen.getByRole('tab', { name: '用户' })).toHaveAttribute('data-state', 'active'));
+    fireEvent.mouseDown(screen.getByRole('tab', { name: '对话' }), { button: 0, ctrlKey: false });
+
+    await waitFor(() => expect(apiMocks.getAdminConversations).toHaveBeenLastCalledWith(
+      expect.not.objectContaining({ user_id: 'user-a' }),
+      expect.any(AbortSignal),
+    ));
+    expect(screen.getByLabelText('用户 ID')).toHaveValue('');
+  });
+
+  it('连续从用户详情进入对话时使用最新选择的用户 B', async () => {
+    const userItems = ['a', 'b'].map(suffix => ({
+      id: `user-${suffix}`, username: `user-${suffix}`, nickname: `用户 ${suffix.toUpperCase()}`,
+      email_masked: `${suffix}***@example.com`, is_superuser: false, created_at: null, updated_at: null,
+      last_active_at: null, conversation_count: 1, message_count: 2, tool_call_count: 3,
+      input_tokens: 4, output_tokens: 5,
+    }));
+    apiMocks.getAdminUsers.mockResolvedValue({ ...emptyPage, total: 2, total_pages: 1, items: userItems });
+    apiMocks.getAdminUser.mockImplementation((userId: string) => Promise.resolve({
+      ...userItems.find(user => user.id === userId), email: `${userId}@example.com`, system_prompt: null,
+    }));
+    render(<AdminAuditCenter />);
+    await screen.findByText('@user-a');
+
+    fireEvent.click(screen.getByRole('button', { name: '查看用户详情 user-a' }));
+    fireEvent.click(await screen.findByRole('button', { name: '查看该用户的对话' }));
+    await waitFor(() => expect(screen.getByLabelText('用户 ID')).toHaveValue('user-a'));
+    fireEvent.mouseDown(screen.getByRole('tab', { name: '用户' }), { button: 0, ctrlKey: false });
+    await waitFor(() => expect(screen.getByRole('tab', { name: '用户' })).toHaveAttribute('data-state', 'active'));
+    fireEvent.click(await screen.findByRole('button', { name: '查看用户详情 user-b' }));
+    fireEvent.click(await screen.findByRole('button', { name: '查看该用户的对话' }));
+
+    await waitFor(() => expect(apiMocks.getAdminConversations).toHaveBeenLastCalledWith(
+      expect.objectContaining({ user_id: 'user-b' }),
+      expect.any(AbortSignal),
+    ));
+    expect(screen.getByLabelText('用户 ID')).toHaveValue('user-b');
+  });
+
+  it('关联用户跳转后遇到 403 会卸载审计内容并清除用户筛选展示', async () => {
+    apiMocks.getAdminUsers.mockResolvedValue({
+      ...emptyPage,
+      total: 1,
+      total_pages: 1,
+      items: [{
+        id: 'user-sensitive', username: 'sensitive', nickname: null, email_masked: 's***@example.com',
+        is_superuser: false, created_at: null, updated_at: null, last_active_at: null,
+        conversation_count: 1, message_count: 2, tool_call_count: 3, input_tokens: 4, output_tokens: 5,
+      }],
+    });
+    apiMocks.getAdminUser.mockResolvedValue({
+      id: 'user-sensitive', username: 'sensitive', nickname: null, email: 'sensitive@example.com',
+      email_masked: 's***@example.com', is_superuser: false, created_at: null, updated_at: null,
+      last_active_at: null, conversation_count: 1, message_count: 2, tool_call_count: 3,
+      input_tokens: 4, output_tokens: 5, system_prompt: null,
+    });
+    render(<AdminAuditCenter />);
+    await screen.findByText('@sensitive');
+    fireEvent.click(screen.getByRole('button', { name: '查看用户详情 user-sensitive' }));
+    fireEvent.click(await screen.findByRole('button', { name: '查看该用户的对话' }));
+    await waitFor(() => expect(screen.getByLabelText('用户 ID')).toHaveValue('user-sensitive'));
+    apiMocks.getAdminConversations.mockRejectedValue(new ApiError('FORBIDDEN', '需要管理员权限', 'req-linked'));
+
+    fireEvent.click(screen.getByRole('button', { name: '刷新对话列表' }));
+
+    expect(await screen.findByText('管理员权限已失效')).toBeInTheDocument();
+    expect(screen.queryByDisplayValue('user-sensitive')).toBeNull();
+  });
+
   it('后端 403 时立即清空敏感内容并显示权限失效', async () => {
     apiMocks.getAdminUsers.mockResolvedValue({
       ...emptyPage,
