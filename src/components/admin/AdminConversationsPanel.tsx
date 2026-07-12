@@ -21,6 +21,7 @@ import AdminUserIdentity from './AdminUserIdentity';
 import {
   AdminEmpty, AdminError, AdminLoading, AdminPagination, AdminPanelHeader, formatAdminDate, formatNumber,
 } from './AdminPanelPrimitives';
+import { normalizeAdminAuditRouteId } from '@/lib/admin/adminAuditRoute';
 
 interface ConversationFilterDraft {
   q: string;
@@ -37,13 +38,18 @@ const EMPTY_FILTER: ConversationFilterDraft = { q: '', user_id: '', model_id: ''
 interface AdminConversationsPanelProps {
   onForbidden: () => void;
   userIdFilter?: string;
+  selectedConversationId: string | null;
+  onUserFilterChange: (userId?: string) => void;
+  onOpen: (conversationId: string) => void;
+  onBack: () => void;
 }
 
-export default function AdminConversationsPanel({ onForbidden, userIdFilter }: AdminConversationsPanelProps) {
+export default function AdminConversationsPanel({
+  onForbidden, userIdFilter, selectedConversationId, onUserFilterChange, onOpen, onBack,
+}: AdminConversationsPanelProps) {
   const [page, setPage] = useState(1);
   const [draft, setDraft] = useState<ConversationFilterDraft>(() => ({ ...EMPTY_FILTER, user_id: userIdFilter ?? '' }));
   const [filters, setFilters] = useState<AdminConversationsQuery>(() => (userIdFilter ? { user_id: userIdFilter } : {}));
-  const [selectedConversationId, setSelectedConversationId] = useState<string | null>(null);
   const previousUserIdFilterRef = useRef(userIdFilter);
   const loader = useCallback(
     (signal: AbortSignal) => getAdminConversations({ page, page_size: 25, ...filters }, signal),
@@ -56,16 +62,18 @@ export default function AdminConversationsPanel({ onForbidden, userIdFilter }: A
     previousUserIdFilterRef.current = userIdFilter;
     const nextUserId = userIdFilter ?? '';
     setPage(1);
-    setSelectedConversationId(null);
-    setDraft(current => ({ ...current, user_id: nextUserId }));
-    setFilters(current => ({ ...current, user_id: nextUserId || undefined }));
+    setDraft(current => current.user_id === nextUserId ? current : { ...current, user_id: nextUserId });
+    setFilters(current => current.user_id === (nextUserId || undefined)
+      ? current
+      : { ...current, user_id: nextUserId || undefined });
   }, [userIdFilter]);
 
   if (selectedConversationId) {
     return (
       <AdminConversationDetailView
+        key={selectedConversationId}
         conversationId={selectedConversationId}
-        onBack={() => setSelectedConversationId(null)}
+        onBack={onBack}
         onForbidden={onForbidden}
       />
     );
@@ -73,16 +81,18 @@ export default function AdminConversationsPanel({ onForbidden, userIdFilter }: A
 
   const applyFilters = (event: React.FormEvent) => {
     event.preventDefault();
+    const nextUserId = normalizeAdminAuditRouteId(draft.user_id);
     setPage(1);
     setFilters({
       q: draft.q,
-      user_id: draft.user_id,
+      user_id: nextUserId,
       model_id: draft.model_id,
       has_tools: parseBoolean(draft.has_tools),
       has_files: parseBoolean(draft.has_files),
       created_from: draft.created_from,
       created_to: draft.created_to,
     });
+    onUserFilterChange(nextUserId);
   };
 
   return (
@@ -105,15 +115,24 @@ export default function AdminConversationsPanel({ onForbidden, userIdFilter }: A
         <>
           <div className="overflow-x-auto rounded-xl border border-border">
             <table className="w-full min-w-[1100px] text-left text-sm">
-              <thead className="bg-muted/30 text-xs text-muted-foreground"><tr><th className="p-3">对话</th><th>用户</th><th>模型</th><th>消息</th><th>工具</th><th>文件</th><th>Agent</th><th>Token</th><th className="pr-3 text-right">操作</th></tr></thead>
+              <thead className="bg-muted/30 text-xs text-muted-foreground"><tr><th className="p-3">对话 / 时间</th><th>用户</th><th>模型</th><th>消息</th><th>工具</th><th>文件</th><th>Agent</th><th>Token</th><th className="pr-3 text-right">操作</th></tr></thead>
               <tbody>{resource.data.items.map(conversation => (
                 <tr key={conversation.id} className="border-t border-border/60">
-                  <td className="p-3"><div className="max-w-xs truncate font-medium" title={conversation.title}>{conversation.title || '未命名对话'}</div><div className="mt-1 text-xs text-muted-foreground">{conversation.id}</div></td>
+                  <td className="p-3">
+                    <div className="max-w-xs truncate font-medium" title={conversation.title}>{conversation.title || '未命名对话'}</div>
+                    <div className="mt-1 text-xs text-muted-foreground">{conversation.id}</div>
+                    <div className="mt-1 text-xs text-muted-foreground" aria-label={`对话时间 ${conversation.id}`}>
+                      {conversation.created_at || conversation.updated_at ? (
+                        <><span>更新：{formatAdminDate(conversation.updated_at)}</span><span className="ml-2">创建：{formatAdminDate(conversation.created_at)}</span></>
+                      ) : '时间未记录'}
+                    </div>
+                  </td>
                   <td><AdminUserIdentity user={conversation.user} /></td>
-                  <td>{conversation.model_id || '—'}</td><td>{conversation.message_count}</td><td>{conversation.tool_call_count}</td><td>{conversation.file_count}</td>
+                  <td>{conversation.model_id || '—'}</td>
+                  <td>{conversation.message_count}</td><td>{conversation.tool_call_count}</td><td>{conversation.file_count}</td>
                   <td>{conversation.latest_agent_status ? <Badge variant="outline">{conversation.latest_agent_status}</Badge> : '—'}</td>
                   <td>{formatNumber(conversation.input_tokens + conversation.output_tokens)}</td>
-                  <td className="pr-3 text-right"><Button variant="ghost" size="sm" aria-label={`查看对话详情 ${conversation.id}`} onClick={() => setSelectedConversationId(conversation.id)}>查看详情</Button></td>
+                  <td className="pr-3 text-right"><Button variant="ghost" size="sm" aria-label={`查看对话详情 ${conversation.id}`} onClick={() => onOpen(conversation.id)}>查看详情</Button></td>
                 </tr>
               ))}</tbody>
             </table>

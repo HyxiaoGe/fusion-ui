@@ -1,4 +1,5 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { useState } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const apiMocks = vi.hoisted(() => ({
@@ -26,6 +27,30 @@ const users = [
 const page = {
   items: users, total: 2, page: 1, page_size: 25, total_pages: 1, has_next: false, has_prev: false,
 };
+const noop = () => undefined;
+
+function ControlledUsersPanel({
+  onForbidden = noop, onViewConversations = noop, initialUserId = null,
+}: {
+  onForbidden?: () => void;
+  onViewConversations?: (userId: string) => void;
+  initialUserId?: string | null;
+}) {
+  const [selectedUserId, setSelectedUserId] = useState<string | null>(initialUserId);
+  const viewConversations = (userId: string) => {
+    setSelectedUserId(null);
+    onViewConversations(userId);
+  };
+  return (
+    <AdminUsersPanel
+      onForbidden={onForbidden}
+      selectedUserId={selectedUserId}
+      onOpen={setSelectedUserId}
+      onClose={() => setSelectedUserId(null)}
+      onViewConversations={viewConversations}
+    />
+  );
+}
 
 describe('AdminUsersPanel', () => {
   beforeEach(() => {
@@ -34,7 +59,7 @@ describe('AdminUsersPanel', () => {
   });
 
   it('同昵称同脱敏邮箱时仍稳定展示 username 与 user_id', async () => {
-    render(<AdminUsersPanel onForbidden={vi.fn()} onViewConversations={vi.fn()} />);
+    render(<ControlledUsersPanel />);
 
     await screen.findAllByText('同名用户');
     expect(screen.getByText('@alpha')).toBeInTheDocument();
@@ -47,7 +72,7 @@ describe('AdminUsersPanel', () => {
   it('关闭详情会中止旧请求且不串数据，之后可继续筛选查看其他用户', async () => {
     let resolveDetail!: (value: Record<string, unknown>) => void;
     apiMocks.getAdminUser.mockReturnValue(new Promise(resolve => { resolveDetail = resolve; }));
-    render(<AdminUsersPanel onForbidden={vi.fn()} onViewConversations={vi.fn()} />);
+    render(<ControlledUsersPanel />);
     await screen.findByText('@alpha');
 
     fireEvent.click(screen.getByRole('button', { name: '查看用户详情 user-alpha' }));
@@ -83,7 +108,7 @@ describe('AdminUsersPanel', () => {
     const onViewConversations = vi.fn();
     let resolveDetail!: (value: Record<string, unknown>) => void;
     apiMocks.getAdminUser.mockReturnValue(new Promise(resolve => { resolveDetail = resolve; }));
-    render(<AdminUsersPanel onForbidden={vi.fn()} onViewConversations={onViewConversations} />);
+    render(<ControlledUsersPanel onViewConversations={onViewConversations} />);
     await screen.findByText('@alpha');
 
     fireEvent.click(screen.getByRole('button', { name: '查看用户详情 user-alpha' }));
@@ -99,11 +124,30 @@ describe('AdminUsersPanel', () => {
     expect(screen.queryByRole('dialog', { name: '用户详情' })).toBeNull();
   });
 
+  it('关闭详情后焦点回到原查看按钮，深链详情回到搜索框', async () => {
+    apiMocks.getAdminUser.mockResolvedValue({
+      ...users[0], email: 'alpha@example.com', system_prompt: null,
+    });
+    const { unmount } = render(<ControlledUsersPanel />);
+    await screen.findByText('@alpha');
+    const trigger = screen.getByRole('button', { name: '查看用户详情 user-alpha' });
+    fireEvent.click(trigger);
+    const dialog = await screen.findByRole('dialog', { name: '用户详情' });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Close' }));
+    await waitFor(() => expect(document.activeElement).toBe(trigger));
+    unmount();
+
+    render(<ControlledUsersPanel initialUserId="user-alpha" />);
+    const deepDialog = await screen.findByRole('dialog', { name: '用户详情' });
+    fireEvent.click(within(deepDialog).getByRole('button', { name: 'Close' }));
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByLabelText('搜索用户')));
+  });
+
   it('首次详情失败时保持弹窗，并可重试成功', async () => {
     apiMocks.getAdminUser
       .mockRejectedValueOnce(new Error('用户详情暂时不可用'))
       .mockResolvedValueOnce({ ...users[0], email: 'alpha@example.com', system_prompt: null });
-    render(<AdminUsersPanel onForbidden={vi.fn()} onViewConversations={vi.fn()} />);
+    render(<ControlledUsersPanel />);
     await screen.findByText('@alpha');
 
     fireEvent.click(screen.getByRole('button', { name: '查看用户详情 user-alpha' }));
@@ -119,7 +163,7 @@ describe('AdminUsersPanel', () => {
   it('关闭详情后刷新列表会清空详情状态，并支持列表失败重试', async () => {
     let resolveDetail!: (value: Record<string, unknown>) => void;
     apiMocks.getAdminUser.mockReturnValue(new Promise(resolve => { resolveDetail = resolve; }));
-    render(<AdminUsersPanel onForbidden={vi.fn()} onViewConversations={vi.fn()} />);
+    render(<ControlledUsersPanel />);
     await screen.findByText('@alpha');
     fireEvent.click(screen.getByRole('button', { name: '查看用户详情 user-alpha' }));
     const detailSignal = apiMocks.getAdminUser.mock.calls[0][1] as AbortSignal;

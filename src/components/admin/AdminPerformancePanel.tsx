@@ -21,26 +21,34 @@ function performanceStatusLabel(status: string): string {
   return status;
 }
 
-export default function AdminPerformancePanel({ onForbidden }: { onForbidden: () => void }) {
+interface AdminPerformancePanelProps {
+  onForbidden: () => void;
+  selectedRunId: string | null;
+  onToggle: (runId: string | null) => void;
+}
+
+export default function AdminPerformancePanel({
+  onForbidden, selectedRunId, onToggle,
+}: AdminPerformancePanelProps) {
   const [page, setPage] = useState(1);
   const [environmentDraft, setEnvironmentDraft] = useState('');
   const [environment, setEnvironment] = useState('');
   const [statusDraft, setStatusDraft] = useState('');
   const [status, setStatus] = useState('');
-  const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
   const loader = useCallback((signal: AbortSignal) => getAdminPerformanceRuns({ page, page_size: 25, environment, status }, signal), [environment, page, status]);
   const resource = useAdminAuditResource(loader, onForbidden);
+  const selectedRunIsVisible = resource.data?.items.some(run => run.run_id === selectedRunId) ?? false;
   const refreshList = () => {
-    setSelectedRunId(null);
+    if (selectedRunId) onToggle(null);
     resource.reload();
   };
   const changePage = (nextPage: number) => {
-    setSelectedRunId(null);
+    if (selectedRunId) onToggle(null);
     setPage(nextPage);
   };
   const applyFilters = (event: React.FormEvent) => {
     event.preventDefault();
-    setSelectedRunId(null);
+    if (selectedRunId) onToggle(null);
     setPage(1);
     setEnvironment(environmentDraft.trim());
     setStatus(statusDraft.trim());
@@ -76,7 +84,7 @@ export default function AdminPerformancePanel({ onForbidden }: { onForbidden: ()
                 aria-label={`${selected ? '收起' : '查看'}压测详情 ${run.run_id}`}
                 aria-expanded={selected}
                 aria-controls={detailId}
-                onClick={() => setSelectedRunId(selected ? null : run.run_id)}
+                onClick={() => onToggle(selected ? null : run.run_id)}
               >
                 {selected ? <ChevronUp /> : <ChevronDown />}{selected ? '收起详情' : '查看详情'}
               </Button>
@@ -85,6 +93,32 @@ export default function AdminPerformancePanel({ onForbidden }: { onForbidden: ()
           </article>
         );
       })}</div><AdminPagination page={resource.data} onPageChange={changePage} /></> : null}
+      {selectedRunId && !selectedRunIsVisible && (resource.data || resource.error) ? (
+        <article className="mt-4 min-w-0 rounded-xl border border-border bg-card p-3 sm:p-4">
+          <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="min-w-0">
+              <div className="break-all font-medium">{selectedRunId}</div>
+              <div className="mt-1 text-xs text-muted-foreground">通过链接打开的压测详情</div>
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              className="w-full shrink-0 sm:w-auto"
+              aria-label={`收起压测详情 ${selectedRunId}`}
+              aria-expanded="true"
+              aria-controls={performanceDetailId(selectedRunId)}
+              onClick={() => onToggle(null)}
+            >
+              <ChevronUp />收起详情
+            </Button>
+          </div>
+          <AdminPerformanceRunDetail
+            id={performanceDetailId(selectedRunId)}
+            runId={selectedRunId}
+            onForbidden={onForbidden}
+          />
+        </article>
+      ) : null}
     </section>
   );
 }

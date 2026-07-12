@@ -19,10 +19,15 @@ import {
 
 interface AdminUsersPanelProps {
   onForbidden: () => void;
+  selectedUserId: string | null;
+  onOpen: (userId: string) => void;
+  onClose: () => void;
   onViewConversations: (userId: string) => void;
 }
 
-export default function AdminUsersPanel({ onForbidden, onViewConversations }: AdminUsersPanelProps) {
+export default function AdminUsersPanel({
+  onForbidden, selectedUserId, onOpen, onClose, onViewConversations,
+}: AdminUsersPanelProps) {
   const [page, setPage] = useState(1);
   const [searchDraft, setSearchDraft] = useState('');
   const [query, setQuery] = useState('');
@@ -30,11 +35,11 @@ export default function AdminUsersPanel({ onForbidden, onViewConversations }: Ad
   const [createdFrom, setCreatedFrom] = useState('');
   const [createdTo, setCreatedTo] = useState('');
   const [selectedUser, setSelectedUser] = useState<AdminUserDetail | null>(null);
-  const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
-  const [detailOpen, setDetailOpen] = useState(false);
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState<string | null>(null);
   const detailControllerRef = useRef<AbortController | null>(null);
+  const detailTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const searchInputRef = useRef<HTMLInputElement | null>(null);
   const loader = useCallback((signal: AbortSignal) => getAdminUsers({
     page,
     page_size: 25,
@@ -45,24 +50,18 @@ export default function AdminUsersPanel({ onForbidden, onViewConversations }: Ad
   }, signal), [adminFilter, createdFrom, createdTo, page, query]);
   const resource = useAdminAuditResource(loader, onForbidden);
 
-  const clearUserDetail = useCallback(() => {
+  const clearLoadedUserDetail = useCallback(() => {
     detailControllerRef.current?.abort();
     detailControllerRef.current = null;
     setSelectedUser(null);
-    setSelectedUserId(null);
-    setDetailOpen(false);
     setDetailError(null);
     setDetailLoading(false);
   }, []);
 
   const refreshUsers = () => {
-    clearUserDetail();
+    if (selectedUserId) onClose();
     resource.reload();
   };
-
-  useEffect(() => {
-    clearUserDetail();
-  }, [adminFilter, clearUserDetail, createdFrom, createdTo, page, query]);
 
   useEffect(() => () => detailControllerRef.current?.abort(), []);
 
@@ -72,13 +71,11 @@ export default function AdminUsersPanel({ onForbidden, onViewConversations }: Ad
     setQuery(searchDraft.trim());
   };
 
-  const openUser = async (userId: string) => {
+  const loadUser = useCallback(async (userId: string) => {
     detailControllerRef.current?.abort();
     const controller = new AbortController();
     detailControllerRef.current = controller;
     setSelectedUser(null);
-    setSelectedUserId(userId);
-    setDetailOpen(true);
     setDetailError(null);
     setDetailLoading(true);
     try {
@@ -92,12 +89,17 @@ export default function AdminUsersPanel({ onForbidden, onViewConversations }: Ad
     } finally {
       if (!controller.signal.aborted) setDetailLoading(false);
     }
-  };
+  }, [onForbidden]);
+
+  useEffect(() => {
+    clearLoadedUserDetail();
+    if (selectedUserId) void loadUser(selectedUserId);
+    return () => detailControllerRef.current?.abort();
+  }, [clearLoadedUserDetail, loadUser, selectedUserId]);
 
   const viewUserConversations = () => {
     const userId = selectedUser?.id ?? selectedUserId;
     if (!userId) return;
-    clearUserDetail();
     onViewConversations(userId);
   };
 
@@ -109,7 +111,7 @@ export default function AdminUsersPanel({ onForbidden, onViewConversations }: Ad
         action={<Button variant="outline" size="sm" onClick={refreshUsers} aria-label="刷新用户列表"><RefreshCw />刷新</Button>}
       />
       <form onSubmit={submitSearch} className="mb-4 grid gap-2 rounded-xl border border-border bg-card p-3 md:grid-cols-2 xl:grid-cols-5">
-        <Input aria-label="搜索用户" value={searchDraft} onChange={event => setSearchDraft(event.target.value)} placeholder="用户 ID、用户名、昵称或邮箱" />
+        <Input ref={searchInputRef} aria-label="搜索用户" value={searchDraft} onChange={event => setSearchDraft(event.target.value)} placeholder="用户 ID、用户名、昵称或邮箱" />
         <select aria-label="管理员筛选" className="h-9 rounded-md border border-input bg-background px-3 text-sm" value={adminFilter} onChange={event => setAdminFilter(event.target.value as '' | 'true' | 'false')}><option value="">权限不限</option><option value="true">仅管理员</option><option value="false">仅普通用户</option></select>
         <Input aria-label="注册开始日期" type="date" value={createdFrom} onChange={event => setCreatedFrom(event.target.value)} />
         <Input aria-label="注册结束日期" type="date" value={createdTo} onChange={event => setCreatedTo(event.target.value)} />
@@ -130,7 +132,7 @@ export default function AdminUsersPanel({ onForbidden, onViewConversations }: Ad
                     <td>{user.email_masked || '—'}</td><td>{formatAdminDate(user.last_active_at)}</td>
                     <td>{formatNumber(user.conversation_count)}</td><td>{formatNumber(user.message_count)}</td><td>{formatNumber(user.tool_call_count)}</td>
                     <td>{formatNumber(user.input_tokens + user.output_tokens)}</td>
-                    <td className="pr-3 text-right"><Button variant="ghost" size="sm" aria-label={`查看用户详情 ${user.id}`} onClick={() => void openUser(user.id)}>查看详情</Button></td>
+                    <td className="pr-3 text-right"><Button variant="ghost" size="sm" aria-label={`查看用户详情 ${user.id}`} onClick={event => { detailTriggerRef.current = event.currentTarget; onOpen(user.id); }}>查看详情</Button></td>
                   </tr>
                 ))}
               </tbody>
@@ -140,8 +142,15 @@ export default function AdminUsersPanel({ onForbidden, onViewConversations }: Ad
         </>
       ) : null}
 
-      <Dialog open={detailOpen} onOpenChange={open => { if (!open) clearUserDetail(); }}>
-        <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-2xl">
+      <Dialog open={Boolean(selectedUserId)} onOpenChange={open => { if (!open) onClose(); }}>
+        <DialogContent
+          className="max-h-[85vh] overflow-y-auto sm:max-w-2xl"
+          onCloseAutoFocus={event => {
+            event.preventDefault();
+            (detailTriggerRef.current ?? searchInputRef.current)?.focus();
+            detailTriggerRef.current = null;
+          }}
+        >
           <DialogHeader>
             <DialogTitle>用户详情</DialogTitle>
             <DialogDescription>查看用户身份、注册信息和管理员可见配置。</DialogDescription>
@@ -150,7 +159,7 @@ export default function AdminUsersPanel({ onForbidden, onViewConversations }: Ad
           {detailError ? (
             <AdminError
               message={detailError}
-              onRetry={() => { if (selectedUserId) void openUser(selectedUserId); }}
+              onRetry={() => { if (selectedUserId) void loadUser(selectedUserId); }}
               retryLabel="重试用户详情"
             />
           ) : null}

@@ -1,4 +1,5 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { useState } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const apiMocks = vi.hoisted(() => ({
@@ -25,6 +26,18 @@ const listRun = {
   finished_at: '2026-07-12T00:30:00Z',
   created_at: '2026-07-12T00:31:00Z',
 };
+const noop = () => undefined;
+
+function ControlledPerformancePanel({ initialRunId = null }: { initialRunId?: string | null }) {
+  const [selectedRunId, setSelectedRunId] = useState<string | null>(initialRunId);
+  return (
+    <AdminPerformancePanel
+      onForbidden={noop}
+      selectedRunId={selectedRunId}
+      onToggle={setSelectedRunId}
+    />
+  );
+}
 
 describe('AdminPerformancePanel', () => {
   beforeEach(() => {
@@ -37,7 +50,7 @@ describe('AdminPerformancePanel', () => {
     let resolvePage!: (value: typeof emptyPage) => void;
     apiMocks.getAdminPerformanceRuns.mockReturnValue(new Promise(resolve => { resolvePage = resolve; }));
 
-    render(<AdminPerformancePanel onForbidden={vi.fn()} />);
+    render(<ControlledPerformancePanel />);
 
     expect(screen.getByRole('status')).toHaveTextContent('正在读取');
     await act(async () => resolvePage(emptyPage));
@@ -47,7 +60,7 @@ describe('AdminPerformancePanel', () => {
   it('展示列表错误并允许重试', async () => {
     apiMocks.getAdminPerformanceRuns.mockRejectedValueOnce(new Error('压测列表读取失败'));
 
-    render(<AdminPerformancePanel onForbidden={vi.fn()} />);
+    render(<ControlledPerformancePanel />);
 
     expect(await screen.findByText('压测列表读取失败')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: '重新加载' }));
@@ -55,11 +68,29 @@ describe('AdminPerformancePanel', () => {
     expect(await screen.findByText('暂无压测记录')).toBeInTheDocument();
   });
 
+  it('深链 run_id 不在当前列表页时仍独立展示详情和收起入口', async () => {
+    apiMocks.getAdminPerformanceRuns.mockResolvedValue({
+      ...emptyPage, items: [listRun], total: 26, total_pages: 2,
+    });
+    apiMocks.getAdminPerformanceRun.mockResolvedValue({
+      ...listRun,
+      run_id: 'perf-old-page',
+      imported_by_user_id: 'admin-1',
+      safe_summary: { stages: [], resources: null },
+    });
+
+    render(<ControlledPerformancePanel initialRunId="perf-old-page" />);
+
+    expect(await screen.findByLabelText('压测详情 perf-old-page')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '收起压测详情 perf-old-page' })).toBeInTheDocument();
+    expect(apiMocks.getAdminPerformanceRun).toHaveBeenCalledWith('perf-old-page', expect.any(AbortSignal));
+  });
+
   it('点击记录后加载并结构化展示 L1-L4 安全详情', async () => {
     apiMocks.getAdminPerformanceRuns.mockResolvedValue({ ...emptyPage, items: [listRun], total: 1, total_pages: 1 });
     let resolveDetail!: (value: typeof listRun & { safe_summary: Record<string, unknown>; imported_by_user_id: string }) => void;
     apiMocks.getAdminPerformanceRun.mockReturnValue(new Promise(resolve => { resolveDetail = resolve; }));
-    render(<AdminPerformancePanel onForbidden={vi.fn()} />);
+    render(<ControlledPerformancePanel />);
     await screen.findByText(listRun.run_id);
 
     const detailButton = screen.getByRole('button', { name: `查看压测详情 ${listRun.run_id}` });
@@ -161,7 +192,7 @@ describe('AdminPerformancePanel', () => {
         imported_by_user_id: 'admin-1',
         safe_summary: { stages: [], resources: null },
       });
-    render(<AdminPerformancePanel onForbidden={vi.fn()} />);
+    render(<ControlledPerformancePanel />);
     await screen.findByText(listRun.run_id);
 
     fireEvent.click(screen.getByRole('button', { name: `查看压测详情 ${listRun.run_id}` }));
@@ -183,7 +214,7 @@ describe('AdminPerformancePanel', () => {
       total_pages: 1,
     });
     apiMocks.getAdminPerformanceRun.mockImplementation(() => new Promise(() => undefined));
-    render(<AdminPerformancePanel onForbidden={vi.fn()} />);
+    render(<ControlledPerformancePanel />);
     await screen.findByText(listRun.run_id);
 
     fireEvent.click(screen.getByRole('button', { name: `查看压测详情 ${listRun.run_id}` }));
@@ -212,7 +243,7 @@ describe('AdminPerformancePanel', () => {
         cleanup: { conversations_deleted: 8 },
       },
     });
-    render(<AdminPerformancePanel onForbidden={vi.fn()} />);
+    render(<ControlledPerformancePanel />);
     await screen.findByText(unknownRun.run_id);
 
     fireEvent.click(screen.getByRole('button', { name: `查看压测详情 ${unknownRun.run_id}` }));
@@ -233,7 +264,7 @@ describe('AdminPerformancePanel', () => {
     };
     apiMocks.getAdminPerformanceRuns.mockResolvedValue(page);
     apiMocks.getAdminPerformanceRun.mockResolvedValue(detail);
-    render(<AdminPerformancePanel onForbidden={vi.fn()} />);
+    render(<ControlledPerformancePanel />);
     await screen.findByText(listRun.run_id);
 
     const openDetail = async () => {
