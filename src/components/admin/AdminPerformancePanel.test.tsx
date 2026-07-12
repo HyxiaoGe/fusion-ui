@@ -83,7 +83,10 @@ describe('AdminPerformancePanel', () => {
 
     expect(await screen.findByLabelText('压测详情 perf-old-page')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '收起压测详情 perf-old-page' })).toBeInTheDocument();
-    expect(apiMocks.getAdminPerformanceRun).toHaveBeenCalledWith('perf-old-page', expect.any(AbortSignal));
+    await waitFor(() => expect(apiMocks.getAdminPerformanceRun).toHaveBeenCalledWith(
+      'perf-old-page',
+      expect.any(AbortSignal),
+    ));
   });
 
   it('点击记录后加载并结构化展示 L1-L4 安全详情', async () => {
