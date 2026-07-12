@@ -116,8 +116,10 @@ describe('AdminModelsPanel', () => {
     fireEvent.click(providerSelect);
 
     const moonshotOption = await screen.findByRole('option', { name: 'Moonshot' });
-    expect(moonshotOption).toHaveClass('min-h-10', 'py-2', '*:[span]:last:gap-3');
-    expect(within(moonshotOption).getByTestId('provider-icon')).toHaveAttribute('data-size', '20');
+    expect(moonshotOption).toHaveClass('min-h-10', 'py-2');
+    const providerIcon = within(moonshotOption).getByTestId('provider-icon');
+    expect(providerIcon).toHaveAttribute('data-size', '20');
+    expect(providerIcon.parentElement?.parentElement).toHaveClass('flex', 'min-w-0', 'items-center', 'gap-3');
     expect(moonshotOption.closest('[data-slot="select-content"]')).toHaveClass('w-[max(232px,var(--radix-select-trigger-width))]', 'max-w-[calc(100vw-2rem)]');
 
     const longOption = screen.getByRole('option', { name: longProvider.label });
