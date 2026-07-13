@@ -130,23 +130,39 @@ describe('ContextStatus', () => {
     expect(localStorage.getItem(CONTEXT_STATUS_DEFAULT_OPEN_STORAGE_KEY)).toBe('true');
   });
 
-  it('默认展开后点击弹层外部只关闭当前弹层并保留偏好', async () => {
+  it('默认展开开启时点击弹层外部不会关闭弹层或偏好', async () => {
     localStorage.setItem(CONTEXT_STATUS_DEFAULT_OPEN_STORAGE_KEY, 'true');
-    const first = render(<ContextStatus conversationId="chat-outside" usage={actualUsage} />);
+    const outsideInput = document.createElement('textarea');
+    document.body.appendChild(outsideInput);
+    render(<ContextStatus conversationId="chat-outside" usage={actualUsage} />);
 
     expect(await screen.findByRole('dialog', { name: '上下文状态' })).toBeInTheDocument();
     fireEvent.pointerDown(document.body);
     fireEvent.click(document.body);
 
-    await waitFor(() => expect(screen.queryByRole('dialog', { name: '上下文状态' })).toBeNull());
+    expect(screen.getByRole('dialog', { name: '上下文状态' })).toBeInTheDocument();
     expect(localStorage.getItem(CONTEXT_STATUS_DEFAULT_OPEN_STORAGE_KEY)).toBe('true');
+    expect(screen.getByRole('switch', { name: '默认展开' })).toBeChecked();
+
+    fireEvent.pointerDown(outsideInput);
+    outsideInput.focus();
+    fireEvent.focusIn(outsideInput);
+    fireEvent.click(outsideInput);
+    expect(outsideInput).toHaveFocus();
+    expect(screen.getByRole('dialog', { name: '上下文状态' })).toBeInTheDocument();
+    outsideInput.remove();
+  });
+
+  it('默认展开关闭时点击弹层外部仍可关闭当前弹层', async () => {
+    render(<ContextStatus conversationId="chat-outside-unpinned" usage={actualUsage} />);
 
     fireEvent.click(screen.getByRole('button', { name: '查看上下文状态，剩余 43%' }));
-    expect(screen.getByRole('switch', { name: '默认展开' })).toBeChecked();
-    first.unmount();
+    expect(screen.getByRole('dialog', { name: '上下文状态' })).toBeInTheDocument();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    fireEvent.pointerDown(document.body);
+    fireEvent.click(document.body);
 
-    render(<ContextStatus conversationId="chat-outside" usage={actualUsage} />);
-    expect(await screen.findByRole('dialog', { name: '上下文状态' })).toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: '上下文状态' })).toBeNull());
   });
 
   it('只有主动关闭默认展开开关才会清除偏好', async () => {
