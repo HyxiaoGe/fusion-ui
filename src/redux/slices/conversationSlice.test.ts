@@ -64,7 +64,7 @@ describe('conversationSlice', () => {
     expect(state.conversationListDirtyIds).toEqual(['conv-2']);
   });
 
-  it('迟到的会话详情响应保留请求期间新增的本地消息并标记水合完成', () => {
+  it('迟到的会话详情响应只保留显式保护的请求期间本地消息并标记水合完成', () => {
     let state = reducer(
       undefined,
       upsertConversation(createConversation({
@@ -81,6 +81,7 @@ describe('conversationSlice', () => {
           id: 'conv-1',
           messages: [textMessage('server-existing')],
         }),
+        preserveMessageIds: ['local-new'],
       })
     );
 
@@ -89,6 +90,57 @@ describe('conversationSlice', () => {
       'local-new',
     ]);
     expect(next.hydrationStatus['conv-1']).toBe('done');
+  });
+
+  it('迟到水合以服务端快照顺序替换未保护的完成消息，不重复也不跨轮', () => {
+    const localMessages: Message[] = [
+      { ...textMessage('server-user-1'), role: 'user', sequence: 1, timestamp: 9_000 },
+      { ...textMessage('server-assistant-1'), role: 'assistant', sequence: 2, timestamp: 1_000 },
+      { ...textMessage('local-user-2'), role: 'user', timestamp: 9_500 },
+      { ...textMessage('local-assistant-2'), role: 'assistant', timestamp: 1_500 },
+    ];
+    let state = reducer(
+      undefined,
+      upsertConversation(createConversation({ id: 'conv-1', messages: localMessages }))
+    );
+
+    state = reducer(state, mergeHydratedConversation({
+      conversation: createConversation({
+        id: 'conv-1',
+        messages: [
+          { ...textMessage('server-user-1'), role: 'user', sequence: 1, timestamp: 9_000 },
+          { ...textMessage('server-assistant-1'), role: 'assistant', sequence: 2, timestamp: 1_000 },
+          { ...textMessage('server-user-2'), role: 'user', sequence: 3, timestamp: 9_500 },
+          { ...textMessage('server-assistant-2'), role: 'assistant', sequence: 4, timestamp: 1_500 },
+        ],
+      }),
+    }));
+
+    expect(state.byId['conv-1'].messages.map((message) => message.id)).toEqual([
+      'server-user-1',
+      'server-assistant-1',
+      'server-user-2',
+      'server-assistant-2',
+    ]);
+  });
+
+  it('服务端快照缺失时也不会继续保留未保护的本地完成消息', () => {
+    let state = reducer(
+      undefined,
+      upsertConversation(createConversation({
+        id: 'conv-1',
+        messages: [textMessage('server-existing'), textMessage('local-completed')],
+      }))
+    );
+
+    state = reducer(state, mergeHydratedConversation({
+      conversation: createConversation({
+        id: 'conv-1',
+        messages: [textMessage('server-existing')],
+      }),
+    }));
+
+    expect(state.byId['conv-1'].messages.map((message) => message.id)).toEqual(['server-existing']);
   });
 
   it('安全合并时不覆盖当前流式消息的本地内容', () => {

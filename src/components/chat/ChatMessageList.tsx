@@ -45,16 +45,6 @@ interface AwayFromBottomState {
   isAway: boolean;
 }
 
-// 定义角色排序优先级
-const getRolePriority = (role: string): number => {
-  switch (role) {
-    case 'user': return 0; // 用户消息最高优先级
-    case 'system': return 1; // 系统消息次之
-    case 'assistant': return 2; // AI回复最低优先级
-    default: return 3;
-  }
-};
-
 const DEFAULT_EMPTY_STATE = {
   title: '开始一个新对话',
   description: '输入你的问题，开始与 AI 助手对话...',
@@ -189,38 +179,19 @@ const ChatMessageList: React.FC<ChatMessageListProps> = ({
     ));
   }, [conversationId]);
 
-  // 按时间戳排序消息 - 确保使用完整毫秒精度
-  const sortedMessages = useMemo(() => {
-    return [...messages].sort((a, b) => {
-      // 确保转换为数字类型进行比较
-      const timestampA = Number(a.timestamp);
-      const timestampB = Number(b.timestamp);
-
-      const timestampDiff = timestampA - timestampB;
-      
-      // 如果时间戳相同（或非常接近，如在同一秒内）
-      if (Math.abs(timestampDiff) < 1000) {
-        // 根据角色排序：用户消息排在AI回复前面
-        return getRolePriority(a.role) - getRolePriority(b.role);
-      }
-      
-      return timestampDiff;
-    });
-  }, [messages]);
-
   const lastAssistantIndex = useMemo(() => {
-    const lastMessage = sortedMessages[sortedMessages.length - 1];
+    const lastMessage = messages[messages.length - 1];
     if (lastMessage?.role !== 'assistant') {
       return -1;
     }
 
-    for (let index = sortedMessages.length - 1; index >= 0; index -= 1) {
-      if (sortedMessages[index]?.role === 'assistant') {
+    for (let index = messages.length - 1; index >= 0; index -= 1) {
+      if (messages[index]?.role === 'assistant') {
         return index;
       }
     }
     return -1;
-  }, [sortedMessages]);
+  }, [messages]);
 
   // 滚动到底部
   const scrollToBottom = useCallback((behavior: ScrollBehavior = 'auto') => {
@@ -331,7 +302,7 @@ const ChatMessageList: React.FC<ChatMessageListProps> = ({
         || currentRun?.messageId === message.id
         || currentRun?.serverMessageId === message.id;
     }
-    return index === sortedMessages.length - 1;
+    return index === messages.length - 1;
   };
 
   useEffect(() => {
@@ -373,9 +344,9 @@ const ChatMessageList: React.FC<ChatMessageListProps> = ({
   }, [scrollToBottom, setIsAwayFromBottom]);
 
   const statusText = useMemo(() => {
-    if (sortedMessages.length === 0) return null;
+    if (messages.length === 0) return null;
 
-    const lastMessage = sortedMessages[sortedMessages.length - 1];
+    const lastMessage = messages[messages.length - 1];
 
     if (lastMessage.role === 'user' && lastMessage.status === 'failed') {
       return '发送失败，可重新发送';
@@ -394,7 +365,7 @@ const ChatMessageList: React.FC<ChatMessageListProps> = ({
     }
 
     return null;
-  }, [completionStateVisible, isLoadingQuestions, isStreaming, sortedMessages, suggestedQuestions.length]);
+  }, [completionStateVisible, isLoadingQuestions, isStreaming, messages, suggestedQuestions.length]);
 
   if (messages.length === 0 && loadingState === 'history-hydration') {
     return (
@@ -421,15 +392,15 @@ const ChatMessageList: React.FC<ChatMessageListProps> = ({
     <div ref={messageListRef} className="flex flex-col min-h-full px-4 pb-[120px]">
       {/* spacer 把消息推到底部，但不阻止向上滚动 */}
       <div className="flex-1" />
-      {sortedMessages.map((message, index) => {
-        const prevMessage = index > 0 ? sortedMessages[index - 1] : null;
+      {messages.map((message, index) => {
+        const prevMessage = index > 0 ? messages[index - 1] : null;
         return (
           <ChatMessageRow
             key={message.id}
             message={message}
             previousRole={prevMessage?.role ?? null}
             isFirstMessage={index === 0}
-            isLastMessage={index === sortedMessages.length - 1}
+            isLastMessage={index === messages.length - 1}
             isStreamingMessage={isStreamingForMessage(message, index)}
             onRetry={onRetry}
             onContinueAgentRun={onContinueAgentRun}

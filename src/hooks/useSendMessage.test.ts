@@ -5,12 +5,19 @@ import { configureStore } from '@reduxjs/toolkit';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import authReducer, { logout } from '@/redux/slices/authSlice';
-import conversationReducer from '@/redux/slices/conversationSlice';
+import conversationReducer, {
+  appendMessage,
+  setHydrationStatus,
+} from '@/redux/slices/conversationSlice';
 import modelsReducer from '@/redux/slices/modelsSlice';
 import streamReducer from '@/redux/slices/streamSlice';
 import { resetConversationState, upsertConversation } from '@/redux/slices/conversationSlice';
 import { useSendMessage } from './useSendMessage';
 import type { StreamCallbacks } from '@/lib/api/chat';
+import {
+  loadConversationDetail,
+  resetConversationDetailResource,
+} from '@/lib/chat/conversationDetailResource';
 
 const {
   sendMessageStreamMock,
@@ -128,6 +135,8 @@ describe('useSendMessage', () => {
     stopStreamMock.mockReset();
     stopStreamMock.mockResolvedValue(undefined);
     getConversationMock.mockReset();
+    getConversationMock.mockRejectedValue(new Error('测试默认跳过完成后权威水合'));
+    resetConversationDetailResource();
     generateChatTitleMock.mockReset();
     generateChatTitleMock.mockResolvedValue('Generated Title');
     uuidMock.mockReset();
@@ -211,6 +220,239 @@ describe('useSendMessage', () => {
       expect(state.conversation.conversationListDirtyIds).toEqual(['server-conv']);
       expect(state.stream.isStreaming).toBe(false);
     });
+  });
+
+  it('发送开始会让发送前详情请求失效，并立即解除旧 loading 状态', async () => {
+    const store = createStore();
+    store.dispatch(
+      upsertConversation({
+        id: 'existing-conv',
+        title: 'Existing',
+        model_id: 'model-1',
+        messages: [],
+        createdAt: 1,
+        updatedAt: 1,
+      })
+    );
+    store.dispatch(setHydrationStatus({ id: 'existing-conv', status: 'loading' }));
+
+    let resolvePreSendDetail: ((value: unknown) => void) | undefined;
+    getConversationMock
+      .mockImplementationOnce(() => new Promise((resolve) => {
+        resolvePreSendDetail = resolve;
+      }))
+      .mockRejectedValueOnce(new Error('完成后权威水合失败'));
+    const preSendRequest = loadConversationDetail('existing-conv');
+    const preSendResult = preSendRequest.catch((error) => error);
+
+    let releaseStream: (() => void) | undefined;
+    let streamCallbacks: StreamCallbacks | undefined;
+    sendMessageStreamMock.mockImplementationOnce(
+      async (_payload: unknown, callbacks: StreamCallbacks) => {
+        streamCallbacks = callbacks;
+        await new Promise<void>((resolve) => {
+          releaseStream = resolve;
+        });
+      }
+    );
+    uuidMock.mockReset().mockReturnValueOnce('local-user').mockReturnValueOnce('local-assistant');
+
+    const { result } = renderHook(() => useSendMessage(), {
+      wrapper: createWrapper(store),
+    });
+
+    let sendPromise: Promise<void> | undefined;
+    await act(async () => {
+      sendPromise = result.current.sendMessage('新问题', { conversationId: 'existing-conv' });
+    });
+    await waitFor(() => expect(sendMessageStreamMock).toHaveBeenCalledTimes(1));
+    expect(store.getState().conversation.hydrationStatus['existing-conv']).toBe('done');
+
+    await act(async () => {
+      resolvePreSendDetail?.({
+        id: 'existing-conv',
+        title: '旧快照',
+        model_id: 'model-1',
+        messages: [],
+      });
+    });
+    await expect(preSendResult).resolves.toMatchObject({
+      name: 'StaleConversationDetailRequestError',
+    });
+    expect(
+      store.getState().conversation.byId['existing-conv'].messages.map((message) => message.id)
+    ).toEqual(['local-user', 'local-assistant']);
+
+    await act(async () => {
+      streamCallbacks?.onDone({
+        messageId: 'server-assistant',
+        conversationId: 'existing-conv',
+      });
+      releaseStream?.();
+      await sendPromise;
+    });
+  });
+
+  it('新 UI 对接忽略客户端消息 ID 的旧 API 时，完成后权威快照替换乐观副本且顺序唯一', async () => {
+    const store = createStore();
+    store.dispatch(
+      upsertConversation({
+        id: 'existing-conv',
+        title: 'Existing',
+        model_id: 'model-1',
+        messages: [
+          { id: 'history-user', role: 'user', content: [], sequence: 1, timestamp: 1 },
+          { id: 'history-assistant', role: 'assistant', content: [], sequence: 2, timestamp: 2 },
+        ],
+        createdAt: 1,
+        updatedAt: 2,
+      })
+    );
+    uuidMock.mockReset().mockReturnValueOnce('local-user').mockReturnValueOnce('local-assistant');
+    getConversationMock.mockResolvedValueOnce({
+      id: 'existing-conv',
+      title: 'Existing',
+      model_id: 'model-1',
+      created_at: 1,
+      updated_at: 4,
+      messages: [
+        { id: 'history-user', role: 'user', content: [], sequence: 1, created_at: 1 },
+        { id: 'history-assistant', role: 'assistant', content: [], sequence: 2, created_at: 2 },
+        { id: 'server-user', role: 'user', content: [], sequence: 3, created_at: 3 },
+        {
+          id: 'server-assistant',
+          role: 'assistant',
+          content: [{ type: 'text', id: 'answer', text: '服务端答案' }],
+          sequence: 4,
+          created_at: 4,
+          usage: { input_tokens: 11, output_tokens: 7 },
+        },
+      ],
+    });
+    sendMessageStreamMock.mockImplementationOnce(
+      async (_payload: unknown, callbacks: StreamCallbacks) => {
+        callbacks.onReady({
+          messageId: 'server-assistant',
+          conversationId: 'existing-conv',
+        });
+        callbacks.onDone({
+          messageId: 'server-assistant',
+          conversationId: 'existing-conv',
+        });
+      }
+    );
+
+    const { result } = renderHook(() => useSendMessage(), {
+      wrapper: createWrapper(store),
+    });
+    await act(async () => {
+      await result.current.sendMessage('新问题', { conversationId: 'existing-conv' });
+    });
+
+    await waitFor(() => {
+      expect(
+        store.getState().conversation.byId['existing-conv'].messages.map((message) => message.id)
+      ).toEqual([
+        'history-user',
+        'history-assistant',
+        'server-user',
+        'server-assistant',
+      ]);
+    });
+    const messages = store.getState().conversation.byId['existing-conv'].messages;
+    expect(messages.map((message) => message.sequence)).toEqual([1, 2, 3, 4]);
+    expect(messages.some((message) => message.id === 'local-user')).toBe(false);
+    expect(messages.some((message) => message.id === 'local-assistant')).toBe(false);
+    expect(sendMessageStreamMock.mock.calls[0]?.[0]).toEqual(
+      expect.objectContaining({
+        user_message_id: 'local-user',
+        assistant_message_id: 'local-assistant',
+      })
+    );
+  });
+
+  it('完成后权威水合保留请求发出后新增的本地消息', async () => {
+    const store = createStore();
+    store.dispatch(
+      upsertConversation({
+        id: 'existing-conv',
+        title: 'Existing',
+        model_id: 'model-1',
+        messages: [],
+        createdAt: 1,
+        updatedAt: 1,
+      })
+    );
+    uuidMock.mockReset().mockReturnValueOnce('local-user').mockReturnValueOnce('local-assistant');
+    let resolveAuthoritativeDetail: ((value: unknown) => void) | undefined;
+    getConversationMock.mockImplementationOnce(() => new Promise((resolve) => {
+      resolveAuthoritativeDetail = resolve;
+    }));
+    sendMessageStreamMock.mockImplementationOnce(
+      async (_payload: unknown, callbacks: StreamCallbacks) => {
+        callbacks.onReady({
+          messageId: 'local-assistant',
+          conversationId: 'existing-conv',
+        });
+        callbacks.onDone({
+          messageId: 'local-assistant',
+          conversationId: 'existing-conv',
+        });
+      }
+    );
+
+    const { result } = renderHook(() => useSendMessage(), {
+      wrapper: createWrapper(store),
+    });
+    await act(async () => {
+      await result.current.sendMessage('第一轮', { conversationId: 'existing-conv' });
+    });
+    await waitFor(() => expect(getConversationMock).toHaveBeenCalledTimes(1));
+
+    act(() => {
+      store.dispatch(appendMessage({
+        conversationId: 'existing-conv',
+        message: {
+          id: 'later-user',
+          role: 'user',
+          content: [{ type: 'text', id: 'later-text', text: '第二轮本地消息' }],
+          status: 'pending',
+          timestamp: 10,
+        },
+      }));
+    });
+    await act(async () => {
+      resolveAuthoritativeDetail?.({
+        id: 'existing-conv',
+        title: 'Existing',
+        model_id: 'model-1',
+        created_at: 1,
+        updated_at: 2,
+        messages: [
+          { id: 'local-user', role: 'user', content: [], sequence: 1, created_at: 1 },
+          {
+            id: 'local-assistant',
+            role: 'assistant',
+            content: [{ type: 'text', id: 'answer', text: '权威答案' }],
+            sequence: 2,
+            created_at: 2,
+            usage: { input_tokens: 3, output_tokens: 5 },
+          },
+        ],
+      });
+    });
+
+    await waitFor(() => {
+      expect(
+        store.getState().conversation.byId['existing-conv'].messages.map((message) => message.id)
+      ).toEqual(['local-user', 'local-assistant', 'later-user']);
+    });
+    expect(store.getState().conversation.byId['existing-conv'].messages[1]).toEqual(
+      expect.objectContaining({
+        sequence: 2,
+        usage: { input_tokens: 3, output_tokens: 5 },
+      })
+    );
   });
 
   it.each(['logout', 'switch-account', 'reset'] as const)(
@@ -702,9 +944,13 @@ describe('useSendMessage', () => {
     });
 
     await waitFor(() => expect(onDraftCreated).toHaveBeenCalledWith('pending-upload-conv'));
+    const [localUserMessage, localAssistantMessage] =
+      store.getState().conversation.byId['pending-upload-conv'].messages;
     expect(sendMessageStreamMock).toHaveBeenCalledWith(
       expect.objectContaining({
         conversation_id: 'pending-upload-conv',
+        user_message_id: localUserMessage.id,
+        assistant_message_id: localAssistantMessage.id,
         file_ids: ['file-1'],
       }),
       expect.any(Object),
@@ -1535,9 +1781,7 @@ describe('useSendMessage', () => {
     await act(async () => { releaseStream?.(); });
   });
 
-  it('普通无工具问答：endStream 保留 currentRun，不触发 agent DB refresh', async () => {
-    // 场景：走过 onRunStarted 但 totalToolCalls=0（如 stop 即结束），
-    // 修复后 isAgentMode 应为 false，不触发 getConversation
+  it('普通无工具问答：endStream 保留 currentRun，且只走统一权威详情刷新', async () => {
     const store = createStore();
     store.dispatch(
       upsertConversation({
@@ -1628,10 +1872,10 @@ describe('useSendMessage', () => {
       expect(store.getState().stream.isStreaming).toBe(false);
     });
 
-    // 关键断言：currentRun 仍保留（方案 A），但因 totalToolCalls=0 不应触发 getConversation
+    // currentRun 仍保留；无论是否调用工具，完成后都只走同一条权威详情刷新。
     expect(store.getState().stream.currentRun).not.toBeNull();
     expect(store.getState().stream.currentRun?.totalToolCalls).toBe(0);
-    expect(getConversationMock).not.toHaveBeenCalled();
+    expect(getConversationMock).toHaveBeenCalledTimes(1);
   });
 
   it('普通无工具问答：reasoning-only 完成时恢复为正文，避免最终正文空白', async () => {
@@ -1727,7 +1971,7 @@ describe('useSendMessage', () => {
     expect(assistantMsg?.content).toEqual([
       { type: 'text', id: 'recovered-blk_t', text: '你好！我是 DeepSeek。' },
     ]);
-    expect(getConversationMock).not.toHaveBeenCalled();
+    expect(getConversationMock).toHaveBeenCalledTimes(1);
   });
 
   it('run_completed finish_reason=incomplete 时保留 incomplete 状态', async () => {
@@ -1824,7 +2068,7 @@ describe('useSendMessage', () => {
     expect(store.getState().stream.currentRun?.status).toBe('incomplete');
   });
 
-  it('agent run 含 tool_call：仍触发 agent DB refresh', async () => {
+  it('agent run 含 tool_call：通过统一权威详情刷新补齐 DB 消息', async () => {
     const store = createStore();
     store.dispatch(
       upsertConversation({
@@ -1839,11 +2083,13 @@ describe('useSendMessage', () => {
 
     getConversationMock.mockResolvedValue({
       id: 'existing-conv',
+      title: 'Existing',
+      model_id: 'model-1',
       messages: [
         {
           id: 'srv-asst-1',
           role: 'assistant',
-          content: [{ type: 'text', text: 'final from db' }],
+          content: [{ type: 'text', id: 'answer', text: 'final from db' }],
           usage: { input_tokens: 10, output_tokens: 20 },
         },
       ],
@@ -1964,7 +2210,7 @@ describe('useSendMessage', () => {
       expect(assistantMsg).toEqual(
         expect.objectContaining({
           id: 'srv-asst-1',
-          content: [{ type: 'text', text: 'final from db' }],
+          content: [{ type: 'text', id: 'answer', text: 'final from db' }],
           usage: { input_tokens: 10, output_tokens: 20 },
         })
       );

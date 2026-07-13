@@ -118,6 +118,7 @@ interface ServerMessage {
   id: string;
   role: 'user' | 'assistant';
   content: ServerBlock[];
+  sequence?: number | null;
   model_id?: string | null;
   usage?: ServerUsage | null;
   created_at?: string | number | null;
@@ -202,6 +203,7 @@ function buildMessage(serverMessage: ServerMessage, conversationId: string): Mes
     id: serverMessage.id,
     role: serverMessage.role,
     content: buildContentBlocks(serverMessage.content),
+    ...(typeof serverMessage.sequence === 'number' ? { sequence: serverMessage.sequence } : {}),
     chatId: conversationId,
     model_id: serverMessage.model_id ?? null,
     usage,
@@ -312,9 +314,9 @@ function mapEvidenceItem(item: ServerAgentEvidenceItem): AgentEvidenceItem {
 export function buildChatFromServerConversation(
   serverConversation: ServerConversation
 ): Conversation {
-  const messages = serverConversation.messages
-    .map(msg => buildMessage(msg, serverConversation.id))
-    .sort((a, b) => (a.timestamp ?? 0) - (b.timestamp ?? 0));
+  // 服务端数组顺序（由 message.sequence 定义）是唯一的历史消息顺序契约。
+  // 旧 payload 没有 sequence 时也保留原数组顺序，不再用时间戳猜测轮次。
+  const messages = serverConversation.messages.map(msg => buildMessage(msg, serverConversation.id));
 
   return {
     id: serverConversation.id,

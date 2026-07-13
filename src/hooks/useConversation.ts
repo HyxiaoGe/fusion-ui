@@ -50,18 +50,20 @@ export function useConversation(conversationId: string | null | undefined) {
     });
     const requestMetadata = getConversationDetailRequestMetadata(request);
     attachedRequestRef.current = { conversationId, promise: request };
+    let requestBecameStale = false;
     dispatch(setHydrationStatus({ id: conversationId, status: 'loading' }));
     void request
       .then((serverConversation) => {
         const state = reduxStore.getState();
         dispatch(mergeHydratedConversation({
           conversation: serverConversation,
-          preserveMessageIds: getProtectedHydrationMessageIds(state, conversationId),
+          preserveMessageIds: getProtectedHydrationMessageIds(state, conversationId, requestMetadata),
           requestMetadata,
         }));
       })
       .catch((error) => {
         if (isStaleConversationDetailRequestError(error)) {
+          requestBecameStale = true;
           return;
         }
         const message = error instanceof Error ? error.message : '加载对话失败';
@@ -70,6 +72,14 @@ export function useConversation(conversationId: string | null | undefined) {
       .finally(() => {
         if (attachedRequestRef.current?.promise === request) {
           attachedRequestRef.current = null;
+          // 发送流程会先把状态切到 done；其他失效来源若仍留下 loading，
+          // 则回到 idle，让 effect 在旧请求解绑后发起一份新快照。
+          if (
+            requestBecameStale &&
+            reduxStore.getState().conversation.hydrationStatus[conversationId] === 'loading'
+          ) {
+            dispatch(setHydrationStatus({ id: conversationId, status: 'idle' }));
+          }
         }
       });
   }, [conversationId, dispatch, reduxStore]);

@@ -131,6 +131,8 @@ export interface Message {
   id: string;
   role: 'user' | 'assistant';
   content: ContentBlock[];
+  /** 服务端分配的会话内稳定顺序；本地 optimistic 消息在服务端确认前可以没有该值。 */
+  sequence?: number;
   model_id?: string | null;
   usage?: Usage | null;
   timestamp?: number;

@@ -54,6 +54,60 @@ describe('conversationHydration', () => {
     expect(parseServerTimestamp('2026-03-14 21:30:00')).toBe(new Date('2026-03-14T21:30:00Z').getTime());
   });
 
+  it('强刷水合时保留服务端 sequence 顺序，不再按异常时间戳反转消息', () => {
+    const chat = buildChatFromServerConversation({
+      id: 'chat-server-order',
+      title: 'Server ordered chat',
+      model_id: 'deepseek-chat',
+      messages: [
+        {
+          id: 'user-1',
+          role: 'user',
+          sequence: 41,
+          content: [{ type: 'text', id: 'blk_u1', text: '用户问题' }],
+          created_at: '2026-07-13T23:17:10',
+        },
+        {
+          id: 'assistant-1',
+          role: 'assistant',
+          sequence: 42,
+          content: [{ type: 'text', id: 'blk_a1', text: '助手回答' }],
+          created_at: '2026-07-13T15:17:17',
+        },
+      ],
+    });
+
+    expect(chat.messages.map((message) => ({ id: message.id, sequence: message.sequence }))).toEqual([
+      { id: 'user-1', sequence: 41 },
+      { id: 'assistant-1', sequence: 42 },
+    ]);
+  });
+
+  it('兼容没有 sequence 的旧响应并原样消费服务端数组顺序', () => {
+    const chat = buildChatFromServerConversation({
+      id: 'chat-legacy-order',
+      title: 'Legacy ordered chat',
+      model_id: 'deepseek-chat',
+      messages: [
+        {
+          id: 'user-legacy',
+          role: 'user',
+          content: [{ type: 'text', id: 'blk_u', text: '旧用户消息' }],
+          created_at: '2026-07-13T23:17:10',
+        },
+        {
+          id: 'assistant-legacy',
+          role: 'assistant',
+          content: [{ type: 'text', id: 'blk_a', text: '旧助手消息' }],
+          created_at: '2026-07-13T15:17:17',
+        },
+      ],
+    });
+
+    expect(chat.messages.map((message) => message.id)).toEqual(['user-legacy', 'assistant-legacy']);
+    expect(chat.messages.every((message) => message.sequence === undefined)).toBe(true);
+  });
+
   it('requests hydration for missing or empty local chats', () => {
     expect(shouldHydrateConversation(null)).toBe(true);
     expect(shouldHydrateConversation({ messages: [] })).toBe(true);

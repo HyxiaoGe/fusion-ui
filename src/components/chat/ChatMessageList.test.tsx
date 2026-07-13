@@ -115,6 +115,44 @@ describe('ChatMessageList', () => {
     });
   });
 
+  it('两轮消息间隔小于一秒时仍严格保留上游顺序', () => {
+    render(
+      <ChatMessageList
+        conversationId="chat-1"
+        messages={[
+          { id: 'user-1', role: 'user', content: [], timestamp: 1_000 },
+          { id: 'assistant-1', role: 'assistant', content: [], timestamp: 1_500 },
+          { id: 'user-2', role: 'user', content: [], timestamp: 1_900 },
+          { id: 'assistant-2', role: 'assistant', content: [], timestamp: 2_400 },
+        ]}
+      />
+    );
+
+    expect(screen.getAllByTestId(/^chat-message-/).map((node) => node.dataset.testid)).toEqual([
+      'chat-message-user-1',
+      'chat-message-assistant-1',
+      'chat-message-user-2',
+      'chat-message-assistant-2',
+    ]);
+  });
+
+  it('时间戳异常反转时仍按服务端传入顺序渲染 user 再 assistant', () => {
+    render(
+      <ChatMessageList
+        conversationId="chat-1"
+        messages={[
+          { id: 'user-1', role: 'user', content: [], sequence: 1, timestamp: 9 * 60 * 60 * 1_000 },
+          { id: 'assistant-1', role: 'assistant', content: [], sequence: 2, timestamp: 1_000 },
+        ]}
+      />
+    );
+
+    expect(screen.getAllByTestId(/^chat-message-/).map((node) => node.dataset.testid)).toEqual([
+      'chat-message-user-1',
+      'chat-message-assistant-1',
+    ]);
+  });
+
   it('初次进入长历史会话时即使当前位置不在底部也会滚到最新回复', () => {
     const scrollIntoView = vi.fn();
     window.HTMLElement.prototype.scrollIntoView = scrollIntoView;

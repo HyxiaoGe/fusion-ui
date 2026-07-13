@@ -324,11 +324,13 @@ const conversationSlice = createSlice({
           suggestedQuestions: serverMessage.suggestedQuestions ?? localMessage.suggestedQuestions,
         };
       });
-      const localOnlyMessages = (existing?.messages ?? []).filter(
-        (message) => !serverIds.has(message.id)
+      // 水合快照的数组顺序由服务端 sequence 保证。只有显式受保护的
+      // pending / failed / streaming / shouldSyncToDb 消息才允许留在快照尾部；
+      // 已完成的本地副本即使 ID 与服务端不同也必须丢弃，避免强刷或迟到水合重复跨轮。
+      const protectedLocalOnlyMessages = (existing?.messages ?? []).filter(
+        (message) => !serverIds.has(message.id) && preservedIds.has(message.id)
       );
-      const messages = [...mergedServerMessages, ...localOnlyMessages]
-        .sort((left, right) => (left.timestamp ?? 0) - (right.timestamp ?? 0));
+      const messages = [...mergedServerMessages, ...protectedLocalOnlyMessages];
       const titleChangedAfterRequest = Boolean(
         existing && requestMetadata && existing.title !== requestMetadata.title
       );

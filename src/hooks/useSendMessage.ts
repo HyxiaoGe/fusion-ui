@@ -6,11 +6,13 @@ import { useStore } from 'react-redux';
 import {
   appendMessage,
   materializeConversation,
+  mergeHydratedConversation,
   removeConversation,
   removeMessage,
   requestConversationListRefresh,
   setAnimatingTitleId,
   setGlobalError,
+  setHydrationStatus,
   setPendingConversationId,
   updateConversationTitle,
   updateMessage,
@@ -28,12 +30,7 @@ import {
   setStreamStatus,
   startStream,
 } from '@/redux/slices/streamSlice';
-import {
-  getConversation,
-  isRecoverableStreamError,
-  reconnectStream,
-  sendMessageStream,
-} from '@/lib/api/chat';
+import { isRecoverableStreamError, reconnectStream, sendMessageStream } from '@/lib/api/chat';
 import type { StreamCallbacks } from '@/lib/api/chat';
 import { runResumableStream } from '@/lib/api/resumableStream';
 import { generateChatTitle } from '@/lib/api/title';
@@ -42,6 +39,16 @@ import {
   recoverReasoningOnlyFinalBlocks,
   shouldRecoverReasoningOnlyFinalBlocks,
 } from '@/lib/chat/contentBlocks';
+import {
+  getConversationDetailRequestMetadata,
+  invalidateConversationDetail,
+  isStaleConversationDetailRequestError,
+  loadConversationDetail,
+} from '@/lib/chat/conversationDetailResource';
+import {
+  getConversationHydrationMetadata,
+  getProtectedHydrationMessageIds,
+} from '@/lib/chat/conversationHydrationMerge';
 import type { Message, ContentBlock } from '@/types/conversation';
 import type { FileAttachment } from '@/lib/utils/fileHelpers';
 import { useTypewriter } from './useTypewriter';
@@ -181,6 +188,44 @@ export function useSendMessage() {
   const typewriterRef = useRef(typewriter);
   typewriterRef.current = typewriter;
   const sendBoundaryRef = useRef({ authSessionKey, conversationEpoch });
+
+  const hydrateAuthoritativeConversation = useCallback(
+    async (conversationId: string, isSessionCurrent: () => boolean) => {
+      if (!isSessionCurrent()) return;
+
+      // SSE 完成后必须绕过发送前可能已挂起的详情请求，以“完成时”的本地消息
+      // 作为合并基线重新取一次服务端快照。旧 API 若忽略客户端消息 ID，服务端
+      // 快照会替换本地乐观副本；新 API 则会用同 ID 补齐 sequence / usage。
+      invalidateConversationDetail(conversationId);
+      const request = loadConversationDetail(conversationId, {
+        requestMetadata: getConversationHydrationMetadata(store.getState(), conversationId),
+      });
+      const requestMetadata = getConversationDetailRequestMetadata(request);
+      dispatch(setHydrationStatus({ id: conversationId, status: 'loading' }));
+
+      try {
+        const serverConversation = await request;
+        if (!isSessionCurrent()) return;
+        const state = store.getState();
+        dispatch(mergeHydratedConversation({
+          conversation: serverConversation,
+          preserveMessageIds: getProtectedHydrationMessageIds(
+            state,
+            conversationId,
+            requestMetadata,
+          ),
+          requestMetadata,
+        }));
+      } catch (error) {
+        if (isStaleConversationDetailRequestError(error) || !isSessionCurrent()) {
+          return;
+        }
+        // 流式结果已经可用，权威快照刷新失败不应把正常完成的发送 UI 变成错误态。
+        dispatch(setHydrationStatus({ id: conversationId, status: 'done' }));
+      }
+    },
+    [dispatch, store]
+  );
 
   const invalidateFrontendSend = useCallback(() => {
     sendGenerationRef.current += 1;
@@ -368,6 +413,13 @@ export function useSendMessage() {
       const isDraft = options.isDraft ?? (options.conversationId === null);
       const tempConvId = isDraft && !options.conversationId ? uuidv4() : options.conversationId!;
 
+      // 发送开始后，发送前发出的详情 GET 已不再能代表当前会话。立即让它失效，
+      // 并结束其 loading 状态，避免迟到快照覆盖本轮乐观消息或永久停在加载态。
+      invalidateConversationDetail(tempConvId);
+      if (options.conversationId) {
+        dispatch(setHydrationStatus({ id: tempConvId, status: 'done' }));
+      }
+
       if (isDraft) {
         dispatch(setPendingConversationId(tempConvId));
         dispatch(
@@ -495,12 +547,6 @@ export function useSendMessage() {
 
         // 从 streamSlice 组装最终 content blocks
         const streamState = (store.getState() as { stream: import('@/redux/slices/streamSlice').StreamState }).stream;
-        // 方案 A 后 endStream 保留 currentRun，仅靠 !!currentRun 判断会误把
-        // 任何走过 onRunStarted 的简单问答当 agent 模式触发 GET /conversations/{id}，
-        // 可能覆盖流式内容。精确判断当前 message 的 currentRun 且确实调过工具。
-        const isAgentMode =
-          streamState.currentRun?.messageId === assistantMessageId &&
-          (streamState.currentRun?.totalToolCalls ?? 0) > 0;
         const rawFinalBlocks = selectFullStreamContentBlocks(streamState);
         const finalBlocks = shouldRecoverReasoningOnlyFinalBlocks({
           runStatus: streamState.currentRun?.status,
@@ -540,6 +586,7 @@ export function useSendMessage() {
         serverMessageIdRef.current = null;
         assistantHasContentRef.current = false;
         options.onStreamEnd?.(finalConvId);
+        void hydrateAuthoritativeConversation(finalConvId, isSessionCurrent);
         // 仅新对话的第一轮生成标题，后续轮次不再更新
         if (isDraft) {
           startPostStreamActions(finalConvId);
@@ -547,41 +594,6 @@ export function useSendMessage() {
           if (isSessionCurrent()) {
             dispatch(requestConversationListRefresh(finalConvId));
           }
-        }
-
-        // Agent 模式：streamSlice 无法完整跟踪多步数据，从 DB 重新拉取完整消息内容
-        if (isAgentMode) {
-          void (async () => {
-            try {
-              if (!isSessionCurrent()) return;
-              const conv = await getConversation(finalConvId) as any;
-              if (!isSessionCurrent()) return;
-              const dbMessages = conv?.messages;
-              if (!dbMessages) return;
-
-              // 用最后一条 assistant 消息（前后端 ID 不同，不能用 assistantMessageId 匹配）
-              const lastAssistant = dbMessages
-                .filter((m: any) => m.role === 'assistant' && m.content?.length > 0)
-                .at(-1);
-              if (lastAssistant?.content) {
-                dispatch(
-                  updateMessage({
-                    conversationId: finalConvId,
-                    messageId: assistantMessageId,
-                    patch: {
-                      id: lastAssistant.id,
-                      content: lastAssistant.content,
-                      model_id: lastAssistant.model_id ?? enabledModel.id,
-                      usage: lastAssistant.usage ?? undefined,
-                      isReasoningVisible: lastAssistant.content.some((b: any) => b.type === 'thinking') ? false : undefined,
-                    },
-                  })
-                );
-              }
-            } catch {
-              // 静默处理，刷新页面也能看到正确数据
-            }
-          })();
         }
       };
 
@@ -674,6 +686,8 @@ export function useSendMessage() {
               model_id: enabledModel.id,
               message: content.trim(),
               conversation_id: tempConvId,
+              user_message_id: userMessageId,
+              assistant_message_id: assistantMessageId,
               stream: true,
               options: { use_reasoning: useReasoning },
               file_ids: fileIds,
@@ -761,7 +775,15 @@ export function useSendMessage() {
         }
       }
     },
-    [dispatch, models, reasoningEnabled, selectedModelId, stopStreaming, store]
+    [
+      dispatch,
+      hydrateAuthoritativeConversation,
+      models,
+      reasoningEnabled,
+      selectedModelId,
+      stopStreaming,
+      store,
+    ]
   );
 
   const retryMessage = useRetryMessage(sendMessage);

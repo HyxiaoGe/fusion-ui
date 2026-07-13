@@ -51,7 +51,7 @@ export function useSidebarActions() {
       const serverChat = await request;
       dispatch(mergeHydratedConversation({
         conversation: serverChat,
-        preserveMessageIds: getProtectedHydrationMessageIds(store.getState(), id),
+        preserveMessageIds: getProtectedHydrationMessageIds(store.getState(), id, requestMetadata),
         requestMetadata,
       }));
     } catch (error) {

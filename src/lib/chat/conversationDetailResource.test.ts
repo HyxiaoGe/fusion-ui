@@ -57,10 +57,20 @@ describe('conversationDetailResource', () => {
   it('共享请求始终携带首个真实 GET 开始时的统一元数据快照', async () => {
     const pending = deferred<any>();
     getConversationMock.mockReturnValue(pending.promise);
-    const firstMetadata = { title: '旧标题', model_id: 'model-old', updatedAt: 1 };
+    const firstMetadata = {
+      title: '旧标题',
+      model_id: 'model-old',
+      updatedAt: 1,
+      messageSignatures: {},
+    };
     const hoverPromise = loadConversationDetail('chat-a', { requestMetadata: firstMetadata });
     const routePromise = loadConversationDetail('chat-a', {
-      requestMetadata: { title: '本地新标题', model_id: 'model-new', updatedAt: 2 },
+      requestMetadata: {
+        title: '本地新标题',
+        model_id: 'model-new',
+        updatedAt: 2,
+        messageSignatures: {},
+      },
     });
 
     expect(routePromise).toBe(hoverPromise);

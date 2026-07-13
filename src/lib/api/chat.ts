@@ -22,6 +22,8 @@ export interface ChatRequest {
   model_id: string;
   message: string;
   conversation_id?: string | null;
+  user_message_id?: string;
+  assistant_message_id?: string;
   stream?: boolean;
   options?: {
     use_reasoning?: boolean;

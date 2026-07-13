@@ -157,6 +157,35 @@ describe('sendMessageStream — 新 envelope 协议', () => {
     fetchWithAuthMock.mockReset();
   });
 
+  it('把前端生成的 user / assistant 稳定消息 ID 原样写入请求 payload', async () => {
+    fetchWithAuthMock.mockResolvedValue(createStreamResponse(['data: [DONE]\n\n']));
+
+    await sendMessageStream(
+      {
+        model_id: 'gpt',
+        message: 'hi',
+        conversation_id: 'conv-1',
+        user_message_id: 'user-stable-id',
+        assistant_message_id: 'assistant-stable-id',
+      },
+      {
+        onReady: vi.fn(),
+        onReasoning: vi.fn(),
+        onAnswering: vi.fn(),
+        onDone: vi.fn(),
+        onError: vi.fn(),
+      },
+    );
+
+    const request = fetchWithAuthMock.mock.calls[0]?.[1] as RequestInit;
+    expect(JSON.parse(String(request.body))).toMatchObject({
+      conversation_id: 'conv-1',
+      user_message_id: 'user-stable-id',
+      assistant_message_id: 'assistant-stable-id',
+      stream: true,
+    });
+  });
+
   it('run_started 触发 onReady 并携带 messageId / conversationId', async () => {
     fetchWithAuthMock.mockResolvedValue(
       createStreamResponse([
