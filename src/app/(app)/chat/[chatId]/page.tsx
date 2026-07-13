@@ -343,6 +343,7 @@ export default function ChatPage() {
             dispatch,
             isActive: () => !cancelled,
             resolveMessageId: () => messageId,
+            resolveConversationId: () => chatId,
           }),
           onDone: () => {
             if (cancelled) return;

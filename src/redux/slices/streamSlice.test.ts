@@ -20,6 +20,7 @@ import streamSliceReducer, {
   selectFullStreamContentBlocks,
   setLastEntryId,
   setStreamStatus,
+  updateContextUsage,
 } from './streamSlice';
 
 const reducer = streamSliceReducer;
@@ -35,6 +36,119 @@ function planStatus(state: ReturnType<typeof initial>, id: string) {
 }
 
 describe('streamSlice — agent run timeline', () => {
+  it('保存当前会话的上下文状态，重复事件幂等覆盖且切换流时清空', () => {
+    let state = reducer(initial(), startStream({ conversationId: 'chat-a', messageId: 'msg-a' }));
+    state = reducer(state, updateContextUsage({
+      conversationId: 'chat-a',
+      usage: {
+        status: 'no_op',
+        window_tokens: 1000,
+        estimated_tokens_before: 400,
+        estimated_tokens_after: 400,
+        actual_prompt_tokens: null,
+        removed_turns: 0,
+        removed_messages: 0,
+        removed_tool_transactions: 0,
+        round_index: 1,
+      },
+      runId: 'run-a',
+      messageId: 'server-msg-a',
+      sequence: 1,
+      phase: 'estimated',
+    }));
+    state = reducer(state, updateContextUsage({
+      conversationId: 'chat-a',
+      usage: {
+        status: 'no_op',
+        window_tokens: 1000,
+        estimated_tokens_before: 400,
+        estimated_tokens_after: 400,
+        actual_prompt_tokens: 410,
+        removed_turns: 0,
+        removed_messages: 0,
+        removed_tool_transactions: 0,
+        round_index: 1,
+      },
+      runId: 'run-a',
+      messageId: 'server-msg-a',
+      sequence: 2,
+      phase: 'final',
+    }));
+
+    expect(state.contextUsage?.actual_prompt_tokens).toBe(410);
+    state = reducer(state, endStream());
+    expect(state.contextUsage?.actual_prompt_tokens).toBe(410);
+    expect(state.conversationId).toBeNull();
+    expect(state.contextUsageConversationId).toBe('chat-a');
+
+    state = reducer(state, startStream({ conversationId: 'chat-b', messageId: 'msg-b' }));
+    expect(state.contextUsage).toBeNull();
+  });
+
+  it('拒绝迟到的其他会话上下文事件', () => {
+    let state = reducer(initial(), startStream({ conversationId: 'chat-a', messageId: 'msg-a' }));
+    state = reducer(state, updateContextUsage({
+      conversationId: 'chat-b',
+      usage: {
+        status: 'no_op',
+        window_tokens: 1000,
+        estimated_tokens_before: 400,
+        estimated_tokens_after: 400,
+        actual_prompt_tokens: null,
+        removed_turns: 0,
+        removed_messages: 0,
+        removed_tool_transactions: 0,
+        round_index: 1,
+      },
+      runId: 'run-b',
+      messageId: 'server-msg-b',
+      sequence: 1,
+      phase: 'estimated',
+    }));
+    expect(state.contextUsage).toBeNull();
+  });
+
+  it('同一 run 按 sequence replace 且 final 优先，重连重放不得倒退', () => {
+    let state = reducer(initial(), startStream({ conversationId: 'chat-a', messageId: 'msg-a' }));
+    const usage = {
+      status: 'no_op',
+      window_tokens: 1000,
+      estimated_tokens_before: 400,
+      estimated_tokens_after: 400,
+      actual_prompt_tokens: null,
+      removed_turns: 0,
+      removed_messages: 0,
+      removed_tool_transactions: 0,
+      round_index: 1,
+    };
+    state = reducer(state, updateContextUsage({
+      conversationId: 'chat-a', usage: { ...usage, actual_prompt_tokens: 410 },
+      runId: 'run-a', messageId: 'server-msg-a', sequence: 5, phase: 'final',
+    }));
+    state = reducer(state, updateContextUsage({
+      conversationId: 'chat-a', usage: { ...usage, actual_prompt_tokens: 999 },
+      runId: 'run-a', messageId: 'server-msg-a', sequence: 4, phase: 'final',
+    }));
+    state = reducer(state, updateContextUsage({
+      conversationId: 'chat-a', usage: { ...usage, actual_prompt_tokens: null },
+      runId: 'run-a', messageId: 'server-msg-a', sequence: 6, phase: 'estimated',
+    }));
+
+    expect(state.contextUsage?.actual_prompt_tokens).toBe(410);
+    expect(state.contextUsageMeta).toMatchObject({ sequence: 5, phase: 'final', roundIndex: 1 });
+
+    state = reducer(state, updateContextUsage({
+      conversationId: 'chat-a',
+      usage: { ...usage, round_index: 2, estimated_tokens_after: 430 },
+      runId: 'run-a', messageId: 'server-msg-a', sequence: 7, phase: 'estimated',
+    }));
+    expect(state.contextUsage).toMatchObject({
+      round_index: 2,
+      estimated_tokens_after: 430,
+      actual_prompt_tokens: null,
+    });
+    expect(state.contextUsageMeta).toMatchObject({ sequence: 7, phase: 'estimated', roundIndex: 2 });
+  });
   it('initRun 创建 currentRun (status=running, lastSequence=0)', () => {
     const state = reducer(initial(), initRun({
       runId: 'r1', messageId: 'm1', config: baseConfig, sequence: 0,

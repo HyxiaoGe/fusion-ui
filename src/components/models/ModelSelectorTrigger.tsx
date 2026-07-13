@@ -11,11 +11,12 @@ interface ModelSelectorTriggerProps {
   providers: ProviderInfo[];
   isOpen: boolean;
   disabled: boolean;
+  toolbarMode?: boolean;
   onClick?: () => void;
 }
 
 const ModelSelectorTrigger = forwardRef<HTMLButtonElement, ModelSelectorTriggerProps>(
-  ({ model, providers, isOpen, disabled, ...props }, ref) => {
+  ({ model, providers, isOpen, disabled, toolbarMode = false, ...props }, ref) => {
     const providerName = model
       ? providers.find((p) => p.id === model.provider)?.name || model.provider
       : "";
@@ -28,6 +29,7 @@ const ModelSelectorTrigger = forwardRef<HTMLButtonElement, ModelSelectorTriggerP
         data-testid="model-selector-trigger"
         className={cn(
           "inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border border-border bg-bg-elevated hover:bg-muted text-sm text-foreground transition-colors duration-fast",
+          toolbarMode && "max-w-[112px] px-1.5 sm:max-w-none sm:px-2.5",
           disabled && "cursor-default opacity-60",
           !disabled && "cursor-pointer",
           isOpen && "bg-muted",
@@ -37,10 +39,26 @@ const ModelSelectorTrigger = forwardRef<HTMLButtonElement, ModelSelectorTriggerP
         {model ? (
           <>
             <ProviderIcon providerId={model.provider} size={16} className="rounded-md" />
-            <div className="flex flex-col items-start leading-tight">
-              <span className="font-semibold text-sm truncate max-w-[140px]">{model.name}</span>
-              <span className="text-[9px] text-muted-foreground">{providerName}</span>
-              <CapabilityChipList labels={capabilityLabels} maxCount={4} />
+            <div className="flex min-w-0 flex-col items-start leading-tight">
+              <span className={cn(
+                "truncate text-sm font-semibold",
+                toolbarMode ? "max-w-[64px] sm:max-w-[140px]" : "max-w-[140px]",
+              )}>{model.name}</span>
+              <span
+                data-testid="model-selector-provider"
+                className={cn(
+                  "text-[9px] text-muted-foreground",
+                  toolbarMode && "hidden sm:block",
+                )}
+              >
+                {providerName}
+              </span>
+              <div
+                data-testid="model-selector-capabilities"
+                className={cn(toolbarMode && "hidden sm:block")}
+              >
+                <CapabilityChipList labels={capabilityLabels} maxCount={4} />
+              </div>
             </div>
           </>
         ) : (

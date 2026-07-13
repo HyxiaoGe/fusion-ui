@@ -13,6 +13,7 @@ import type {
   LimitReachedReason,
 } from '@/types/agentRun';
 import { parseTimestamp } from '@/lib/utils/parseTimestamp';
+import { normalizeContextUsage } from '@/lib/chat/contextUsage';
 
 // 服务端返回的原始类型（对齐后端 schema）
 interface ServerBlock {
@@ -45,6 +46,7 @@ interface ServerBlock {
 interface ServerUsage {
   input_tokens: number;
   output_tokens: number;
+  context?: unknown;
 }
 
 interface ServerAgentRunSummary {
@@ -188,13 +190,21 @@ function buildContentBlocks(serverBlocks: ServerBlock[]): ContentBlock[] {
 
 function buildMessage(serverMessage: ServerMessage, conversationId: string): Message {
   const hasThinking = serverMessage.content.some(b => b.type === 'thinking');
+  const contextUsage = normalizeContextUsage(serverMessage.usage?.context);
+  const usage = serverMessage.usage
+    ? {
+        input_tokens: serverMessage.usage.input_tokens,
+        output_tokens: serverMessage.usage.output_tokens,
+        ...(contextUsage ? { context: contextUsage } : {}),
+      }
+    : null;
   return {
     id: serverMessage.id,
     role: serverMessage.role,
     content: buildContentBlocks(serverMessage.content),
     chatId: conversationId,
     model_id: serverMessage.model_id ?? null,
-    usage: serverMessage.usage ?? null,
+    usage,
     timestamp: parseServerTimestamp(serverMessage.created_at),
     isReasoningVisible: hasThinking ? false : undefined,
     suggestedQuestions: serverMessage.suggested_questions ?? undefined,

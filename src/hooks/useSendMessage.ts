@@ -633,6 +633,7 @@ export function useSendMessage() {
                   serverMessageIdRef.current = messageId;
                 }
               },
+              resolveConversationId: () => activeConvIdRef.current,
             }),
 
             onDone: ({ conversationId: incomingConvId }) => {

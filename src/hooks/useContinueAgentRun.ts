@@ -135,10 +135,12 @@ function buildContinuationStreamCallbacks({
       isActive,
       resolveMessageId: () => assistantMessageId,
       setServerMessageId,
+      resolveConversationId: () => conversationId,
     }),
     onDone: () => {
       if (!isActive()) return;
-      const streamState = (store.getState() as RootStateForContinuation).stream;
+      const state = store.getState() as RootStateForContinuation;
+      const streamState = state.stream;
       const rawFinalBlocks = selectFullStreamContentBlocks(streamState);
       const finalBlocks = shouldRecoverReasoningOnlyFinalBlocks({
         runStatus: streamState.currentRun?.status,
@@ -146,16 +148,23 @@ function buildContinuationStreamCallbacks({
       })
         ? recoverReasoningOnlyFinalBlocks(rawFinalBlocks)
         : rawFinalBlocks;
+      const existingUsage = state.conversation.byId[conversationId]?.messages
+        .find(message => message.id === assistantMessageId)?.usage;
+      const currentContextUsage = streamState.contextUsageConversationId === conversationId
+        ? streamState.contextUsage
+        : null;
       dispatch(updateMessage({
         conversationId,
         messageId: assistantMessageId,
-        patch: { content: finalBlocks },
+        patch: {
+          content: finalBlocks,
+          ...(existingUsage && currentContextUsage
+            ? { usage: { ...existingUsage, context: currentContextUsage } }
+            : {}),
+        },
       }));
       dispatch(endStream());
-
-      if ((streamState.currentRun?.totalToolCalls ?? 0) > 0) {
-        refreshContinuationMessage({ conversationId, assistantMessageId, dispatch });
-      }
+      refreshContinuationMessage({ conversationId, assistantMessageId, dispatch });
     },
     onError: (message, payload) => {
       if (!isActive()) return;

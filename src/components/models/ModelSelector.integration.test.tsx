@@ -85,4 +85,14 @@ describe('ModelSelector 集成渲染', () => {
     expect(screen.getAllByText('长上下文')).toHaveLength(2);
     expect(screen.getByText('深度任务')).toBeInTheDocument();
   });
+
+  it('toolbarMode 在窄屏隐藏 provider 和能力标签，sm 恢复桌面信息', () => {
+    render(<ModelSelector toolbarMode />);
+
+    const trigger = screen.getByTestId('model-selector-trigger');
+    expect(trigger).toHaveClass('max-w-[112px]', 'sm:max-w-none');
+    expect(screen.getByTestId('model-selector-provider')).toHaveClass('hidden', 'sm:block');
+    expect(screen.getByTestId('model-selector-capabilities')).toHaveClass('hidden', 'sm:block');
+    expect(screen.getByText('Search Model')).toHaveClass('max-w-[64px]', 'sm:max-w-[140px]');
+  });
 });

@@ -38,6 +38,8 @@ const {
       },
       stream: {
         isStreaming: false,
+        conversationId: null,
+        contextUsage: null,
       },
       fileUpload: {
         files: {},
@@ -215,6 +217,8 @@ describe('ChatInput', () => {
     currentState.conversation.reasoningEnabled = false;
     currentState.conversation.byId = {};
     currentState.stream.isStreaming = false;
+    currentState.stream.conversationId = null;
+    currentState.stream.contextUsage = null;
     currentState.fileUpload.files = {};
     currentState.fileUpload.fileIds = {};
     currentState.fileUpload.processingFiles = {};
@@ -256,6 +260,88 @@ describe('ChatInput', () => {
       })
     );
     expect(triggerLoginDialogMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('在模型选择器旁展示当前会话上下文，并在切换会话时不串用流式状态', () => {
+    configureAuthenticatedVisionModel();
+    currentState.conversation.byId = {
+      'chat-a': {
+        id: 'chat-a',
+        messages: [{
+          id: 'assistant-a',
+          role: 'assistant',
+          content: [],
+          usage: {
+            input_tokens: 400,
+            output_tokens: 1,
+            context: { status: 'no_op', window_tokens: 1000, actual_prompt_tokens: 400 },
+          },
+        }],
+      },
+      'chat-b': {
+        id: 'chat-b',
+        messages: [{
+          id: 'assistant-b',
+          role: 'assistant',
+          content: [],
+          usage: {
+            input_tokens: 1500,
+            output_tokens: 1,
+            context: { status: 'no_op', window_tokens: 2000, actual_prompt_tokens: 1500 },
+          },
+        }],
+      },
+    };
+    currentState.stream.conversationId = 'chat-a';
+    currentState.stream.isStreaming = true;
+    currentState.stream.contextUsage = {
+      status: 'no_op',
+      window_tokens: 1000,
+      actual_prompt_tokens: 500,
+    };
+
+    const { rerender } = render(<ChatInput onSendMessage={vi.fn()} activeChatId="chat-a" />);
+    expect(screen.getByRole('button', { name: /50%/ })).toBeInTheDocument();
+
+    rerender(<ChatInput onSendMessage={vi.fn()} activeChatId="chat-b" />);
+    expect(screen.getByRole('button', { name: /25%/ })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /50%/ })).toBeNull();
+  });
+
+  it('新一轮 startStream 尚未收到 context 事件时保持上下文入口，避免工具栏跳动', () => {
+    configureAuthenticatedVisionModel();
+    currentState.conversation.byId = {
+      'chat-a': {
+        id: 'chat-a',
+        messages: [
+          {
+            id: 'assistant-old', role: 'assistant', content: [],
+            usage: { input_tokens: 400, output_tokens: 1, context: { status: 'no_op', window_tokens: 1000, actual_prompt_tokens: 400 } },
+          },
+          { id: 'assistant-pending', role: 'assistant', content: [], usage: null },
+        ],
+      },
+    };
+    currentState.stream.isStreaming = true;
+    currentState.stream.conversationId = 'chat-a';
+    currentState.stream.contextUsageConversationId = 'chat-a';
+    currentState.stream.contextUsage = null;
+    currentState.stream.contextUsageMeta = null;
+
+    render(<ChatInput onSendMessage={vi.fn()} activeChatId="chat-a" />);
+
+    expect(screen.getByTestId('context-status-trigger')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /60%/ })).toBeNull();
+  });
+
+  it('窄屏工具栏隐藏思考文字并保留可收缩边界', () => {
+    configureAuthenticatedVisionModel();
+    render(<ChatInput onSendMessage={vi.fn()} activeChatId="chat-a" />);
+
+    const toolbar = screen.getByRole('toolbar', { name: '消息工具栏' });
+    expect(toolbar).toHaveClass('min-w-0');
+    expect(screen.getByText('思考')).toHaveClass('hidden', 'min-[420px]:inline');
+    expect(screen.getByTestId('model-selector-trigger')).toHaveClass('max-w-[112px]', 'sm:max-w-none');
   });
 
   it('focuses the composer when autoFocus is enabled', () => {

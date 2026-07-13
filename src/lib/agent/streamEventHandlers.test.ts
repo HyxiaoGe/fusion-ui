@@ -9,6 +9,7 @@ describe('createAgentStreamEventHandlers', () => {
       dispatch,
       isActive: () => true,
       resolveMessageId: ev => ev.message_id,
+      resolveConversationId: () => 'c1',
       setServerMessageId,
     });
 
@@ -73,6 +74,7 @@ describe('createAgentStreamEventHandlers', () => {
       dispatch,
       isActive: () => false,
       resolveMessageId: ev => ev.message_id,
+      resolveConversationId: () => 'c1',
     });
 
     handlers.onRunStarted?.({
@@ -101,6 +103,7 @@ describe('createAgentStreamEventHandlers', () => {
       dispatch,
       isActive: () => true,
       resolveMessageId: ev => ev.message_id,
+      resolveConversationId: () => 'c1',
     });
 
     handlers.onEvidenceItemUpserted?.({
@@ -136,6 +139,55 @@ describe('createAgentStreamEventHandlers', () => {
           id: 'ev-web-1',
           status: 'selected',
           usedByFinalAnswer: false,
+        }),
+      }),
+    }));
+  });
+
+  it('把 context_status_updated 作为单轮快照写入当前会话', () => {
+    const dispatch = vi.fn();
+    const handlers = createAgentStreamEventHandlers({
+      dispatch,
+      isActive: () => true,
+      resolveMessageId: ev => ev.message_id,
+      resolveConversationId: () => 'c1',
+    });
+
+    handlers.onContextStatusUpdated?.({
+      type: 'context_status_updated',
+      protocol_version: 2,
+      run_id: 'r1',
+      parent_run_id: null,
+      step_id: 's1',
+      parent_step_id: null,
+      tool_call_id: null,
+      sequence: 4,
+      trace_id: 'r1',
+      ts: 0,
+      phase: 'final',
+      message_id: 'server-m1',
+      status: 'trimmed',
+      window_tokens: 262_144,
+      estimated_tokens_before: 232_305,
+      estimated_tokens_after: 192_280,
+      actual_prompt_tokens: 147_811,
+      removed_turns: 1,
+      removed_messages: 2,
+      removed_tool_transactions: 0,
+      round_index: 1,
+    });
+
+    expect(dispatch).toHaveBeenCalledWith(expect.objectContaining({
+      type: 'stream/updateContextUsage',
+      payload: expect.objectContaining({
+        conversationId: 'c1',
+        runId: 'r1',
+        messageId: 'server-m1',
+        sequence: 4,
+        phase: 'final',
+        usage: expect.objectContaining({
+          actual_prompt_tokens: 147_811,
+          round_index: 1,
         }),
       }),
     }));

@@ -437,6 +437,127 @@ describe('sendMessageStream — 新 envelope 协议', () => {
     expect(cbs.onRunCompleted).toHaveBeenCalledTimes(1);
   });
 
+  it('context_status_updated 预计态与真实态均 dispatch，重复重连事件由 sequence 去重', async () => {
+    fetchWithAuthMock.mockResolvedValue(
+      createStreamResponse([
+        agentEvent('context_status_updated', {
+          protocol_version: 2,
+          phase: 'estimated',
+          message_id: 'server-message-1',
+          round_index: 1,
+          status: 'no_op',
+          window_tokens: 262144,
+          estimated_tokens_before: 1000,
+          estimated_tokens_after: 1000,
+          actual_prompt_tokens: null,
+          removed_turns: 0,
+          removed_messages: 0,
+          removed_tool_transactions: 0,
+        }, 1),
+        agentEvent('context_status_updated', {
+          protocol_version: 2,
+          phase: 'estimated',
+          message_id: 'server-message-1',
+          round_index: 1,
+          status: 'no_op',
+          window_tokens: 262144,
+          estimated_tokens_before: 1000,
+          estimated_tokens_after: 1000,
+          actual_prompt_tokens: null,
+          removed_turns: 0,
+          removed_messages: 0,
+          removed_tool_transactions: 0,
+        }, 1),
+        agentEvent('context_status_updated', {
+          protocol_version: 2,
+          phase: 'final',
+          message_id: 'server-message-1',
+          round_index: 1,
+          status: 'no_op',
+          window_tokens: 262144,
+          estimated_tokens_before: 1000,
+          estimated_tokens_after: 1000,
+          actual_prompt_tokens: 1012,
+          removed_turns: 0,
+          removed_messages: 0,
+          removed_tool_transactions: 0,
+        }, 2),
+        envelope('done', {}),
+        'data: [DONE]\n\n',
+      ]),
+    );
+    const onContextStatusUpdated = vi.fn();
+
+    await sendMessageStream(
+      { model_id: 'g', message: 'q' },
+      {
+        onReady: vi.fn(),
+        onReasoning: vi.fn(),
+        onAnswering: vi.fn(),
+        onContextStatusUpdated,
+        onDone: vi.fn(),
+        onError: vi.fn(),
+      },
+    );
+
+    expect(onContextStatusUpdated).toHaveBeenCalledTimes(2);
+    expect(onContextStatusUpdated).toHaveBeenLastCalledWith(expect.objectContaining({
+      phase: 'final',
+      actual_prompt_tokens: 1012,
+    }));
+  });
+
+  it('忽略未知协议版本或缺少 message_id 的 context_status_updated', async () => {
+    fetchWithAuthMock.mockResolvedValue(
+      createStreamResponse([
+        agentEvent('context_status_updated', {
+          protocol_version: 1,
+          phase: 'final',
+          message_id: 'server-message-1',
+          round_index: 1,
+          status: 'no_op',
+          window_tokens: 262144,
+          estimated_tokens_before: 1000,
+          estimated_tokens_after: 1000,
+          actual_prompt_tokens: 1012,
+          removed_turns: 0,
+          removed_messages: 0,
+          removed_tool_transactions: 0,
+        }, 1),
+        agentEvent('context_status_updated', {
+          protocol_version: 2,
+          phase: 'final',
+          round_index: 1,
+          status: 'no_op',
+          window_tokens: 262144,
+          estimated_tokens_before: 1000,
+          estimated_tokens_after: 1000,
+          actual_prompt_tokens: 1012,
+          removed_turns: 0,
+          removed_messages: 0,
+          removed_tool_transactions: 0,
+        }, 2),
+        envelope('done', {}),
+        'data: [DONE]\n\n',
+      ]),
+    );
+    const onContextStatusUpdated = vi.fn();
+
+    await sendMessageStream(
+      { model_id: 'g', message: 'q' },
+      {
+        onReady: vi.fn(),
+        onReasoning: vi.fn(),
+        onAnswering: vi.fn(),
+        onContextStatusUpdated,
+        onDone: vi.fn(),
+        onError: vi.fn(),
+      },
+    );
+
+    expect(onContextStatusUpdated).not.toHaveBeenCalled();
+  });
+
   it('agent_event v2 五类事件 dispatch 到对应 callback 且不触发 onReady', async () => {
     fetchWithAuthMock.mockResolvedValue(
       createStreamResponse([

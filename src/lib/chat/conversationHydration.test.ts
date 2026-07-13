@@ -8,6 +8,48 @@ import {
 } from './conversationHydration';
 
 describe('conversationHydration', () => {
+  it('从最新 assistant message usage.context 恢复上下文状态，旧历史保持兼容', () => {
+    const chat = buildChatFromServerConversation({
+      id: 'chat-context',
+      title: 'Context chat',
+      model_id: 'kimi-k2.5',
+      messages: [
+        {
+          id: 'assistant-old',
+          role: 'assistant',
+          content: [{ type: 'text', id: 'old', text: '旧消息' }],
+          usage: { input_tokens: 10, output_tokens: 2 },
+        },
+        {
+          id: 'assistant-new',
+          role: 'assistant',
+          content: [{ type: 'text', id: 'new', text: '新消息' }],
+          usage: {
+            input_tokens: 147_811,
+            output_tokens: 20,
+            context: {
+              status: 'trimmed',
+              window_tokens: 262_144,
+              estimated_tokens_before: 232_305,
+              estimated_tokens_after: 192_280,
+              actual_prompt_tokens: 147_811,
+              removed_turns: 1,
+              removed_messages: 2,
+              removed_tool_transactions: 0,
+              round_index: 1,
+            },
+          },
+        },
+      ],
+    });
+
+    expect(chat.messages[0].usage).toEqual({ input_tokens: 10, output_tokens: 2 });
+    expect(chat.messages[1].usage?.context).toMatchObject({
+      status: 'trimmed',
+      actual_prompt_tokens: 147_811,
+      removed_turns: 1,
+    });
+  });
   it('parses plain database timestamps as utc values', () => {
     expect(parseServerTimestamp('2026-03-14 21:30:00')).toBe(new Date('2026-03-14T21:30:00Z').getTime());
   });

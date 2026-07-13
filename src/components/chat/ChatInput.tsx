@@ -26,6 +26,8 @@ import { useToast } from "../ui/toast";
 import { v4 as uuidv4 } from "uuid";
 import { useRenderProbe } from "@/lib/debug/perfProbe";
 import ComposerAttachmentList from "./ComposerAttachmentList";
+import ContextStatus from "./ContextStatus";
+import { selectConversationContextStatus } from "@/lib/chat/contextUsage";
 import {
   isComposerAttachmentError,
   isComposerAttachmentProcessing,
@@ -153,6 +155,9 @@ const ChatInput: React.FC<ChatInputProps> = ({
   const processingFiles = useAppSelector((state) => state.fileUpload.processingFiles);
   const reasoningEnabled = useAppSelector((state) => state.conversation.reasoningEnabled);
   const isStreaming = useAppSelector((state) => state.stream.isStreaming);
+  const contextStatus = useAppSelector((state) =>
+    selectConversationContextStatus(state, activeChatId)
+  );
 
   // 首页无 activeChatId 时，生成一个稳定的临时 UUID 用于文件上传关联
   const pendingChatIdRef = useRef<string>(uuidv4());
@@ -996,10 +1001,10 @@ const ChatInput: React.FC<ChatInputProps> = ({
         <div
           role="toolbar"
           aria-label="消息工具栏"
-          className="flex items-center gap-1 border-t border-border/40 px-2 py-1.5"
+          className="flex min-w-0 items-center gap-1 border-t border-border/40 px-2 py-1.5"
         >
           {/* 左侧工具按钮组 */}
-          <div className="flex items-center gap-1 flex-1">
+          <div className="flex min-w-0 flex-1 items-center gap-1">
             {/* 图片上传按钮 */}
             <Button
               onClick={handleFileSelect}
@@ -1028,14 +1033,23 @@ const ChatInput: React.FC<ChatInputProps> = ({
               title={supportsReasoning ? (reasoningEnabled ? "AI思考过程已开启" : "AI思考过程已关闭") : "当前模型不支持思考过程"}
             >
               <Lightbulb className={`h-4 w-4 ${reasoningEnabled && supportsReasoning ? "text-info" : ""}`} />
-              <span className="text-xs">{reasoningEnabled && supportsReasoning ? "思考已开" : "思考"}</span>
+              <span className="hidden text-xs min-[420px]:inline">{reasoningEnabled && supportsReasoning ? "思考已开" : "思考"}</span>
             </Button>
 
           </div>
 
           {/* 右侧：模型选择器 + 发送按钮 */}
-          <div className="flex items-center gap-1.5">
-            <ModelSelector onChange={onModelChange || (() => {})} />
+          <div className="ml-auto flex min-w-0 items-center gap-1.5">
+            {activeChatId && contextStatus ? (
+              <ContextStatus
+                conversationId={activeChatId}
+                usage={contextStatus.usage}
+                phase={contextStatus.phase}
+                pending={contextStatus.pending}
+                errorKind={contextStatus.errorKind}
+              />
+            ) : null}
+            <ModelSelector toolbarMode onChange={onModelChange || (() => {})} />
             <Button
               onClick={isStreaming && onStopStreaming ? onStopStreaming : handleSendMessage}
               disabled={!canSend && !(isStreaming && onStopStreaming)}

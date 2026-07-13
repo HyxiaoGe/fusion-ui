@@ -20,7 +20,12 @@ interface ModelSelectorProps {
   toolbarMode?: boolean;
 }
 
-const ModelSelector: React.FC<ModelSelectorProps> = ({ onChange, modelId, disabled }) => {
+const ModelSelector: React.FC<ModelSelectorProps> = ({
+  onChange,
+  modelId,
+  disabled,
+  toolbarMode = false,
+}) => {
   const dispatch = useAppDispatch();
   const pathname = usePathname();
   const { models, providers, selectedModelId } = useAppSelector((state) => state.models);
@@ -95,7 +100,7 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({ onChange, modelId, disabl
   if (models.length === 0) return null;
 
   return (
-    <span className="inline-flex">
+    <span className="inline-flex min-w-0">
       <Popover open={isOpen} onOpenChange={isDisabled ? undefined : setIsOpen}>
         <PopoverTrigger asChild>
           <ModelSelectorTrigger
@@ -103,6 +108,7 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({ onChange, modelId, disabl
             providers={providers}
             isOpen={isOpen}
             disabled={isDisabled}
+            toolbarMode={toolbarMode}
           />
         </PopoverTrigger>
         <PopoverContent

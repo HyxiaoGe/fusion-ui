@@ -1,5 +1,7 @@
 import { createSlice, PayloadAction } from '@reduxjs/toolkit';
-import type { ContentBlock, SearchSourceSummary } from '@/types/conversation';
+import type { ContentBlock, ContextUsage, SearchSourceSummary } from '@/types/conversation';
+import type { ContextUsagePhase } from '@/lib/chat/contextUsage';
+import { logout } from '@/redux/slices/authSlice';
 import type {
   AgentEvidenceItem,
   AgentPlanItem,
@@ -41,6 +43,15 @@ export interface StreamState {
   currentRun: AgentRunState | null;
   // ── 错误卡片 ──
   lastError: { message: string; code?: string; data?: Record<string, unknown> } | null;
+  contextUsage: ContextUsage | null;
+  contextUsageConversationId: string | null;
+  contextUsageMeta: {
+    runId: string;
+    messageId: string;
+    sequence: number;
+    phase: ContextUsagePhase;
+    roundIndex: number | null;
+  } | null;
 }
 
 const initialState: StreamState = {
@@ -63,6 +74,9 @@ const initialState: StreamState = {
   streamStatus: 'idle',
   currentRun: null,
   lastError: null,
+  contextUsage: null,
+  contextUsageConversationId: null,
+  contextUsageMeta: null,
 };
 
 const streamSlice = createSlice({
@@ -93,6 +107,9 @@ const streamSlice = createSlice({
       state.currentRun = null;
       // 新一轮发送清空上一次的错误卡片
       state.lastError = null;
+      state.contextUsage = null;
+      state.contextUsageConversationId = action.payload.conversationId;
+      state.contextUsageMeta = null;
     },
 
     appendTextDelta(
@@ -473,6 +490,48 @@ const streamSlice = createSlice({
       state.lastError = null;
     },
 
+    updateContextUsage(
+      state,
+      action: PayloadAction<{
+        conversationId: string;
+        usage: ContextUsage;
+        runId: string;
+        messageId: string;
+        sequence: number;
+        phase: ContextUsagePhase;
+      }>,
+    ) {
+      const { conversationId, usage, runId, messageId, sequence, phase } = action.payload;
+      if (state.conversationId !== conversationId || !state.isStreaming) return;
+      if (state.currentRun && state.currentRun.runId !== runId) return;
+      if (
+        state.currentRun?.serverMessageId
+        && state.currentRun.serverMessageId !== messageId
+      ) return;
+
+      const previous = state.contextUsageMeta;
+      if (previous?.runId === runId && previous.messageId === messageId) {
+        if (sequence <= previous.sequence) return;
+        const sameRound = previous.roundIndex === usage.round_index;
+        if (
+          previous.roundIndex !== null
+          && usage.round_index !== null
+          && usage.round_index < previous.roundIndex
+        ) return;
+        if (sameRound && previous.phase === 'final' && phase !== 'final') return;
+      }
+
+      state.contextUsage = usage;
+      state.contextUsageConversationId = conversationId;
+      state.contextUsageMeta = {
+        runId,
+        messageId,
+        sequence,
+        phase,
+        roundIndex: usage.round_index,
+      };
+    },
+
     endStream(state) {
       // 保留 lastError 跨流生命周期：错误卡片需要在 endStream 后继续显示，
       // 由 startStream（新一轮发送）或 clearStreamError（用户手动 dismiss）清掉
@@ -481,10 +540,19 @@ const streamSlice = createSlice({
       //    确保不挂错对话）
       const preservedError = state.lastError;
       const preservedRun = state.currentRun;
+      const preservedContextUsage = state.contextUsage;
+      const preservedContextUsageConversationId = state.contextUsageConversationId;
+      const preservedContextUsageMeta = state.contextUsageMeta;
       Object.assign(state, initialState);
       state.lastError = preservedError;
       state.currentRun = preservedRun;
+      state.contextUsage = preservedContextUsage;
+      state.contextUsageConversationId = preservedContextUsageConversationId;
+      state.contextUsageMeta = preservedContextUsageMeta;
     },
+  },
+  extraReducers: builder => {
+    builder.addCase(logout, () => initialState);
   },
 });
 
@@ -573,6 +641,7 @@ export const {
   startStream,
   updatePlanStep,
   updateRunProgress,
+  updateContextUsage,
   upsertEvidenceItem,
   upsertToolDigest,
 } = streamSlice.actions;

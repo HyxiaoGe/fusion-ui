@@ -107,6 +107,20 @@ export type ContentBlock = TextBlock | ThinkingBlock | FileBlock | SearchBlock |
 export interface Usage {
   input_tokens: number;
   output_tokens: number;
+  context?: ContextUsage | null;
+}
+
+/** 单次有效模型请求的上下文快照；不与 usage.input_tokens 的 Agent 累计口径混用。 */
+export interface ContextUsage {
+  status: string;
+  window_tokens: number | null;
+  estimated_tokens_before: number | null;
+  estimated_tokens_after: number | null;
+  actual_prompt_tokens: number | null;
+  removed_turns: number;
+  removed_messages: number;
+  removed_tool_transactions: number;
+  round_index: number | null;
 }
 
 // ============================================================

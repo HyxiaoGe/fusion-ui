@@ -14,6 +14,7 @@ import {
   updateRunProgress,
   upsertEvidenceItem,
   upsertToolDigest,
+  updateContextUsage,
 } from '@/redux/slices/streamSlice';
 import type {
   AgentEvidenceItem,
@@ -31,6 +32,7 @@ interface AgentStreamEventHandlerOptions {
   isActive: () => boolean;
   resolveMessageId: (ev: RunStartedEvent) => string;
   setServerMessageId?: (messageId: string) => void;
+  resolveConversationId: () => string | null;
 }
 
 export function createAgentStreamEventHandlers({
@@ -38,6 +40,7 @@ export function createAgentStreamEventHandlers({
   isActive,
   resolveMessageId,
   setServerMessageId,
+  resolveConversationId,
 }: AgentStreamEventHandlerOptions): Partial<StreamCallbacks> {
   return {
     onRunStarted: ev => {
@@ -198,6 +201,29 @@ export function createAgentStreamEventHandlers({
         runId: ev.run_id,
         sequence: ev.sequence,
         evidence: mapEvidenceItem(ev.evidence),
+      }));
+    },
+    onContextStatusUpdated: ev => {
+      if (!isActive()) return;
+      const conversationId = resolveConversationId();
+      if (!conversationId) return;
+      dispatch(updateContextUsage({
+        conversationId,
+        usage: {
+          status: ev.status,
+          window_tokens: ev.window_tokens,
+          estimated_tokens_before: ev.estimated_tokens_before,
+          estimated_tokens_after: ev.estimated_tokens_after,
+          actual_prompt_tokens: ev.actual_prompt_tokens,
+          removed_turns: ev.removed_turns,
+          removed_messages: ev.removed_messages,
+          removed_tool_transactions: ev.removed_tool_transactions,
+          round_index: ev.round_index,
+        },
+        runId: ev.run_id,
+        messageId: ev.message_id,
+        sequence: ev.sequence,
+        phase: ev.phase,
       }));
     },
   };

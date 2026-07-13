@@ -9,6 +9,8 @@ import type {
   SseEnvelope,
 } from '@/types/agentRun';
 import type { ContentBlock } from '@/types/conversation';
+import type { ContextUsage } from '@/types/conversation';
+import { normalizeContextUsage, type ContextUsagePhase } from '@/lib/chat/contextUsage';
 
 const API_BASE_URL = API_CONFIG.BASE_URL;
 
@@ -271,6 +273,13 @@ export interface StreamCallbacks {
       };
     },
   ) => void;
+  onContextStatusUpdated?: (
+    ev: AgentEventEnvelope & ContextUsage & {
+      protocol_version: 2;
+      phase: ContextUsagePhase;
+      message_id: string;
+    },
+  ) => void;
 
   /** done chunk：协议层流完成（与 [DONE] SSE 通道终止并存） */
   onDone: (meta: { messageId: string; conversationId: string }) => void;
@@ -375,6 +384,28 @@ async function parseSseEnvelopeStream(
         return callbacks.onToolResultDigest?.(ev as never);
       case 'evidence_item_upserted':
         return callbacks.onEvidenceItemUpserted?.(ev as never);
+      case 'context_status_updated': {
+        const usage = normalizeContextUsage(ev);
+        const phase = ev.phase;
+        const messageId = ev.message_id;
+        if (
+          !usage
+          || ev.protocol_version !== 2
+          || (phase !== 'estimated' && phase !== 'final' && phase !== 'error')
+          || typeof messageId !== 'string'
+          || !messageId
+        ) {
+          console.warn('[chat] context_status_updated 数据无效，已忽略', ev);
+          return;
+        }
+        return callbacks.onContextStatusUpdated?.({
+          ...ev,
+          ...usage,
+          protocol_version: 2,
+          phase,
+          message_id: messageId,
+        } as never);
+      }
       default:
         console.warn('[chat] 未知 agent_event type，已忽略', ev.type);
     }

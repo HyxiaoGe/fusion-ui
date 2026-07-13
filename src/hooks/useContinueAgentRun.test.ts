@@ -8,7 +8,10 @@ import {
   reconnectStream,
   stopStream,
 } from '@/lib/api/chat';
-import conversationReducer, { upsertConversation } from '@/redux/slices/conversationSlice';
+import conversationReducer, {
+  updateMessage,
+  upsertConversation,
+} from '@/redux/slices/conversationSlice';
 import streamReducer from '@/redux/slices/streamSlice';
 
 vi.mock('@/lib/api/chat', () => ({
@@ -551,6 +554,176 @@ describe('useContinueAgentRun', () => {
     });
   });
 
+  it('无工具 continuation 完成后也从 DB 刷新最新 usage.context', async () => {
+    const { store, dispatch } = createReducerBackedHarness();
+    vi.mocked(getConversation).mockResolvedValue({
+      id: 'conv-1',
+      title: '会话',
+      model_id: 'deepseek-chat',
+      messages: [{
+        id: 'msg-1',
+        role: 'assistant',
+        content: [{ type: 'text', id: 'db-text', text: '数据库回答' }],
+        usage: {
+          input_tokens: 650,
+          output_tokens: 20,
+          context: {
+            status: 'no_op',
+            window_tokens: 1000,
+            estimated_tokens_before: 640,
+            estimated_tokens_after: 640,
+            actual_prompt_tokens: 650,
+            removed_turns: 0,
+            removed_messages: 0,
+            removed_tool_transactions: 0,
+            round_index: 2,
+          },
+        },
+      }],
+    });
+    vi.mocked(continueAgentRunStream).mockImplementation(async (_payload, callbacks) => {
+      callbacks.onRunStarted?.({
+        type: 'run_started',
+        run_id: 'run-new',
+        parent_run_id: null,
+        step_id: null,
+        parent_step_id: null,
+        tool_call_id: null,
+        sequence: 1,
+        trace_id: 'run-new',
+        ts: 1,
+        conversation_id: 'conv-1',
+        message_id: 'msg-1',
+        model: 'deepseek-chat',
+        tools: [],
+        config: { max_steps: 3, max_tool_calls: 5, timeout_s: 60 },
+      });
+      callbacks.onRunCompleted?.({
+        type: 'run_completed',
+        run_id: 'run-new',
+        parent_run_id: null,
+        step_id: null,
+        parent_step_id: null,
+        tool_call_id: null,
+        sequence: 2,
+        trace_id: 'run-new',
+        ts: 2,
+        total_steps: 1,
+        total_tool_calls: 0,
+        finish_reason: 'stop',
+      });
+      callbacks.onDone({ messageId: 'msg-1', conversationId: 'conv-1' });
+    });
+
+    const { result } = renderHook(() => useContinueAgentRun({
+      dispatch: dispatch as never,
+      store: store as never,
+    }));
+
+    await act(async () => {
+      await result.current.continueAgentRun({
+        conversationId: 'conv-1',
+        assistantMessageId: 'msg-1',
+        previousRunId: 'run-old',
+      });
+    });
+
+    await waitFor(() => expect(getConversation).toHaveBeenCalledWith('conv-1'));
+    await waitFor(() => expect(
+      store.getState().conversation.byId['conv-1'].messages[0].usage?.context?.actual_prompt_tokens,
+    ).toBe(650));
+  });
+
+  it('continuation 完成时立即写入本轮 context，且不伪造顶层累计 Token', async () => {
+    const { store, dispatch } = createReducerBackedHarness();
+    store.dispatch(updateMessage({
+      conversationId: 'conv-1',
+      messageId: 'msg-1',
+      patch: {
+        usage: {
+          input_tokens: 400,
+          output_tokens: 20,
+          context: {
+            status: 'no_op',
+            window_tokens: 1000,
+            estimated_tokens_before: 390,
+            estimated_tokens_after: 390,
+            actual_prompt_tokens: 400,
+            removed_turns: 0,
+            removed_messages: 0,
+            removed_tool_transactions: 0,
+            round_index: 1,
+          },
+        },
+      },
+    }));
+    dispatch.mockClear();
+    vi.mocked(getConversation).mockImplementation(() => new Promise(() => {}));
+    vi.mocked(continueAgentRunStream).mockImplementation(async (_payload, callbacks) => {
+      callbacks.onRunStarted?.({
+        type: 'run_started',
+        run_id: 'run-new',
+        parent_run_id: null,
+        step_id: null,
+        parent_step_id: null,
+        tool_call_id: null,
+        sequence: 1,
+        trace_id: 'run-new',
+        ts: 1,
+        conversation_id: 'conv-1',
+        message_id: 'msg-1',
+        model: 'deepseek-chat',
+        tools: [],
+        config: { max_steps: 3, max_tool_calls: 5, timeout_s: 60 },
+      });
+      callbacks.onContextStatusUpdated?.({
+        type: 'context_status_updated',
+        protocol_version: 2,
+        run_id: 'run-new',
+        parent_run_id: null,
+        step_id: null,
+        parent_step_id: null,
+        tool_call_id: null,
+        sequence: 2,
+        trace_id: 'run-new',
+        ts: 2,
+        phase: 'final',
+        message_id: 'msg-1',
+        status: 'no_op',
+        window_tokens: 1000,
+        estimated_tokens_before: 640,
+        estimated_tokens_after: 640,
+        actual_prompt_tokens: 650,
+        removed_turns: 0,
+        removed_messages: 0,
+        removed_tool_transactions: 0,
+        round_index: 2,
+      });
+      callbacks.onDone({ messageId: 'msg-1', conversationId: 'conv-1' });
+    });
+
+    const { result } = renderHook(() => useContinueAgentRun({
+      dispatch: dispatch as never,
+      store: store as never,
+    }));
+
+    await act(async () => {
+      await result.current.continueAgentRun({
+        conversationId: 'conv-1',
+        assistantMessageId: 'msg-1',
+        previousRunId: 'run-old',
+      });
+    });
+
+    const usage = store.getState().conversation.byId['conv-1'].messages[0].usage;
+    expect(usage).toMatchObject({
+      input_tokens: 400,
+      output_tokens: 20,
+      context: { actual_prompt_tokens: 650, round_index: 2 },
+    });
+    expect(getConversation).toHaveBeenCalledWith('conv-1');
+  });
+
   it('停止 continuation 时保存静态内容和当前增量，并忽略迟到 done', async () => {
     const dispatch = vi.fn();
     const streamState = {
@@ -649,7 +822,7 @@ describe('useContinueAgentRun', () => {
       await Promise.resolve();
     });
 
-    expect(capturedSignal?.aborted).toBe(true);
+    expect((capturedSignal as AbortSignal | null)?.aborted).toBe(true);
     expect(stopStream).toHaveBeenCalledWith('conv-1', 'server-msg-1');
     const contentPatches = dispatch.mock.calls
       .map(([action]) => action)
