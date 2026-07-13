@@ -40,6 +40,11 @@ const {
         isStreaming: false,
         conversationId: null,
         contextUsage: null,
+        contextUsageMeta: null,
+        contextUsageConversationId: null,
+        contextUsageInFlight: null,
+        contextUsageInFlightMeta: null,
+        contextUsageInFlightConversationId: null,
       },
       fileUpload: {
         files: {},
@@ -219,6 +224,11 @@ describe('ChatInput', () => {
     currentState.stream.isStreaming = false;
     currentState.stream.conversationId = null;
     currentState.stream.contextUsage = null;
+    currentState.stream.contextUsageMeta = null;
+    currentState.stream.contextUsageConversationId = null;
+    currentState.stream.contextUsageInFlight = null;
+    currentState.stream.contextUsageInFlightMeta = null;
+    currentState.stream.contextUsageInFlightConversationId = null;
     currentState.fileUpload.files = {};
     currentState.fileUpload.fileIds = {};
     currentState.fileUpload.processingFiles = {};
@@ -299,6 +309,13 @@ describe('ChatInput', () => {
       window_tokens: 1000,
       actual_prompt_tokens: 500,
     };
+    currentState.stream.contextUsageConversationId = 'chat-a';
+    currentState.stream.contextUsageMeta = {
+      runId: 'run-a', messageId: 'assistant-a', sequence: 2, phase: 'final', roundIndex: 1,
+    };
+    currentState.stream.contextUsageInFlight = currentState.stream.contextUsage;
+    currentState.stream.contextUsageInFlightConversationId = 'chat-a';
+    currentState.stream.contextUsageInFlightMeta = currentState.stream.contextUsageMeta;
 
     const { rerender } = render(<ChatInput onSendMessage={vi.fn()} activeChatId="chat-a" />);
     const statusRow = screen.getByTestId('context-status-row');
@@ -315,7 +332,7 @@ describe('ChatInput', () => {
     expect(screen.queryByRole('button', { name: /50%/ })).toBeNull();
   });
 
-  it('新一轮 startStream 尚未收到 context 事件时保持上下文入口，避免工具栏跳动', () => {
+  it('新一轮尚未收到 actual 时保留最近 confirmed 值并显示更新中', () => {
     configureAuthenticatedVisionModel();
     currentState.conversation.byId = {
       'chat-a': {
@@ -334,11 +351,15 @@ describe('ChatInput', () => {
     currentState.stream.contextUsageConversationId = 'chat-a';
     currentState.stream.contextUsage = null;
     currentState.stream.contextUsageMeta = null;
+    currentState.stream.contextUsageInFlight = null;
+    currentState.stream.contextUsageInFlightConversationId = 'chat-a';
+    currentState.stream.contextUsageInFlightMeta = null;
 
     render(<ChatInput onSendMessage={vi.fn()} activeChatId="chat-a" />);
 
     expect(screen.getByTestId('context-status-trigger')).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /60%/ })).toBeNull();
+    expect(screen.getByRole('button', { name: /60%/ })).toBeInTheDocument();
+    expect(screen.getByTestId('context-updating-indicator')).toHaveTextContent('更新中');
   });
 
   it('窄屏工具栏隐藏思考文字并保留可收缩边界', () => {

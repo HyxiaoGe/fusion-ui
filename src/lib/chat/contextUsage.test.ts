@@ -32,7 +32,7 @@ describe('contextUsage', () => {
     });
   });
 
-  it('预计态使用裁剪后 Token，未知窗口不伪造百分比', () => {
+  it('预计态不展示估算 Token，未知窗口的 actual 仍保留实际 Token', () => {
     const estimated = normalizeContextUsage({
       status: 'no_op',
       window_tokens: 100_000,
@@ -55,11 +55,16 @@ describe('contextUsage', () => {
     });
 
     expect(buildContextUsageView(estimated!)).toMatchObject({
-      phase: 'estimated',
-      usedTokens: 18_000,
-      remainingPercent: 82,
+      phase: 'unavailable',
+      usedTokens: null,
+      remainingPercent: null,
     });
-    expect(buildContextUsageView(unknown!).remainingPercent).toBeNull();
+    expect(buildContextUsageView(unknown!)).toMatchObject({
+      phase: 'actual',
+      usedTokens: 2_000,
+      windowTokens: null,
+      remainingPercent: null,
+    });
   });
 
   it('快速路径缺少裁剪后估算时保持计算中，不拿优化前 Token 冒充当前占比', () => {
@@ -98,12 +103,25 @@ describe('contextUsage', () => {
     });
   });
 
-  it('流式状态只在会话 ID 匹配时优先，切换会话回退各自最新 assistant 历史', () => {
+  it('流式 confirmed actual 只在会话 ID 匹配时优先，切换会话回退各自最新 assistant 历史', () => {
     const usageA = { status: 'no_op', window_tokens: 1000, actual_prompt_tokens: 400 };
     const usageB = { status: 'trimmed', window_tokens: 2000, actual_prompt_tokens: 1500 };
     const liveA = { status: 'no_op', window_tokens: 1000, actual_prompt_tokens: 500 };
     const state = {
-      stream: { isStreaming: true, conversationId: 'chat-a', contextUsage: liveA },
+      stream: {
+        isStreaming: true,
+        conversationId: 'chat-a',
+        contextUsageConversationId: 'chat-a',
+        contextUsage: liveA,
+        contextUsageMeta: {
+          runId: 'run-a', messageId: 'assistant-a', sequence: 2, phase: 'final' as const, roundIndex: 1,
+        },
+        contextUsageInFlightConversationId: 'chat-a',
+        contextUsageInFlight: liveA,
+        contextUsageInFlightMeta: {
+          runId: 'run-a', messageId: 'assistant-a', sequence: 2, phase: 'final' as const, roundIndex: 1,
+        },
+      },
       conversation: {
         byId: {
           'chat-a': {
@@ -124,21 +142,42 @@ describe('contextUsage', () => {
     expect(selectConversationContextUsage(state, null)).toBeNull();
   });
 
-  it('同会话新一轮已开始但 live 事件尚未到达时不闪回上一轮历史占比', () => {
+  it('同会话新一轮开始后保留最近 confirmed actual，并标记更新中', () => {
     const state = {
       stream: { isStreaming: true, conversationId: 'chat-a', contextUsage: null },
       conversation: {
         byId: {
           'chat-a': {
-            messages: [{
-              role: 'assistant',
-              usage: {
-                input_tokens: 1,
-                output_tokens: 1,
-                context: { status: 'no_op', window_tokens: 1000, actual_prompt_tokens: 400 },
+            messages: [
+              {
+                id: 'assistant-old', role: 'assistant',
+                usage: {
+                  input_tokens: 1,
+                  output_tokens: 1,
+                  context: { status: 'no_op', window_tokens: 1000, actual_prompt_tokens: 400 },
+                },
               },
-            }],
+              { id: 'assistant-new', role: 'assistant', usage: null },
+            ],
           },
+        },
+      },
+    };
+
+    expect(selectConversationContextStatus(state, 'chat-a')).toMatchObject({
+      usage: { actual_prompt_tokens: 400 },
+      phase: 'estimated',
+      pending: false,
+      updating: true,
+    });
+  });
+
+  it('首次没有 confirmed actual 时才显示计算中', () => {
+    const state = {
+      stream: { isStreaming: true, conversationId: 'chat-a', contextUsage: null },
+      conversation: {
+        byId: {
+          'chat-a': { messages: [{ id: 'assistant-new', role: 'assistant', usage: null }] },
         },
       },
     };
@@ -147,6 +186,165 @@ describe('contextUsage', () => {
       usage: null,
       phase: 'estimated',
       pending: true,
+      updating: false,
+    });
+  });
+
+  it('Agent 下一轮 estimated 保留 confirmed actual，final actual 到达后原子替换', () => {
+    const confirmed = { status: 'no_op', window_tokens: 1000, actual_prompt_tokens: 410 };
+    const estimated = {
+      status: 'no_op', window_tokens: 1000, estimated_tokens_after: 430,
+      actual_prompt_tokens: null, round_index: 2,
+    };
+    const baseState = {
+      stream: {
+        isStreaming: true,
+        conversationId: 'chat-a',
+        contextUsageConversationId: 'chat-a',
+        contextUsage: confirmed,
+        contextUsageMeta: {
+          runId: 'run-a', messageId: 'assistant-a', sequence: 5, phase: 'final' as const, roundIndex: 1,
+        },
+        contextUsageInFlightConversationId: 'chat-a',
+        contextUsageInFlight: estimated,
+        contextUsageInFlightMeta: {
+          runId: 'run-a', messageId: 'assistant-a', sequence: 7, phase: 'estimated' as const, roundIndex: 2,
+        },
+      },
+      conversation: {
+        byId: { 'chat-a': { messages: [{ id: 'assistant-a', role: 'assistant', usage: null }] } },
+      },
+    };
+
+    expect(selectConversationContextStatus(baseState, 'chat-a')).toMatchObject({
+      usage: { actual_prompt_tokens: 410 },
+      updating: true,
+      pending: false,
+    });
+
+    const finalUsage = { ...estimated, actual_prompt_tokens: 450 };
+    expect(selectConversationContextStatus({
+      ...baseState,
+      stream: {
+        ...baseState.stream,
+        contextUsage: finalUsage,
+        contextUsageMeta: {
+          runId: 'run-a', messageId: 'assistant-a', sequence: 8, phase: 'final' as const, roundIndex: 2,
+        },
+        contextUsageInFlight: finalUsage,
+        contextUsageInFlightMeta: {
+          runId: 'run-a', messageId: 'assistant-a', sequence: 8, phase: 'final' as const, roundIndex: 2,
+        },
+      },
+    }, 'chat-a')).toMatchObject({
+      usage: { actual_prompt_tokens: 450 },
+      updating: false,
+      pending: false,
+    });
+  });
+
+  it('final 无 actual 或错误时结束计算并保留最近 confirmed actual', () => {
+    const confirmed = { status: 'no_op', window_tokens: 1000, actual_prompt_tokens: 410 };
+    const common = {
+      isStreaming: true,
+      conversationId: 'chat-a',
+      contextUsageConversationId: 'chat-a',
+      contextUsage: confirmed,
+      contextUsageMeta: {
+        runId: 'run-a', messageId: 'assistant-a', sequence: 5, phase: 'final' as const, roundIndex: 1,
+      },
+    };
+    const conversation = {
+      byId: { 'chat-a': { messages: [{ id: 'assistant-a', role: 'assistant', usage: null }] } },
+    };
+
+    expect(selectConversationContextStatus({
+      stream: {
+        ...common,
+        contextUsageInFlightConversationId: 'chat-a',
+        contextUsageInFlight: { status: 'no_op', window_tokens: 1000, actual_prompt_tokens: null, round_index: 2 },
+        contextUsageInFlightMeta: {
+          runId: 'run-a', messageId: 'assistant-a', sequence: 8, phase: 'final' as const, roundIndex: 2,
+        },
+      },
+      conversation,
+    }, 'chat-a')).toMatchObject({
+      usage: { actual_prompt_tokens: 410 },
+      phase: 'final',
+      pending: false,
+      updating: false,
+      latestActualUnavailable: true,
+    });
+
+    expect(selectConversationContextStatus({
+      stream: {
+        ...common,
+        contextUsageInFlightConversationId: 'chat-a',
+        contextUsageInFlight: { status: 'estimator_unavailable', window_tokens: 1000, actual_prompt_tokens: null },
+        contextUsageInFlightMeta: {
+          runId: 'run-a', messageId: 'assistant-a', sequence: 9, phase: 'error' as const, roundIndex: 2,
+        },
+      },
+      conversation,
+    }, 'chat-a')).toMatchObject({
+      usage: { actual_prompt_tokens: 410 },
+      phase: 'error',
+      errorKind: 'check_failed',
+      updating: false,
+      latestActualUnavailable: true,
+    });
+  });
+
+  it('非流式 continuation 的当前终态覆盖同一 assistant 的旧 persisted actual', () => {
+    const conversation = {
+      byId: {
+        'chat-a': {
+          messages: [{
+            id: 'assistant-a',
+            role: 'assistant',
+            usage: { context: { status: 'no_op', window_tokens: 1000, actual_prompt_tokens: 400 } },
+          }],
+        },
+      },
+    };
+    const baseStream = {
+      isStreaming: false,
+      contextUsageInFlightConversationId: 'chat-a',
+      currentRun: {
+        runId: 'run-new', messageId: 'assistant-a', serverMessageId: 'server-assistant-a',
+      },
+    };
+
+    expect(selectConversationContextStatus({
+      stream: {
+        ...baseStream,
+        contextUsageInFlight: { status: 'no_op', window_tokens: 1000, actual_prompt_tokens: null },
+        contextUsageInFlightMeta: {
+          runId: 'run-new', messageId: 'server-assistant-a', sequence: 8, phase: 'final' as const, roundIndex: 2,
+        },
+      },
+      conversation,
+    }, 'chat-a')).toMatchObject({
+      usage: { actual_prompt_tokens: 400 },
+      phase: 'final',
+      pending: false,
+      latestActualUnavailable: true,
+    });
+
+    expect(selectConversationContextStatus({
+      stream: {
+        ...baseStream,
+        contextUsageInFlight: { status: 'estimator_unavailable', window_tokens: 1000, actual_prompt_tokens: null },
+        contextUsageInFlightMeta: {
+          runId: 'run-new', messageId: 'server-assistant-a', sequence: 9, phase: 'error' as const, roundIndex: 2,
+        },
+      },
+      conversation,
+    }, 'chat-a')).toMatchObject({
+      usage: { actual_prompt_tokens: 400 },
+      phase: 'error',
+      errorKind: 'check_failed',
+      latestActualUnavailable: true,
     });
   });
 

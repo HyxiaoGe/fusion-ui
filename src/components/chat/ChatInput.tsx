@@ -953,6 +953,8 @@ const ChatInput: React.FC<ChatInputProps> = ({
             usage={contextStatus.usage}
             phase={contextStatus.phase}
             pending={contextStatus.pending}
+            updating={contextStatus.updating}
+            latestActualUnavailable={contextStatus.latestActualUnavailable}
             errorKind={contextStatus.errorKind}
           />
         </div>

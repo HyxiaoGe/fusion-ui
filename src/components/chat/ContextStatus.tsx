@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from 'react';
 import { CircleAlert, Gauge, Sparkles } from 'lucide-react';
 
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -18,8 +19,12 @@ interface ContextStatusProps {
   usage: ContextUsage | null;
   phase?: ContextUsagePhase | null;
   pending?: boolean;
+  updating?: boolean;
+  latestActualUnavailable?: boolean;
   errorKind?: ContextUsageErrorKind | null;
 }
+
+export const CONTEXT_STATUS_DEFAULT_OPEN_STORAGE_KEY = 'fusion.context-status.default-open.v1';
 
 function formatTokens(value: number): string {
   return new Intl.NumberFormat().format(value);
@@ -41,6 +46,8 @@ export default function ContextStatus({
   usage,
   phase = null,
   pending = false,
+  updating = false,
+  latestActualUnavailable = false,
   errorKind = null,
 }: ContextStatusProps) {
   // Fusion 聊天界面当前固定使用中文，避免浏览器语言探测让单个组件混入英文。
@@ -54,9 +61,35 @@ export default function ContextStatus({
     ?? statusErrorKind
     ?? (phase === 'error' ? 'check_failed' : null);
   const isError = effectiveErrorKind !== null;
+  const [open, setOpen] = useState(false);
+  const [defaultOpen, setDefaultOpen] = useState(false);
+
+  useEffect(() => {
+    try {
+      const preferred = window.localStorage.getItem(CONTEXT_STATUS_DEFAULT_OPEN_STORAGE_KEY) === 'true';
+      setDefaultOpen(preferred);
+      if (preferred) setOpen(true);
+    } catch {
+      // localStorage 不可用时维持默认关闭，不影响上下文状态本身。
+    }
+  }, []);
+
+  const persistDefaultOpen = (value: boolean) => {
+    setDefaultOpen(value);
+    try {
+      window.localStorage.setItem(CONTEXT_STATUS_DEFAULT_OPEN_STORAGE_KEY, String(value));
+    } catch {
+      // 隐私模式或存储被禁用时只保留本次页面状态。
+    }
+  };
+
+  const handleOpenChange = (nextOpen: boolean) => {
+    setOpen(nextOpen);
+    if (!nextOpen) persistDefaultOpen(false);
+  };
   const rawView = usage ? buildContextUsageView(usage) : EMPTY_VIEW;
   const view = isError
-    ? { ...rawView, remainingPercent: null, optimized: false, usedTokens: null }
+    ? { ...rawView, remainingPercent: null, optimized: false }
     : rawView;
   const errorLabel = effectiveErrorKind === 'not_sent'
     ? t('contextStatus.notSent')
@@ -65,12 +98,20 @@ export default function ContextStatus({
     ? t('contextStatus.openWithError', { status: errorLabel })
     : pending
       ? t('contextStatus.openCalculating')
-    : view.remainingPercent === null
-      ? t('contextStatus.open')
-      : t('contextStatus.openWithRemaining', { percent: view.remainingPercent });
-  const tokenSummary = view.usedTokens !== null && view.windowTokens !== null
-    ? `${formatTokens(view.usedTokens)} / ${formatTokens(view.windowTokens)} Token`
-    : null;
+      : updating
+        ? view.remainingPercent === null
+          ? t('contextStatus.openUpdatingWithoutPercent')
+          : t('contextStatus.openUpdating', { percent: view.remainingPercent })
+        : view.usedTokens !== null && view.windowTokens === null
+          ? t('contextStatus.openWindowUnknown')
+          : view.remainingPercent === null
+            ? t('contextStatus.open')
+            : t('contextStatus.openWithRemaining', { percent: view.remainingPercent });
+  const tokenSummary = view.usedTokens === null
+    ? null
+    : view.windowTokens === null
+      ? `${formatTokens(view.usedTokens)} Token`
+      : `${formatTokens(view.usedTokens)} / ${formatTokens(view.windowTokens)} Token`;
   const removedSummary = view.optimized && !isError
     ? t('contextStatus.removedSummary', {
         turns: view.removedTurns,
@@ -82,9 +123,24 @@ export default function ContextStatus({
       })
     : null;
   const usedPercent = view.remainingPercent === null ? null : 100 - view.remainingPercent;
+  const mainValue = isError
+    ? errorLabel
+    : pending
+      ? t('contextStatus.calculating')
+      : view.usedTokens !== null && view.windowTokens === null
+        ? t('contextStatus.windowUnknown')
+        : view.remainingPercent === null
+          ? t('contextStatus.unavailable')
+          : `${view.remainingPercent}%`;
+  const tokenValue = tokenSummary
+    ?? (isError
+      ? t('contextStatus.notAvailable')
+      : pending
+        ? t('contextStatus.calculating')
+        : t('contextStatus.unavailable'));
 
   return (
-    <Popover>
+    <Popover open={open} onOpenChange={handleOpenChange}>
       <PopoverTrigger asChild>
         <button
           type="button"
@@ -101,6 +157,16 @@ export default function ContextStatus({
           {view.remainingPercent !== null ? (
             <span className="tabular-nums text-foreground">{view.remainingPercent}%</span>
           ) : null}
+          {updating && !isError ? (
+            <span
+              data-testid="context-updating-indicator"
+              aria-live="polite"
+              className="inline-flex items-center gap-1 text-[10px] text-muted-foreground"
+            >
+              <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-primary/70 motion-reduce:animate-none" aria-hidden="true" />
+              {t('contextStatus.updating')}
+            </span>
+          ) : null}
         </button>
       </PopoverTrigger>
       <PopoverContent
@@ -110,21 +176,42 @@ export default function ContextStatus({
         align="end"
         sideOffset={8}
         collisionPadding={12}
+        onOpenAutoFocus={(event) => event.preventDefault()}
         className="max-h-[min(70vh,30rem)] w-[calc(100vw-1.5rem)] max-w-[24rem] overflow-y-auto p-0"
       >
-        <div className="flex items-center justify-between gap-3 border-b border-border/60 px-4 py-3">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border/60 px-4 py-3">
           <h3 className="text-sm font-semibold">{t('contextStatus.title')}</h3>
-          {isError ? (
-            <span className="inline-flex items-center gap-1 rounded-full bg-destructive/10 px-2 py-1 text-[11px] font-medium text-destructive">
-              <CircleAlert className="h-3 w-3" aria-hidden="true" />
-              {errorLabel}
-            </span>
-          ) : view.optimized ? (
-            <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-1 text-[11px] font-medium text-primary">
-              <Sparkles className="h-3 w-3" aria-hidden="true" />
-              {t('contextStatus.optimized')}
-            </span>
-          ) : null}
+          <div className="flex items-center gap-2">
+            {isError ? (
+              <span className="inline-flex items-center gap-1 rounded-full bg-destructive/10 px-2 py-1 text-[11px] font-medium text-destructive">
+                <CircleAlert className="h-3 w-3" aria-hidden="true" />
+                {errorLabel}
+              </span>
+            ) : updating ? (
+              <span className="rounded-full bg-muted px-2 py-1 text-[11px] text-muted-foreground">
+                {t('contextStatus.updating')}
+              </span>
+            ) : view.optimized ? (
+              <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-1 text-[11px] font-medium text-primary">
+                <Sparkles className="h-3 w-3" aria-hidden="true" />
+                {t('contextStatus.optimized')}
+              </span>
+            ) : null}
+            <button
+              type="button"
+              aria-label={t('contextStatus.defaultOpen')}
+              aria-pressed={defaultOpen}
+              onClick={() => persistDefaultOpen(!defaultOpen)}
+              className={cn(
+                'rounded-md border px-2 py-1 text-[11px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                defaultOpen
+                  ? 'border-primary/40 bg-primary/10 text-primary'
+                  : 'border-border/60 text-muted-foreground hover:bg-muted hover:text-foreground',
+              )}
+            >
+              {t('contextStatus.defaultOpen')}
+            </button>
+          </div>
         </div>
 
         <div className="space-y-3 p-4">
@@ -135,11 +222,7 @@ export default function ContextStatus({
                 'text-right font-semibold tabular-nums text-foreground',
                 view.remainingPercent === null || isError ? 'text-sm' : 'text-2xl leading-none',
               )}>
-                {isError
-                  ? errorLabel
-                  : view.remainingPercent === null
-                    ? (pending ? t('contextStatus.calculating') : t('contextStatus.unavailable'))
-                    : `${view.remainingPercent}%`}
+                {mainValue}
               </strong>
             </div>
 
@@ -147,6 +230,7 @@ export default function ContextStatus({
               <Progress
                 value={usedPercent}
                 aria-label={t('contextStatus.usedProgress')}
+                aria-valuenow={usedPercent}
                 aria-valuetext={t('contextStatus.usedWithRemaining', {
                   used: usedPercent,
                   remaining: view.remainingPercent,
@@ -159,14 +243,12 @@ export default function ContextStatus({
           <dl className="rounded-lg border border-border/60 px-3 py-2.5 text-xs">
             <div className="flex items-center justify-between gap-4">
               <dt className="shrink-0 text-muted-foreground">
-                {view.phase === 'actual'
-                  ? t('contextStatus.actualTokens')
-                  : t('contextStatus.estimatedTokens')}
+                {latestActualUnavailable || isError
+                  ? t('contextStatus.latestActualTokens')
+                  : t('contextStatus.actualTokens')}
               </dt>
               <dd className="text-right font-medium tabular-nums text-foreground">
-                {isError
-                  ? t('contextStatus.notAvailable')
-                  : tokenSummary ?? t('contextStatus.calculating')}
+                {tokenValue}
               </dd>
             </div>
           </dl>
@@ -192,13 +274,19 @@ export default function ContextStatus({
                 ? t('contextStatus.requiredOverBudget')
                 : t('contextStatus.estimatorUnavailable')}
             </p>
-          ) : view.remainingPercent === null ? (
+          ) : pending || view.remainingPercent === null ? (
             <p className="rounded-lg bg-muted/60 px-3 py-2 text-xs leading-relaxed text-muted-foreground">
               {pending
                 ? t('contextStatus.awaitingEstimate')
-                : view.windowTokens === null
+                : view.usedTokens !== null && view.windowTokens === null
                   ? t('contextStatus.unknownWindow')
-                  : t('contextStatus.awaitingEstimate')}
+                  : t('contextStatus.finalUnavailable')}
+            </p>
+          ) : null}
+
+          {!isError && latestActualUnavailable && view.usedTokens !== null ? (
+            <p className="rounded-lg bg-muted/60 px-3 py-2 text-xs leading-relaxed text-muted-foreground">
+              {t('contextStatus.latestActualUnavailable')}
             </p>
           ) : null}
 

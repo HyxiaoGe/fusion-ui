@@ -52,6 +52,15 @@ export interface StreamState {
     phase: ContextUsagePhase;
     roundIndex: number | null;
   } | null;
+  contextUsageInFlight: ContextUsage | null;
+  contextUsageInFlightConversationId: string | null;
+  contextUsageInFlightMeta: {
+    runId: string;
+    messageId: string;
+    sequence: number;
+    phase: ContextUsagePhase;
+    roundIndex: number | null;
+  } | null;
 }
 
 const initialState: StreamState = {
@@ -77,6 +86,9 @@ const initialState: StreamState = {
   contextUsage: null,
   contextUsageConversationId: null,
   contextUsageMeta: null,
+  contextUsageInFlight: null,
+  contextUsageInFlightConversationId: null,
+  contextUsageInFlightMeta: null,
 };
 
 const streamSlice = createSlice({
@@ -110,6 +122,9 @@ const streamSlice = createSlice({
       state.contextUsage = null;
       state.contextUsageConversationId = action.payload.conversationId;
       state.contextUsageMeta = null;
+      state.contextUsageInFlight = null;
+      state.contextUsageInFlightConversationId = action.payload.conversationId;
+      state.contextUsageInFlightMeta = null;
     },
 
     appendTextDelta(
@@ -173,7 +188,14 @@ const streamSlice = createSlice({
     },
 
     migrateStreamConversation(state, action: PayloadAction<string>) {
+      const previousConversationId = state.conversationId;
       state.conversationId = action.payload;
+      if (state.contextUsageConversationId === previousConversationId) {
+        state.contextUsageConversationId = action.payload;
+      }
+      if (state.contextUsageInFlightConversationId === previousConversationId) {
+        state.contextUsageInFlightConversationId = action.payload;
+      }
     },
 
     setLastEntryId(state, action: PayloadAction<string>) {
@@ -509,7 +531,7 @@ const streamSlice = createSlice({
         && state.currentRun.serverMessageId !== messageId
       ) return;
 
-      const previous = state.contextUsageMeta;
+      const previous = state.contextUsageInFlightMeta;
       if (previous?.runId === runId && previous.messageId === messageId) {
         if (sequence <= previous.sequence) return;
         const sameRound = previous.roundIndex === usage.round_index;
@@ -519,17 +541,27 @@ const streamSlice = createSlice({
           && usage.round_index < previous.roundIndex
         ) return;
         if (sameRound && previous.phase === 'final' && phase !== 'final') return;
+        if (sameRound && previous.phase === 'error' && phase !== 'error') return;
       }
 
-      state.contextUsage = usage;
-      state.contextUsageConversationId = conversationId;
-      state.contextUsageMeta = {
+      const nextMeta = {
         runId,
         messageId,
         sequence,
         phase,
         roundIndex: usage.round_index,
       };
+      state.contextUsageInFlight = usage;
+      state.contextUsageInFlightConversationId = conversationId;
+      state.contextUsageInFlightMeta = nextMeta;
+
+      if (phase === 'final') {
+        if (usage.actual_prompt_tokens !== null) {
+          state.contextUsage = usage;
+          state.contextUsageConversationId = conversationId;
+          state.contextUsageMeta = nextMeta;
+        }
+      }
     },
 
     endStream(state) {
@@ -543,12 +575,18 @@ const streamSlice = createSlice({
       const preservedContextUsage = state.contextUsage;
       const preservedContextUsageConversationId = state.contextUsageConversationId;
       const preservedContextUsageMeta = state.contextUsageMeta;
+      const preservedContextUsageInFlight = state.contextUsageInFlight;
+      const preservedContextUsageInFlightConversationId = state.contextUsageInFlightConversationId;
+      const preservedContextUsageInFlightMeta = state.contextUsageInFlightMeta;
       Object.assign(state, initialState);
       state.lastError = preservedError;
       state.currentRun = preservedRun;
       state.contextUsage = preservedContextUsage;
       state.contextUsageConversationId = preservedContextUsageConversationId;
       state.contextUsageMeta = preservedContextUsageMeta;
+      state.contextUsageInFlight = preservedContextUsageInFlight;
+      state.contextUsageInFlightConversationId = preservedContextUsageInFlightConversationId;
+      state.contextUsageInFlightMeta = preservedContextUsageInFlightMeta;
     },
   },
   extraReducers: builder => {

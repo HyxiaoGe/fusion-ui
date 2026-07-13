@@ -7,6 +7,8 @@ export interface ConversationContextStatus {
   usage: ContextUsage | null;
   phase: ContextUsagePhase | null;
   pending: boolean;
+  updating: boolean;
+  latestActualUnavailable: boolean;
   errorKind: ContextUsageErrorKind | null;
 }
 
@@ -28,6 +30,15 @@ interface ContextStateLike {
     contextUsageConversationId?: string | null;
     contextUsage?: unknown;
     contextUsageMeta?: {
+      runId?: string;
+      messageId?: string;
+      sequence?: number;
+      phase?: ContextUsagePhase;
+      roundIndex?: number | null;
+    } | null;
+    contextUsageInFlightConversationId?: string | null;
+    contextUsageInFlight?: unknown;
+    contextUsageInFlightMeta?: {
       runId?: string;
       messageId?: string;
       sequence?: number;
@@ -87,18 +98,14 @@ export function normalizeContextUsage(value: unknown): ContextUsage | null {
 }
 
 export function buildContextUsageView(usage: ContextUsage): ContextUsageView {
-  const usedTokens = usage.actual_prompt_tokens ?? usage.estimated_tokens_after;
+  const usedTokens = usage.actual_prompt_tokens;
   const windowTokens = usage.window_tokens;
   const remainingPercent = usedTokens !== null && windowTokens !== null
     ? Math.max(0, Math.min(100, Math.floor((1 - usedTokens / windowTokens) * 100)))
     : null;
 
   return {
-    phase: usage.actual_prompt_tokens !== null
-      ? 'actual'
-      : usedTokens !== null
-        ? 'estimated'
-        : 'unavailable',
+    phase: usedTokens !== null ? 'actual' : 'unavailable',
     usedTokens,
     windowTokens,
     remainingPercent,
@@ -123,15 +130,54 @@ function toContextStatus(
   usage: ContextUsage | null,
   phase: ContextUsagePhase | null,
   pending: boolean,
+  updating = false,
+  latestActualUnavailable = false,
+  explicitErrorKind: ContextUsageErrorKind | null = null,
 ): ConversationContextStatus {
   const errorKind = usage ? errorKindFromStatus(usage.status) : null;
-  const effectiveErrorKind = phase === 'error' ? (errorKind ?? 'check_failed') : errorKind;
+  const effectiveErrorKind = explicitErrorKind
+    ?? (phase === 'error' ? (errorKind ?? 'check_failed') : errorKind);
   return {
     usage,
     phase: effectiveErrorKind ? 'error' : phase,
     pending: effectiveErrorKind ? false : pending,
+    updating: effectiveErrorKind ? false : updating,
+    latestActualUnavailable,
     errorKind: effectiveErrorKind,
   };
+}
+
+function actualUsage(value: unknown): ContextUsage | null {
+  const usage = normalizeContextUsage(value);
+  return usage
+    && usage.actual_prompt_tokens !== null
+    && !errorKindFromStatus(usage.status)
+    ? usage
+    : null;
+}
+
+function latestConfirmedUsage(
+  messages: NonNullable<NonNullable<ContextStateLike['conversation']>['byId']>[string]['messages'],
+): ContextUsage | null {
+  if (!messages) return null;
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index];
+    if (message?.role !== 'assistant') continue;
+    const usage = actualUsage(message.usage?.context);
+    if (usage) return usage;
+  }
+  return null;
+}
+
+function belongsToAssistant(
+  meta: { runId?: string; messageId?: string } | null | undefined,
+  latestAssistantId: string,
+  currentRun: NonNullable<ContextStateLike['stream']>['currentRun'],
+): boolean {
+  if (meta?.messageId === latestAssistantId) return true;
+  if (!currentRun || meta?.runId !== currentRun.runId) return false;
+  return currentRun.messageId === latestAssistantId
+    || currentRun.serverMessageId === latestAssistantId;
 }
 
 export function selectConversationContextStatus(
@@ -143,33 +189,109 @@ export function selectConversationContextStatus(
   const messages = state.conversation?.byId?.[conversationId]?.messages ?? [];
   const latestAssistant = [...messages].reverse().find(message => message.role === 'assistant');
   if (state.stream?.isStreaming && state.stream.conversationId === conversationId) {
-    const liveUsage = normalizeContextUsage(state.stream.contextUsage);
-    const phase = state.stream.contextUsageMeta?.phase ?? 'estimated';
-    return toContextStatus(liveUsage, phase, liveUsage === null && phase !== 'error');
+    const confirmedMatches = state.stream.contextUsageConversationId == null
+      || state.stream.contextUsageConversationId === conversationId;
+    const inFlightMatches = state.stream.contextUsageInFlightConversationId == null
+      || state.stream.contextUsageInFlightConversationId === conversationId;
+    const confirmedUsage = confirmedMatches ? actualUsage(state.stream.contextUsage) : null;
+    const recentConfirmedUsage = confirmedUsage ?? latestConfirmedUsage(messages);
+    const inFlightUsage = inFlightMatches
+      ? normalizeContextUsage(state.stream.contextUsageInFlight)
+      : null;
+    const inFlightMeta = inFlightMatches ? state.stream.contextUsageInFlightMeta : null;
+    const phase = inFlightMeta?.phase
+      ?? (confirmedUsage && state.stream.contextUsageMeta?.phase === 'final' ? 'final' : 'estimated');
+
+    if (phase === 'error' || (inFlightUsage && errorKindFromStatus(inFlightUsage.status))) {
+      const errorKind = inFlightUsage
+        ? (errorKindFromStatus(inFlightUsage.status) ?? 'check_failed')
+        : 'check_failed';
+      return toContextStatus(
+        recentConfirmedUsage,
+        'error',
+        false,
+        false,
+        recentConfirmedUsage !== null,
+        errorKind,
+      );
+    }
+
+    if (phase === 'final') {
+      const finalUsage = actualUsage(inFlightUsage) ?? (inFlightMeta ? null : confirmedUsage);
+      return toContextStatus(
+        finalUsage ?? recentConfirmedUsage,
+        'final',
+        false,
+        false,
+        finalUsage === null,
+      );
+    }
+
+    if (recentConfirmedUsage) {
+      return toContextStatus(recentConfirmedUsage, 'estimated', false, true);
+    }
+    return toContextStatus(null, 'estimated', true);
   }
 
+  const retainedConfirmedMatches = state.stream?.contextUsageConversationId === conversationId;
+  const retainedInFlightMatches = state.stream?.contextUsageInFlightConversationId === conversationId;
+  const currentRun = state.stream?.currentRun;
+  const inFlightMeta = retainedInFlightMatches ? state.stream?.contextUsageInFlightMeta : null;
+  const inFlightUsage = retainedInFlightMatches
+    ? normalizeContextUsage(state.stream?.contextUsageInFlight)
+    : null;
+  const latestAssistantId = latestAssistant?.id;
+  const inFlightBelongs = latestAssistantId
+    ? belongsToAssistant(inFlightMeta, latestAssistantId, currentRun)
+    : false;
+  const confirmedUsage = retainedConfirmedMatches ? actualUsage(state.stream?.contextUsage) : null;
+  const confirmedBelongs = latestAssistantId
+    ? belongsToAssistant(state.stream?.contextUsageMeta, latestAssistantId, currentRun)
+    : false;
+  const retainedConfirmedUsage = confirmedBelongs ? confirmedUsage : null;
   const persistedUsage = normalizeContextUsage(latestAssistant?.usage?.context);
-  if (persistedUsage) {
-    return toContextStatus(persistedUsage, null, false);
+  const latestAvailableUsage = retainedConfirmedUsage ?? actualUsage(persistedUsage);
+
+  if (inFlightBelongs && (inFlightMeta?.phase === 'error' || (inFlightUsage && errorKindFromStatus(inFlightUsage.status)))) {
+    const errorKind = inFlightUsage
+      ? (errorKindFromStatus(inFlightUsage.status) ?? 'check_failed')
+      : 'check_failed';
+    return toContextStatus(
+      latestAvailableUsage,
+      'error',
+      false,
+      false,
+      latestAvailableUsage !== null,
+      errorKind,
+    );
+  }
+  if (inFlightBelongs && inFlightMeta?.phase === 'final') {
+    const finalUsage = actualUsage(inFlightUsage);
+    return toContextStatus(
+      finalUsage ?? latestAvailableUsage,
+      'final',
+      false,
+      false,
+      finalUsage === null,
+    );
   }
 
-  if (state.stream?.contextUsageConversationId !== conversationId) return null;
-  const retainedUsage = normalizeContextUsage(state.stream.contextUsage);
-  if (!retainedUsage || !latestAssistant?.id) return null;
+  if (persistedUsage) {
+    if (errorKindFromStatus(persistedUsage.status)) {
+      return toContextStatus(persistedUsage, 'error', false);
+    }
+    return toContextStatus(actualUsage(persistedUsage), null, false);
+  }
 
-  const metaMessageId = state.stream.contextUsageMeta?.messageId;
-  const currentRun = state.stream.currentRun;
-  const belongsToLatestAssistant =
-    metaMessageId === latestAssistant.id
-    || currentRun?.messageId === latestAssistant.id
-    || currentRun?.serverMessageId === latestAssistant.id;
-  if (!belongsToLatestAssistant) return null;
+  if (!latestAssistant?.id) return null;
 
-  return toContextStatus(
-    retainedUsage,
-    state.stream.contextUsageMeta?.phase ?? null,
-    false,
-  );
+  if (!retainedConfirmedMatches && !retainedInFlightMatches) return null;
+
+  const finalInFlightUsage = inFlightBelongs ? actualUsage(inFlightUsage) : null;
+  const retainedUsage = retainedConfirmedUsage ?? finalInFlightUsage;
+  if (!retainedUsage) return null;
+
+  return toContextStatus(retainedUsage, 'final', false);
 }
 
 export function selectConversationContextUsage(

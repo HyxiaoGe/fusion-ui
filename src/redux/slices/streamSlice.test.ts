@@ -36,7 +36,7 @@ function planStatus(state: ReturnType<typeof initial>, id: string) {
 }
 
 describe('streamSlice — agent run timeline', () => {
-  it('保存当前会话的上下文状态，重复事件幂等覆盖且切换流时清空', () => {
+  it('estimated 只进入 in-flight，final actual 才原子替换 confirmed', () => {
     let state = reducer(initial(), startStream({ conversationId: 'chat-a', messageId: 'msg-a' }));
     state = reducer(state, updateContextUsage({
       conversationId: 'chat-a',
@@ -56,6 +56,13 @@ describe('streamSlice — agent run timeline', () => {
       sequence: 1,
       phase: 'estimated',
     }));
+    expect(state.contextUsage).toBeNull();
+    expect(state.contextUsageInFlight).toMatchObject({
+      estimated_tokens_after: 400,
+      actual_prompt_tokens: null,
+    });
+    expect(state.contextUsageInFlightMeta).toMatchObject({ phase: 'estimated', roundIndex: 1 });
+
     state = reducer(state, updateContextUsage({
       conversationId: 'chat-a',
       usage: {
@@ -76,13 +83,17 @@ describe('streamSlice — agent run timeline', () => {
     }));
 
     expect(state.contextUsage?.actual_prompt_tokens).toBe(410);
+    expect(state.contextUsageMeta).toMatchObject({ phase: 'final', roundIndex: 1 });
+    expect(state.contextUsageInFlightMeta).toMatchObject({ phase: 'final', roundIndex: 1 });
     state = reducer(state, endStream());
     expect(state.contextUsage?.actual_prompt_tokens).toBe(410);
+    expect(state.contextUsageInFlight?.actual_prompt_tokens).toBe(410);
     expect(state.conversationId).toBeNull();
     expect(state.contextUsageConversationId).toBe('chat-a');
 
     state = reducer(state, startStream({ conversationId: 'chat-b', messageId: 'msg-b' }));
     expect(state.contextUsage).toBeNull();
+    expect(state.contextUsageInFlight).toBeNull();
   });
 
   it('拒绝迟到的其他会话上下文事件', () => {
@@ -106,6 +117,7 @@ describe('streamSlice — agent run timeline', () => {
       phase: 'estimated',
     }));
     expect(state.contextUsage).toBeNull();
+    expect(state.contextUsageInFlight).toBeNull();
   });
 
   it('同一 run 按 sequence replace 且 final 优先，重连重放不得倒退', () => {
@@ -136,6 +148,7 @@ describe('streamSlice — agent run timeline', () => {
 
     expect(state.contextUsage?.actual_prompt_tokens).toBe(410);
     expect(state.contextUsageMeta).toMatchObject({ sequence: 5, phase: 'final', roundIndex: 1 });
+    expect(state.contextUsageInFlightMeta).toMatchObject({ sequence: 5, phase: 'final', roundIndex: 1 });
 
     state = reducer(state, updateContextUsage({
       conversationId: 'chat-a',
@@ -143,11 +156,27 @@ describe('streamSlice — agent run timeline', () => {
       runId: 'run-a', messageId: 'server-msg-a', sequence: 7, phase: 'estimated',
     }));
     expect(state.contextUsage).toMatchObject({
+      round_index: 1,
+      actual_prompt_tokens: 410,
+    });
+    expect(state.contextUsageInFlight).toMatchObject({
       round_index: 2,
       estimated_tokens_after: 430,
       actual_prompt_tokens: null,
     });
-    expect(state.contextUsageMeta).toMatchObject({ sequence: 7, phase: 'estimated', roundIndex: 2 });
+    expect(state.contextUsageMeta).toMatchObject({ sequence: 5, phase: 'final', roundIndex: 1 });
+    expect(state.contextUsageInFlightMeta).toMatchObject({ sequence: 7, phase: 'estimated', roundIndex: 2 });
+
+    state = reducer(state, updateContextUsage({
+      conversationId: 'chat-a',
+      usage: { ...usage, round_index: 2, estimated_tokens_after: 430 },
+      runId: 'run-a', messageId: 'server-msg-a', sequence: 8, phase: 'final',
+    }));
+    expect(state.contextUsage).toMatchObject({
+      round_index: 1,
+      actual_prompt_tokens: 410,
+    });
+    expect(state.contextUsageInFlightMeta).toMatchObject({ sequence: 8, phase: 'final', roundIndex: 2 });
   });
   it('initRun 创建 currentRun (status=running, lastSequence=0)', () => {
     const state = reducer(initial(), initRun({
