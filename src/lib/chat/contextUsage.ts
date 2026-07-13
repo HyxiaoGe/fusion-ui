@@ -250,7 +250,9 @@ export function selectConversationContextStatus(
     : false;
   const retainedConfirmedUsage = confirmedBelongs ? confirmedUsage : null;
   const persistedUsage = normalizeContextUsage(latestAssistant?.usage?.context);
-  const latestAvailableUsage = retainedConfirmedUsage ?? actualUsage(persistedUsage);
+  const latestAvailableUsage = retainedConfirmedUsage
+    ?? actualUsage(persistedUsage)
+    ?? (inFlightBelongs ? latestConfirmedUsage(messages) : null);
 
   if (inFlightBelongs && (inFlightMeta?.phase === 'error' || (inFlightUsage && errorKindFromStatus(inFlightUsage.status)))) {
     const errorKind = inFlightUsage

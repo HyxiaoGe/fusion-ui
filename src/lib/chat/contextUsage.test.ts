@@ -348,6 +348,44 @@ describe('contextUsage', () => {
     });
   });
 
+  it('流结束后当前终态无 actual 时仅回退到会话最近 actual', () => {
+    const state = {
+      stream: {
+        isStreaming: false,
+        contextUsageInFlightConversationId: 'chat-a',
+        contextUsageInFlight: {
+          status: 'no_op', window_tokens: 1000, actual_prompt_tokens: null, round_index: 1,
+        },
+        contextUsageInFlightMeta: {
+          runId: 'run-new', messageId: 'server-assistant-new', sequence: 8,
+          phase: 'final' as const, roundIndex: 1,
+        },
+        currentRun: {
+          runId: 'run-new', messageId: 'assistant-new', serverMessageId: 'server-assistant-new',
+        },
+      },
+      conversation: {
+        byId: {
+          'chat-a': {
+            messages: [
+              {
+                id: 'assistant-old', role: 'assistant',
+                usage: { context: { status: 'no_op', window_tokens: 1000, actual_prompt_tokens: 360 } },
+              },
+              { id: 'assistant-new', role: 'assistant', usage: null },
+            ],
+          },
+        },
+      },
+    };
+
+    expect(selectConversationContextStatus(state, 'chat-a')).toMatchObject({
+      usage: { actual_prompt_tokens: 360 },
+      phase: 'final',
+      latestActualUnavailable: true,
+    });
+  });
+
   it('非流式只读取最新 assistant，不向前捞取旧 context', () => {
     const state = {
       stream: {
