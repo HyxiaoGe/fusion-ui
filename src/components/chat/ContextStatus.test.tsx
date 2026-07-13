@@ -111,7 +111,7 @@ describe('ContextStatus', () => {
     expect(screen.getByText('2,000 Token')).toBeInTheDocument();
   });
 
-  it('默认展开偏好持久化，自动展开后主动关闭会取消偏好', async () => {
+  it('默认展开偏好持久化，关闭当前弹层不会取消偏好', async () => {
     const first = render(<ContextStatus conversationId="chat-pref" usage={actualUsage} />);
     fireEvent.click(screen.getByRole('button', { name: '查看上下文状态，剩余 43%' }));
     const toggle = screen.getByRole('switch', { name: '默认展开' });
@@ -127,18 +127,39 @@ describe('ContextStatus', () => {
     expect(await screen.findByRole('dialog', { name: '上下文状态' })).toBeInTheDocument();
     fireEvent.keyDown(screen.getByRole('dialog', { name: '上下文状态' }), { key: 'Escape' });
     await waitFor(() => expect(screen.queryByRole('dialog', { name: '上下文状态' })).toBeNull());
-    expect(localStorage.getItem(CONTEXT_STATUS_DEFAULT_OPEN_STORAGE_KEY)).toBe('false');
+    expect(localStorage.getItem(CONTEXT_STATUS_DEFAULT_OPEN_STORAGE_KEY)).toBe('true');
   });
 
-  it('默认展开后点击弹层外部会关闭并取消偏好', async () => {
+  it('默认展开后点击弹层外部只关闭当前弹层并保留偏好', async () => {
     localStorage.setItem(CONTEXT_STATUS_DEFAULT_OPEN_STORAGE_KEY, 'true');
-    render(<ContextStatus conversationId="chat-outside" usage={actualUsage} />);
+    const first = render(<ContextStatus conversationId="chat-outside" usage={actualUsage} />);
 
     expect(await screen.findByRole('dialog', { name: '上下文状态' })).toBeInTheDocument();
     fireEvent.pointerDown(document.body);
     fireEvent.click(document.body);
 
     await waitFor(() => expect(screen.queryByRole('dialog', { name: '上下文状态' })).toBeNull());
+    expect(localStorage.getItem(CONTEXT_STATUS_DEFAULT_OPEN_STORAGE_KEY)).toBe('true');
+
+    fireEvent.click(screen.getByRole('button', { name: '查看上下文状态，剩余 43%' }));
+    expect(screen.getByRole('switch', { name: '默认展开' })).toBeChecked();
+    first.unmount();
+
+    render(<ContextStatus conversationId="chat-outside" usage={actualUsage} />);
+    expect(await screen.findByRole('dialog', { name: '上下文状态' })).toBeInTheDocument();
+  });
+
+  it('只有主动关闭默认展开开关才会清除偏好', async () => {
+    localStorage.setItem(CONTEXT_STATUS_DEFAULT_OPEN_STORAGE_KEY, 'true');
+    render(<ContextStatus conversationId="chat-toggle-off" usage={actualUsage} />);
+
+    expect(await screen.findByRole('dialog', { name: '上下文状态' })).toBeInTheDocument();
+    const toggle = screen.getByRole('switch', { name: '默认展开' });
+    expect(toggle).toBeChecked();
+
+    fireEvent.click(toggle);
+
+    expect(toggle).not.toBeChecked();
     expect(localStorage.getItem(CONTEXT_STATUS_DEFAULT_OPEN_STORAGE_KEY)).toBe('false');
   });
 

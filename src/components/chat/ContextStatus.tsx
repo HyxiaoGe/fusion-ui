@@ -84,10 +84,6 @@ export default function ContextStatus({
     }
   };
 
-  const handleOpenChange = (nextOpen: boolean) => {
-    setOpen(nextOpen);
-    if (!nextOpen) persistDefaultOpen(false);
-  };
   const rawView = usage ? buildContextUsageView(usage) : EMPTY_VIEW;
   const view = isError
     ? { ...rawView, remainingPercent: null, optimized: false }
@@ -141,7 +137,7 @@ export default function ContextStatus({
         : t('contextStatus.unavailable'));
 
   return (
-    <Popover open={open} onOpenChange={handleOpenChange}>
+    <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
         <button
           type="button"
