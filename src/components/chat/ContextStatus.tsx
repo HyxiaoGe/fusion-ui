@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { CircleAlert, Gauge, Sparkles } from 'lucide-react';
 
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -23,6 +23,8 @@ interface ContextStatusProps {
   updating?: boolean;
   latestActualUnavailable?: boolean;
   errorKind?: ContextUsageErrorKind | null;
+  isStreaming?: boolean;
+  isFirstConversationTurn?: boolean;
 }
 
 export const CONTEXT_STATUS_DEFAULT_OPEN_STORAGE_KEY = 'fusion.context-status.default-open.v1';
@@ -50,6 +52,8 @@ export default function ContextStatus({
   updating = false,
   latestActualUnavailable = false,
   errorKind = null,
+  isStreaming = false,
+  isFirstConversationTurn = false,
 }: ContextStatusProps) {
   // Fusion 聊天界面当前固定使用中文，避免浏览器语言探测让单个组件混入英文。
   const t = i18n.getFixedT('zh-CN');
@@ -64,18 +68,63 @@ export default function ContextStatus({
   const isError = effectiveErrorKind !== null;
   const [open, setOpen] = useState(false);
   const [defaultOpen, setDefaultOpen] = useState(false);
+  const [preferenceLoaded, setPreferenceLoaded] = useState(false);
+  const trackedConversationIdRef = useRef(conversationId);
+  const sawFirstTurnStreamingRef = useRef(false);
+  const autoOpenHandledRef = useRef(false);
+  const userInteractedRef = useRef(false);
 
   useEffect(() => {
     try {
       const preferred = window.localStorage.getItem(CONTEXT_STATUS_DEFAULT_OPEN_STORAGE_KEY) === 'true';
       setDefaultOpen(preferred);
-      if (preferred) setOpen(true);
     } catch {
       // localStorage 不可用时维持默认关闭，不影响上下文状态本身。
+    } finally {
+      setPreferenceLoaded(true);
     }
   }, []);
 
+  useEffect(() => {
+    if (trackedConversationIdRef.current === conversationId) return;
+    trackedConversationIdRef.current = conversationId;
+    sawFirstTurnStreamingRef.current = false;
+    autoOpenHandledRef.current = false;
+    userInteractedRef.current = false;
+    setOpen(false);
+  }, [conversationId]);
+
+  useEffect(() => {
+    if (isStreaming && isFirstConversationTurn && !autoOpenHandledRef.current) {
+      sawFirstTurnStreamingRef.current = true;
+    }
+  }, [isFirstConversationTurn, isStreaming]);
+
+  useEffect(() => {
+    if (
+      !preferenceLoaded
+      || isStreaming
+      || !sawFirstTurnStreamingRef.current
+      || autoOpenHandledRef.current
+    ) return;
+
+    if (isError || latestActualUnavailable || usage?.actual_prompt_tokens == null) {
+      return;
+    }
+
+    autoOpenHandledRef.current = true;
+    if (defaultOpen && !userInteractedRef.current) {
+      setOpen(true);
+    }
+  }, [defaultOpen, isError, isStreaming, latestActualUnavailable, preferenceLoaded, usage]);
+
+  const handleOpenChange = (value: boolean) => {
+    userInteractedRef.current = true;
+    setOpen(value);
+  };
+
   const persistDefaultOpen = (value: boolean) => {
+    userInteractedRef.current = true;
     setDefaultOpen(value);
     try {
       window.localStorage.setItem(CONTEXT_STATUS_DEFAULT_OPEN_STORAGE_KEY, String(value));
@@ -137,7 +186,7 @@ export default function ContextStatus({
         : t('contextStatus.unavailable'));
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
+    <Popover open={open} onOpenChange={handleOpenChange}>
       <PopoverTrigger asChild>
         <button
           type="button"

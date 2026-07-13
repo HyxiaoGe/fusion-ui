@@ -158,6 +158,22 @@ const ChatInput: React.FC<ChatInputProps> = ({
   const contextStatus = useAppSelector((state) =>
     selectConversationContextStatus(state, activeChatId)
   );
+  const isCurrentConversationStreaming = useAppSelector((state) => Boolean(
+    activeChatId
+    && state.stream.isStreaming
+    && state.stream.conversationId === activeChatId
+  ));
+  const isFirstConversationTurn = useAppSelector((state) => {
+    if (!activeChatId) return false;
+    const messages = state.conversation.byId[activeChatId]?.messages ?? [];
+    let userMessageCount = 0;
+    for (const item of messages) {
+      if (item.role !== 'user') continue;
+      userMessageCount += 1;
+      if (userMessageCount > 1) return false;
+    }
+    return userMessageCount === 1;
+  });
 
   // 首页无 activeChatId 时，生成一个稳定的临时 UUID 用于文件上传关联
   const pendingChatIdRef = useRef<string>(uuidv4());
@@ -956,6 +972,8 @@ const ChatInput: React.FC<ChatInputProps> = ({
             updating={contextStatus.updating}
             latestActualUnavailable={contextStatus.latestActualUnavailable}
             errorKind={contextStatus.errorKind}
+            isStreaming={isCurrentConversationStreaming}
+            isFirstConversationTurn={isFirstConversationTurn}
           />
         </div>
       ) : null}

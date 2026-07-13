@@ -186,6 +186,7 @@ function createDeferred<T>() {
 
 describe('ChatInput', () => {
   beforeEach(() => {
+    localStorage.clear();
     dispatchMock.mockReset();
     useAppDispatchMock.mockReturnValue(dispatchMock);
     useAppSelectorMock.mockImplementation(selector => selector(currentState));
@@ -360,6 +361,85 @@ describe('ChatInput', () => {
     expect(screen.getByTestId('context-status-trigger')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /60%/ })).toBeInTheDocument();
     expect(screen.getByTestId('context-updating-indicator')).toHaveTextContent('更新中');
+  });
+
+  it('全局偏好开启时首轮生成期间保持收起，首轮完成后自动展开', async () => {
+    localStorage.setItem('fusion.context-status.default-open.v1', 'true');
+    configureAuthenticatedVisionModel();
+    currentState.conversation.byId = {
+      'chat-first': {
+        id: 'chat-first',
+        messages: [
+          { id: 'user-first', role: 'user', content: [] },
+          { id: 'assistant-first', role: 'assistant', content: [], usage: null },
+        ],
+      },
+    };
+    currentState.stream.isStreaming = true;
+    currentState.stream.conversationId = 'chat-first';
+    currentState.stream.contextUsageConversationId = 'chat-first';
+    currentState.stream.contextUsageInFlightConversationId = 'chat-first';
+
+    const { rerender } = render(<ChatInput onSendMessage={vi.fn()} activeChatId="chat-first" />);
+
+    expect(screen.getByRole('button', { name: '查看上下文状态，计算中' })).toBeInTheDocument();
+    expect(screen.queryByRole('dialog', { name: '上下文状态' })).toBeNull();
+
+    currentState.stream.isStreaming = false;
+    currentState.stream.conversationId = null;
+    currentState.conversation.byId['chat-first'].messages[1].usage = {
+      input_tokens: 400,
+      output_tokens: 1,
+      context: { status: 'no_op', window_tokens: 1000, actual_prompt_tokens: 400 },
+    };
+    rerender(<ChatInput onSendMessage={vi.fn()} activeChatId="chat-first" />);
+
+    expect(await screen.findByRole('dialog', { name: '上下文状态' })).toBeInTheDocument();
+  });
+
+  it('后续对话轮次完成时不会再次自动展开上下文面板', async () => {
+    localStorage.setItem('fusion.context-status.default-open.v1', 'true');
+    configureAuthenticatedVisionModel();
+    currentState.conversation.byId = {
+      'chat-follow-up': {
+        id: 'chat-follow-up',
+        messages: [
+          { id: 'user-old', role: 'user', content: [] },
+          {
+            id: 'assistant-old',
+            role: 'assistant',
+            content: [],
+            usage: {
+              input_tokens: 400,
+              output_tokens: 1,
+              context: { status: 'no_op', window_tokens: 1000, actual_prompt_tokens: 400 },
+            },
+          },
+          { id: 'user-current', role: 'user', content: [] },
+          { id: 'assistant-current', role: 'assistant', content: [], usage: null },
+        ],
+      },
+    };
+    currentState.stream.isStreaming = true;
+    currentState.stream.conversationId = 'chat-follow-up';
+    currentState.stream.contextUsageConversationId = 'chat-follow-up';
+    currentState.stream.contextUsageInFlightConversationId = 'chat-follow-up';
+
+    const { rerender } = render(<ChatInput onSendMessage={vi.fn()} activeChatId="chat-follow-up" />);
+    expect(screen.queryByRole('dialog', { name: '上下文状态' })).toBeNull();
+
+    currentState.stream.isStreaming = false;
+    currentState.stream.conversationId = null;
+    currentState.conversation.byId['chat-follow-up'].messages[3].usage = {
+      input_tokens: 500,
+      output_tokens: 1,
+      context: { status: 'no_op', window_tokens: 1000, actual_prompt_tokens: 500 },
+    };
+    rerender(<ChatInput onSendMessage={vi.fn()} activeChatId="chat-follow-up" />);
+
+    await waitFor(() => expect(
+      screen.queryByRole('dialog', { name: '上下文状态' })
+    ).toBeNull());
   });
 
   it('窄屏工具栏隐藏思考文字并保留可收缩边界', () => {

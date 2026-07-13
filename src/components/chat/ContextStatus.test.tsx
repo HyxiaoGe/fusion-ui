@@ -111,10 +111,10 @@ describe('ContextStatus', () => {
     expect(screen.getByText('2,000 Token')).toBeInTheDocument();
   });
 
-  it('默认展开偏好持久化，关闭当前弹层不会取消偏好', async () => {
+  it('首轮完成后展开偏好全局持久化，但历史状态挂载时不会立即展开', async () => {
     const first = render(<ContextStatus conversationId="chat-pref" usage={actualUsage} />);
     fireEvent.click(screen.getByRole('button', { name: '查看上下文状态，剩余 43%' }));
-    const toggle = screen.getByRole('switch', { name: '默认展开' });
+    const toggle = screen.getByRole('switch', { name: '首轮完成后展开' });
     expect(toggle).not.toBeChecked();
     expect(toggle).toHaveAttribute('data-state', 'unchecked');
     fireEvent.click(toggle);
@@ -124,10 +124,121 @@ describe('ContextStatus', () => {
     first.unmount();
 
     render(<ContextStatus conversationId="chat-pref" usage={actualUsage} />);
+    await waitFor(() => expect(
+      localStorage.getItem(CONTEXT_STATUS_DEFAULT_OPEN_STORAGE_KEY)
+    ).toBe('true'));
+    expect(screen.queryByRole('dialog', { name: '上下文状态' })).toBeNull();
+    expect(localStorage.getItem(CONTEXT_STATUS_DEFAULT_OPEN_STORAGE_KEY)).toBe('true');
+  });
+
+  it('首轮生成期间保持收起，正常结束并拿到实际值后才自动展开一次', async () => {
+    localStorage.setItem(CONTEXT_STATUS_DEFAULT_OPEN_STORAGE_KEY, 'true');
+    const { rerender } = render(<ContextStatus
+      conversationId="chat-first-round"
+      usage={null}
+      phase="estimated"
+      pending
+      isStreaming
+      isFirstConversationTurn
+    />);
+
+    expect(screen.queryByRole('dialog', { name: '上下文状态' })).toBeNull();
+
+    rerender(<ContextStatus
+      conversationId="chat-first-round"
+      usage={actualUsage}
+      phase="final"
+      isStreaming
+      isFirstConversationTurn
+    />);
+    expect(screen.queryByRole('dialog', { name: '上下文状态' })).toBeNull();
+
+    rerender(<ContextStatus
+      conversationId="chat-first-round"
+      usage={actualUsage}
+      phase="final"
+      isFirstConversationTurn
+    />);
     expect(await screen.findByRole('dialog', { name: '上下文状态' })).toBeInTheDocument();
+
     fireEvent.keyDown(screen.getByRole('dialog', { name: '上下文状态' }), { key: 'Escape' });
     await waitFor(() => expect(screen.queryByRole('dialog', { name: '上下文状态' })).toBeNull());
-    expect(localStorage.getItem(CONTEXT_STATUS_DEFAULT_OPEN_STORAGE_KEY)).toBe('true');
+    rerender(<ContextStatus
+      conversationId="chat-first-round"
+      usage={actualUsage}
+      phase="final"
+      isFirstConversationTurn
+    />);
+    expect(screen.queryByRole('dialog', { name: '上下文状态' })).toBeNull();
+  });
+
+  it('后续轮次、失败结果和用户手动关闭都不会触发自动展开', async () => {
+    localStorage.setItem(CONTEXT_STATUS_DEFAULT_OPEN_STORAGE_KEY, 'true');
+    const subsequent = render(<ContextStatus
+      conversationId="chat-subsequent"
+      usage={actualUsage}
+      phase="estimated"
+      updating
+      isStreaming
+    />);
+    subsequent.rerender(<ContextStatus
+      conversationId="chat-subsequent"
+      usage={actualUsage}
+      phase="final"
+    />);
+    expect(screen.queryByRole('dialog', { name: '上下文状态' })).toBeNull();
+    subsequent.unmount();
+
+    const failed = render(<ContextStatus
+      conversationId="chat-failed"
+      usage={null}
+      phase="estimated"
+      pending
+      isStreaming
+      isFirstConversationTurn
+    />);
+    failed.rerender(<ContextStatus
+      conversationId="chat-failed"
+      usage={null}
+      phase="error"
+      errorKind="check_failed"
+      isFirstConversationTurn
+    />);
+    expect(screen.queryByRole('dialog', { name: '上下文状态' })).toBeNull();
+    failed.rerender(<ContextStatus
+      conversationId="chat-failed"
+      usage={null}
+      phase="estimated"
+      pending
+      isStreaming
+      isFirstConversationTurn
+    />);
+    failed.rerender(<ContextStatus
+      conversationId="chat-failed"
+      usage={actualUsage}
+      phase="final"
+      isFirstConversationTurn
+    />);
+    expect(await screen.findByRole('dialog', { name: '上下文状态' })).toBeInTheDocument();
+    failed.unmount();
+
+    const manual = render(<ContextStatus
+      conversationId="chat-manual"
+      usage={null}
+      phase="estimated"
+      pending
+      isStreaming
+      isFirstConversationTurn
+    />);
+    fireEvent.click(screen.getByRole('button', { name: '查看上下文状态，计算中' }));
+    fireEvent.keyDown(screen.getByRole('dialog', { name: '上下文状态' }), { key: 'Escape' });
+    manual.rerender(<ContextStatus
+      conversationId="chat-manual"
+      usage={actualUsage}
+      phase="final"
+      isFirstConversationTurn
+    />);
+    expect(screen.queryByRole('dialog', { name: '上下文状态' })).toBeNull();
   });
 
   it('默认展开开启时点击弹层外部不会关闭弹层或偏好', async () => {
@@ -136,13 +247,14 @@ describe('ContextStatus', () => {
     document.body.appendChild(outsideInput);
     render(<ContextStatus conversationId="chat-outside" usage={actualUsage} />);
 
-    expect(await screen.findByRole('dialog', { name: '上下文状态' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '查看上下文状态，剩余 43%' }));
+    expect(screen.getByRole('dialog', { name: '上下文状态' })).toBeInTheDocument();
     fireEvent.pointerDown(document.body);
     fireEvent.click(document.body);
 
     expect(screen.getByRole('dialog', { name: '上下文状态' })).toBeInTheDocument();
     expect(localStorage.getItem(CONTEXT_STATUS_DEFAULT_OPEN_STORAGE_KEY)).toBe('true');
-    expect(screen.getByRole('switch', { name: '默认展开' })).toBeChecked();
+    expect(screen.getByRole('switch', { name: '首轮完成后展开' })).toBeChecked();
 
     fireEvent.pointerDown(outsideInput);
     outsideInput.focus();
@@ -169,8 +281,8 @@ describe('ContextStatus', () => {
     localStorage.setItem(CONTEXT_STATUS_DEFAULT_OPEN_STORAGE_KEY, 'true');
     render(<ContextStatus conversationId="chat-toggle-off" usage={actualUsage} />);
 
-    expect(await screen.findByRole('dialog', { name: '上下文状态' })).toBeInTheDocument();
-    const toggle = screen.getByRole('switch', { name: '默认展开' });
+    fireEvent.click(screen.getByRole('button', { name: '查看上下文状态，剩余 43%' }));
+    const toggle = screen.getByRole('switch', { name: '首轮完成后展开' });
     expect(toggle).toBeChecked();
 
     fireEvent.click(toggle);
@@ -185,7 +297,20 @@ describe('ContextStatus', () => {
     document.body.appendChild(textarea);
     textarea.focus();
 
-    render(<ContextStatus conversationId="chat-focus" usage={actualUsage} />);
+    const { rerender } = render(<ContextStatus
+      conversationId="chat-focus"
+      usage={null}
+      phase="estimated"
+      pending
+      isStreaming
+      isFirstConversationTurn
+    />);
+    rerender(<ContextStatus
+      conversationId="chat-focus"
+      usage={actualUsage}
+      phase="final"
+      isFirstConversationTurn
+    />);
 
     expect(await screen.findByRole('dialog', { name: '上下文状态' })).toBeInTheDocument();
     expect(textarea).toHaveFocus();
