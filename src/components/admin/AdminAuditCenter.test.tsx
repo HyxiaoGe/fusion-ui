@@ -22,6 +22,7 @@ const navigationMocks = vi.hoisted(() => ({
   push: vi.fn(),
   replace: vi.fn(),
   back: vi.fn(),
+  forward: vi.fn(),
   pathname: '/admin',
   search: '',
   history: ['/admin'],
@@ -50,6 +51,10 @@ const navigationMocks = vi.hoisted(() => ({
     if (this.historyIndex > 0) this.historyIndex -= 1;
     this.publish(this.history[this.historyIndex]);
   },
+  forwardUrl() {
+    if (this.historyIndex < this.history.length - 1) this.historyIndex += 1;
+    this.publish(this.history[this.historyIndex]);
+  },
   setUrl(url: string) {
     this.history[this.historyIndex] = url;
     this.publish(url);
@@ -65,6 +70,7 @@ vi.mock('next/navigation', async () => {
       push: navigationMocks.push,
       replace: navigationMocks.replace,
       back: navigationMocks.back,
+      forward: navigationMocks.forward,
     }),
     useSearchParams: () => {
       const search = React.useSyncExternalStore(
@@ -86,12 +92,21 @@ const emptyPage = {
   items: [], total: 0, page: 1, page_size: 25, total_pages: 0, has_next: false, has_prev: false,
 };
 
+const modelSummary = {
+  model_id: 'model-a', name: '模型 A', provider: 'deepseek', provider_display: 'DeepSeek',
+  catalog_status: 'active', health: { status: 'healthy' },
+  capabilities: { vision: true, deepThinking: true, fileSupport: true, functionCalling: true },
+  conversation_count: 1, user_count: 1, assistant_message_count: 2, input_tokens: 3, output_tokens: 4,
+  last_used_at: null, agent_run_count: 0, agent_error_count: 0, latest_performance_run: null,
+};
+
 describe('AdminAuditCenter', () => {
   beforeEach(() => {
     Object.values(apiMocks).forEach(mock => mock.mockReset().mockResolvedValue(emptyPage));
     navigationMocks.push.mockReset().mockImplementation((url: string) => navigationMocks.pushUrl(url));
     navigationMocks.replace.mockReset().mockImplementation((url: string) => navigationMocks.replaceUrl(url));
     navigationMocks.back.mockReset().mockImplementation(() => navigationMocks.backUrl());
+    navigationMocks.forward.mockReset().mockImplementation(() => navigationMocks.forwardUrl());
     navigationMocks.pathname = '/admin';
     navigationMocks.seed('/admin');
   });
@@ -192,6 +207,126 @@ describe('AdminAuditCenter', () => {
     fireEvent.mouseDown(screen.getByRole('tab', { name: '对话', hidden: true }), { button: 0, ctrlKey: false });
 
     expect(navigationMocks.push).toHaveBeenCalledWith('/admin?tab=conversations', { scroll: false });
+  });
+
+  it('路由提交变慢时仍立即切换页签并开始加载目标面板', async () => {
+    navigationMocks.push.mockImplementation(() => undefined);
+    render(<AdminAuditCenter />);
+    await waitFor(() => expect(apiMocks.getAdminUsers).toHaveBeenCalledTimes(1));
+
+    fireEvent.mouseDown(screen.getByRole('tab', { name: '模型' }), { button: 0, ctrlKey: false });
+
+    expect(screen.getByRole('tab', { name: '模型' })).toHaveAttribute('data-state', 'active');
+    expect(screen.getByRole('tab', { name: '用户' })).toHaveAttribute('data-state', 'inactive');
+    await waitFor(() => expect(apiMocks.getAdminModels).toHaveBeenCalledTimes(1));
+    expect(navigationMocks.search).toBe('');
+  });
+
+  it('只挂载访问过的页签，切回时保留草稿且不重复请求列表', async () => {
+    render(<AdminAuditCenter />);
+    await waitFor(() => expect(apiMocks.getAdminUsers).toHaveBeenCalledTimes(1));
+    expect(apiMocks.getAdminConversations).not.toHaveBeenCalled();
+    expect(apiMocks.getAdminModels).not.toHaveBeenCalled();
+    expect(apiMocks.getAdminPerformanceRuns).not.toHaveBeenCalled();
+    expect(apiMocks.getAdminAuditEvents).not.toHaveBeenCalled();
+
+    fireEvent.change(screen.getByLabelText('搜索用户'), { target: { value: '尚未提交的草稿' } });
+    fireEvent.mouseDown(screen.getByRole('tab', { name: '模型' }), { button: 0, ctrlKey: false });
+    await waitFor(() => expect(apiMocks.getAdminModels).toHaveBeenCalledTimes(1));
+    fireEvent.mouseDown(screen.getByRole('tab', { name: '用户' }), { button: 0, ctrlKey: false });
+
+    expect(screen.getByLabelText('搜索用户')).toHaveValue('尚未提交的草稿');
+    expect(apiMocks.getAdminUsers).toHaveBeenCalledTimes(1);
+    expect(apiMocks.getAdminConversations).not.toHaveBeenCalled();
+    expect(apiMocks.getAdminPerformanceRuns).not.toHaveBeenCalled();
+    expect(apiMocks.getAdminAuditEvents).not.toHaveBeenCalled();
+  });
+
+  it('方向键只移动页签焦点，不触发导航或加载', async () => {
+    render(<AdminAuditCenter />);
+    await waitFor(() => expect(apiMocks.getAdminUsers).toHaveBeenCalledTimes(1));
+    const usersTab = screen.getByRole('tab', { name: '用户' });
+    usersTab.focus();
+
+    fireEvent.keyDown(usersTab, { key: 'ArrowRight' });
+
+    expect(navigationMocks.push).not.toHaveBeenCalled();
+    expect(screen.getByRole('tab', { name: '用户' })).toHaveAttribute('data-state', 'active');
+    expect(apiMocks.getAdminConversations).not.toHaveBeenCalled();
+
+    const conversationsTab = screen.getByRole('tab', { name: '对话' });
+    await waitFor(() => expect(conversationsTab).toHaveFocus());
+    fireEvent.keyDown(conversationsTab, { key: 'Enter', code: 'Enter' });
+    fireEvent.keyUp(conversationsTab, { key: 'Enter', code: 'Enter' });
+    expect(navigationMocks.push).toHaveBeenCalledWith('/admin?tab=conversations', { scroll: false });
+  });
+
+  it('切换后隐藏旧面板并卸载模型下拉框和能力浮层 Portal', async () => {
+    apiMocks.getAdminModels.mockResolvedValue({
+      ...emptyPage,
+      total: 1,
+      total_pages: 1,
+      items: [modelSummary],
+      provider_options: [{ value: 'deepseek', label: 'DeepSeek' }],
+    });
+    navigationMocks.seed('/admin?tab=models');
+    render(<AdminAuditCenter />);
+    await screen.findByText('模型 A');
+
+    fireEvent.click(screen.getByLabelText('模型提供商'));
+    expect(screen.getByRole('listbox')).toBeInTheDocument();
+    act(() => navigationMocks.setUrl('/admin'));
+    await waitFor(() => expect(screen.queryByRole('listbox')).toBeNull());
+    const modelsPanel = document.getElementById(screen.getByRole('tab', { name: '模型' }).getAttribute('aria-controls')!);
+    expect(modelsPanel).toHaveClass('data-[state=inactive]:hidden');
+    expect(modelsPanel).toHaveAttribute('data-state', 'inactive');
+    expect(modelsPanel).toHaveAttribute('hidden');
+
+    fireEvent.mouseDown(screen.getByRole('tab', { name: '模型' }), { button: 0, ctrlKey: false });
+    expect(screen.queryByRole('listbox')).toBeNull();
+    fireEvent.click(await screen.findByRole('button', { name: /显示另外 2 项能力/ }));
+    expect(screen.getByLabelText('其余模型能力')).toBeInTheDocument();
+    fireEvent.mouseDown(screen.getByRole('tab', { name: '用户' }), { button: 0, ctrlKey: false });
+    expect(screen.queryByLabelText('其余模型能力')).toBeNull();
+  });
+
+  it('模型深链首屏只挂载目标页签，不预取其他管理列表', async () => {
+    apiMocks.getAdminModels.mockResolvedValue({ ...emptyPage, items: [modelSummary] });
+    navigationMocks.seed('/admin?tab=models');
+    render(<AdminAuditCenter />);
+
+    await screen.findByText('模型 A');
+    expect(apiMocks.getAdminModels).toHaveBeenCalledTimes(1);
+    expect(apiMocks.getAdminUsers).not.toHaveBeenCalled();
+    expect(apiMocks.getAdminConversations).not.toHaveBeenCalled();
+    expect(apiMocks.getAdminPerformanceRuns).not.toHaveBeenCalled();
+    expect(apiMocks.getAdminAuditEvents).not.toHaveBeenCalled();
+  });
+
+  it('浏览器返回会覆盖乐观状态并同步到历史页签', async () => {
+    render(<AdminAuditCenter />);
+    fireEvent.mouseDown(screen.getByRole('tab', { name: '模型' }), { button: 0, ctrlKey: false });
+    await waitFor(() => expect(screen.getByRole('tab', { name: '模型' })).toHaveAttribute('data-state', 'active'));
+
+    act(() => navigationMocks.backUrl());
+
+    await waitFor(() => expect(screen.getByRole('tab', { name: '用户' })).toHaveAttribute('data-state', 'active'));
+    expect(apiMocks.getAdminUsers).toHaveBeenCalledTimes(1);
+  });
+
+  it('浏览器前进会恢复已访问页签且复用缓存数据', async () => {
+    render(<AdminAuditCenter />);
+    await waitFor(() => expect(apiMocks.getAdminUsers).toHaveBeenCalledTimes(1));
+    fireEvent.mouseDown(screen.getByRole('tab', { name: '模型' }), { button: 0, ctrlKey: false });
+    await waitFor(() => expect(apiMocks.getAdminModels).toHaveBeenCalledTimes(1));
+
+    act(() => navigationMocks.backUrl());
+    await waitFor(() => expect(screen.getByRole('tab', { name: '用户' })).toHaveAttribute('data-state', 'active'));
+    act(() => navigationMocks.forwardUrl());
+
+    await waitFor(() => expect(screen.getByRole('tab', { name: '模型' })).toHaveAttribute('data-state', 'active'));
+    expect(apiMocks.getAdminUsers).toHaveBeenCalledTimes(1);
+    expect(apiMocks.getAdminModels).toHaveBeenCalledTimes(1);
   });
 
   it('用户详情由 URL 恢复；UI 打开后关闭走 back，直接深链关闭回父列表', async () => {

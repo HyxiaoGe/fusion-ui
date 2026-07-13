@@ -17,6 +17,7 @@ import {
 } from './AdminPanelPrimitives';
 
 interface AdminModelsPanelProps {
+  active?: boolean;
   onForbidden: () => void;
   selectedModelId: string | null;
   onOpen: (modelId: string) => void;
@@ -28,12 +29,13 @@ const CATALOG_DEGRADED_MESSAGE = '模型目录暂时不可用，当前信息可�
 const ALL_PROVIDERS_VALUE = '__all_providers__';
 
 export default function AdminModelsPanel({
-  onForbidden, selectedModelId, onOpen, onBack, onViewConversations,
+  active = true, onForbidden, selectedModelId, onOpen, onBack, onViewConversations,
 }: AdminModelsPanelProps) {
   const [page, setPage] = useState(1);
   const [draft, setDraft] = useState({ q: '', provider: '', catalog_status: '' });
   const [filters, setFilters] = useState({ q: '', provider: '', catalog_status: '' });
   const [providerOptions, setProviderOptions] = useState<Array<{ value: string; label: string }>>([]);
+  const [providerOpen, setProviderOpen] = useState(false);
   const loader = useCallback((signal: AbortSignal) => getAdminModels({
     page, page_size: 25, ...filters,
   }, signal), [filters, page]);
@@ -42,6 +44,10 @@ export default function AdminModelsPanel({
   useEffect(() => {
     if (resource.data) setProviderOptions(resource.data.provider_options ?? []);
   }, [resource.data]);
+
+  useEffect(() => {
+    if (!active) setProviderOpen(false);
+  }, [active]);
 
   const selectedProvider = draft.provider
     ? providerOptions.find(option => option.value === draft.provider) || { value: draft.provider, label: draft.provider }
@@ -67,7 +73,7 @@ export default function AdminModelsPanel({
         setFilters({ q: draft.q.trim(), provider: draft.provider.trim(), catalog_status: draft.catalog_status });
       }}>
         <Input aria-label="搜索模型" placeholder="模型名称或 ID" value={draft.q} onChange={event => setDraft(current => ({ ...current, q: event.target.value }))} />
-        <Select value={draft.provider || ALL_PROVIDERS_VALUE} onValueChange={value => setDraft(current => ({ ...current, provider: value === ALL_PROVIDERS_VALUE ? '' : value }))}><SelectTrigger aria-label="模型提供商">{selectedProvider ? <span className="flex min-w-0 items-center gap-2"><span className="shrink-0" aria-hidden="true"><ProviderIcon providerId={selectedProvider.value} size={18} /></span><span className="truncate">{selectedProvider.label}</span></span> : <span>不限</span>}</SelectTrigger><SelectContent className="w-[max(232px,var(--radix-select-trigger-width))] max-w-[calc(100vw-2rem)]"><SelectItem value={ALL_PROVIDERS_VALUE} className="min-h-10 py-2">不限</SelectItem>{renderedProviderOptions.map(option => <SelectItem key={option.value} value={option.value} textValue={option.label} className="min-h-10 py-2"><span className="flex min-w-0 items-center gap-3"><span className="shrink-0" aria-hidden="true"><ProviderIcon providerId={option.value} size={20} /></span><span className="min-w-0 flex-1 truncate" title={option.label}>{option.label}</span></span></SelectItem>)}</SelectContent></Select>
+        <Select open={active && providerOpen} onOpenChange={setProviderOpen} value={draft.provider || ALL_PROVIDERS_VALUE} onValueChange={value => setDraft(current => ({ ...current, provider: value === ALL_PROVIDERS_VALUE ? '' : value }))}><SelectTrigger aria-label="模型提供商">{selectedProvider ? <span className="flex min-w-0 items-center gap-2"><span className="shrink-0" aria-hidden="true"><ProviderIcon providerId={selectedProvider.value} size={18} /></span><span className="truncate">{selectedProvider.label}</span></span> : <span>不限</span>}</SelectTrigger><SelectContent className="w-[max(232px,var(--radix-select-trigger-width))] max-w-[calc(100vw-2rem)]"><SelectItem value={ALL_PROVIDERS_VALUE} className="min-h-10 py-2">不限</SelectItem>{renderedProviderOptions.map(option => <SelectItem key={option.value} value={option.value} textValue={option.label} className="min-h-10 py-2"><span className="flex min-w-0 items-center gap-3"><span className="shrink-0" aria-hidden="true"><ProviderIcon providerId={option.value} size={20} /></span><span className="min-w-0 flex-1 truncate" title={option.label}>{option.label}</span></span></SelectItem>)}</SelectContent></Select>
         <select aria-label="模型目录状态" className="h-9 rounded-md border border-input bg-background px-3 text-sm" value={draft.catalog_status} onChange={event => setDraft(current => ({ ...current, catalog_status: event.target.value }))}><option value="">目录状态不限</option><option value="active">当前模型</option><option value="historical">历史模型</option><option value="unknown">状态未知</option></select>
         <Button type="submit"><Filter />筛选</Button>
       </form>
@@ -75,13 +81,13 @@ export default function AdminModelsPanel({
       {resource.data?.catalog_availability === 'degraded' || (resource.data?.excluded_invalid_model_count ?? 0) > 0 ? <div className="mb-3 space-y-1 text-xs text-muted-foreground">{resource.data?.catalog_availability === 'degraded' ? <p>{CATALOG_DEGRADED_MESSAGE}</p> : null}{(resource.data?.excluded_invalid_model_count ?? 0) > 0 ? <p>有 {resource.data?.excluded_invalid_model_count} 条异常模型记录未展示，请检查历史数据</p> : null}</div> : null}
       {resource.data?.items.length === 0 ? <AdminEmpty>没有匹配的模型</AdminEmpty> : null}
       {resource.data?.items.length ? (
-        <><div className="overflow-x-auto rounded-xl border border-border"><table className="w-full min-w-[960px] table-fixed text-left text-sm"><caption className="sr-only">模型运营列表</caption><colgroup><col className="w-[20%]" /><col className="w-[13%]" /><col className="w-[16%]" /><col className="w-[28%]" /><col className="w-[13%]" /><col className="w-[10%]" /></colgroup><thead className="bg-muted/30 text-xs text-muted-foreground"><tr><th scope="col" className="px-3 py-3">模型</th><th scope="col" className="px-3 py-3">状态</th><th scope="col" className="px-3 py-3">能力</th><th scope="col" className="px-3 py-3">运营统计</th><th scope="col" className="px-3 py-3">时间（北京时间）</th><th scope="col" className="px-3 py-3 text-right">操作</th></tr></thead><tbody>{resource.data.items.map(model => <ModelRow key={model.model_id} model={model} onOpen={onOpen} />)}</tbody></table></div><AdminPagination page={resource.data} onPageChange={setPage} /></>
+        <><div className="overflow-x-auto rounded-xl border border-border"><table className="w-full min-w-[960px] table-fixed text-left text-sm"><caption className="sr-only">模型运营列表</caption><colgroup><col className="w-[20%]" /><col className="w-[13%]" /><col className="w-[16%]" /><col className="w-[28%]" /><col className="w-[13%]" /><col className="w-[10%]" /></colgroup><thead className="bg-muted/30 text-xs text-muted-foreground"><tr><th scope="col" className="px-3 py-3">模型</th><th scope="col" className="px-3 py-3">状态</th><th scope="col" className="px-3 py-3">能力</th><th scope="col" className="px-3 py-3">运营统计</th><th scope="col" className="px-3 py-3">时间（北京时间）</th><th scope="col" className="px-3 py-3 text-right">操作</th></tr></thead><tbody>{resource.data.items.map(model => <ModelRow key={model.model_id} active={active} model={model} onOpen={onOpen} />)}</tbody></table></div><AdminPagination page={resource.data} onPageChange={setPage} /></>
       ) : null}
     </section>
   );
 }
 
-function ModelRow({ model, onOpen }: { model: AdminModelSummary; onOpen: (modelId: string) => void }) {
+function ModelRow({ active, model, onOpen }: { active: boolean; model: AdminModelSummary; onOpen: (modelId: string) => void }) {
   const checkedAt = formatModelHealthCheckedAt(model.health?.checked_at);
   const checkedAtCompact = formatCompactAdminDate(model.health?.checked_at);
   const recentActivity = formatCompactAdminDate(model.last_used_at);
@@ -92,7 +98,7 @@ function ModelRow({ model, onOpen }: { model: AdminModelSummary; onOpen: (modelI
     <tr className="border-t border-border/60 align-top">
       <td className="px-3 py-3"><div className="truncate font-medium" title={model.name || model.model_id}>{model.name || model.model_id}</div><div className="mt-1 break-all text-xs text-muted-foreground">{model.model_id}</div><div className="mt-1 flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">{providerId ? <span aria-hidden="true"><ProviderIcon providerId={providerId} size={16} /></span> : null}<span className="truncate" title={providerLabel}>{providerLabel}</span></div></td>
       <td className="px-3 py-3"><div className="flex flex-wrap gap-1"><Badge variant="outline">{catalogStatusLabel(model.catalog_status, 'badge')}</Badge><Badge variant="outline">{healthLabel(model.health?.status)}</Badge></div></td>
-      <td className="px-3 py-3"><CapabilityBadges capabilities={model.capabilities} maxVisible={2} /></td>
+      <td className="px-3 py-3"><CapabilityBadges active={active} capabilities={model.capabilities} maxVisible={2} /></td>
       <td className="px-3 py-3"><dl className="grid grid-cols-3 gap-x-3 gap-y-2 text-xs"><Statistic label="对话" value={formatNumber(model.conversation_count)} /><Statistic label="用户" value={formatNumber(model.user_count)} /><Statistic label="回复" value={formatNumber(model.assistant_message_count)} /><Statistic label="持久化 Token" value={formatNumber(model.input_tokens + model.output_tokens)} /><Statistic label="Agent 运行" value={formatNumber(model.agent_run_count)} /><Statistic label="错误" value={formatNumber(model.agent_error_count)} /></dl></td>
       <td className="px-3 py-3 text-xs"><div className="text-muted-foreground">最近活动</div>{recentActivity.dateTime ? <time className="mt-0.5 block whitespace-nowrap" dateTime={recentActivity.dateTime} title={recentActivityFull} aria-label={`最近活动 ${recentActivityFull}`}>{recentActivity.text}</time> : <div className="mt-0.5 whitespace-nowrap" aria-label={`最近活动 ${recentActivityFull}`}>{recentActivity.text}</div>}<div className="mt-2 text-muted-foreground">健康检测</div>{checkedAt === '尚未检测' ? <div className="mt-0.5 whitespace-nowrap">尚未检测</div> : <time className="mt-0.5 block whitespace-nowrap" dateTime={checkedAtCompact.dateTime} title={checkedAt} aria-label={`检测时间 ${checkedAt}`}>{checkedAtCompact.text}</time>}</td>
       <td className="px-3 py-3 text-right"><Button variant="ghost" size="sm" className="whitespace-nowrap" aria-label={`查看模型详情 ${model.model_id}`} onClick={() => onOpen(model.model_id)}>查看详情</Button></td>
@@ -152,11 +158,11 @@ const RECOMMENDED_FOR_LABELS: Record<string, string> = { agent: 'Agent', coding:
 const PERFORMANCE_STATUS_LABELS: Record<string, string> = { completed: '已完成', failed: '失败', running: '运行中', stopped: '已停止' };
 const PERFORMANCE_ENVIRONMENT_LABELS: Record<string, string> = { production: '生产环境', prod: '生产环境', staging: '预发布环境', development: '开发环境', dev: '开发环境' };
 
-function CapabilityBadges({ capabilities, maxVisible }: { capabilities: Record<string, boolean>; maxVisible?: number }) {
+function CapabilityBadges({ active = true, capabilities, maxVisible }: { active?: boolean; capabilities: Record<string, boolean>; maxVisible?: number }) {
   const labels = Object.entries(CAPABILITY_LABELS).filter(([key]) => capabilities[key]).map(([, label]) => label).filter((label, index, all) => all.indexOf(label) === index);
   const visibleLabels = maxVisible === undefined ? labels : labels.slice(0, maxVisible);
   const hiddenLabels = labels.slice(visibleLabels.length);
-  return labels.length ? <div className="flex max-w-sm flex-wrap gap-1" role="group" aria-label={`模型能力：${labels.join('、')}`}>{visibleLabels.map(label => <Badge key={label} variant="outline">{label}</Badge>)}{hiddenLabels.length ? <Popover><PopoverTrigger asChild><button type="button" className={cn(badgeVariants({ variant: 'outline' }), 'cursor-pointer')} aria-label={`显示另外 ${hiddenLabels.length} 项能力：${hiddenLabels.join('、')}`}>+{hiddenLabels.length}项</button></PopoverTrigger><PopoverContent align="start" className="w-auto max-w-xs p-3" aria-label="其余模型能力"><div className="flex flex-wrap gap-1">{hiddenLabels.map(label => <Badge key={label} variant="outline">{label}</Badge>)}</div></PopoverContent></Popover> : null}</div> : <span className="text-xs text-muted-foreground">未标注能力</span>;
+  return labels.length ? <div className="flex max-w-sm flex-wrap gap-1" role="group" aria-label={`模型能力：${labels.join('、')}`}>{visibleLabels.map(label => <Badge key={label} variant="outline">{label}</Badge>)}{hiddenLabels.length ? active ? <Popover><PopoverTrigger asChild><button type="button" className={cn(badgeVariants({ variant: 'outline' }), 'cursor-pointer')} aria-label={`显示另外 ${hiddenLabels.length} 项能力：${hiddenLabels.join('、')}`}>+{hiddenLabels.length}项</button></PopoverTrigger><PopoverContent align="start" className="w-auto max-w-xs p-3" aria-label="其余模型能力"><div className="flex flex-wrap gap-1">{hiddenLabels.map(label => <Badge key={label} variant="outline">{label}</Badge>)}</div></PopoverContent></Popover> : <Badge variant="outline">+{hiddenLabels.length}项</Badge> : null}</div> : <span className="text-xs text-muted-foreground">未标注能力</span>;
 }
 
 function healthLabel(status: string | null | undefined): string {

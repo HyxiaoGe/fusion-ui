@@ -18,6 +18,7 @@ import {
 } from './AdminPanelPrimitives';
 
 interface AdminUsersPanelProps {
+  active?: boolean;
   onForbidden: () => void;
   selectedUserId: string | null;
   onOpen: (userId: string) => void;
@@ -26,7 +27,7 @@ interface AdminUsersPanelProps {
 }
 
 export default function AdminUsersPanel({
-  onForbidden, selectedUserId, onOpen, onClose, onViewConversations,
+  active = true, onForbidden, selectedUserId, onOpen, onClose, onViewConversations,
 }: AdminUsersPanelProps) {
   const [page, setPage] = useState(1);
   const [searchDraft, setSearchDraft] = useState('');
@@ -142,7 +143,7 @@ export default function AdminUsersPanel({
         </>
       ) : null}
 
-      <Dialog open={Boolean(selectedUserId)} onOpenChange={open => { if (!open) onClose(); }}>
+      <Dialog open={active && Boolean(selectedUserId)} onOpenChange={open => { if (!open && active) onClose(); }}>
         <DialogContent
           className="max-h-[85vh] overflow-y-auto sm:max-w-2xl"
           onCloseAutoFocus={event => {

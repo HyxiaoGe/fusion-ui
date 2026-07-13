@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { RefreshCw, Search } from 'lucide-react';
 import { getAdminAuditEvents } from '@/lib/api/adminAudit';
 import { useAdminAuditResource } from '@/hooks/useAdminAuditResource';
@@ -19,7 +19,7 @@ import {
   formatAdminAuditTargetUser,
 } from '@/lib/admin/adminAuditPresentation';
 
-export default function AdminAuditEventsPanel({ onForbidden }: { onForbidden: () => void }) {
+export default function AdminAuditEventsPanel({ active = true, onForbidden }: { active?: boolean; onForbidden: () => void }) {
   const [page, setPage] = useState(1);
   const [actionDraft, setActionDraft] = useState('');
   const [action, setAction] = useState('');
@@ -32,6 +32,10 @@ export default function AdminAuditEventsPanel({ onForbidden }: { onForbidden: ()
   const loader = useCallback((signal: AbortSignal) => getAdminAuditEvents({ page, page_size: 25, action, admin_user_id: adminUserId, target_user_id: targetUserId }, signal), [action, adminUserId, page, targetUserId]);
   const resource = useAdminAuditResource(loader, onForbidden);
   const selectedEvent = resource.data?.items.find(event => event.id === selectedEventId) ?? null;
+
+  useEffect(() => {
+    if (!active) setSelectedEventId(null);
+  }, [active]);
 
   return (
     <section>
@@ -65,7 +69,7 @@ export default function AdminAuditEventsPanel({ onForbidden }: { onForbidden: ()
           </tr>
         );
       })}</tbody></table></div><AdminPagination page={resource.data} onPageChange={nextPage => { setSelectedEventId(null); setPage(nextPage); }} /></> : null}
-      <Dialog open={Boolean(selectedEvent)} onOpenChange={open => { if (!open) setSelectedEventId(null); }}>
+      <Dialog open={active && Boolean(selectedEvent)} onOpenChange={open => { if (!open && active) setSelectedEventId(null); }}>
         <DialogContent
           className="max-h-[85vh] overflow-y-auto sm:max-w-2xl"
           closeLabel="关闭审计详情"
