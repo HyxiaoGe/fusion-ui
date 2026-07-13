@@ -1,6 +1,5 @@
 "use client";
 
-import { useAppSelector } from "@/redux/hooks";
 import { MenuIcon, XIcon } from "lucide-react";
 import { usePathname } from "next/navigation";
 import React from "react";
@@ -17,31 +16,12 @@ interface MainLayoutProps {
   rightPanel?: React.ReactNode;
 }
 
-const MainLayout: React.FC<MainLayoutProps> = ({ children, sidebar, title, header, rightPanel }) => {
-  const themeMode = useAppSelector((state) => state.theme.mode);
+const MainLayout: React.FC<MainLayoutProps> = ({ children, sidebar, rightPanel }) => {
   const pathname = usePathname();
   const [isMobileViewport, setIsMobileViewport] = React.useState(() => (
     typeof window !== "undefined" ? window.innerWidth < 1024 : false
   ));
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = React.useState(false);
-
-  // 根据系统和用户设置应用主题
-  React.useEffect(() => {
-    const root = window.document.documentElement;
-
-    if (themeMode === "system") {
-      const systemTheme = window.matchMedia("(prefers-color-scheme: dark)")
-        .matches
-        ? "dark"
-        : "light";
-
-      root.classList.remove("light", "dark");
-      root.classList.add(systemTheme);
-    } else {
-      root.classList.remove("light", "dark");
-      root.classList.add(themeMode);
-    }
-  }, [themeMode]);
 
   React.useEffect(() => {
     const updateViewport = () => {

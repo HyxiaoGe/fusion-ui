@@ -1,6 +1,7 @@
 'use client';
 
 import initializeStoreFromDB from '@/lib/db/initializeStore';
+import ThemeClassSync from '@/components/layouts/ThemeClassSync';
 import { useEffect } from 'react';
 import { Provider } from 'react-redux';
 import { store } from './store';
@@ -27,7 +28,10 @@ const StoreInitializer = ({ children }: { children: React.ReactNode }) => {
 export function Providers({ children }: { children: React.ReactNode }) {
   return (
     <Provider store={store}>
-      <StoreInitializer>{children}</StoreInitializer>
+      <StoreInitializer>
+        <ThemeClassSync />
+        {children}
+      </StoreInitializer>
     </Provider>
   );
 }
