@@ -943,6 +943,21 @@ const ChatInput: React.FC<ChatInputProps> = ({
 
   return (
     <div className="flex flex-col space-y-2">
+      {activeChatId && contextStatus ? (
+        <div
+          data-testid="context-status-row"
+          className="flex min-h-7 items-center justify-end px-1"
+        >
+          <ContextStatus
+            conversationId={activeChatId}
+            usage={contextStatus.usage}
+            phase={contextStatus.phase}
+            pending={contextStatus.pending}
+            errorKind={contextStatus.errorKind}
+          />
+        </div>
+      ) : null}
+
       {/* 外层卡片容器（支持拖拽上传） */}
       <div
         role="group"
@@ -1040,15 +1055,6 @@ const ChatInput: React.FC<ChatInputProps> = ({
 
           {/* 右侧：模型选择器 + 发送按钮 */}
           <div className="ml-auto flex min-w-0 items-center gap-1.5">
-            {activeChatId && contextStatus ? (
-              <ContextStatus
-                conversationId={activeChatId}
-                usage={contextStatus.usage}
-                phase={contextStatus.phase}
-                pending={contextStatus.pending}
-                errorKind={contextStatus.errorKind}
-              />
-            ) : null}
             <ModelSelector toolbarMode onChange={onModelChange || (() => {})} />
             <Button
               onClick={isStreaming && onStopStreaming ? onStopStreaming : handleSendMessage}

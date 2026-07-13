@@ -38,6 +38,7 @@
       "removedTools": ", plus {{count}} tool transactions",
       "historyIntact": "Only the context sent to the model was optimized. Messages on this page were not deleted.",
       "usedProgress": "Context used",
+      "usedWithRemaining": "{{used}}% used, {{remaining}}% remaining",
       "notSent": "Not sent",
       "checkFailed": "Context check failed",
       "notAvailable": "Unavailable",

@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import i18n from '@/lib/i18n';
@@ -26,8 +26,9 @@ describe('ContextStatus', () => {
     await i18n.changeLanguage('zh-CN');
   });
 
-  it('以低干扰入口展示剩余比例，并在详情说明历史消息未删除', () => {
-    render(<ContextStatus conversationId="chat-123" usage={actualUsage} />);
+  it('以低干扰入口展示剩余比例，会话 ID 独占一行且不生硬换行', () => {
+    const conversationId = '40e593b8-81c4-4932-b05b-f0265bab2379';
+    render(<ContextStatus conversationId={conversationId} usage={actualUsage} />);
 
     const trigger = screen.getByRole('button', { name: '查看上下文状态，剩余 43%' });
     expect(trigger).toHaveTextContent('43%');
@@ -35,12 +36,40 @@ describe('ContextStatus', () => {
 
     fireEvent.click(trigger);
 
-    expect(screen.getByRole('dialog', { name: '上下文状态' })).toBeInTheDocument();
-    expect(screen.getByText('chat-123')).toBeInTheDocument();
+    const dialog = screen.getByRole('dialog', { name: '上下文状态' });
+    expect(dialog).toHaveClass(
+      'w-[calc(100vw-1.5rem)]',
+      'max-w-[24rem]',
+      'max-h-[min(70vh,30rem)]',
+      'overflow-y-auto',
+    );
+    expect(screen.getByText('会话 ID')).toBeInTheDocument();
+    expect(screen.getByText('本轮输入（实际）')).toBeInTheDocument();
+    const conversationSection = screen.getByTestId('context-conversation-section');
+    const conversationValue = screen.getByTestId('context-conversation-id');
+    expect(conversationSection).toContainElement(conversationValue);
+    expect(conversationSection).toHaveClass('min-w-0');
+    expect(conversationValue).toHaveTextContent(conversationId);
+    expect(conversationValue).toHaveAttribute('title', conversationId);
+    expect(conversationValue).toHaveClass('truncate', 'whitespace-nowrap');
     expect(screen.getByText('147,811 / 262,144 Token')).toBeInTheDocument();
+    expect(screen.getByRole('progressbar')).toHaveAttribute('aria-valuetext', '已使用 57%，剩余 43%');
     expect(screen.getByText('已自动优化')).toBeInTheDocument();
     expect(screen.getByText('已移除 1 个历史轮次、2 条消息')).toBeInTheDocument();
     expect(screen.getByText('仅优化发送给模型的上下文，页面聊天记录未删除。')).toBeInTheDocument();
+  });
+
+  it('支持 Escape 关闭详情并将焦点还给入口', async () => {
+    render(<ContextStatus conversationId="chat-keyboard" usage={actualUsage} />);
+
+    const trigger = screen.getByRole('button', { name: '查看上下文状态，剩余 43%' });
+    trigger.focus();
+    fireEvent.click(trigger);
+    expect(screen.getByRole('dialog', { name: '上下文状态' })).toBeInTheDocument();
+
+    fireEvent.keyDown(screen.getByRole('dialog', { name: '上下文状态' }), { key: 'Escape' });
+    expect(screen.queryByRole('dialog', { name: '上下文状态' })).toBeNull();
+    await waitFor(() => expect(trigger).toHaveFocus());
   });
 
   it('未知窗口只显示可访问入口，不展示虚假百分比', () => {
@@ -96,12 +125,12 @@ describe('ContextStatus', () => {
     expect(screen.queryByText('已自动优化')).toBeNull();
   });
 
-  it('支持英文文案', async () => {
+  it('在浏览器语言为英文时仍固定展示中文', async () => {
     await i18n.changeLanguage('en-US');
     render(<ContextStatus conversationId="chat-en" usage={actualUsage} />);
 
-    fireEvent.click(screen.getByRole('button', { name: 'View context status, 43% remaining' }));
-    expect(screen.getByRole('dialog', { name: 'Context status' })).toBeInTheDocument();
-    expect(screen.getByText('Only the context sent to the model was optimized. Messages on this page were not deleted.')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '查看上下文状态，剩余 43%' }));
+    expect(screen.getByRole('dialog', { name: '上下文状态' })).toBeInTheDocument();
+    expect(screen.getByText('仅优化发送给模型的上下文，页面聊天记录未删除。')).toBeInTheDocument();
   });
 });

@@ -1,5 +1,5 @@
 import React from 'react';
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const {
@@ -262,7 +262,7 @@ describe('ChatInput', () => {
     expect(triggerLoginDialogMock).toHaveBeenCalledTimes(1);
   });
 
-  it('在模型选择器旁展示当前会话上下文，并在切换会话时不串用流式状态', () => {
+  it('在整个输入卡片上方右对齐展示当前会话上下文，不挤压模型选择器', () => {
     configureAuthenticatedVisionModel();
     currentState.conversation.byId = {
       'chat-a': {
@@ -301,10 +301,17 @@ describe('ChatInput', () => {
     };
 
     const { rerender } = render(<ChatInput onSendMessage={vi.fn()} activeChatId="chat-a" />);
-    expect(screen.getByRole('button', { name: /50%/ })).toBeInTheDocument();
+    const statusRow = screen.getByTestId('context-status-row');
+    const inputCard = screen.getByRole('group', { name: '消息输入区' });
+    const toolbar = screen.getByRole('toolbar', { name: '消息工具栏' });
+    expect(statusRow).toHaveClass('justify-end');
+    expect(statusRow.nextElementSibling).toBe(inputCard);
+    expect(within(statusRow).getByRole('button', { name: /50%/ })).toBeInTheDocument();
+    expect(within(inputCard).queryByTestId('context-status-trigger')).toBeNull();
+    expect(within(toolbar).queryByTestId('context-status-trigger')).toBeNull();
 
     rerender(<ChatInput onSendMessage={vi.fn()} activeChatId="chat-b" />);
-    expect(screen.getByRole('button', { name: /25%/ })).toBeInTheDocument();
+    expect(within(screen.getByTestId('context-status-row')).getByRole('button', { name: /25%/ })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /50%/ })).toBeNull();
   });
 
