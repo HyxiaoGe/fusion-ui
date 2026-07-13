@@ -114,10 +114,12 @@ describe('ContextStatus', () => {
   it('默认展开偏好持久化，自动展开后主动关闭会取消偏好', async () => {
     const first = render(<ContextStatus conversationId="chat-pref" usage={actualUsage} />);
     fireEvent.click(screen.getByRole('button', { name: '查看上下文状态，剩余 43%' }));
-    const toggle = screen.getByRole('button', { name: '默认展开' });
-    expect(toggle).toHaveAttribute('aria-pressed', 'false');
+    const toggle = screen.getByRole('switch', { name: '默认展开' });
+    expect(toggle).not.toBeChecked();
+    expect(toggle).toHaveAttribute('data-state', 'unchecked');
     fireEvent.click(toggle);
-    expect(toggle).toHaveAttribute('aria-pressed', 'true');
+    expect(toggle).toBeChecked();
+    expect(toggle).toHaveAttribute('data-state', 'checked');
     expect(localStorage.getItem(CONTEXT_STATUS_DEFAULT_OPEN_STORAGE_KEY)).toBe('true');
     first.unmount();
 

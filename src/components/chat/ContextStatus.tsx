@@ -5,6 +5,7 @@ import { CircleAlert, Gauge, Sparkles } from 'lucide-react';
 
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Progress } from '@/components/ui/progress';
+import { Switch } from '@/components/ui/switch';
 import {
   buildContextUsageView,
   type ContextUsageErrorKind,
@@ -197,20 +198,17 @@ export default function ContextStatus({
                 {t('contextStatus.optimized')}
               </span>
             ) : null}
-            <button
-              type="button"
-              aria-label={t('contextStatus.defaultOpen')}
-              aria-pressed={defaultOpen}
-              onClick={() => persistDefaultOpen(!defaultOpen)}
-              className={cn(
-                'rounded-md border px-2 py-1 text-[11px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-                defaultOpen
-                  ? 'border-primary/40 bg-primary/10 text-primary'
-                  : 'border-border/60 text-muted-foreground hover:bg-muted hover:text-foreground',
-              )}
-            >
-              {t('contextStatus.defaultOpen')}
-            </button>
+            <div className="flex items-center gap-2">
+              <span className="text-[11px] text-muted-foreground">
+                {t('contextStatus.defaultOpen')}
+              </span>
+              <Switch
+                aria-label={t('contextStatus.defaultOpen')}
+                checked={defaultOpen}
+                onCheckedChange={persistDefaultOpen}
+                className="h-5 w-9 [&_[data-slot=switch-thumb]]:h-4 [&_[data-slot=switch-thumb]]:w-4 [&_[data-slot=switch-thumb]][data-state=checked]:translate-x-4"
+              />
+            </div>
           </div>
         </div>
 
