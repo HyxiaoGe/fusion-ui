@@ -27,7 +27,7 @@ import { v4 as uuidv4 } from "uuid";
 import { useRenderProbe } from "@/lib/debug/perfProbe";
 import ComposerAttachmentList from "./ComposerAttachmentList";
 import ContextStatus from "./ContextStatus";
-import { selectConversationContextStatus } from "@/lib/chat/contextUsage";
+import { makeSelectConversationContextStatus } from "@/lib/chat/contextUsage";
 import {
   isComposerAttachmentError,
   isComposerAttachmentProcessing,
@@ -136,6 +136,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
   const [localFiles, setLocalFiles] = useState<LocalFileWithStatus[]>([]);
   const [isDragOver, setIsDragOver] = useState(false);
   const [viewingImageUrl, setViewingImageUrl] = useState<string | null>(null);
+  const [hasHydrated, setHasHydrated] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const previousResetSignalRef = useRef(resetSignal);
@@ -155,9 +156,11 @@ const ChatInput: React.FC<ChatInputProps> = ({
   const processingFiles = useAppSelector((state) => state.fileUpload.processingFiles);
   const reasoningEnabled = useAppSelector((state) => state.conversation.reasoningEnabled);
   const isStreaming = useAppSelector((state) => state.stream.isStreaming);
-  const contextStatus = useAppSelector((state) =>
-    selectConversationContextStatus(state, activeChatId)
+  const selectContextStatus = useMemo(
+    () => makeSelectConversationContextStatus(activeChatId),
+    [activeChatId],
   );
+  const contextStatus = useAppSelector(selectContextStatus);
   const isCurrentConversationStreaming = useAppSelector((state) => Boolean(
     activeChatId
     && state.stream.isStreaming
@@ -181,11 +184,17 @@ const ChatInput: React.FC<ChatInputProps> = ({
   const chatId = effectiveChatId || pendingChatIdRef.current;
   const currentChatIdRef = useRef<string>(chatId);
   const selectedModel = useAppSelector((state) => selectChatModel(state, effectiveChatId));
-  const isCurrentModelUnavailable = Boolean(selectedModel?.enabled === false);
+  // 模型列表在浏览器挂载后异步写入 Redux；客户端导航时 Store 可能已有模型，而服务端仍为空。
+  // 水合首帧先保持无能力的中性状态，避免按钮属性和文案因两端 Store 快照不同而失配。
+  const isCurrentModelUnavailable = hasHydrated && Boolean(selectedModel?.enabled === false);
   const isComposerBlocked = disabled || isCurrentModelUnavailable;
 
-  const supportsReasoning = selectedModel?.capabilities?.deepThinking || false;
-  const supportsFileUpload = selectedModel?.capabilities?.vision || false;
+  const supportsReasoning = hasHydrated && Boolean(selectedModel?.capabilities?.deepThinking);
+  const supportsFileUpload = hasHydrated && Boolean(selectedModel?.capabilities?.vision);
+
+  useEffect(() => {
+    setHasHydrated(true);
+  }, []);
 
   useLayoutEffect(() => {
     currentChatIdRef.current = chatId;
@@ -959,19 +968,19 @@ const ChatInput: React.FC<ChatInputProps> = ({
 
   return (
     <div className="flex flex-col space-y-2">
-      {activeChatId && contextStatus ? (
+      {activeChatId ? (
         <div
           data-testid="context-status-row"
           className="flex min-h-7 items-center justify-end px-1"
         >
           <ContextStatus
             conversationId={activeChatId}
-            usage={contextStatus.usage}
-            phase={contextStatus.phase}
-            pending={contextStatus.pending}
-            updating={contextStatus.updating}
-            latestActualUnavailable={contextStatus.latestActualUnavailable}
-            errorKind={contextStatus.errorKind}
+            usage={contextStatus?.usage ?? null}
+            phase={contextStatus?.phase ?? null}
+            pending={contextStatus?.pending ?? false}
+            updating={contextStatus?.updating ?? false}
+            latestActualUnavailable={contextStatus?.latestActualUnavailable ?? false}
+            errorKind={contextStatus?.errorKind ?? null}
             isStreaming={isCurrentConversationStreaming}
             isFirstConversationTurn={isFirstConversationTurn}
           />

@@ -1,3 +1,5 @@
+import { createSelector } from '@reduxjs/toolkit';
+
 import type { ContextUsage } from '@/types/conversation';
 
 export type ContextUsagePhase = 'estimated' | 'final' | 'error';
@@ -21,6 +23,12 @@ export interface ContextUsageView {
   removedTurns: number;
   removedMessages: number;
   removedToolTransactions: number;
+}
+
+interface ContextMessageLike {
+  id?: string;
+  role?: string;
+  usage?: { context?: unknown } | null;
 }
 
 interface ContextStateLike {
@@ -53,14 +61,12 @@ interface ContextStateLike {
   };
   conversation?: {
     byId?: Record<string, {
-      messages?: Array<{
-        id?: string;
-        role?: string;
-        usage?: { context?: unknown } | null;
-      }>;
+      messages?: ContextMessageLike[];
     }>;
   };
 }
+
+const EMPTY_CONTEXT_MESSAGES: ContextMessageLike[] = [];
 
 function nullableTokenCount(value: unknown): number | null {
   return typeof value === 'number' && Number.isFinite(value) && value >= 0
@@ -294,6 +300,25 @@ export function selectConversationContextStatus(
   if (!retainedUsage) return null;
 
   return toContextStatus(retainedUsage, 'final', false);
+}
+
+export function makeSelectConversationContextStatus(
+  conversationId: string | null | undefined,
+) {
+  return createSelector(
+    [
+      (state: ContextStateLike) => state.stream,
+      (state: ContextStateLike) => conversationId
+        ? (state.conversation?.byId?.[conversationId]?.messages ?? EMPTY_CONTEXT_MESSAGES)
+        : EMPTY_CONTEXT_MESSAGES,
+    ],
+    (stream, messages) => selectConversationContextStatus({
+      stream,
+      conversation: conversationId
+        ? { byId: { [conversationId]: { messages } } }
+        : undefined,
+    }, conversationId),
+  );
 }
 
 export function selectConversationContextUsage(

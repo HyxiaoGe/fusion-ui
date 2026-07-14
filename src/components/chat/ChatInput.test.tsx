@@ -1,5 +1,7 @@
 import React from 'react';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { hydrateRoot } from 'react-dom/client';
+import { renderToString } from 'react-dom/server';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const {
@@ -187,6 +189,7 @@ function createDeferred<T>() {
 describe('ChatInput', () => {
   beforeEach(() => {
     localStorage.clear();
+    sessionStorage.clear();
     dispatchMock.mockReset();
     useAppDispatchMock.mockReturnValue(dispatchMock);
     useAppSelectorMock.mockImplementation(selector => selector(currentState));
@@ -333,6 +336,65 @@ describe('ChatInput', () => {
     expect(screen.queryByRole('button', { name: /50%/ })).toBeNull();
   });
 
+  it('窗口已展开时切换到上下文尚未水合或没有用量的对话仍保持展开', async () => {
+    configureAuthenticatedVisionModel();
+    currentState.conversation.byId = {
+      'chat-a': {
+        id: 'chat-a',
+        messages: [{
+          id: 'assistant-a',
+          role: 'assistant',
+          content: [],
+          usage: {
+            input_tokens: 400,
+            output_tokens: 1,
+            context: { status: 'no_op', window_tokens: 1000, actual_prompt_tokens: 400 },
+          },
+        }],
+      },
+    };
+
+    const { rerender } = render(<ChatInput onSendMessage={vi.fn()} activeChatId="chat-a" />);
+    fireEvent.click(screen.getByRole('button', { name: '查看上下文状态，剩余 60%' }));
+    expect(screen.getByRole('dialog', { name: '上下文状态' })).toBeInTheDocument();
+
+    currentState.conversation = {
+      ...currentState.conversation,
+      byId: {
+        ...currentState.conversation.byId,
+        'chat-b': {
+          id: 'chat-b',
+          messages: [],
+        },
+      },
+    };
+    useAppSelectorMock.mockImplementation(selector => selector({ ...currentState }));
+    rerender(<ChatInput onSendMessage={vi.fn()} activeChatId="chat-b" />);
+
+    expect(screen.getByRole('dialog', { name: '上下文状态' })).toBeInTheDocument();
+    expect(screen.getByText('chat-b')).toBeInTheDocument();
+    expect(screen.getAllByText('暂不可用').length).toBeGreaterThan(0);
+
+    fireEvent.click(screen.getByRole('switch', { name: '上下文窗口' }));
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: '上下文状态' })).toBeNull());
+
+    currentState.conversation = {
+      ...currentState.conversation,
+      byId: {
+        ...currentState.conversation.byId,
+        'chat-c': {
+          id: 'chat-c',
+          messages: [],
+        },
+      },
+    };
+    useAppSelectorMock.mockImplementation(selector => selector({ ...currentState }));
+    rerender(<ChatInput onSendMessage={vi.fn()} activeChatId="chat-c" />);
+
+    expect(screen.queryByRole('dialog', { name: '上下文状态' })).toBeNull();
+    expect(screen.getByRole('button', { name: '查看上下文状态' })).toHaveAttribute('aria-expanded', 'false');
+  });
+
   it('新一轮尚未收到 actual 时保留最近 confirmed 值并显示更新中', () => {
     configureAuthenticatedVisionModel();
     currentState.conversation.byId = {
@@ -363,8 +425,7 @@ describe('ChatInput', () => {
     expect(screen.getByTestId('context-updating-indicator')).toHaveTextContent('更新中');
   });
 
-  it('全局偏好开启时首轮生成期间保持收起，首轮完成后自动展开', async () => {
-    localStorage.setItem('fusion.context-status.default-open.v1', 'true');
+  it('首轮生成期间保持收起，首轮完成后自动展开', async () => {
     configureAuthenticatedVisionModel();
     currentState.conversation.byId = {
       'chat-first': {
@@ -385,20 +446,39 @@ describe('ChatInput', () => {
     expect(screen.getByRole('button', { name: '查看上下文状态，计算中' })).toBeInTheDocument();
     expect(screen.queryByRole('dialog', { name: '上下文状态' })).toBeNull();
 
-    currentState.stream.isStreaming = false;
-    currentState.stream.conversationId = null;
-    currentState.conversation.byId['chat-first'].messages[1].usage = {
-      input_tokens: 400,
-      output_tokens: 1,
-      context: { status: 'no_op', window_tokens: 1000, actual_prompt_tokens: 400 },
+    currentState.stream = {
+      ...currentState.stream,
+      isStreaming: false,
+      conversationId: null,
     };
+    currentState.conversation = {
+      ...currentState.conversation,
+      byId: {
+        ...currentState.conversation.byId,
+        'chat-first': {
+          ...currentState.conversation.byId['chat-first'],
+          messages: currentState.conversation.byId['chat-first'].messages.map((message: any, index: number) => (
+            index === 1
+              ? {
+                  ...message,
+                  usage: {
+                    input_tokens: 400,
+                    output_tokens: 1,
+                    context: { status: 'no_op', window_tokens: 1000, actual_prompt_tokens: 400 },
+                  },
+                }
+              : message
+          )),
+        },
+      },
+    };
+    useAppSelectorMock.mockImplementation(selector => selector({ ...currentState }));
     rerender(<ChatInput onSendMessage={vi.fn()} activeChatId="chat-first" />);
 
     expect(await screen.findByRole('dialog', { name: '上下文状态' })).toBeInTheDocument();
   });
 
   it('后续对话轮次完成时不会再次自动展开上下文面板', async () => {
-    localStorage.setItem('fusion.context-status.default-open.v1', 'true');
     configureAuthenticatedVisionModel();
     currentState.conversation.byId = {
       'chat-follow-up': {
@@ -428,13 +508,33 @@ describe('ChatInput', () => {
     const { rerender } = render(<ChatInput onSendMessage={vi.fn()} activeChatId="chat-follow-up" />);
     expect(screen.queryByRole('dialog', { name: '上下文状态' })).toBeNull();
 
-    currentState.stream.isStreaming = false;
-    currentState.stream.conversationId = null;
-    currentState.conversation.byId['chat-follow-up'].messages[3].usage = {
-      input_tokens: 500,
-      output_tokens: 1,
-      context: { status: 'no_op', window_tokens: 1000, actual_prompt_tokens: 500 },
+    currentState.stream = {
+      ...currentState.stream,
+      isStreaming: false,
+      conversationId: null,
     };
+    currentState.conversation = {
+      ...currentState.conversation,
+      byId: {
+        ...currentState.conversation.byId,
+        'chat-follow-up': {
+          ...currentState.conversation.byId['chat-follow-up'],
+          messages: currentState.conversation.byId['chat-follow-up'].messages.map((message: any, index: number) => (
+            index === 3
+              ? {
+                  ...message,
+                  usage: {
+                    input_tokens: 500,
+                    output_tokens: 1,
+                    context: { status: 'no_op', window_tokens: 1000, actual_prompt_tokens: 500 },
+                  },
+                }
+              : message
+          )),
+        },
+      },
+    };
+    useAppSelectorMock.mockImplementation(selector => selector({ ...currentState }));
     rerender(<ChatInput onSendMessage={vi.fn()} activeChatId="chat-follow-up" />);
 
     await waitFor(() => expect(
@@ -450,6 +550,37 @@ describe('ChatInput', () => {
     expect(toolbar).toHaveClass('min-w-0');
     expect(screen.getByText('思考')).toHaveClass('hidden', 'min-[420px]:inline');
     expect(screen.getByTestId('model-selector-trigger')).toHaveClass('max-w-[112px]', 'sm:max-w-none');
+  });
+
+  it('模型能力在服务端渲染后已于客户端加载时不会产生 hydration mismatch', async () => {
+    currentState.conversation.reasoningEnabled = true;
+    const container = document.createElement('div');
+    container.innerHTML = renderToString(<ChatInput onSendMessage={vi.fn()} />);
+
+    currentState.models.selectedModelId = 'reasoning-model';
+    currentState.models.models = [
+      {
+        id: 'reasoning-model',
+        provider: 'deepseek',
+        capabilities: { vision: true, deepThinking: true },
+      },
+    ];
+
+    const recoverableErrors: unknown[] = [];
+    let root: ReturnType<typeof hydrateRoot> | undefined;
+    await act(async () => {
+      root = hydrateRoot(container, <ChatInput onSendMessage={vi.fn()} />, {
+        onRecoverableError: (error) => recoverableErrors.push(error),
+      });
+      await Promise.resolve();
+    });
+
+    expect(recoverableErrors).toEqual([]);
+    expect(container.textContent).toContain('思考已开');
+
+    await act(async () => {
+      root?.unmount();
+    });
   });
 
   it('focuses the composer when autoFocus is enabled', () => {

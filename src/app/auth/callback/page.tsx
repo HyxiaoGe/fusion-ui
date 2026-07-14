@@ -28,12 +28,14 @@ export default function AuthCallbackPage() {
   const dispatch = useAppDispatch();
   const { toast } = useToast();
   const processed = useRef(false);
-  // 首帧一次性判定来源（completeLogin 随后会消费 RETURN，故必须在此之前判）。
-  const [interactive] = useState(isInteractiveLogin);
+  // SSR 与浏览器水合首帧统一渲染中性态；挂载后再读取 URL，避免服务端无 window、客户端有
+  // ?code 时产生 hydration mismatch。来源判定仍须早于 completeLogin 消费 RETURN。
+  const [interactive, setInteractive] = useState(false);
 
   useEffect(() => {
     if (processed.current) return;
     processed.current = true;
+    setInteractive(isInteractiveLogin());
 
     // completeLogin 内部：SDK 从 window.location 读 code/state 并校验 state、PKCE 换 token，
     // 成功后拉取 fusion profile；解析出的 redirectPath 已含静默/交互两种回跳路径。

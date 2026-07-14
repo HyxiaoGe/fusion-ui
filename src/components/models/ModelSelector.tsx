@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useCallback } from "react";
+import { useMemo, useState, useCallback, useEffect } from "react";
 import { usePathname } from "next/navigation";
 import { useAppDispatch, useAppSelector } from "@/redux/hooks";
 import { setSelectedModel } from "@/redux/slices/modelsSlice";
@@ -31,7 +31,12 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({
   const { models, providers, selectedModelId } = useAppSelector((state) => state.models);
   const chats = useAppSelector((state) => state.conversation.byId);
   const [isOpen, setIsOpen] = useState(false);
+  const [hasHydrated, setHasHydrated] = useState(false);
   const [recentModelIds, setRecentModelIds] = useState<string[]>(getRecentModels);
+
+  useEffect(() => {
+    setHasHydrated(true);
+  }, []);
 
   const activeChatId = getRouteConversationId(pathname);
   const activeChat = activeChatId ? chats[activeChatId] : null;
@@ -97,7 +102,8 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({
     setActiveProvider(providerId);
   }, []);
 
-  if (models.length === 0) return null;
+  // 服务端没有浏览器内已加载的模型 Store；首帧保持空占位，挂载后再展示真实模型。
+  if (!hasHydrated || models.length === 0) return null;
 
   return (
     <span className="inline-flex min-w-0">

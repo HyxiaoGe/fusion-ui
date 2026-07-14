@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   buildContextUsageView,
+  makeSelectConversationContextStatus,
   normalizeContextUsage,
   selectConversationContextStatus,
   selectConversationContextUsage,
@@ -501,5 +502,30 @@ describe('contextUsage', () => {
       pending: false,
       errorKind,
     });
+  });
+
+  it('相同会话输入未变化时复用上下文状态对象引用', () => {
+    const state = {
+      stream: { isStreaming: false },
+      conversation: {
+        byId: {
+          'chat-a': {
+            messages: [{
+              id: 'assistant-a', role: 'assistant',
+              usage: { context: { status: 'no_op', window_tokens: 1000, actual_prompt_tokens: 400 } },
+            }],
+          },
+        },
+      },
+    };
+    const selector = makeSelectConversationContextStatus('chat-a');
+
+    const first = selector(state);
+    expect(selector(state)).toBe(first);
+    expect(selector({ ...state })).toBe(first);
+    expect(selector({
+      ...state,
+      stream: { ...state.stream },
+    })).not.toBe(first);
   });
 });

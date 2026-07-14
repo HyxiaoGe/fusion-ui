@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { CircleAlert, Gauge, Sparkles } from 'lucide-react';
 
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -27,7 +27,24 @@ interface ContextStatusProps {
   isFirstConversationTurn?: boolean;
 }
 
-export const CONTEXT_STATUS_DEFAULT_OPEN_STORAGE_KEY = 'fusion.context-status.default-open.v1';
+export const CONTEXT_STATUS_OPEN_STORAGE_KEY = 'fusion.context-status.open.v1';
+
+function readOpenState(): boolean {
+  try {
+    return window.sessionStorage.getItem(CONTEXT_STATUS_OPEN_STORAGE_KEY) === 'true';
+  } catch {
+    return false;
+  }
+}
+
+function persistOpenState(open: boolean): void {
+  try {
+    // 展开/关闭是当前浏览器标签页的全局状态：刷新与切换对话都保持用户最后一次选择。
+    window.sessionStorage.setItem(CONTEXT_STATUS_OPEN_STORAGE_KEY, String(open));
+  } catch {
+    // sessionStorage 不可用时仍保留当前页面内的展开状态。
+  }
+}
 
 function formatTokens(value: number): string {
   return new Intl.NumberFormat().format(value);
@@ -67,31 +84,21 @@ export default function ContextStatus({
     ?? (phase === 'error' ? 'check_failed' : null);
   const isError = effectiveErrorKind !== null;
   const [open, setOpen] = useState(false);
-  const [defaultOpen, setDefaultOpen] = useState(false);
-  const [preferenceLoaded, setPreferenceLoaded] = useState(false);
   const trackedConversationIdRef = useRef(conversationId);
   const sawFirstTurnStreamingRef = useRef(false);
   const autoOpenHandledRef = useRef(false);
   const userInteractedRef = useRef(false);
 
-  useEffect(() => {
-    try {
-      const preferred = window.localStorage.getItem(CONTEXT_STATUS_DEFAULT_OPEN_STORAGE_KEY) === 'true';
-      setDefaultOpen(preferred);
-    } catch {
-      // localStorage 不可用时维持默认关闭，不影响上下文状态本身。
-    } finally {
-      setPreferenceLoaded(true);
-    }
-  }, []);
-
-  useEffect(() => {
-    if (trackedConversationIdRef.current === conversationId) return;
+  useLayoutEffect(() => {
+    const conversationChanged = trackedConversationIdRef.current !== conversationId;
     trackedConversationIdRef.current = conversationId;
-    sawFirstTurnStreamingRef.current = false;
-    autoOpenHandledRef.current = false;
-    userInteractedRef.current = false;
-    setOpen(false);
+    if (conversationChanged) {
+      sawFirstTurnStreamingRef.current = false;
+      autoOpenHandledRef.current = false;
+      userInteractedRef.current = false;
+    }
+    // 在浏览器绘制前恢复当前标签页状态，避免刷新或跨路由重挂时闪成关闭态。
+    setOpen(readOpenState());
   }, [conversationId]);
 
   useEffect(() => {
@@ -102,8 +109,7 @@ export default function ContextStatus({
 
   useEffect(() => {
     if (
-      !preferenceLoaded
-      || isStreaming
+      isStreaming
       || !sawFirstTurnStreamingRef.current
       || autoOpenHandledRef.current
     ) return;
@@ -113,24 +119,16 @@ export default function ContextStatus({
     }
 
     autoOpenHandledRef.current = true;
-    if (defaultOpen && !userInteractedRef.current) {
+    if (!userInteractedRef.current) {
       setOpen(true);
+      persistOpenState(true);
     }
-  }, [defaultOpen, isError, isStreaming, latestActualUnavailable, preferenceLoaded, usage]);
+  }, [conversationId, isError, isStreaming, latestActualUnavailable, usage]);
 
   const handleOpenChange = (value: boolean) => {
     userInteractedRef.current = true;
     setOpen(value);
-  };
-
-  const persistDefaultOpen = (value: boolean) => {
-    userInteractedRef.current = true;
-    setDefaultOpen(value);
-    try {
-      window.localStorage.setItem(CONTEXT_STATUS_DEFAULT_OPEN_STORAGE_KEY, String(value));
-    } catch {
-      // 隐私模式或存储被禁用时只保留本次页面状态。
-    }
+    persistOpenState(value);
   };
 
   const rawView = usage ? buildContextUsageView(usage) : EMPTY_VIEW;
@@ -215,19 +213,18 @@ export default function ContextStatus({
           ) : null}
         </button>
       </PopoverTrigger>
-      <PopoverContent
-        role="dialog"
-        aria-label={t('contextStatus.title')}
-        side="top"
-        align="end"
-        sideOffset={8}
-        collisionPadding={12}
-        onOpenAutoFocus={(event) => event.preventDefault()}
-        onInteractOutside={(event) => {
-          if (defaultOpen) event.preventDefault();
-        }}
-        className="max-h-[min(70vh,30rem)] w-[calc(100vw-1.5rem)] max-w-[24rem] overflow-y-auto p-0"
-      >
+      {open ? (
+        <PopoverContent
+          role="dialog"
+          aria-label={t('contextStatus.title')}
+          side="top"
+          align="end"
+          sideOffset={8}
+          collisionPadding={12}
+          onOpenAutoFocus={(event) => event.preventDefault()}
+          onInteractOutside={(event) => event.preventDefault()}
+          className="max-h-[min(70vh,30rem)] w-[calc(100vw-1.5rem)] max-w-[24rem] overflow-y-auto p-0"
+        >
         <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border/60 px-4 py-3">
           <h3 className="text-sm font-semibold">{t('contextStatus.title')}</h3>
           <div className="flex items-center gap-2">
@@ -248,12 +245,12 @@ export default function ContextStatus({
             ) : null}
             <div className="flex items-center gap-2">
               <span className="text-[11px] text-muted-foreground">
-                {t('contextStatus.defaultOpen')}
+                {t('contextStatus.windowOpen')}
               </span>
               <Switch
-                aria-label={t('contextStatus.defaultOpen')}
-                checked={defaultOpen}
-                onCheckedChange={persistDefaultOpen}
+                aria-label={t('contextStatus.windowOpen')}
+                checked={open}
+                onCheckedChange={handleOpenChange}
                 className="h-5 w-9 [&_[data-slot=switch-thumb]]:h-4 [&_[data-slot=switch-thumb]]:w-4 [&_[data-slot=switch-thumb]][data-state=checked]:translate-x-4"
               />
             </div>
@@ -348,7 +345,8 @@ export default function ContextStatus({
             {t('contextStatus.historyIntact')}
           </p>
         ) : null}
-      </PopoverContent>
+        </PopoverContent>
+      ) : null}
     </Popover>
   );
 }

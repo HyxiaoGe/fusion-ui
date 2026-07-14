@@ -1,5 +1,7 @@
-import React from 'react';
+import React, { act } from 'react';
 import { render, waitFor } from '@testing-library/react';
+import { hydrateRoot } from 'react-dom/client';
+import { renderToString } from 'react-dom/server';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const { dispatchMock, replaceMock, completeLoginMock, toastMock, unwrapMock } = vi.hoisted(() => ({
@@ -65,6 +67,31 @@ describe('AuthCallbackPage (SDK callback)', () => {
   // user-initiated login); a logout/probe transit must render a neutral loader, never claim
   // authorization is "完成中".
   const AUTHORIZING = '正在完成授权，请稍候...';
+
+  it('hydrates an interactive callback from the neutral server frame without a mismatch', async () => {
+    window.history.pushState({}, '', '/auth/callback');
+    unwrapMock.mockReturnValue(new Promise(() => {}));
+    const container = document.createElement('div');
+    container.innerHTML = renderToString(React.createElement(AuthCallbackPage));
+
+    window.history.pushState({}, '', '/auth/callback?code=abc&state=s');
+    const recoverableErrors: unknown[] = [];
+    let root: ReturnType<typeof hydrateRoot> | undefined;
+
+    await act(async () => {
+      root = hydrateRoot(container, React.createElement(AuthCallbackPage), {
+        onRecoverableError: (error) => recoverableErrors.push(error),
+      });
+      await Promise.resolve();
+    });
+
+    expect(recoverableErrors).toEqual([]);
+    expect(container.textContent).toContain(AUTHORIZING);
+
+    await act(async () => {
+      root?.unmount();
+    });
+  });
 
   it('interactive login (?code present): shows the "正在完成授权" copy', () => {
     window.history.pushState({}, '', '/auth/callback?code=abc&state=s');
