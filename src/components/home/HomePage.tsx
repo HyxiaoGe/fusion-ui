@@ -112,7 +112,9 @@ const STARTER_PAGE_SIZE = 4;
 const STARTER_ROTATE_INTERVAL = 12_000;
 const INSPIRATION_FETCH_LIMIT = 50;
 const INSPIRATION_ROTATE_INTERVAL = 15_000;
-const INSPIRATION_FLIP_STAGGER = 80;
+const CAROUSEL_FLIP_STAGGER = 80;
+const CAROUSEL_REPLACE_PADDING = 300;
+const CAROUSEL_FLIP_BACK_DELAY = 50;
 const INSPIRATION_ROW_COUNT = 2;
 const INSPIRATION_GAP = 8;
 const DEFAULT_INSPIRATION_WIDTH = 768;
@@ -237,6 +239,7 @@ const HomePage: React.FC<HomePageProps> = ({ onSelectPrompt }) => {
   useRenderProbe('HomePage');
   const [pageIndex, setPageIndex] = useState(0);
   const [starterPrompts, setStarterPrompts] = useState(FALLBACK_STARTER_PROMPTS);
+  const [flippedStarters, setFlippedStarters] = useState<boolean[]>([]);
   const [isStarterPaused, setIsStarterPaused] = useState(false);
   const [libraryTemplates, setLibraryTemplates] = useState(FALLBACK_LIBRARY_TEMPLATES);
   const [inspirationPool, setInspirationPool] = useState<string[]>([]);
@@ -253,6 +256,7 @@ const HomePage: React.FC<HomePageProps> = ({ onSelectPrompt }) => {
   const [templatesOpen, setTemplatesOpen] = useState(false);
   const inspirationContainerRef = useRef<HTMLDivElement>(null);
   const inspirationMeasureRef = useRef<HTMLDivElement>(null);
+  const starterFlipTimeoutsRef = useRef<Array<ReturnType<typeof setTimeout>>>([]);
   const flipTimeoutsRef = useRef<Array<ReturnType<typeof setTimeout>>>([]);
   const pageCount = Math.max(1, Math.ceil(starterPrompts.length / STARTER_PAGE_SIZE));
   const visibleStarters = useMemo(() => {
@@ -311,6 +315,8 @@ const HomePage: React.FC<HomePageProps> = ({ onSelectPrompt }) => {
 
     return () => {
       cancelled = true;
+      starterFlipTimeoutsRef.current.forEach(clearTimeout);
+      starterFlipTimeoutsRef.current = [];
       flipTimeoutsRef.current.forEach(clearTimeout);
       flipTimeoutsRef.current = [];
     };
@@ -380,10 +386,11 @@ const HomePage: React.FC<HomePageProps> = ({ onSelectPrompt }) => {
           setFlippedInspirations((current) => current.map((value, itemIndex) => (
             itemIndex === index ? true : value
           )));
-        }, index * INSPIRATION_FLIP_STAGGER));
+        }, index * CAROUSEL_FLIP_STAGGER));
       });
 
-      const replaceDelay = inspirations.length * INSPIRATION_FLIP_STAGGER + 300;
+      const replaceDelay = inspirations.length * CAROUSEL_FLIP_STAGGER
+        + CAROUSEL_REPLACE_PADDING;
       flipTimeoutsRef.current.push(setTimeout(() => {
         setInspirationStartIndex(nextStartIndex);
         setFlippedInspirations(nextInspirations.map(() => true));
@@ -392,7 +399,7 @@ const HomePage: React.FC<HomePageProps> = ({ onSelectPrompt }) => {
             setFlippedInspirations((current) => current.map((value, itemIndex) => (
               itemIndex === index ? false : value
             )));
-          }, 50 + index * INSPIRATION_FLIP_STAGGER));
+          }, CAROUSEL_FLIP_BACK_DELAY + index * CAROUSEL_FLIP_STAGGER));
         });
       }, replaceDelay));
     }, INSPIRATION_ROTATE_INTERVAL);
@@ -408,9 +415,41 @@ const HomePage: React.FC<HomePageProps> = ({ onSelectPrompt }) => {
     isInspirationPaused,
   ]);
 
+  useEffect(() => {
+    setFlippedStarters((current) => Array.from(
+      { length: visibleStarters.length },
+      (_, index) => current[index] ?? false,
+    ));
+  }, [visibleStarters.length]);
+
   const showNextPage = useCallback(() => {
-    setPageIndex((current) => (current + 1) % pageCount);
-  }, [pageCount]);
+    if (pageCount <= 1 || visibleStarters.length === 0) return;
+
+    starterFlipTimeoutsRef.current.forEach(clearTimeout);
+    starterFlipTimeoutsRef.current = [];
+    setFlippedStarters(visibleStarters.map(() => false));
+    visibleStarters.forEach((_, index) => {
+      starterFlipTimeoutsRef.current.push(setTimeout(() => {
+        setFlippedStarters((current) => current.map((value, itemIndex) => (
+          itemIndex === index ? true : value
+        )));
+      }, index * CAROUSEL_FLIP_STAGGER));
+    });
+
+    const replaceDelay = visibleStarters.length * CAROUSEL_FLIP_STAGGER
+      + CAROUSEL_REPLACE_PADDING;
+    starterFlipTimeoutsRef.current.push(setTimeout(() => {
+      setPageIndex((current) => (current + 1) % pageCount);
+      setFlippedStarters(visibleStarters.map(() => true));
+      visibleStarters.forEach((_, index) => {
+        starterFlipTimeoutsRef.current.push(setTimeout(() => {
+          setFlippedStarters((current) => current.map((value, itemIndex) => (
+            itemIndex === index ? false : value
+          )));
+        }, CAROUSEL_FLIP_BACK_DELAY + index * CAROUSEL_FLIP_STAGGER));
+      });
+    }, replaceDelay));
+  }, [pageCount, visibleStarters]);
 
   useEffect(() => {
     if (isStarterPaused || pageCount <= 1) return undefined;
@@ -440,9 +479,8 @@ const HomePage: React.FC<HomePageProps> = ({ onSelectPrompt }) => {
         </div>
 
         <div
-          key={`${starterPrompts[0]?.id ?? 'starter'}-${pageIndex}`}
           data-testid="starter-prompts"
-          className="grid grid-cols-1 gap-3 animate-in fade-in-0 duration-500 sm:grid-cols-2 motion-reduce:animate-none"
+          className="grid grid-cols-1 gap-3 sm:grid-cols-2"
           onMouseEnter={() => setIsStarterPaused(true)}
           onMouseLeave={() => setIsStarterPaused(false)}
           onFocusCapture={() => setIsStarterPaused(true)}
@@ -452,29 +490,38 @@ const HomePage: React.FC<HomePageProps> = ({ onSelectPrompt }) => {
             }
           }}
         >
-          {visibleStarters.map((starter) => {
+          {visibleStarters.map((starter, index) => {
             const Icon = starter.icon;
             return (
-              <button
+              <div
                 key={starter.id}
-                type="button"
-                onClick={() => onSelectPrompt(starter.prompt)}
-                className="group flex min-h-24 items-center gap-4 rounded-2xl border border-border/80 bg-background/90 p-4 text-left shadow-fdv2-xs transition-[border-color,box-shadow,transform] duration-200 hover:-translate-y-0.5 hover:border-border-strong hover:shadow-fdv2-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transform-none motion-reduce:transition-none"
+                data-testid="starter-card"
+                style={{
+                  opacity: flippedStarters[index] ? 0 : 1,
+                  transform: flippedStarters[index] ? 'rotateX(90deg)' : 'rotateX(0deg)',
+                  transition: 'opacity 300ms ease, transform 300ms ease',
+                }}
               >
-                <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${starter.tone}`}>
-                  <Icon className="h-5 w-5" aria-hidden="true" />
-                </span>
-                <span className="min-w-0 flex-1">
-                  <span className="block text-sm font-medium text-foreground">{starter.title}</span>
-                  <span className="mt-1 block text-xs leading-5 text-muted-foreground">
-                    {starter.description}
+                <button
+                  type="button"
+                  onClick={() => onSelectPrompt(starter.prompt)}
+                  className="group flex min-h-24 w-full items-center gap-4 rounded-2xl border border-border/80 bg-background/90 p-4 text-left shadow-fdv2-xs transition-[border-color,box-shadow,transform] duration-200 hover:-translate-y-0.5 hover:border-border-strong hover:shadow-fdv2-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transform-none motion-reduce:transition-none"
+                >
+                  <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${starter.tone}`}>
+                    <Icon className="h-5 w-5" aria-hidden="true" />
                   </span>
-                </span>
-                <ArrowUpRight
-                  className="h-4 w-4 shrink-0 text-muted-foreground/60 transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5 motion-reduce:transition-none"
-                  aria-hidden="true"
-                />
-              </button>
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-sm font-medium text-foreground">{starter.title}</span>
+                    <span className="mt-1 block text-xs leading-5 text-muted-foreground">
+                      {starter.description}
+                    </span>
+                  </span>
+                  <ArrowUpRight
+                    className="h-4 w-4 shrink-0 text-muted-foreground/60 transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5 motion-reduce:transition-none"
+                    aria-hidden="true"
+                  />
+                </button>
+              </div>
             );
           })}
         </div>

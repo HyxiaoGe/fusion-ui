@@ -89,16 +89,30 @@ describe('HomePage', () => {
     expect(screen.queryByText('今日灵感')).toBeNull();
   });
 
-  it('点击换一批立即替换核心任务', () => {
-    render(<HomePage onSelectPrompt={vi.fn()} />);
+  it('点击换一批后按波浪翻牌效果替换核心任务', async () => {
+    vi.useFakeTimers();
+    try {
+      render(<HomePage onSelectPrompt={vi.fn()} />);
 
-    expect(screen.getByRole('button', { name: /深度调研/ })).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /分析数据/ })).toBeNull();
+      expect(screen.getByRole('button', { name: /深度调研/ })).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: /分析数据/ })).toBeNull();
 
-    fireEvent.click(screen.getByRole('button', { name: '换一批' }));
+      fireEvent.click(screen.getByRole('button', { name: '换一批' }));
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1);
+      });
+      expect(screen.getAllByTestId('starter-card')[0]).toHaveStyle({
+        transform: 'rotateX(90deg)',
+      });
 
-    expect(screen.queryByRole('button', { name: /深度调研/ })).toBeNull();
-    expect(screen.getByRole('button', { name: /分析数据/ })).toBeInTheDocument();
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(700);
+      });
+      expect(screen.queryByRole('button', { name: /深度调研/ })).toBeNull();
+      expect(screen.getByRole('button', { name: /分析数据/ })).toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('任务模板会自动切换到下一批', async () => {
@@ -112,9 +126,15 @@ describe('HomePage', () => {
       expect(screen.getByRole('button', { name: /深度调研/ })).toBeInTheDocument();
 
       await act(async () => {
-        await vi.advanceTimersByTimeAsync(12_500);
+        await vi.advanceTimersByTimeAsync(12_001);
+      });
+      expect(screen.getAllByTestId('starter-card')[0]).toHaveStyle({
+        transform: 'rotateX(90deg)',
       });
 
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(700);
+      });
       expect(screen.queryByRole('button', { name: /深度调研/ })).toBeNull();
       expect(screen.getByRole('button', { name: /分析数据/ })).toBeInTheDocument();
     } finally {
