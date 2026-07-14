@@ -172,13 +172,16 @@ export default function ContextStatus({
   const preferredOpenRef = useRef<boolean | null>(null);
   const autoOpenHandledRef = useRef(false);
   const userInteractedRef = useRef(false);
+  const firstTurnStreamingRef = useRef(isStreaming && isFirstConversationTurn);
+  firstTurnStreamingRef.current = isStreaming && isFirstConversationTurn;
 
   useLayoutEffect(() => {
     const conversationChanged = trackedConversationIdRef.current !== conversationId;
     trackedConversationIdRef.current = conversationId;
     if (conversationChanged) {
       autoOpenHandledRef.current = false;
-      userInteractedRef.current = false;
+      // 首轮流中的临时 ID 物化仍属于同一次对话，保留用户刚刚执行的开关操作。
+      if (!firstTurnStreamingRef.current) userInteractedRef.current = false;
     }
     const storedOpen = readOpenState();
     preferredOpenRef.current = storedOpen;
@@ -190,10 +193,12 @@ export default function ContextStatus({
     if (
       isStreaming
       && isFirstConversationTurn
-      && preferredOpenRef.current === null
+      && preferredOpenRef.current !== false
       && !userInteractedRef.current
     ) {
       markPendingFirstTurn(conversationId);
+      // 全局开启只决定首轮结束后的目标状态；首轮生成期间先收起，避免发送消息时提前展开。
+      setOpen(false);
     }
   }, [conversationId, isFirstConversationTurn, isStreaming]);
 
@@ -214,8 +219,8 @@ export default function ContextStatus({
 
     autoOpenHandledRef.current = true;
     clearPendingFirstTurn(conversationId);
-    // 只在从未选择时执行首轮自动展开；显式 true/false 都由用户的全局开关决定。
-    if (preferredOpenRef.current === null && !userInteractedRef.current) {
+    // 未明确关闭时，首轮回答完成才恢复或执行自动展开。
+    if (preferredOpenRef.current !== false && !userInteractedRef.current) {
       preferredOpenRef.current = true;
       setOpen(true);
       persistOpenState(true);

@@ -245,7 +245,7 @@ describe('ContextStatus', () => {
     expect(screen.queryByRole('dialog', { name: '上下文状态' })).toBeNull();
   });
 
-  it('全局已展开时，切换到新会话首轮生成期间与完成后都保持展开', async () => {
+  it('全局已展开时，新会话首轮发送后先收起，回答完成才重新展开', async () => {
     localStorage.setItem(CONTEXT_STATUS_OPEN_STORAGE_KEY, 'true');
     const { rerender } = render(<ContextStatus
       conversationId="chat-new-while-open"
@@ -256,7 +256,9 @@ describe('ContextStatus', () => {
       isFirstConversationTurn
     />);
 
-    expect(await screen.findByRole('dialog', { name: '上下文状态' })).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog', { name: '上下文状态' })).toBeNull();
+    });
 
     rerender(<ContextStatus
       conversationId="chat-new-while-open"
@@ -398,6 +400,7 @@ describe('ContextStatus', () => {
       isFirstConversationTurn
     />);
 
+    fireEvent.click(screen.getByRole('button', { name: '查看上下文状态，计算中' }));
     fireEvent.click(await screen.findByRole('switch', { name: '上下文窗口' }));
     expect(localStorage.getItem(CONTEXT_STATUS_OPEN_STORAGE_KEY)).toBe('false');
     first.unmount();
