@@ -102,8 +102,21 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({
     setActiveProvider(providerId);
   }, []);
 
-  // 服务端没有浏览器内已加载的模型 Store；首帧保持空占位，挂载后再展示真实模型。
-  if (!hasHydrated || models.length === 0) return null;
+  // 服务端没有浏览器内已加载的模型 Store；首帧先渲染同尺寸的真实控件，避免目录返回后工具栏增高。
+  if (!hasHydrated || models.length === 0) {
+    return (
+      <span className="inline-flex min-w-0">
+        <ModelSelectorTrigger
+          model={null}
+          providers={[]}
+          isOpen={false}
+          disabled
+          toolbarMode={toolbarMode}
+          placeholderLabel="模型加载中"
+        />
+      </span>
+    );
+  }
 
   return (
     <span className="inline-flex min-w-0">

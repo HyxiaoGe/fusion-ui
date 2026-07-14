@@ -12,11 +12,20 @@ interface ModelSelectorTriggerProps {
   isOpen: boolean;
   disabled: boolean;
   toolbarMode?: boolean;
+  placeholderLabel?: string;
   onClick?: () => void;
 }
 
 const ModelSelectorTrigger = forwardRef<HTMLButtonElement, ModelSelectorTriggerProps>(
-  ({ model, providers, isOpen, disabled, toolbarMode = false, ...props }, ref) => {
+  ({
+    model,
+    providers,
+    isOpen,
+    disabled,
+    toolbarMode = false,
+    placeholderLabel = "选择模型",
+    ...props
+  }, ref) => {
     const providerName = model
       ? providers.find((p) => p.id === model.provider)?.name || model.provider
       : "";
@@ -29,7 +38,7 @@ const ModelSelectorTrigger = forwardRef<HTMLButtonElement, ModelSelectorTriggerP
         data-testid="model-selector-trigger"
         className={cn(
           "inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border border-border bg-bg-elevated hover:bg-muted text-sm text-foreground transition-colors duration-fast",
-          toolbarMode && "max-w-[112px] px-1.5 sm:max-w-none sm:px-2.5",
+          toolbarMode && "h-8 w-[112px] max-w-[112px] justify-between px-1.5 sm:h-[66px] sm:w-64 sm:max-w-none sm:px-2.5",
           disabled && "cursor-default opacity-60",
           !disabled && "cursor-pointer",
           isOpen && "bg-muted",
@@ -62,7 +71,7 @@ const ModelSelectorTrigger = forwardRef<HTMLButtonElement, ModelSelectorTriggerP
             </div>
           </>
         ) : (
-          <span className="px-1 text-sm">选择模型</span>
+          <span className="truncate px-1 text-sm">{placeholderLabel}</span>
         )}
         <ChevronUp
           className={cn(

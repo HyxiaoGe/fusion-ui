@@ -79,14 +79,16 @@ describe('HomePage', () => {
     expect(onSelectPrompt).toHaveBeenCalledTimes(1);
   });
 
-  it('远端灵感加载期间立即稳定展示四个核心任务', () => {
+  it('远端灵感加载期间立即稳定展示四个核心任务和两行灵感', () => {
     fetchPromptExamplesMock.mockReturnValue(new Promise(() => {}));
 
     render(<HomePage onSelectPrompt={vi.fn()} />);
 
     expect(within(screen.getByTestId('starter-prompts')).getAllByRole('button')).toHaveLength(4);
     expect(screen.getByRole('button', { name: /深度调研/ })).toBeInTheDocument();
-    expect(screen.queryByText('今日灵感')).toBeNull();
+    const inspirationRegion = screen.getByRole('region', { name: '今日灵感' });
+    expect(screen.getByTestId('inspiration-cloud')).toHaveAttribute('data-row-count', '2');
+    expect(within(inspirationRegion).getAllByRole('button').length).toBeGreaterThan(4);
   });
 
   it('点击换一批后按波浪翻牌效果替换核心任务', async () => {

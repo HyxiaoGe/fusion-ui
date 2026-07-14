@@ -108,6 +108,22 @@ const FALLBACK_STARTER_PROMPTS: StarterPrompt[] = [
   },
 ];
 
+// 后端灵感目录仍是真源；这组内容只负责保证 SSR 首帧有真实可用的入口，避免强刷后整块内容后插入。
+const FALLBACK_INSPIRATIONS = [
+  '帮我梳理今天最重要的三件事',
+  '把一段材料整理成行动清单',
+  '比较两个方案的成本和风险',
+  '解释一个最近遇到的技术问题',
+  '为下周制定一份执行计划',
+  '检查这段文字的逻辑和表达',
+  '从一份报告中提炼关键结论',
+  '设计一套用户访谈问题',
+  '把会议纪要整理成责任清单',
+  '分析一组数据里的异常趋势',
+  '规划一周的高效学习安排',
+  '为发布公告调整表达和语气',
+];
+
 const STARTER_PAGE_SIZE = 4;
 const STARTER_ROTATE_INTERVAL = 12_000;
 const INSPIRATION_FETCH_LIMIT = 50;
@@ -242,7 +258,7 @@ const HomePage: React.FC<HomePageProps> = ({ onSelectPrompt }) => {
   const [areStartersFlipped, setAreStartersFlipped] = useState(false);
   const [isStarterPaused, setIsStarterPaused] = useState(false);
   const [libraryTemplates, setLibraryTemplates] = useState(FALLBACK_LIBRARY_TEMPLATES);
-  const [inspirationPool, setInspirationPool] = useState<string[]>([]);
+  const [inspirationPool, setInspirationPool] = useState<string[]>(FALLBACK_INSPIRATIONS);
   const [inspirationStartIndex, setInspirationStartIndex] = useState(0);
   const [inspirationLayout, setInspirationLayout] = useState<{
     containerWidth: number;
@@ -280,11 +296,13 @@ const HomePage: React.FC<HomePageProps> = ({ onSelectPrompt }) => {
         const uniqueQuestions = Array.from(
           new Set(data.examples.map((item) => item.question.trim()).filter(Boolean)),
         );
-        setInspirationPool(uniqueQuestions);
-        setInspirationStartIndex(0);
+        if (uniqueQuestions.length > 0) {
+          setInspirationPool(uniqueQuestions);
+          setInspirationStartIndex(0);
+        }
       })
       .catch(() => {
-        if (!cancelled) setInspirationPool([]);
+        // 动态目录暂不可用时保留首帧兜底，避免灵感区域消失并引发布局跳动。
       });
 
     void fetchPromptTemplates()
