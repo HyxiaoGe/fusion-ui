@@ -1,26 +1,9 @@
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { currentState, useAppSelectorMock, toastMock, fetchPromptExamplesMock, preloadChatMessageListMock } = vi.hoisted(() => ({
-  currentState: {
-    auth: {
-      isAuthenticated: true,
-    },
-  } as any,
-  useAppSelectorMock: vi.fn(),
-  toastMock: vi.fn(),
+const { fetchPromptExamplesMock, preloadChatMessageListMock } = vi.hoisted(() => ({
   fetchPromptExamplesMock: vi.fn(),
   preloadChatMessageListMock: vi.fn(),
-}));
-
-vi.mock('@/redux/hooks', () => ({
-  useAppSelector: useAppSelectorMock,
-}));
-
-vi.mock('@/components/ui/toast', () => ({
-  useToast: () => ({
-    toast: toastMock,
-  }),
 }));
 
 vi.mock('@/lib/api/prompts', () => ({
@@ -31,84 +14,89 @@ vi.mock('@/components/lazy/preloaders', () => ({
   preloadChatMessageList: preloadChatMessageListMock,
 }));
 
+vi.mock('@/components/prompts/PromptTemplateList', () => ({
+  default: ({ onSelectTemplate }: { onSelectTemplate?: (content: string) => void }) => (
+    <button type="button" onClick={() => onSelectTemplate?.('来自模板库的提示词')}>
+      使用模板
+    </button>
+  ),
+}));
+
 import HomePage from './HomePage';
 
 describe('HomePage', () => {
   beforeEach(() => {
-    currentState.auth.isAuthenticated = true;
-    useAppSelectorMock.mockImplementation((selector) => selector(currentState));
-    toastMock.mockReset();
     preloadChatMessageListMock.mockReset();
     fetchPromptExamplesMock.mockReset();
     fetchPromptExamplesMock.mockResolvedValue({
       examples: [
-        { question: '示例问题 1' },
-        { question: '示例问题 2' },
-        { question: '示例问题 3' },
+        { question: '今天有哪些值得关注的 AI 进展？', category: 'tech' },
+        { question: '最近有哪些重要科技新闻？', category: 'news' },
+        { question: '如何安排一次高质量复盘？', category: 'general' },
       ],
+      refreshed_at: '2026-07-14T09:00:00+08:00',
     });
   });
 
-  afterEach(() => {
-    vi.useRealTimers();
+  it('点击任务卡只选择提示词，不直接创建会话', () => {
+    const onSelectPrompt = vi.fn();
+
+    render(<HomePage onSelectPrompt={onSelectPrompt} />);
+
+    fireEvent.click(screen.getByRole('button', { name: /深度调研/ }));
+
+    expect(onSelectPrompt).toHaveBeenCalledWith(expect.stringContaining('联网调研'));
+    expect(onSelectPrompt).toHaveBeenCalledTimes(1);
   });
 
-  it('sends message when clicking an example', async () => {
-    const onSendMessage = vi.fn();
-
-    render(<HomePage onNewChat={vi.fn()} onSendMessage={onSendMessage} />);
-
-    // loading=true 时只渲染骨架，等 fetchPromptExamples resolve 后按钮才出现
-    const exampleButtons = await screen.findAllByRole('button');
-    fireEvent.click(exampleButtons[0]);
-
-    expect(onSendMessage).toHaveBeenCalledTimes(1);
-  });
-
-  it('shows fallback examples immediately while remote examples are loading', () => {
-    const onSendMessage = vi.fn();
+  it('远端灵感加载期间立即稳定展示四个核心任务', () => {
     fetchPromptExamplesMock.mockReturnValue(new Promise(() => {}));
 
-    render(<HomePage onNewChat={vi.fn()} onSendMessage={onSendMessage} />);
+    render(<HomePage onSelectPrompt={vi.fn()} />);
 
-    const fallbackExample = screen.getByRole('button', { name: '写一个 Python 快速排序函数' });
-    fireEvent.click(fallbackExample);
-
-    expect(onSendMessage).toHaveBeenCalledWith('写一个 Python 快速排序函数');
+    expect(within(screen.getByTestId('starter-prompts')).getAllByRole('button')).toHaveLength(4);
+    expect(screen.getByRole('button', { name: /深度调研/ })).toBeInTheDocument();
+    expect(screen.queryByText('今日灵感')).toBeNull();
   });
 
-  it('preloads the chat message list chunk from the home page', async () => {
-    render(<HomePage onNewChat={vi.fn()} onSendMessage={vi.fn()} />);
+  it('只有用户点击换一批后才替换核心任务', () => {
+    render(<HomePage onSelectPrompt={vi.fn()} />);
+
+    expect(screen.getByRole('button', { name: /深度调研/ })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /分析数据/ })).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: '换一批' }));
+
+    expect(screen.queryByRole('button', { name: /深度调研/ })).toBeNull();
+    expect(screen.getByRole('button', { name: /分析数据/ })).toBeInTheDocument();
+  });
+
+  it('把远端动态问题作为低干扰的今日灵感展示', async () => {
+    const onSelectPrompt = vi.fn();
+    render(<HomePage onSelectPrompt={onSelectPrompt} />);
+
+    expect(await screen.findByText('今日灵感')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '今天有哪些值得关注的 AI 进展？' }));
+
+    expect(onSelectPrompt).toHaveBeenCalledWith('今天有哪些值得关注的 AI 进展？');
+  });
+
+  it('可以从更多模板选择内容填入输入框', () => {
+    const onSelectPrompt = vi.fn();
+    render(<HomePage onSelectPrompt={onSelectPrompt} />);
+
+    fireEvent.click(screen.getByRole('button', { name: '更多模板' }));
+    fireEvent.click(screen.getByRole('button', { name: '使用模板' }));
+
+    expect(onSelectPrompt).toHaveBeenCalledWith('来自模板库的提示词');
+    expect(screen.queryByRole('dialog', { name: '提示词模板' })).toBeNull();
+  });
+
+  it('从首页预加载对话消息列表代码块', async () => {
+    render(<HomePage onSelectPrompt={vi.fn()} />);
 
     await waitFor(() => {
       expect(preloadChatMessageListMock).toHaveBeenCalledTimes(1);
     });
-  });
-
-  it('pauses example rotation while the examples are hovered', async () => {
-    vi.useFakeTimers();
-    fetchPromptExamplesMock.mockResolvedValue({
-      examples: Array.from({ length: 24 }, (_, index) => ({
-        question: `远程示例 ${index + 1}`,
-      })),
-    });
-
-    render(<HomePage onNewChat={vi.fn()} onSendMessage={vi.fn()} />);
-
-    await act(async () => {
-      await Promise.resolve();
-      await Promise.resolve();
-    });
-
-    expect(screen.getAllByRole('button', { name: /远程示例/ }).length).toBeGreaterThan(0);
-    const firstBeforeHover = screen.getAllByRole('button')[0].textContent;
-    const examples = screen.getByTestId('prompt-examples');
-
-    fireEvent.mouseEnter(examples);
-    await act(async () => {
-      vi.advanceTimersByTime(18000);
-    });
-
-    expect(screen.getAllByRole('button')[0].textContent).toBe(firstBeforeHover);
   });
 });

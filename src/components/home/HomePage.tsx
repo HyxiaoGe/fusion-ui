@@ -1,211 +1,250 @@
-import { useCallback, memo, useState, useEffect, useRef } from "react";
-import { useAppSelector } from "@/redux/hooks";
-import { useToast } from "@/components/ui/toast";
-import { fetchPromptExamples } from "@/lib/api/prompts";
-import { preloadChatMessageList } from "@/components/lazy/preloaders";
-import { useRenderProbe } from "@/lib/debug/perfProbe";
+import { memo, useCallback, useEffect, useMemo, useState } from 'react';
+import {
+  ArrowUpRight,
+  BarChart3,
+  BookOpenCheck,
+  Code2,
+  FileText,
+  Languages,
+  Library,
+  ListChecks,
+  PenLine,
+  RefreshCw,
+  Search,
+  Sparkles,
+  type LucideIcon,
+} from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import PromptTemplateList from '@/components/prompts/PromptTemplateList';
+import { fetchPromptExamples } from '@/lib/api/prompts';
+import { preloadChatMessageList } from '@/components/lazy/preloaders';
+import { useRenderProbe } from '@/lib/debug/perfProbe';
 
-const FALLBACK_EXAMPLES = [
-  '写一个 Python 快速排序函数',
-  '帮我 review 这段代码',
-  '如何用 Docker 部署 FastAPI 服务',
-  '解释 React useEffect 的执行时机',
-  '写一篇关于 AI 发展的短文',
-  '帮我润色这段产品介绍',
-  '写一封正式的商务邮件',
-  '解释一下量子计算的基本原理',
-  '对比 PostgreSQL 和 MongoDB 适用场景',
+interface StarterPrompt {
+  id: string;
+  title: string;
+  description: string;
+  prompt: string;
+  icon: LucideIcon;
+  tone: string;
+}
+
+const STARTER_PROMPTS: StarterPrompt[] = [
+  {
+    id: 'research',
+    title: '深度调研',
+    description: '梳理结论、争议和可靠来源',
+    prompt: '请围绕以下主题进行联网调研，给出关键结论、主要争议和可靠来源：\n\n【在这里填写主题】',
+    icon: Search,
+    tone: 'bg-blue-500/10 text-blue-600 dark:text-blue-400',
+  },
+  {
+    id: 'file',
+    title: '解读一份文件',
+    description: '提炼重点、数据、风险和行动项',
+    prompt: '请阅读我接下来上传的文件，先总结核心内容，再列出关键数据、风险点和建议行动。',
+    icon: FileText,
+    tone: 'bg-violet-500/10 text-violet-600 dark:text-violet-400',
+  },
+  {
+    id: 'code-review',
+    title: '审查代码',
+    description: '检查正确性、性能和安全风险',
+    prompt: '请审查下面这段代码，重点检查正确性、可维护性、性能和安全风险，并给出可以直接应用的修改建议：\n\n```\n【粘贴代码】\n```',
+    icon: Code2,
+    tone: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400',
+  },
+  {
+    id: 'writing',
+    title: '起草与润色',
+    description: '优化结构、表达和目标语气',
+    prompt: '请帮我起草或润色下面的内容。保持原意，优化结构、表达和语气，并说明主要修改点：\n\n【粘贴内容】',
+    icon: PenLine,
+    tone: 'bg-amber-500/10 text-amber-600 dark:text-amber-400',
+  },
+  {
+    id: 'data',
+    title: '分析数据',
+    description: '发现趋势、异常和可行动洞察',
+    prompt: '请分析我提供的数据，说明关键趋势、异常点、可能原因和下一步行动建议。必要时用表格呈现。\n\n【粘贴数据或上传文件】',
+    icon: BarChart3,
+    tone: 'bg-cyan-500/10 text-cyan-600 dark:text-cyan-400',
+  },
+  {
+    id: 'plan',
+    title: '制定计划',
+    description: '拆解目标、里程碑和风险',
+    prompt: '请把下面的目标拆成一份可执行计划，包含优先级、里程碑、依赖、风险和验收标准：\n\n【描述目标】',
+    icon: ListChecks,
+    tone: 'bg-rose-500/10 text-rose-600 dark:text-rose-400',
+  },
+  {
+    id: 'learning',
+    title: '快速学习',
+    description: '从核心概念到练习路径',
+    prompt: '我想快速掌握下面这个主题。请先解释核心概念，再给出循序渐进的学习路径、例子和练习：\n\n【填写主题】',
+    icon: BookOpenCheck,
+    tone: 'bg-indigo-500/10 text-indigo-600 dark:text-indigo-400',
+  },
+  {
+    id: 'translation',
+    title: '翻译与本地化',
+    description: '保留语气并适配目标受众',
+    prompt: '请把下面的内容翻译并本地化为【目标语言/地区】。保留原意和语气，同时让表达符合当地习惯：\n\n【粘贴内容】',
+    icon: Languages,
+    tone: 'bg-fuchsia-500/10 text-fuchsia-600 dark:text-fuchsia-400',
+  },
 ];
 
-const PAGE_SIZE = 9;
-const ROTATE_INTERVAL = 15000;
-
-function shuffle<T>(arr: T[]): T[] {
-  const a = [...arr];
-  for (let i = a.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [a[i], a[j]] = [a[j], a[i]];
-  }
-  return a;
-}
+const STARTER_PAGE_SIZE = 4;
+const INSPIRATION_LIMIT = 2;
 
 interface HomePageProps {
-  onNewChat?: () => void;
-  onSendMessage: (content: string) => void;
+  onSelectPrompt: (content: string) => void;
 }
 
-const HomePage: React.FC<HomePageProps> = ({ onSendMessage }) => {
+const HomePage: React.FC<HomePageProps> = ({ onSelectPrompt }) => {
   useRenderProbe('HomePage');
-  const { isAuthenticated } = useAppSelector((state) => state.auth);
-  const { toast } = useToast();
-  const [remoteExamplesReady, setRemoteExamplesReady] = useState(false);
-  const [displayItems, setDisplayItems] = useState<string[]>(FALLBACK_EXAMPLES.slice(0, PAGE_SIZE));
-  const [isRotationPaused, setIsRotationPaused] = useState(false);
-  // 每张卡片的翻转状态：true = 翻到侧面（不可见）
-  const [flippedCards, setFlippedCards] = useState<boolean[]>(new Array(PAGE_SIZE).fill(false));
+  const [pageIndex, setPageIndex] = useState(0);
+  const [inspirations, setInspirations] = useState<string[]>([]);
+  const [templatesOpen, setTemplatesOpen] = useState(false);
+  const pageCount = Math.ceil(STARTER_PROMPTS.length / STARTER_PAGE_SIZE);
+  const visibleStarters = useMemo(() => {
+    const start = pageIndex * STARTER_PAGE_SIZE;
+    return STARTER_PROMPTS.slice(start, start + STARTER_PAGE_SIZE);
+  }, [pageIndex]);
 
-  const poolRef = useRef<string[]>([]);
-  const cursorRef = useRef(0);
-  const waveTimeoutsRef = useRef<ReturnType<typeof setTimeout>[]>([]);
-  const isRotationPausedRef = useRef(false);
-
-  const clearWaveTimeouts = useCallback(() => {
-    waveTimeoutsRef.current.forEach((timer) => clearTimeout(timer));
-    waveTimeoutsRef.current = [];
-  }, []);
-
-  const updateRotationPaused = useCallback((paused: boolean) => {
-    isRotationPausedRef.current = paused;
-    setIsRotationPaused(paused);
-    if (paused) {
-      clearWaveTimeouts();
-      setFlippedCards(new Array(PAGE_SIZE).fill(false));
-    }
-  }, [clearWaveTimeouts]);
-
-  const getNextBatch = useCallback((): string[] => {
-    const pool = poolRef.current;
-    if (pool.length === 0) return FALLBACK_EXAMPLES.slice(0, PAGE_SIZE);
-    if (cursorRef.current + PAGE_SIZE > pool.length) {
-      poolRef.current = shuffle(pool);
-      cursorRef.current = 0;
-    }
-    const batch = poolRef.current.slice(cursorRef.current, cursorRef.current + PAGE_SIZE);
-    cursorRef.current += PAGE_SIZE;
-    return batch;
-  }, []);
-
-  // 首次加载
   useEffect(() => {
     let cancelled = false;
     void preloadChatMessageList();
-    (async () => {
-      try {
-        const data = await fetchPromptExamples(50);
-        if (!cancelled && data.examples.length > 0) {
-          const all = data.examples.map((e) => e.question);
-          poolRef.current = shuffle(all);
-          cursorRef.current = 0;
-          const first = poolRef.current.slice(0, PAGE_SIZE);
-          cursorRef.current = PAGE_SIZE;
-          setDisplayItems(first);
-        }
-      } catch {
-        // fallback
-      } finally {
-        if (!cancelled) setRemoteExamplesReady(true);
-      }
-    })();
-    return () => { cancelled = true; };
+
+    void fetchPromptExamples(8)
+      .then((data) => {
+        if (cancelled) return;
+        const uniqueQuestions = Array.from(
+          new Set(data.examples.map((item) => item.question.trim()).filter(Boolean)),
+        );
+        setInspirations(uniqueQuestions.slice(0, INSPIRATION_LIMIT));
+      })
+      .catch(() => {
+        if (!cancelled) setInspirations([]);
+      });
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
-  // 波浪翻牌：逐张翻出 → 换文字 → 逐张翻回
-  const doWaveFlip = useCallback(() => {
-    if (isRotationPausedRef.current) return;
+  const showNextPage = useCallback(() => {
+    setPageIndex((current) => (current + 1) % pageCount);
+  }, [pageCount]);
 
-    clearWaveTimeouts();
-    const nextBatch = getNextBatch();
-    const schedule = (callback: () => void, delay: number) => {
-      const timer = setTimeout(() => {
-        if (isRotationPausedRef.current) return;
-        callback();
-      }, delay);
-      waveTimeoutsRef.current.push(timer);
-    };
-
-    // 阶段1：从左到右逐张翻出（rotateY 90deg）
-    for (let i = 0; i < PAGE_SIZE; i++) {
-      schedule(() => {
-        setFlippedCards((prev) => {
-          const next = [...prev];
-          next[i] = true;
-          return next;
-        });
-      }, i * 80);
-    }
-
-    // 阶段2：全部翻出后换文字
-    const allFlippedTime = PAGE_SIZE * 80 + 300;
-    schedule(() => {
-      setDisplayItems(nextBatch);
-    }, allFlippedTime);
-
-    // 阶段3：从左到右逐张翻回
-    for (let i = 0; i < PAGE_SIZE; i++) {
-      schedule(() => {
-        setFlippedCards((prev) => {
-          const next = [...prev];
-          next[i] = false;
-          return next;
-        });
-      }, allFlippedTime + 50 + i * 80);
-    }
-  }, [clearWaveTimeouts, getNextBatch]);
-
-  // 定时轮换
-  useEffect(() => {
-    if (!remoteExamplesReady || isRotationPaused) return;
-    const timer = setInterval(doWaveFlip, ROTATE_INTERVAL);
-    return () => clearInterval(timer);
-  }, [remoteExamplesReady, isRotationPaused, doWaveFlip]);
-
-  useEffect(() => clearWaveTimeouts, [clearWaveTimeouts]);
-
-  const handleExampleClick = useCallback((message: string) => {
-    updateRotationPaused(true);
-    if (!isAuthenticated) {
-      toast({
-        message: "请先登录后再使用聊天功能",
-        type: "warning",
-        duration: 3000
-      });
-      if ((globalThis as any).triggerLoginDialog) {
-        (globalThis as any).triggerLoginDialog();
-      }
-      return;
-    }
-    void Promise.resolve(onSendMessage(message));
-  }, [isAuthenticated, onSendMessage, toast, updateRotationPaused]);
+  const selectTemplate = useCallback((content: string) => {
+    setTemplatesOpen(false);
+    onSelectPrompt(content);
+  }, [onSelectPrompt]);
 
   return (
-    <div className="flex h-full items-center justify-center px-4 pb-32">
-      <div className="w-full max-w-4xl mx-auto px-8">
-        <h1 className="text-2xl font-bold text-foreground mb-12 text-center">
-          有什么我能帮你的吗？
-        </h1>
-
-        <div
-          data-testid="prompt-examples"
-          className="flex flex-wrap gap-3.5 justify-center"
-          style={{ perspective: '1000px' }}
-          onMouseEnter={() => updateRotationPaused(true)}
-          onMouseLeave={() => updateRotationPaused(false)}
-          onFocusCapture={() => updateRotationPaused(true)}
-          onBlurCapture={(event) => {
-            if (!event.currentTarget.contains(event.relatedTarget)) {
-              updateRotationPaused(false);
-            }
-          }}
-        >
-          {displayItems.map((example, index) => (
-            <button
-              key={`slot-${index}`}
-              onClick={() => handleExampleClick(example)}
-              className="px-5 py-2.5 rounded-[20px] bg-bg-subtle text-md leading-5 text-fg-secondary whitespace-nowrap
-                           border border-border shadow-fdv2-xs
-                           hover:bg-muted hover:text-foreground hover:border-border-strong hover:shadow-fdv2-sm
-                           transition-all duration-fast cursor-pointer"
-              style={{
-                transition: 'transform 0.3s ease, opacity 0.3s ease, background-color 0.15s, box-shadow 0.15s',
-                transform: flippedCards[index] ? 'rotateY(90deg)' : 'rotateY(0deg)',
-                opacity: flippedCards[index] ? 0 : 1,
-              }}
-            >
-              {example}
-            </button>
-          ))}
+    <div className="flex min-h-full items-center justify-center px-4 pb-20 pt-8 sm:pb-24">
+      <div className="mx-auto w-full max-w-3xl">
+        <div className="mb-8 text-center">
+          <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-border/70 bg-background/80 px-3 py-1 text-xs text-muted-foreground shadow-fdv2-xs">
+            <Sparkles className="h-3.5 w-3.5 text-primary" aria-hidden="true" />
+            从一个任务开始，随时可以修改
+          </div>
+          <h1 className="text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">
+            今天想完成什么？
+          </h1>
+          <p className="mt-2 text-sm text-muted-foreground">
+            选择一个方向填入输入框，再补充你的材料和要求
+          </p>
         </div>
+
+        <div data-testid="starter-prompts" className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          {visibleStarters.map((starter) => {
+            const Icon = starter.icon;
+            return (
+              <button
+                key={starter.id}
+                type="button"
+                onClick={() => onSelectPrompt(starter.prompt)}
+                className="group flex min-h-24 items-center gap-4 rounded-2xl border border-border/80 bg-background/90 p-4 text-left shadow-fdv2-xs transition-[border-color,box-shadow,transform] duration-200 hover:-translate-y-0.5 hover:border-border-strong hover:shadow-fdv2-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transform-none motion-reduce:transition-none"
+              >
+                <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${starter.tone}`}>
+                  <Icon className="h-5 w-5" aria-hidden="true" />
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block text-sm font-medium text-foreground">{starter.title}</span>
+                  <span className="mt-1 block text-xs leading-5 text-muted-foreground">
+                    {starter.description}
+                  </span>
+                </span>
+                <ArrowUpRight
+                  className="h-4 w-4 shrink-0 text-muted-foreground/60 transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5 motion-reduce:transition-none"
+                  aria-hidden="true"
+                />
+              </button>
+            );
+          })}
+        </div>
+
+        <div className="mt-4 flex items-center justify-center gap-2">
+          <Button type="button" variant="ghost" size="sm" onClick={showNextPage} className="gap-1.5 text-muted-foreground">
+            <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" />
+            换一批
+          </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={() => setTemplatesOpen(true)}
+            className="gap-1.5 text-muted-foreground"
+          >
+            <Library className="h-3.5 w-3.5" aria-hidden="true" />
+            更多模板
+          </Button>
+        </div>
+
+        {inspirations.length > 0 ? (
+          <section className="mt-6 border-t border-border/60 pt-4" aria-labelledby="daily-inspiration-title">
+            <div className="mb-2 flex items-center justify-center gap-1.5 text-xs text-muted-foreground">
+              <Sparkles className="h-3.5 w-3.5" aria-hidden="true" />
+              <h2 id="daily-inspiration-title" className="font-medium">今日灵感</h2>
+            </div>
+            <div className="flex flex-wrap justify-center gap-2">
+              {inspirations.map((question) => (
+                <button
+                  key={question}
+                  type="button"
+                  onClick={() => onSelectPrompt(question)}
+                  className="rounded-full border border-border/70 bg-bg-subtle px-3.5 py-2 text-xs text-fg-secondary transition-colors hover:border-border-strong hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                >
+                  {question}
+                </button>
+              ))}
+            </div>
+          </section>
+        ) : null}
       </div>
+
+      <Dialog open={templatesOpen} onOpenChange={setTemplatesOpen}>
+        <DialogContent className="max-h-[80vh] overflow-hidden sm:max-w-2xl" closeLabel="关闭模板库">
+          <DialogHeader className="sr-only">
+            <DialogTitle>提示词模板</DialogTitle>
+            <DialogDescription>选择一个模板并填入消息输入框</DialogDescription>
+          </DialogHeader>
+          <div className="max-h-[calc(80vh-3rem)] overflow-y-auto pr-1">
+            <PromptTemplateList onSelectTemplate={selectTemplate} />
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

@@ -67,10 +67,12 @@ const PromptTemplateList: React.FC<PromptTemplateListProps> = ({
     <div className="flex flex-col h-full">
       <div className="flex items-center justify-between mb-4">
         <h2 className="text-xl font-bold">提示词模板</h2>
-        <Button onClick={handleCreateClick} size="sm">
-          <PlusIcon className="h-4 w-4 mr-2" />
-          新建模板
-        </Button>
+        {onCreateNew ? (
+          <Button onClick={handleCreateClick} size="sm">
+            <PlusIcon className="h-4 w-4 mr-2" />
+            新建模板
+          </Button>
+        ) : null}
       </div>
 
       <div className="relative mb-4">
@@ -122,9 +124,11 @@ const PromptTemplateList: React.FC<PromptTemplateListProps> = ({
                   ? '还没有创建模板'
                   : `${selectedCategory} 分类中还没有模板`}
               </p>
-              <Button variant="outline" onClick={handleCreateClick}>
-                创建新模板
-              </Button>
+              {onCreateNew ? (
+                <Button variant="outline" onClick={handleCreateClick}>
+                  创建新模板
+                </Button>
+              ) : null}
             </div>
           )}
         </TabsContent>

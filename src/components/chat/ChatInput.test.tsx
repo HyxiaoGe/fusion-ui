@@ -589,6 +589,29 @@ describe('ChatInput', () => {
     expect(screen.getByPlaceholderText('发消息给 Fusion AI（Enter 发送）')).toHaveFocus();
   });
 
+  it('applies each explicit prompt prefill request and keeps the composer focused', () => {
+    const { rerender } = render(
+      <ChatInput
+        onSendMessage={vi.fn()}
+        prefillRequest={{ id: 1, content: '第一条任务提示词' }}
+      />,
+    );
+    const composer = screen.getByPlaceholderText('发消息给 Fusion AI（Enter 发送）');
+    expect(composer).toHaveValue('第一条任务提示词');
+    expect(composer).toHaveFocus();
+
+    fireEvent.change(composer, { target: { value: '用户修改后的内容' } });
+    rerender(
+      <ChatInput
+        onSendMessage={vi.fn()}
+        prefillRequest={{ id: 2, content: '第一条任务提示词' }}
+      />,
+    );
+
+    expect(composer).toHaveValue('第一条任务提示词');
+    expect(composer).toHaveFocus();
+  });
+
   it('rejects selected non-image files while file conversation is paused', async () => {
     currentState.auth.isAuthenticated = true;
     currentState.models.selectedModelId = 'model-1';

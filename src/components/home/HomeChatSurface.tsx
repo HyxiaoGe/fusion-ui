@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { usePathname, useRouter, useSearchParams } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { Files } from 'lucide-react';
 import ChatInput, { type ChatUploadCompleteFile } from '@/components/chat/ChatInput';
 import ConversationFilesPanel from '@/components/chat/ConversationFilesPanel';
@@ -17,8 +17,8 @@ import { setSelectedModel } from '@/redux/slices/modelsSlice';
 import { deleteFile, type FileInfo } from '@/lib/api/files';
 import { useSendMessage } from '@/hooks/useSendMessage';
 import { useConversationFiles } from '@/hooks/useConversationFiles';
-import { getFirstEnabledModelId, getPreferredModelId } from '@/lib/models/modelPreference';
-import { CHAT_NEW_PATH, buildChatConversationPath, buildChatNewPath, isChatNewPath } from '@/lib/routes/chatRoutes';
+import { getPreferredModelId } from '@/lib/models/modelPreference';
+import { CHAT_NEW_PATH, buildChatConversationPath } from '@/lib/routes/chatRoutes';
 import type { FileAttachment } from '@/lib/utils/fileHelpers';
 import { markConversationFilesPanelOpen } from '@/lib/chat/filesPanelHandoff';
 import { subscribeNewChatDraftReset } from '@/lib/chat/newChatDraftReset';
@@ -71,6 +71,11 @@ interface PendingAutoAttachState {
   fileIds: string[];
 }
 
+interface ComposerPrefillRequest {
+  id: number;
+  content: string;
+}
+
 function uploadResultToConversationAttachment(file: ChatUploadCompleteFile): ConversationComposerAttachment | null {
   if (file.status !== 'processed') {
     return null;
@@ -89,13 +94,13 @@ function uploadResultToConversationAttachment(file: ChatUploadCompleteFile): Con
 
 export default function HomeChatSurface() {
   const router = useRouter();
-  const pathname = usePathname();
   const searchParams = useSearchParams();
   const dispatch = useAppDispatch();
   const [inputKey, setInputKey] = useState(0);
   const [filesPanelOpen, setFilesPanelOpen] = useState(false);
   const [filesConversationId, setFilesConversationId] = useState<string | null>(null);
   const [handoffConversationId, setHandoffConversationId] = useState<string | null>(null);
+  const [prefillRequest, setPrefillRequest] = useState<ComposerPrefillRequest | null>(null);
   const [conversationAttachmentState, setConversationAttachmentState] = useState<ConversationAttachmentState>({
     chatId: NEW_CHAT_ATTACHMENT_SCOPE,
     attachments: [],
@@ -107,6 +112,7 @@ export default function HomeChatSurface() {
   const appliedModelHintRef = useRef<string | null>(null);
   const ownsNewChatNavigationRef = useRef(true);
   const navigationGenerationRef = useRef(0);
+  const prefillRequestIdRef = useRef(0);
   const isAuthenticated = useAppSelector((state) => state.auth.isAuthenticated);
   const authSessionKey = useAppSelector(
     (state) => state.auth.user?.id ?? state.auth.token ?? null,
@@ -164,11 +170,20 @@ export default function HomeChatSurface() {
     }
     setInputKey((current) => current + 1);
     setHandoffConversationId(null);
+    setPrefillRequest(null);
     setFilesPanelOpen(false);
     setFilesConversationId(null);
     setConversationAttachmentState({ chatId: NEW_CHAT_ATTACHMENT_SCOPE, attachments: [] });
     setPendingAutoAttachState({ chatId: NEW_CHAT_ATTACHMENT_SCOPE, fileIds: [] });
   }, [displayConversationId, isDisplayConversationStreaming, stopStreaming]);
+
+  const handleSelectPrompt = useCallback((content: string) => {
+    prefillRequestIdRef.current += 1;
+    setPrefillRequest({
+      id: prefillRequestIdRef.current,
+      content,
+    });
+  }, []);
 
   useEffect(() => subscribeNewChatDraftReset(resetNewChatDraft), [resetNewChatDraft]);
 
@@ -378,6 +393,7 @@ export default function HomeChatSurface() {
     attachments?: FileAttachment[],
     pendingConversationId?: string
   ) => {
+    setPrefillRequest(null);
     const navigationGeneration = navigationGenerationRef.current + 1;
     navigationGenerationRef.current = navigationGeneration;
     const shouldOpenFilesPanel = Boolean(attachments && attachments.length > 0);
@@ -420,17 +436,6 @@ export default function HomeChatSurface() {
     );
   }, [router, sendMessage]);
 
-  const handleNewChat = useCallback(() => {
-    if (isChatNewPath(pathname)) {
-      resetNewChatDraft();
-      return;
-    }
-
-    const modelToUse = modelHint || getFirstEnabledModelId(models);
-    setInputKey((current) => current + 1);
-    router.push(buildChatNewPath(modelToUse));
-  }, [modelHint, models, pathname, resetNewChatDraft, router]);
-
   return (
     <div className="h-full flex flex-col relative">
       <div className="flex-1 overflow-y-auto" data-chat-scroll-container="true">
@@ -444,7 +449,7 @@ export default function HomeChatSurface() {
             />
           </div>
         ) : (
-          <HomePage onSendMessage={handleSendMessage} onNewChat={handleNewChat} />
+          <HomePage onSelectPrompt={handleSelectPrompt} />
         )}
       </div>
       <div className="flex-shrink-0 p-4">
@@ -471,6 +476,7 @@ export default function HomeChatSurface() {
           activeChatId={shouldShowPendingConversation ? displayConversationId : null}
           autoFocus
           focusSignal={inputKey}
+          prefillRequest={prefillRequest}
           conversationAttachments={conversationAttachments}
           onRemoveConversationAttachment={handleRemoveConversationAttachment}
           onClearConversationAttachments={handleClearConversationAttachments}

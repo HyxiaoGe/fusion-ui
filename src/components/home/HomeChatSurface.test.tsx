@@ -137,11 +137,11 @@ vi.mock('@/lib/api/files', () => ({
 }));
 
 vi.mock('@/components/home/HomePage', () => ({
-  default: function MockHomePage({ onSendMessage, onNewChat }: any) {
+  default: function MockHomePage({ onSelectPrompt, onNewChat }: any) {
     return (
       <div data-testid="home-page">
-        <button type="button" onClick={() => onSendMessage('首页示例问题')}>
-          首页发送
+        <button type="button" onClick={() => onSelectPrompt('首页示例问题')}>
+          首页填入
         </button>
         <button type="button" onClick={onNewChat}>
           新建会话
@@ -190,9 +190,10 @@ vi.mock('@/components/chat/ChatInput', () => ({
     onUploadComplete,
     onStopStreaming,
     activeChatId,
+    prefillRequest,
   }: any) {
     const [hasLocalUploadError, setHasLocalUploadError] = React.useState(false);
-    chatInputRenderMock({ conversationAttachments });
+    chatInputRenderMock({ conversationAttachments, prefillRequest });
 
     const sendSelectedAttachment = () => {
       const attachments = conversationAttachments.map((attachment: any) => ({
@@ -210,6 +211,7 @@ vi.mock('@/components/chat/ChatInput', () => ({
         data-attachment-count={conversationAttachments.length}
         data-local-upload-error={hasLocalUploadError ? 'true' : 'false'}
         data-active-chat-id={activeChatId ?? ''}
+        data-prefill-content={prefillRequest?.content ?? ''}
       >
         {onStopStreaming ? (
           <button type="button" onClick={onStopStreaming}>
@@ -258,6 +260,9 @@ vi.mock('@/components/chat/ChatInput', () => ({
         </button>
         <button type="button" onClick={sendSelectedAttachment}>
           发送资料提问
+        </button>
+        <button type="button" onClick={() => onSendMessage(prefillRequest?.content ?? '')}>
+          发送已填入示例
         </button>
         <button
           type="button"
@@ -426,7 +431,11 @@ describe('HomeChatSurface 会话资料交互', () => {
     });
 
     const { rerender } = render(<HomeChatSurface />);
-    fireEvent.click(screen.getByRole('button', { name: '首页发送' }));
+    fireEvent.click(screen.getByRole('button', { name: '首页填入' }));
+    expect(sendMessageMock).not.toHaveBeenCalled();
+    expect(screen.getByTestId('chat-input')).toHaveAttribute('data-prefill-content', '首页示例问题');
+
+    fireEvent.click(screen.getByRole('button', { name: '发送已填入示例' }));
     await waitFor(() => expect(sendMessageMock).toHaveBeenCalledTimes(1));
 
     pendingConversationState.id = 'draft-chat-1';

@@ -65,14 +65,14 @@ vi.mock('@/hooks/useSendMessage', () => ({
 vi.mock('@/components/home/HomePage', () => ({
   default: function MockHomePage({
     onNewChat,
-    onSendMessage,
+    onSelectPrompt,
   }: {
     onNewChat: () => void;
-    onSendMessage: (content: string) => void;
+    onSelectPrompt: (content: string) => void;
   }) {
     return (
       <div>
-        <button type="button" onClick={() => onSendMessage('示例问题')}>
+        <button type="button" onClick={() => onSelectPrompt('示例问题')}>
           示例问题
         </button>
         <button type="button" onClick={onNewChat}>
@@ -86,13 +86,18 @@ vi.mock('@/components/home/HomePage', () => ({
 vi.mock('@/components/chat/ChatInput', () => ({
   default: function MockChatInput({
     onSendMessage,
+    prefillRequest,
   }: {
     onSendMessage: (content: string, attachments?: unknown[], pendingConversationId?: string) => void;
+    prefillRequest?: { content: string } | null;
   }) {
     return (
       <div>
         <button type="button" onClick={() => onSendMessage('输入框消息')}>
           输入框发送
+        </button>
+        <button type="button" onClick={() => onSendMessage(prefillRequest?.content ?? '')}>
+          发送已填入示例
         </button>
         <button
           type="button"
@@ -133,7 +138,7 @@ describe('NewChatPage', () => {
     sendMessageMock.mockResolvedValue(undefined);
   });
 
-  it('首个 SSE 未到时保留 /chat/new，由页面内本地草稿负责即时展示', async () => {
+  it('示例卡先填入输入框，确认发送后首个 SSE 前仍保留 /chat/new', async () => {
     sendMessageMock.mockImplementation((_content, options) => {
       options.onDraftCreated('draft-conv');
       return new Promise(() => {});
@@ -142,6 +147,8 @@ describe('NewChatPage', () => {
     render(<NewChatPage />);
 
     fireEvent.click(screen.getByRole('button', { name: '示例问题' }));
+    expect(sendMessageMock).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: '发送已填入示例' }));
 
     await waitFor(() => expect(sendMessageMock).toHaveBeenCalledTimes(1));
     expect(sendMessageMock).toHaveBeenCalledWith(
@@ -165,6 +172,7 @@ describe('NewChatPage', () => {
     render(<NewChatPage />);
 
     fireEvent.click(screen.getByRole('button', { name: '示例问题' }));
+    fireEvent.click(screen.getByRole('button', { name: '发送已填入示例' }));
 
     await waitFor(() => expect(sendMessageMock).toHaveBeenCalledTimes(1));
     expect(routerReplaceMock).toHaveBeenCalledTimes(1);
@@ -181,6 +189,7 @@ describe('NewChatPage', () => {
     render(<NewChatPage />);
 
     fireEvent.click(screen.getByRole('button', { name: '示例问题' }));
+    fireEvent.click(screen.getByRole('button', { name: '发送已填入示例' }));
 
     await waitFor(() => expect(sendMessageMock).toHaveBeenCalledTimes(1));
     expect(routerReplaceMock.mock.calls).toEqual([['/chat/server-conv']]);
@@ -196,6 +205,7 @@ describe('NewChatPage', () => {
 
     const { unmount } = render(<NewChatPage />);
     fireEvent.click(screen.getByRole('button', { name: '示例问题' }));
+    fireEvent.click(screen.getByRole('button', { name: '发送已填入示例' }));
     await waitFor(() => expect(sendMessageMock).toHaveBeenCalledTimes(1));
 
     unmount();
@@ -216,6 +226,7 @@ describe('NewChatPage', () => {
 
     render(<NewChatPage />);
     fireEvent.click(screen.getByRole('button', { name: '示例问题' }));
+    fireEvent.click(screen.getByRole('button', { name: '发送已填入示例' }));
     await waitFor(() => expect(sendMessageMock).toHaveBeenCalledTimes(1));
 
     act(() => {

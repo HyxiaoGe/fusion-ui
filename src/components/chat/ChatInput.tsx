@@ -52,6 +52,7 @@ interface ChatInputProps {
   resetSignal?: string | number | null;
   autoFocus?: boolean;
   focusSignal?: string | number | null;
+  prefillRequest?: { id: number; content: string } | null;
   conversationAttachments?: ConversationComposerAttachment[];
   onRemoveConversationAttachment?: (fileId: string) => void;
   onClearConversationAttachments?: () => void;
@@ -123,6 +124,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
   resetSignal,
   autoFocus = false,
   focusSignal = null,
+  prefillRequest = null,
   conversationAttachments = EMPTY_CONVERSATION_ATTACHMENTS,
   onRemoveConversationAttachment,
   onClearConversationAttachments,
@@ -140,6 +142,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const previousResetSignalRef = useRef(resetSignal);
+  const previousPrefillRequestIdRef = useRef<number | null>(null);
   const previousChatIdRef = useRef<string | null>(null);
   const uploadGenerationRef = useRef(0);
   const cancelledUploadLocalIdsRef = useRef<Set<string>>(new Set());
@@ -241,6 +244,18 @@ const ChatInput: React.FC<ChatInputProps> = ({
 
     textareaRef.current.focus({ preventScroll: true });
   }, [autoFocus, focusSignal, isComposerBlocked]);
+
+  useLayoutEffect(() => {
+    if (!prefillRequest || previousPrefillRequestIdRef.current === prefillRequest.id) {
+      return;
+    }
+
+    previousPrefillRequestIdRef.current = prefillRequest.id;
+    setMessage(prefillRequest.content);
+    if (!isComposerBlocked) {
+      textareaRef.current?.focus({ preventScroll: true });
+    }
+  }, [isComposerBlocked, prefillRequest]);
 
   const selectChatFileIds = useMemo(makeSelectChatFileIds, []);
   const fileIds = useAppSelector((state) => selectChatFileIds(state, chatId));
