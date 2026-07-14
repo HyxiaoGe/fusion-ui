@@ -50,6 +50,14 @@ describe('HomePage', () => {
         { question: '比较三个技术方案的成本和风险', category: 'tech' },
         { question: '整理一份项目复盘行动清单', category: 'general' },
         { question: '总结今天的重要行业新闻', category: 'news' },
+        { question: '设计一个新用户引导流程', category: 'general' },
+        { question: '解释分布式系统中的背压机制', category: 'tech' },
+        { question: '制定下季度产品目标和里程碑', category: 'general' },
+        { question: '分析一份竞品报告的关键差异', category: 'general' },
+        { question: '把会议纪要整理成责任清单', category: 'general' },
+        { question: '规划一周的高效学习安排', category: 'general' },
+        { question: '审查接口设计中的兼容性风险', category: 'tech' },
+        { question: '为发布公告调整表达和语气', category: 'general' },
       ],
       refreshed_at: '2026-07-14T09:00:00+08:00',
     });
@@ -81,7 +89,7 @@ describe('HomePage', () => {
     expect(screen.queryByText('今日灵感')).toBeNull();
   });
 
-  it('只有用户点击换一批后才替换核心任务', () => {
+  it('点击换一批立即替换核心任务', () => {
     render(<HomePage onSelectPrompt={vi.fn()} />);
 
     expect(screen.getByRole('button', { name: /深度调研/ })).toBeInTheDocument();
@@ -91,6 +99,27 @@ describe('HomePage', () => {
 
     expect(screen.queryByRole('button', { name: /深度调研/ })).toBeNull();
     expect(screen.getByRole('button', { name: /分析数据/ })).toBeInTheDocument();
+  });
+
+  it('任务模板会自动切换到下一批', async () => {
+    vi.useFakeTimers();
+    try {
+      render(<HomePage onSelectPrompt={vi.fn()} />);
+
+      await act(async () => {
+        await Promise.resolve();
+      });
+      expect(screen.getByRole('button', { name: /深度调研/ })).toBeInTheDocument();
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(12_500);
+      });
+
+      expect(screen.queryByRole('button', { name: /深度调研/ })).toBeNull();
+      expect(screen.getByRole('button', { name: /分析数据/ })).toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('把远端动态问题作为低干扰的今日灵感展示', async () => {
@@ -103,7 +132,7 @@ describe('HomePage', () => {
     expect(onSelectPrompt).toHaveBeenCalledWith('今天有哪些值得关注的 AI 进展？');
   });
 
-  it('今日灵感固定展示四条并按原翻牌节奏自动轮换', async () => {
+  it('今日灵感按宽度填充两行并继续自动轮换', async () => {
     vi.useFakeTimers();
     try {
       render(<HomePage onSelectPrompt={vi.fn()} />);
@@ -113,16 +142,22 @@ describe('HomePage', () => {
       });
 
       const inspirationRegion = screen.getByRole('region', { name: '今日灵感' });
-      expect(within(inspirationRegion).getAllByRole('button')).toHaveLength(4);
-      expect(within(inspirationRegion).getByText('今天有哪些值得关注的 AI 进展？')).toBeInTheDocument();
+      const inspirationCloud = screen.getByTestId('inspiration-cloud');
+      const beforeRotation = within(inspirationRegion).getAllByRole('button').map(
+        (button) => button.textContent,
+      );
+      expect(inspirationCloud).toHaveAttribute('data-row-count', '2');
+      expect(beforeRotation.length).toBeGreaterThan(4);
 
       await act(async () => {
         await vi.advanceTimersByTimeAsync(16000);
       });
 
-      expect(within(inspirationRegion).getAllByRole('button')).toHaveLength(4);
-      expect(within(inspirationRegion).getByText('分析本周产品数据中的异常趋势')).toBeInTheDocument();
-      expect(within(inspirationRegion).queryByText('今天有哪些值得关注的 AI 进展？')).toBeNull();
+      const afterRotation = within(inspirationRegion).getAllByRole('button').map(
+        (button) => button.textContent,
+      );
+      expect(afterRotation.length).toBeGreaterThan(4);
+      expect(afterRotation).not.toEqual(beforeRotation);
     } finally {
       vi.useRealTimers();
     }

@@ -109,10 +109,13 @@ const FALLBACK_STARTER_PROMPTS: StarterPrompt[] = [
 ];
 
 const STARTER_PAGE_SIZE = 4;
-const INSPIRATION_PAGE_SIZE = 4;
+const STARTER_ROTATE_INTERVAL = 12_000;
 const INSPIRATION_FETCH_LIMIT = 50;
 const INSPIRATION_ROTATE_INTERVAL = 15_000;
 const INSPIRATION_FLIP_STAGGER = 80;
+const INSPIRATION_ROW_COUNT = 2;
+const INSPIRATION_GAP = 8;
+const DEFAULT_INSPIRATION_WIDTH = 768;
 
 const ICONS_BY_KEY: Record<string, LucideIcon> = {
   search: Search,
@@ -183,6 +186,49 @@ function toLibraryTemplate(item: PromptTemplateCatalogItem): PromptTemplateListI
   };
 }
 
+function estimateInspirationWidth(question: string): number {
+  const textWidth = Array.from(question).reduce((width, character) => (
+    width + (/[^\u0000-\u00ff]/.test(character) ? 12 : 7)
+  ), 0);
+  return textWidth + 30;
+}
+
+function fitInspirationRows(
+  pool: string[],
+  startIndex: number,
+  containerWidth: number,
+  measuredWidths: Record<string, number>,
+): string[] {
+  if (pool.length === 0) return [];
+
+  const visible: string[] = [];
+  let row = 0;
+  let rowWidth = 0;
+  const availableWidth = Math.max(containerWidth, 1);
+
+  for (let offset = 0; offset < pool.length; offset += 1) {
+    const question = pool[(startIndex + offset) % pool.length];
+    const chipWidth = Math.min(
+      measuredWidths[question] ?? estimateInspirationWidth(question),
+      availableWidth,
+    );
+    const nextWidth = rowWidth === 0
+      ? chipWidth
+      : rowWidth + INSPIRATION_GAP + chipWidth;
+
+    if (rowWidth > 0 && nextWidth > availableWidth) {
+      row += 1;
+      if (row >= INSPIRATION_ROW_COUNT) break;
+      rowWidth = chipWidth;
+    } else {
+      rowWidth = nextWidth;
+    }
+    visible.push(question);
+  }
+
+  return visible;
+}
+
 interface HomePageProps {
   onSelectPrompt: (content: string) => void;
 }
@@ -191,19 +237,35 @@ const HomePage: React.FC<HomePageProps> = ({ onSelectPrompt }) => {
   useRenderProbe('HomePage');
   const [pageIndex, setPageIndex] = useState(0);
   const [starterPrompts, setStarterPrompts] = useState(FALLBACK_STARTER_PROMPTS);
+  const [isStarterPaused, setIsStarterPaused] = useState(false);
   const [libraryTemplates, setLibraryTemplates] = useState(FALLBACK_LIBRARY_TEMPLATES);
-  const [inspirations, setInspirations] = useState<string[]>([]);
+  const [inspirationPool, setInspirationPool] = useState<string[]>([]);
+  const [inspirationStartIndex, setInspirationStartIndex] = useState(0);
+  const [inspirationLayout, setInspirationLayout] = useState<{
+    containerWidth: number;
+    measuredWidths: Record<string, number>;
+  }>({
+    containerWidth: DEFAULT_INSPIRATION_WIDTH,
+    measuredWidths: {},
+  });
   const [flippedInspirations, setFlippedInspirations] = useState<boolean[]>([]);
   const [isInspirationPaused, setIsInspirationPaused] = useState(false);
   const [templatesOpen, setTemplatesOpen] = useState(false);
-  const inspirationPoolRef = useRef<string[]>([]);
-  const inspirationCursorRef = useRef(0);
+  const inspirationContainerRef = useRef<HTMLDivElement>(null);
+  const inspirationMeasureRef = useRef<HTMLDivElement>(null);
   const flipTimeoutsRef = useRef<Array<ReturnType<typeof setTimeout>>>([]);
   const pageCount = Math.max(1, Math.ceil(starterPrompts.length / STARTER_PAGE_SIZE));
   const visibleStarters = useMemo(() => {
     const start = pageIndex * STARTER_PAGE_SIZE;
     return starterPrompts.slice(start, start + STARTER_PAGE_SIZE);
   }, [pageIndex, starterPrompts]);
+  const inspirations = useMemo(() => fitInspirationRows(
+    inspirationPool,
+    inspirationStartIndex,
+    inspirationLayout.containerWidth,
+    inspirationLayout.measuredWidths,
+  ), [inspirationLayout, inspirationPool, inspirationStartIndex]);
+  const inspirationCount = inspirations.length;
 
   useEffect(() => {
     let cancelled = false;
@@ -215,14 +277,11 @@ const HomePage: React.FC<HomePageProps> = ({ onSelectPrompt }) => {
         const uniqueQuestions = Array.from(
           new Set(data.examples.map((item) => item.question.trim()).filter(Boolean)),
         );
-        inspirationPoolRef.current = uniqueQuestions;
-        inspirationCursorRef.current = INSPIRATION_PAGE_SIZE;
-        const initialInspirations = uniqueQuestions.slice(0, INSPIRATION_PAGE_SIZE);
-        setInspirations(initialInspirations);
-        setFlippedInspirations(initialInspirations.map(() => false));
+        setInspirationPool(uniqueQuestions);
+        setInspirationStartIndex(0);
       })
       .catch(() => {
-        if (!cancelled) setInspirations([]);
+        if (!cancelled) setInspirationPool([]);
       });
 
     void fetchPromptTemplates()
@@ -258,27 +317,65 @@ const HomePage: React.FC<HomePageProps> = ({ onSelectPrompt }) => {
   }, []);
 
   useEffect(() => {
+    if (inspirationPool.length === 0) return undefined;
+
+    const measure = () => {
+      const containerWidth = inspirationContainerRef.current?.getBoundingClientRect().width
+        || DEFAULT_INSPIRATION_WIDTH;
+      const measureItems = Array.from(inspirationMeasureRef.current?.children ?? []);
+      const measuredWidths = Object.fromEntries(inspirationPool.map((question, index) => {
+        const measuredWidth = measureItems[index]?.getBoundingClientRect().width ?? 0;
+        return [question, measuredWidth > 0 ? measuredWidth : estimateInspirationWidth(question)];
+      }));
+      setInspirationLayout((current) => {
+        const sameWidth = Math.abs(current.containerWidth - containerWidth) < 1;
+        const sameMeasurements = inspirationPool.every(
+          (question) => current.measuredWidths[question] === measuredWidths[question],
+        );
+        return sameWidth && sameMeasurements
+          ? current
+          : { containerWidth, measuredWidths };
+      });
+    };
+
+    measure();
+    if (typeof ResizeObserver === 'undefined' || !inspirationContainerRef.current) {
+      return undefined;
+    }
+    const observer = new ResizeObserver(measure);
+    observer.observe(inspirationContainerRef.current);
+    return () => observer.disconnect();
+  }, [inspirationPool]);
+
+  useEffect(() => {
+    setFlippedInspirations((current) => Array.from(
+      { length: inspirationCount },
+      (_, index) => current[index] ?? false,
+    ));
+  }, [inspirationCount]);
+
+  useEffect(() => {
     if (
       isInspirationPaused
-      || inspirations.length < INSPIRATION_PAGE_SIZE
-      || inspirationPoolRef.current.length <= INSPIRATION_PAGE_SIZE
+      || inspirations.length === 0
+      || inspirationPool.length <= inspirations.length
     ) {
       return undefined;
     }
 
     const intervalId = window.setInterval(() => {
-      const pool = inspirationPoolRef.current;
-      let cursor = inspirationCursorRef.current;
-      if (cursor + INSPIRATION_PAGE_SIZE > pool.length) {
-        cursor = 0;
-      }
-      const nextInspirations = pool.slice(cursor, cursor + INSPIRATION_PAGE_SIZE);
-      if (nextInspirations.length < INSPIRATION_PAGE_SIZE) return;
-      inspirationCursorRef.current = cursor + INSPIRATION_PAGE_SIZE;
+      const nextStartIndex = (inspirationStartIndex + inspirations.length) % inspirationPool.length;
+      const nextInspirations = fitInspirationRows(
+        inspirationPool,
+        nextStartIndex,
+        inspirationLayout.containerWidth,
+        inspirationLayout.measuredWidths,
+      );
+      if (nextInspirations.length === 0) return;
 
       flipTimeoutsRef.current.forEach(clearTimeout);
       flipTimeoutsRef.current = [];
-      Array.from({ length: INSPIRATION_PAGE_SIZE }).forEach((_, index) => {
+      inspirations.forEach((_, index) => {
         flipTimeoutsRef.current.push(setTimeout(() => {
           setFlippedInspirations((current) => current.map((value, itemIndex) => (
             itemIndex === index ? true : value
@@ -286,10 +383,11 @@ const HomePage: React.FC<HomePageProps> = ({ onSelectPrompt }) => {
         }, index * INSPIRATION_FLIP_STAGGER));
       });
 
-      const replaceDelay = INSPIRATION_PAGE_SIZE * INSPIRATION_FLIP_STAGGER + 300;
+      const replaceDelay = inspirations.length * INSPIRATION_FLIP_STAGGER + 300;
       flipTimeoutsRef.current.push(setTimeout(() => {
-        setInspirations(nextInspirations);
-        Array.from({ length: INSPIRATION_PAGE_SIZE }).forEach((_, index) => {
+        setInspirationStartIndex(nextStartIndex);
+        setFlippedInspirations(nextInspirations.map(() => true));
+        nextInspirations.forEach((_, index) => {
           flipTimeoutsRef.current.push(setTimeout(() => {
             setFlippedInspirations((current) => current.map((value, itemIndex) => (
               itemIndex === index ? false : value
@@ -302,11 +400,23 @@ const HomePage: React.FC<HomePageProps> = ({ onSelectPrompt }) => {
     return () => {
       window.clearInterval(intervalId);
     };
-  }, [inspirations.length, isInspirationPaused]);
+  }, [
+    inspirationLayout,
+    inspirationPool,
+    inspirationStartIndex,
+    inspirations,
+    isInspirationPaused,
+  ]);
 
   const showNextPage = useCallback(() => {
     setPageIndex((current) => (current + 1) % pageCount);
   }, [pageCount]);
+
+  useEffect(() => {
+    if (isStarterPaused || pageCount <= 1) return undefined;
+    const intervalId = window.setInterval(showNextPage, STARTER_ROTATE_INTERVAL);
+    return () => window.clearInterval(intervalId);
+  }, [isStarterPaused, pageCount, showNextPage]);
 
   const selectTemplate = useCallback((content: string) => {
     setTemplatesOpen(false);
@@ -329,7 +439,19 @@ const HomePage: React.FC<HomePageProps> = ({ onSelectPrompt }) => {
           </p>
         </div>
 
-        <div data-testid="starter-prompts" className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <div
+          key={`${starterPrompts[0]?.id ?? 'starter'}-${pageIndex}`}
+          data-testid="starter-prompts"
+          className="grid grid-cols-1 gap-3 animate-in fade-in-0 duration-500 sm:grid-cols-2 motion-reduce:animate-none"
+          onMouseEnter={() => setIsStarterPaused(true)}
+          onMouseLeave={() => setIsStarterPaused(false)}
+          onFocusCapture={() => setIsStarterPaused(true)}
+          onBlurCapture={(event) => {
+            if (!event.currentTarget.contains(event.relatedTarget)) {
+              setIsStarterPaused(false);
+            }
+          }}
+        >
           {visibleStarters.map((starter) => {
             const Icon = starter.icon;
             return (
@@ -376,7 +498,7 @@ const HomePage: React.FC<HomePageProps> = ({ onSelectPrompt }) => {
 
         {inspirations.length > 0 ? (
           <section
-            className="mt-6 border-t border-border/60 pt-4"
+            className="relative mt-6 border-t border-border/60 pt-4"
             aria-labelledby="daily-inspiration-title"
             onMouseEnter={() => setIsInspirationPaused(true)}
             onMouseLeave={() => setIsInspirationPaused(false)}
@@ -391,13 +513,32 @@ const HomePage: React.FC<HomePageProps> = ({ onSelectPrompt }) => {
               <Sparkles className="h-3.5 w-3.5" aria-hidden="true" />
               <h2 id="daily-inspiration-title" className="font-medium">今日灵感</h2>
             </div>
-            <div className="flex flex-wrap justify-center gap-2">
+            <div
+              ref={inspirationMeasureRef}
+              aria-hidden="true"
+              className="pointer-events-none absolute left-0 top-0 flex h-0 w-0 gap-2 overflow-hidden invisible"
+            >
+              {inspirationPool.map((question) => (
+                <span
+                  key={question}
+                  className="shrink-0 whitespace-nowrap rounded-full border px-3.5 py-2 text-xs"
+                >
+                  {question}
+                </span>
+              ))}
+            </div>
+            <div
+              ref={inspirationContainerRef}
+              data-testid="inspiration-cloud"
+              data-row-count={INSPIRATION_ROW_COUNT}
+              className="flex min-h-[4.75rem] flex-wrap content-center justify-center gap-2 overflow-hidden"
+            >
               {inspirations.map((question, index) => (
                 <button
-                  key={index}
+                  key={question}
                   type="button"
                   onClick={() => onSelectPrompt(question)}
-                  className="rounded-full border border-border/70 bg-bg-subtle px-3.5 py-2 text-xs text-fg-secondary transition-colors hover:border-border-strong hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  className="max-w-full truncate whitespace-nowrap rounded-full border border-border/70 bg-bg-subtle px-3.5 py-2 text-xs text-fg-secondary transition-colors hover:border-border-strong hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                   style={{
                     opacity: flippedInspirations[index] ? 0 : 1,
                     transform: flippedInspirations[index] ? 'rotateX(90deg)' : 'rotateX(0deg)',
