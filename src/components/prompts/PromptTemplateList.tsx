@@ -64,7 +64,7 @@ const PromptTemplateList: React.FC<PromptTemplateListProps> = ({
   );
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex h-full min-h-0 flex-col">
       <div className="flex items-center justify-between mb-4">
         <h2 className="text-xl font-bold">提示词模板</h2>
         {onCreateNew ? (
@@ -89,7 +89,7 @@ const PromptTemplateList: React.FC<PromptTemplateListProps> = ({
         defaultValue="all"
         value={selectedCategory}
         onValueChange={handleCategoryChange}
-        className="flex-1 flex flex-col"
+        className="flex min-h-0 flex-1 flex-col"
       >
         <TabsList className="w-full justify-start overflow-x-auto">
           <TabsTrigger value="all">全部</TabsTrigger>
@@ -100,7 +100,7 @@ const PromptTemplateList: React.FC<PromptTemplateListProps> = ({
           ))}
         </TabsList>
 
-        <TabsContent value={selectedCategory} className="flex-1 overflow-y-auto mt-4">
+        <TabsContent value={selectedCategory} className="mt-4 min-h-0 flex-1 overflow-y-auto">
           {isLoading ? (
             <div className="flex items-center justify-center h-full">
               <p>加载中...</p>

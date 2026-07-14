@@ -235,12 +235,12 @@ const HomePage: React.FC<HomePageProps> = ({ onSelectPrompt }) => {
       </div>
 
       <Dialog open={templatesOpen} onOpenChange={setTemplatesOpen}>
-        <DialogContent className="max-h-[80vh] overflow-hidden sm:max-w-2xl" closeLabel="关闭模板库">
+        <DialogContent className="h-[min(36rem,80vh)] overflow-hidden sm:max-w-2xl" closeLabel="关闭模板库">
           <DialogHeader className="sr-only">
             <DialogTitle>提示词模板</DialogTitle>
             <DialogDescription>选择一个模板并填入消息输入框</DialogDescription>
           </DialogHeader>
-          <div className="max-h-[calc(80vh-3rem)] overflow-y-auto pr-1">
+          <div className="min-h-0 overflow-hidden pr-1">
             <PromptTemplateList onSelectTemplate={selectTemplate} />
           </div>
         </DialogContent>

@@ -92,6 +92,16 @@ describe('HomePage', () => {
     expect(screen.queryByRole('dialog', { name: '提示词模板' })).toBeNull();
   });
 
+  it('模板分类切换时保持与全部分类一致的弹窗高度', () => {
+    render(<HomePage onSelectPrompt={vi.fn()} />);
+
+    fireEvent.click(screen.getByRole('button', { name: '更多模板' }));
+
+    expect(screen.getByRole('dialog', { name: '提示词模板' })).toHaveClass(
+      'h-[min(36rem,80vh)]'
+    );
+  });
+
   it('从首页预加载对话消息列表代码块', async () => {
     render(<HomePage onSelectPrompt={vi.fn()} />);
 
