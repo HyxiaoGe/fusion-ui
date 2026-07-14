@@ -104,6 +104,12 @@ describe('HomePage', () => {
       expect(screen.getAllByTestId('starter-card')[0]).toHaveStyle({
         transform: 'rotateX(90deg)',
       });
+      expect(screen.getAllByTestId('starter-card').map((card) => card.style.transitionDelay)).toEqual([
+        '0ms',
+        '80ms',
+        '160ms',
+        '240ms',
+      ]);
 
       await act(async () => {
         await vi.advanceTimersByTimeAsync(700);

@@ -239,7 +239,7 @@ const HomePage: React.FC<HomePageProps> = ({ onSelectPrompt }) => {
   useRenderProbe('HomePage');
   const [pageIndex, setPageIndex] = useState(0);
   const [starterPrompts, setStarterPrompts] = useState(FALLBACK_STARTER_PROMPTS);
-  const [flippedStarters, setFlippedStarters] = useState<boolean[]>([]);
+  const [areStartersFlipped, setAreStartersFlipped] = useState(false);
   const [isStarterPaused, setIsStarterPaused] = useState(false);
   const [libraryTemplates, setLibraryTemplates] = useState(FALLBACK_LIBRARY_TEMPLATES);
   const [inspirationPool, setInspirationPool] = useState<string[]>([]);
@@ -251,7 +251,7 @@ const HomePage: React.FC<HomePageProps> = ({ onSelectPrompt }) => {
     containerWidth: DEFAULT_INSPIRATION_WIDTH,
     measuredWidths: {},
   });
-  const [flippedInspirations, setFlippedInspirations] = useState<boolean[]>([]);
+  const [areInspirationsFlipped, setAreInspirationsFlipped] = useState(false);
   const [isInspirationPaused, setIsInspirationPaused] = useState(false);
   const [templatesOpen, setTemplatesOpen] = useState(false);
   const inspirationContainerRef = useRef<HTMLDivElement>(null);
@@ -269,7 +269,6 @@ const HomePage: React.FC<HomePageProps> = ({ onSelectPrompt }) => {
     inspirationLayout.containerWidth,
     inspirationLayout.measuredWidths,
   ), [inspirationLayout, inspirationPool, inspirationStartIndex]);
-  const inspirationCount = inspirations.length;
 
   useEffect(() => {
     let cancelled = false;
@@ -354,13 +353,6 @@ const HomePage: React.FC<HomePageProps> = ({ onSelectPrompt }) => {
   }, [inspirationPool]);
 
   useEffect(() => {
-    setFlippedInspirations((current) => Array.from(
-      { length: inspirationCount },
-      (_, index) => current[index] ?? false,
-    ));
-  }, [inspirationCount]);
-
-  useEffect(() => {
     if (
       isInspirationPaused
       || inspirations.length === 0
@@ -381,26 +373,15 @@ const HomePage: React.FC<HomePageProps> = ({ onSelectPrompt }) => {
 
       flipTimeoutsRef.current.forEach(clearTimeout);
       flipTimeoutsRef.current = [];
-      inspirations.forEach((_, index) => {
-        flipTimeoutsRef.current.push(setTimeout(() => {
-          setFlippedInspirations((current) => current.map((value, itemIndex) => (
-            itemIndex === index ? true : value
-          )));
-        }, index * CAROUSEL_FLIP_STAGGER));
-      });
+      setAreInspirationsFlipped(true);
 
       const replaceDelay = inspirations.length * CAROUSEL_FLIP_STAGGER
         + CAROUSEL_REPLACE_PADDING;
       flipTimeoutsRef.current.push(setTimeout(() => {
         setInspirationStartIndex(nextStartIndex);
-        setFlippedInspirations(nextInspirations.map(() => true));
-        nextInspirations.forEach((_, index) => {
-          flipTimeoutsRef.current.push(setTimeout(() => {
-            setFlippedInspirations((current) => current.map((value, itemIndex) => (
-              itemIndex === index ? false : value
-            )));
-          }, CAROUSEL_FLIP_BACK_DELAY + index * CAROUSEL_FLIP_STAGGER));
-        });
+        flipTimeoutsRef.current.push(setTimeout(() => {
+          setAreInspirationsFlipped(false);
+        }, CAROUSEL_FLIP_BACK_DELAY));
       }, replaceDelay));
     }, INSPIRATION_ROTATE_INTERVAL);
 
@@ -415,39 +396,20 @@ const HomePage: React.FC<HomePageProps> = ({ onSelectPrompt }) => {
     isInspirationPaused,
   ]);
 
-  useEffect(() => {
-    setFlippedStarters((current) => Array.from(
-      { length: visibleStarters.length },
-      (_, index) => current[index] ?? false,
-    ));
-  }, [visibleStarters.length]);
-
   const showNextPage = useCallback(() => {
     if (pageCount <= 1 || visibleStarters.length === 0) return;
 
     starterFlipTimeoutsRef.current.forEach(clearTimeout);
     starterFlipTimeoutsRef.current = [];
-    setFlippedStarters(visibleStarters.map(() => false));
-    visibleStarters.forEach((_, index) => {
-      starterFlipTimeoutsRef.current.push(setTimeout(() => {
-        setFlippedStarters((current) => current.map((value, itemIndex) => (
-          itemIndex === index ? true : value
-        )));
-      }, index * CAROUSEL_FLIP_STAGGER));
-    });
+    setAreStartersFlipped(true);
 
     const replaceDelay = visibleStarters.length * CAROUSEL_FLIP_STAGGER
       + CAROUSEL_REPLACE_PADDING;
     starterFlipTimeoutsRef.current.push(setTimeout(() => {
       setPageIndex((current) => (current + 1) % pageCount);
-      setFlippedStarters(visibleStarters.map(() => true));
-      visibleStarters.forEach((_, index) => {
-        starterFlipTimeoutsRef.current.push(setTimeout(() => {
-          setFlippedStarters((current) => current.map((value, itemIndex) => (
-            itemIndex === index ? false : value
-          )));
-        }, CAROUSEL_FLIP_BACK_DELAY + index * CAROUSEL_FLIP_STAGGER));
-      });
+      starterFlipTimeoutsRef.current.push(setTimeout(() => {
+        setAreStartersFlipped(false);
+      }, CAROUSEL_FLIP_BACK_DELAY));
     }, replaceDelay));
   }, [pageCount, visibleStarters]);
 
@@ -481,6 +443,7 @@ const HomePage: React.FC<HomePageProps> = ({ onSelectPrompt }) => {
         <div
           data-testid="starter-prompts"
           className="grid grid-cols-1 gap-3 sm:grid-cols-2"
+          style={{ contain: 'layout' }}
           onMouseEnter={() => setIsStarterPaused(true)}
           onMouseLeave={() => setIsStarterPaused(false)}
           onFocusCapture={() => setIsStarterPaused(true)}
@@ -497,9 +460,12 @@ const HomePage: React.FC<HomePageProps> = ({ onSelectPrompt }) => {
                 key={starter.id}
                 data-testid="starter-card"
                 style={{
-                  opacity: flippedStarters[index] ? 0 : 1,
-                  transform: flippedStarters[index] ? 'rotateX(90deg)' : 'rotateX(0deg)',
+                  backfaceVisibility: 'hidden',
+                  opacity: areStartersFlipped ? 0 : 1,
+                  transform: areStartersFlipped ? 'rotateX(90deg)' : 'rotateX(0deg)',
                   transition: 'opacity 300ms ease, transform 300ms ease',
+                  transitionDelay: `${index * CAROUSEL_FLIP_STAGGER}ms`,
+                  willChange: 'opacity, transform',
                 }}
               >
                 <button
@@ -579,6 +545,7 @@ const HomePage: React.FC<HomePageProps> = ({ onSelectPrompt }) => {
               data-testid="inspiration-cloud"
               data-row-count={INSPIRATION_ROW_COUNT}
               className="flex min-h-[4.75rem] flex-wrap content-center justify-center gap-2 overflow-hidden"
+              style={{ contain: 'layout paint' }}
             >
               {inspirations.map((question, index) => (
                 <button
@@ -587,9 +554,12 @@ const HomePage: React.FC<HomePageProps> = ({ onSelectPrompt }) => {
                   onClick={() => onSelectPrompt(question)}
                   className="max-w-full truncate whitespace-nowrap rounded-full border border-border/70 bg-bg-subtle px-3.5 py-2 text-xs text-fg-secondary transition-colors hover:border-border-strong hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                   style={{
-                    opacity: flippedInspirations[index] ? 0 : 1,
-                    transform: flippedInspirations[index] ? 'rotateX(90deg)' : 'rotateX(0deg)',
+                    backfaceVisibility: 'hidden',
+                    opacity: areInspirationsFlipped ? 0 : 1,
+                    transform: areInspirationsFlipped ? 'rotateX(90deg)' : 'rotateX(0deg)',
                     transition: 'opacity 300ms ease, transform 300ms ease',
+                    transitionDelay: `${index * CAROUSEL_FLIP_STAGGER}ms`,
+                    willChange: 'opacity, transform',
                   }}
                 >
                   {question}
