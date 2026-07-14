@@ -1,12 +1,20 @@
 'use client';
 
 import { Card, CardContent } from '@/components/ui/card';
-import { PromptTemplate } from '@/lib/db/promptTemplates';
 import { cn } from '@/lib/utils';
 import React from 'react';
 
+export interface PromptTemplateListItem {
+  id?: number | string;
+  title: string;
+  content: string;
+  category: string;
+  isSystem?: boolean;
+  updatedAt?: Date | string;
+}
+
 interface PromptTemplateItemProps {
-  template: PromptTemplate;
+  template: PromptTemplateListItem;
   onClick: () => void;
   isSelected?: boolean;
 }
@@ -42,9 +50,11 @@ const PromptTemplateItem: React.FC<PromptTemplateItemProps> = ({
           <span className="text-xs text-muted-foreground">
             {template.isSystem ? '系统模板' : '自定义模板'}
           </span>
-          <span className="text-xs text-muted-foreground">
-            {new Date(template.updatedAt).toLocaleDateString()}
-          </span>
+          {template.updatedAt ? (
+            <span className="text-xs text-muted-foreground">
+              {new Date(template.updatedAt).toLocaleDateString()}
+            </span>
+          ) : null}
         </div>
       </CardContent>
     </Card>

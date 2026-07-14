@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useMemo, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ArrowUpRight,
   BarChart3,
@@ -23,7 +23,12 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import PromptTemplateList from '@/components/prompts/PromptTemplateList';
-import { fetchPromptExamples } from '@/lib/api/prompts';
+import type { PromptTemplateListItem } from '@/components/prompts/PromptTemplateItem';
+import {
+  fetchPromptExamples,
+  fetchPromptTemplates,
+  type PromptTemplateCatalogItem,
+} from '@/lib/api/prompts';
 import { preloadChatMessageList } from '@/components/lazy/preloaders';
 import { useRenderProbe } from '@/lib/debug/perfProbe';
 
@@ -36,7 +41,7 @@ interface StarterPrompt {
   tone: string;
 }
 
-const STARTER_PROMPTS: StarterPrompt[] = [
+const FALLBACK_STARTER_PROMPTS: StarterPrompt[] = [
   {
     id: 'research',
     title: '深度调研',
@@ -104,7 +109,79 @@ const STARTER_PROMPTS: StarterPrompt[] = [
 ];
 
 const STARTER_PAGE_SIZE = 4;
-const INSPIRATION_LIMIT = 2;
+const INSPIRATION_PAGE_SIZE = 4;
+const INSPIRATION_FETCH_LIMIT = 50;
+const INSPIRATION_ROTATE_INTERVAL = 15_000;
+const INSPIRATION_FLIP_STAGGER = 80;
+
+const ICONS_BY_KEY: Record<string, LucideIcon> = {
+  search: Search,
+  'file-text': FileText,
+  code: Code2,
+  'code-2': Code2,
+  'pen-line': PenLine,
+  'bar-chart': BarChart3,
+  'bar-chart-3': BarChart3,
+  'list-checks': ListChecks,
+  'book-open-check': BookOpenCheck,
+  languages: Languages,
+};
+
+const TONES_BY_KEY: Record<string, string> = {
+  blue: 'bg-blue-500/10 text-blue-600 dark:text-blue-400',
+  violet: 'bg-violet-500/10 text-violet-600 dark:text-violet-400',
+  emerald: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400',
+  amber: 'bg-amber-500/10 text-amber-600 dark:text-amber-400',
+  cyan: 'bg-cyan-500/10 text-cyan-600 dark:text-cyan-400',
+  rose: 'bg-rose-500/10 text-rose-600 dark:text-rose-400',
+  indigo: 'bg-indigo-500/10 text-indigo-600 dark:text-indigo-400',
+  fuchsia: 'bg-fuchsia-500/10 text-fuchsia-600 dark:text-fuchsia-400',
+};
+
+const FALLBACK_LIBRARY_TEMPLATES: PromptTemplateListItem[] = [
+  {
+    id: 'template-code-explanation',
+    title: '代码解释',
+    content: '请解释以下代码的功能，并分析其时间和空间复杂度：\n\n```\n<在此处放置代码>\n```',
+    category: '编程',
+    isSystem: true,
+  },
+  {
+    id: 'template-text-summary',
+    title: '文本总结',
+    content: '请总结以下文本的要点：\n\n<在此处放置文本>',
+    category: '写作',
+    isSystem: true,
+  },
+  {
+    id: 'template-question-answering',
+    title: '问题解答',
+    content: '我需要回答以下问题，请提供详细的解释：\n\n<在此处放置问题>',
+    category: '学习',
+    isSystem: true,
+  },
+];
+
+function toStarterPrompt(item: PromptTemplateCatalogItem): StarterPrompt {
+  return {
+    id: item.id,
+    title: item.title,
+    description: item.description,
+    prompt: item.content,
+    icon: ICONS_BY_KEY[item.icon_key] ?? Sparkles,
+    tone: TONES_BY_KEY[item.tone] ?? TONES_BY_KEY.blue,
+  };
+}
+
+function toLibraryTemplate(item: PromptTemplateCatalogItem): PromptTemplateListItem {
+  return {
+    id: item.id,
+    title: item.title,
+    content: item.content,
+    category: item.category,
+    isSystem: true,
+  };
+}
 
 interface HomePageProps {
   onSelectPrompt: (content: string) => void;
@@ -113,34 +190,119 @@ interface HomePageProps {
 const HomePage: React.FC<HomePageProps> = ({ onSelectPrompt }) => {
   useRenderProbe('HomePage');
   const [pageIndex, setPageIndex] = useState(0);
+  const [starterPrompts, setStarterPrompts] = useState(FALLBACK_STARTER_PROMPTS);
+  const [libraryTemplates, setLibraryTemplates] = useState(FALLBACK_LIBRARY_TEMPLATES);
   const [inspirations, setInspirations] = useState<string[]>([]);
+  const [flippedInspirations, setFlippedInspirations] = useState<boolean[]>([]);
+  const [isInspirationPaused, setIsInspirationPaused] = useState(false);
   const [templatesOpen, setTemplatesOpen] = useState(false);
-  const pageCount = Math.ceil(STARTER_PROMPTS.length / STARTER_PAGE_SIZE);
+  const inspirationPoolRef = useRef<string[]>([]);
+  const inspirationCursorRef = useRef(0);
+  const flipTimeoutsRef = useRef<Array<ReturnType<typeof setTimeout>>>([]);
+  const pageCount = Math.max(1, Math.ceil(starterPrompts.length / STARTER_PAGE_SIZE));
   const visibleStarters = useMemo(() => {
     const start = pageIndex * STARTER_PAGE_SIZE;
-    return STARTER_PROMPTS.slice(start, start + STARTER_PAGE_SIZE);
-  }, [pageIndex]);
+    return starterPrompts.slice(start, start + STARTER_PAGE_SIZE);
+  }, [pageIndex, starterPrompts]);
 
   useEffect(() => {
     let cancelled = false;
     void preloadChatMessageList();
 
-    void fetchPromptExamples(8)
+    void fetchPromptExamples(INSPIRATION_FETCH_LIMIT)
       .then((data) => {
         if (cancelled) return;
         const uniqueQuestions = Array.from(
           new Set(data.examples.map((item) => item.question.trim()).filter(Boolean)),
         );
-        setInspirations(uniqueQuestions.slice(0, INSPIRATION_LIMIT));
+        inspirationPoolRef.current = uniqueQuestions;
+        inspirationCursorRef.current = INSPIRATION_PAGE_SIZE;
+        const initialInspirations = uniqueQuestions.slice(0, INSPIRATION_PAGE_SIZE);
+        setInspirations(initialInspirations);
+        setFlippedInspirations(initialInspirations.map(() => false));
       })
       .catch(() => {
         if (!cancelled) setInspirations([]);
       });
 
+    void fetchPromptTemplates()
+      .then((data) => {
+        if (cancelled) return;
+        const enabledItems = data.items
+          .filter((item) => item.enabled)
+          .sort((left, right) => left.sort_order - right.sort_order);
+        const remoteStarters = enabledItems
+          .filter((item) => item.kind === 'starter')
+          .map(toStarterPrompt);
+        const remoteTemplates = enabledItems
+          .filter((item) => item.kind === 'template')
+          .map(toLibraryTemplate);
+
+        if (remoteStarters.length > 0) {
+          setStarterPrompts(remoteStarters);
+          setPageIndex(0);
+        }
+        if (remoteTemplates.length > 0) {
+          setLibraryTemplates(remoteTemplates);
+        }
+      })
+      .catch(() => {
+        // 后端目录不可用时保留内置兜底，首页仍可正常启动任务。
+      });
+
     return () => {
       cancelled = true;
+      flipTimeoutsRef.current.forEach(clearTimeout);
+      flipTimeoutsRef.current = [];
     };
   }, []);
+
+  useEffect(() => {
+    if (
+      isInspirationPaused
+      || inspirations.length < INSPIRATION_PAGE_SIZE
+      || inspirationPoolRef.current.length <= INSPIRATION_PAGE_SIZE
+    ) {
+      return undefined;
+    }
+
+    const intervalId = window.setInterval(() => {
+      const pool = inspirationPoolRef.current;
+      let cursor = inspirationCursorRef.current;
+      if (cursor + INSPIRATION_PAGE_SIZE > pool.length) {
+        cursor = 0;
+      }
+      const nextInspirations = pool.slice(cursor, cursor + INSPIRATION_PAGE_SIZE);
+      if (nextInspirations.length < INSPIRATION_PAGE_SIZE) return;
+      inspirationCursorRef.current = cursor + INSPIRATION_PAGE_SIZE;
+
+      flipTimeoutsRef.current.forEach(clearTimeout);
+      flipTimeoutsRef.current = [];
+      Array.from({ length: INSPIRATION_PAGE_SIZE }).forEach((_, index) => {
+        flipTimeoutsRef.current.push(setTimeout(() => {
+          setFlippedInspirations((current) => current.map((value, itemIndex) => (
+            itemIndex === index ? true : value
+          )));
+        }, index * INSPIRATION_FLIP_STAGGER));
+      });
+
+      const replaceDelay = INSPIRATION_PAGE_SIZE * INSPIRATION_FLIP_STAGGER + 300;
+      flipTimeoutsRef.current.push(setTimeout(() => {
+        setInspirations(nextInspirations);
+        Array.from({ length: INSPIRATION_PAGE_SIZE }).forEach((_, index) => {
+          flipTimeoutsRef.current.push(setTimeout(() => {
+            setFlippedInspirations((current) => current.map((value, itemIndex) => (
+              itemIndex === index ? false : value
+            )));
+          }, 50 + index * INSPIRATION_FLIP_STAGGER));
+        });
+      }, replaceDelay));
+    }, INSPIRATION_ROTATE_INTERVAL);
+
+    return () => {
+      window.clearInterval(intervalId);
+    };
+  }, [inspirations.length, isInspirationPaused]);
 
   const showNextPage = useCallback(() => {
     setPageIndex((current) => (current + 1) % pageCount);
@@ -213,18 +375,34 @@ const HomePage: React.FC<HomePageProps> = ({ onSelectPrompt }) => {
         </div>
 
         {inspirations.length > 0 ? (
-          <section className="mt-6 border-t border-border/60 pt-4" aria-labelledby="daily-inspiration-title">
+          <section
+            className="mt-6 border-t border-border/60 pt-4"
+            aria-labelledby="daily-inspiration-title"
+            onMouseEnter={() => setIsInspirationPaused(true)}
+            onMouseLeave={() => setIsInspirationPaused(false)}
+            onFocusCapture={() => setIsInspirationPaused(true)}
+            onBlurCapture={(event) => {
+              if (!event.currentTarget.contains(event.relatedTarget)) {
+                setIsInspirationPaused(false);
+              }
+            }}
+          >
             <div className="mb-2 flex items-center justify-center gap-1.5 text-xs text-muted-foreground">
               <Sparkles className="h-3.5 w-3.5" aria-hidden="true" />
               <h2 id="daily-inspiration-title" className="font-medium">今日灵感</h2>
             </div>
             <div className="flex flex-wrap justify-center gap-2">
-              {inspirations.map((question) => (
+              {inspirations.map((question, index) => (
                 <button
-                  key={question}
+                  key={index}
                   type="button"
                   onClick={() => onSelectPrompt(question)}
                   className="rounded-full border border-border/70 bg-bg-subtle px-3.5 py-2 text-xs text-fg-secondary transition-colors hover:border-border-strong hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  style={{
+                    opacity: flippedInspirations[index] ? 0 : 1,
+                    transform: flippedInspirations[index] ? 'rotateX(90deg)' : 'rotateX(0deg)',
+                    transition: 'opacity 300ms ease, transform 300ms ease',
+                  }}
                 >
                   {question}
                 </button>
@@ -241,7 +419,10 @@ const HomePage: React.FC<HomePageProps> = ({ onSelectPrompt }) => {
             <DialogDescription>选择一个模板并填入消息输入框</DialogDescription>
           </DialogHeader>
           <div className="min-h-0 overflow-hidden pr-1">
-            <PromptTemplateList onSelectTemplate={selectTemplate} />
+            <PromptTemplateList
+              templates={libraryTemplates}
+              onSelectTemplate={selectTemplate}
+            />
           </div>
         </DialogContent>
       </Dialog>

@@ -9,28 +9,44 @@ import {
   setSelectedTemplate
 } from '@/redux/slices/promptTemplatesSlice';
 import { PlusIcon, Search } from 'lucide-react';
-import React, { useEffect, useState } from 'react';
-import PromptTemplateItem from './PromptTemplateItem';
+import React, { useEffect, useMemo, useState } from 'react';
+import PromptTemplateItem, { type PromptTemplateListItem } from './PromptTemplateItem';
 
 interface PromptTemplateListProps {
   onSelectTemplate?: (content: string) => void;
   onCreateNew?: () => void;
+  templates?: PromptTemplateListItem[];
 }
 
 const PromptTemplateList: React.FC<PromptTemplateListProps> = ({
   onSelectTemplate,
   onCreateNew,
+  templates: providedTemplates,
 }) => {
   const dispatch = useAppDispatch();
-  const { templates, categories, isLoading, error } = useAppSelector(
+  const {
+    templates: storedTemplates,
+    categories: storedCategories,
+    isLoading,
+    error,
+  } = useAppSelector(
     (state) => state.promptTemplates
+  );
+  const templates = providedTemplates ?? storedTemplates;
+  const categories = useMemo(
+    () => providedTemplates
+      ? Array.from(new Set(providedTemplates.map((template) => template.category).filter(Boolean)))
+      : storedCategories,
+    [providedTemplates, storedCategories]
   );
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
 
   useEffect(() => {
-    dispatch(initializeTemplates());
-  }, [dispatch]);
+    if (providedTemplates === undefined) {
+      dispatch(initializeTemplates());
+    }
+  }, [dispatch, providedTemplates]);
 
   const handleCategoryChange = (value: string) => {
     setSelectedCategory(value);
@@ -40,10 +56,11 @@ const PromptTemplateList: React.FC<PromptTemplateListProps> = ({
     setSearchTerm(e.target.value);
   };
 
-  const handleTemplateClick = (templateId: number) => {
-    dispatch(setSelectedTemplate(templateId));
-    const template = templates.find((t) => t.id === templateId);
-    if (template && onSelectTemplate) {
+  const handleTemplateClick = (template: PromptTemplateListItem) => {
+    if (typeof template.id === 'number') {
+      dispatch(setSelectedTemplate(template.id));
+    }
+    if (onSelectTemplate) {
       onSelectTemplate(template.content);
     }
   };
@@ -101,7 +118,7 @@ const PromptTemplateList: React.FC<PromptTemplateListProps> = ({
         </TabsList>
 
         <TabsContent value={selectedCategory} className="mt-4 min-h-0 flex-1 overflow-y-auto">
-          {isLoading ? (
+          {providedTemplates === undefined && isLoading ? (
             <div className="flex items-center justify-center h-full">
               <p>加载中...</p>
             </div>
@@ -109,9 +126,9 @@ const PromptTemplateList: React.FC<PromptTemplateListProps> = ({
             <div className="grid gap-3">
               {filteredTemplates.map((template) => (
                 <PromptTemplateItem
-                  key={template.id}
+                  key={template.id ?? `${template.category}-${template.title}`}
                   template={template}
-                  onClick={() => handleTemplateClick(template.id!)}
+                  onClick={() => handleTemplateClick(template)}
                 />
               ))}
             </div>
@@ -134,7 +151,9 @@ const PromptTemplateList: React.FC<PromptTemplateListProps> = ({
         </TabsContent>
       </Tabs>
 
-      {error && <p className="text-destructive mt-2">{error}</p>}
+      {providedTemplates === undefined && error ? (
+        <p className="text-destructive mt-2">{error}</p>
+      ) : null}
     </div>
   );
 };
