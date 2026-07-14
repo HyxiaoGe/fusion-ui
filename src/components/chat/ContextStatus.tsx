@@ -28,21 +28,105 @@ interface ContextStatusProps {
 }
 
 export const CONTEXT_STATUS_OPEN_STORAGE_KEY = 'fusion.context-status.open.v1';
+export const LEGACY_CONTEXT_STATUS_OPEN_STORAGE_KEY = 'fusion.context-status.default-open.v1';
+export const CONTEXT_STATUS_PENDING_FIRST_TURN_STORAGE_KEY = 'fusion.context-status.pending-first-turn.v1';
 
-function readOpenState(): boolean {
+function readPendingFirstTurnIds(): Set<string> {
   try {
-    return window.sessionStorage.getItem(CONTEXT_STATUS_OPEN_STORAGE_KEY) === 'true';
+    const raw = window.sessionStorage.getItem(CONTEXT_STATUS_PENDING_FIRST_TURN_STORAGE_KEY);
+    if (!raw) return new Set();
+    const parsed: unknown = JSON.parse(raw);
+    return new Set(Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === 'string') : []);
   } catch {
-    return false;
+    return new Set();
   }
+}
+
+function writePendingFirstTurnIds(ids: Set<string>): void {
+  try {
+    if (ids.size === 0) {
+      window.sessionStorage.removeItem(CONTEXT_STATUS_PENDING_FIRST_TURN_STORAGE_KEY);
+      return;
+    }
+    window.sessionStorage.setItem(CONTEXT_STATUS_PENDING_FIRST_TURN_STORAGE_KEY, JSON.stringify([...ids]));
+  } catch {
+    // sessionStorage 不可用时仅失去跨路由/刷新恢复，不影响当前窗口开关。
+  }
+}
+
+function markPendingFirstTurn(conversationId: string): void {
+  const ids = readPendingFirstTurnIds();
+  ids.add(conversationId);
+  writePendingFirstTurnIds(ids);
+}
+
+function hasPendingFirstTurn(conversationId: string): boolean {
+  return readPendingFirstTurnIds().has(conversationId);
+}
+
+function clearPendingFirstTurn(conversationId: string): void {
+  const ids = readPendingFirstTurnIds();
+  if (!ids.delete(conversationId)) return;
+  writePendingFirstTurnIds(ids);
+}
+
+function readOpenState(): boolean | null {
+  let currentValue: string | null = null;
+  try {
+    currentValue = window.localStorage.getItem(CONTEXT_STATUS_OPEN_STORAGE_KEY);
+  } catch {
+    // localStorage 不可用时继续尝试当前标签页存储。
+  }
+  if (currentValue !== null) return currentValue === 'true';
+
+  let sessionValue: string | null = null;
+  try {
+    sessionValue = window.sessionStorage.getItem(CONTEXT_STATUS_OPEN_STORAGE_KEY);
+  } catch {
+    // sessionStorage 不可用时继续尝试旧版偏好。
+  }
+  if (sessionValue !== null) {
+    const open = sessionValue === 'true';
+    try {
+      window.localStorage.setItem(CONTEXT_STATUS_OPEN_STORAGE_KEY, String(open));
+      window.sessionStorage.removeItem(CONTEXT_STATUS_OPEN_STORAGE_KEY);
+    } catch {
+      // 迁移失败时仍使用已读出的标签页状态。
+    }
+    return open;
+  }
+
+  let legacyValue: string | null = null;
+  try {
+    legacyValue = window.localStorage.getItem(LEGACY_CONTEXT_STATUS_OPEN_STORAGE_KEY);
+  } catch {
+    // 存储不可用时维持默认关闭。
+  }
+  if (legacyValue !== null) {
+    const open = legacyValue === 'true';
+    try {
+      window.localStorage.setItem(CONTEXT_STATUS_OPEN_STORAGE_KEY, String(open));
+    } catch {
+      // 迁移失败时仍使用已读出的旧版状态。
+    }
+    return open;
+  }
+
+  return null;
 }
 
 function persistOpenState(open: boolean): void {
   try {
-    // 展开/关闭是当前浏览器标签页的全局状态：刷新与切换对话都保持用户最后一次选择。
-    window.sessionStorage.setItem(CONTEXT_STATUS_OPEN_STORAGE_KEY, String(open));
+    // 展开/关闭是全局用户状态：刷新、切换对话和后续浏览器会话都保持最后一次选择。
+    window.localStorage.setItem(CONTEXT_STATUS_OPEN_STORAGE_KEY, String(open));
+    window.sessionStorage.removeItem(CONTEXT_STATUS_OPEN_STORAGE_KEY);
   } catch {
-    // sessionStorage 不可用时仍保留当前页面内的展开状态。
+    try {
+      // localStorage 不可用时至少在当前标签页内保持。
+      window.sessionStorage.setItem(CONTEXT_STATUS_OPEN_STORAGE_KEY, String(open));
+    } catch {
+      // 两种存储均不可用时仍保留当前页面内的 React 状态。
+    }
   }
 }
 
@@ -85,7 +169,7 @@ export default function ContextStatus({
   const isError = effectiveErrorKind !== null;
   const [open, setOpen] = useState(false);
   const trackedConversationIdRef = useRef(conversationId);
-  const sawFirstTurnStreamingRef = useRef(false);
+  const preferredOpenRef = useRef<boolean | null>(null);
   const autoOpenHandledRef = useRef(false);
   const userInteractedRef = useRef(false);
 
@@ -93,40 +177,55 @@ export default function ContextStatus({
     const conversationChanged = trackedConversationIdRef.current !== conversationId;
     trackedConversationIdRef.current = conversationId;
     if (conversationChanged) {
-      sawFirstTurnStreamingRef.current = false;
       autoOpenHandledRef.current = false;
       userInteractedRef.current = false;
     }
-    // 在浏览器绘制前恢复当前标签页状态，避免刷新或跨路由重挂时闪成关闭态。
-    setOpen(readOpenState());
+    const storedOpen = readOpenState();
+    preferredOpenRef.current = storedOpen;
+    // 显式开启属于全局状态，切换到任何对话都要在浏览器绘制前恢复。
+    setOpen(storedOpen === true);
   }, [conversationId]);
 
-  useEffect(() => {
-    if (isStreaming && isFirstConversationTurn && !autoOpenHandledRef.current) {
-      sawFirstTurnStreamingRef.current = true;
-    }
-  }, [isFirstConversationTurn, isStreaming]);
-
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (
       isStreaming
-      || !sawFirstTurnStreamingRef.current
-      || autoOpenHandledRef.current
-    ) return;
+      && isFirstConversationTurn
+      && preferredOpenRef.current === null
+      && !userInteractedRef.current
+    ) {
+      markPendingFirstTurn(conversationId);
+    }
+  }, [conversationId, isFirstConversationTurn, isStreaming]);
+
+  useEffect(() => {
+    if (isStreaming || autoOpenHandledRef.current || !hasPendingFirstTurn(conversationId)) return;
+
+    if (!isFirstConversationTurn) {
+      clearPendingFirstTurn(conversationId);
+      return;
+    }
 
     if (isError || latestActualUnavailable || usage?.actual_prompt_tokens == null) {
+      if (isError || latestActualUnavailable || phase === 'final' || phase === 'error') {
+        clearPendingFirstTurn(conversationId);
+      }
       return;
     }
 
     autoOpenHandledRef.current = true;
-    if (!userInteractedRef.current) {
+    clearPendingFirstTurn(conversationId);
+    // 只在从未选择时执行首轮自动展开；显式 true/false 都由用户的全局开关决定。
+    if (preferredOpenRef.current === null && !userInteractedRef.current) {
+      preferredOpenRef.current = true;
       setOpen(true);
       persistOpenState(true);
     }
-  }, [conversationId, isError, isStreaming, latestActualUnavailable, usage]);
+  }, [conversationId, isError, isFirstConversationTurn, isStreaming, latestActualUnavailable, phase, usage]);
 
   const handleOpenChange = (value: boolean) => {
     userInteractedRef.current = true;
+    preferredOpenRef.current = value;
+    clearPendingFirstTurn(conversationId);
     setOpen(value);
     persistOpenState(value);
   };
