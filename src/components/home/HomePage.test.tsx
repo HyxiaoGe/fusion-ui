@@ -155,7 +155,7 @@ describe('HomePage', () => {
     render(<HomePage onSelectPrompt={onSelectPrompt} />);
 
     expect(await screen.findByText('今日灵感')).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: '今天有哪些值得关注的 AI 进展？' }));
+    fireEvent.click(await screen.findByRole('button', { name: '今天有哪些值得关注的 AI 进展？' }));
 
     expect(onSelectPrompt).toHaveBeenCalledWith('今天有哪些值得关注的 AI 进展？');
   });
