@@ -22,14 +22,19 @@ vi.mock('@/components/prompts/PromptTemplateList', () => ({
     templates,
   }: {
     onSelectTemplate?: (content: string) => void;
-    templates?: Array<{ content: string }>;
+    templates?: Array<{ title: string; content: string }>;
   }) => (
-    <button
-      type="button"
-      onClick={() => onSelectTemplate?.(templates?.[0]?.content ?? '来自模板库的提示词')}
-    >
-      使用模板
-    </button>
+    <div>
+      <output data-testid="template-list-items">
+        {templates?.map((template) => template.title).join('|')}
+      </output>
+      <button
+        type="button"
+        onClick={() => onSelectTemplate?.(templates?.[0]?.content ?? '来自模板库的提示词')}
+      >
+        使用模板
+      </button>
+    </div>
   ),
 }));
 
@@ -191,7 +196,7 @@ describe('HomePage', () => {
     }
   });
 
-  it('后端模板目录覆盖首页任务卡并提供模板库内容', async () => {
+  it('后端统一模板目录同时驱动首页精选任务和完整模板库', async () => {
     const onSelectPrompt = vi.fn();
     fetchPromptTemplatesMock.mockResolvedValue({
       items: [
@@ -232,11 +237,12 @@ describe('HomePage', () => {
     expect(onSelectPrompt).toHaveBeenCalledWith('后端任务提示词');
 
     fireEvent.click(screen.getByRole('button', { name: '更多模板' }));
+    expect(screen.getByTestId('template-list-items')).toHaveTextContent('后端任务卡|后端模板');
     fireEvent.click(screen.getByRole('button', { name: '使用模板' }));
-    expect(onSelectPrompt).toHaveBeenCalledWith('后端模板提示词');
+    expect(onSelectPrompt).toHaveBeenLastCalledWith('后端任务提示词');
   });
 
-  it('可以从更多模板选择内容填入输入框', async () => {
+  it('前端兜底时更多模板也包含首页精选任务', async () => {
     const onSelectPrompt = vi.fn();
     render(<HomePage onSelectPrompt={onSelectPrompt} />);
 
@@ -245,9 +251,11 @@ describe('HomePage', () => {
     });
 
     fireEvent.click(screen.getByRole('button', { name: '更多模板' }));
+    expect(screen.getByTestId('template-list-items')).toHaveTextContent('深度调研');
+    expect(screen.getByTestId('template-list-items')).toHaveTextContent('代码解释');
     fireEvent.click(screen.getByRole('button', { name: '使用模板' }));
 
-    expect(onSelectPrompt).toHaveBeenCalledWith(expect.stringContaining('请解释以下代码'));
+    expect(onSelectPrompt).toHaveBeenCalledWith(expect.stringContaining('联网调研'));
     expect(screen.queryByRole('dialog', { name: '提示词模板' })).toBeNull();
   });
 

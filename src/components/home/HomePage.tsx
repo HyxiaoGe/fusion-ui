@@ -37,6 +37,7 @@ interface StarterPrompt {
   title: string;
   description: string;
   prompt: string;
+  category: string;
   icon: LucideIcon;
   tone: string;
 }
@@ -47,6 +48,7 @@ const FALLBACK_STARTER_PROMPTS: StarterPrompt[] = [
     title: '深度调研',
     description: '梳理结论、争议和可靠来源',
     prompt: '请围绕以下主题进行联网调研，给出关键结论、主要争议和可靠来源：\n\n【在这里填写主题】',
+    category: '研究',
     icon: Search,
     tone: 'bg-blue-500/10 text-blue-600 dark:text-blue-400',
   },
@@ -55,6 +57,7 @@ const FALLBACK_STARTER_PROMPTS: StarterPrompt[] = [
     title: '解读一份文件',
     description: '提炼重点、数据、风险和行动项',
     prompt: '请阅读我接下来上传的文件，先总结核心内容，再列出关键数据、风险点和建议行动。',
+    category: '文件',
     icon: FileText,
     tone: 'bg-violet-500/10 text-violet-600 dark:text-violet-400',
   },
@@ -63,6 +66,7 @@ const FALLBACK_STARTER_PROMPTS: StarterPrompt[] = [
     title: '审查代码',
     description: '检查正确性、性能和安全风险',
     prompt: '请审查下面这段代码，重点检查正确性、可维护性、性能和安全风险，并给出可以直接应用的修改建议：\n\n```\n【粘贴代码】\n```',
+    category: '编程',
     icon: Code2,
     tone: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400',
   },
@@ -71,6 +75,7 @@ const FALLBACK_STARTER_PROMPTS: StarterPrompt[] = [
     title: '起草与润色',
     description: '优化结构、表达和目标语气',
     prompt: '请帮我起草或润色下面的内容。保持原意，优化结构、表达和语气，并说明主要修改点：\n\n【粘贴内容】',
+    category: '写作',
     icon: PenLine,
     tone: 'bg-amber-500/10 text-amber-600 dark:text-amber-400',
   },
@@ -79,6 +84,7 @@ const FALLBACK_STARTER_PROMPTS: StarterPrompt[] = [
     title: '分析数据',
     description: '发现趋势、异常和可行动洞察',
     prompt: '请分析我提供的数据，说明关键趋势、异常点、可能原因和下一步行动建议。必要时用表格呈现。\n\n【粘贴数据或上传文件】',
+    category: '分析',
     icon: BarChart3,
     tone: 'bg-cyan-500/10 text-cyan-600 dark:text-cyan-400',
   },
@@ -87,6 +93,7 @@ const FALLBACK_STARTER_PROMPTS: StarterPrompt[] = [
     title: '制定计划',
     description: '拆解目标、里程碑和风险',
     prompt: '请把下面的目标拆成一份可执行计划，包含优先级、里程碑、依赖、风险和验收标准：\n\n【描述目标】',
+    category: '规划',
     icon: ListChecks,
     tone: 'bg-rose-500/10 text-rose-600 dark:text-rose-400',
   },
@@ -95,6 +102,7 @@ const FALLBACK_STARTER_PROMPTS: StarterPrompt[] = [
     title: '快速学习',
     description: '从核心概念到练习路径',
     prompt: '我想快速掌握下面这个主题。请先解释核心概念，再给出循序渐进的学习路径、例子和练习：\n\n【填写主题】',
+    category: '学习',
     icon: BookOpenCheck,
     tone: 'bg-indigo-500/10 text-indigo-600 dark:text-indigo-400',
   },
@@ -103,6 +111,7 @@ const FALLBACK_STARTER_PROMPTS: StarterPrompt[] = [
     title: '翻译与本地化',
     description: '保留语气并适配目标受众',
     prompt: '请把下面的内容翻译并本地化为【目标语言/地区】。保留原意和语气，同时让表达符合当地习惯：\n\n【粘贴内容】',
+    category: '写作',
     icon: Languages,
     tone: 'bg-fuchsia-500/10 text-fuchsia-600 dark:text-fuchsia-400',
   },
@@ -160,6 +169,13 @@ const TONES_BY_KEY: Record<string, string> = {
 };
 
 const FALLBACK_LIBRARY_TEMPLATES: PromptTemplateListItem[] = [
+  ...FALLBACK_STARTER_PROMPTS.map((starter) => ({
+    id: starter.id,
+    title: starter.title,
+    content: starter.prompt,
+    category: starter.category,
+    isSystem: true,
+  })),
   {
     id: 'template-code-explanation',
     title: '代码解释',
@@ -189,6 +205,7 @@ function toStarterPrompt(item: PromptTemplateCatalogItem): StarterPrompt {
     title: item.title,
     description: item.description,
     prompt: item.content,
+    category: item.category,
     icon: ICONS_BY_KEY[item.icon_key] ?? Sparkles,
     tone: TONES_BY_KEY[item.tone] ?? TONES_BY_KEY.blue,
   };
@@ -314,9 +331,7 @@ const HomePage: React.FC<HomePageProps> = ({ onSelectPrompt }) => {
         const remoteStarters = enabledItems
           .filter((item) => item.kind === 'starter')
           .map(toStarterPrompt);
-        const remoteTemplates = enabledItems
-          .filter((item) => item.kind === 'template')
-          .map(toLibraryTemplate);
+        const remoteTemplates = enabledItems.map(toLibraryTemplate);
 
         if (remoteStarters.length > 0) {
           setStarterPrompts(remoteStarters);
