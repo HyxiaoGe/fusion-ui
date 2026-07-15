@@ -41,7 +41,7 @@
       "awaitingEstimate": "Calculating context usage for this round",
       "finalUnavailable": "Actual context usage is unavailable for this round",
       "latestActualUnavailable": "This round did not return actual usage. Showing the latest available result.",
-      "windowOpen": "Context window",
+      "windowOpen": "Auto-open after response",
       "optimized": "Automatically optimized",
       "removedSummary": "Removed {{turns}} earlier turns and {{messages}} messages{{toolSuffix}}",
       "removedTools": ", plus {{count}} tool transactions",

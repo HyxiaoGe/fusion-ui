@@ -122,7 +122,7 @@ describe('ContextStatus', () => {
   it('窗口开关反映真实展开状态，关闭后立即收起', async () => {
     render(<ContextStatus conversationId="chat-toggle" usage={actualUsage} />);
     fireEvent.click(screen.getByRole('button', { name: '查看上下文状态，剩余 43%' }));
-    const toggle = screen.getByRole('switch', { name: '上下文窗口' });
+    const toggle = screen.getByRole('switch', { name: '回答完成后自动展开' });
     expect(toggle).toBeChecked();
     expect(toggle).toHaveAttribute('data-state', 'checked');
 
@@ -150,7 +150,7 @@ describe('ContextStatus', () => {
     const first = render(<ContextStatus conversationId={conversationId} usage={actualUsage} />);
 
     fireEvent.click(screen.getByRole('button', { name: '查看上下文状态，剩余 43%' }));
-    fireEvent.click(screen.getByRole('switch', { name: '上下文窗口' }));
+    fireEvent.click(screen.getByRole('switch', { name: '回答完成后自动展开' }));
     expect(localStorage.getItem(CONTEXT_STATUS_OPEN_STORAGE_KEY)).toBe('false');
     first.unmount();
 
@@ -234,7 +234,7 @@ describe('ContextStatus', () => {
     />);
     expect(await screen.findByRole('dialog', { name: '上下文状态' })).toBeInTheDocument();
 
-    fireEvent.keyDown(screen.getByRole('dialog', { name: '上下文状态' }), { key: 'Escape' });
+    fireEvent.click(screen.getByRole('switch', { name: '回答完成后自动展开' }));
     await waitFor(() => expect(screen.queryByRole('dialog', { name: '上下文状态' })).toBeNull());
     rerender(<ContextStatus
       conversationId="chat-first-round"
@@ -363,7 +363,7 @@ describe('ContextStatus', () => {
   it('用户全局关闭后，新会话生成与首轮完成都保持关闭', async () => {
     const view = render(<ContextStatus conversationId="chat-close-before-new" usage={actualUsage} />);
     fireEvent.click(screen.getByRole('button', { name: '查看上下文状态，剩余 43%' }));
-    fireEvent.click(screen.getByRole('switch', { name: '上下文窗口' }));
+    fireEvent.click(screen.getByRole('switch', { name: '回答完成后自动展开' }));
     await waitFor(() => expect(screen.queryByRole('dialog', { name: '上下文状态' })).toBeNull());
 
     view.rerender(<ContextStatus
@@ -401,7 +401,7 @@ describe('ContextStatus', () => {
     />);
 
     fireEvent.click(screen.getByRole('button', { name: '查看上下文状态，计算中' }));
-    fireEvent.click(await screen.findByRole('switch', { name: '上下文窗口' }));
+    fireEvent.click(await screen.findByRole('switch', { name: '回答完成后自动展开' }));
     expect(localStorage.getItem(CONTEXT_STATUS_OPEN_STORAGE_KEY)).toBe('false');
     first.unmount();
 
@@ -485,7 +485,7 @@ describe('ContextStatus', () => {
       isFirstConversationTurn
     />);
     fireEvent.click(screen.getByRole('button', { name: '查看上下文状态，计算中' }));
-    fireEvent.keyDown(screen.getByRole('dialog', { name: '上下文状态' }), { key: 'Escape' });
+    fireEvent.click(screen.getByRole('switch', { name: '回答完成后自动展开' }));
     manual.rerender(<ContextStatus
       conversationId="chat-manual"
       usage={actualUsage}
@@ -541,7 +541,7 @@ describe('ContextStatus', () => {
     });
 
     expect(screen.getByRole('dialog', { name: '上下文状态' })).toBeInTheDocument();
-    expect(screen.getByRole('switch', { name: '上下文窗口' })).toBeChecked();
+    expect(screen.getByRole('switch', { name: '回答完成后自动展开' })).toBeChecked();
     expect(localStorage.getItem(CONTEXT_STATUS_OPEN_STORAGE_KEY)).toBe('true');
   });
 
@@ -630,18 +630,16 @@ describe('ContextStatus', () => {
     textarea.remove();
   });
 
-  it('支持 Escape 关闭详情并将焦点还给入口', async () => {
+  it('Escape 不关闭详情，也不修改回答完成后的自动展开偏好', () => {
     render(<ContextStatus conversationId="chat-keyboard" usage={actualUsage} />);
 
     const trigger = screen.getByRole('button', { name: '查看上下文状态，剩余 43%' });
-    trigger.focus();
     fireEvent.click(trigger);
     expect(screen.getByRole('dialog', { name: '上下文状态' })).toBeInTheDocument();
 
     fireEvent.keyDown(screen.getByRole('dialog', { name: '上下文状态' }), { key: 'Escape' });
-    expect(screen.queryByRole('dialog', { name: '上下文状态' })).toBeNull();
-    expect(localStorage.getItem(CONTEXT_STATUS_OPEN_STORAGE_KEY)).toBe('false');
-    await waitFor(() => expect(trigger).toHaveFocus());
+    expect(screen.getByRole('dialog', { name: '上下文状态' })).toBeInTheDocument();
+    expect(localStorage.getItem(CONTEXT_STATUS_OPEN_STORAGE_KEY)).toBe('true');
   });
 
   it('未知窗口只显示可访问入口，不展示虚假百分比', () => {

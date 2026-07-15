@@ -326,6 +326,7 @@ export default function ContextStatus({
           sideOffset={8}
           collisionPadding={12}
           onOpenAutoFocus={(event) => event.preventDefault()}
+          onEscapeKeyDown={(event) => event.preventDefault()}
           onInteractOutside={(event) => event.preventDefault()}
           className="max-h-[min(70vh,30rem)] w-[calc(100vw-1.5rem)] max-w-[24rem] overflow-y-auto p-0"
         >

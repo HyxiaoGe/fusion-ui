@@ -375,7 +375,7 @@ describe('ChatInput', () => {
     expect(screen.getByText('chat-b')).toBeInTheDocument();
     expect(screen.getAllByText('暂不可用').length).toBeGreaterThan(0);
 
-    fireEvent.click(screen.getByRole('switch', { name: '上下文窗口' }));
+    fireEvent.click(screen.getByRole('switch', { name: '回答完成后自动展开' }));
     await waitFor(() => expect(screen.queryByRole('dialog', { name: '上下文状态' })).toBeNull());
 
     currentState.conversation = {
