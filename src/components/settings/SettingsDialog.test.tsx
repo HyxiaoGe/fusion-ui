@@ -31,6 +31,10 @@ vi.mock('@/app/settings/RuntimeConfigManager', () => ({
   default: () => <div>运行时配置管理面板</div>,
 }));
 
+vi.mock('@/app/settings/McpServerManager', () => ({
+  default: () => <div>MCP 服务管理面板</div>,
+}));
+
 import { SettingsDialog } from './SettingsDialog';
 
 function mockSettingsDialogState(isSuperuser: boolean, activeSettingsTab = 'general') {
@@ -84,6 +88,15 @@ describe('SettingsDialog 管理员用量入口', () => {
     expect(screen.getByRole('tabpanel', { name: /常规设置/ })).toBeInTheDocument();
   });
 
+  it('普通用户残留 MCP 服务选中状态时回退到常规设置', () => {
+    mockSettingsDialogState(false, 'mcp-servers');
+
+    render(<SettingsDialog />);
+
+    expect(screen.queryByRole('tab', { name: /MCP 服务/ })).toBeNull();
+    expect(screen.getByRole('tabpanel', { name: /常规设置/ })).toBeInTheDocument();
+  });
+
   it('管理员在设置弹窗中可以看到联网用量页签', () => {
     mockSettingsDialogState(true);
 
@@ -100,6 +113,15 @@ describe('SettingsDialog 管理员用量入口', () => {
     expect(screen.getByRole('tab', { name: /运行时配置/ })).toBeInTheDocument();
   });
 
+  it('管理员在设置弹窗中可以看到 MCP 服务页签', () => {
+    mockSettingsDialogState(true);
+
+    render(<SettingsDialog />);
+
+    expect(screen.getByRole('tab', { name: /MCP 服务/ })).toBeInTheDocument();
+    expect(screen.getByTestId('settings-tabs-scroller')).toHaveClass('overflow-x-auto');
+  });
+
   it('管理员切到联网用量页签时渲染额度面板', () => {
     mockSettingsDialogState(true, 'usage');
 
@@ -114,5 +136,13 @@ describe('SettingsDialog 管理员用量入口', () => {
     render(<SettingsDialog />);
 
     expect(screen.getByText('运行时配置管理面板')).toBeInTheDocument();
+  });
+
+  it('管理员切到 MCP 服务页签时渲染管理面板', () => {
+    mockSettingsDialogState(true, 'mcp-servers');
+
+    render(<SettingsDialog />);
+
+    expect(screen.getByText('MCP 服务管理面板')).toBeInTheDocument();
   });
 });

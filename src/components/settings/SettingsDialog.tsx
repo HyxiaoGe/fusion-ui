@@ -7,8 +7,9 @@ import { useAppDispatch, useAppSelector } from "@/redux/hooks";
 import { closeSettingsDialog, setActiveSettingsTab } from "@/redux/slices/settingsSlice";
 import { setThemeMode } from "@/redux/slices/themeSlice";
 import { motion } from "framer-motion";
-import { Activity, Database, Settings, Sun, Moon, Laptop, SlidersHorizontal } from "lucide-react";
+import { Activity, Database, Settings, Sun, Moon, Laptop, Network, SlidersHorizontal } from "lucide-react";
 import DataManagement from "@/app/settings/DataManagement";
+import McpServerManager from "@/app/settings/McpServerManager";
 import RuntimeConfigManager from "@/app/settings/RuntimeConfigManager";
 import SearchUsageMonitor from "@/app/settings/SearchUsageMonitor";
 import SystemPrompt from "@/app/settings/SystemPrompt";
@@ -21,7 +22,7 @@ export const SettingsDialog = () => {
   const [isMounted, setIsMounted] = useState(false);
   const isAdmin = useAppSelector((state) => Boolean(state.auth.user?.is_superuser));
   const showAdminTabs = isMounted && isAdmin;
-  const selectedSettingsTab = showAdminTabs || !["usage", "runtime-config"].includes(activeSettingsTab) ? activeSettingsTab : "general";
+  const selectedSettingsTab = showAdminTabs || !["usage", "runtime-config", "mcp-servers"].includes(activeSettingsTab) ? activeSettingsTab : "general";
 
   const handleClose = () => {
     dispatch(closeSettingsDialog());
@@ -51,8 +52,8 @@ export const SettingsDialog = () => {
         
         <div className="flex-1 overflow-hidden">
           <Tabs value={selectedSettingsTab} onValueChange={handleTabChange} className="h-full flex flex-col">
-            <div className="bg-card/50 backdrop-blur-sm border rounded-lg shadow-sm p-1 flex-shrink-0">
-              <TabsList className={`w-full grid gap-1 bg-transparent ${showAdminTabs ? "grid-cols-4" : "grid-cols-2"}`}>
+            <div data-testid="settings-tabs-scroller" className="bg-card/50 backdrop-blur-sm border rounded-lg shadow-sm p-1 flex-shrink-0 overflow-x-auto">
+              <TabsList className={`grid w-full gap-1 bg-transparent ${showAdminTabs ? "min-w-[36rem] grid-cols-5 md:min-w-0" : "grid-cols-2"}`}>
                 <TabsTrigger value="general" className="flex gap-2 items-center justify-center">
                   <Settings className="h-4 w-4" />
                   <span className="hidden md:inline">常规设置</span>
@@ -74,6 +75,11 @@ export const SettingsDialog = () => {
                       <SlidersHorizontal className="h-4 w-4" />
                       <span className="hidden md:inline">运行时配置</span>
                       <span className="md:hidden">配置</span>
+                    </TabsTrigger>
+                    <TabsTrigger value="mcp-servers" className="flex gap-2 items-center justify-center">
+                      <Network className="h-4 w-4" />
+                      <span className="hidden md:inline">MCP 服务</span>
+                      <span className="md:hidden">MCP</span>
                     </TabsTrigger>
                   </>
                 )}
@@ -170,6 +176,10 @@ export const SettingsDialog = () => {
 
                 <TabsContent value="runtime-config" className="flex-1 overflow-auto mt-4">
                   <RuntimeConfigManager />
+                </TabsContent>
+
+                <TabsContent value="mcp-servers" className="flex-1 overflow-auto mt-4">
+                  <McpServerManager />
                 </TabsContent>
               </>
             )}

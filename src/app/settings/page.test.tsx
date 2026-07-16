@@ -33,6 +33,10 @@ vi.mock('./RuntimeConfigManager', () => ({
   default: () => <div>运行时配置管理面板</div>,
 }));
 
+vi.mock('./McpServerManager', () => ({
+  default: () => <div>MCP 服务管理面板</div>,
+}));
+
 import SettingsPage from './page';
 
 function setAdmin(isSuperuser: boolean) {
@@ -68,6 +72,14 @@ describe('SettingsPage 管理员页签', () => {
     expect(screen.queryByRole('tab', { name: /运行时配置/ })).toBeNull();
   });
 
+  it('普通用户不显示 MCP 服务页签', () => {
+    setAdmin(false);
+
+    render(<SettingsPage />);
+
+    expect(screen.queryByRole('tab', { name: /MCP 服务/ })).toBeNull();
+  });
+
   it('管理员显示联网用量页签', () => {
     setAdmin(true);
 
@@ -82,5 +94,14 @@ describe('SettingsPage 管理员页签', () => {
     render(<SettingsPage />);
 
     expect(screen.getByRole('tab', { name: /运行时配置/ })).toBeInTheDocument();
+  });
+
+  it('管理员显示 MCP 服务页签', () => {
+    setAdmin(true);
+
+    render(<SettingsPage />);
+
+    expect(screen.getByRole('tab', { name: /MCP 服务/ })).toBeInTheDocument();
+    expect(screen.getByTestId('settings-tabs-scroller')).toHaveClass('overflow-x-auto');
   });
 });
