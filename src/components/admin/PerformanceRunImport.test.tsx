@@ -32,7 +32,7 @@ describe('PerformanceRunImport', () => {
 
     await waitFor(() => expect(importMock).toHaveBeenCalledWith(expect.objectContaining({ status: 'completed' })));
     expect(onImported).toHaveBeenCalled();
-    expect(screen.getByText('压测结果已导入')).toBeInTheDocument();
+    expect(await screen.findByText('压测结果已导入')).toBeInTheDocument();
   });
 
   it('重复导入时明确提示记录已存在', async () => {
