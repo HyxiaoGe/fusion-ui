@@ -3,10 +3,20 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 const workflow = readFileSync(join(process.cwd(), '.github/workflows/build-and-deploy.yml'), 'utf8');
-const buildBlock = workflow.slice(workflow.indexOf('  build:'), workflow.indexOf('  deploy-preview:'));
+const buildBlock = workflow.slice(workflow.indexOf('  build:'), workflow.indexOf('  deploy-dev:'));
 const deployDevBlock = workflow.slice(workflow.indexOf('  deploy-dev:'));
 
 describe('build-and-deploy workflow 发布门禁', () => {
+  it('特性分支只运行 CI，不向 dev 服务器部署 Preview', () => {
+    expect(workflow).not.toContain('deploy-preview:');
+    expect(workflow).not.toContain('fusion-ui-preview');
+    expect(workflow).not.toContain('docker-compose.fusion-ui-preview.yml');
+    expect(workflow).not.toContain('3005:3000');
+    expect(workflow).not.toContain('Configure preview public env');
+    expect(workflow).toContain('$environment = if ($env:GITHUB_REF_NAME -eq "master") { "dev" } else { "ci" }');
+    expect(deployDevBlock).toContain("if: github.ref == 'refs/heads/master'");
+  });
+
   it('dev 部署后使用宿主 Chrome 运行 browser smoke', () => {
     expect(deployDevBlock).toContain('Run dev browser smoke');
     expect(deployDevBlock).toContain('Resolve browser smoke runtime');
