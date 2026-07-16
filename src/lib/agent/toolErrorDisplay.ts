@@ -1,5 +1,10 @@
 import type { ToolCallStatus } from '@/types/agentRun';
 
+const SAFE_EXTERNAL_TOOL_NAMES = new Set([
+  'local_place_search',
+  'route_compare',
+]);
+
 export function getToolErrorDisplay(
   toolName: string,
   status: ToolCallStatus,
@@ -19,7 +24,10 @@ export function getToolErrorDisplay(
     return '部分搜索结果未能使用';
   }
 
-  if (toolName.startsWith('mcp_') && (status === 'failed' || status === 'degraded')) {
+  if (
+    (toolName.startsWith('mcp_') || SAFE_EXTERNAL_TOOL_NAMES.has(toolName))
+    && (status === 'failed' || status === 'degraded')
+  ) {
     return '部分工具结果未能使用';
   }
 

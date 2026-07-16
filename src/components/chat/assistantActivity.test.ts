@@ -118,6 +118,49 @@ describe('deriveAssistantActivity', () => {
     expect(activity.tool?.target).toBe('example.com');
   });
 
+  it.each([
+    {
+      toolName: 'local_place_search',
+      arguments: { query: '烤肉', location: '深圳民治' },
+      label: '正在搜索附近地点',
+      target: '深圳民治 · 烤肉',
+    },
+    {
+      toolName: 'route_compare',
+      arguments: { origin: '民治地铁站', destination: '星河 WORLD' },
+      label: '正在比较路线',
+      target: '民治地铁站 → 星河 WORLD',
+    },
+  ])('为稳定工具 $toolName 派生可区分的实时状态', ({ toolName, arguments: args, label, target }) => {
+    const activity = deriveAssistantActivity({
+      isStreaming: true,
+      isCurrentlyStreaming: true,
+      contentBlocks: [],
+      currentRun: makeRun({
+        steps: [{
+          stepId: 'step-1',
+          stepNumber: 1,
+          status: 'running',
+          startedAt: 1,
+          contentBlockIds: [],
+          toolCalls: [{
+            toolCallId: 'tool-1',
+            toolName,
+            arguments: args,
+            status: 'running',
+            startedAt: 1,
+          }],
+        }],
+      }),
+      messageStatus: null,
+      isLoadingSuggestedQuestions: false,
+      suggestedQuestionsCount: 0,
+    });
+
+    expect(activity.kind).toBe('tool_running');
+    expect(activity.tool).toMatchObject({ kind: 'other', toolName, label, target });
+  });
+
   it('prioritizes answering over reasoning once text is visible', () => {
     const blocks: ContentBlock[] = [
       { type: 'thinking', id: 'think-1', thinking: '推理内容' },

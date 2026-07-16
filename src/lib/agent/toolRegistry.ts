@@ -6,7 +6,7 @@
  * icon 用 Lucide component reference 而不是字符串——保证类型安全 + tree-shaking 友好。
  */
 
-import { Search, Globe, Wrench } from 'lucide-react';
+import { Search, Globe, MapPin, Route, Wrench } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 
 export type SemanticColor = 'info' | 'success' | 'warn' | 'danger' | 'teal' | 'neutral';
@@ -32,6 +32,27 @@ export const TOOL_REGISTRY: Record<string, ToolMeta> = {
     color: 'teal',
     summarize: (a) => String(a.url ?? ''),
   },
+  local_place_search: {
+    label: '搜索附近地点',
+    icon: MapPin,
+    color: 'teal',
+    summarize: (a) => joinSummaryParts(
+      firstStringArgument(a, ['location', 'area', 'city', 'near']),
+      firstStringArgument(a, ['query', 'keywords', 'keyword']),
+      '附近地点',
+    ),
+  },
+  route_compare: {
+    label: '比较路线',
+    icon: Route,
+    color: 'info',
+    summarize: (a) => {
+      const origin = firstStringArgument(a, ['origin', 'from', 'start']);
+      const destination = firstStringArgument(a, ['destination', 'to', 'end']);
+      if (origin && destination) return `${origin} → ${destination}`;
+      return origin || destination || '路线方案';
+    },
+  },
 };
 
 const FALLBACK: ToolMeta = {
@@ -45,4 +66,21 @@ export function getToolMeta(toolName: string): ToolMeta {
   const found = TOOL_REGISTRY[toolName];
   if (found) return found;
   return FALLBACK;
+}
+
+export function hasToolMeta(toolName: string): boolean {
+  return Object.prototype.hasOwnProperty.call(TOOL_REGISTRY, toolName);
+}
+
+function firstStringArgument(args: Record<string, unknown>, keys: string[]): string {
+  for (const key of keys) {
+    const value = args[key];
+    if (typeof value === 'string' && value.trim()) return value.trim();
+  }
+  return '';
+}
+
+function joinSummaryParts(first: string, second: string, fallback: string): string {
+  if (first && second) return `${first} · ${second}`;
+  return first || second || fallback;
 }

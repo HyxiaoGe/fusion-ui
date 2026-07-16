@@ -1,5 +1,6 @@
 import type { AgentRunState, ToolCallState } from '@/types/agentRun';
 import type { ContentBlock, SearchBlock, UrlBlock } from '@/types/conversation';
+import { getToolMeta, hasToolMeta } from '@/lib/agent/toolRegistry';
 
 export type AssistantActivityKind =
   | 'waiting'
@@ -253,7 +254,7 @@ function toToolActivity(call: ToolCallState): AssistantToolActivity {
   return {
     kind,
     toolName: call.toolName,
-    label: getToolLabel(kind),
+    label: getToolLabel(kind, call.toolName),
     target: getToolTarget(kind, call),
     call,
   };
@@ -271,13 +272,17 @@ function getToolKind(toolName: string): AssistantToolKind {
   return 'other';
 }
 
-function getToolLabel(kind: AssistantToolKind): string {
+function getToolLabel(kind: AssistantToolKind, toolName: string): string {
   if (kind === 'web_search') {
     return '正在搜索';
   }
 
   if (kind === 'url_read') {
     return '正在读取网页';
+  }
+
+  if (hasToolMeta(toolName)) {
+    return `正在${getToolMeta(toolName).label}`;
   }
 
   return '正在调用工具';
@@ -292,6 +297,10 @@ function getToolTarget(kind: AssistantToolKind, call: ToolCallState): string {
     const url = getStringArgument(call, 'url');
 
     return getHostname(url);
+  }
+
+  if (hasToolMeta(call.toolName)) {
+    return getToolMeta(call.toolName).summarize(call.arguments).trim();
   }
 
   return '';

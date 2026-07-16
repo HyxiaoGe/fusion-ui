@@ -5,6 +5,7 @@ import {
   type ToolCallGroupDetail,
   type ToolCallGroupKind,
 } from '@/lib/agent/toolCallGroups';
+import { getToolMeta, hasToolMeta } from '@/lib/agent/toolRegistry';
 
 export interface ExecutionProcessModel {
   isRenderable: boolean;
@@ -92,6 +93,11 @@ export function sanitizeExecutionTitle(digest: AgentToolDigest): string {
     return '网页暂时无法读取';
   }
 
+  const registeredLabel = hasToolMeta(digest.toolName)
+    ? getToolMeta(digest.toolName).label
+    : null;
+  if (registeredLabel) return registeredLabel;
+
   const title = digest.title.trim();
   if (!title || containsInternalToolAlias(title, digest.toolName)) {
     return '外部工具';
@@ -114,6 +120,10 @@ export function sanitizeExecutionSummary(digest: AgentToolDigest): string {
     return '部分搜索结果未能使用。';
   }
 
+  if (isExternalToolName(digest.toolName) && hasToolMeta(digest.toolName)) {
+    return getRegisteredToolSummary(getToolMeta(digest.toolName).label, digest.status);
+  }
+
   if (!isExternalToolName(digest.toolName)) {
     return sanitizeInternalText(digest.summary || '资料处理完成。');
   }
@@ -126,9 +136,19 @@ export function sanitizeExecutionSummary(digest: AgentToolDigest): string {
 
   const summary = digest.summary.trim();
   if (!summary || containsInternalToolAlias(summary, digest.toolName)) {
-    return '外部工具已完成。';
+    return `${getToolMeta(digest.toolName).label}已完成。`;
   }
   return sanitizeInternalText(summary);
+}
+
+function getRegisteredToolSummary(
+  label: string,
+  status: AgentToolDigest['status'],
+): string {
+  if (status === 'success') return `${label}已完成。`;
+  if (status === 'degraded') return `${label}部分可用。`;
+  if (status === 'failed') return `${label}未取得可用结果。`;
+  return `${label}已中断。`;
 }
 
 export function statusText(status: AgentToolDigest['status'] | ToolCallStatus): string {
@@ -153,7 +173,7 @@ export function statusText(status: AgentToolDigest['status'] | ToolCallStatus): 
 export function groupSectionTitle(group: ToolCallGroup): string {
   if (group.kind === 'web_search') return '搜索记录';
   if (group.kind === 'url_read') return '网页读取';
-  return '外部工具';
+  return group.label;
 }
 
 export function groupDetailStatusText(detail: ToolCallGroupDetail): string {

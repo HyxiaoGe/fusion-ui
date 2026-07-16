@@ -211,6 +211,56 @@ describe('groupToolCalls', () => {
     },
   );
 
+  it('稳定地点与路线工具分别分组并显示中文动作和目标', () => {
+    const groups = groupToolCalls([
+      tc({
+        toolCallId: 'place-1',
+        toolName: 'local_place_search',
+        status: 'running',
+        arguments: { query: '烤肉', location: '深圳民治' },
+        resultSummary: undefined,
+      }),
+      tc({
+        toolCallId: 'route-1',
+        toolName: 'route_compare',
+        status: 'running',
+        arguments: { origin: '民治地铁站', destination: '星河 WORLD' },
+        resultSummary: undefined,
+      }),
+    ]);
+
+    expect(groups).toHaveLength(2);
+    expect(findGroup(groups, 'local_place_search')).toMatchObject({
+      label: '搜索附近地点',
+      summary: '正在搜索附近地点 · 1 个任务',
+    });
+    expect(findGroup(groups, 'local_place_search').details[0].primary).toBe('深圳民治 · 烤肉');
+    expect(findGroup(groups, 'route_compare')).toMatchObject({
+      label: '比较路线',
+      summary: '正在比较路线 · 1 个任务',
+    });
+    expect(findGroup(groups, 'route_compare').details[0].primary).toBe('民治地铁站 → 星河 WORLD');
+  });
+
+  it.each([
+    ['local_place_search', 'failed', '高德 MCP upstream unavailable'],
+    ['route_compare', 'degraded', '高德 route service quota exceeded'],
+  ] as const)('稳定工具 %s 的 %s 错误不泄露上游信息', (toolName, status, error) => {
+    const groups = groupToolCalls([
+      tc({
+        toolCallId: `${toolName}-1`,
+        toolName,
+        status,
+        arguments: {},
+        resultSummary: undefined,
+        error,
+      }),
+    ]);
+
+    expect(groups[0].details[0].secondary).toBe('部分工具结果未能使用');
+    expect(JSON.stringify(groups)).not.toMatch(/MCP|mcp__|upstream|quota|高德/i);
+  });
+
   it('截断结果让成功组可展开但不默认展开', () => {
     const groups = groupToolCalls([
       tc({ toolCallId: 's1', resultSummary: { kind: 'web_search', title: '部分结果', count: 5, truncated: true } }),

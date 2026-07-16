@@ -1,5 +1,5 @@
 import type { ToolCallState, ToolCallStatus } from '@/types/agentRun';
-import { getToolMeta } from './toolRegistry';
+import { getToolMeta, hasToolMeta } from './toolRegistry';
 import { getToolErrorDisplay } from './toolErrorDisplay';
 
 export type ToolCallGroupKind = 'web_search' | 'url_read' | 'other';
@@ -47,6 +47,7 @@ export function groupToolCalls(calls: ToolCallState[]): ToolCallGroup[] {
   return Array.from(buckets.entries()).map(([id, groupCalls]) => {
     const first = groupCalls[0];
     const meta = getToolMeta(first.toolName);
+    const registeredLabel = hasToolMeta(first.toolName) ? meta.label : null;
     const kind = getGroupKind(first.toolName);
     const status = deriveGroupStatus(groupCalls);
     const resultCount = groupCalls.reduce((sum, call) => sum + (call.resultSummary?.count ?? 0), 0);
@@ -61,7 +62,14 @@ export function groupToolCalls(calls: ToolCallState[]): ToolCallGroup[] {
       count: groupCalls.length,
       resultCount,
       status,
-      summary: buildSummary(kind, status, groupCalls.length, resultCount, countByStatus(groupCalls, 'failed')),
+      summary: buildSummary(
+        kind,
+        status,
+        groupCalls.length,
+        resultCount,
+        countByStatus(groupCalls, 'failed'),
+        registeredLabel,
+      ),
       details,
       hasExpandableDetails,
       shouldShowDetailsByDefault: status !== 'success',
@@ -122,6 +130,7 @@ function buildSummary(
   count: number,
   resultCount: number,
   failedCount: number,
+  registeredLabel: string | null,
 ): string {
   if (kind === 'web_search') {
     if (status === 'running') return `正在搜索 · ${count} 个查询`;
@@ -139,6 +148,15 @@ function buildSummary(
     if (status === 'degraded') return '网页读取部分可用 · 已跳过部分页面';
     if (status === 'interrupted') return `网页读取已中断 · ${count} 个目标`;
     return `读取 ${count} 个网页`;
+  }
+
+  if (registeredLabel) {
+    if (status === 'running') return `正在${registeredLabel} · ${count} 个任务`;
+    if (status === 'partial') return `${registeredLabel} ${count} 次 · ${failedCount} 次未使用`;
+    if (status === 'failed') return `${registeredLabel}未取得可用结果 · ${count} 个任务`;
+    if (status === 'degraded') return `${registeredLabel}部分可用 · 已跳过部分结果`;
+    if (status === 'interrupted') return `${registeredLabel}已中断 · ${count} 个任务`;
+    return `${registeredLabel} ${count} 次`;
   }
 
   if (status === 'running') return `正在调用工具 · ${count} 个任务`;

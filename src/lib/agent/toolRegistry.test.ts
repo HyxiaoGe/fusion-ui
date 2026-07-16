@@ -22,6 +22,26 @@ describe('toolRegistry', () => {
     expect(summary).toBe('https://example.com');
   });
 
+  it('包含地点搜索与路线比较的稳定产品工具元数据', () => {
+    expect(TOOL_REGISTRY.local_place_search).toMatchObject({
+      label: '搜索附近地点',
+      color: 'teal',
+    });
+    expect(TOOL_REGISTRY.route_compare).toMatchObject({
+      label: '比较路线',
+      color: 'info',
+    });
+
+    expect(TOOL_REGISTRY.local_place_search.summarize({
+      query: '烤肉',
+      location: '深圳民治',
+    })).toBe('深圳民治 · 烤肉');
+    expect(TOOL_REGISTRY.route_compare.summarize({
+      origin: '民治地铁站',
+      destination: '星河 WORLD',
+    })).toBe('民治地铁站 → 星河 WORLD');
+  });
+
   it('getToolMeta 未知工具返回兜底元数据', () => {
     const meta = getToolMeta('mcp__learn__microsoft_docs_search');
     expect(meta.label).toBe('外部工具');

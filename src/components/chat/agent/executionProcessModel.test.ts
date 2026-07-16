@@ -259,6 +259,97 @@ describe('executionProcessModel 场景矩阵', () => {
     expect(model.groups[0].kind).toBe('other');
   });
 
+  it('稳定地点与路线工具在实时和刷新摘要中保留产品名称', () => {
+    const model = buildExecutionProcessModel(run({
+      steps: [{
+        stepId: 's1',
+        stepNumber: 1,
+        status: 'completed',
+        toolCalls: [
+          toolCall({
+            toolCallId: 'place-1',
+            toolName: 'local_place_search',
+            arguments: { query: '烤肉', location: '深圳民治' },
+          }),
+          toolCall({
+            toolCallId: 'route-1',
+            toolName: 'route_compare',
+            arguments: { origin: '民治地铁站', destination: '星河 WORLD' },
+          }),
+        ],
+        contentBlockIds: [],
+        startedAt: 1_000,
+        completedAt: 2_000,
+      }],
+      toolDigests: [
+        digest({
+          toolCallId: 'place-history',
+          toolName: 'local_place_search',
+          title: 'local_place_search 已完成',
+          summary: 'local_place_search 返回了可用地点',
+        }),
+        digest({
+          toolCallId: 'route-history',
+          toolName: 'route_compare',
+          title: 'route_compare 已完成',
+          summary: 'route_compare 返回了路线方案',
+        }),
+      ],
+    }));
+
+    expect(model.groups.map(group => group.label)).toEqual(['搜索附近地点', '比较路线']);
+    expect(model.digestRows).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: 'place-history', title: '搜索附近地点', summary: '搜索附近地点已完成。' }),
+      expect.objectContaining({ id: 'route-history', title: '比较路线', summary: '比较路线已完成。' }),
+    ]));
+  });
+
+  it.each([
+    {
+      toolName: 'local_place_search',
+      status: 'success',
+      backendTitle: '高德地点搜索',
+      backendSummary: '工具返回了可用结果。',
+      expectedTitle: '搜索附近地点',
+      expectedSummary: '搜索附近地点已完成。',
+    },
+    {
+      toolName: 'route_compare',
+      status: 'degraded',
+      backendTitle: '高德路线对比',
+      backendSummary: '高德 MCP upstream degraded',
+      expectedTitle: '比较路线',
+      expectedSummary: '比较路线部分可用。',
+    },
+    {
+      toolName: 'local_place_search',
+      status: 'failed',
+      backendTitle: '高德地点搜索失败',
+      backendSummary: 'maps_text_search quota exceeded',
+      expectedTitle: '搜索附近地点',
+      expectedSummary: '搜索附近地点未取得可用结果。',
+    },
+  ] as const)(
+    '刷新恢复 $toolName/$status 时忽略 backend 自由文案',
+    ({ toolName, status, backendTitle, backendSummary, expectedTitle, expectedSummary }) => {
+      const model = buildExecutionProcessModel(run({
+        toolDigests: [digest({
+          toolCallId: `${toolName}-${status}`,
+          toolName,
+          status,
+          title: backendTitle,
+          summary: backendSummary,
+        })],
+      }));
+
+      expect(model.digestRows[0]).toMatchObject({
+        title: expectedTitle,
+        summary: expectedSummary,
+      });
+      expect(JSON.stringify(model.digestRows[0])).not.toMatch(/高德|MCP|upstream|maps_text_search|quota|工具返回/i);
+    },
+  );
+
   it('只有不可读网页时仍构成可查看执行过程', () => {
     const model = buildExecutionProcessModel(run({
       totalSteps: 1,
