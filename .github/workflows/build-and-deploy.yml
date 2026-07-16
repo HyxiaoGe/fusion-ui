@@ -56,7 +56,7 @@ jobs:
           PUSHGW_AUTH: ${{ secrets.PUSHGW_BASIC_AUTH }}
         run: |
           $ProgressPreference = "SilentlyContinue"
-          $environment = if ($env:GITHUB_REF_NAME -eq "master") { "dev" } else { "preview" }
+          $environment = if ($env:GITHUB_REF_NAME -eq "master") { "dev" } else { "ci" }
           $branchKey = $env:GITHUB_REF_NAME -replace '[^A-Za-z0-9_.-]', '_'
           $now = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
           $metrics = @"
@@ -141,12 +141,6 @@ jobs:
           docker version
           docker ps
           exit 1
-
-      - name: Configure preview public env
-        run: |
-          if not "%GITHUB_REF_NAME%"=="master" (
-            echo NEXT_PUBLIC_AUTH_CALLBACK_URL=http://fusion-ui-preview.dev.seanfield.org/auth/callback>>%GITHUB_ENV%
-          )
 
       - name: Test and build Docker image
         shell: powershell -NoProfile -ExecutionPolicy Bypass -Command ". '{0}'"
@@ -251,90 +245,6 @@ jobs:
           docker image inspect "%IMAGE_NAME%:%GITHUB_SHA%" >NUL 2>NUL
           if %ERRORLEVEL% EQU 0 docker image rm "%IMAGE_NAME%:%GITHUB_SHA%"
           exit /b 0
-
-  deploy-preview:
-    name: Deploy preview on dev server
-    if: github.ref != 'refs/heads/master'
-    needs: build
-    runs-on: [self-hosted, Linux, X64]
-    timeout-minutes: 10
-
-    steps:
-      - name: Record deploy start time
-        run: echo "DEPLOY_START=$(date +%s)" >> "$GITHUB_ENV"
-
-      - name: Login to ACR
-        run: echo "${ACR_PASSWORD}" | docker login "${REGISTRY}" -u "${ACR_USERNAME}" --password-stdin
-        env:
-          ACR_USERNAME: ${{ secrets.ACR_USERNAME }}
-          ACR_PASSWORD: ${{ secrets.ACR_PASSWORD }}
-
-      - name: Pull and restart preview
-        run: |
-          cd ~/project/fusion
-          docker pull ${{ env.IMAGE_NAME }}:${{ github.sha }}
-          cat > docker-compose.fusion-ui-preview.yml <<'EOF'
-          services:
-            fusion-ui-preview:
-              image: ${{ env.IMAGE_NAME }}:${{ github.sha }}
-              container_name: fusion-ui-preview
-              restart: always
-              ports:
-                - "3005:3000"
-              environment:
-                - NODE_ENV=production
-              deploy:
-                resources:
-                  limits:
-                    memory: 256m
-              networks:
-                - postgres_default
-
-          networks:
-            postgres_default:
-              external: true
-          EOF
-          docker rm -f fusion-ui-design-system-v2 2>/dev/null || true
-          docker compose -f docker-compose.fusion-ui-preview.yml up -d
-
-      - name: Smoke check preview deployment
-        run: |
-          for attempt in 1 2 3 4 5 6 7 8 9 10 11 12; do
-            if curl --fail --silent --show-error --max-time 5 http://127.0.0.1:3005/ >/dev/null; then
-              exit 0
-            fi
-            sleep 2
-          done
-          echo "fusion-ui preview smoke check failed"
-          docker ps --filter "name=fusion-ui-preview"
-          docker logs --tail 80 fusion-ui-preview || true
-          exit 1
-
-      - name: Cleanup old preview images
-        if: always()
-        run: |
-          current="${{ env.IMAGE_NAME }}:${{ github.sha }}"
-          docker images --format '{{.Repository}}:{{.Tag}} {{.ID}}' ${{ env.IMAGE_NAME }} \
-            | awk -v current="$current" '$1 != current {print $2}' \
-            | sort -u \
-            | xargs -r docker rmi || true
-
-      - name: Push CI/CD metrics
-        if: always()
-        run: |
-          if ! timeout 15s bash ~/scripts/push-cicd-metrics.sh \
-            fusion-ui \
-            "${{ github.ref_name }}" \
-            preview \
-            "${{ job.status }}" \
-            "${{ needs.build.outputs.started_at }}" \
-            "${{ env.IMAGE_NAME }}:${{ github.sha }}" \
-            "${{ github.sha }}" \
-            "${{ needs.build.outputs.runner_name }}" \
-            fusion-ui-preview \
-            "${{ env.DEPLOY_START }}"; then
-            echo "CI/CD metrics push failed, ignored"
-          fi
 
   deploy-dev:
     name: Deploy master on dev server
