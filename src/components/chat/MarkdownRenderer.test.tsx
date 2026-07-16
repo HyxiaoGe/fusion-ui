@@ -184,6 +184,18 @@ describe('MarkdownRenderer — citation 行为（contract §9）', () => {
 });
 
 describe('MarkdownRenderer — code/table 行为', () => {
+  it('温度和数值范围中的单个波浪线保持为普通文本', () => {
+    const { container } = render(
+      <MarkdownRenderer
+        content="周六 22~29℃，周日 22~31℃。"
+        sources={[]}
+      />
+    );
+
+    expect(container.textContent).toContain('周六 22~29℃，周日 22~31℃。');
+    expect(container.querySelector('del')).toBeNull();
+  });
+
   it('裸 URL 后接中文说明时链接边界停在 URL 本身', () => {
     const { container } = render(
       <MarkdownRenderer

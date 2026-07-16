@@ -231,7 +231,7 @@ const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({ content, className,
     <div className={`prose prose-neutral dark:prose-invert max-w-none ${className || ''}`}>
       <CitationRenderContext.Provider value={citationContextValue}>
         <ReactMarkdown
-          remarkPlugins={[remarkGfm]}
+          remarkPlugins={[[remarkGfm, { singleTilde: false }]]}
           rehypePlugins={[rehypeRaw]}
           components={MARKDOWN_COMPONENTS}
         >

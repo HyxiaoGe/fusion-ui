@@ -114,7 +114,7 @@ const ReasoningContent: React.FC<ReasoningContentProps> = ({
             >
               {content && content.trim() ? (
                 <ReactMarkdown
-                  remarkPlugins={[remarkGfm]}
+                  remarkPlugins={[[remarkGfm, { singleTilde: false }]]}
                   rehypePlugins={[rehypeRaw]}
                   components={{
                     pre: MarkdownPreRenderer,
