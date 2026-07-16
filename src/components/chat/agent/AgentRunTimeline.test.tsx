@@ -761,7 +761,7 @@ describe('AgentRunTimeline', () => {
       limitReachedReason: 'max_steps',
     }));
 
-    expect(screen.getByText(/已达最大步数/)).toBeInTheDocument();
+    expect(screen.getByText('本次检索已达到安全上限')).toBeInTheDocument();
 
     limitReached.unmount();
 
@@ -804,7 +804,7 @@ describe('AgentRunTimeline', () => {
       },
     }));
 
-    expect(screen.getByText(/运行超时/)).toBeInTheDocument();
+    expect(screen.getByText('本次检索用时较长，已结束当前检索')).toBeInTheDocument();
     expect(screen.getByText('整理回答')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: '查看执行过程' })).not.toBeInTheDocument();
   });

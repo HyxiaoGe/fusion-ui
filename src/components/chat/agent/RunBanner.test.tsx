@@ -45,30 +45,29 @@ describe('RunBanner', () => {
     expect(screen.queryByText(/^恢复$/)).not.toBeInTheDocument();
   });
 
-  it('limit_reached + max_steps reason 显示 max_steps 文案', () => {
-    render(<RunBanner run={run({
-      status: 'limit_reached',
-      limitReachedReason: 'max_steps',
-    })} onRetry={vi.fn()} />);
-    expect(screen.getByText(/最大步数/)).toBeInTheDocument();
-    expect(screen.getByText(/8/)).toBeInTheDocument();
-  });
+  it.each(['max_steps', 'max_tool_calls'] as const)(
+    'limit_reached + %s 显示统一普通用户文案且不泄露内部限制',
+    reason => {
+      const { container } = render(<RunBanner run={run({
+        status: 'limit_reached',
+        limitReachedReason: reason,
+      })} onRetry={vi.fn()} />);
 
-  it('limit_reached + max_tool_calls reason 显示工具调用文案', () => {
-    render(<RunBanner run={run({
-      status: 'limit_reached',
-      limitReachedReason: 'max_tool_calls',
-    })} onRetry={vi.fn()} />);
-    expect(screen.getByText(/工具调用/)).toBeInTheDocument();
-  });
+      expect(screen.getByText('本次检索已达到安全上限')).toBeInTheDocument();
+      expect(screen.getByText('当前结果可能未完整覆盖你的问题，可以继续查找。')).toBeInTheDocument();
+      expect(container.textContent).not.toMatch(/max_steps|max_tool_calls|最大步数|工具调用|停止规划|停止调工具|工具预算|\b8\b|\b20\b/);
+    },
+  );
 
-  it('limit_reached + timeout reason 显示超时文案且不走旧重试按钮', () => {
+  it('limit_reached + timeout 显示普通用户文案且不走旧重试按钮', () => {
     const onRetry = vi.fn();
-    render(<RunBanner run={run({
+    const { container } = render(<RunBanner run={run({
       status: 'limit_reached',
       limitReachedReason: 'timeout',
     })} onRetry={onRetry} />);
-    expect(screen.getByText(/超时/)).toBeInTheDocument();
+    expect(screen.getByText('本次检索用时较长，已结束当前检索')).toBeInTheDocument();
+    expect(screen.getByText('当前结果可能未完整覆盖你的问题，可以继续查找。')).toBeInTheDocument();
+    expect(container.textContent).not.toMatch(/timeout|300|运行超时|停止规划|工具预算/);
     expect(screen.queryByText(/重新提问/)).not.toBeInTheDocument();
     expect(onRetry).not.toHaveBeenCalled();
   });
@@ -94,10 +93,8 @@ describe('RunBanner', () => {
       status: 'limit_reached',
       limitReachedReason: 'timeout',
     })} />);
-    // 文案应该显示
-    expect(screen.getByText(/超时/)).toBeInTheDocument();
-    // 按钮不应该显示
-    expect(screen.queryByText(/继续查/)).not.toBeInTheDocument();
+    expect(screen.getByText('本次检索用时较长，已结束当前检索')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '继续查' })).not.toBeInTheDocument();
   });
 
   it.each(['max_steps', 'max_tool_calls', 'timeout'] as const)(

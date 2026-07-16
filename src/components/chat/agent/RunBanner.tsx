@@ -16,7 +16,7 @@ interface RunBannerProps {
  * 三种终态 banner（contract §7 CTA 白名单已限制不做 fake CTA）：
  *   - failed → danger banner + 重试运行按钮
  *   - interrupted → neutral banner（不显示恢复按钮，能力没有）
- *   - limit_reached → warn banner + 三种 reason 文案 + 继续查按钮
+ *   - limit_reached → warn banner + 面向普通用户的说明 + 继续查按钮
  */
 export function RunBanner({ run, onRetry, onContinue }: RunBannerProps) {
   if (run.status === 'failed') {
@@ -57,11 +57,7 @@ export function RunBanner({ run, onRetry, onContinue }: RunBannerProps) {
   }
 
   if (run.status === 'limit_reached' && run.limitReachedReason) {
-    const configValue =
-      run.limitReachedReason === 'max_steps' ? run.config.maxSteps
-      : run.limitReachedReason === 'max_tool_calls' ? run.config.maxToolCalls
-      : run.config.timeoutS;
-    const text = getLimitReachedBannerText(run.limitReachedReason, configValue);
+    const text = getLimitReachedBannerText(run.limitReachedReason);
     return (
       <div className="rounded-lg border border-warn/30 bg-warn/5 p-3 flex items-start gap-2 mb-2">
         <AlertTriangle className="w-4 h-4 text-warn shrink-0 mt-0.5" />

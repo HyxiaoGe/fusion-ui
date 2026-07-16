@@ -83,28 +83,11 @@ export function isSummaryStep(step: AgentStepState): boolean {
  */
 export function getLimitReachedBannerText(
   reason: LimitReachedReason,
-  configValue: number,
 ): { title: string; sub: string } {
-  switch (reason) {
-    case 'max_steps':
-      return {
-        title: `已达最大步数（${configValue}）— 停止规划`,
-        sub: '模型已用强制总结给出答复，可能未完整覆盖问题',
-      };
-    case 'max_tool_calls':
-      return {
-        title: `已达最大工具调用数（${configValue}）— 停止调工具`,
-        sub: '工具预算用完，模型已用现有信息总结',
-      };
-    case 'timeout':
-      return {
-        title: `运行超时（${configValue}s）— 停止规划`,
-        sub: '总耗时超过上限，结果可能不完整',
-      };
-    default:
-      return {
-        title: '已达运行上限',
-        sub: '模型已用现有信息给出答复',
-      };
-  }
+  return {
+    title: reason === 'timeout'
+      ? '本次检索用时较长，已结束当前检索'
+      : '本次检索已达到安全上限',
+    sub: '当前结果可能未完整覆盖你的问题，可以继续查找。',
+  };
 }

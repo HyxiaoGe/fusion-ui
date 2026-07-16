@@ -108,24 +108,32 @@ describe('timelineDerive — isSummaryStep', () => {
 });
 
 describe('timelineDerive — getLimitReachedBannerText', () => {
-  it('max_steps 文案', () => {
-    const t = getLimitReachedBannerText('max_steps', 8);
-    expect(t.title).toContain('最大步数');
-    expect(t.title).toContain('8');
+  it.each(['max_steps', 'max_tool_calls'] as const)(
+    '%s 使用统一的普通用户文案且不泄露内部限制',
+    reason => {
+      const t = getLimitReachedBannerText(reason);
+      const rendered = `${t.title} ${t.sub}`;
+
+      expect(t.title).toBe('本次检索已达到安全上限');
+      expect(t.sub).toBe('当前结果可能未完整覆盖你的问题，可以继续查找。');
+      expect(rendered).not.toMatch(/max_steps|max_tool_calls|最大步数|工具调用|停止规划|停止调工具|工具预算|\b8\b|\b20\b/);
+    },
+  );
+
+  it('timeout 使用普通用户文案且不泄露内部时限', () => {
+    const t = getLimitReachedBannerText('timeout');
+    const rendered = `${t.title} ${t.sub}`;
+
+    expect(t.title).toBe('本次检索用时较长，已结束当前检索');
+    expect(t.sub).toBe('当前结果可能未完整覆盖你的问题，可以继续查找。');
+    expect(rendered).not.toMatch(/timeout|300|运行超时|停止规划|工具预算/);
   });
 
-  it('max_tool_calls 文案', () => {
-    const t = getLimitReachedBannerText('max_tool_calls', 20);
-    expect(t.title).toContain('工具调用');
-  });
-
-  it('timeout 文案', () => {
-    const t = getLimitReachedBannerText('timeout', 300);
-    expect(t.title).toContain('超时');
-  });
-
-  it('未知 reason 兜底', () => {
-    const t = getLimitReachedBannerText('unknown' as LimitReachedReason, 0);
-    expect(t.title).toBeTruthy();
+  it('未知 reason 使用安全兜底文案', () => {
+    const t = getLimitReachedBannerText('unknown' as LimitReachedReason);
+    expect(t).toEqual({
+      title: '本次检索已达到安全上限',
+      sub: '当前结果可能未完整覆盖你的问题，可以继续查找。',
+    });
   });
 });
