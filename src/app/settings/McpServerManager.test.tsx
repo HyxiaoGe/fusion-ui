@@ -42,6 +42,20 @@ const server = {
   last_error_message: null,
 };
 
+const recommendedAmapReadOnlyTools = [
+  'maps_geo',
+  'maps_regeocode',
+  'maps_weather',
+  'maps_direction_bicycling',
+  'maps_direction_walking',
+  'maps_direction_driving',
+  'maps_direction_transit_integrated',
+  'maps_distance',
+  'maps_text_search',
+  'maps_around_search',
+  'maps_search_detail',
+];
+
 describe('McpServerManager', () => {
   beforeEach(() => {
     Object.values(apiMocks).forEach((mock) => mock.mockReset());
@@ -177,6 +191,78 @@ describe('McpServerManager', () => {
     expect(await screen.findByText('Header / Query 参数名不能为空')).toBeInTheDocument();
     expect(screen.getByText('凭证引用不能为空')).toBeInTheDocument();
     expect(apiMocks.create).not.toHaveBeenCalled();
+  });
+
+  it('高德安全预设只填写凭证引用，不把 key 放进 endpoint 或表单', async () => {
+    apiMocks.create.mockResolvedValue({
+      ...server,
+      endpoint_url: 'https://mcp.amap.com/mcp',
+      auth_type: 'query',
+      auth_name: 'key',
+      allowed_tools: [],
+    });
+
+    render(<McpServerManager />);
+    await screen.findByText('高德地图');
+    fireEvent.click(screen.getByRole('button', { name: '新增 MCP 服务' }));
+    fireEvent.click(screen.getByRole('button', { name: '使用高德安全预设' }));
+
+    expect(screen.getByLabelText('服务名称')).toHaveValue('高德地图');
+    expect(screen.getByLabelText('提供商')).toHaveValue('amap');
+    expect(screen.getByLabelText('Endpoint URL')).toHaveValue('https://mcp.amap.com/mcp');
+    expect(screen.getByLabelText('Endpoint URL')).not.toHaveValue(expect.stringContaining('?'));
+    expect(screen.getByLabelText('鉴权方式')).toHaveValue('query');
+    expect(screen.getByLabelText('Header / Query 参数名')).toHaveValue('key');
+    expect(screen.getByLabelText('凭证引用')).toHaveValue('AMAP_MCP_API_KEY');
+    expect(screen.queryByLabelText(/API Key|明文密钥|secret|token/i)).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: '保存服务' }));
+
+    await waitFor(() => expect(apiMocks.create).toHaveBeenCalledWith({
+      name: '高德地图',
+      provider: 'amap',
+      endpoint_url: 'https://mcp.amap.com/mcp',
+      transport: 'streamable_http',
+      auth_type: 'query',
+      auth_name: 'key',
+      credential_ref: 'AMAP_MCP_API_KEY',
+      allowed_tools: [],
+    }));
+  });
+
+  it('编辑已发现高德服务时一键只选择发现快照中的推荐只读工具', async () => {
+    const discoveredRecommendedTools = recommendedAmapReadOnlyTools.filter(
+      (name) => name !== 'maps_weather',
+    );
+    const discoveredTools = [
+      ...discoveredRecommendedTools.map((name) => ({ name, description: `只读工具 ${name}` })),
+      { name: 'maps_ip_location', description: 'IP 定位未列入推荐集合' },
+      { name: 'maps_schema_personal_map', description: '生成专属地图' },
+    ];
+    apiMocks.fetch.mockResolvedValue([{
+      ...server,
+      allowed_tools: ['maps_schema_personal_map'],
+      discovered_tools: discoveredTools,
+    }]);
+    apiMocks.update.mockResolvedValue(server);
+
+    render(<McpServerManager />);
+    const card = await screen.findByTestId('mcp-server-mcp-1');
+    fireEvent.click(within(card).getByRole('button', { name: '编辑高德地图' }));
+    fireEvent.click(screen.getByRole('button', { name: '一键选择推荐只读工具' }));
+
+    discoveredRecommendedTools.forEach((toolName) => {
+      expect(screen.getByRole('checkbox', { name: new RegExp(toolName) })).toBeChecked();
+    });
+    expect(screen.queryByRole('checkbox', { name: /maps_weather/ })).toBeNull();
+    expect(screen.getByRole('checkbox', { name: /maps_ip_location/ })).not.toBeChecked();
+    expect(screen.getByRole('checkbox', { name: /maps_schema_personal_map/ })).not.toBeChecked();
+
+    fireEvent.click(screen.getByRole('button', { name: '保存服务' }));
+    await waitFor(() => expect(apiMocks.update).toHaveBeenCalledWith(
+      'mcp-1',
+      expect.objectContaining({ allowed_tools: discoveredRecommendedTools }),
+    ));
   });
 
   it('新建服务不允许填写未发现工具并固定提交空白名单', async () => {

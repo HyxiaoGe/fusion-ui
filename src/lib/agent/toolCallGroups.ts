@@ -151,12 +151,12 @@ function buildSummary(
 
 function toGroupDetail(call: ToolCallState): ToolCallGroupDetail {
   const target = getTarget(call);
-  const resultTitle = call.resultSummary?.title;
+  const resultTitle = getSafeExternalResultTitle(call);
   const issueText = getToolErrorDisplay(call.toolName, call.status, call.error);
   return {
     id: call.toolCallId,
     primary: target.short,
-    secondary: issueText || resultTitle || getStatusText(call.status),
+    secondary: issueText || (resultTitle !== target.short ? resultTitle : undefined) || getStatusText(call.status),
     status: call.status,
     truncated: call.resultSummary?.truncated === true,
     fullValue: target.full,
@@ -175,8 +175,26 @@ function getTarget(call: ToolCallState): { short: string; full: string } {
   }
 
   const summarized = getToolMeta(call.toolName).summarize(call.arguments).trim();
-  const value = summarized || call.toolName;
+  const resultTitle = getSafeExternalResultTitle(call);
+  const value = resultTitle || summarized || '外部工具';
   return { short: value, full: value };
+}
+
+function getSafeExternalResultTitle(call: ToolCallState): string | undefined {
+  const title = call.resultSummary?.title?.trim();
+  if (!title || call.toolName === 'web_search' || call.toolName === 'url_read') {
+    return title || undefined;
+  }
+
+  const normalizedTitle = title.toLowerCase();
+  const normalizedToolName = call.toolName.trim().toLowerCase();
+  if (
+    (normalizedToolName && normalizedTitle.includes(normalizedToolName))
+    || /(?:^|[^a-z0-9])mcp(?:__|[_:-])[a-z0-9_.:-]+/i.test(title)
+  ) {
+    return undefined;
+  }
+  return title;
 }
 
 function getHostname(rawUrl: string): string {

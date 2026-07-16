@@ -439,6 +439,36 @@ describe('AgentRunTimeline', () => {
     expect(screen.queryByText('搜索记录')).not.toBeInTheDocument();
   });
 
+  it('completed + 实时 MCP 工具使用外部工具分组和友好结果标题', () => {
+    const internalAlias = 'mcp__learn__microsoft_docs_search';
+    renderTimeline(run({
+      status: 'completed',
+      steps: [
+        step({
+          toolCalls: [
+            toolCall({
+              toolCallId: 'mcp-1',
+              toolName: internalAlias,
+              arguments: { query: 'Responses API' },
+              resultSummary: {
+                kind: 'mcp',
+                title: '找到 2 篇官方文档',
+                truncated: false,
+              },
+            }),
+          ],
+        }),
+      ],
+    }));
+
+    expect(screen.getByText('执行过程 · 调用 1 个外部工具')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '查看执行过程' }));
+
+    expect(screen.getByText('外部工具')).toBeInTheDocument();
+    expect(screen.getByText('找到 2 篇官方文档')).toBeInTheDocument();
+    expect(screen.queryByText(new RegExp(internalAlias, 'i'))).not.toBeInTheDocument();
+  });
+
   it('completed 且存在执行过程时默认收起，并通过侧栏查看过程详情', () => {
     renderTimeline(run({
       status: 'completed',
@@ -723,6 +753,38 @@ describe('AgentRunTimeline', () => {
     expect(screen.queryByText('2 个未使用')).not.toBeInTheDocument();
     expect(screen.queryByText('搜索完成')).not.toBeInTheDocument();
     expect(screen.queryByText('网页读取部分可用')).not.toBeInTheDocument();
+  });
+
+  it('completed 历史 MCP digest-only 刷新后仍显示且不暴露内部 alias', () => {
+    const internalAlias = 'mcp__learn__microsoft_docs_search';
+    renderTimeline(run({
+      status: 'completed',
+      steps: [],
+      totalSteps: 1,
+      totalToolCalls: 1,
+      toolDigests: [
+        {
+          toolCallId: 'mcp-1',
+          toolName: internalAlias,
+          status: 'success',
+          title: `${internalAlias} 已完成`,
+          summary: `${internalAlias} 返回了可用结果`,
+          keyFindings: [],
+          sourceRefs: [],
+          truncated: false,
+        },
+      ],
+    }));
+
+    expect(screen.getByText('执行过程 · 调用 1 个外部工具')).toBeInTheDocument();
+    expect(screen.queryByText(new RegExp(internalAlias, 'i'))).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: '查看执行过程' }));
+
+    expect(screen.getByRole('dialog', { name: '执行过程' })).toBeInTheDocument();
+    expect(screen.getAllByText('外部工具').length).toBeGreaterThan(0);
+    expect(screen.getByText('外部工具已完成。')).toBeInTheDocument();
+    expect(screen.queryByText(new RegExp(internalAlias, 'i'))).not.toBeInTheDocument();
   });
 
   it('completed 但存在 failed step 时仍渲染 timeline', () => {

@@ -182,6 +182,83 @@ describe('executionProcessModel 场景矩阵', () => {
     expect(model.groups).toHaveLength(0);
   });
 
+  it('历史未知 MCP digest-only 仍可渲染且不暴露内部 alias', () => {
+    const internalAlias = 'mcp__learn__microsoft_docs_search';
+    const model = buildExecutionProcessModel(run({
+      toolDigests: [
+        digest({
+          toolCallId: 'mcp-1',
+          toolName: internalAlias,
+          title: `${internalAlias} 已完成`,
+          summary: `${internalAlias} 返回了可用结果`,
+        }),
+      ],
+    }));
+
+    expect(model.isRenderable).toBe(true);
+    expect(model.externalToolCount).toBe(1);
+    expect(model.summary).toBe('执行过程 · 调用 1 个外部工具');
+    expect(model.digestRows).toEqual([
+      expect.objectContaining({
+        id: 'mcp-1',
+        kind: 'other',
+        title: '外部工具',
+        summary: '外部工具已完成。',
+      }),
+    ]);
+    expect(JSON.stringify(model)).not.toContain(internalAlias);
+  });
+
+  it.each(['failed', 'degraded'] as const)('历史 MCP %s digest 不显示技术术语或旧上游错误', (status) => {
+    const model = buildExecutionProcessModel(run({
+      toolDigests: [digest({
+        toolCallId: 'external-failed',
+        toolName: 'mcp_3xYzSafeToken',
+        status,
+        title: '高德地图 / maps_text_search',
+        summary: status === 'failed'
+          ? 'MCP 工具暂时不可用'
+          : 'upstream 429 quota response',
+      })],
+    }));
+
+    expect(model.digestRows[0]).toMatchObject({
+      title: '高德地图 / maps_text_search',
+      summary: '部分外部工具结果未能使用。',
+    });
+    expect(JSON.stringify(model)).not.toMatch(/MCP|upstream|quota/i);
+  });
+
+  it('实时 MCP 调用和同一 digest 按 toolCallId 去重计数', () => {
+    const model = buildExecutionProcessModel(run({
+      steps: [{
+        stepId: 's1',
+        stepNumber: 1,
+        status: 'completed',
+        toolCalls: [toolCall({
+          toolCallId: 'mcp-1',
+          toolName: 'mcp__learn__microsoft_docs_search',
+          arguments: { query: 'Responses API' },
+          resultSummary: { kind: 'mcp', title: '找到 2 篇官方文档', truncated: false },
+        })],
+        contentBlockIds: [],
+        startedAt: 1_000,
+        completedAt: 2_000,
+      }],
+      toolDigests: [digest({
+        toolCallId: 'mcp-1',
+        toolName: 'mcp__learn__microsoft_docs_search',
+        title: 'Microsoft Learn 文档检索',
+        summary: '找到 2 篇官方文档。',
+      })],
+    }));
+
+    expect(model.externalToolCount).toBe(1);
+    expect(model.summary).toBe('执行过程 · 调用 1 个外部工具');
+    expect(model.groups).toHaveLength(1);
+    expect(model.groups[0].kind).toBe('other');
+  });
+
   it('只有不可读网页时仍构成可查看执行过程', () => {
     const model = buildExecutionProcessModel(run({
       totalSteps: 1,

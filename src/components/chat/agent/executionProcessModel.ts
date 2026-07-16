@@ -1,5 +1,10 @@
 import type { AgentEvidenceItem, AgentRunState, AgentToolDigest, ToolCallState, ToolCallStatus } from '@/types/agentRun';
-import { groupToolCalls, type ToolCallGroup, type ToolCallGroupDetail } from '@/lib/agent/toolCallGroups';
+import {
+  groupToolCalls,
+  type ToolCallGroup,
+  type ToolCallGroupDetail,
+  type ToolCallGroupKind,
+} from '@/lib/agent/toolCallGroups';
 
 export interface ExecutionProcessModel {
   isRenderable: boolean;
@@ -7,6 +12,7 @@ export interface ExecutionProcessModel {
   searchCount: number;
   readCount: number;
   skippedReadCount: number;
+  externalToolCount: number;
   searchCandidateCount: number;
   searchQueries: string[];
   searchSources: ExecutionProcessSource[];
@@ -29,6 +35,7 @@ export interface ExecutionProcessSource {
 
 export interface ExecutionDigestRow {
   id: string;
+  kind: ToolCallGroupKind;
   title: string;
   status: AgentToolDigest['status'];
   summary: string;
@@ -47,6 +54,7 @@ export function buildExecutionProcessModel(
   const searchCount = countSearches(toolCalls, run.toolDigests);
   const readCount = countSuccessfulReads(toolCalls, run.toolDigests);
   const skippedReadCount = countSkippedReads(toolCalls, run.toolDigests);
+  const externalToolCount = countExternalTools(toolCalls, run.toolDigests);
   const searchCandidateCount = Math.max(
     countSearchCandidates(toolCalls, run.toolDigests),
     searchSources.length,
@@ -54,14 +62,16 @@ export function buildExecutionProcessModel(
   const isRenderable = searchCount > 0
     || readCount > 0
     || skippedReadCount > 0
+    || externalToolCount > 0
     || groups.length > 0;
 
   return {
     isRenderable,
-    summary: buildSummary(searchCount, readCount, skippedReadCount),
+    summary: buildSummary(searchCount, readCount, skippedReadCount, externalToolCount),
     searchCount,
     readCount,
     skippedReadCount,
+    externalToolCount,
     searchCandidateCount,
     searchQueries,
     searchSources,
@@ -82,7 +92,11 @@ export function sanitizeExecutionTitle(digest: AgentToolDigest): string {
     return '网页暂时无法读取';
   }
 
-  return sanitizeInternalText(digest.title || '资料处理完成');
+  const title = digest.title.trim();
+  if (!title || containsInternalToolAlias(title, digest.toolName)) {
+    return '外部工具';
+  }
+  return sanitizeInternalText(title);
 }
 
 export function sanitizeExecutionSummary(digest: AgentToolDigest): string {
@@ -100,7 +114,21 @@ export function sanitizeExecutionSummary(digest: AgentToolDigest): string {
     return '部分搜索结果未能使用。';
   }
 
-  return sanitizeInternalText(digest.summary || '资料处理完成。');
+  if (!isExternalToolName(digest.toolName)) {
+    return sanitizeInternalText(digest.summary || '资料处理完成。');
+  }
+
+  if (digest.status !== 'success') {
+    return digest.status === 'interrupted'
+      ? '外部工具调用已中断。'
+      : '部分外部工具结果未能使用。';
+  }
+
+  const summary = digest.summary.trim();
+  if (!summary || containsInternalToolAlias(summary, digest.toolName)) {
+    return '外部工具已完成。';
+  }
+  return sanitizeInternalText(summary);
 }
 
 export function statusText(status: AgentToolDigest['status'] | ToolCallStatus): string {
@@ -125,7 +153,7 @@ export function statusText(status: AgentToolDigest['status'] | ToolCallStatus): 
 export function groupSectionTitle(group: ToolCallGroup): string {
   if (group.kind === 'web_search') return '搜索记录';
   if (group.kind === 'url_read') return '网页读取';
-  return '其他任务';
+  return '外部工具';
 }
 
 export function groupDetailStatusText(detail: ToolCallGroupDetail): string {
@@ -168,6 +196,20 @@ function countSearchCandidates(toolCalls: ToolCallState[], digests: AgentToolDig
   return (digests ?? [])
     .filter(digest => digest.toolName === 'web_search')
     .reduce((count, digest) => count + extractCandidateCount(digest.summary), 0);
+}
+
+function countExternalTools(
+  toolCalls: ToolCallState[],
+  digests: AgentToolDigest[] | undefined,
+): number {
+  const toolCallIds = new Set<string>();
+  for (const call of toolCalls) {
+    if (isExternalToolName(call.toolName)) toolCallIds.add(call.toolCallId);
+  }
+  for (const digest of digests ?? []) {
+    if (isExternalToolName(digest.toolName)) toolCallIds.add(digest.toolCallId);
+  }
+  return toolCallIds.size;
 }
 
 function collectSearchQueries(
@@ -266,21 +308,45 @@ function dedupeSources(sources: ExecutionProcessSource[]): ExecutionProcessSourc
   return result;
 }
 
-function buildSummary(searchCount: number, readCount: number, skippedReadCount: number): string {
+function buildSummary(
+  searchCount: number,
+  readCount: number,
+  skippedReadCount: number,
+  externalToolCount: number,
+): string {
   const parts = ['执行过程'];
   if (searchCount > 0) parts.push(`搜索 ${searchCount} 次`);
   if (readCount > 0) parts.push(`读取 ${readCount} 个网页`);
   if (skippedReadCount > 0) parts.push(`跳过 ${skippedReadCount} 个网页`);
+  if (externalToolCount > 0) parts.push(`调用 ${externalToolCount} 个外部工具`);
   return parts.join(' · ');
 }
 
 function toDigestRow(digest: AgentToolDigest): ExecutionDigestRow {
   return {
     id: digest.toolCallId,
+    kind: getDigestKind(digest.toolName),
     title: sanitizeExecutionTitle(digest),
     status: digest.status,
     summary: sanitizeExecutionSummary(digest),
   };
+}
+
+function getDigestKind(toolName: string): ToolCallGroupKind {
+  if (toolName === 'web_search') return 'web_search';
+  if (toolName === 'url_read') return 'url_read';
+  return 'other';
+}
+
+function isExternalToolName(toolName: string): boolean {
+  return toolName !== 'web_search' && toolName !== 'url_read';
+}
+
+function containsInternalToolAlias(value: string, toolName: string): boolean {
+  const normalizedValue = value.toLowerCase();
+  const normalizedToolName = toolName.trim().toLowerCase();
+  return Boolean(normalizedToolName && normalizedValue.includes(normalizedToolName))
+    || /(?:^|[^a-z0-9])mcp(?:__|[_:-])[a-z0-9_.:-]+/i.test(value);
 }
 
 function sanitizeInternalText(value: string): string {

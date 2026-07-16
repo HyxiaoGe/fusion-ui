@@ -16,7 +16,9 @@ import streamSliceReducer, {
   finalizeRun,
   appendTextDelta,
   appendThinkingDelta,
+  advanceTypewriter,
   endStream,
+  selectStreamContentBlocks,
   selectFullStreamContentBlocks,
   setLastEntryId,
   setStreamStatus,
@@ -34,6 +36,98 @@ const baseConfig = { maxSteps: 8, maxToolCalls: 20, timeoutS: 300 };
 function planStatus(state: ReturnType<typeof initial>, id: string) {
   return state.currentRun?.plan?.items.find(item => item.id === id)?.status;
 }
+
+describe('streamSlice — content blocks selector', () => {
+  it('相同 stream 状态重复选择时复用结果引用', () => {
+    let state = reducer(initial(), startStream({ conversationId: 'c1', messageId: 'm1' }));
+    state = reducer(state, appendTextDelta({ blockId: 'text-1', delta: '流式' }));
+    state = reducer(state, advanceTypewriter(2));
+
+    const first = selectStreamContentBlocks(state);
+    const second = selectStreamContentBlocks(state);
+
+    expect(second).toBe(first);
+    expect(second).toEqual([{ type: 'text', id: 'text-1', text: '流式' }]);
+
+    state = reducer(state, appendTextDelta({ blockId: 'text-1', delta: '回答' }));
+    state = reducer(state, advanceTypewriter(2));
+    const updated = selectStreamContentBlocks(state);
+
+    expect(updated).not.toBe(first);
+    expect(updated).toEqual([{ type: 'text', id: 'text-1', text: '流式回答' }]);
+  });
+
+  it('A→B→A 交错选择时复用各自引用且不串值', () => {
+    const stateA = reducer(initial(), startStream({
+      conversationId: 'c-a',
+      messageId: 'm-a',
+      staticBlocks: [{ type: 'text', id: 'static-a', text: '回答 A' }],
+    }));
+    const stateB = reducer(initial(), startStream({
+      conversationId: 'c-b',
+      messageId: 'm-b',
+      staticBlocks: [{ type: 'text', id: 'static-b', text: '回答 B' }],
+    }));
+
+    const firstA = selectStreamContentBlocks(stateA);
+    const selectedB = selectStreamContentBlocks(stateB);
+    const secondA = selectStreamContentBlocks(stateA);
+
+    expect(secondA).toBe(firstA);
+    expect(secondA).toEqual([{ type: 'text', id: 'static-a', text: '回答 A' }]);
+    expect(selectedB).not.toBe(firstA);
+    expect(selectedB).toEqual([{ type: 'text', id: 'static-b', text: '回答 B' }]);
+  });
+
+  it('static、thinking 或 typewriter 输入变化时生成新引用并返回正确内容', () => {
+    const baseState = reducer(initial(), startStream({
+      conversationId: 'c1',
+      messageId: 'm1',
+      staticBlocks: [{ type: 'text', id: 'static-1', text: '历史回答' }],
+    }));
+    const baseBlocks = selectStreamContentBlocks(baseState);
+
+    const staticChangedState = {
+      ...baseState,
+      staticBlocks: [{ type: 'text' as const, id: 'static-2', text: '恢复后的回答' }],
+    };
+    const staticChangedBlocks = selectStreamContentBlocks(staticChangedState);
+    expect(staticChangedBlocks).not.toBe(baseBlocks);
+    expect(staticChangedBlocks).toEqual([
+      { type: 'text', id: 'static-2', text: '恢复后的回答' },
+    ]);
+
+    let thinkingState = reducer(staticChangedState, appendThinkingDelta({
+      blockId: 'thinking-1',
+      delta: '第一步',
+    }));
+    const firstThinkingBlocks = selectStreamContentBlocks(thinkingState);
+    thinkingState = reducer(thinkingState, appendThinkingDelta({
+      blockId: 'thinking-1',
+      delta: '继续思考',
+    }));
+    const updatedThinkingBlocks = selectStreamContentBlocks(thinkingState);
+    expect(updatedThinkingBlocks).not.toBe(firstThinkingBlocks);
+    expect(updatedThinkingBlocks).toEqual([
+      { type: 'text', id: 'static-2', text: '恢复后的回答' },
+      { type: 'thinking', id: 'thinking-1', thinking: '第一步继续思考' },
+    ]);
+
+    const textPendingState = reducer(thinkingState, appendTextDelta({
+      blockId: 'text-1',
+      delta: '新回答',
+    }));
+    const beforeTypewriterBlocks = selectStreamContentBlocks(textPendingState);
+    const typewriterState = reducer(textPendingState, advanceTypewriter(3));
+    const afterTypewriterBlocks = selectStreamContentBlocks(typewriterState);
+    expect(afterTypewriterBlocks).not.toBe(beforeTypewriterBlocks);
+    expect(afterTypewriterBlocks).toEqual([
+      { type: 'text', id: 'static-2', text: '恢复后的回答' },
+      { type: 'thinking', id: 'thinking-1', thinking: '第一步继续思考' },
+      { type: 'text', id: 'text-1', text: '新回答' },
+    ]);
+  });
+});
 
 describe('streamSlice — agent run timeline', () => {
   it('estimated 只进入 in-flight，final actual 才原子替换 confirmed', () => {

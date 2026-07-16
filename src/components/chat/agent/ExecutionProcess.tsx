@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { AlertTriangle, CheckCircle2, FileSearch, Search, Globe2, X } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, FileSearch, Search, Globe2, Wrench, X } from 'lucide-react';
 import type { AgentRunState } from '@/types/agentRun';
 import { cn } from '@/lib/utils';
 import type { ToolCallGroupDetail } from '@/lib/agent/toolCallGroups';
@@ -148,7 +148,9 @@ function ExecutionProcessSidebar({
                   <h4 className="mb-2 flex items-center gap-1.5 text-xs font-medium text-foreground">
                     {group.kind === 'url_read'
                       ? <Globe2 className="h-3.5 w-3.5 text-teal" aria-hidden="true" />
-                      : <Search className="h-3.5 w-3.5 text-info" aria-hidden="true" />}
+                      : group.kind === 'web_search'
+                        ? <Search className="h-3.5 w-3.5 text-info" aria-hidden="true" />
+                        : <Wrench className="h-3.5 w-3.5 text-muted-foreground" aria-hidden="true" />}
                     {groupSectionTitle(group)}
                   </h4>
                   <div className="space-y-2">
@@ -213,7 +215,12 @@ function DigestOnlyList({
   model: ExecutionProcessModel;
   onOpenSources?: () => void;
 }) {
-  if (model.searchCount === 0 && model.readCount === 0 && model.skippedReadCount === 0) {
+  if (
+    model.searchCount === 0
+    && model.readCount === 0
+    && model.skippedReadCount === 0
+    && model.externalToolCount === 0
+  ) {
     return (
       <section className="rounded-md border border-border/40 bg-muted/10 px-3 py-2 text-xs text-muted-foreground">
         没有可展示的执行过程
@@ -251,7 +258,51 @@ function DigestOnlyList({
           />
         </section>
       ) : null}
+      {model.externalToolCount > 0 ? (
+        <section>
+          <h4 className="mb-2 flex items-center gap-1.5 text-xs font-medium text-foreground">
+            <Wrench className="h-3.5 w-3.5 text-muted-foreground" aria-hidden="true" />
+            外部工具
+          </h4>
+          <div className="space-y-2">
+            {model.digestRows
+              .filter(row => row.kind === 'other')
+              .map(row => (
+                <ExternalToolDigestItem key={row.id} row={row} />
+              ))}
+          </div>
+        </section>
+      ) : null}
       <SkippedReadNotice count={model.skippedReadCount} />
+    </div>
+  );
+}
+
+function ExternalToolDigestItem({ row }: { row: ExecutionProcessModel['digestRows'][number] }) {
+  const isIssue = row.status !== 'success';
+  return (
+    <div className="flex min-w-0 gap-3 rounded-md border border-border/40 bg-background/70 px-3 py-2">
+      <span className={cn(
+        'mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-md',
+        isIssue ? 'text-warn' : 'text-success',
+      )}>
+        {isIssue
+          ? <AlertTriangle className="h-4 w-4" aria-hidden="true" />
+          : <CheckCircle2 className="h-4 w-4" aria-hidden="true" />}
+      </span>
+      <div className="min-w-0 flex-1">
+        <div className="mb-1 flex min-w-0 items-center gap-2">
+          <span className="min-w-0 truncate text-sm font-medium text-foreground" title={row.title}>
+            {row.title}
+          </span>
+          <span className="shrink-0 rounded-full border border-border/30 px-1.5 py-0.5 text-[10px] text-muted-foreground">
+            {statusText(row.status)}
+          </span>
+        </div>
+        <p className="line-clamp-2 text-xs text-muted-foreground" title={row.summary}>
+          {row.summary}
+        </p>
+      </div>
     </div>
   );
 }

@@ -68,9 +68,11 @@ const ClientLayout = ({ children }: { children: React.ReactNode }) => {
   };
 
   useEffect(() => {
-    // 检查用户状态并判断是否需要刷新数据
+    // 只在登录态发生变化时重新检查，避免资料请求状态变化触发认证检查循环。
     dispatch(checkUserState());
-    
+  }, [dispatch, isAuthenticated]);
+
+  useEffect(() => {
     // 如果状态被重置为idle，说明数据可能过期，需要刷新
     if (isAuthenticated && status === 'idle') {
       dispatch(fetchUserProfile());

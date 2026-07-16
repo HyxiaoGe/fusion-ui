@@ -59,6 +59,30 @@ const emptyForm: ServerFormState = {
   allowedTools: "",
 };
 
+const amapSafePreset: ServerFormState = {
+  name: "高德地图",
+  provider: "amap",
+  endpointUrl: "https://mcp.amap.com/mcp",
+  authType: "query",
+  authName: "key",
+  credentialRef: "AMAP_MCP_API_KEY",
+  allowedTools: "",
+};
+
+const recommendedAmapReadOnlyTools = [
+  "maps_geo",
+  "maps_regeocode",
+  "maps_weather",
+  "maps_direction_bicycling",
+  "maps_direction_walking",
+  "maps_direction_driving",
+  "maps_direction_transit_integrated",
+  "maps_distance",
+  "maps_text_search",
+  "maps_around_search",
+  "maps_search_detail",
+] as const;
+
 const healthPresentation: Record<
   McpHealthStatus,
   { label: string; className: string; icon: typeof CheckCircle2 }
@@ -263,6 +287,12 @@ export default function McpServerManager() {
     setEditorOpen(true);
   };
 
+  const applyAmapSafePreset = () => {
+    setForm(amapSafePreset);
+    setFormErrors({});
+    setActionError(null);
+  };
+
   const changeForm = (field: keyof ServerFormState, value: string) => {
     setForm((current) => ({ ...current, [field]: value }));
     setFormErrors((current) => ({ ...current, [field]: undefined }));
@@ -327,6 +357,10 @@ export default function McpServerManager() {
     const discoveredNames = editingServer.discovered_tools.map((tool) => tool.name);
     return Array.from(new Set([...discoveredNames, ...parseAllowedTools(form.allowedTools)]));
   }, [connectionIdentityChanged, editingServer, form.allowedTools]);
+  const isEditingAmapServer = Boolean(
+    editingServer
+    && editingServer.provider.trim().toLowerCase() === "amap",
+  );
   const titleDetail = useMemo(
     () => hasServers ? `${servers.length} 个已配置服务` : "管理员专属配置",
     [hasServers, servers.length],
@@ -338,6 +372,13 @@ export default function McpServerManager() {
       ? Array.from(new Set([...current, toolName]))
       : current.filter((item) => item !== toolName);
     changeForm("allowedTools", next.join("\n"));
+  };
+
+  const selectRecommendedAmapReadOnlyTools = () => {
+    if (!editingServer || !isEditingAmapServer || connectionIdentityChanged) return;
+    const discoveredNames = new Set(editingServer.discovered_tools.map((tool) => tool.name));
+    const selected = recommendedAmapReadOnlyTools.filter((toolName) => discoveredNames.has(toolName));
+    changeForm("allowedTools", selected.join("\n"));
   };
 
   return (
@@ -533,6 +574,17 @@ export default function McpServerManager() {
             <div className="rounded-md border border-primary/20 bg-primary/5 p-3 text-sm text-muted-foreground">
               只保存环境变量名称，不会接收或保存明文密钥。
             </div>
+            {!editingServer && (
+              <div className="flex flex-col gap-2 rounded-md border bg-muted/10 p-3 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <p className="text-sm font-medium text-foreground">高德地图安全预设</p>
+                  <p className="mt-1 text-xs text-muted-foreground">使用无查询参数的官方 Endpoint，仅引用部署环境中的 API Key。</p>
+                </div>
+                <Button type="button" size="sm" variant="outline" onClick={applyAmapSafePreset}>
+                  使用高德安全预设
+                </Button>
+              </div>
+            )}
             {editingServer && (
               <div className="rounded-md border border-amber-500/30 bg-amber-500/5 p-3 text-sm text-muted-foreground">
                 修改 Endpoint、提供商或鉴权配置后，旧的工具发现结果和授权会失效；保存后需要重新测试并刷新工具。
@@ -597,7 +649,19 @@ export default function McpServerManager() {
             )}
 
             <div className="space-y-2">
-              <Label htmlFor={selectableTools.length > 0 ? undefined : "mcp-allowed-tools"}>允许工具</Label>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <Label htmlFor={selectableTools.length > 0 ? undefined : "mcp-allowed-tools"}>允许工具</Label>
+                {isEditingAmapServer && !connectionIdentityChanged && editingServer?.discovered_tools.length ? (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={selectRecommendedAmapReadOnlyTools}
+                  >
+                    一键选择推荐只读工具
+                  </Button>
+                ) : null}
+              </div>
               {selectableTools.length > 0 ? (
                 <div className="space-y-2 rounded-md border p-3" role="group" aria-label="允许工具">
                   {selectableTools.map((toolName) => {
