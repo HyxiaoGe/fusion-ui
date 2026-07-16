@@ -19,13 +19,24 @@ export function getToolErrorDisplay(
     return '部分搜索结果未能使用';
   }
 
+  if (toolName.startsWith('mcp_') && (status === 'failed' || status === 'degraded')) {
+    return '部分工具结果未能使用';
+  }
+
   const rawError = error?.trim();
-  if (rawError && !isInternalFailureReason(rawError)) {
+  if (rawError && !isInternalFailureReason(rawError) && !containsInternalToolAlias(rawError, toolName)) {
     return rawError;
   }
 
   if (status === 'interrupted') return '工具调用已中断';
   return '部分工具结果未能使用';
+}
+
+function containsInternalToolAlias(reason: string, toolName: string): boolean {
+  const normalizedReason = reason.toLowerCase();
+  const normalizedToolName = toolName.trim().toLowerCase();
+  return Boolean(normalizedToolName && normalizedReason.includes(normalizedToolName))
+    || /(?:^|[^a-z0-9])mcp(?:__|[_:-])[a-z0-9_.:-]+/i.test(reason);
 }
 
 function isInternalFailureReason(reason: string): boolean {

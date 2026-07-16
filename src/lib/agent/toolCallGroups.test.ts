@@ -133,17 +133,83 @@ describe('groupToolCalls', () => {
     expect(read.shouldShowDetailsByDefault).toBe(true);
   });
 
-  it('未知工具按 toolName 聚合并显示调用工具摘要', () => {
+  it('未知工具按 toolName 聚合，优先用结果标题且不显示内部 alias', () => {
     const groups = groupToolCalls([
-      tc({ toolCallId: 'x1', toolName: 'calculator', arguments: { expression: '1+1' }, resultSummary: { kind: 'calculator', title: '2', truncated: false } }),
-      tc({ toolCallId: 'x2', toolName: 'calculator', arguments: { expression: '2+2' }, resultSummary: { kind: 'calculator', title: '4', truncated: false } }),
+      tc({ toolCallId: 'x1', toolName: 'mcp__learn__microsoft_docs_search', arguments: { query: 'Responses API' }, resultSummary: { kind: 'mcp', title: '找到 2 篇官方文档', truncated: false } }),
+      tc({ toolCallId: 'x2', toolName: 'mcp__learn__microsoft_docs_search', arguments: { query: 'Agents SDK' }, resultSummary: { kind: 'mcp', title: '找到 3 篇官方文档', truncated: false } }),
     ]);
 
     expect(groups).toHaveLength(1);
-    expect(groups[0].toolName).toBe('calculator');
+    expect(groups[0].toolName).toBe('mcp__learn__microsoft_docs_search');
     expect(groups[0].kind).toBe('other');
     expect(groups[0].summary).toBe('调用 2 个工具');
+    expect(groups[0].details.map(detail => detail.primary)).toEqual([
+      '找到 2 篇官方文档',
+      '找到 3 篇官方文档',
+    ]);
+    expect(JSON.stringify(groups[0].details)).not.toContain('mcp__learn__microsoft_docs_search');
   });
+
+  it('未知工具没有安全结果标题时使用外部工具兜底', () => {
+    const groups = groupToolCalls([
+      tc({
+        toolCallId: 'x1',
+        toolName: 'mcp__learn__microsoft_docs_search',
+        arguments: { query: 'Responses API' },
+        resultSummary: {
+          kind: 'mcp',
+          title: 'mcp__learn__microsoft_docs_search 已完成',
+          truncated: false,
+        },
+      }),
+    ]);
+
+    expect(groups[0].details[0].primary).toBe('外部工具');
+    expect(JSON.stringify(groups[0].details)).not.toContain('mcp__learn__microsoft_docs_search');
+  });
+
+  it('未知工具失败时不透出错误里的内部 alias', () => {
+    const groups = groupToolCalls([
+      tc({
+        toolCallId: 'x1',
+        toolName: 'mcp__learn__microsoft_docs_search',
+        status: 'failed',
+        arguments: { query: 'Responses API' },
+        resultSummary: undefined,
+        error: 'mcp__learn__microsoft_docs_search upstream unavailable',
+      }),
+    ]);
+
+    expect(groups[0].details[0]).toMatchObject({
+      primary: '外部工具',
+      secondary: '部分工具结果未能使用',
+    });
+    expect(JSON.stringify(groups[0].details)).not.toContain('mcp__learn__microsoft_docs_search');
+  });
+
+  it.each(['failed', 'degraded'] as const)(
+    'MCP %s 不透传固定错误、MCP 术语或原始错误',
+    (status) => {
+      const groups = groupToolCalls([
+        tc({
+          toolCallId: 'x1',
+          toolName: 'mcp_3xYzSafeToken',
+          status,
+          arguments: { keywords: '民治 烤肉' },
+          resultSummary: undefined,
+          error: status === 'failed'
+            ? 'MCP 工具暂时不可用'
+            : '高德 MCP upstream degraded',
+        }),
+      ]);
+
+      expect(groups[0].details[0]).toMatchObject({
+        primary: '外部工具',
+        secondary: '部分工具结果未能使用',
+      });
+      expect(JSON.stringify(groups[0].details)).not.toMatch(/MCP|mcp_|upstream|高德/i);
+    },
+  );
 
   it('截断结果让成功组可展开但不默认展开', () => {
     const groups = groupToolCalls([

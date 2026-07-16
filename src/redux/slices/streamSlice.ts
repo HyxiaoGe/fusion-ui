@@ -1,4 +1,4 @@
-import { createSlice, PayloadAction } from '@reduxjs/toolkit';
+import { createSelector, createSlice, PayloadAction } from '@reduxjs/toolkit';
 import type { ContentBlock, ContextUsage, SearchSourceSummary } from '@/types/conversation';
 import type { ContextUsagePhase } from '@/lib/chat/contextUsage';
 import { logout } from '@/redux/slices/authSlice';
@@ -596,36 +596,73 @@ const streamSlice = createSlice({
 
 // Selector：从 streamSlice 组装出当前流式 content blocks 数组
 // thinking blocks 全量返回（实时显示），text blocks 按 displayedTextLength 截断（打字机效果）
+type StreamContentBlockSelectorArgs = [
+  StreamState['staticBlocks'],
+  StreamState['textBlocks'],
+  StreamState['thinkingBlocks'],
+  StreamState['blockOrder'],
+  StreamState['blockTypes'],
+  StreamState['displayedTextLength'],
+];
+
+const selectStreamContentBlocksFromParts = createSelector(
+  [
+    (...args: StreamContentBlockSelectorArgs) => args[0],
+    (...args: StreamContentBlockSelectorArgs) => args[1],
+    (...args: StreamContentBlockSelectorArgs) => args[2],
+    (...args: StreamContentBlockSelectorArgs) => args[3],
+    (...args: StreamContentBlockSelectorArgs) => args[4],
+    (...args: StreamContentBlockSelectorArgs) => args[5],
+  ],
+  (
+    staticBlocks,
+    textBlocks,
+    thinkingBlocks,
+    blockOrder,
+    blockTypes,
+    displayedTextLength,
+  ): ContentBlock[] => {
+    let remainingChars = displayedTextLength;
+    const blocks: ContentBlock[] = [...staticBlocks];
+
+    // 先输出 thinking blocks
+    for (const blockId of blockOrder) {
+      if (blockTypes[blockId] === 'thinking') {
+        blocks.push({
+          type: 'thinking' as const,
+          id: blockId,
+          thinking: thinkingBlocks[blockId] ?? '',
+        });
+      }
+    }
+
+    // 再输出 text blocks（带打字机截断）
+    for (const blockId of blockOrder) {
+      if (blockTypes[blockId] === 'text') {
+        const fullText = textBlocks[blockId] ?? '';
+        const visibleLength = Math.min(remainingChars, fullText.length);
+        remainingChars -= visibleLength;
+        blocks.push({
+          type: 'text' as const,
+          id: blockId,
+          text: fullText.slice(0, visibleLength),
+        });
+      }
+    }
+
+    return blocks;
+  },
+);
+
 export function selectStreamContentBlocks(state: StreamState): ContentBlock[] {
-  let remainingChars = state.displayedTextLength;
-  const blocks: ContentBlock[] = [...state.staticBlocks];
-
-  // 先输出 thinking blocks
-  for (const blockId of state.blockOrder) {
-    if (state.blockTypes[blockId] === 'thinking') {
-      blocks.push({
-        type: 'thinking' as const,
-        id: blockId,
-        thinking: state.thinkingBlocks[blockId] ?? '',
-      });
-    }
-  }
-
-  // 再输出 text blocks（带打字机截断）
-  for (const blockId of state.blockOrder) {
-    if (state.blockTypes[blockId] === 'text') {
-      const fullText = state.textBlocks[blockId] ?? '';
-      const visibleLength = Math.min(remainingChars, fullText.length);
-      remainingChars -= visibleLength;
-      blocks.push({
-        type: 'text' as const,
-        id: blockId,
-        text: fullText.slice(0, visibleLength),
-      });
-    }
-  }
-
-  return blocks;
+  return selectStreamContentBlocksFromParts(
+    state.staticBlocks,
+    state.textBlocks,
+    state.thinkingBlocks,
+    state.blockOrder,
+    state.blockTypes,
+    state.displayedTextLength,
+  );
 }
 
 // 完整版 selector（不截断），用于流结束时写入最终消息

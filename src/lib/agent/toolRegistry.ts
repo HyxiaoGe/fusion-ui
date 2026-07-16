@@ -35,7 +35,7 @@ export const TOOL_REGISTRY: Record<string, ToolMeta> = {
 };
 
 const FALLBACK: ToolMeta = {
-  label: '',
+  label: '外部工具',
   icon: Wrench,
   color: 'neutral',
   summarize: () => '',
@@ -44,5 +44,5 @@ const FALLBACK: ToolMeta = {
 export function getToolMeta(toolName: string): ToolMeta {
   const found = TOOL_REGISTRY[toolName];
   if (found) return found;
-  return { ...FALLBACK, label: toolName };
+  return FALLBACK;
 }

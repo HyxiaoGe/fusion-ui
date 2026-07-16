@@ -252,7 +252,7 @@ describe('AdminPerformancePanel', () => {
     fireEvent.click(screen.getByRole('button', { name: `查看压测详情 ${unknownRun.run_id}` }));
 
     const detail = await screen.findByLabelText(`压测详情 ${unknownRun.run_id}`);
-    expect(detail).toHaveTextContent('暂不支持 Schema v99');
+    await waitFor(() => expect(detail).toHaveTextContent('暂不支持 Schema v99'));
     expect(detail).not.toHaveTextContent('HTTP 基线');
     expect(detail).not.toHaveTextContent('CPU 窗口峰值');
     expect(detail).not.toHaveTextContent('清理对话');

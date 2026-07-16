@@ -151,6 +151,34 @@ describe('ClientLayout', () => {
     });
   });
 
+  it('does not repeat auth checks or profile fetches when profile loading completes', async () => {
+    currentAuthState.isAuthenticated = true;
+    currentAuthState.status = 'idle';
+
+    const createLayout = () =>
+      React.createElement(
+        ClientLayout,
+        null,
+        React.createElement('div', null, 'child')
+      );
+    const { rerender } = render(createLayout());
+
+    await waitFor(() => {
+      expect(checkUserStateMock).toHaveBeenCalledTimes(1);
+      expect(fetchUserProfileMock).toHaveBeenCalledTimes(1);
+    });
+
+    currentAuthState.status = 'loading';
+    rerender(createLayout());
+    currentAuthState.status = 'succeeded';
+    rerender(createLayout());
+
+    await waitFor(() => {
+      expect(checkUserStateMock).toHaveBeenCalledTimes(1);
+      expect(fetchUserProfileMock).toHaveBeenCalledTimes(1);
+    });
+  });
+
   it('loads models and opens login dialog for unauthenticated users after delay', async () => {
     render(
       React.createElement(

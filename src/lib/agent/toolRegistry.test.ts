@@ -23,8 +23,9 @@ describe('toolRegistry', () => {
   });
 
   it('getToolMeta 未知工具返回兜底元数据', () => {
-    const meta = getToolMeta('future_tool_x');
-    expect(meta.label).toBe('future_tool_x');
+    const meta = getToolMeta('mcp__learn__microsoft_docs_search');
+    expect(meta.label).toBe('外部工具');
+    expect(meta.label).not.toContain('mcp__');
     expect(meta.color).toBe('neutral');
     expect(meta.summarize({})).toBe('');
   });
