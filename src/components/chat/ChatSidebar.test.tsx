@@ -10,6 +10,7 @@ const {
   mockDispatch,
   mockChatListProps,
   selectorState,
+  themeRuntimeState,
 } = vi.hoisted(() => ({
   mockUseConversationList: vi.fn(),
   mockUseSidebarActions: vi.fn(),
@@ -20,6 +21,10 @@ const {
     models: { models: [{ id: 'model-a', name: '测试模型' }] },
     theme: { mode: 'system' },
     stream: { isStreaming: false, conversationId: null as string | null },
+  },
+  themeRuntimeState: {
+    resolvedTheme: 'light' as 'light' | 'dark',
+    hasMounted: true,
   },
 }));
 
@@ -42,7 +47,11 @@ vi.mock('@/redux/hooks', () => ({
 }));
 
 vi.mock('@/lib/hooks/useResolvedTheme', () => ({
-  useResolvedTheme: () => 'light',
+  useResolvedTheme: () => themeRuntimeState.resolvedTheme,
+}));
+
+vi.mock('@/hooks/useHasMounted', () => ({
+  useHasMounted: () => themeRuntimeState.hasMounted,
 }));
 
 vi.mock('@/components/layouts/UserAvatarMenu', () => ({
@@ -165,6 +174,8 @@ describe('ChatSidebar', () => {
     mockChatListProps.mockClear();
     selectorState.stream.isStreaming = false;
     selectorState.stream.conversationId = null;
+    themeRuntimeState.resolvedTheme = 'light';
+    themeRuntimeState.hasMounted = true;
     Element.prototype.scrollIntoView = vi.fn();
   });
 
@@ -334,5 +345,19 @@ describe('ChatSidebar', () => {
     rerender(<ChatSidebar onNewChat={vi.fn()} />);
 
     expect(mockChatListProps.mock.calls.at(-1)?.[0].streamingConversationId).toBeNull();
+  });
+
+  it('hydration 完成前使用稳定的浅色主题按钮，挂载后再同步真实主题', () => {
+    themeRuntimeState.resolvedTheme = 'dark';
+    themeRuntimeState.hasMounted = false;
+
+    const { rerender } = render(<ChatSidebar onNewChat={vi.fn()} />);
+
+    expect(screen.getByRole('button', { name: '切换到暗色模式' })).toBeTruthy();
+
+    themeRuntimeState.hasMounted = true;
+    rerender(<ChatSidebar onNewChat={vi.fn()} />);
+
+    expect(screen.getByRole('button', { name: '切换到亮色模式' })).toBeTruthy();
   });
 });

@@ -14,6 +14,7 @@ import { useSidebarActions } from "@/hooks/useSidebarActions";
 import { useAppSelector, useAppDispatch } from "@/redux/hooks";
 import { setThemeMode } from "@/redux/slices/themeSlice";
 import { useResolvedTheme } from "@/lib/hooks/useResolvedTheme";
+import { useHasMounted } from "@/hooks/useHasMounted";
 import { getRouteConversationId } from "@/lib/routes/chatRoutes";
 import type { ConversationListItem } from "@/hooks/useConversationList";
 import { formatInTimeZone } from 'date-fns-tz';
@@ -62,7 +63,10 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ onNewChat, activeChatIdOverri
     state.stream.isStreaming ? state.stream.conversationId : null
   );
   const resolvedTheme = useResolvedTheme(themeMode);
-  const isDark = resolvedTheme === 'dark';
+  const hasMounted = useHasMounted();
+  // SSR 无法读取 localStorage 里的主题。首个 hydration 帧固定按浅色渲染，
+  // 挂载后再同步真实主题，避免服务端 Moon 与客户端 Sun 直接冲突。
+  const isDark = hasMounted && resolvedTheme === 'dark';
   const modelNameById = React.useMemo(() => {
     return new Map(models.map((model) => [model.id, model.name]));
   }, [models]);
