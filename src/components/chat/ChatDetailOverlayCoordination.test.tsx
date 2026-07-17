@@ -225,4 +225,38 @@ describe('聊天详情浮层互斥', () => {
     expect(screen.getByRole('dialog', { name: '上下文状态' })).toBeInTheDocument();
     expect(localStorage.getItem(CONTEXT_STATUS_OPEN_STORAGE_KEY)).toBe('true');
   });
+
+  it('执行过程侧栏隔离消息间距并由视口上下边界约束高度', () => {
+    render(
+      <div className="space-y-1">
+        <ExecutionProcess run={run} />
+      </div>,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: '查看执行过程' }));
+
+    const dialog = screen.getByRole('dialog', { name: '执行过程' });
+    expect(dialog.parentElement).toBe(document.body);
+    expect(screen.getByRole('button', { name: '关闭执行过程背景' }).parentElement).toBe(document.body);
+    expect(dialog).toHaveClass('inset-y-0');
+    expect(dialog).not.toHaveClass('h-full');
+  });
+
+  it('回答依据侧栏隔离消息间距并由视口上下边界约束高度', () => {
+    render(
+      <div className="space-y-1">
+        <AnswerEvidenceSidebar
+          model={evidenceModel}
+          isOpen
+          onClose={() => undefined}
+        />
+      </div>,
+    );
+
+    const dialog = screen.getByRole('dialog', { name: '回答依据' });
+    expect(dialog.parentElement).toBe(document.body);
+    expect(screen.getByRole('button', { name: '关闭回答依据背景' }).parentElement).toBe(document.body);
+    expect(dialog).toHaveClass('inset-y-0');
+    expect(dialog).not.toHaveClass('h-full');
+  });
 });

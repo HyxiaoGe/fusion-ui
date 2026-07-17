@@ -9,6 +9,7 @@ import type {
   AnswerEvidenceSidebarUsedItem,
 } from './answerEvidenceSidebarModel';
 import { useChatDetailOverlayRegistration } from './ChatDetailOverlayContext';
+import { ChatDetailOverlayPortal } from './ChatDetailOverlayPortal';
 
 interface AnswerEvidenceSidebarProps {
   model: AnswerEvidenceSidebarModel | null;
@@ -77,7 +78,7 @@ export default function AnswerEvidenceSidebar({
   }
 
   return (
-    <>
+    <ChatDetailOverlayPortal>
       <button
         type="button"
         aria-label="关闭回答依据背景"
@@ -89,7 +90,7 @@ export default function AnswerEvidenceSidebar({
         role="dialog"
         aria-modal="true"
         aria-label="回答依据"
-        className="fixed right-0 top-0 z-50 flex h-full w-[440px] max-w-[100vw] transform flex-col border-l border-border bg-background shadow-lg transition-transform duration-300 ease-in-out"
+        className="fixed inset-y-0 right-0 z-50 flex w-[440px] max-w-[100vw] transform flex-col border-l border-border bg-background shadow-lg transition-transform duration-300 ease-in-out"
       >
         <header className="flex items-start justify-between gap-3 border-b border-border px-4 py-3">
           <div className="min-w-0">
@@ -181,7 +182,7 @@ export default function AnswerEvidenceSidebar({
 
         </div>
       </aside>
-    </>
+    </ChatDetailOverlayPortal>
   );
 }
 
