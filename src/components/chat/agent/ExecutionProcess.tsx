@@ -5,6 +5,7 @@ import { AlertTriangle, CheckCircle2, FileSearch, Search, Globe2, Wrench, X } fr
 import type { AgentRunState } from '@/types/agentRun';
 import { cn } from '@/lib/utils';
 import type { ToolCallGroupDetail } from '@/lib/agent/toolCallGroups';
+import { useChatDetailOverlayRegistration } from '../ChatDetailOverlayContext';
 import {
   buildExecutionProcessModel,
   type ExecutionProcessModel,
@@ -80,6 +81,7 @@ function ExecutionProcessSidebar({
   );
   const closeButtonRef = useRef<HTMLButtonElement | null>(null);
   const previousFocusRef = useRef<HTMLElement | null>(null);
+  useChatDetailOverlayRegistration(isOpen && model.isRenderable);
 
   useEffect(() => {
     if (!isOpen) return;

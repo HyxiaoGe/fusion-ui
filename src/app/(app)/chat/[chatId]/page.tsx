@@ -5,6 +5,7 @@ import { useParams, useRouter } from 'next/navigation';
 import { Files } from 'lucide-react';
 import { ChatMessageListLazy } from '@/components/lazy/LazyComponents';
 import ChatInput, { type ChatUploadCompleteFile } from '@/components/chat/ChatInput';
+import { ChatDetailOverlayProvider } from '@/components/chat/ChatDetailOverlayContext';
 import ConversationFilesPanel from '@/components/chat/ConversationFilesPanel';
 import {
   tryConversationFileToComposerAttachment,
@@ -813,7 +814,7 @@ export default function ChatPage() {
   }
 
   return (
-    <>
+    <ChatDetailOverlayProvider>
       <div className="relative flex h-full min-h-0">
         <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
           <div className="flex-1 overflow-y-auto px-4 pt-4" data-chat-scroll-container="true">
@@ -896,6 +897,6 @@ export default function ChatPage() {
         cancelLabel="取消"
         variant="destructive"
       />
-    </>
+    </ChatDetailOverlayProvider>
   );
 }

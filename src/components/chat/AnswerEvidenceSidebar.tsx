@@ -8,6 +8,7 @@ import type {
   AnswerEvidenceSidebarModel,
   AnswerEvidenceSidebarUsedItem,
 } from './answerEvidenceSidebarModel';
+import { useChatDetailOverlayRegistration } from './ChatDetailOverlayContext';
 
 interface AnswerEvidenceSidebarProps {
   model: AnswerEvidenceSidebarModel | null;
@@ -29,6 +30,7 @@ export default function AnswerEvidenceSidebar({
   const previousFocusRef = useRef<HTMLElement | null>(null);
   const usedItems = model?.usedItems ?? [];
   const candidateItems = model?.candidateItems ?? [];
+  useChatDetailOverlayRegistration(isOpen && Boolean(model?.isRenderable));
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {

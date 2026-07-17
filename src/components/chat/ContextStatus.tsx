@@ -14,6 +14,7 @@ import {
 import { cn } from '@/lib/utils';
 import type { ContextUsage } from '@/types/conversation';
 import i18n from '@/lib/i18n';
+import { useHasOpenChatDetailOverlay } from './ChatDetailOverlayContext';
 
 interface ContextStatusProps {
   conversationId: string;
@@ -168,6 +169,8 @@ export default function ContextStatus({
     ?? (phase === 'error' ? 'check_failed' : null);
   const isError = effectiveErrorKind !== null;
   const [open, setOpen] = useState(false);
+  const hasOpenDetailOverlay = useHasOpenChatDetailOverlay();
+  const visibleOpen = open && !hasOpenDetailOverlay;
   const trackedConversationIdRef = useRef(conversationId);
   const preferredOpenRef = useRef<boolean | null>(null);
   const autoOpenHandledRef = useRef(false);
@@ -288,7 +291,7 @@ export default function ContextStatus({
         : t('contextStatus.unavailable'));
 
   return (
-    <Popover open={open} onOpenChange={handleOpenChange}>
+    <Popover open={visibleOpen} onOpenChange={handleOpenChange}>
       <PopoverTrigger asChild>
         <button
           type="button"
@@ -317,7 +320,7 @@ export default function ContextStatus({
           ) : null}
         </button>
       </PopoverTrigger>
-      {open ? (
+      {visibleOpen ? (
         <PopoverContent
           role="dialog"
           aria-label={t('contextStatus.title')}
