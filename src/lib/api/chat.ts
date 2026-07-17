@@ -8,7 +8,7 @@ import type {
   AgentProgressPhase,
   SseEnvelope,
 } from '@/types/agentRun';
-import type { ContentBlock } from '@/types/conversation';
+import type { ContentBlock, StructuredToolResultBlock } from '@/types/conversation';
 import type { ContextUsage } from '@/types/conversation';
 import { normalizeContextUsage, type ContextUsagePhase } from '@/lib/chat/contextUsage';
 
@@ -275,6 +275,14 @@ export interface StreamCallbacks {
       };
     },
   ) => void;
+  onContentBlockUpserted?: (
+    ev: AgentEventEnvelope & {
+      protocol_version: 2;
+      content_block: StructuredToolResultBlock;
+      /** 兼容早期实验事件；正式契约固定为 content_block。 */
+      block?: StructuredToolResultBlock;
+    },
+  ) => void;
   onContextStatusUpdated?: (
     ev: AgentEventEnvelope & ContextUsage & {
       protocol_version: 2;
@@ -386,6 +394,8 @@ async function parseSseEnvelopeStream(
         return callbacks.onToolResultDigest?.(ev as never);
       case 'evidence_item_upserted':
         return callbacks.onEvidenceItemUpserted?.(ev as never);
+      case 'content_block_upserted':
+        return callbacks.onContentBlockUpserted?.(ev as never);
       case 'context_status_updated': {
         const usage = normalizeContextUsage(ev);
         const phase = ev.phase;

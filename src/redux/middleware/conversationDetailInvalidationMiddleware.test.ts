@@ -21,6 +21,14 @@ vi.mock('@/lib/chat/conversationFilesResource', () => ({
 
 import conversationDetailInvalidationMiddleware from './conversationDetailInvalidationMiddleware';
 
+function createUnsignedToken(subject: string): string {
+  const encode = (value: object) => btoa(JSON.stringify(value))
+    .replaceAll('+', '-')
+    .replaceAll('/', '_')
+    .replaceAll('=', '');
+  return `${encode({ alg: 'none', typ: 'JWT' })}.${encode({ sub: subject })}.`;
+}
+
 describe('conversationDetailInvalidationMiddleware', () => {
   beforeEach(() => {
     invalidateAllConversationDetailsMock.mockClear();
@@ -69,6 +77,40 @@ describe('conversationDetailInvalidationMiddleware', () => {
     );
     expect(dispatch).toHaveBeenCalledWith({ type: 'stream/endStream' });
     expect(dispatch).toHaveBeenCalledWith({ type: 'fileUpload/resetFileUploadState' });
+  });
+
+  it('Fusion 用户资料替换认证占位用户时不应被误判为切换账号', () => {
+    const token = createUnsignedToken('auth-user-a');
+    let state = {
+      auth: {
+        isAuthenticated: true,
+        user: { id: 'auth-user-a' },
+        token,
+      },
+    } as any;
+    const dispatch = vi.fn();
+    const next = vi.fn(() => {
+      state = {
+        auth: {
+          isAuthenticated: true,
+          user: { id: 'fusion-user-a' },
+          token,
+        },
+      };
+    });
+    const invoke = conversationDetailInvalidationMiddleware({
+      getState: () => state,
+      dispatch,
+    } as any)(next);
+
+    invoke({
+      type: 'auth/fetchUserProfile/fulfilled',
+      payload: { id: 'fusion-user-a' },
+    });
+
+    expect(invalidateAllConversationDetailsMock).not.toHaveBeenCalled();
+    expect(invalidateAllConversationFilesMock).not.toHaveBeenCalled();
+    expect(dispatch).not.toHaveBeenCalled();
   });
 
   it('清空单个会话时只让该会话 pending 详情请求失效', () => {

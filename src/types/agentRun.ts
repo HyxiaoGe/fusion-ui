@@ -107,6 +107,9 @@ export interface ToolCallResultSummary {
   kind: string;
   title?: string;
   count?: number;
+  provider?: string;
+  result_count?: number;
+  mode_count?: number;
   favicon?: string;
   truncated: boolean;
 }

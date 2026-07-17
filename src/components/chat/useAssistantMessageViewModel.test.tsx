@@ -96,6 +96,36 @@ describe('useAssistantMessageViewModel', () => {
     );
   });
 
+  it('静态消息与流式 staticBlocks 都派生结构化工具结果', () => {
+    const placeResult = {
+      type: 'place_results' as const,
+      id: 'places-1',
+      schema_version: 1 as const,
+      provider: 'amap',
+      status: 'success' as const,
+      result_count: 1,
+      places: [{ provider_place_id: 'p1', name: '民治烤肉店' }],
+      limitations: [],
+    };
+    const message: Message = {
+      id: 'assistant-1',
+      role: 'assistant',
+      content: [placeResult, { type: 'text', id: 'text-1', text: '静态回答' }],
+    };
+
+    const staticModel = deriveStaticAssistantMessageViewModel({
+      message,
+      isLoadingQuestions: false,
+      suggestedQuestionsCount: 0,
+    });
+    expect(staticModel.structuredResults).toEqual([placeResult]);
+
+    selectorState.stream.messageId = 'assistant-1';
+    selectorState.stream.staticBlocks = [placeResult];
+    const { result } = renderViewModel(message, { isStreaming: true, isLastMessage: true });
+    expect(result.current.structuredResults).toEqual([placeResult]);
+  });
+
   it('从 SearchBlock 的最终 provider 派生回答依据提供方文案', () => {
     const message: Message = {
       id: 'assistant-1',

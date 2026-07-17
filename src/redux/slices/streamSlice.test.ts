@@ -23,6 +23,7 @@ import streamSliceReducer, {
   setLastEntryId,
   setStreamStatus,
   updateContextUsage,
+  upsertStaticContentBlock,
 } from './streamSlice';
 
 const reducer = streamSliceReducer;
@@ -38,6 +39,61 @@ function planStatus(state: ReturnType<typeof initial>, id: string) {
 }
 
 describe('streamSlice — content blocks selector', () => {
+  it('在模型正文到达前 upsert 结构化结果块，并按 id 替换而不重复', () => {
+    let state = reducer(initial(), startStream({ conversationId: 'c1', messageId: 'm1' }));
+    state = reducer(state, initRun({
+      runId: 'r1',
+      messageId: 'm1',
+      config: baseConfig,
+      sequence: 0,
+    }));
+    state = reducer(state, upsertStaticContentBlock({
+      runId: 'r1',
+      sequence: 1,
+      block: {
+        type: 'place_results',
+        id: 'places-1',
+        schema_version: 1,
+        provider: 'amap',
+        query: '烤肉',
+        status: 'success',
+        result_count: 1,
+        places: [{ provider_place_id: 'p1', name: '第一家烤肉' }],
+        limitations: [],
+      },
+    }));
+
+    expect(selectStreamContentBlocks(state)).toEqual([
+      expect.objectContaining({ type: 'place_results', id: 'places-1', result_count: 1 }),
+    ]);
+
+    state = reducer(state, upsertStaticContentBlock({
+      runId: 'r1',
+      sequence: 2,
+      block: {
+        type: 'place_results',
+        id: 'places-1',
+        schema_version: 1,
+        provider: 'amap',
+        query: '烤肉',
+        status: 'success',
+        result_count: 2,
+        places: [
+          { provider_place_id: 'p1', name: '第一家烤肉' },
+          { provider_place_id: 'p2', name: '第二家烤肉' },
+        ],
+        limitations: [],
+      },
+    }));
+    state = reducer(state, appendTextDelta({ blockId: 'text-1', delta: '推荐如下。' }));
+    state = reducer(state, advanceTypewriter(5));
+
+    const blocks = selectStreamContentBlocks(state);
+    expect(blocks).toHaveLength(2);
+    expect(blocks[0]).toMatchObject({ type: 'place_results', id: 'places-1', result_count: 2 });
+    expect(blocks[1]).toEqual({ type: 'text', id: 'text-1', text: '推荐如下。' });
+  });
+
   it('相同 stream 状态重复选择时复用结果引用', () => {
     let state = reducer(initial(), startStream({ conversationId: 'c1', messageId: 'm1' }));
     state = reducer(state, appendTextDelta({ blockId: 'text-1', delta: '流式' }));

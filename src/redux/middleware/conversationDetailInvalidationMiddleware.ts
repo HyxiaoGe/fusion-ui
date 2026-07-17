@@ -1,4 +1,5 @@
 import type { Middleware } from '@reduxjs/toolkit';
+import { selectStableAuthIdentity } from '@/lib/auth/authIdentity';
 import { resetConversationListForAuthChange } from '@/redux/slices/conversationSlice';
 import {
   invalidateAllConversationDetails,
@@ -6,23 +7,9 @@ import {
 } from '@/lib/chat/conversationDetailResource';
 import { invalidateAllConversationFiles } from '@/lib/chat/conversationFilesResource';
 
-interface AuthIdentityState {
-  auth?: {
-    isAuthenticated?: boolean;
-    user?: { id?: string | null } | null;
-    token?: string | null;
-  };
-}
-
-function selectAuthIdentity(state: unknown): string | null {
-  const auth = (state as AuthIdentityState | undefined)?.auth;
-  if (!auth?.isAuthenticated) return null;
-  return auth.user?.id ?? auth.token ?? null;
-}
-
 const conversationDetailInvalidationMiddleware: Middleware = (api) => (next) => (action) => {
   const typedAction = action as { type?: string; payload?: unknown };
-  const previousAuthIdentity = selectAuthIdentity(api.getState());
+  const previousAuthIdentity = selectStableAuthIdentity(api.getState());
   if (typedAction.type === 'conversation/resetConversationState') {
     invalidateAllConversationDetails();
     invalidateAllConversationFiles();
@@ -34,7 +21,7 @@ const conversationDetailInvalidationMiddleware: Middleware = (api) => (next) => 
   }
 
   const result = next(action);
-  const nextAuthIdentity = selectAuthIdentity(api.getState());
+  const nextAuthIdentity = selectStableAuthIdentity(api.getState());
   if (
     typedAction.type === 'auth/logout' ||
     previousAuthIdentity !== nextAuthIdentity

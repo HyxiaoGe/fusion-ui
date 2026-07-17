@@ -6,12 +6,16 @@
  */
 
 import { createSelector } from '@reduxjs/toolkit';
+import { selectStableAuthIdentity } from '@/lib/auth/authIdentity';
 import type { RootState } from './store';
 
 // ==================== 认证 ====================
 
 /** 当前用户是否已登录 */
 export const selectIsAuthenticated = (state: RootState) => state.auth.isAuthenticated;
+
+/** 当前认证会话的稳定身份键，避免用户资料水合时误判为切换账号 */
+export const selectAuthSessionKey = (state: RootState) => selectStableAuthIdentity(state);
 
 // ==================== 模型 ====================
 

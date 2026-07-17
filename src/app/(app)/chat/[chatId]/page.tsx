@@ -15,7 +15,7 @@ import { Button } from '@/components/ui/button';
 import type { FileAttachment } from '@/lib/utils/fileHelpers';
 import ConfirmDialog from '@/components/ui/confirm-dialog';
 import { useAppDispatch, useAppSelector } from '@/redux/hooks';
-import { selectIsAuthenticated } from '@/redux/selectors';
+import { selectAuthSessionKey, selectIsAuthenticated } from '@/redux/selectors';
 import { useStore } from 'react-redux';
 import {
   appendMessage,
@@ -148,9 +148,7 @@ export default function ChatPage() {
   } | null>(null);
   const fetchQuestionsRef = useRef<((force?: boolean) => Promise<void>) | undefined>(undefined);
   const isAuthenticated = useAppSelector(selectIsAuthenticated);
-  const authSessionKey = useAppSelector(
-    (state) => state.auth.user?.id ?? state.auth.token ?? null,
-  );
+  const authSessionKey = useAppSelector(selectAuthSessionKey);
   const { conversation, hydrationView, hydrationError, retryHydration } = useConversation(chatId);
   const { sendMessage, stopStreaming, retryMessage } = useSendMessage();
   const { continueAgentRun, stopContinueAgentRun } = useContinueAgentRun();

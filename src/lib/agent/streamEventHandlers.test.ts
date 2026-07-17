@@ -144,6 +144,55 @@ describe('createAgentStreamEventHandlers', () => {
     }));
   });
 
+  it('把 content_block_upserted 的规范 content_block 写入 stream staticBlocks', () => {
+    const dispatch = vi.fn();
+    const handlers = createAgentStreamEventHandlers({
+      dispatch,
+      isActive: () => true,
+      resolveMessageId: ev => ev.message_id,
+      resolveConversationId: () => 'c1',
+    });
+
+    handlers.onContentBlockUpserted?.({
+      type: 'content_block_upserted',
+      protocol_version: 2,
+      run_id: 'r1',
+      parent_run_id: null,
+      step_id: 's1',
+      parent_step_id: null,
+      tool_call_id: 'tc-place',
+      sequence: 4,
+      trace_id: 'r1',
+      ts: 0,
+      content_block: {
+        type: 'place_results',
+        id: 'places-1',
+        schema_version: 1,
+        provider: 'amap',
+        query: '烤肉',
+        near: '深圳民治',
+        status: 'success',
+        result_count: 1,
+        places: [{ provider_place_id: 'p1', name: '民治烤肉店' }],
+        limitations: [],
+        tool_call_log_id: 'tc-place',
+      },
+    });
+
+    expect(dispatch).toHaveBeenCalledWith(expect.objectContaining({
+      type: 'stream/upsertStaticContentBlock',
+      payload: expect.objectContaining({
+        runId: 'r1',
+        sequence: 4,
+        block: expect.objectContaining({
+          type: 'place_results',
+          id: 'places-1',
+          provider: 'amap',
+        }),
+      }),
+    }));
+  });
+
   it('把 context_status_updated 作为单轮快照写入当前会话', () => {
     const dispatch = vi.fn();
     const handlers = createAgentStreamEventHandlers({

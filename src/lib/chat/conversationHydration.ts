@@ -14,11 +14,13 @@ import type {
 } from '@/types/agentRun';
 import { parseTimestamp } from '@/lib/utils/parseTimestamp';
 import { normalizeContextUsage } from '@/lib/chat/contextUsage';
+import { normalizeStructuredToolResultBlock } from '@/lib/chat/structuredToolResults';
 
 // 服务端返回的原始类型（对齐后端 schema）
 interface ServerBlock {
-  type: 'text' | 'thinking' | 'file' | 'search' | 'url_read';
+  type: 'text' | 'thinking' | 'file' | 'search' | 'url_read' | 'place_results' | 'route_results';
   id: string;
+  [key: string]: unknown;
   text?: string;
   thinking?: string;
   file_id?: string;
@@ -184,6 +186,9 @@ function buildContentBlocks(serverBlocks: ServerBlock[]): ContentBlock[] {
         source_count: b.source_count,
         source_refs: b.source_refs,
       } satisfies UrlBlock);
+    } else if (b.type === 'place_results' || b.type === 'route_results') {
+      const resultBlock = normalizeStructuredToolResultBlock(b);
+      if (resultBlock) blocks.push(resultBlock);
     }
   }
   return blocks;

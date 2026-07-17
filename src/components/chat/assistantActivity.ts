@@ -64,9 +64,14 @@ export function deriveAssistantActivity(input: DeriveAssistantActivityInput): As
   const urlBlocks = input.contentBlocks.filter((block): block is UrlBlock => block.type === 'url_read');
   const hasText = input.contentBlocks.some(block => block.type === 'text' && block.text.length > 0);
   const hasThinking = input.contentBlocks.some(block => block.type === 'thinking' && block.thinking.length > 0);
+  const hasUsableStructuredResult = input.contentBlocks.some(block => (
+    block.type === 'place_results' && (block.places?.length ?? 0) > 0
+  ) || (
+    block.type === 'route_results' && (block.routes?.length ?? 0) > 0
+  ));
   const runningTool = findLatestToolCall(input.currentRun, call => call.status === 'running');
   const runningToolActivity = runningTool ? toToolActivity(runningTool) : null;
-  const issue = deriveIssue(input.currentRun, searchBlock);
+  const issue = deriveIssue(input.currentRun, searchBlock, hasUsableStructuredResult);
   const suggestionState = deriveSuggestionState(input);
   const kind = deriveKind(input, { hasText, hasThinking, hasRunningTool: runningToolActivity !== null });
   const tool = kind === 'tool_running' ? runningToolActivity : null;
@@ -125,12 +130,18 @@ function deriveSuggestionState(input: DeriveAssistantActivityInput): AssistantSu
   return input.suggestedQuestionsCount > 0 ? 'ready' : 'idle';
 }
 
-function deriveIssue(currentRun: AgentRunState | null, searchBlock: SearchBlock | null): AssistantToolIssue | null {
+function deriveIssue(
+  currentRun: AgentRunState | null,
+  searchBlock: SearchBlock | null,
+  hasUsableStructuredResult: boolean,
+): AssistantToolIssue | null {
   if (searchBlock) {
     const searchIssueCall = findSearchBlockIssueCall(currentRun, searchBlock);
 
     if (searchIssueCall) {
-      return toToolIssue(searchIssueCall.status, searchIssueCall);
+      return hasUsableStructuredResult
+        ? toOverallPartialIssue(searchIssueCall)
+        : toToolIssue(searchIssueCall.status, searchIssueCall);
     }
 
     const nonSearchToolIssueCall = findLatestOpenToolIssueCall(
@@ -139,11 +150,20 @@ function deriveIssue(currentRun: AgentRunState | null, searchBlock: SearchBlock 
     );
 
     if (nonSearchToolIssueCall?.status === 'failed' || nonSearchToolIssueCall?.status === 'degraded') {
-      return toToolIssue(nonSearchToolIssueCall.status, nonSearchToolIssueCall);
+      return hasUsableStructuredResult
+        ? toOverallPartialIssue(nonSearchToolIssueCall)
+        : toToolIssue(nonSearchToolIssueCall.status, nonSearchToolIssueCall);
     }
 
     if (searchBlock.sources.length === 0) {
       const call = findSearchCall(currentRun, searchBlock) ?? makeEmptySearchCall(searchBlock);
+
+      if (
+        hasUsableStructuredResult
+        && (searchBlock.status === 'failed' || searchBlock.status === 'degraded')
+      ) {
+        return toOverallPartialIssue({ ...call, status: searchBlock.status });
+      }
 
       return {
         kind: 'empty',
@@ -161,7 +181,9 @@ function deriveIssue(currentRun: AgentRunState | null, searchBlock: SearchBlock 
   const toolIssueCall = findLatestOpenToolIssueCall(currentRun);
 
   if (toolIssueCall?.status === 'failed' || toolIssueCall?.status === 'degraded') {
-    return toToolIssue(toolIssueCall.status, toolIssueCall);
+    return hasUsableStructuredResult
+      ? toOverallPartialIssue(toolIssueCall)
+      : toToolIssue(toolIssueCall.status, toolIssueCall);
   }
 
   return null;
@@ -220,6 +242,17 @@ function toToolIssue(status: ToolIssueStatus, call: ToolCallState): AssistantToo
     toolName: call.toolName,
     title: copy.title,
     detail: copy.detail,
+    call,
+  };
+}
+
+function toOverallPartialIssue(call: ToolCallState): AssistantToolIssue {
+  return {
+    kind: 'degraded',
+    toolKind: getToolKind(call.toolName),
+    toolName: call.toolName,
+    title: '部分工具结果未能使用',
+    detail: '已基于可用信息继续回答',
     call,
   };
 }

@@ -24,6 +24,7 @@ import {
 import { parseTimestamp } from '@/lib/utils/parseTimestamp';
 import type { Conversation, Pagination } from '@/types/conversation';
 import type { RootState } from '@/redux/store';
+import { selectAuthSessionKey } from '@/redux/selectors';
 
 export type ConversationListItem = Omit<Conversation, 'messages'>;
 export const CONVERSATION_PAGE_SIZE = 20;
@@ -34,11 +35,6 @@ const METADATA_RETRY_BASE_MS = 250;
 interface ConversationListRequestContext {
   authSessionKey: string;
   epoch: number;
-}
-
-function selectAuthSessionKey(state: RootState): string | null {
-  if (!state.auth.isAuthenticated) return null;
-  return state.auth.user?.id ?? state.auth.token ?? null;
 }
 
 function captureRequestContext(state: RootState): ConversationListRequestContext | null {

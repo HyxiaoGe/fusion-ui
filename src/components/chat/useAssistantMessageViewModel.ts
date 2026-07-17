@@ -11,6 +11,7 @@ import type {
   SearchBlock,
   SearchSourceSummary,
   SourceReference,
+  StructuredToolResultBlock,
   UrlBlock,
 } from '@/types/conversation';
 import { extractTextFromBlocks, extractThinkingFromBlocks } from '@/types/conversation';
@@ -36,6 +37,7 @@ export interface AssistantMessageViewModel {
   searchSources: SearchSourceSummary[];
   searchQueries: string[];
   answerEvidence: AnswerEvidenceModel | null;
+  structuredResults: StructuredToolResultBlock[];
   displayText: string;
   displayThinking: string;
   suppressThinking: boolean;
@@ -85,6 +87,7 @@ export function deriveStaticAssistantMessageViewModel({
   });
   const displayText = extractTextFromBlocks(blocksToRender);
   const displayThinking = extractThinkingFromBlocks(blocksToRender);
+  const structuredResults = collectStructuredResults(blocksToRender);
 
   return {
     blocksToRender,
@@ -93,6 +96,7 @@ export function deriveStaticAssistantMessageViewModel({
     searchSources,
     searchQueries,
     answerEvidence,
+    structuredResults,
     displayText,
     displayThinking,
     suppressThinking: false,
@@ -182,6 +186,7 @@ export function useAssistantMessageViewModel({
 
   const displayText = useMemo(() => extractTextFromBlocks(blocksToRender), [blocksToRender]);
   const displayThinking = useMemo(() => extractThinkingFromBlocks(blocksToRender), [blocksToRender]);
+  const structuredResults = useMemo(() => collectStructuredResults(blocksToRender), [blocksToRender]);
   const suppressThinking = isCurrentlyStreaming && (
     activity.kind === 'tool_running' || activity.kind === 'waiting'
   );
@@ -194,6 +199,7 @@ export function useAssistantMessageViewModel({
     searchSources,
     searchQueries,
     answerEvidence,
+    structuredResults,
     displayText,
     displayThinking,
     suppressThinking,
@@ -207,6 +213,12 @@ export function useAssistantMessageViewModel({
 
 function collectSearchBlocks(contentBlocks: ContentBlock[]): SearchBlock[] {
   return contentBlocks.filter((block): block is SearchBlock => block.type === 'search');
+}
+
+function collectStructuredResults(contentBlocks: ContentBlock[]): StructuredToolResultBlock[] {
+  return contentBlocks.filter((block): block is StructuredToolResultBlock => (
+    block.type === 'place_results' || block.type === 'route_results'
+  ));
 }
 
 function collectSearchSources(searchBlocks: SearchBlock[]): SearchSourceSummary[] {

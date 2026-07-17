@@ -1,5 +1,10 @@
 import { createSelector, createSlice, PayloadAction } from '@reduxjs/toolkit';
-import type { ContentBlock, ContextUsage, SearchSourceSummary } from '@/types/conversation';
+import type {
+  ContentBlock,
+  ContextUsage,
+  SearchSourceSummary,
+  StructuredToolResultBlock,
+} from '@/types/conversation';
 import type { ContextUsagePhase } from '@/lib/chat/contextUsage';
 import { logout } from '@/redux/slices/authSlice';
 import type {
@@ -321,6 +326,27 @@ const streamSlice = createSlice({
         run.evidence[index] = evidence;
       } else {
         run.evidence.push(evidence);
+      }
+    },
+
+    upsertStaticContentBlock(
+      state,
+      action: PayloadAction<{
+        runId: string;
+        sequence: number;
+        block: StructuredToolResultBlock;
+      }>,
+    ) {
+      const run = state.currentRun;
+      const { runId, sequence, block } = action.payload;
+      if (!run || run.runId !== runId || sequence <= run.lastSequence) return;
+      run.lastSequence = sequence;
+      run.protocolVersion = 2;
+      const index = state.staticBlocks.findIndex(existing => existing.id === block.id);
+      if (index >= 0) {
+        state.staticBlocks[index] = block;
+      } else {
+        state.staticBlocks.push(block);
       }
     },
 
@@ -718,6 +744,7 @@ export const {
   updateRunProgress,
   updateContextUsage,
   upsertEvidenceItem,
+  upsertStaticContentBlock,
   upsertToolDigest,
 } = streamSlice.actions;
 

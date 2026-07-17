@@ -24,9 +24,11 @@ export interface ToolCallGroup {
   id: string;
   kind: ToolCallGroupKind;
   toolName: string;
+  provider?: string;
   label: string;
   count: number;
   resultCount: number;
+  modeCount?: number;
   status: ToolCallGroupStatus;
   summary: string;
   details: ToolCallGroupDetail[];
@@ -50,7 +52,14 @@ export function groupToolCalls(calls: ToolCallState[]): ToolCallGroup[] {
     const registeredLabel = hasToolMeta(first.toolName) ? meta.label : null;
     const kind = getGroupKind(first.toolName);
     const status = deriveGroupStatus(groupCalls);
-    const resultCount = groupCalls.reduce((sum, call) => sum + (call.resultSummary?.count ?? 0), 0);
+    const resultCount = groupCalls.reduce(
+      (sum, call) => sum + (call.resultSummary?.count ?? call.resultSummary?.result_count ?? 0),
+      0,
+    );
+    const modeCount = groupCalls.reduce((sum, call) => sum + (call.resultSummary?.mode_count ?? 0), 0);
+    const provider = groupCalls
+      .map(call => call.resultSummary?.provider?.trim())
+      .find(Boolean);
     const details = groupCalls.map(toGroupDetail);
     const hasExpandableDetails = shouldHaveExpandableDetails(groupCalls, status);
 
@@ -58,17 +67,21 @@ export function groupToolCalls(calls: ToolCallState[]): ToolCallGroup[] {
       id,
       kind,
       toolName: first.toolName,
+      ...(provider ? { provider } : {}),
       label: meta.label,
       count: groupCalls.length,
       resultCount,
+      modeCount,
       status,
       summary: buildSummary(
         kind,
         status,
         groupCalls.length,
         resultCount,
+        modeCount,
         countByStatus(groupCalls, 'failed'),
         registeredLabel,
+        first.toolName,
       ),
       details,
       hasExpandableDetails,
@@ -129,8 +142,10 @@ function buildSummary(
   status: ToolCallGroupStatus,
   count: number,
   resultCount: number,
+  modeCount: number,
   failedCount: number,
   registeredLabel: string | null,
+  toolName: string,
 ): string {
   if (kind === 'web_search') {
     if (status === 'running') return `正在搜索 · ${count} 个查询`;
@@ -156,6 +171,12 @@ function buildSummary(
     if (status === 'failed') return `${registeredLabel}未取得可用结果 · ${count} 个任务`;
     if (status === 'degraded') return `${registeredLabel}部分可用 · 已跳过部分结果`;
     if (status === 'interrupted') return `${registeredLabel}已中断 · ${count} 个任务`;
+    if (toolName === 'local_place_search' && resultCount > 0) {
+      return `${registeredLabel} ${count} 次 · ${resultCount} 个地点`;
+    }
+    if (toolName === 'route_compare' && modeCount > 0) {
+      return `${registeredLabel} ${count} 次 · ${modeCount} 种方案`;
+    }
     return `${registeredLabel} ${count} 次`;
   }
 
@@ -171,10 +192,14 @@ function toGroupDetail(call: ToolCallState): ToolCallGroupDetail {
   const target = getTarget(call);
   const resultTitle = getSafeExternalResultTitle(call);
   const issueText = getToolErrorDisplay(call.toolName, call.status, call.error);
+  const productResultDetail = getProductResultDetail(call);
   return {
     id: call.toolCallId,
     primary: target.short,
-    secondary: issueText || (resultTitle !== target.short ? resultTitle : undefined) || getStatusText(call.status),
+    secondary: issueText
+      || productResultDetail
+      || (resultTitle !== target.short ? resultTitle : undefined)
+      || getStatusText(call.status),
     status: call.status,
     truncated: call.resultSummary?.truncated === true,
     fullValue: target.full,
@@ -194,8 +219,31 @@ function getTarget(call: ToolCallState): { short: string; full: string } {
 
   const summarized = getToolMeta(call.toolName).summarize(call.arguments).trim();
   const resultTitle = getSafeExternalResultTitle(call);
-  const value = resultTitle || summarized || '外部工具';
+  const value = hasToolMeta(call.toolName)
+    ? summarized || resultTitle || getToolMeta(call.toolName).label
+    : resultTitle || summarized || '外部工具';
   return { short: value, full: value };
+}
+
+function getProductResultDetail(call: ToolCallState): string | undefined {
+  if (!hasToolMeta(call.toolName)) return undefined;
+  const provider = getProviderLabel(call.resultSummary?.provider);
+  const resultCount = call.resultSummary?.result_count;
+  const modeCount = call.resultSummary?.mode_count;
+  const parts = [provider];
+  if (call.toolName === 'local_place_search' && typeof resultCount === 'number' && resultCount >= 0) {
+    parts.push(`${Math.floor(resultCount)} 个地点`);
+  }
+  if (call.toolName === 'route_compare' && typeof modeCount === 'number' && modeCount >= 0) {
+    parts.push(`${Math.floor(modeCount)} 种方案`);
+  }
+  const detail = parts.filter(Boolean).join(' · ');
+  return detail || undefined;
+}
+
+function getProviderLabel(provider: string | undefined): string | undefined {
+  if (provider?.trim().toLowerCase() === 'amap') return '高德';
+  return undefined;
 }
 
 function getSafeExternalResultTitle(call: ToolCallState): string | undefined {

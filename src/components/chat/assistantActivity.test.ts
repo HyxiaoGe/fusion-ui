@@ -418,6 +418,74 @@ describe('deriveAssistantActivity', () => {
     expect(activity.searchBlock?.query).toBe('最新搜索');
   });
 
+  it('历史消息已有可用地点结果时，把失败搜索归并为通用部分失败状态', () => {
+    const activity = deriveAssistantActivity({
+      isStreaming: false,
+      isCurrentlyStreaming: false,
+      contentBlocks: [
+        {
+          type: 'search',
+          id: 'search-1',
+          query: '深圳民治烤肉',
+          status: 'failed',
+          sources: [],
+        },
+        {
+          type: 'place_results',
+          id: 'places-1',
+          schema_version: 1,
+          provider: 'amap',
+          status: 'success',
+          places: [{ provider_place_id: 'p1', name: '民治烤肉店' }],
+        },
+        { type: 'text', id: 'text-1', text: '推荐如下。' },
+      ],
+      currentRun: null,
+      messageStatus: null,
+      isLoadingSuggestedQuestions: false,
+      suggestedQuestionsCount: 0,
+    });
+
+    expect(activity.issue).toMatchObject({
+      kind: 'degraded',
+      title: '部分工具结果未能使用',
+      detail: '已基于可用信息继续回答',
+    });
+  });
+
+  it('结构化结果为空时仍保留全搜索失败的空结果提示', () => {
+    const activity = deriveAssistantActivity({
+      isStreaming: false,
+      isCurrentlyStreaming: false,
+      contentBlocks: [
+        {
+          type: 'search',
+          id: 'search-1',
+          query: '深圳民治烤肉',
+          status: 'failed',
+          sources: [],
+        },
+        {
+          type: 'place_results',
+          id: 'places-1',
+          schema_version: 1,
+          provider: 'amap',
+          status: 'degraded',
+          places: [],
+        },
+      ],
+      currentRun: null,
+      messageStatus: null,
+      isLoadingSuggestedQuestions: false,
+      suggestedQuestionsCount: 0,
+    });
+
+    expect(activity.issue).toMatchObject({
+      kind: 'empty',
+      title: '未找到可用搜索结果',
+    });
+  });
+
   it('prioritizes a failed url_read issue over an empty latest search block', () => {
     const activity = deriveAssistantActivity({
       isStreaming: false,

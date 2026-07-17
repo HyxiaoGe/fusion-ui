@@ -159,6 +159,7 @@ function AssistantMessageFrame({
     searchSources,
     searchQueries,
     answerEvidence,
+    structuredResults,
     displayText,
     displayThinking,
     suppressThinking,
@@ -292,6 +293,7 @@ function AssistantMessageFrame({
             onRetry={handleRetry}
             onContinueAgentRun={handleContinue}
             answerEvidence={answerEvidence}
+            structuredResults={structuredResults}
             answerEvidenceSidebar={answerEvidenceSidebar}
             searchQueries={searchQueries}
             onSourceClick={handleCitationClick}

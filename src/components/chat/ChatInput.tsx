@@ -7,7 +7,7 @@ import { uploadFiles, deleteFile } from "@/lib/api/files";
 import { startPollingFileStatus, stopPollingFileStatus } from "@/lib/api/FileStatusPoller";
 import { useAppDispatch, useAppSelector } from "@/redux/hooks";
 import type { RootState } from "@/redux/store";
-import { selectChatModel, selectIsAuthenticated } from "@/redux/selectors";
+import { selectAuthSessionKey, selectChatModel, selectIsAuthenticated } from "@/redux/selectors";
 import { setReasoningEnabled } from "@/redux/slices/conversationSlice";
 import {
   addFileId,
@@ -91,7 +91,7 @@ function isSupportedImageUpload(file: File): boolean {
 
 function selectUploadAuthIdentity(state: RootState): string | null {
   if (!state.auth.isAuthenticated) return null;
-  return state.auth.user?.id ?? state.auth.token ?? "authenticated";
+  return selectAuthSessionKey(state) ?? "authenticated";
 }
 
 function formatFileErrorMessage(errorMessage?: string): string {

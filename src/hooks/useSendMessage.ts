@@ -51,6 +51,7 @@ import {
 } from '@/lib/chat/conversationHydrationMerge';
 import type { Message, ContentBlock } from '@/types/conversation';
 import type { FileAttachment } from '@/lib/utils/fileHelpers';
+import { selectAuthSessionKey } from '@/redux/selectors';
 import { useTypewriter } from './useTypewriter';
 import { useRetryMessage } from './useRetryMessage';
 import type { RootState } from '@/redux/store';
@@ -72,11 +73,6 @@ interface SendSessionContext {
   authSessionKey: string;
   conversationEpoch: number;
   generation: number;
-}
-
-function selectAuthSessionKey(state: RootState): string | null {
-  if (!state.auth.isAuthenticated) return null;
-  return state.auth.user?.id ?? state.auth.token ?? null;
 }
 
 function captureSendSessionContext(

@@ -40,6 +40,10 @@ function buildAdminContentSecurityPolicy() {
 
 const nextConfig = {
   reactStrictMode: true,
+  // 避开左下角账户入口，防止开发工具浮标拦截头像菜单点击。
+  devIndicators: {
+    position: 'top-right',
+  },
   // 实验性功能 - 移除不支持的选项
   experimental: {
     // 移除 appDir, optimizeFonts, isrMemoryCacheSize - 这些在当前版本不支持

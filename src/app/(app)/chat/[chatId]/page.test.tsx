@@ -117,6 +117,11 @@ vi.mock('react-redux', () => ({
 
 vi.mock('@/redux/selectors', () => ({
   selectIsAuthenticated: (state: any) => state.auth.isAuthenticated,
+  selectAuthSessionKey: (state: any) => (
+    state.auth.isAuthenticated
+      ? state.auth.user?.id ?? state.auth.token ?? null
+      : null
+  ),
 }));
 
 vi.mock('@/hooks/useConversation', () => ({

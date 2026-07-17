@@ -236,6 +236,112 @@ describe('conversationHydration', () => {
     expect(chat.messages[1].content[1]).toMatchObject({ type: 'text', text: 'world' });
   });
 
+  it('强刷后恢复地点与路线结果块，并保留可选字段的安全缺省', () => {
+    const chat = buildChatFromServerConversation({
+      id: 'chat-results',
+      title: '地图结果',
+      model_id: 'qwen-max-latest',
+      messages: [{
+        id: 'assistant-results',
+        role: 'assistant',
+        content: [
+          {
+            type: 'place_results',
+            id: 'places-1',
+            schema_version: 1,
+            provider: 'amap',
+            query: '烤肉',
+            near: '深圳民治',
+            status: 'success',
+            result_count: 1,
+            places: [{
+              provider_place_id: 'p1',
+              name: '民治烤肉店',
+              photos: [{ url: 'https://img.example.com/place.jpg' }],
+              platform_url: 'https://www.amap.com/place/p1',
+            }],
+            limitations: ['不包含实时排队信息'],
+            tool_call_log_id: 'tc-place',
+          },
+          {
+            type: 'route_results',
+            id: 'routes-1',
+            schema_version: 1,
+            provider: 'amap',
+            status: 'degraded',
+            origin: { label: '民治地铁站' },
+            destination: { label: '星河 WORLD', city: '深圳' },
+            routes: [{ mode: 'driving', distance_m: 6200, duration_s: 1100 }],
+            unavailable_modes: ['transit'],
+            limitations: [],
+            tool_call_log_id: 'tc-route',
+          },
+          { type: 'text', id: 'answer-1', text: '推荐如下。' },
+        ],
+      }],
+    });
+
+    expect(chat.messages[0].content).toEqual([
+      expect.objectContaining({
+        type: 'place_results',
+        id: 'places-1',
+        places: [expect.objectContaining({ name: '民治烤肉店' })],
+      }),
+      expect.objectContaining({
+        type: 'route_results',
+        id: 'routes-1',
+        status: 'degraded',
+        unavailable_modes: ['transit'],
+      }),
+      { type: 'text', id: 'answer-1', text: '推荐如下。' },
+    ]);
+  });
+
+  it('强刷后同时保留失败搜索状态和可用地点结果，供活动状态按整体结果派生', () => {
+    const chat = buildChatFromServerConversation({
+      id: 'chat-partial-results',
+      title: '部分工具结果',
+      model_id: 'qwen-max-latest',
+      messages: [{
+        id: 'assistant-results',
+        role: 'assistant',
+        content: [
+          {
+            type: 'search',
+            id: 'search-1',
+            query: '深圳民治烤肉',
+            status: 'failed',
+            sources: [],
+            source_count: 0,
+          },
+          {
+            type: 'place_results',
+            id: 'places-1',
+            schema_version: 1,
+            provider: 'amap',
+            status: 'success',
+            places: [{ provider_place_id: 'p1', name: '民治烤肉店' }],
+          },
+          { type: 'text', id: 'answer-1', text: '推荐如下。' },
+        ],
+      }],
+    });
+
+    expect(chat.messages[0].content).toEqual([
+      expect.objectContaining({
+        type: 'search',
+        status: 'failed',
+        sources: [],
+      }),
+      expect.objectContaining({
+        type: 'place_results',
+        status: 'success',
+        places: [expect.objectContaining({ name: '民治烤肉店' })],
+      }),
+      { type: 'text', id: 'answer-1', text: '推荐如下。' },
+    ]);
+  });
+
   it('preserves file thumbnail metadata while hydrating file blocks', () => {
     const chat = buildChatFromServerConversation({
       id: 'chat-files',

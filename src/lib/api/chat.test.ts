@@ -466,6 +466,54 @@ describe('sendMessageStream — 新 envelope 协议', () => {
     expect(cbs.onRunCompleted).toHaveBeenCalledTimes(1);
   });
 
+  it('分发 content_block_upserted 并保留规范 content_block 字段', async () => {
+    fetchWithAuthMock.mockResolvedValue(
+      createStreamResponse([
+        agentEvent('content_block_upserted', {
+          protocol_version: 2,
+          tool_call_id: 'tc-route',
+          content_block: {
+            type: 'route_results',
+            id: 'routes-1',
+            schema_version: 1,
+            provider: 'amap',
+            status: 'degraded',
+            origin: { label: '民治地铁站', city: '深圳' },
+            destination: { label: '星河 WORLD', city: '深圳' },
+            routes: [{ mode: 'driving', distance_m: 6200, duration_s: 1100 }],
+            unavailable_modes: ['transit'],
+            limitations: ['路线时间仅代表本次返回结果'],
+            tool_call_log_id: 'tc-route',
+          },
+        }, 1),
+        envelope('done', {}),
+        'data: [DONE]\n\n',
+      ]),
+    );
+    const onContentBlockUpserted = vi.fn();
+
+    await sendMessageStream(
+      { model_id: 'g', message: 'q' },
+      {
+        onReady: vi.fn(),
+        onReasoning: vi.fn(),
+        onAnswering: vi.fn(),
+        onContentBlockUpserted,
+        onDone: vi.fn(),
+        onError: vi.fn(),
+      },
+    );
+
+    expect(onContentBlockUpserted).toHaveBeenCalledWith(expect.objectContaining({
+      type: 'content_block_upserted',
+      content_block: expect.objectContaining({
+        type: 'route_results',
+        id: 'routes-1',
+        status: 'degraded',
+      }),
+    }));
+  });
+
   it('context_status_updated 预计态与真实态均 dispatch，重复重连事件由 sequence 去重', async () => {
     fetchWithAuthMock.mockResolvedValue(
       createStreamResponse([

@@ -2,7 +2,7 @@ import React from 'react';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import type { AgentRunState } from '@/types/agentRun';
-import type { SearchSourceSummary } from '@/types/conversation';
+import type { PlaceResultsBlock, SearchSourceSummary } from '@/types/conversation';
 import type { ExecutionProcessSource } from './agent/executionProcessModel';
 import type { AssistantActivity } from './assistantActivity';
 import type { AnswerEvidenceModel } from './answerEvidenceModel';
@@ -191,6 +191,47 @@ const agentRun: AgentRunState = {
 };
 
 describe('AssistantResponseStack', () => {
+  it('把结构化工具结果放在执行过程之后、Markdown 正文之前', () => {
+    const structuredResult: PlaceResultsBlock = {
+      type: 'place_results',
+      id: 'places-1',
+      schema_version: 1,
+      provider: 'amap',
+      status: 'success',
+      result_count: 1,
+      places: [{ provider_place_id: 'p1', name: '民治烤肉店' }],
+      limitations: [],
+    };
+
+    render(
+      <AssistantResponseStack
+        assistantMessageId="assistant-1"
+        reasoning={{
+          shouldRender: false,
+          content: '',
+          isVisible: false,
+          isStreaming: false,
+          onToggle: vi.fn(),
+        }}
+        activity={activity({ kind: 'completed' })}
+        structuredResults={[structuredResult]}
+        answerEvidence={null}
+        onSourceClick={vi.fn()}
+        onOpenSources={vi.fn()}
+        markdown={{ content: '最终回答', sources: [] }}
+        showStreamingCursor={false}
+      />,
+    );
+
+    const stack = screen.getByTestId('assistant-response-stack');
+    const children = [...stack.children];
+    const executionIndex = children.indexOf(screen.getByTestId('stack-agent'));
+    const resultIndex = children.indexOf(screen.getByTestId('structured-tool-results'));
+    const markdownIndex = children.indexOf(screen.getByTestId('stack-markdown'));
+    expect(executionIndex).toBeLessThan(resultIndex);
+    expect(resultIndex).toBeLessThan(markdownIndex);
+  });
+
   it('按 assistant 内容栈顺序渲染，并收敛根节点和末尾间距', () => {
     render(
       <AssistantResponseStack

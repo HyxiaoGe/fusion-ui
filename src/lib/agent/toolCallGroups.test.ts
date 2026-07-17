@@ -242,6 +242,51 @@ describe('groupToolCalls', () => {
     expect(findGroup(groups, 'route_compare').details[0].primary).toBe('民治地铁站 → 星河 WORLD');
   });
 
+  it('消费 provider 与产品结果数量，同时保留用户调用目标', () => {
+    const groups = groupToolCalls([
+      tc({
+        toolCallId: 'place-1',
+        toolName: 'local_place_search',
+        arguments: { query: '烤肉', near: '深圳民治' },
+        resultSummary: {
+          kind: 'external_tool',
+          title: '高德地点搜索',
+          provider: 'amap',
+          result_count: 5,
+          truncated: false,
+        },
+      }),
+      tc({
+        toolCallId: 'route-1',
+        toolName: 'route_compare',
+        arguments: { origin: '民治地铁站', destination: '星河 WORLD' },
+        resultSummary: {
+          kind: 'external_tool',
+          title: '高德路线对比',
+          provider: 'amap',
+          mode_count: 2,
+          truncated: false,
+        },
+      }),
+    ]);
+
+    const place = findGroup(groups, 'local_place_search');
+    expect(place).toMatchObject({ provider: 'amap', resultCount: 5 });
+    expect(place.summary).toBe('搜索附近地点 1 次 · 5 个地点');
+    expect(place.details[0]).toMatchObject({
+      primary: '深圳民治 · 烤肉',
+      secondary: '高德 · 5 个地点',
+    });
+
+    const route = findGroup(groups, 'route_compare');
+    expect(route).toMatchObject({ provider: 'amap', modeCount: 2 });
+    expect(route.summary).toBe('比较路线 1 次 · 2 种方案');
+    expect(route.details[0]).toMatchObject({
+      primary: '民治地铁站 → 星河 WORLD',
+      secondary: '高德 · 2 种方案',
+    });
+  });
+
   it.each([
     ['local_place_search', 'failed', '高德 MCP upstream unavailable'],
     ['route_compare', 'degraded', '高德 route service quota exceeded'],

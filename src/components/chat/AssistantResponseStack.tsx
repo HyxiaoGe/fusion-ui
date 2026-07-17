@@ -1,7 +1,7 @@
 'use client';
 
 import { memo } from 'react';
-import type { SearchSourceSummary } from '@/types/conversation';
+import type { SearchSourceSummary, StructuredToolResultBlock } from '@/types/conversation';
 import type { AgentRunState } from '@/types/agentRun';
 import ReasoningContent from './ReasoningContent';
 import AssistantActivityStatus from './AssistantActivityStatus';
@@ -12,6 +12,7 @@ import type { AnswerEvidenceSidebarModel } from './answerEvidenceSidebarModel';
 import { AgentRunTimeline } from './agent';
 import type { ExecutionProcessSource } from './agent/executionProcessModel';
 import MarkdownRenderer from './MarkdownRenderer';
+import StructuredToolResults from './StructuredToolResults';
 
 interface AssistantResponseStackProps {
   assistantMessageId: string;
@@ -29,6 +30,7 @@ interface AssistantResponseStackProps {
   onRetry?: () => void;
   onContinueAgentRun?: (previousRunId?: string) => void;
   answerEvidence: AnswerEvidenceModel | null;
+  structuredResults?: StructuredToolResultBlock[];
   answerEvidenceSidebar?: AnswerEvidenceSidebarModel | null;
   searchQueries?: string[];
   onSourceClick: (index: number) => void;
@@ -49,6 +51,7 @@ function AssistantResponseStack({
   onRetry,
   onContinueAgentRun,
   answerEvidence,
+  structuredResults = [],
   answerEvidenceSidebar,
   searchQueries,
   onSourceClick,
@@ -95,6 +98,8 @@ function AssistantResponseStack({
       <AssistantActivityStatus activity={activity} />
 
       <AgentRunTimeline {...agentRunTimelineProps} />
+
+      <StructuredToolResults blocks={structuredResults} />
 
       <AnswerEvidence
         evidence={answerEvidence}

@@ -13,6 +13,7 @@ import {
   updatePlanStep,
   updateRunProgress,
   upsertEvidenceItem,
+  upsertStaticContentBlock,
   upsertToolDigest,
   updateContextUsage,
 } from '@/redux/slices/streamSlice';
@@ -23,6 +24,7 @@ import type {
   LimitReachedReason,
   ToolCallResultSummary,
 } from '@/types/agentRun';
+import { normalizeStructuredToolResultBlock } from '@/lib/chat/structuredToolResults';
 
 type DispatchLike = (action: unknown) => unknown;
 type RunStartedEvent = Parameters<NonNullable<StreamCallbacks['onRunStarted']>>[0];
@@ -201,6 +203,16 @@ export function createAgentStreamEventHandlers({
         runId: ev.run_id,
         sequence: ev.sequence,
         evidence: mapEvidenceItem(ev.evidence),
+      }));
+    },
+    onContentBlockUpserted: ev => {
+      if (!isActive()) return;
+      const block = normalizeStructuredToolResultBlock(ev.content_block ?? ev.block);
+      if (!block) return;
+      dispatch(upsertStaticContentBlock({
+        runId: ev.run_id,
+        sequence: ev.sequence,
+        block,
       }));
     },
     onContextStatusUpdated: ev => {

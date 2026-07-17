@@ -13,6 +13,7 @@ import {
 import { Button } from '@/components/ui/button';
 import HomePage from '@/components/home/HomePage';
 import { useAppDispatch, useAppSelector } from '@/redux/hooks';
+import { selectAuthSessionKey } from '@/redux/selectors';
 import { setSelectedModel } from '@/redux/slices/modelsSlice';
 import { deleteFile, type FileInfo } from '@/lib/api/files';
 import { useSendMessage } from '@/hooks/useSendMessage';
@@ -114,9 +115,7 @@ export default function HomeChatSurface() {
   const navigationGenerationRef = useRef(0);
   const prefillRequestIdRef = useRef(0);
   const isAuthenticated = useAppSelector((state) => state.auth.isAuthenticated);
-  const authSessionKey = useAppSelector(
-    (state) => state.auth.user?.id ?? state.auth.token ?? null,
-  );
+  const authSessionKey = useAppSelector(selectAuthSessionKey);
   const models = useAppSelector((state) => state.models.models);
   const pendingConversationId = useAppSelector((state) => state.conversation.pendingConversationId);
   const displayConversationId = pendingConversationId ?? handoffConversationId;

@@ -98,7 +98,78 @@ export interface UrlBlock {
   reason?: string | null;
 }
 
-export type ContentBlock = TextBlock | ThinkingBlock | FileBlock | SearchBlock | UrlBlock;
+export interface ProviderPlacePhoto {
+  url?: string;
+  title?: string | null;
+}
+
+export interface ProviderPlaceResult {
+  provider_place_id?: string | null;
+  name?: string | null;
+  address?: string | null;
+  district?: string | null;
+  business_area?: string | null;
+  category?: string | null;
+  distance_m?: number | null;
+  photos?: ProviderPlacePhoto[] | null;
+  rating?: number | null;
+  reference_cost_yuan?: number | null;
+  open_hours?: string | null;
+  detail_status?: 'enriched' | 'unavailable' | 'budget_limited' | 'not_requested' | null;
+  platform_url?: string | null;
+}
+
+export interface PlaceResultsBlock {
+  type: 'place_results';
+  id: string;
+  schema_version: 1;
+  provider?: string | null;
+  query?: string | null;
+  near?: string | null;
+  status?: 'success' | 'degraded' | null;
+  result_count?: number | null;
+  places?: ProviderPlaceResult[] | null;
+  limitations?: string[] | null;
+  tool_call_log_id?: string | null;
+}
+
+export interface ProviderRouteEndpoint {
+  label?: string | null;
+  city?: string | null;
+}
+
+export interface ProviderRouteResult {
+  mode?: string | null;
+  distance_m?: number | null;
+  duration_s?: number | null;
+  summary?: string | null;
+  toll_yuan?: number | null;
+  transfers?: number | null;
+}
+
+export interface RouteResultsBlock {
+  type: 'route_results';
+  id: string;
+  schema_version: 1;
+  provider?: string | null;
+  origin?: ProviderRouteEndpoint | null;
+  destination?: ProviderRouteEndpoint | null;
+  routes?: ProviderRouteResult[] | null;
+  unavailable_modes?: string[] | null;
+  limitations?: string[] | null;
+  status?: 'success' | 'degraded' | null;
+  tool_call_log_id?: string | null;
+}
+
+export type StructuredToolResultBlock = PlaceResultsBlock | RouteResultsBlock;
+
+export type ContentBlock =
+  | TextBlock
+  | ThinkingBlock
+  | FileBlock
+  | SearchBlock
+  | UrlBlock
+  | StructuredToolResultBlock;
 
 // ============================================================
 // Usage
