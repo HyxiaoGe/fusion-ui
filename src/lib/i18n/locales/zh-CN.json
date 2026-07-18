@@ -11,6 +11,10 @@
       "googleLogin": "使用 Google 登录",
       "emailCodeLogin": "使用邮箱验证码登录"
     },
+    "language": {
+      "switchToChinese": "切换到中文",
+      "switchToEnglish": "切换到英文"
+    },
     "chat": {
       "send": "发送",
       "typing": "AI正在思考...",

@@ -1,7 +1,8 @@
 import React from 'react';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ConversationListItem } from '@/hooks/useConversationList';
+import i18n from '@/lib/i18n';
 
 const {
   mockUseConversationList,
@@ -135,7 +136,8 @@ function mockElementRect(element: Element, rect: Pick<DOMRect, 'top' | 'bottom'>
 }
 
 describe('ChatSidebar', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
+    await i18n.changeLanguage('zh-CN');
     vi.useFakeTimers();
     mockUsePathname.mockReturnValue('/chat/chat-a');
     mockUseConversationList.mockReturnValue({
@@ -179,9 +181,10 @@ describe('ChatSidebar', () => {
     Element.prototype.scrollIntoView = vi.fn();
   });
 
-  afterEach(() => {
+  afterEach(async () => {
     vi.useRealTimers();
     vi.restoreAllMocks();
+    await i18n.changeLanguage('zh-CN');
     if (originalScrollIntoView) {
       Element.prototype.scrollIntoView = originalScrollIntoView;
     } else {
@@ -359,5 +362,13 @@ describe('ChatSidebar', () => {
     rerender(<ChatSidebar onNewChat={vi.fn()} />);
 
     expect(screen.getByRole('button', { name: '切换到亮色模式' })).toBeTruthy();
+  });
+
+  it('在主题按钮旁提供语言切换入口', () => {
+    render(<ChatSidebar onNewChat={vi.fn()} />);
+
+    const displayControls = screen.getByTestId('sidebar-display-controls');
+    expect(within(displayControls).getByRole('button', { name: '切换到英文' })).toHaveTextContent('中');
+    expect(within(displayControls).getByRole('button', { name: '切换到暗色模式' })).toBeTruthy();
   });
 });

@@ -18,6 +18,7 @@ import { useHasMounted } from "@/hooks/useHasMounted";
 import { getRouteConversationId } from "@/lib/routes/chatRoutes";
 import type { ConversationListItem } from "@/hooks/useConversationList";
 import { formatInTimeZone } from 'date-fns-tz';
+import { LanguageToggle } from "@/components/ui/language-toggle";
 
 interface ChatSidebarProps {
   onNewChat: () => void;
@@ -293,15 +294,18 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ onNewChat, activeChatIdOverri
       {/* 底部用户区（固定不随列表滚动） */}
       <div className="flex items-center justify-between gap-2 mt-auto border-t pt-2 px-2 pb-3">
         <UserAvatarMenu />
-        <button
-          type="button"
-          onClick={toggleTheme}
-          className="h-8 w-8 grid place-items-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground transition-colors duration-fast"
-          aria-label={isDark ? '切换到亮色模式' : '切换到暗色模式'}
-          title={isDark ? '切换到亮色模式' : '切换到暗色模式'}
-        >
-          {isDark ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
-        </button>
+        <div className="flex items-center gap-1" data-testid="sidebar-display-controls">
+          <LanguageToggle />
+          <button
+            type="button"
+            onClick={toggleTheme}
+            className="h-8 w-8 grid place-items-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground transition-colors duration-fast"
+            aria-label={isDark ? '切换到亮色模式' : '切换到暗色模式'}
+            title={isDark ? '切换到亮色模式' : '切换到暗色模式'}
+          >
+            {isDark ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+          </button>
+        </div>
       </div>
 
       <DeleteChatDialog

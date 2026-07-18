@@ -11,6 +11,10 @@
       "googleLogin": "Sign in with Google",
       "emailCodeLogin": "Sign in with email verification code"
     },
+    "language": {
+      "switchToChinese": "Switch to Chinese",
+      "switchToEnglish": "Switch to English"
+    },
     "chat": {
       "send": "Send",
       "typing": "AI is generating a response...",
