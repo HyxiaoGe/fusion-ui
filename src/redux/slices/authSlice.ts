@@ -110,14 +110,37 @@ const getInitialAuthState = (): AuthState => {
 
 const initialState: AuthState = getInitialAuthState();
 
-export const fetchUserProfile = createAsyncThunk(
+interface FetchUserProfileInput {
+  expectedToken?: string;
+}
+
+interface FetchUserProfileMeta {
+  expectedToken: string | null;
+}
+
+export const fetchUserProfile = createAsyncThunk<
+  UserProfile,
+  FetchUserProfileInput | void,
+  {
+    state: { auth: AuthState };
+    rejectValue: string;
+    fulfilledMeta: FetchUserProfileMeta;
+    rejectedMeta: FetchUserProfileMeta;
+  }
+>(
   'auth/fetchUserProfile',
-  async (_, { rejectWithValue }) => {
+  async (input, { fulfillWithValue, getState, rejectWithValue }) => {
+    // 在真正发请求前冻结本次请求所属 token。响应返回时 reducer 会再次核对，
+    // 防止 A 的迟到 profile 在 logout 或切换到 B 后污染 Redux/localStorage。
+    const expectedToken = input?.expectedToken ?? getState().auth.token;
     try {
       const userProfile = await fetchUserProfileAPI();
-      return userProfile;
-    } catch (error: any) {
-      return rejectWithValue(error.message);
+      return fulfillWithValue(userProfile, { expectedToken });
+    } catch (error: unknown) {
+      return rejectWithValue(
+        error instanceof Error ? error.message : 'profile request failed',
+        { expectedToken },
+      );
     }
   }
 );
@@ -225,7 +248,10 @@ const authSlice = createSlice({
       .addCase(fetchUserProfile.pending, (state) => {
         state.status = 'loading';
       })
-      .addCase(fetchUserProfile.fulfilled, (state, action: PayloadAction<UserProfile>) => {
+      .addCase(fetchUserProfile.fulfilled, (state, action) => {
+        // 缺少 expectedToken 的手工 action 仅用于既有测试/兼容；真实 thunk action 必带该字段。
+        const expectedToken = (action.meta as Partial<FetchUserProfileMeta> | undefined)?.expectedToken;
+        if (expectedToken !== undefined && (expectedToken === null || state.token !== expectedToken)) return;
         state.status = 'succeeded';
         state.user = action.payload;
         // 保存用户信息到localStorage
@@ -235,6 +261,8 @@ const authSlice = createSlice({
         }
       })
       .addCase(fetchUserProfile.rejected, (state, action) => {
+        const expectedToken = (action.meta as Partial<FetchUserProfileMeta> | undefined)?.expectedToken;
+        if (expectedToken !== undefined && (expectedToken === null || state.token !== expectedToken)) return;
         state.status = 'failed';
         state.error = action.payload as string;
       })
@@ -258,7 +286,7 @@ export const { setToken, logout, checkUserState, resolveSession } = authSlice.ac
 export const completeLogin = createAsyncThunk<
   { redirectPath: string },
   void,
-  { rejectValue: string }
+  { state: { auth: AuthState }; rejectValue: string }
 >('auth/completeLogin', async (_, { dispatch, rejectWithValue }) => {
   // 若本次回调源自加载时的静默探测，取回并清除探测前记下的原始路径（HIT/MISS 都回此处）。
   // 交互式登录无此项（登录前已 clearSsoReturn），silentReturn 为 null 时回退到 SDK 解析的路径。
@@ -272,24 +300,33 @@ export const completeLogin = createAsyncThunk<
       const token = getStoredAccessToken();
       if (token) {
         dispatch(setToken(token));
-        await dispatch(fetchUserProfile());
+        await dispatch(fetchUserProfile({ expectedToken: token }));
       }
       return { redirectPath: silentReturn || result.redirectPath || '/' };
     }
     // 静默探测未命中（login_required）等：软回原页（fusion 是软门禁，未登录也可浏览）。
     return { redirectPath: silentReturn || '/' };
-  } catch (error: any) {
-    // SDK 在 token 落库之后才拉 auth-service /userinfo（fusion 用不到它，自己拉 /api/auth/me）；
-    // 那一步若抖动会抛错，但换码其实已成功。若本地确有 token，则按登录成功兜底，
-    // 用 JWT 灌 Redux 并拉 fusion profile，避免「已拿到有效会话却提示登录失败」的割裂。
-    const token = getStoredAccessToken();
-    if (token) {
-      dispatch(setToken(token));
-      await dispatch(fetchUserProfile());
-      return { redirectPath: silentReturn || '/' };
-    }
-    return rejectWithValue(error?.message || 'callback failed');
+  } catch (error: unknown) {
+    // 新版 SDK 以 token + user 原子提交会话：callback 抛错即表示本次授权未完成。
+    // 此处不能读取任意现存 token 兜底，否则用户从 A 切换登录 B 失败时，会把 A 误判成 B 登录成功。
+    return rejectWithValue(error instanceof Error ? error.message : 'callback failed');
   }
+});
+
+// headless 邮箱流程已由 SDK 完成 state/PKCE 校验和原子会话落库；这里只把 SDK token
+// 注入 Redux 并拉取 Fusion 自己的 profile。没有 token 说明 SDK completion 未成功，不能
+// 为了关闭弹窗而伪造登录态。
+export const completeEmailCodeLogin = createAsyncThunk<
+  void,
+  void,
+  { state: { auth: AuthState }; rejectValue: string }
+>('auth/completeEmailCodeLogin', async (_, { dispatch, rejectWithValue }) => {
+  const token = getStoredAccessToken();
+  if (!token) return rejectWithValue('missing access token after email-code completion');
+  dispatch(setToken(token));
+  // token 已足以建立 Redux 登录态；完整 profile 后台刷新，不能延长验证码 verify 的
+  // 不可关闭临界区。createAsyncThunk 的 dispatch promise 会自行收敛，不产生未处理拒绝。
+  void dispatch(fetchUserProfile({ expectedToken: token }));
 });
 
 // userinfo / 存活探测失败是否为「服务端明确拒绝」（401 未授权 / 403 禁止）——即别处已登出 / 令牌

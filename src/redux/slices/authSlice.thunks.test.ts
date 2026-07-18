@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { configureStore } from '@reduxjs/toolkit';
+import { configureStore, type Middleware } from '@reduxjs/toolkit';
 
 const {
   completeSsoCallbackMock,
@@ -45,9 +45,25 @@ vi.mock('../../lib/api/user', () => ({
 
 vi.mock('jwt-decode', () => ({ jwtDecode: jwtDecodeMock }));
 
-import authReducer, { completeLogin, logoutWithSso } from './authSlice';
+import authReducer, {
+  completeEmailCodeLogin,
+  completeLogin,
+  fetchUserProfile,
+  logout,
+  logoutWithSso,
+  setToken,
+} from './authSlice';
 
-const makeStore = () => configureStore({ reducer: { auth: authReducer } });
+const makeStore = (observedActions?: unknown[]) => {
+  const observer: Middleware = () => (next) => (action) => {
+    observedActions?.push(action);
+    return next(action);
+  };
+  return configureStore({
+    reducer: { auth: authReducer },
+    middleware: (getDefaultMiddleware) => getDefaultMiddleware().concat(observer),
+  });
+};
 
 describe('completeLogin thunk (SDK callback)', () => {
   beforeEach(() => {
@@ -222,10 +238,41 @@ describe('completeLogin thunk (SDK callback)', () => {
     expect(completeLogin.rejected.match(action)).toBe(true);
   });
 
-  it('recovers a successful login when the SDK callback throws AFTER tokens were persisted (transient /userinfo blip)', async () => {
-    // handleCallback persists tokens, THEN fetches auth-service /userinfo (which fusion does not use);
-    // a transient /userinfo failure throws — but the exchange succeeded and a valid token is in storage.
+  it('已有 A 会话时 B 的 callback 失败必须拒绝，不能把 A 的旧 token 当成 B 登录成功', async () => {
     completeSsoCallbackMock.mockRejectedValue(new Error('userinfo failed (502)'));
+    getStoredAccessTokenMock.mockReturnValue('access-token-a');
+    jwtDecodeMock.mockReturnValue({
+      sub: 'account-a',
+      email: 'a@example.com',
+      exp: Math.floor(Date.now() / 1000) + 3600,
+    });
+
+    const observedActions: unknown[] = [];
+    const store = makeStore(observedActions);
+    store.dispatch(setToken('access-token-a'));
+    observedActions.length = 0;
+    const action = await store.dispatch(completeLogin());
+
+    expect(completeLogin.rejected.match(action)).toBe(true);
+    expect(action.payload).toBe('userinfo failed (502)');
+    expect(getStoredAccessTokenMock).not.toHaveBeenCalled();
+    expect(fetchUserProfileAPIMock).not.toHaveBeenCalled();
+    expect(observedActions).not.toContainEqual(expect.objectContaining({ type: setToken.type }));
+    expect(store.getState().auth).toMatchObject({
+      isAuthenticated: true,
+      token: 'access-token-a',
+      user: { id: 'account-a', email: 'a@example.com' },
+    });
+  });
+});
+
+describe('completeEmailCodeLogin thunk', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    localStorage.clear();
+  });
+
+  it('SDK headless completion 成功后立即注入 token，并在后台刷新 Fusion profile', async () => {
     getStoredAccessTokenMock.mockReturnValue('access-jwt');
     jwtDecodeMock.mockReturnValue({
       sub: 'u1',
@@ -244,13 +291,152 @@ describe('completeLogin thunk (SDK callback)', () => {
     });
 
     const store = makeStore();
-    const action = await store.dispatch(completeLogin());
+    const action = await store.dispatch(completeEmailCodeLogin());
 
-    expect(completeLogin.fulfilled.match(action)).toBe(true);
-    expect(action.payload).toEqual({ redirectPath: '/' });
-    expect(store.getState().auth.isAuthenticated).toBe(true);
-    expect(store.getState().auth.user?.nickname).toBe('Nick');
+    expect(completeEmailCodeLogin.fulfilled.match(action)).toBe(true);
     expect(fetchUserProfileAPIMock).toHaveBeenCalledTimes(1);
+    expect(store.getState().auth).toMatchObject({ isAuthenticated: true, token: 'access-jwt' });
+    await vi.waitFor(() => {
+      expect(store.getState().auth.user).toMatchObject({ nickname: 'Nick' });
+    });
+  });
+
+  it('profile 请求永不完成时 thunk 仍立即 fulfilled，verify critical 不被后台刷新挂住', async () => {
+    getStoredAccessTokenMock.mockReturnValue('access-jwt');
+    jwtDecodeMock.mockReturnValue({
+      sub: 'u1',
+      email: 'a@b.com',
+      exp: Math.floor(Date.now() / 1000) + 3600,
+    });
+    fetchUserProfileAPIMock.mockReturnValue(new Promise(() => undefined));
+
+    const store = makeStore();
+    const actionPromise = store.dispatch(completeEmailCodeLogin());
+    const outcome = await Promise.race([
+      actionPromise.then((action) => ({ kind: 'action' as const, action })),
+      new Promise<{ kind: 'timeout' }>((resolve) => {
+        setTimeout(() => resolve({ kind: 'timeout' }), 50);
+      }),
+    ]);
+
+    expect(outcome.kind).toBe('action');
+    if (outcome.kind !== 'action') return;
+    expect(completeEmailCodeLogin.fulfilled.match(outcome.action)).toBe(true);
+    expect(fetchUserProfileAPIMock).toHaveBeenCalledTimes(1);
+    expect(store.getState().auth).toMatchObject({
+      isAuthenticated: true,
+      token: 'access-jwt',
+      status: 'loading',
+    });
+  });
+
+  it('SDK completion 没有原子落库 token 时拒绝，不伪造登录成功', async () => {
+    getStoredAccessTokenMock.mockReturnValue(null);
+
+    const store = makeStore();
+    const action = await store.dispatch(completeEmailCodeLogin());
+
+    expect(completeEmailCodeLogin.rejected.match(action)).toBe(true);
+    expect(fetchUserProfileAPIMock).not.toHaveBeenCalled();
+    expect(store.getState().auth.isAuthenticated).toBe(false);
+  });
+
+  it('A profile 挂起后 logout→B 登录，A 迟到成功不得覆盖 B profile 或 localStorage', async () => {
+    let resolveProfileA: ((profile: Record<string, unknown>) => void) | undefined;
+    const profileA = {
+      id: 'account-a', username: 'a', email: 'a@example.com', nickname: 'Account A',
+      avatar: null, mobile: null, system_prompt: '', is_superuser: false,
+    };
+    const profileB = {
+      id: 'account-b', username: 'b', email: 'b@example.com', nickname: 'Account B',
+      avatar: null, mobile: null, system_prompt: '', is_superuser: false,
+    };
+    fetchUserProfileAPIMock
+      .mockReturnValueOnce(new Promise((resolve) => { resolveProfileA = resolve; }))
+      .mockResolvedValueOnce(profileB);
+    jwtDecodeMock.mockImplementation((token: string) => ({
+      sub: token === 'token-a' ? 'account-a' : 'account-b',
+      email: token === 'token-a' ? 'a@example.com' : 'b@example.com',
+      exp: Math.floor(Date.now() / 1000) + 3600,
+    }));
+    const store = makeStore();
+    store.dispatch(setToken('token-a'));
+    const requestA = store.dispatch(fetchUserProfile());
+    store.dispatch(logout());
+    store.dispatch(setToken('token-b'));
+    await store.dispatch(fetchUserProfile());
+    expect(store.getState().auth.user).toMatchObject({ id: 'account-b', nickname: 'Account B' });
+
+    resolveProfileA?.(profileA);
+    await requestA;
+
+    expect(store.getState().auth).toMatchObject({
+      token: 'token-b',
+      user: { id: 'account-b', nickname: 'Account B' },
+      status: 'succeeded',
+    });
+    expect(JSON.parse(localStorage.getItem('user_profile') ?? 'null')).toMatchObject({
+      id: 'account-b', nickname: 'Account B',
+    });
+  });
+
+  it('logout 后 A profile 迟到成功不得复活 Redux 或重写已清理的 profile 存储', async () => {
+    let resolveProfileA: ((profile: Record<string, unknown>) => void) | undefined;
+    fetchUserProfileAPIMock.mockReturnValueOnce(new Promise((resolve) => { resolveProfileA = resolve; }));
+    jwtDecodeMock.mockReturnValue({
+      sub: 'account-a',
+      email: 'a@example.com',
+      exp: Math.floor(Date.now() / 1000) + 3600,
+    });
+    const store = makeStore();
+    store.dispatch(setToken('token-a'));
+    const requestA = store.dispatch(fetchUserProfile());
+    store.dispatch(logout());
+
+    resolveProfileA?.({
+      id: 'account-a', username: 'a', email: 'a@example.com', nickname: 'Account A',
+      avatar: null, mobile: null, system_prompt: '', is_superuser: false,
+    });
+    await requestA;
+
+    expect(store.getState().auth).toMatchObject({
+      isAuthenticated: false,
+      token: null,
+      user: null,
+      status: 'idle',
+    });
+    expect(localStorage.getItem('user_profile')).toBeNull();
+    expect(localStorage.getItem('user_profile_timestamp')).toBeNull();
+  });
+
+  it('切换到 B 后 A profile 迟到失败不得把 B 状态改成 failed', async () => {
+    let rejectProfileA: ((error: Error) => void) | undefined;
+    const profileB = {
+      id: 'account-b', username: 'b', email: 'b@example.com', nickname: 'Account B',
+      avatar: null, mobile: null, system_prompt: '', is_superuser: false,
+    };
+    fetchUserProfileAPIMock
+      .mockReturnValueOnce(new Promise((_resolve, reject) => { rejectProfileA = reject; }))
+      .mockResolvedValueOnce(profileB);
+    jwtDecodeMock.mockImplementation((token: string) => ({
+      sub: token === 'token-a' ? 'account-a' : 'account-b',
+      exp: Math.floor(Date.now() / 1000) + 3600,
+    }));
+    const store = makeStore();
+    store.dispatch(setToken('token-a'));
+    const requestA = store.dispatch(fetchUserProfile());
+    store.dispatch(setToken('token-b'));
+    await store.dispatch(fetchUserProfile());
+
+    rejectProfileA?.(new Error('A profile late failure'));
+    await requestA;
+
+    expect(store.getState().auth).toMatchObject({
+      token: 'token-b',
+      user: { id: 'account-b', nickname: 'Account B' },
+      status: 'succeeded',
+      error: null,
+    });
   });
 });
 

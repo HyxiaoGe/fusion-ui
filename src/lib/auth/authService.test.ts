@@ -39,16 +39,23 @@ vi.mock('auth-client-web', () => ({
 
 vi.mock('../config', () => ({
   API_CONFIG: { BASE_URL: '' },
-  AUTH_SERVICE_CONFIG: { BASE_URL: 'https://auth.example.com/' },
+  AUTH_SERVICE_CONFIG: {
+    BASE_URL: 'https://auth.example.com/',
+    HEADLESS_BASE_URL: 'http://127.0.0.1:18100/',
+    CLIENT_ID: 'fusion-app',
+  },
+  getAuthCallbackUrl: () => 'http://localhost:3000/auth/callback',
 }));
 
 import {
   clearAuthStorage,
   completeSsoCallback,
   forceRefreshAccessToken,
+  getEmailLoginCapabilities,
   getStoredAccessToken,
   getStoredRefreshToken,
   getValidAccessToken,
+  isEmailHeadlessRuntime,
   probeSessionLiveness,
   revokeSsoSession,
   startSsoLogin,
@@ -65,18 +72,56 @@ describe('authService SDK adapter', () => {
     vi.unstubAllGlobals();
   });
 
-  it('supportsEmailCodeLogin 以 no-store GET 探测开启的邮箱登录能力', async () => {
+  it('以 no-store GET 探测 hosted/headless 邮箱登录能力', async () => {
     const fetchMock = vi.fn(async () => ({
       ok: true,
-      json: async () => ({ email_login: true }),
+      json: async () => ({ email_login: true, email_headless_login: true }),
     }));
     vi.stubGlobal('fetch', fetchMock);
 
-    await expect(supportsEmailCodeLogin()).resolves.toBe(true);
-    expect(fetchMock).toHaveBeenCalledWith('https://auth.example.com/auth/capabilities', {
+    await expect(getEmailLoginCapabilities()).resolves.toEqual({ hosted: true, headless: true });
+    expect(fetchMock).toHaveBeenCalledWith(
+      'http://127.0.0.1:18100/auth/capabilities?client_id=fusion-app&redirect_uri=http%3A%2F%2Flocalhost%3A3000%2Fauth%2Fcallback',
+      {
       method: 'GET',
       cache: 'no-store',
-    });
+      },
+    );
+
+    fetchMock.mockClear();
+    await expect(supportsEmailCodeLogin()).resolves.toBe(true);
+    expect(fetchMock).toHaveBeenCalledWith(
+      'http://127.0.0.1:18100/auth/capabilities?client_id=fusion-app&redirect_uri=http%3A%2F%2Flocalhost%3A3000%2Fauth%2Fcallback',
+      {
+      method: 'GET',
+      cache: 'no-store',
+      },
+    );
+  });
+
+  it('旧后端只有 email_login 时保持 hosted fallback，不误开 headless', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => ({
+      ok: true,
+      json: async () => ({ email_login: true }),
+    })));
+
+    await expect(getEmailLoginCapabilities()).resolves.toEqual({ hosted: true, headless: false });
+  });
+
+  it('email_login 未开启时即使错误宣称 headless 也整体 fail closed', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => ({
+      ok: true,
+      json: async () => ({ email_login: false, email_headless_login: true }),
+    })));
+
+    await expect(getEmailLoginCapabilities()).resolves.toEqual({ hosted: false, headless: false });
+  });
+
+  it('headless 仅允许 http/https Web runtime', () => {
+    expect(isEmailHeadlessRuntime('http:')).toBe(true);
+    expect(isEmailHeadlessRuntime('https:')).toBe(true);
+    expect(isEmailHeadlessRuntime('file:')).toBe(false);
+    expect(isEmailHeadlessRuntime('app:')).toBe(false);
   });
 
   it.each([
@@ -95,6 +140,7 @@ describe('authService SDK adapter', () => {
     }));
 
     await expect(supportsEmailCodeLogin()).resolves.toBe(false);
+    await expect(getEmailLoginCapabilities()).resolves.toEqual({ hosted: false, headless: false });
   });
 
   it('startSsoLogin configures the SDK then delegates with provider + redirect path', async () => {

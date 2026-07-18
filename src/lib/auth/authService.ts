@@ -17,7 +17,7 @@ import {
 } from 'auth-client-web';
 import { configureAuth } from './auth-sdk';
 import { clearSsoReturn } from './sso-probe';
-import { API_CONFIG, AUTH_SERVICE_CONFIG } from '../config';
+import { API_CONFIG, AUTH_SERVICE_CONFIG, getAuthCallbackUrl } from '../config';
 
 const ACCESS_TOKEN_KEY = 'auth_token';
 const REFRESH_TOKEN_KEY = 'auth_refresh_token';
@@ -28,31 +28,67 @@ const USER_PROFILE_TIMESTAMP_KEY = 'user_profile_timestamp';
 
 export type SsoProvider = 'github' | 'google' | 'email';
 
+export interface EmailLoginCapabilities {
+  hosted: boolean;
+  headless: boolean;
+}
+
+const EMAIL_LOGIN_UNAVAILABLE: EmailLoginCapabilities = { hosted: false, headless: false };
+
+export function isEmailHeadlessRuntime(
+  protocol: string = typeof window === 'undefined' ? '' : window.location.protocol,
+): boolean {
+  return protocol === 'http:' || protocol === 'https:';
+}
+
 /**
  * 探测 auth-service 是否明确开放邮箱验证码登录。旧版本、异常响应和网络失败均关闭入口，
  * 避免 UI 先于后端发布后把用户带到不可用的 provider。
  */
-export async function supportsEmailCodeLogin(): Promise<boolean> {
-  const authBaseUrl = AUTH_SERVICE_CONFIG.BASE_URL.replace(/\/+$/, '');
-  if (!authBaseUrl) return false;
+export async function getEmailLoginCapabilities(): Promise<EmailLoginCapabilities> {
+  const authBaseUrl = AUTH_SERVICE_CONFIG.HEADLESS_BASE_URL.replace(/\/+$/, '');
+  if (!authBaseUrl) return EMAIL_LOGIN_UNAVAILABLE;
+
+  const query = new URLSearchParams();
+  const clientId = AUTH_SERVICE_CONFIG.CLIENT_ID;
+  const redirectUri = clientId ? getAuthCallbackUrl() : '';
+  if (clientId && redirectUri) {
+    query.set('client_id', clientId);
+    query.set('redirect_uri', redirectUri);
+  }
+  const capabilityUrl = `${authBaseUrl}/auth/capabilities${query.size > 0 ? `?${query.toString()}` : ''}`;
 
   try {
-    const response = await fetch(`${authBaseUrl}/auth/capabilities`, {
+    const response = await fetch(capabilityUrl, {
       method: 'GET',
       cache: 'no-store',
     });
-    if (!response.ok) return false;
+    if (!response.ok) return EMAIL_LOGIN_UNAVAILABLE;
 
     const capabilities: unknown = await response.json();
-    return (
+    const hosted = (
       typeof capabilities === 'object'
       && capabilities !== null
       && 'email_login' in capabilities
       && capabilities.email_login === true
     );
+    if (!hosted) return EMAIL_LOGIN_UNAVAILABLE;
+
+    const headless = (
+      'email_headless_login' in capabilities
+      && capabilities.email_headless_login === true
+      && clientId.length > 0
+      && redirectUri.length > 0
+      && isEmailHeadlessRuntime()
+    );
+    return { hosted: true, headless };
   } catch {
-    return false;
+    return EMAIL_LOGIN_UNAVAILABLE;
   }
+}
+
+export async function supportsEmailCodeLogin(): Promise<boolean> {
+  return (await getEmailLoginCapabilities()).hosted;
 }
 
 /** Interactive login: top-level redirect to /auth/authorize (PKCE + state). */
