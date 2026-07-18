@@ -106,9 +106,9 @@ export function LoginDialog({
       {trigger && <DialogTrigger asChild>{trigger}</DialogTrigger>}
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>登录</DialogTitle>
+          <DialogTitle>{t("auth.loginTitle")}</DialogTitle>
           <DialogDescription>
-            选择一种方式登录，以解锁全部功能。
+            {t("auth.loginDescription")}
           </DialogDescription>
         </DialogHeader>
         <div className="flex flex-col space-y-4 py-4">
@@ -118,7 +118,7 @@ export function LoginDialog({
             ) : (
               <Github className="mr-2 h-4 w-4" />
             )}
-            使用 GitHub 登录
+            {t("auth.githubLogin")}
           </Button>
           <Button onClick={handleGoogleLogin} disabled={isAnyLoginLoading}>
             {isGoogleLoading ? (
@@ -126,7 +126,7 @@ export function LoginDialog({
             ) : (
               <Mail className="mr-2 h-4 w-4" />
             )}
-            使用 Google 登录
+            {t("auth.googleLogin")}
           </Button>
           {isEmailLoginAvailable && (
             <Button onClick={handleEmailLogin} disabled={isAnyLoginLoading}>

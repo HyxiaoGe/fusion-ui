@@ -95,10 +95,14 @@ describe('LoginDialog', () => {
     expect(screen.getByRole('button', { name: '使用邮箱验证码登录' })).toBeEnabled();
   });
 
-  it('邮箱验证码入口使用英文语言包文案', async () => {
+  it('英文环境下登录弹窗和全部登录入口使用英文语言包文案', async () => {
     await i18n.changeLanguage('en-US');
     render(<LoginDialog open onOpenChange={vi.fn()} />);
 
+    expect(screen.getByRole('heading', { name: 'Login' })).toBeInTheDocument();
+    expect(screen.getByText('Choose a sign-in method to unlock all features.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Sign in with GitHub' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Sign in with Google' })).toBeInTheDocument();
     expect(await screen.findByRole('button', { name: 'Sign in with email verification code' })).toBeInTheDocument();
   });
 

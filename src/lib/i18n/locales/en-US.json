@@ -5,6 +5,10 @@
       "settings": "Settings"
     },
     "auth": {
+      "loginTitle": "Login",
+      "loginDescription": "Choose a sign-in method to unlock all features.",
+      "githubLogin": "Sign in with GitHub",
+      "googleLogin": "Sign in with Google",
       "emailCodeLogin": "Sign in with email verification code"
     },
     "chat": {

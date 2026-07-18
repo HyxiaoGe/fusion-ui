@@ -5,6 +5,10 @@
       "settings": "设置"
     },
     "auth": {
+      "loginTitle": "登录",
+      "loginDescription": "选择一种方式登录，以解锁全部功能。",
+      "githubLogin": "使用 GitHub 登录",
+      "googleLogin": "使用 Google 登录",
       "emailCodeLogin": "使用邮箱验证码登录"
     },
     "chat": {
