@@ -14,6 +14,12 @@ const GEOLOCATION_OPTIONS: PositionOptions = {
   maximumAge: 60_000,
 };
 
+const GEOLOCATION_RETRY_OPTIONS: PositionOptions = {
+  enableHighAccuracy: true,
+  timeout: 25_000,
+  maximumAge: 0,
+};
+
 type ContextSubmission = Omit<SubmitAgentContextResultInput, 'conversationId' | 'runId' | 'requestId'>;
 
 function requestKey(request: PendingAgentContextRequest | null): string | null {
@@ -62,7 +68,7 @@ function mapPosition(position: GeolocationPosition): ContextSubmission {
   return { status: 'provided', location };
 }
 
-function getBrowserLocation(): Promise<ContextSubmission> {
+function requestBrowserLocation(options: PositionOptions): Promise<ContextSubmission> {
   if (typeof navigator === 'undefined' || !navigator.geolocation) {
     return Promise.resolve(unavailableResult('browser_unsupported'));
   }
@@ -71,9 +77,17 @@ function getBrowserLocation(): Promise<ContextSubmission> {
     navigator.geolocation.getCurrentPosition(
       position => resolve(mapPosition(position)),
       error => resolve(mapPositionError(error)),
-      GEOLOCATION_OPTIONS,
+      options,
     );
   });
+}
+
+async function getBrowserLocation(): Promise<ContextSubmission> {
+  const initial = await requestBrowserLocation(GEOLOCATION_OPTIONS);
+  if (initial.status !== 'timeout' && initial.reason !== 'position_unavailable') {
+    return initial;
+  }
+  return requestBrowserLocation(GEOLOCATION_RETRY_OPTIONS);
 }
 
 export function useLocationContextHandshake(conversationId: string | null) {

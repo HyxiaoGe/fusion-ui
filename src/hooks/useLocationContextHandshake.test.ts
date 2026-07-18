@@ -106,6 +106,40 @@ describe('useLocationContextHandshake', () => {
     ]));
   });
 
+  it('首次定位超时后自动用高精度长等待重试一次', async () => {
+    const getCurrentPosition = vi.fn()
+      .mockImplementationOnce((_success: PositionCallback, error: PositionErrorCallback) => {
+        error({ code: 3, message: 'timed out' } as GeolocationPositionError);
+      })
+      .mockImplementationOnce((success: PositionCallback) => success({
+        coords: {
+          latitude: 22.62123,
+          longitude: 114.03541,
+          accuracy: 42,
+        },
+        timestamp: 1_721_200_000_000,
+      } as GeolocationPosition));
+    vi.stubGlobal('navigator', { geolocation: { getCurrentPosition } });
+    const { result } = renderHook(() => useLocationContextHandshake('c1'));
+
+    await act(async () => result.current.allowLocation());
+
+    expect(getCurrentPosition).toHaveBeenCalledTimes(2);
+    expect(getCurrentPosition).toHaveBeenNthCalledWith(
+      2,
+      expect.any(Function),
+      expect.any(Function),
+      { enableHighAccuracy: true, timeout: 25_000, maximumAge: 0 },
+    );
+    expect(submitMock).toHaveBeenCalledWith(expect.objectContaining({
+      status: 'provided',
+      location: expect.objectContaining({
+        latitude: 22.62123,
+        longitude: 114.03541,
+      }),
+    }));
+  });
+
   it('用户主动拒绝时不调用 geolocation，并回传 denied', async () => {
     const getCurrentPosition = vi.fn();
     vi.stubGlobal('navigator', { geolocation: { getCurrentPosition } });
