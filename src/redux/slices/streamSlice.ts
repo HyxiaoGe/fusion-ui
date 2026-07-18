@@ -15,6 +15,11 @@ import type {
   AgentRunState,
   AgentRunStatus,
   AgentToolDigest,
+  AgentContextPurpose,
+  AgentContextRequestPhase,
+  AgentContextResultStatus,
+  AgentContextType,
+  PendingAgentContextRequest,
   LimitReachedReason,
   ToolCallResultSummary,
 } from '@/types/agentRun';
@@ -66,6 +71,7 @@ export interface StreamState {
     phase: ContextUsagePhase;
     roundIndex: number | null;
   } | null;
+  pendingContextRequest: PendingAgentContextRequest | null;
 }
 
 const initialState: StreamState = {
@@ -94,6 +100,7 @@ const initialState: StreamState = {
   contextUsageInFlight: null,
   contextUsageInFlightConversationId: null,
   contextUsageInFlightMeta: null,
+  pendingContextRequest: null,
 };
 
 const streamSlice = createSlice({
@@ -130,6 +137,7 @@ const streamSlice = createSlice({
       state.contextUsageInFlight = null;
       state.contextUsageInFlightConversationId = action.payload.conversationId;
       state.contextUsageInFlightMeta = null;
+      state.pendingContextRequest = null;
     },
 
     appendTextDelta(
@@ -178,6 +186,29 @@ const streamSlice = createSlice({
       state.thinkingBlocks[blockId] = (state.thinkingBlocks[blockId] ?? '') + delta;
     },
 
+    discardContentBlock(
+      state,
+      action: PayloadAction<{ runId: string; blockId: string; sequence: number }>,
+    ) {
+      const run = state.currentRun;
+      const { runId, blockId, sequence } = action.payload;
+      if (!run || run.runId !== runId || sequence <= run.lastSequence) return;
+      run.lastSequence = sequence;
+      if (state.blockTypes[blockId] === 'text') {
+        state.totalTextLength = Math.max(
+          0,
+          state.totalTextLength - (state.textBlocks[blockId]?.length ?? 0),
+        );
+        state.displayedTextLength = Math.min(state.displayedTextLength, state.totalTextLength);
+        delete state.textBlocks[blockId];
+        delete state.blockTypes[blockId];
+        state.blockOrder = state.blockOrder.filter(existingId => existingId !== blockId);
+      }
+      for (const step of run.steps) {
+        step.contentBlockIds = step.contentBlockIds.filter(existingId => existingId !== blockId);
+      }
+    },
+
     // 打字机每 tick 推进显示长度
     advanceTypewriter(state, action: PayloadAction<number>) {
       state.displayedTextLength = Math.min(
@@ -201,6 +232,9 @@ const streamSlice = createSlice({
       if (state.contextUsageInFlightConversationId === previousConversationId) {
         state.contextUsageInFlightConversationId = action.payload;
       }
+      if (state.pendingContextRequest?.conversationId === previousConversationId) {
+        state.pendingContextRequest.conversationId = action.payload;
+      }
     },
 
     setLastEntryId(state, action: PayloadAction<string>) {
@@ -208,6 +242,79 @@ const streamSlice = createSlice({
     },
 
     // ── Agent run timeline reducers (Task 12 / spec §6.4) ──
+
+    receiveContextRequired(
+      state,
+      action: PayloadAction<{
+        conversationId: string;
+        runId: string;
+        requestId: string;
+        contextType: AgentContextType;
+        purpose: AgentContextPurpose;
+        reason: string;
+        expiresAt: number;
+        sequence: number;
+      }>,
+    ) {
+      const run = state.currentRun;
+      const { conversationId, runId, requestId, contextType, purpose, reason, expiresAt, sequence } = action.payload;
+      if (
+        !state.isStreaming
+        || state.conversationId !== conversationId
+        || !run
+        || run.runId !== runId
+        || sequence <= run.lastSequence
+      ) return;
+      run.lastSequence = sequence;
+      state.pendingContextRequest = {
+        conversationId,
+        runId,
+        requestId,
+        contextType,
+        purpose,
+        reason,
+        expiresAt,
+        sequence,
+        phase: 'required',
+      };
+    },
+
+    setContextRequestPhase(
+      state,
+      action: PayloadAction<{
+        runId: string;
+        requestId: string;
+        phase: AgentContextRequestPhase;
+      }>,
+    ) {
+      const request = state.pendingContextRequest;
+      if (
+        !request
+        || request.runId !== action.payload.runId
+        || request.requestId !== action.payload.requestId
+      ) return;
+      request.phase = action.payload.phase;
+    },
+
+    receiveContextResult(
+      state,
+      action: PayloadAction<{
+        runId: string;
+        requestId: string;
+        contextType: AgentContextType;
+        status: AgentContextResultStatus;
+        sequence: number;
+      }>,
+    ) {
+      const run = state.currentRun;
+      const { runId, requestId, sequence } = action.payload;
+      if (!run || run.runId !== runId || sequence <= run.lastSequence) return;
+      run.lastSequence = sequence;
+      const request = state.pendingContextRequest;
+      if (request?.runId === runId && request.requestId === requestId) {
+        state.pendingContextRequest = null;
+      }
+    },
 
     initRun(
       state,
@@ -460,14 +567,33 @@ const streamSlice = createSlice({
 
     finalizeStep(
       state,
-      action: PayloadAction<{ runId: string; stepId: string; sequence: number }>
+      action: PayloadAction<{
+        runId: string;
+        stepId: string;
+        sequence: number;
+        toolCallCount?: number;
+      }>
     ) {
       const run = state.currentRun;
-      const { runId, stepId, sequence } = action.payload;
+      const { runId, stepId, sequence, toolCallCount } = action.payload;
       if (!run || run.runId !== runId || sequence <= run.lastSequence) return;
       run.lastSequence = sequence;
       const step = run.steps.find(s => s.stepId === stepId);
       if (step) {
+        if ((toolCallCount ?? step.toolCalls.length) > 0) {
+          const transientTextIds = new Set(
+            step.contentBlockIds.filter(blockId => state.blockTypes[blockId] === 'text'),
+          );
+          for (const blockId of transientTextIds) {
+            state.totalTextLength -= state.textBlocks[blockId]?.length ?? 0;
+            delete state.textBlocks[blockId];
+            delete state.blockTypes[blockId];
+          }
+          state.totalTextLength = Math.max(0, state.totalTextLength);
+          state.displayedTextLength = Math.min(state.displayedTextLength, state.totalTextLength);
+          state.blockOrder = state.blockOrder.filter(blockId => !transientTextIds.has(blockId));
+          step.contentBlockIds = step.contentBlockIds.filter(blockId => !transientTextIds.has(blockId));
+        }
         step.status = 'completed';
         step.completedAt = Date.now();
       }
@@ -501,6 +627,9 @@ const streamSlice = createSlice({
       run.lastSequence = sequence;
       run.status = status;
       if (failure) run.failure = failure;
+      if (state.pendingContextRequest?.runId === runId) {
+        state.pendingContextRequest = null;
+      }
       // contract §3：run-level 终态（interrupted/failed）派生——
       //   扫所有 running step 和 tool call，把它们标为对应终态，避免 UI 残留 spinner。
       //   只改 running 的，不动已 completed/failed/degraded 的历史 tool call。
@@ -726,6 +855,7 @@ export const {
   applyPlanSnapshot,
   clearStreamError,
   completeThinkingPhase,
+  discardContentBlock,
   endStream,
   finalizeRun,
   finalizeStep,
@@ -743,6 +873,9 @@ export const {
   updatePlanStep,
   updateRunProgress,
   updateContextUsage,
+  receiveContextRequired,
+  receiveContextResult,
+  setContextRequestPhase,
   upsertEvidenceItem,
   upsertStaticContentBlock,
   upsertToolDigest,

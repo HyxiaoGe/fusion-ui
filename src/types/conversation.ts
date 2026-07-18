@@ -138,13 +138,43 @@ export interface ProviderRouteEndpoint {
   city?: string | null;
 }
 
-export interface ProviderRouteResult {
-  mode?: string | null;
+export type ProviderTransitType = 'subway' | 'bus' | 'mixed' | 'public_transit';
+
+export type ProviderTransitLegKind = 'walking' | 'subway' | 'bus' | 'other';
+
+export interface ProviderTransitLeg {
+  kind?: ProviderTransitLegKind | null;
+  line_name?: string | null;
+  departure_stop?: string | null;
+  arrival_stop?: string | null;
+  via_stop_count?: number | null;
   distance_m?: number | null;
   duration_s?: number | null;
+  entrance?: string | null;
+  exit?: string | null;
+}
+
+export interface ProviderTransitAlternative {
+  transit_type?: ProviderTransitType | null;
+  distance_m?: number | null;
+  duration_s?: number | null;
+  walking_distance_m?: number | null;
+  transfers?: number | null;
+  summary?: string | null;
+  legs?: ProviderTransitLeg[] | null;
+}
+
+export interface ProviderRouteResult {
+  mode?: string | null;
+  transit_type?: ProviderTransitType | null;
+  distance_m?: number | null;
+  duration_s?: number | null;
+  walking_distance_m?: number | null;
   summary?: string | null;
   toll_yuan?: number | null;
   transfers?: number | null;
+  legs?: ProviderTransitLeg[] | null;
+  alternatives?: ProviderTransitAlternative[] | null;
 }
 
 export interface RouteResultsBlock {

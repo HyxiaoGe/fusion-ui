@@ -2,6 +2,7 @@ import { getRunStatusFromFinishReason } from '@/lib/agent/finishReason';
 import type { StreamCallbacks } from '@/lib/api/chat';
 import {
   applyPlanSnapshot,
+  discardContentBlock,
   finalizeRun,
   finalizeStep,
   finalizeToolCall,
@@ -16,6 +17,8 @@ import {
   upsertStaticContentBlock,
   upsertToolDigest,
   updateContextUsage,
+  receiveContextRequired,
+  receiveContextResult,
 } from '@/redux/slices/streamSlice';
 import type {
   AgentEvidenceItem,
@@ -106,6 +109,7 @@ export function createAgentStreamEventHandlers({
       dispatch(finalizeStep({
         runId: ev.run_id,
         stepId: ev.step_id,
+        toolCallCount: ev.tool_call_count,
         sequence: ev.sequence,
       }));
     },
@@ -213,6 +217,39 @@ export function createAgentStreamEventHandlers({
         runId: ev.run_id,
         sequence: ev.sequence,
         block,
+      }));
+    },
+    onContentBlockDiscarded: ev => {
+      if (!isActive() || !ev.block_id) return;
+      dispatch(discardContentBlock({
+        runId: ev.run_id,
+        sequence: ev.sequence,
+        blockId: ev.block_id,
+      }));
+    },
+    onContextRequired: ev => {
+      if (!isActive()) return;
+      const conversationId = resolveConversationId();
+      if (!conversationId) return;
+      dispatch(receiveContextRequired({
+        conversationId,
+        runId: ev.run_id,
+        requestId: ev.request_id,
+        contextType: ev.context_type,
+        purpose: ev.purpose,
+        reason: ev.reason,
+        expiresAt: ev.expires_at,
+        sequence: ev.sequence,
+      }));
+    },
+    onContextResult: ev => {
+      if (!isActive()) return;
+      dispatch(receiveContextResult({
+        runId: ev.run_id,
+        requestId: ev.request_id,
+        contextType: ev.context_type,
+        status: ev.status,
+        sequence: ev.sequence,
       }));
     },
     onContextStatusUpdated: ev => {

@@ -7,6 +7,7 @@ import { ChatMessageListLazy } from '@/components/lazy/LazyComponents';
 import ChatInput, { type ChatUploadCompleteFile } from '@/components/chat/ChatInput';
 import { ChatDetailOverlayProvider } from '@/components/chat/ChatDetailOverlayContext';
 import ConversationFilesPanel from '@/components/chat/ConversationFilesPanel';
+import LocationContextBanner from '@/components/chat/LocationContextBanner';
 import {
   tryConversationFileToComposerAttachment,
   type ConversationComposerAttachment,
@@ -815,6 +816,7 @@ export default function ChatPage() {
     <ChatDetailOverlayProvider>
       <div className="relative flex h-full min-h-0">
         <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
+          <LocationContextBanner conversationId={chatId} />
           <div className="flex-1 overflow-y-auto px-4 pt-4" data-chat-scroll-container="true">
             <ChatMessageListLazy
               messages={isHydratingWithoutContent ? [] : displayMessages}

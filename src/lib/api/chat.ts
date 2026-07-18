@@ -2,11 +2,16 @@ import { API_CONFIG } from '../config';
 import fetchWithAuth, { apiRequest } from './fetchWithAuth';
 import type {
   AgentEvidenceItem,
+  AgentContextRequiredEvent,
+  AgentContextResultEvent,
+  AgentContextPurpose,
+  AgentContextResultStatus,
   AgentEventEnvelope,
   AgentPlanItemKind,
   AgentPlanItemStatus,
   AgentProgressPhase,
   SseEnvelope,
+  SubmitAgentContextResultInput,
 } from '@/types/agentRun';
 import type { ContentBlock, StructuredToolResultBlock } from '@/types/conversation';
 import type { ContextUsage } from '@/types/conversation';
@@ -38,6 +43,45 @@ export interface ContinueAgentRunRequest {
   conversationId: string;
   messageId: string;
   previousRunId?: string;
+}
+
+export interface AgentContextSubmissionResponse {
+  outcome: 'accepted' | 'idempotent';
+  request_id: string;
+  context_type: 'geolocation';
+  status: AgentContextResultStatus;
+}
+
+export async function submitAgentContextResult(
+  input: SubmitAgentContextResultInput,
+  signal?: AbortSignal,
+): Promise<AgentContextSubmissionResponse> {
+  const body = input.status === 'provided'
+    ? {
+        context_type: 'geolocation' as const,
+        status: input.status,
+        location: {
+          latitude: input.location.latitude,
+          longitude: input.location.longitude,
+          accuracy_m: input.location.accuracyM,
+          acquired_at: input.location.acquiredAt,
+        },
+      }
+    : {
+        context_type: 'geolocation' as const,
+        status: input.status,
+        reason: input.reason,
+      };
+
+  return apiRequest<AgentContextSubmissionResponse>(
+    `${API_BASE_URL}/api/chat/conversations/${encodeURIComponent(input.conversationId)}/runs/${encodeURIComponent(input.runId)}/context/${encodeURIComponent(input.requestId)}`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      signal,
+      body: JSON.stringify(body),
+    },
+  );
 }
 
 // ============================================================
@@ -283,6 +327,12 @@ export interface StreamCallbacks {
       block?: StructuredToolResultBlock;
     },
   ) => void;
+  onContentBlockDiscarded?: (
+    ev: AgentEventEnvelope & {
+      protocol_version: 2;
+      block_id: string;
+    },
+  ) => void;
   onContextStatusUpdated?: (
     ev: AgentEventEnvelope & ContextUsage & {
       protocol_version: 2;
@@ -290,6 +340,8 @@ export interface StreamCallbacks {
       message_id: string;
     },
   ) => void;
+  onContextRequired?: (ev: AgentContextRequiredEvent) => void;
+  onContextResult?: (ev: AgentContextResultEvent) => void;
 
   /** done chunk：协议层流完成（与 [DONE] SSE 通道终止并存） */
   onDone: (meta: { messageId: string; conversationId: string }) => void;
@@ -312,6 +364,88 @@ interface SseStreamContext {
    * sendMessageStream 不传则用 BE 推的 conversationId（fallback 为 request.conversation_id）。
    */
   doneConversationId?: () => string;
+}
+
+const AGENT_CONTEXT_PURPOSES = new Set<AgentContextPurpose>([
+  'nearby_search',
+  'route_origin',
+  'route_destination',
+  'local_weather',
+]);
+
+const AGENT_CONTEXT_RESULT_STATUSES = new Set<AgentContextResultStatus>([
+  'provided',
+  'denied',
+  'timeout',
+  'unavailable',
+]);
+
+function contextRequiredEvent(
+  ev: AgentEventEnvelope & Record<string, unknown>,
+): AgentContextRequiredEvent | null {
+  if (
+    ev.protocol_version !== 2
+    || ev.context_type !== 'geolocation'
+    || typeof ev.request_id !== 'string'
+    || !ev.request_id
+    || typeof ev.purpose !== 'string'
+    || !AGENT_CONTEXT_PURPOSES.has(ev.purpose as AgentContextPurpose)
+    || typeof ev.reason !== 'string'
+    || !ev.reason
+    || typeof ev.expires_at !== 'number'
+    || !Number.isFinite(ev.expires_at)
+  ) {
+    return null;
+  }
+  // 显式重建 allowlist，防止后端误带坐标或其他上下文进入前端回调链路。
+  return {
+    type: 'context_required',
+    protocol_version: 2,
+    run_id: ev.run_id,
+    parent_run_id: ev.parent_run_id,
+    step_id: ev.step_id,
+    parent_step_id: ev.parent_step_id,
+    tool_call_id: ev.tool_call_id,
+    sequence: ev.sequence,
+    trace_id: ev.trace_id,
+    ts: ev.ts,
+    request_id: ev.request_id,
+    context_type: 'geolocation',
+    purpose: ev.purpose as AgentContextPurpose,
+    reason: ev.reason,
+    expires_at: ev.expires_at,
+  };
+}
+
+function contextResultEvent(
+  ev: AgentEventEnvelope & Record<string, unknown>,
+): AgentContextResultEvent | null {
+  if (
+    ev.protocol_version !== 2
+    || ev.context_type !== 'geolocation'
+    || typeof ev.request_id !== 'string'
+    || !ev.request_id
+    || typeof ev.status !== 'string'
+    || !AGENT_CONTEXT_RESULT_STATUSES.has(ev.status as AgentContextResultStatus)
+  ) {
+    return null;
+  }
+  // 显式重建 allowlist，防止后端误带坐标后进入 Redux 或日志链路。
+  return {
+    type: 'context_result',
+    protocol_version: 2,
+    run_id: ev.run_id,
+    parent_run_id: ev.parent_run_id,
+    step_id: ev.step_id,
+    parent_step_id: ev.parent_step_id,
+    tool_call_id: ev.tool_call_id,
+    sequence: ev.sequence,
+    trace_id: ev.trace_id,
+    ts: ev.ts,
+    request_id: ev.request_id,
+    context_type: 'geolocation',
+    status: ev.status as AgentContextResultStatus,
+  };
 }
 
 /**
@@ -396,6 +530,24 @@ async function parseSseEnvelopeStream(
         return callbacks.onEvidenceItemUpserted?.(ev as never);
       case 'content_block_upserted':
         return callbacks.onContentBlockUpserted?.(ev as never);
+      case 'content_block_discarded':
+        return callbacks.onContentBlockDiscarded?.(ev as never);
+      case 'context_required': {
+        const event = contextRequiredEvent(ev);
+        if (!event) {
+          console.warn('[chat] context_required 数据无效，已忽略');
+          return;
+        }
+        return callbacks.onContextRequired?.(event);
+      }
+      case 'context_result': {
+        const event = contextResultEvent(ev);
+        if (!event) {
+          console.warn('[chat] context_result 数据无效，已忽略');
+          return;
+        }
+        return callbacks.onContextResult?.(event);
+      }
       case 'context_status_updated': {
         const usage = normalizeContextUsage(ev);
         const phase = ev.phase;

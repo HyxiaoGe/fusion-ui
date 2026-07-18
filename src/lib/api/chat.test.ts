@@ -21,7 +21,81 @@ import {
   reconnectStream,
   sendMessageStream,
   stopStream,
+  submitAgentContextResult,
 } from './chat';
+
+describe('submitAgentContextResult', () => {
+  beforeEach(() => {
+    apiRequestMock.mockReset();
+  });
+
+  it('provided 只通过独立上下文接口提交定位，不走消息正文', async () => {
+    apiRequestMock.mockResolvedValue({
+      outcome: 'accepted',
+      request_id: 'ctx-1',
+      context_type: 'geolocation',
+      status: 'provided',
+    });
+
+    await submitAgentContextResult({
+      conversationId: 'conv-1',
+      runId: 'run-1',
+      requestId: 'ctx-1',
+      status: 'provided',
+      location: {
+        latitude: 22.62123,
+        longitude: 114.03541,
+        accuracyM: 35,
+        acquiredAt: 1_721_200_000,
+      },
+    });
+
+    expect(apiRequestMock).toHaveBeenCalledWith(
+      expect.stringContaining('/api/chat/conversations/conv-1/runs/run-1/context/ctx-1'),
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({
+          context_type: 'geolocation',
+          status: 'provided',
+          location: {
+            latitude: 22.62123,
+            longitude: 114.03541,
+            accuracy_m: 35,
+            acquired_at: 1_721_200_000,
+          },
+        }),
+      }),
+    );
+  });
+
+  it('拒绝结果只提交状态和原因，不携带 location', async () => {
+    apiRequestMock.mockResolvedValue({
+      outcome: 'accepted',
+      request_id: 'ctx-1',
+      context_type: 'geolocation',
+      status: 'denied',
+    });
+
+    await submitAgentContextResult({
+      conversationId: 'conv-1',
+      runId: 'run-1',
+      requestId: 'ctx-1',
+      status: 'denied',
+      reason: 'user_declined',
+    });
+
+    expect(apiRequestMock).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({
+        body: JSON.stringify({
+          context_type: 'geolocation',
+          status: 'denied',
+          reason: 'user_declined',
+        }),
+      }),
+    );
+  });
+});
 
 describe('stopStream', () => {
   beforeEach(() => {
@@ -155,6 +229,115 @@ function agentEvent(
 describe('sendMessageStream — 新 envelope 协议', () => {
   beforeEach(() => {
     fetchWithAuthMock.mockReset();
+  });
+
+  it('解析 geolocation context_required 和脱敏 context_result', async () => {
+    fetchWithAuthMock.mockResolvedValue(
+      createStreamResponse([
+        agentEvent('context_required', {
+          protocol_version: 2,
+          request_id: 'ctx-1',
+          context_type: 'geolocation',
+          purpose: 'nearby_search',
+          reason: '需要当前位置搜索附近地点',
+          expires_at: 1_721_200_120,
+          location: { latitude: 22.6, longitude: 114.0 },
+        }, 1),
+        agentEvent('context_result', {
+          protocol_version: 2,
+          request_id: 'ctx-1',
+          context_type: 'geolocation',
+          status: 'provided',
+          location: { latitude: 22.6, longitude: 114.0 },
+        }, 2),
+        envelope('done', {}),
+        'data: [DONE]\n\n',
+      ]),
+    );
+    const onContextRequired = vi.fn();
+    const onContextResult = vi.fn();
+
+    await sendMessageStream(
+      { model_id: 'g', message: '推荐附近餐厅' },
+      {
+        onReady: vi.fn(),
+        onReasoning: vi.fn(),
+        onAnswering: vi.fn(),
+        onContextRequired,
+        onContextResult,
+        onDone: vi.fn(),
+        onError: vi.fn(),
+      },
+    );
+
+    expect(onContextRequired).toHaveBeenCalledWith(expect.objectContaining({
+      run_id: 'r1',
+      request_id: 'ctx-1',
+      context_type: 'geolocation',
+      purpose: 'nearby_search',
+      expires_at: 1_721_200_120,
+    }));
+    expect(onContextRequired.mock.calls[0][0]).not.toHaveProperty('location');
+    expect(onContextResult).toHaveBeenCalledWith({
+      type: 'context_result',
+      protocol_version: 2,
+      run_id: 'r1',
+      parent_run_id: null,
+      step_id: null,
+      parent_step_id: null,
+      tool_call_id: null,
+      sequence: 2,
+      trace_id: 'r1',
+      ts: 0,
+      request_id: 'ctx-1',
+      context_type: 'geolocation',
+      status: 'provided',
+    });
+    expect(onContextResult.mock.calls[0][0]).not.toHaveProperty('location');
+  });
+
+  it('忽略协议版本、上下文类型或字段不合法的 context 事件', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    fetchWithAuthMock.mockResolvedValue(
+      createStreamResponse([
+        agentEvent('context_required', {
+          protocol_version: 1,
+          request_id: 'ctx-old',
+          context_type: 'geolocation',
+          purpose: 'nearby_search',
+          reason: '旧协议',
+          expires_at: 1_721_200_120,
+        }, 1),
+        agentEvent('context_result', {
+          protocol_version: 2,
+          request_id: 'ctx-2',
+          context_type: 'timezone',
+          status: 'provided',
+        }, 2),
+        envelope('done', {}),
+        'data: [DONE]\n\n',
+      ]),
+    );
+    const onContextRequired = vi.fn();
+    const onContextResult = vi.fn();
+
+    await sendMessageStream(
+      { model_id: 'g', message: 'q' },
+      {
+        onReady: vi.fn(),
+        onReasoning: vi.fn(),
+        onAnswering: vi.fn(),
+        onContextRequired,
+        onContextResult,
+        onDone: vi.fn(),
+        onError: vi.fn(),
+      },
+    );
+
+    expect(onContextRequired).not.toHaveBeenCalled();
+    expect(onContextResult).not.toHaveBeenCalled();
+    expect(warn).toHaveBeenCalled();
+    warn.mockRestore();
   });
 
   it('把前端生成的 user / assistant 稳定消息 ID 原样写入请求 payload', async () => {
@@ -511,6 +694,39 @@ describe('sendMessageStream — 新 envelope 协议', () => {
         id: 'routes-1',
         status: 'degraded',
       }),
+    }));
+  });
+
+  it('分发 content_block_discarded 并保留精确 block_id', async () => {
+    fetchWithAuthMock.mockResolvedValue(
+      createStreamResponse([
+        agentEvent('content_block_discarded', {
+          protocol_version: 2,
+          step_id: 'step-1',
+          block_id: 'tool-preamble',
+        }, 1),
+        envelope('done', {}),
+        'data: [DONE]\n\n',
+      ]),
+    );
+    const onContentBlockDiscarded = vi.fn();
+
+    await sendMessageStream(
+      { model_id: 'g', message: 'q' },
+      {
+        onReady: vi.fn(),
+        onReasoning: vi.fn(),
+        onAnswering: vi.fn(),
+        onContentBlockDiscarded,
+        onDone: vi.fn(),
+        onError: vi.fn(),
+      },
+    );
+
+    expect(onContentBlockDiscarded).toHaveBeenCalledWith(expect.objectContaining({
+      type: 'content_block_discarded',
+      step_id: 'step-1',
+      block_id: 'tool-preamble',
     }));
   });
 

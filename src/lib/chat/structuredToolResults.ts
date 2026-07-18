@@ -4,6 +4,10 @@ import type {
   ProviderPlaceResult,
   ProviderRouteEndpoint,
   ProviderRouteResult,
+  ProviderTransitAlternative,
+  ProviderTransitLeg,
+  ProviderTransitLegKind,
+  ProviderTransitType,
   RouteResultsBlock,
   StructuredToolResultBlock,
 } from '@/types/conversation';
@@ -99,11 +103,45 @@ function normalizeRoute(value: unknown): ProviderRouteResult | null {
   if (!source) return null;
   return {
     ...optionalField('mode', optionalString(source.mode)),
+    ...optionalField('transit_type', transitType(source.transit_type)),
     ...optionalField('distance_m', nonNegativeNumber(source.distance_m)),
     ...optionalField('duration_s', nonNegativeNumber(source.duration_s)),
+    ...optionalField('walking_distance_m', nonNegativeNumber(source.walking_distance_m)),
     ...optionalField('summary', optionalString(source.summary)),
     ...optionalField('toll_yuan', nonNegativeNumber(source.toll_yuan)),
     ...optionalField('transfers', nonNegativeNumber(source.transfers)),
+    legs: normalizeArray(source.legs, normalizeTransitLeg, 8),
+    alternatives: normalizeArray(source.alternatives, normalizeTransitAlternative, 2),
+  };
+}
+
+function normalizeTransitLeg(value: unknown): ProviderTransitLeg | null {
+  const source = asRecord(value);
+  if (!source) return null;
+  return {
+    ...optionalField('kind', transitLegKind(source.kind)),
+    ...optionalField('line_name', optionalString(source.line_name)),
+    ...optionalField('departure_stop', optionalString(source.departure_stop)),
+    ...optionalField('arrival_stop', optionalString(source.arrival_stop)),
+    ...optionalField('via_stop_count', nonNegativeNumber(source.via_stop_count)),
+    ...optionalField('distance_m', nonNegativeNumber(source.distance_m)),
+    ...optionalField('duration_s', nonNegativeNumber(source.duration_s)),
+    ...optionalField('entrance', optionalString(source.entrance)),
+    ...optionalField('exit', optionalString(source.exit)),
+  };
+}
+
+function normalizeTransitAlternative(value: unknown): ProviderTransitAlternative | null {
+  const source = asRecord(value);
+  if (!source) return null;
+  return {
+    ...optionalField('transit_type', transitType(source.transit_type)),
+    ...optionalField('distance_m', nonNegativeNumber(source.distance_m)),
+    ...optionalField('duration_s', nonNegativeNumber(source.duration_s)),
+    ...optionalField('walking_distance_m', nonNegativeNumber(source.walking_distance_m)),
+    ...optionalField('transfers', nonNegativeNumber(source.transfers)),
+    ...optionalField('summary', optionalString(source.summary)),
+    legs: normalizeArray(source.legs, normalizeTransitLeg, 8),
   };
 }
 
@@ -158,6 +196,24 @@ function detailStatus(
     || value === 'unavailable'
     || value === 'budget_limited'
     || value === 'not_requested'
+    ? value
+    : undefined;
+}
+
+function transitType(value: unknown): ProviderTransitType | undefined {
+  return value === 'subway'
+    || value === 'bus'
+    || value === 'mixed'
+    || value === 'public_transit'
+    ? value
+    : undefined;
+}
+
+function transitLegKind(value: unknown): ProviderTransitLegKind | undefined {
+  return value === 'walking'
+    || value === 'subway'
+    || value === 'bus'
+    || value === 'other'
     ? value
     : undefined;
 }

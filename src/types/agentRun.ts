@@ -165,6 +165,80 @@ export interface AgentRunState {
   lastSequence: number;
 }
 
+export type AgentContextType = 'geolocation';
+
+export type AgentContextPurpose =
+  | 'nearby_search'
+  | 'route_origin'
+  | 'route_destination'
+  | 'local_weather';
+
+export type AgentContextResultStatus =
+  | 'provided'
+  | 'denied'
+  | 'timeout'
+  | 'unavailable';
+
+export type AgentContextRequestPhase =
+  | 'required'
+  | 'locating'
+  | 'submitting'
+  | 'submit_failed';
+
+export interface PendingAgentContextRequest {
+  conversationId: string;
+  runId: string;
+  requestId: string;
+  contextType: AgentContextType;
+  purpose: AgentContextPurpose;
+  reason: string;
+  expiresAt: number;
+  sequence: number;
+  phase: AgentContextRequestPhase;
+}
+
+export interface AgentContextRequiredEvent extends AgentEventEnvelope {
+  type: 'context_required';
+  protocol_version: 2;
+  request_id: string;
+  context_type: AgentContextType;
+  purpose: AgentContextPurpose;
+  reason: string;
+  expires_at: number;
+}
+
+export interface AgentContextResultEvent extends AgentEventEnvelope {
+  type: 'context_result';
+  protocol_version: 2;
+  request_id: string;
+  context_type: AgentContextType;
+  status: AgentContextResultStatus;
+}
+
+export interface AgentContextLocation {
+  latitude: number;
+  longitude: number;
+  accuracyM: number;
+  acquiredAt: number;
+}
+
+export type SubmitAgentContextResultInput = {
+  conversationId: string;
+  runId: string;
+  requestId: string;
+} & (
+  | {
+      status: 'provided';
+      location: AgentContextLocation;
+      reason?: never;
+    }
+  | {
+      status: Exclude<AgentContextResultStatus, 'provided'>;
+      reason: string;
+      location?: never;
+    }
+);
+
 /** SSE 顶层 envelope（与 BE §4.6 一致）. */
 export interface SseEnvelope<T = unknown> {
   chunk_type: string;

@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { Files } from 'lucide-react';
 import ChatInput, { type ChatUploadCompleteFile } from '@/components/chat/ChatInput';
 import ConversationFilesPanel from '@/components/chat/ConversationFilesPanel';
+import LocationContextBanner from '@/components/chat/LocationContextBanner';
 import { ChatMessageListLazy } from '@/components/lazy/LazyComponents';
 import {
   tryConversationFileToComposerAttachment,
@@ -437,6 +438,7 @@ export default function HomeChatSurface() {
 
   return (
     <div className="h-full flex flex-col relative">
+      <LocationContextBanner conversationId={displayConversationId} />
       <div className="flex-1 overflow-y-auto" data-chat-scroll-container="true">
         {shouldShowPendingConversation && displayConversationId && displayConversation ? (
           <div className="h-full px-4 pt-4" data-testid="pending-conversation-surface">

@@ -125,6 +125,12 @@ vi.mock('@/components/lazy/LazyComponents', () => ({
   },
 }));
 
+vi.mock('@/components/chat/LocationContextBanner', () => ({
+  default: ({ conversationId }: { conversationId: string | null }) => (
+    <div data-testid="location-context-banner" data-conversation-id={conversationId ?? ''} />
+  ),
+}));
+
 vi.mock('@/hooks/useConversationFiles', () => ({
   useConversationFiles: (conversationId: string | null, options?: unknown) => {
     useConversationFilesMock(conversationId, options);
@@ -323,6 +329,33 @@ describe('HomeChatSurface 会话资料交互', () => {
     streamState.isStreaming = false;
     streamState.conversationId = null;
     window.sessionStorage.clear();
+  });
+
+  it('新对话本地草稿阶段也在消息区顶部装配定位授权提示', () => {
+    pendingConversationState.id = 'draft-chat-1';
+    pendingConversationState.byId = {
+      'draft-chat-1': {
+        id: 'draft-chat-1',
+        title: '即时草稿',
+        model_id: 'model-vision',
+        createdAt: 1,
+        updatedAt: 1,
+        messages: [{
+          id: 'user-1',
+          role: 'user',
+          content: [{ type: 'text', id: 'user-block', text: '你好' }],
+          status: 'pending',
+          timestamp: 1,
+        }],
+      },
+    };
+
+    render(<HomeChatSurface />);
+
+    const banner = screen.getByTestId('location-context-banner');
+    const messageList = screen.getByTestId('pending-message-list');
+    expect(banner).toHaveAttribute('data-conversation-id', 'draft-chat-1');
+    expect(banner.compareDocumentPosition(messageList) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0);
   });
 
   it('/chat/new 在首个 SSE 前立即渲染本地草稿并保留停止能力', async () => {

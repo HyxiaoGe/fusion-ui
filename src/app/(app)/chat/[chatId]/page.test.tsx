@@ -375,6 +375,12 @@ vi.mock('@/components/lazy/LazyComponents', () => ({
   },
 }));
 
+vi.mock('@/components/chat/LocationContextBanner', () => ({
+  default: ({ conversationId }: { conversationId: string | null }) => (
+    <div data-testid="location-context-banner" data-conversation-id={conversationId ?? ''} />
+  ),
+}));
+
 vi.mock('@/components/ui/confirm-dialog', () => ({
   default: () => null,
 }));
@@ -458,6 +464,18 @@ describe('ChatPage 会话切换体验', () => {
     stopRecoveredStreamMock.mockReset();
     stopRecoveredStreamMock.mockResolvedValue(true);
     window.sessionStorage.clear();
+  });
+
+  it('把定位授权提示固定装配在消息滚动区顶部', () => {
+    conversationsById.set('chat-a', createConversation('chat-a', [textMessage('user-1')]));
+    hydrationById.set('chat-a', { view: 'ready' });
+
+    render(<ChatPage />);
+
+    const banner = screen.getByTestId('location-context-banner');
+    const messageList = screen.getByTestId('message-list');
+    expect(banner).toHaveAttribute('data-conversation-id', 'chat-a');
+    expect(banner.compareDocumentPosition(messageList) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0);
   });
 
   it('mount 发现 streaming 后自动恢复，并在终态后不重试', async () => {

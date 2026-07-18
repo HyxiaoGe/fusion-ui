@@ -97,6 +97,75 @@ describe('createAgentStreamEventHandlers', () => {
     expect(dispatch).not.toHaveBeenCalled();
   });
 
+  it('把 step_completed 的工具调用数传给 Redux', () => {
+    const dispatch = vi.fn();
+    const handlers = createAgentStreamEventHandlers({
+      dispatch,
+      isActive: () => true,
+      resolveMessageId: ev => ev.message_id,
+      resolveConversationId: () => 'c1',
+    });
+
+    handlers.onStepCompleted?.({
+      type: 'step_completed',
+      protocol_version: 2,
+      run_id: 'r1',
+      parent_run_id: null,
+      step_id: 's1',
+      parent_step_id: null,
+      tool_call_id: null,
+      sequence: 3,
+      trace_id: 'r1',
+      ts: 0,
+      step_number: 1,
+      tool_call_count: 1,
+      duration_ms: 100,
+    });
+
+    expect(dispatch).toHaveBeenCalledWith(expect.objectContaining({
+      type: 'stream/finalizeStep',
+      payload: {
+        runId: 'r1',
+        stepId: 's1',
+        toolCallCount: 1,
+        sequence: 3,
+      },
+    }));
+  });
+
+  it('把 content_block_discarded 映射为精确的 block 撤回', () => {
+    const dispatch = vi.fn();
+    const handlers = createAgentStreamEventHandlers({
+      dispatch,
+      isActive: () => true,
+      resolveMessageId: ev => ev.message_id,
+      resolveConversationId: () => 'c1',
+    });
+
+    handlers.onContentBlockDiscarded?.({
+      type: 'content_block_discarded',
+      protocol_version: 2,
+      run_id: 'r1',
+      parent_run_id: null,
+      step_id: 's1',
+      parent_step_id: null,
+      tool_call_id: null,
+      sequence: 2,
+      trace_id: 'r1',
+      ts: 0,
+      block_id: 'tool-preamble',
+    });
+
+    expect(dispatch).toHaveBeenCalledWith(expect.objectContaining({
+      type: 'stream/discardContentBlock',
+      payload: {
+        runId: 'r1',
+        blockId: 'tool-preamble',
+        sequence: 2,
+      },
+    }));
+  });
+
   it('映射 selected evidence event 到 Redux action', () => {
     const dispatch = vi.fn();
     const handlers = createAgentStreamEventHandlers({
@@ -238,6 +307,69 @@ describe('createAgentStreamEventHandlers', () => {
           actual_prompt_tokens: 147_811,
           round_index: 1,
         }),
+      }),
+    }));
+  });
+
+  it('把定位上下文请求和脱敏结果映射到当前会话的瞬态状态', () => {
+    const dispatch = vi.fn();
+    const handlers = createAgentStreamEventHandlers({
+      dispatch,
+      isActive: () => true,
+      resolveMessageId: ev => ev.message_id,
+      resolveConversationId: () => 'c1',
+    });
+
+    handlers.onContextRequired?.({
+      type: 'context_required',
+      protocol_version: 2,
+      run_id: 'r1',
+      parent_run_id: null,
+      step_id: 's1',
+      parent_step_id: null,
+      tool_call_id: null,
+      sequence: 5,
+      trace_id: 'r1',
+      ts: 0,
+      request_id: 'ctx-1',
+      context_type: 'geolocation',
+      purpose: 'route_origin',
+      reason: '需要当前位置作为路线起点',
+      expires_at: 1_721_200_120,
+    });
+    handlers.onContextResult?.({
+      type: 'context_result',
+      protocol_version: 2,
+      run_id: 'r1',
+      parent_run_id: null,
+      step_id: 's1',
+      parent_step_id: null,
+      tool_call_id: null,
+      sequence: 6,
+      trace_id: 'r1',
+      ts: 0,
+      request_id: 'ctx-1',
+      context_type: 'geolocation',
+      status: 'provided',
+    });
+
+    expect(dispatch.mock.calls[0][0]).toMatchObject({
+      type: 'stream/receiveContextRequired',
+      payload: {
+        conversationId: 'c1',
+        runId: 'r1',
+        requestId: 'ctx-1',
+        purpose: 'route_origin',
+        sequence: 5,
+      },
+    });
+    expect(dispatch.mock.calls[1][0]).toEqual(expect.objectContaining({
+      type: 'stream/receiveContextResult',
+      payload: expect.objectContaining({
+        runId: 'r1',
+        requestId: 'ctx-1',
+        status: 'provided',
+        sequence: 6,
       }),
     }));
   });

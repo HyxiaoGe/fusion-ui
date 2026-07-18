@@ -12,6 +12,7 @@ import streamSliceReducer, {
   mergeToolCallDelta,
   finalizeToolCall,
   finalizeStep,
+  discardContentBlock,
   markLimitReached,
   finalizeRun,
   appendTextDelta,
@@ -24,6 +25,9 @@ import streamSliceReducer, {
   setStreamStatus,
   updateContextUsage,
   upsertStaticContentBlock,
+  receiveContextRequired,
+  receiveContextResult,
+  setContextRequestPhase,
 } from './streamSlice';
 
 const reducer = streamSliceReducer;
@@ -39,6 +43,38 @@ function planStatus(state: ReturnType<typeof initial>, id: string) {
 }
 
 describe('streamSlice — content blocks selector', () => {
+  it('content_block_discarded 按 block id 幂等移除过程性正文', () => {
+    let state = reducer(initial(), startStream({ conversationId: 'c1', messageId: 'm1' }));
+    state = reducer(state, initRun({ runId: 'r1', messageId: 'm1', config: baseConfig, sequence: 0 }));
+    state = reducer(state, pushStep({ runId: 'r1', stepId: 's1', stepNumber: 1, sequence: 1 }));
+    state = reducer(state, appendTextDelta({
+      blockId: 'tool-preamble',
+      delta: '我先调用工具。',
+      runId: 'r1',
+      stepId: 's1',
+    }));
+    state = reducer(state, advanceTypewriter(100));
+
+    state = reducer(state, discardContentBlock({
+      runId: 'r1',
+      blockId: 'tool-preamble',
+      sequence: 2,
+    }));
+    const afterFirstDiscard = state;
+    state = reducer(state, discardContentBlock({
+      runId: 'r1',
+      blockId: 'tool-preamble',
+      sequence: 3,
+    }));
+
+    expect(selectFullStreamContentBlocks(state)).toEqual([]);
+    expect(state.textBlocks['tool-preamble']).toBeUndefined();
+    expect(state.totalTextLength).toBe(0);
+    expect(state.displayedTextLength).toBe(0);
+    expect(afterFirstDiscard.currentRun?.steps[0].contentBlockIds).toEqual([]);
+    expect(state.currentRun?.steps[0].contentBlockIds).toEqual([]);
+  });
+
   it('在模型正文到达前 upsert 结构化结果块，并按 id 替换而不重复', () => {
     let state = reducer(initial(), startStream({ conversationId: 'c1', messageId: 'm1' }));
     state = reducer(state, initRun({
@@ -186,6 +222,106 @@ describe('streamSlice — content blocks selector', () => {
 });
 
 describe('streamSlice — agent run timeline', () => {
+  it('定位请求只保存瞬态元数据，按 sequence 幂等并由匹配结果清理', () => {
+    let state = reducer(initial(), startStream({ conversationId: 'c1', messageId: 'm1' }));
+    state = reducer(state, initRun({
+      runId: 'r1',
+      messageId: 'm1',
+      config: baseConfig,
+      sequence: 0,
+    }));
+    state = reducer(state, receiveContextRequired({
+      conversationId: 'c1',
+      runId: 'r1',
+      requestId: 'ctx-1',
+      contextType: 'geolocation',
+      purpose: 'nearby_search',
+      reason: '搜索附近地点',
+      expiresAt: 1_721_200_120,
+      sequence: 1,
+    }));
+
+    expect(state.pendingContextRequest).toEqual(expect.objectContaining({
+      conversationId: 'c1',
+      runId: 'r1',
+      requestId: 'ctx-1',
+      phase: 'required',
+    }));
+    expect(state.pendingContextRequest).not.toHaveProperty('location');
+
+    state = reducer(state, setContextRequestPhase({
+      runId: 'r1',
+      requestId: 'ctx-1',
+      phase: 'locating',
+    }));
+    expect(state.pendingContextRequest?.phase).toBe('locating');
+
+    state = reducer(state, receiveContextRequired({
+      conversationId: 'c1',
+      runId: 'r1',
+      requestId: 'ctx-old',
+      contextType: 'geolocation',
+      purpose: 'local_weather',
+      reason: '旧事件',
+      expiresAt: 1_721_200_120,
+      sequence: 1,
+    }));
+    expect(state.pendingContextRequest?.requestId).toBe('ctx-1');
+
+    state = reducer(state, receiveContextResult({
+      runId: 'another-run',
+      requestId: 'ctx-1',
+      contextType: 'geolocation',
+      status: 'provided',
+      sequence: 2,
+    }));
+    expect(state.pendingContextRequest).not.toBeNull();
+
+    state = reducer(state, receiveContextResult({
+      runId: 'r1',
+      requestId: 'ctx-1',
+      contextType: 'geolocation',
+      status: 'provided',
+      sequence: 2,
+    }));
+    expect(state.pendingContextRequest).toBeNull();
+  });
+
+  it('run 终态和 endStream 都清理未完成的定位请求', () => {
+    let state = reducer(initial(), startStream({ conversationId: 'c1', messageId: 'm1' }));
+    state = reducer(state, initRun({
+      runId: 'r1',
+      messageId: 'm1',
+      config: baseConfig,
+      sequence: 0,
+    }));
+    state = reducer(state, receiveContextRequired({
+      conversationId: 'c1',
+      runId: 'r1',
+      requestId: 'ctx-1',
+      contextType: 'geolocation',
+      purpose: 'nearby_search',
+      reason: '搜索附近地点',
+      expiresAt: 1_721_200_120,
+      sequence: 1,
+    }));
+    state = reducer(state, finalizeRun({ runId: 'r1', status: 'completed', sequence: 2 }));
+    expect(state.pendingContextRequest).toBeNull();
+
+    state = reducer(state, receiveContextRequired({
+      conversationId: 'c1',
+      runId: 'r1',
+      requestId: 'ctx-2',
+      contextType: 'geolocation',
+      purpose: 'local_weather',
+      reason: '查询本地天气',
+      expiresAt: 1_721_200_120,
+      sequence: 3,
+    }));
+    state = reducer(state, endStream());
+    expect(state.pendingContextRequest).toBeNull();
+  });
+
   it('estimated 只进入 in-flight，final actual 才原子替换 confirmed', () => {
     let state = reducer(initial(), startStream({ conversationId: 'chat-a', messageId: 'msg-a' }));
     state = reducer(state, updateContextUsage({
@@ -643,6 +779,60 @@ describe('streamSlice — agent run timeline', () => {
     s = reducer(s, finalizeStep({ runId: 'r1', stepId: 's1', sequence: 2 }));
     expect(s.currentRun?.steps[0].status).toBe('completed');
     expect(s.currentRun?.steps[0].completedAt).toBeDefined();
+  });
+
+  it('finalizeStep 移除工具调用回合的过程性正文，保留后续最终回答', () => {
+    let s = reducer(initial(), initRun({ runId: 'r1', messageId: 'm1', config: baseConfig, sequence: 0 }));
+    s = reducer(s, pushStep({ runId: 'r1', stepId: 's1', stepNumber: 1, sequence: 1 }));
+    s = reducer(s, appendTextDelta({
+      blockId: 'tool-preamble',
+      delta: '好的，我先调用路线工具。',
+      runId: 'r1',
+      stepId: 's1',
+    }));
+    s = reducer(s, advanceTypewriter(100));
+    s = reducer(s, finalizeStep({
+      runId: 'r1',
+      stepId: 's1',
+      toolCallCount: 1,
+      sequence: 2,
+    }));
+
+    expect(s.textBlocks['tool-preamble']).toBeUndefined();
+    expect(s.blockOrder).not.toContain('tool-preamble');
+    expect(s.totalTextLength).toBe(0);
+    expect(s.displayedTextLength).toBe(0);
+
+    s = reducer(s, pushStep({ runId: 'r1', stepId: 's2', stepNumber: 2, sequence: 3 }));
+    s = reducer(s, appendTextDelta({
+      blockId: 'final-answer',
+      delta: '如果优先考虑用时，建议驾车。',
+      runId: 'r1',
+      stepId: 's2',
+    }));
+
+    expect(selectFullStreamContentBlocks(s)).toEqual([
+      { type: 'text', id: 'final-answer', text: '如果优先考虑用时，建议驾车。' },
+    ]);
+  });
+
+  it('finalizeStep 保留无工具回合的正常流式回答', () => {
+    let s = reducer(initial(), initRun({ runId: 'r1', messageId: 'm1', config: baseConfig, sequence: 0 }));
+    s = reducer(s, pushStep({ runId: 'r1', stepId: 's1', stepNumber: 1, sequence: 1 }));
+    s = reducer(s, appendTextDelta({
+      blockId: 'plain-answer',
+      delta: '正常回答',
+      runId: 'r1',
+      stepId: 's1',
+    }));
+    s = reducer(s, finalizeStep({
+      runId: 'r1',
+      stepId: 's1',
+      toolCallCount: 0,
+      sequence: 2,
+    }));
+
+    expect(s.textBlocks['plain-answer']).toBe('正常回答');
   });
 
   it('markLimitReached 写 reason 不改 run.status', () => {

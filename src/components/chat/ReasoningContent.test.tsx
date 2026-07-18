@@ -96,4 +96,36 @@ describe('ReasoningContent', () => {
     expect(screen.getByTestId('reasoning-code-block')).toBe(firstCodeBlock);
     expect(screen.getByTestId('reasoning-code-block').textContent).toContain('const c = 3;');
   });
+
+  it('将工具协议标记显示为普通文本，不创建未知 DOM 标签', () => {
+    const { container } = render(
+      <ReasoningContent
+        content={'准备 <strong>核对</strong> 工具调用：\n<function name="web_search">\n<parameter name="query">深圳天气</parameter>\n</function>'}
+        isStreaming={false}
+        isVisible={true}
+        onToggle={vi.fn()}
+      />,
+    );
+
+    expect(container.querySelector('function')).toBeNull();
+    expect(container.querySelector('parameter')).toBeNull();
+    expect(container.textContent).toContain('<function name="web_search">');
+    expect(container.textContent).toContain('<parameter name="query">深圳天气</parameter>');
+    expect(screen.getByText('核对').tagName).toBe('STRONG');
+  });
+
+  it('不改写 fenced code 中的工具协议示例', () => {
+    render(
+      <ReasoningContent
+        content={'```xml\n<function>\n<parameter name="query">深圳天气</parameter>\n</function>\n```'}
+        isStreaming={false}
+        isVisible={true}
+        onToggle={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByTestId('reasoning-code-block').textContent).toBe(
+      '<function>\n<parameter name="query">深圳天气</parameter>\n</function>',
+    );
+  });
 });
