@@ -285,6 +285,14 @@ describe('StructuredToolResults', () => {
     );
     expect(screen.getByText('驾车')).toHaveClass('min-w-0', 'break-words');
     expect(screen.getByText(/约 167 分钟/)).toHaveClass('min-w-0', 'break-words');
+    const routeItems = within(screen.getByTestId('route-results-grid')).getAllByRole('article');
+    expect(within(routeItems[2]).getByText('AI 推荐')).toHaveClass(
+      'border-violet-300/70',
+      'bg-gradient-to-r',
+      'text-violet-600',
+    );
+    expect(within(routeItems[0]).queryByText('AI 推荐')).toBeNull();
+    expect(within(routeItems[1]).queryByText('AI 推荐')).toBeNull();
   });
 
   it('三方案中仅公交有复杂详情时默认选中公交，并可在稳定详情面板切换方案', () => {
@@ -350,6 +358,9 @@ describe('StructuredToolResults', () => {
     expect(within(drivingSummary).getByTestId('route-mode-icon-driving')).toBeInTheDocument();
     expect(within(transitSummary).getByTestId('route-mode-icon-bus')).toBeInTheDocument();
     expect(within(cyclingSummary).getByTestId('route-mode-icon-bicycling')).toBeInTheDocument();
+    expect(within(drivingSummary).getByText('AI 推荐')).toBeInTheDocument();
+    expect(within(transitSummary).queryByText('AI 推荐')).toBeNull();
+    expect(within(cyclingSummary).queryByText('AI 推荐')).toBeNull();
 
     const detailPanel = screen.getByTestId('route-detail-panel');
     expect(within(detailPanel).getByText('公交')).toBeInTheDocument();

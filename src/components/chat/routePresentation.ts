@@ -7,6 +7,21 @@ export interface RoutePresentation {
   initialSelectedIndex: number;
 }
 
+export function findRecommendedRouteIndex(
+  routes: readonly ProviderRouteResult[],
+): number | null {
+  const timedRoutes = routes.flatMap((route, index) => (
+    typeof route.duration_s === 'number' && Number.isFinite(route.duration_s) && route.duration_s >= 0
+      ? [{ index, duration: route.duration_s }]
+      : []
+  ));
+  if (timedRoutes.length < 2) return null;
+
+  const fastestDuration = Math.min(...timedRoutes.map(route => route.duration));
+  const fastestRoutes = timedRoutes.filter(route => route.duration === fastestDuration);
+  return fastestRoutes.length === 1 ? fastestRoutes[0].index : null;
+}
+
 function hasComplexDetails(route: ProviderRouteResult): boolean {
   return (route.legs?.length ?? 0) > 0 || (route.alternatives?.length ?? 0) > 0;
 }
