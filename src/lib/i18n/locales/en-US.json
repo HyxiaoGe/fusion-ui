@@ -4,6 +4,9 @@
       "newChat": "New Chat",
       "settings": "Settings"
     },
+    "auth": {
+      "emailCodeLogin": "Sign in with email verification code"
+    },
     "chat": {
       "send": "Send",
       "typing": "AI is generating a response...",

@@ -17,7 +17,7 @@ import {
 } from 'auth-client-web';
 import { configureAuth } from './auth-sdk';
 import { clearSsoReturn } from './sso-probe';
-import { API_CONFIG } from '../config';
+import { API_CONFIG, AUTH_SERVICE_CONFIG } from '../config';
 
 const ACCESS_TOKEN_KEY = 'auth_token';
 const REFRESH_TOKEN_KEY = 'auth_refresh_token';
@@ -26,11 +26,38 @@ const SDK_USER_KEY = 'auth_user_info';
 const USER_PROFILE_KEY = 'user_profile';
 const USER_PROFILE_TIMESTAMP_KEY = 'user_profile_timestamp';
 
-type OAuthProvider = 'github' | 'google';
+export type SsoProvider = 'github' | 'google' | 'email';
+
+/**
+ * 探测 auth-service 是否明确开放邮箱验证码登录。旧版本、异常响应和网络失败均关闭入口，
+ * 避免 UI 先于后端发布后把用户带到不可用的 provider。
+ */
+export async function supportsEmailCodeLogin(): Promise<boolean> {
+  const authBaseUrl = AUTH_SERVICE_CONFIG.BASE_URL.replace(/\/+$/, '');
+  if (!authBaseUrl) return false;
+
+  try {
+    const response = await fetch(`${authBaseUrl}/auth/capabilities`, {
+      method: 'GET',
+      cache: 'no-store',
+    });
+    if (!response.ok) return false;
+
+    const capabilities: unknown = await response.json();
+    return (
+      typeof capabilities === 'object'
+      && capabilities !== null
+      && 'email_login' in capabilities
+      && capabilities.email_login === true
+    );
+  } catch {
+    return false;
+  }
+}
 
 /** Interactive login: top-level redirect to /auth/authorize (PKCE + state). */
 export async function startSsoLogin(
-  provider: OAuthProvider,
+  provider: SsoProvider,
   redirectPath?: string
 ): Promise<void> {
   configureAuth();

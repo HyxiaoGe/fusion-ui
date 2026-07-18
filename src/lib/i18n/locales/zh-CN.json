@@ -4,6 +4,9 @@
       "newChat": "新建聊天",
       "settings": "设置"
     },
+    "auth": {
+      "emailCodeLogin": "使用邮箱验证码登录"
+    },
     "chat": {
       "send": "发送",
       "typing": "AI正在思考...",

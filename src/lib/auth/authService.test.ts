@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const {
   configureAuthMock,
@@ -37,6 +37,11 @@ vi.mock('auth-client-web', () => ({
   logout: logoutMock,
 }));
 
+vi.mock('../config', () => ({
+  API_CONFIG: { BASE_URL: '' },
+  AUTH_SERVICE_CONFIG: { BASE_URL: 'https://auth.example.com/' },
+}));
+
 import {
   clearAuthStorage,
   completeSsoCallback,
@@ -47,12 +52,49 @@ import {
   probeSessionLiveness,
   revokeSsoSession,
   startSsoLogin,
+  supportsEmailCodeLogin,
 } from './authService';
 
 describe('authService SDK adapter', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     localStorage.clear();
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('supportsEmailCodeLogin 以 no-store GET 探测开启的邮箱登录能力', async () => {
+    const fetchMock = vi.fn(async () => ({
+      ok: true,
+      json: async () => ({ email_login: true }),
+    }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(supportsEmailCodeLogin()).resolves.toBe(true);
+    expect(fetchMock).toHaveBeenCalledWith('https://auth.example.com/auth/capabilities', {
+      method: 'GET',
+      cache: 'no-store',
+    });
+  });
+
+  it.each([
+    ['能力关闭', { ok: true, json: async () => ({ email_login: false }) }],
+    ['旧后端 404', { ok: false, status: 404, json: async () => ({ email_login: true }) }],
+    ['响应格式错误', { ok: true, json: async () => ({ email_login: 'true' }) }],
+  ] as const)('supportsEmailCodeLogin 遇到%s时 fail closed', async (_case, response) => {
+    vi.stubGlobal('fetch', vi.fn(async () => response));
+
+    await expect(supportsEmailCodeLogin()).resolves.toBe(false);
+  });
+
+  it('supportsEmailCodeLogin 遇到网络失败时 fail closed', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => {
+      throw new TypeError('Failed to fetch');
+    }));
+
+    await expect(supportsEmailCodeLogin()).resolves.toBe(false);
   });
 
   it('startSsoLogin configures the SDK then delegates with provider + redirect path', async () => {
@@ -66,6 +108,13 @@ describe('authService SDK adapter', () => {
     await startSsoLogin('google');
 
     expect(loginMock).toHaveBeenCalledWith('google', undefined);
+  });
+
+  it('startSsoLogin delegates hosted email-code login through provider=email', async () => {
+    await startSsoLogin('email');
+
+    expect(configureAuthMock).toHaveBeenCalledTimes(1);
+    expect(loginMock).toHaveBeenCalledWith('email', undefined);
   });
 
   it('startSsoLogin clears any stale silent-probe return path before redirecting (no hijacked redirect)', async () => {
