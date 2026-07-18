@@ -34,7 +34,6 @@
         "retryCountdown": "Try again in {{seconds}} seconds",
         "codeExpiresIn": "Code expires in {{seconds}} seconds",
         "codeResent": "A new verification code has been sent",
-        "hostedFallback": "Continue on the authentication page",
         "errors": {
           "invalid_email": "Enter a valid email address",
           "invalid_code": "The code is incorrect. Try again.",

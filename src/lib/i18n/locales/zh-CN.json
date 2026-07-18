@@ -34,7 +34,6 @@
         "retryCountdown": "{{seconds}} 秒后重试",
         "codeExpiresIn": "验证码将在 {{seconds}} 秒后过期",
         "codeResent": "新的验证码已发送",
-        "hostedFallback": "在认证页面继续",
         "errors": {
           "invalid_email": "请输入有效的邮箱地址",
           "invalid_code": "验证码不正确，请重新输入",

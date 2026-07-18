@@ -26,14 +26,13 @@ const SDK_USER_KEY = 'auth_user_info';
 const USER_PROFILE_KEY = 'user_profile';
 const USER_PROFILE_TIMESTAMP_KEY = 'user_profile_timestamp';
 
-export type SsoProvider = 'github' | 'google' | 'email';
+export type SsoProvider = 'github' | 'google';
 
 export interface EmailLoginCapabilities {
-  hosted: boolean;
   headless: boolean;
 }
 
-const EMAIL_LOGIN_UNAVAILABLE: EmailLoginCapabilities = { hosted: false, headless: false };
+const EMAIL_LOGIN_UNAVAILABLE: EmailLoginCapabilities = { headless: false };
 
 export function isEmailHeadlessRuntime(
   protocol: string = typeof window === 'undefined' ? '' : window.location.protocol,
@@ -66,29 +65,19 @@ export async function getEmailLoginCapabilities(): Promise<EmailLoginCapabilitie
     if (!response.ok) return EMAIL_LOGIN_UNAVAILABLE;
 
     const capabilities: unknown = await response.json();
-    const hosted = (
+    const headless = (
       typeof capabilities === 'object'
       && capabilities !== null
-      && 'email_login' in capabilities
-      && capabilities.email_login === true
-    );
-    if (!hosted) return EMAIL_LOGIN_UNAVAILABLE;
-
-    const headless = (
-      'email_headless_login' in capabilities
+      && 'email_headless_login' in capabilities
       && capabilities.email_headless_login === true
       && clientId.length > 0
       && redirectUri.length > 0
       && isEmailHeadlessRuntime()
     );
-    return { hosted: true, headless };
+    return { headless };
   } catch {
     return EMAIL_LOGIN_UNAVAILABLE;
   }
-}
-
-export async function supportsEmailCodeLogin(): Promise<boolean> {
-  return (await getEmailLoginCapabilities()).hosted;
 }
 
 /** Interactive login: top-level redirect to /auth/authorize (PKCE + state). */

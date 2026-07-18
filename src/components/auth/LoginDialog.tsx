@@ -32,7 +32,7 @@ import "@/lib/i18n";
 import { useAppDispatch } from "@/redux/hooks";
 import { completeEmailCodeLogin } from "@/redux/slices/authSlice";
 
-const EMAIL_LOGIN_UNAVAILABLE: EmailLoginCapabilities = { hosted: false, headless: false };
+const EMAIL_LOGIN_UNAVAILABLE: EmailLoginCapabilities = { headless: false };
 
 export function LoginDialog({
   open,
@@ -48,7 +48,6 @@ export function LoginDialog({
   const [view, setView] = useState<"methods" | "email">("methods");
   const [isGitHubLoading, setIsGitHubLoading] = useState(false);
   const [isGoogleLoading, setIsGoogleLoading] = useState(false);
-  const [isEmailLoading, setIsEmailLoading] = useState(false);
   const [emailCapabilities, setEmailCapabilities] = useState<EmailLoginCapabilities>(EMAIL_LOGIN_UNAVAILABLE);
   const [criticalOperation, setCriticalOperation] = useState(false);
   const criticalOperationRef = useRef(false);
@@ -58,7 +57,7 @@ export function LoginDialog({
   const requestedOpen = isControlled ? open : internalOpen;
   // 外层受控 prop 即使在 verify 途中变成 false，也要等 authorization code 完成/失败后再关闭。
   const dialogOpen = criticalOperation ? true : requestedOpen;
-  const isAnyLoginLoading = isGitHubLoading || isGoogleLoading || isEmailLoading;
+  const isAnyLoginLoading = isGitHubLoading || isGoogleLoading;
 
   const setCritical = (critical: boolean) => {
     criticalOperationRef.current = critical;
@@ -92,7 +91,6 @@ export function LoginDialog({
     setView("methods");
     setIsGitHubLoading(false);
     setIsGoogleLoading(false);
-    setIsEmailLoading(false);
     criticalOperationRef.current = false;
     setCriticalOperation(false);
   }, [dialogOpen]);
@@ -100,10 +98,9 @@ export function LoginDialog({
   const resetLoginLoading = () => {
     setIsGitHubLoading(false);
     setIsGoogleLoading(false);
-    setIsEmailLoading(false);
   };
 
-  const startHostedLogin = (provider: SsoProvider) => {
+  const startOAuthLogin = (provider: SsoProvider) => {
     if (!isAuthConfigured()) {
       toast({ message: t("auth.configurationMissing"), type: "error" });
       resetLoginLoading();
@@ -118,12 +115,12 @@ export function LoginDialog({
 
   const handleGitHubLogin = () => {
     setIsGitHubLoading(true);
-    startHostedLogin("github");
+    startOAuthLogin("github");
   };
 
   const handleGoogleLogin = () => {
     setIsGoogleLoading(true);
-    startHostedLogin("google");
+    startOAuthLogin("google");
   };
 
   const handleEmailLogin = () => {
@@ -131,17 +128,7 @@ export function LoginDialog({
       toast({ message: t("auth.configurationMissing"), type: "error" });
       return;
     }
-    if (emailCapabilities.headless) {
-      setView("email");
-      return;
-    }
-    setIsEmailLoading(true);
-    startHostedLogin("email");
-  };
-
-  const handleHostedEmailFallback = () => {
-    setIsEmailLoading(true);
-    startHostedLogin("email");
+    setView("email");
   };
 
   const handleVerifyEmailCode = async (input: Parameters<typeof verifyEmailCodeLogin>[0]) => {
@@ -174,7 +161,6 @@ export function LoginDialog({
             cancel={cancelEmailCodeLogin}
             onBackToMethods={() => setView("methods")}
             onAuthenticated={handleEmailAuthenticated}
-            onUseHostedLogin={handleHostedEmailFallback}
             onCriticalOperationChange={setCritical}
           />
         ) : (
@@ -200,13 +186,9 @@ export function LoginDialog({
                 )}
                 {t("auth.googleLogin")}
               </Button>
-              {emailCapabilities.hosted ? (
+              {emailCapabilities.headless ? (
                 <Button onClick={handleEmailLogin} disabled={isAnyLoginLoading}>
-                  {isEmailLoading ? (
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  ) : (
-                    <KeyRound className="mr-2 h-4 w-4" />
-                  )}
+                  <KeyRound className="mr-2 h-4 w-4" />
                   {t("auth.emailCodeLogin")}
                 </Button>
               ) : null}

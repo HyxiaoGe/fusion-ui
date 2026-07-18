@@ -59,7 +59,6 @@ import {
   probeSessionLiveness,
   revokeSsoSession,
   startSsoLogin,
-  supportsEmailCodeLogin,
 } from './authService';
 
 describe('authService SDK adapter', () => {
@@ -72,24 +71,14 @@ describe('authService SDK adapter', () => {
     vi.unstubAllGlobals();
   });
 
-  it('以 no-store GET 探测 hosted/headless 邮箱登录能力', async () => {
+  it('以 no-store GET 探测 headless 邮箱登录能力', async () => {
     const fetchMock = vi.fn(async () => ({
       ok: true,
       json: async () => ({ email_login: true, email_headless_login: true }),
     }));
     vi.stubGlobal('fetch', fetchMock);
 
-    await expect(getEmailLoginCapabilities()).resolves.toEqual({ hosted: true, headless: true });
-    expect(fetchMock).toHaveBeenCalledWith(
-      'http://127.0.0.1:18100/auth/capabilities?client_id=fusion-app&redirect_uri=http%3A%2F%2Flocalhost%3A3000%2Fauth%2Fcallback',
-      {
-      method: 'GET',
-      cache: 'no-store',
-      },
-    );
-
-    fetchMock.mockClear();
-    await expect(supportsEmailCodeLogin()).resolves.toBe(true);
+    await expect(getEmailLoginCapabilities()).resolves.toEqual({ headless: true });
     expect(fetchMock).toHaveBeenCalledWith(
       'http://127.0.0.1:18100/auth/capabilities?client_id=fusion-app&redirect_uri=http%3A%2F%2Flocalhost%3A3000%2Fauth%2Fcallback',
       {
@@ -99,22 +88,22 @@ describe('authService SDK adapter', () => {
     );
   });
 
-  it('旧后端只有 email_login 时保持 hosted fallback，不误开 headless', async () => {
+  it('旧版响应只有 email_login 时隐藏邮箱入口', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => ({
       ok: true,
       json: async () => ({ email_login: true }),
     })));
 
-    await expect(getEmailLoginCapabilities()).resolves.toEqual({ hosted: true, headless: false });
+    await expect(getEmailLoginCapabilities()).resolves.toEqual({ headless: false });
   });
 
-  it('email_login 未开启时即使错误宣称 headless 也整体 fail closed', async () => {
-    vi.stubGlobal('fetch', vi.fn(async () => ({
-      ok: true,
-      json: async () => ({ email_login: false, email_headless_login: true }),
-    })));
+  it.each([
+    ['email_login=false', { email_login: false, email_headless_login: true }],
+    ['缺少 email_login', { email_headless_login: true }],
+  ] as const)('%s 时只要 headless 明确开启就开放弹窗邮箱登录', async (_case, capabilities) => {
+    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => capabilities })));
 
-    await expect(getEmailLoginCapabilities()).resolves.toEqual({ hosted: false, headless: false });
+    await expect(getEmailLoginCapabilities()).resolves.toEqual({ headless: true });
   });
 
   it('headless 仅允许 http/https Web runtime', () => {
@@ -125,22 +114,21 @@ describe('authService SDK adapter', () => {
   });
 
   it.each([
-    ['能力关闭', { ok: true, json: async () => ({ email_login: false }) }],
-    ['旧后端 404', { ok: false, status: 404, json: async () => ({ email_login: true }) }],
-    ['响应格式错误', { ok: true, json: async () => ({ email_login: 'true' }) }],
-  ] as const)('supportsEmailCodeLogin 遇到%s时 fail closed', async (_case, response) => {
+    ['能力关闭', { ok: true, json: async () => ({ email_headless_login: false }) }],
+    ['旧后端 404', { ok: false, status: 404, json: async () => ({ email_headless_login: true }) }],
+    ['响应格式错误', { ok: true, json: async () => ({ email_headless_login: 'true' }) }],
+  ] as const)('getEmailLoginCapabilities 遇到%s时 fail closed', async (_case, response) => {
     vi.stubGlobal('fetch', vi.fn(async () => response));
 
-    await expect(supportsEmailCodeLogin()).resolves.toBe(false);
+    await expect(getEmailLoginCapabilities()).resolves.toEqual({ headless: false });
   });
 
-  it('supportsEmailCodeLogin 遇到网络失败时 fail closed', async () => {
+  it('getEmailLoginCapabilities 遇到网络失败时 fail closed', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => {
       throw new TypeError('Failed to fetch');
     }));
 
-    await expect(supportsEmailCodeLogin()).resolves.toBe(false);
-    await expect(getEmailLoginCapabilities()).resolves.toEqual({ hosted: false, headless: false });
+    await expect(getEmailLoginCapabilities()).resolves.toEqual({ headless: false });
   });
 
   it('startSsoLogin configures the SDK then delegates with provider + redirect path', async () => {
@@ -148,19 +136,14 @@ describe('authService SDK adapter', () => {
 
     expect(configureAuthMock).toHaveBeenCalledTimes(1);
     expect(loginMock).toHaveBeenCalledWith('github', { redirectPath: '/chat/abc' });
+    expect(loginMock.mock.calls.map(([provider]) => provider)).not.toContain('email');
   });
 
   it('startSsoLogin omits redirectPath option when none is given', async () => {
     await startSsoLogin('google');
 
     expect(loginMock).toHaveBeenCalledWith('google', undefined);
-  });
-
-  it('startSsoLogin delegates hosted email-code login through provider=email', async () => {
-    await startSsoLogin('email');
-
-    expect(configureAuthMock).toHaveBeenCalledTimes(1);
-    expect(loginMock).toHaveBeenCalledWith('email', undefined);
+    expect(loginMock.mock.calls.map(([provider]) => provider)).not.toContain('email');
   });
 
   it('startSsoLogin clears any stale silent-probe return path before redirecting (no hijacked redirect)', async () => {

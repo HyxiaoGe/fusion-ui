@@ -58,7 +58,6 @@ export interface EmailCodeLoginPanelProps {
   cancel: (input: CancelEmailCodeInput) => void | Promise<void>;
   onBackToMethods: () => void;
   onAuthenticated?: () => void;
-  onUseHostedLogin?: () => void;
   onCriticalOperationChange?: (critical: boolean) => void;
 }
 
@@ -82,7 +81,6 @@ export function EmailCodeLoginPanel({
   cancel,
   onBackToMethods,
   onAuthenticated,
-  onUseHostedLogin,
   onCriticalOperationChange,
 }: EmailCodeLoginPanelProps) {
   const { t } = useTranslation();
@@ -321,11 +319,6 @@ export function EmailCodeLoginPanel({
 
   const handleChangeEmail = () => resetFlow("email");
 
-  const handleHostedFallback = () => {
-    resetFlow("reset");
-    onUseHostedLogin?.();
-  };
-
   if (!active || state.phase === "methods") return null;
 
   const retryRemaining = remainingSeconds(state.retryAvailableAt, now);
@@ -498,18 +491,6 @@ export function EmailCodeLoginPanel({
           </form>
         </>
       )}
-
-      {onUseHostedLogin ? (
-        <Button
-          type="button"
-          variant="link"
-          className="h-auto self-center p-0"
-          onClick={handleHostedFallback}
-          disabled={state.phase === "verifying"}
-        >
-          {t("auth.emailCode.hostedFallback")}
-        </Button>
-      ) : null}
     </div>
   );
 }

@@ -22,7 +22,6 @@ function createProps(overrides: Partial<EmailCodeLoginPanelProps> = {}): EmailCo
     cancel: vi.fn(async () => undefined),
     onBackToMethods: vi.fn(),
     onAuthenticated: vi.fn(),
-    onUseHostedLogin: vi.fn(),
     onCriticalOperationChange: vi.fn(),
     ...overrides,
   };
@@ -145,7 +144,7 @@ describe('EmailCodeLoginPanel', () => {
     expect(props.onAuthenticated).not.toHaveBeenCalled();
   });
 
-  it('verify 从请求发出到 callback 完成持续标记 critical，并禁用 hosted fallback', async () => {
+  it('verify 从请求发出到 callback 完成持续标记 critical', async () => {
     let resolveVerify: (() => void) | undefined;
     const verify = vi.fn(() => new Promise<void>((resolve) => { resolveVerify = resolve; }));
     const props = createProps({ verify });
@@ -155,7 +154,6 @@ describe('EmailCodeLoginPanel', () => {
     fireEvent.click(screen.getByRole('button', { name: '验证并登录' }));
 
     expect(props.onCriticalOperationChange).toHaveBeenCalledWith(true);
-    expect(screen.getByRole('button', { name: '在认证页面继续' })).toBeDisabled();
     expect(screen.getByRole('button', { name: '更换邮箱' })).toBeDisabled();
 
     await act(async () => resolveVerify?.());
@@ -269,21 +267,16 @@ describe('EmailCodeLoginPanel', () => {
     expect(screen.getByLabelText('邮箱地址')).toHaveValue('');
   });
 
-  it('返回其他登录方式和 hosted fallback 都先清理 headless 流程', () => {
+  it('返回其他登录方式会先清理 headless 流程', () => {
     const props = createProps();
-    const first = renderPanel(props);
+    renderPanel(props);
 
     fireEvent.click(screen.getByRole('button', { name: '返回其他登录方式' }));
     expect(props.cancel).toHaveBeenCalledWith({ interactionToken: null });
     expect(props.onBackToMethods).toHaveBeenCalledTimes(1);
-
-    first.unmount();
-    renderPanel(props);
-    fireEvent.click(screen.getByRole('button', { name: '在认证页面继续' }));
-    expect(props.onUseHostedLogin).toHaveBeenCalledTimes(1);
   });
 
-  it('英文环境覆盖标题、字段、动作和 hosted fallback', async () => {
+  it('英文环境覆盖标题、字段和动作，且不渲染额外跳转入口', async () => {
     await i18n.changeLanguage('en-US');
     const props = createProps();
     renderPanel(props);
@@ -292,6 +285,6 @@ describe('EmailCodeLoginPanel', () => {
     expect(screen.getByLabelText('Email address')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Send verification code' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Back to sign-in methods' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Continue on the authentication page' })).toBeInTheDocument();
+    expect(screen.getAllByRole('button')).toHaveLength(3);
   });
 });

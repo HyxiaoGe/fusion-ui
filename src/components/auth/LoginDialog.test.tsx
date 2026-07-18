@@ -21,12 +21,12 @@ const {
   cancelEmailCodeLoginMock: vi.fn(),
   completeEmailCodeLoginMock: vi.fn(() => ({ type: 'auth/completeEmailCodeLogin' })),
   dispatchMock: vi.fn(),
-  getEmailLoginCapabilitiesMock: vi.fn<() => Promise<{ hosted: boolean; headless: boolean }>>(),
+  getEmailLoginCapabilitiesMock: vi.fn<() => Promise<{ headless: boolean }>>(),
   isAuthConfiguredMock: vi.fn(() => true),
   onOpenChangeMock: vi.fn(),
   resendEmailCodeLoginMock: vi.fn(),
   startEmailCodeLoginMock: vi.fn(),
-  startSsoLoginMock: vi.fn<(provider: 'github' | 'google' | 'email') => Promise<void>>(),
+  startSsoLoginMock: vi.fn<(provider: 'github' | 'google') => Promise<void>>(),
   toastMock: vi.fn(),
   unwrapMock: vi.fn(),
   verifyEmailCodeLoginMock: vi.fn(),
@@ -84,7 +84,7 @@ describe('LoginDialog', () => {
   beforeEach(async () => {
     vi.clearAllMocks();
     isAuthConfiguredMock.mockReturnValue(true);
-    getEmailLoginCapabilitiesMock.mockResolvedValue({ hosted: true, headless: true });
+    getEmailLoginCapabilitiesMock.mockResolvedValue({ headless: true });
     startSsoLoginMock.mockResolvedValue(undefined);
     startEmailCodeLoginMock.mockResolvedValue(challenge);
     resendEmailCodeLoginMock.mockResolvedValue(challenge);
@@ -98,23 +98,23 @@ describe('LoginDialog', () => {
     await i18n.changeLanguage('zh-CN');
   });
 
-  it('headless 能力开启时邮箱入口进入弹窗两步流程，不触发 hosted 跳转', async () => {
+  it('headless 能力开启时邮箱入口只进入弹窗两步流程，不触发任何 SDK 跳转', async () => {
     render(<LoginDialog open onOpenChange={onOpenChangeMock} />);
 
     const emailInput = await enterEmailPanel();
 
     expect(emailInput).toBeInTheDocument();
-    expect(startSsoLoginMock).not.toHaveBeenCalledWith('email');
+    expect(startSsoLoginMock).not.toHaveBeenCalled();
     expect(screen.queryByRole('button', { name: '使用 GitHub 登录' })).not.toBeInTheDocument();
   });
 
-  it('旧后端只有 hosted 能力时邮箱入口维持 provider=email 顶层跳转', async () => {
-    getEmailLoginCapabilitiesMock.mockResolvedValue({ hosted: true, headless: false });
+  it('没有 headless 能力时隐藏邮箱入口且不调用 SDK', async () => {
+    getEmailLoginCapabilitiesMock.mockResolvedValue({ headless: false });
     render(<LoginDialog open onOpenChange={onOpenChangeMock} />);
 
-    fireEvent.click(await screen.findByRole('button', { name: '使用邮箱验证码登录' }));
-
-    expect(startSsoLoginMock).toHaveBeenCalledWith('email');
+    await waitFor(() => expect(getEmailLoginCapabilitiesMock).toHaveBeenCalledTimes(1));
+    expect(screen.queryByRole('button', { name: '使用邮箱验证码登录' })).not.toBeInTheDocument();
+    expect(startSsoLoginMock).not.toHaveBeenCalled();
     expect(screen.queryByLabelText('邮箱地址')).not.toBeInTheDocument();
   });
 
@@ -159,7 +159,6 @@ describe('LoginDialog', () => {
 
     await waitFor(() => expect(verifyEmailCodeLoginMock).toHaveBeenCalledTimes(1));
     expect(screen.queryByRole('button', { name: '关闭登录' })).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '在认证页面继续' })).toBeDisabled();
     fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' });
     expect(onOpenChangeMock).not.toHaveBeenCalledWith(false);
 
@@ -183,16 +182,6 @@ describe('LoginDialog', () => {
     expect(onOpenChangeMock).not.toHaveBeenCalledWith(false);
   });
 
-  it('弹窗内显式 hosted fallback 会先 cancel headless 再使用 provider=email', async () => {
-    render(<LoginDialog open onOpenChange={onOpenChangeMock} />);
-    await enterEmailPanel();
-
-    fireEvent.click(screen.getByRole('button', { name: '在认证页面继续' }));
-
-    expect(cancelEmailCodeLoginMock).toHaveBeenCalledWith({ interactionToken: null });
-    expect(startSsoLoginMock).toHaveBeenCalledWith('email');
-  });
-
   it('认证配置缺失时不进入 headless，也不调用 SDK', async () => {
     isAuthConfiguredMock.mockReturnValue(false);
     render(<LoginDialog open onOpenChange={onOpenChangeMock} />);
@@ -208,13 +197,13 @@ describe('LoginDialog', () => {
   });
 
   it('能力探测中、能力关闭或网络失败时隐藏邮箱入口，OAuth 不受影响', async () => {
-    let resolveCapability: ((value: { hosted: boolean; headless: boolean }) => void) | undefined;
+    let resolveCapability: ((value: { headless: boolean }) => void) | undefined;
     getEmailLoginCapabilitiesMock.mockReturnValueOnce(new Promise((resolve) => { resolveCapability = resolve; }));
     const { rerender } = render(<LoginDialog open onOpenChange={onOpenChangeMock} />);
 
     expect(screen.queryByRole('button', { name: '使用邮箱验证码登录' })).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: '使用 GitHub 登录' })).toBeEnabled();
-    resolveCapability?.({ hosted: false, headless: false });
+    resolveCapability?.({ headless: false });
     await waitFor(() => expect(screen.queryByRole('button', { name: '使用邮箱验证码登录' })).not.toBeInTheDocument());
 
     getEmailLoginCapabilitiesMock.mockRejectedValueOnce(new TypeError('Failed to fetch'));
