@@ -59,6 +59,14 @@ describe('EmailCodeLoginPanel', () => {
     await i18n.changeLanguage('zh-CN');
   });
 
+  it('首次使用自动创建账户说明始终展示', () => {
+    renderPanel(createProps());
+
+    expect(
+      screen.getByText('输入邮箱地址，我们会向你发送登录验证码。首次使用该邮箱将自动创建账户。'),
+    ).toBeInTheDocument();
+  });
+
   it('无效邮箱只显示行内错误，不调用 start，并把焦点留在邮箱字段', () => {
     const props = createProps();
     renderPanel(props);

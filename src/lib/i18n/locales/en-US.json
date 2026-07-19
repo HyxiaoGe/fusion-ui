@@ -15,7 +15,7 @@
       "closeDialog": "Close sign-in dialog",
       "emailCode": {
         "title": "Sign in with email",
-        "description": "Enter your email address and we'll send you a verification code.",
+        "description": "Enter your email address and we'll send you a verification code. If this is your first time, we'll create your account automatically.",
         "emailLabel": "Email address",
         "emailPlaceholder": "name@example.com",
         "send": "Send verification code",

@@ -15,7 +15,7 @@
       "closeDialog": "关闭登录",
       "emailCode": {
         "title": "邮箱验证码登录",
-        "description": "输入邮箱地址，我们会向你发送登录验证码。",
+        "description": "输入邮箱地址，我们会向你发送登录验证码。首次使用该邮箱将自动创建账户。",
         "emailLabel": "邮箱地址",
         "emailPlaceholder": "name@example.com",
         "send": "发送验证码",
