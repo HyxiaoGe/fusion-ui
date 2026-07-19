@@ -23,8 +23,8 @@ vi.mock('@/app/settings/DataManagement', () => ({
   default: () => <div>数据管理内容</div>,
 }));
 
-vi.mock('@/app/settings/SearchUsageMonitor', () => ({
-  default: () => <div>Firecrawl 用量面板</div>,
+vi.mock('@/app/settings/ServiceUsagePanel', () => ({
+  default: () => <div>服务用量统一面板</div>,
 }));
 
 vi.mock('@/app/settings/RuntimeConfigManager', () => ({
@@ -62,20 +62,20 @@ describe('SettingsDialog 管理员用量入口', () => {
     useAppSelectorMock.mockReset();
   });
 
-  it('普通用户不显示联网用量页签', () => {
+  it('普通用户不显示服务用量页签', () => {
     mockSettingsDialogState(false);
 
     render(<SettingsDialog />);
 
-    expect(screen.queryByRole('tab', { name: /联网用量/ })).toBeNull();
+    expect(screen.queryByRole('tab', { name: /服务用量/ })).toBeNull();
   });
 
-  it('普通用户残留联网用量选中状态时回退到常规设置', () => {
+  it('普通用户残留服务用量选中状态时回退到常规设置', () => {
     mockSettingsDialogState(false, 'usage');
 
     render(<SettingsDialog />);
 
-    expect(screen.queryByRole('tab', { name: /联网用量/ })).toBeNull();
+    expect(screen.queryByRole('tab', { name: /服务用量/ })).toBeNull();
     expect(screen.getByRole('tabpanel', { name: /常规设置/ })).toBeInTheDocument();
   });
 
@@ -97,12 +97,12 @@ describe('SettingsDialog 管理员用量入口', () => {
     expect(screen.getByRole('tabpanel', { name: /常规设置/ })).toBeInTheDocument();
   });
 
-  it('管理员在设置弹窗中可以看到联网用量页签', () => {
+  it('管理员在设置弹窗中可以看到服务用量页签', () => {
     mockSettingsDialogState(true);
 
     render(<SettingsDialog />);
 
-    expect(screen.getByRole('tab', { name: /联网用量/ })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: /服务用量/ })).toBeInTheDocument();
   });
 
   it('管理员在设置弹窗中可以看到运行时配置页签', () => {
@@ -122,12 +122,12 @@ describe('SettingsDialog 管理员用量入口', () => {
     expect(screen.getByTestId('settings-tabs-scroller')).toHaveClass('overflow-x-auto');
   });
 
-  it('管理员切到联网用量页签时渲染额度面板', () => {
+  it('管理员切到服务用量页签时渲染额度面板', () => {
     mockSettingsDialogState(true, 'usage');
 
     render(<SettingsDialog />);
 
-    expect(screen.getByText('Firecrawl 用量面板')).toBeInTheDocument();
+    expect(screen.getByText('服务用量统一面板')).toBeInTheDocument();
   });
 
   it('管理员切到运行时配置页签时渲染管理面板', () => {

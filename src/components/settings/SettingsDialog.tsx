@@ -11,7 +11,7 @@ import { Activity, Database, Settings, Sun, Moon, Laptop, Network, SlidersHorizo
 import DataManagement from "@/app/settings/DataManagement";
 import McpServerManager from "@/app/settings/McpServerManager";
 import RuntimeConfigManager from "@/app/settings/RuntimeConfigManager";
-import SearchUsageMonitor from "@/app/settings/SearchUsageMonitor";
+import ServiceUsagePanel from "@/app/settings/ServiceUsagePanel";
 import SystemPrompt from "@/app/settings/SystemPrompt";
 import { useEffect, useState } from "react";
 
@@ -68,7 +68,7 @@ export const SettingsDialog = () => {
                   <>
                     <TabsTrigger value="usage" className="flex gap-2 items-center justify-center">
                       <Activity className="h-4 w-4" />
-                      <span className="hidden md:inline">联网用量</span>
+                      <span className="hidden md:inline">服务用量</span>
                       <span className="md:hidden">用量</span>
                     </TabsTrigger>
                     <TabsTrigger value="runtime-config" className="flex gap-2 items-center justify-center">
@@ -171,7 +171,7 @@ export const SettingsDialog = () => {
             {showAdminTabs && (
               <>
                 <TabsContent value="usage" className="flex-1 overflow-auto mt-4">
-                  <SearchUsageMonitor />
+                  <ServiceUsagePanel />
                 </TabsContent>
 
                 <TabsContent value="runtime-config" className="flex-1 overflow-auto mt-4">

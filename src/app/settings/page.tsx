@@ -8,7 +8,7 @@ import { Activity, Database, Network, SlidersHorizontal, Sparkles } from "lucide
 import DataManagement from "./DataManagement";
 import McpServerManager from "./McpServerManager";
 import RuntimeConfigManager from "./RuntimeConfigManager";
-import SearchUsageMonitor from "./SearchUsageMonitor";
+import ServiceUsagePanel from "./ServiceUsagePanel";
 import SystemPrompt from "./SystemPrompt";
 import { useEffect, useState } from "react";
 
@@ -42,7 +42,7 @@ export default function SettingsPage() {
                 <>
                   <TabsTrigger value="usage" className="flex gap-2 items-center justify-center">
                     <Activity className="h-4 w-4" />
-                    <span className="hidden md:inline">联网用量</span>
+                    <span className="hidden md:inline">服务用量</span>
                     <span className="md:hidden">用量</span>
                   </TabsTrigger>
                   <TabsTrigger value="runtime-config" className="flex gap-2 items-center justify-center">
@@ -77,7 +77,7 @@ export default function SettingsPage() {
           {showAdminTabs && (
             <>
               <TabsContent value="usage" className="space-y-6 w-full flex-grow overflow-auto">
-                <SearchUsageMonitor />
+                <ServiceUsagePanel />
               </TabsContent>
 
               <TabsContent value="runtime-config" className="space-y-6 w-full flex-grow overflow-auto">

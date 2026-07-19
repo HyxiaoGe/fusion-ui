@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const fetchSearchUsageMock = vi.hoisted(() => vi.fn());
@@ -8,6 +8,7 @@ vi.mock('@/lib/api/searchUsage', () => ({
 }));
 
 import SearchUsageMonitor from './SearchUsageMonitor';
+import { createServiceUsageRefreshRegistry, ServiceUsageRefreshProvider } from './serviceUsageRefresh';
 
 const makeUsageOverview = (overrides = {}) => ({
   generated_at: '2026-06-25T03:00:00Z',
@@ -32,6 +33,13 @@ const makeUsageOverview = (overrides = {}) => ({
       period_start: '2026-06-01T00:00:00Z',
       period_end: '2026-06-30T23:59:59Z',
       source: 'search_response_credits_used',
+      daily: [
+        {
+          date: '2026-06-25T00:00:00Z',
+          credits_used: 8,
+          request_count: 2,
+        },
+      ],
     },
   },
   historical: {
@@ -61,23 +69,32 @@ describe('SearchUsageMonitor', () => {
     vi.spyOn(Date, 'now').mockReturnValue(now);
   });
 
-  it('展示 Firecrawl 当前余额、账期和历史消耗', async () => {
+  it('紧凑展示 Firecrawl 核心额度，并将每日明细和历史消耗默认折叠', async () => {
     fetchSearchUsageMock.mockResolvedValue(makeUsageOverview());
 
     render(<SearchUsageMonitor />);
 
     await waitFor(() => expect(fetchSearchUsageMock).toHaveBeenCalledTimes(1));
+    expect(screen.getByTestId('search-usage-card')).toHaveClass('h-full', 'border-border');
+    expect(screen.getByTestId('search-usage-card')).not.toHaveClass('h-fit', 'border-muted');
     expect(screen.getByText('84,833')).toBeInTheDocument();
-    expect(screen.getByText('500,000')).toBeInTheDocument();
-    expect(screen.getByText('本系统记录消耗')).toBeInTheDocument();
-    expect(screen.getByText('12')).toBeInTheDocument();
-    expect(screen.getByText('3 次 Firecrawl 请求')).toBeInTheDocument();
-    expect(screen.getByText('官方已用 83.0%')).toBeInTheDocument();
-    expect(screen.getByText('2026/06/01 - 2026/06/30')).toBeInTheDocument();
+    expect(screen.getByText('套餐额度 500,000')).toBeInTheDocument();
+    expect(screen.getByText('系统累计')).toBeInTheDocument();
+    expect(screen.getByText('12 credits · 3 次请求')).toBeInTheDocument();
+    expect(screen.getByText('已使用 83.0%')).toBeInTheDocument();
+    expect(screen.getByText('账期 2026/06/01 - 2026/06/30')).toBeInTheDocument();
+    expect(screen.queryByText('官方余额 + 系统记录')).not.toBeInTheDocument();
+    expect(screen.queryByText('当前展示 Firecrawl 官方余额和本系统 Firecrawl 调用记录。')).not.toBeInTheDocument();
+
+    const details = screen.getByTestId('search-usage-details');
+    expect(details).not.toHaveAttribute('open');
+    expect(within(details).getByText('查看详细记录')).toBeInTheDocument();
+    expect(within(details).getByText('每日明细')).toBeInTheDocument();
+    expect(within(details).getByText('2026/06/25')).toBeInTheDocument();
+    expect(within(details).getByText('8 credits / 2 次')).toBeInTheDocument();
     expect(screen.getByText('官方历史消耗')).toBeInTheDocument();
     expect(screen.getByText('2026/06')).toBeInTheDocument();
     expect(screen.getByText('128 credits')).toBeInTheDocument();
-    expect(screen.getByText('当前展示 Firecrawl 官方余额和本系统 Firecrawl 调用记录。')).toBeInTheDocument();
   });
 
   it('Firecrawl key 未配置时展示不可用状态', async () => {
@@ -124,7 +141,7 @@ describe('SearchUsageMonitor', () => {
 
     render(<SearchUsageMonitor />);
 
-    expect(await screen.findByText('本系统记录消耗')).toBeInTheDocument();
+    expect(await screen.findByText('系统累计')).toBeInTheDocument();
     expect(screen.getByText('记录暂不可用')).toBeInTheDocument();
   });
 
@@ -272,7 +289,30 @@ describe('SearchUsageMonitor', () => {
     expect(fetchSearchUsageMock).toHaveBeenCalledTimes(2);
   });
 
-  it('点击刷新按钮会绕过会话缓存重新请求接口', async () => {
+  it('错误状态保持单卡，并可通过统一刷新恢复', async () => {
+    fetchSearchUsageMock
+      .mockRejectedValueOnce(new Error('联网用量查询失败'))
+      .mockResolvedValueOnce(makeUsageOverview());
+
+    const registry = createServiceUsageRefreshRegistry();
+    const { container } = render(
+      <ServiceUsageRefreshProvider registry={registry}>
+        <SearchUsageMonitor />
+      </ServiceUsageRefreshProvider>
+    );
+
+    expect(await screen.findByText('联网用量查询失败')).toBeInTheDocument();
+    expect(container.querySelectorAll('[data-slot="card"]')).toHaveLength(1);
+
+    await act(async () => {
+      await registry.refreshAll();
+    });
+
+    expect(await screen.findByText('84,833')).toBeInTheDocument();
+    expect(container.querySelectorAll('[data-slot="card"]')).toHaveLength(1);
+  });
+
+  it('统一刷新会绕过会话缓存重新请求接口且卡片不再提供刷新按钮', async () => {
     window.localStorage.setItem('user_profile', '{"id":"admin-a"}');
     fetchSearchUsageMock
       .mockResolvedValueOnce(makeUsageOverview())
@@ -283,10 +323,18 @@ describe('SearchUsageMonitor', () => {
         },
       }));
 
-    render(<SearchUsageMonitor />);
+    const registry = createServiceUsageRefreshRegistry();
+    render(
+      <ServiceUsageRefreshProvider registry={registry}>
+        <SearchUsageMonitor />
+      </ServiceUsageRefreshProvider>
+    );
     expect(await screen.findByText('84,833')).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('button', { name: '刷新联网用量' }));
+    expect(screen.queryByRole('button', { name: '刷新联网用量' })).not.toBeInTheDocument();
+    await act(async () => {
+      await registry.refreshAll();
+    });
 
     expect(await screen.findByText('77,777')).toBeInTheDocument();
     expect(fetchSearchUsageMock).toHaveBeenCalledTimes(2);

@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const useAppSelectorMock = vi.hoisted(() => vi.fn());
@@ -25,8 +25,8 @@ vi.mock('./DataManagement', () => ({
   default: () => <div>数据管理内容</div>,
 }));
 
-vi.mock('./SearchUsageMonitor', () => ({
-  default: () => <div>Firecrawl 用量</div>,
+vi.mock('./ServiceUsagePanel', () => ({
+  default: () => <div>服务用量统一面板</div>,
 }));
 
 vi.mock('./RuntimeConfigManager', () => ({
@@ -56,12 +56,12 @@ describe('SettingsPage 管理员页签', () => {
     useAppSelectorMock.mockReset();
   });
 
-  it('普通用户不显示联网用量页签', () => {
+  it('普通用户不显示服务用量页签', () => {
     setAdmin(false);
 
     render(<SettingsPage />);
 
-    expect(screen.queryByRole('tab', { name: /联网用量/ })).toBeNull();
+    expect(screen.queryByRole('tab', { name: /服务用量/ })).toBeNull();
   });
 
   it('普通用户不显示运行时配置页签', () => {
@@ -80,12 +80,24 @@ describe('SettingsPage 管理员页签', () => {
     expect(screen.queryByRole('tab', { name: /MCP 服务/ })).toBeNull();
   });
 
-  it('管理员显示联网用量页签', () => {
+  it('管理员显示服务用量页签', () => {
     setAdmin(true);
 
     render(<SettingsPage />);
 
-    expect(screen.getByText('联网用量')).toBeInTheDocument();
+    expect(screen.getByText('服务用量')).toBeInTheDocument();
+  });
+
+  it('管理员服务用量页复用统一面板', () => {
+    setAdmin(true);
+
+    render(<SettingsPage />);
+    fireEvent.mouseDown(screen.getByRole('tab', { name: /服务用量/ }), {
+      button: 0,
+      ctrlKey: false,
+    });
+
+    expect(screen.getByText('服务用量统一面板')).toBeInTheDocument();
   });
 
   it('管理员显示运行时配置页签', () => {
