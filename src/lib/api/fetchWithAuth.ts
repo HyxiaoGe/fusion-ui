@@ -1,5 +1,6 @@
 import {
-  clearAuthStorage,
+  clearFusionProfileStorage,
+  clearRemoteSsoSession,
   forceRefreshAccessToken,
   getStoredAccessToken,
   getValidAccessToken,
@@ -20,15 +21,24 @@ import {
 // 返回 null = SDK 已确定性失败并清掉自身 token；此时同步清掉 fusion 侧 profile 等键，
 // 与 401 分支对称，避免请求落到公共接口（200，不触发 401 清理）时残留 user_profile。
 async function resolveToken(): Promise<string | null> {
+  const expectedAccessToken = getStoredAccessToken();
   try {
     const token = await getValidAccessToken();
     if (token === null) {
-      clearAuthStorage();
+      await clearRemoteSsoSession(expectedAccessToken);
+      clearFusionProfileStorage();
     }
     return token;
-  } catch {
+  } catch (error) {
+    // SDK 在“共享存储已是 B、当前页内存仍是 A”的事件投递窗口会同步建立屏障。
+    // 这类错误绝不能降级读取 localStorage，否则会把 B token 交给 A 页面发起的请求。
+    if (isBlockingAuthTransition(error)) throw error;
     return getStoredAccessToken();
   }
+}
+
+function isBlockingAuthTransition(error: unknown): boolean {
+  return typeof error === 'object' && error !== null && 'blocking' in error && error.blocking === true;
 }
 
 async function runAuthBoundFetch(
@@ -87,7 +97,8 @@ async function fetchWithAuth(url: string, options: RequestInit = {}): Promise<Re
     }
 
     // 刷新被服务端确定性拒绝：SDK 已清掉自身 token，这里再清掉 fusion 侧 profile 等键
-    clearAuthStorage();
+    await clearRemoteSsoSession(token);
+    clearFusionProfileStorage();
     throw new Error('Unauthorized');
   }
 

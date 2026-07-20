@@ -8,6 +8,7 @@ vi.mock('jwt-decode', () => ({
   jwtDecode: jwtDecodeMock,
 }));
 
+import { accountSessionSwitchStarted } from '@/redux/actions/authSessionActions';
 import authReducer, { checkUserState, logout, resolveSession, setToken } from './authSlice';
 
 describe('authSlice', () => {
@@ -148,5 +149,61 @@ describe('authSlice', () => {
     });
     const state = authReducer(undefined, setToken('valid-token'));
     expect(state.sessionResolved).toBe(true);
+  });
+
+  it('switch barrier clears the previous account rich profile before the new token is adopted', () => {
+    localStorage.setItem('user_profile', JSON.stringify({ id: 'user-a', nickname: 'A' }));
+    localStorage.setItem('user_profile_timestamp', '123');
+
+    const state = authReducer(undefined, accountSessionSwitchStarted());
+
+    expect(state.accountSwitchStatus).toBe('synchronizing');
+    expect(localStorage.getItem('user_profile')).toBeNull();
+    expect(localStorage.getItem('user_profile_timestamp')).toBeNull();
+  });
+
+  it('setToken clears a cached A profile when adopting B', () => {
+    localStorage.setItem('user_profile', JSON.stringify({ id: 'user-a', nickname: 'A' }));
+    localStorage.setItem('user_profile_timestamp', '123');
+    jwtDecodeMock.mockReturnValue({
+      sub: 'user-b',
+      email: 'b@example.com',
+      exp: Math.floor(Date.now() / 1000) + 3600,
+    });
+
+    const state = authReducer({
+      isAuthenticated: true,
+      user: {
+        id: 'user-a', username: 'a', avatar: null, email: 'a@example.com', nickname: 'A',
+        mobile: null, system_prompt: '', is_superuser: false,
+      },
+      token: 'token-a',
+      status: 'succeeded',
+      error: null,
+      sessionResolved: true,
+      accountSwitchStatus: 'synchronizing',
+      accountSwitchError: null,
+      switchedAccountEmail: null,
+    }, setToken('token-b'));
+
+    expect(state.user?.id).toBe('user-b');
+    expect(localStorage.getItem('user_profile')).toBeNull();
+    expect(localStorage.getItem('user_profile_timestamp')).toBeNull();
+  });
+
+  it('setToken also clears stale A profile when Redux has not hydrated an old user', () => {
+    localStorage.setItem('user_profile', JSON.stringify({ id: 'user-a', nickname: 'A' }));
+    localStorage.setItem('user_profile_timestamp', '123');
+    jwtDecodeMock.mockReturnValue({
+      sub: 'user-b',
+      email: 'b@example.com',
+      exp: Math.floor(Date.now() / 1000) + 3600,
+    });
+
+    const state = authReducer(undefined, setToken('token-b'));
+
+    expect(state.user?.id).toBe('user-b');
+    expect(localStorage.getItem('user_profile')).toBeNull();
+    expect(localStorage.getItem('user_profile_timestamp')).toBeNull();
   });
 });

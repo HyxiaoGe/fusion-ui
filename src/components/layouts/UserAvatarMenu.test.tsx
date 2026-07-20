@@ -33,6 +33,7 @@ vi.mock('@/lib/auth/authService', () => ({
   revokeSsoSession: vi.fn(),
   getStoredAccessToken: vi.fn(() => null),
   clearAuthStorage: vi.fn(),
+  clearFusionProfileStorage: vi.fn(),
 }));
 
 function renderMenu(preloadedAuth: unknown) {

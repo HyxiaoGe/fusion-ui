@@ -30,6 +30,7 @@ vi.mock('@/lib/auth/authService', () => ({
   revokeSsoSession: revokeSsoSessionMock,
   getStoredAccessToken: getStoredAccessTokenMock,
   clearAuthStorage: clearAuthStorageMock,
+  clearFusionProfileStorage: vi.fn(),
 }));
 
 vi.mock('@/lib/auth/sso-probe', () => ({

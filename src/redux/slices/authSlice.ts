@@ -3,11 +3,14 @@ import { jwtDecode } from "jwt-decode";
 import { fetchUserProfileAPI, updateUserSettingsAPI, UserProfile } from '../../lib/api/user';
 import {
   clearAuthStorage,
+  clearFusionProfileStorage,
+  clearRemoteSsoSession,
   completeSsoCallback,
   getStoredAccessToken,
   getValidAccessToken,
   probeSessionLiveness,
   reconcileSsoSession,
+  resumeCentralSession,
   revokeSsoSession,
 } from '@/lib/auth/authService';
 import { isSafeReturnPath, markSsoProbed, takeSsoReturnPath } from '@/lib/auth/sso-probe';
@@ -100,9 +103,17 @@ const getInitialAuthState = (): AuthState => {
 
       // 检查token是否还有效
       if (decoded.exp * 1000 > Date.now()) {
-        const parsedUser: UserProfile = userProfile
-          ? { system_prompt: '', is_superuser: false, ...JSON.parse(userProfile) }
+        const cachedProfile = userProfile
+          ? { system_prompt: '', is_superuser: false, ...JSON.parse(userProfile) } as UserProfile
+          : null;
+        // token 与富 profile 必须属于同一 subject；跨标签刚提交 B、旧页面仍留 A profile 时，
+        // 宁可回退到 B token 的最小用户并强制刷新，也绝不能把 A 资料拼到 B 会话上。
+        const parsedUser = cachedProfile?.id === decoded.sub
+          ? cachedProfile
           : buildTokenUser(decoded);
+        if (cachedProfile !== null && cachedProfile.id !== decoded.sub) {
+          clearFusionProfileStorage();
+        }
 
         return {
           isAuthenticated: true,
@@ -188,6 +199,22 @@ const authSlice = createSlice({
         try {
           const decoded: DecodedToken = jwtDecode(action.payload);
           if (decoded.exp * 1000 > Date.now()) {
+            if (typeof window !== "undefined") {
+              let cachedProfileId: string | null = null;
+              try {
+                const rawProfile = localStorage.getItem('user_profile');
+                const cachedProfile = rawProfile ? JSON.parse(rawProfile) as { id?: unknown } : null;
+                cachedProfileId = typeof cachedProfile?.id === 'string' ? cachedProfile.id : null;
+              } catch {
+                cachedProfileId = null;
+              }
+              if (
+                (state.user !== null && state.user.id !== decoded.sub)
+                || (localStorage.getItem('user_profile') !== null && cachedProfileId !== decoded.sub)
+              ) {
+                clearFusionProfileStorage();
+              }
+            }
             state.isAuthenticated = true;
             state.token = action.payload;
             state.user = buildTokenUser(decoded);
@@ -260,6 +287,19 @@ const authSlice = createSlice({
       state.accountSwitchError = null;
       state.switchedAccountEmail = null;
     },
+    // SDK 已在统一会话写锁内按旧 token 条件清理完成；这里只收敛 Redux，禁止再次无条件
+    // clearAuthStorage，否则可能删掉兄弟标签刚提交的新账号。
+    remoteSessionCleared: (state) => {
+      state.isAuthenticated = false;
+      state.user = null;
+      state.token = null;
+      state.status = 'idle';
+      state.error = null;
+      state.sessionResolved = true;
+      state.accountSwitchStatus = 'stable';
+      state.accountSwitchError = null;
+      state.switchedAccountEmail = null;
+    },
     // 把会话标记为「已定论」（不改登入/登出本身）。加载侧确认「未发起静默恢复、就是登出」后派发，
     // 用以解锁头像菜单的登出终态；静默恢复在途时绝不派发，以维持中性占位、杜绝登录按钮闪烁。
     resolveSession: (state) => {
@@ -269,6 +309,7 @@ const authSlice = createSlice({
   extraReducers: (builder) => {
     builder
       .addCase(accountSessionSwitchStarted, (state) => {
+        if (typeof window !== 'undefined') clearFusionProfileStorage();
         state.accountSwitchStatus = 'synchronizing';
         state.accountSwitchError = null;
       })
@@ -314,7 +355,7 @@ const authSlice = createSlice({
   },
 });
 
-export const { setToken, logout, checkUserState, resolveSession } = authSlice.actions;
+export const { setToken, logout, remoteSessionCleared, checkUserState, resolveSession } = authSlice.actions;
 
 // 在 /auth/callback 页消费 auth-service 回调：SDK 内部完成 state 校验 + PKCE 换 token + 落库，
 // 这里只负责把 access token 灌进 Redux 占位并拉取 fusion 自己的完整 profile。
@@ -429,6 +470,71 @@ export const adoptCommittedSsoSession = createAsyncThunk<
   return switchedToken;
 });
 
+/**
+ * 已被跨应用 SLO 翻为未登录的标签页，重新聚焦时尝试采用中央会话。
+ * SDK 已原子提交 token/user；宿主只把 token 注入 Redux 并刷新自身扩展 profile。
+ */
+export const resumeSsoSession = createAsyncThunk<
+  'local_session' | 'no_session' | 'resumed',
+  void,
+  { state: { auth: AuthState } }
+>('auth/resumeSsoSession', async (_, { dispatch }) => {
+  const result = await resumeCentralSession({
+    beforeCommit: () => {
+      // SDK 尚未落 B 票据；先封住 A 的请求并让所有用户绑定 slice 清空。
+      beginAuthSessionTransition();
+      dispatch(accountSessionSwitchStarted());
+    },
+  });
+  if (result.status === 'no_session') return 'no_session';
+  await dispatch(adoptCommittedSsoSession({
+    email: result.status === 'resumed' ? result.user.email ?? '' : '',
+  }));
+  return result.status;
+});
+
+/**
+ * 服务端已明确拒绝当前票据时的本地收敛。与显式 logoutWithSso 不同：不写登出守卫、
+ * 不销毁中央 Cookie，只清当前应用旧票据和 A 的业务缓存，为稍后无感恢复 B 留出入口。
+ */
+export const settleRemoteSessionLoss = createAsyncThunk<
+  void,
+  string | null,
+  { state: { auth: AuthState } }
+>(
+  'auth/settleRemoteSessionLoss',
+  async (expectedAccessToken, { dispatch }) => {
+    beginAuthSessionTransition();
+    dispatch(accountSessionSwitchStarted());
+    let result: Awaited<ReturnType<typeof clearRemoteSsoSession>>;
+    try {
+      result = await clearRemoteSsoSession(expectedAccessToken);
+    } catch (error) {
+      blockAuthSessionTransition();
+      dispatch(accountSessionSwitchBlocked(
+        error instanceof Error ? error.message : '旧账户会话清理未完成，请重试',
+      ));
+      return;
+    }
+    if (result.status === 'changed') {
+      if (result.user === null) {
+        blockAuthSessionTransition();
+        dispatch(accountSessionSwitchBlocked('检测到新会话，但用户信息不完整，请重试'));
+        return;
+      }
+      await dispatch(adoptCommittedSsoSession({ email: result.user.email ?? '' }));
+      return;
+    }
+    dispatch(remoteSessionCleared());
+    completeAuthSessionTransition();
+    // SDK 锁释放到 Redux 收敛之间若兄弟标签恰好提交 B，重新读取并采用胜出会话；更晚的提交
+    // 则由 session-sync 的 synchronizing → authenticated 通知负责采用。
+    if (getStoredAccessToken()) {
+      await dispatch(adoptCommittedSsoSession({ email: '' }));
+    }
+  },
+);
+
 // 跨应用单点登出（SLO）的前端存活探测：别处登出后，本标签页手里的 access token 在过期前签名仍然
 // 有效、本地无从察觉。标签页重新聚焦/可见或低频定时器触发时调用——【绝不强制轮换 refresh token】
 // （旧版 revalidateToken 调 forceRefreshAccessToken 每次切标签都轮换一张一次性 refresh token，慢隧道
@@ -447,6 +553,7 @@ export const checkLiveness = createAsyncThunk<
   void,
   { state: { auth: AuthState } }
 >('auth/checkLiveness', async (_, { dispatch, getState }) => {
+  let expectedAccessToken = getState().auth.token ?? getStoredAccessToken();
   try {
     const reconciliation = await reconcileSsoSession({
       beforeCommit: () => {
@@ -498,14 +605,15 @@ export const checkLiveness = createAsyncThunk<
     return null; // 瞬时网络故障：保持现状，不登出
   }
   if (token === null) {
-    dispatch(logout()); // 定论失败（刷新被拒 / 无票），SDK 已清自身会话
+    await dispatch(settleRemoteSessionLoss(expectedAccessToken)); // 定论失败（刷新被拒 / 无票）
     return null;
   }
   try {
     await probeSessionLiveness(token);
   } catch (err) {
     if (isAuthRejection(err)) {
-      dispatch(logout()); // 401/403：别处已登出 / 令牌被吊销
+      expectedAccessToken = token;
+      await dispatch(settleRemoteSessionLoss(expectedAccessToken)); // 401/403：别处已登出 / 令牌被吊销
     }
     // 否则瞬时 / 5xx：保持登录
   }
