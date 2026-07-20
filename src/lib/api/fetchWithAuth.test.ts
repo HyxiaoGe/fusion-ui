@@ -20,6 +20,11 @@ vi.mock('@/lib/auth/authService', () => ({
 }));
 
 import fetchWithAuth, { apiRequest } from './fetchWithAuth';
+import {
+  beginAuthSessionTransition,
+  completeAuthSessionTransition,
+  resetAuthSessionTransitionForTests,
+} from '@/lib/auth/sessionTransition';
 
 const res = (status: number) => new Response('{}', { status });
 
@@ -28,6 +33,7 @@ describe('fetchWithAuth (shared-SDK token lifecycle)', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    resetAuthSessionTransitionForTests();
     fetchMock = vi.fn();
     vi.stubGlobal('fetch', fetchMock);
   });
@@ -104,6 +110,21 @@ describe('fetchWithAuth (shared-SDK token lifecycle)', () => {
 
     expect(clearAuthStorageMock).toHaveBeenCalledTimes(1);
     expect(new Headers(fetchMock.mock.calls[0][1].headers).get('Authorization')).toBeNull();
+  });
+
+  it('取到 A token 期间即使 B 已完成切换，也不会把 A token 注册到 B epoch', async () => {
+    let resolveToken!: (token: string) => void;
+    getValidAccessTokenMock.mockReturnValue(new Promise<string>((resolve) => {
+      resolveToken = resolve;
+    }));
+
+    const pending = fetchWithAuth('/api/private');
+    beginAuthSessionTransition();
+    completeAuthSessionTransition();
+    resolveToken('token-a');
+
+    await expect(pending).rejects.toMatchObject({ code: 'AUTH_SESSION_TRANSITION' });
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });
 

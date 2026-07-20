@@ -35,6 +35,16 @@ vi.mock('auth-client-web', () => ({
   getAccessToken: getAccessTokenMock,
   refresh: refreshMock,
   logout: logoutMock,
+  tokenStore: () => ({
+    getAccessToken: () => localStorage.getItem('auth_token'),
+    getRefreshToken: () => localStorage.getItem('auth_refresh_token'),
+    clear: () => {
+      localStorage.removeItem('auth_token');
+      localStorage.removeItem('auth_refresh_token');
+      localStorage.removeItem('auth_token_expiry');
+      localStorage.removeItem('auth_user_info');
+    },
+  }),
 }));
 
 vi.mock('../config', () => ({

@@ -1,4 +1,5 @@
 import { createSlice, PayloadAction } from '@reduxjs/toolkit';
+import { accountSessionSwitchStarted } from '@/redux/actions/authSessionActions';
 import type {
   Conversation,
   HydrationStatus,
@@ -520,6 +521,16 @@ const conversationSlice = createSlice({
         conversationListEpoch: conversationListEpoch + 1,
       });
     },
+  },
+  extraReducers: (builder) => {
+    builder.addCase(accountSessionSwitchStarted, (state) => {
+      const { reasoningEnabled, conversationListEpoch } = state;
+      Object.assign(state, {
+        ...initialState,
+        reasoningEnabled,
+        conversationListEpoch: conversationListEpoch + 1,
+      });
+    });
   },
 });
 

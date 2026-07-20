@@ -8,6 +8,7 @@ import {
   updatePromptTemplate,
 } from '@/lib/db/promptTemplates';
 import { createAsyncThunk, createSlice, PayloadAction } from '@reduxjs/toolkit';
+import { accountSessionSwitchStarted } from '@/redux/actions/authSessionActions';
 
 interface PromptTemplatesState {
   templates: PromptTemplate[];
@@ -123,6 +124,7 @@ const promptTemplatesSlice = createSlice({
   },
   extraReducers: (builder) => {
     builder
+      .addCase(accountSessionSwitchStarted, () => initialState)
       // 初始化模板
       .addCase(initializeTemplates.pending, (state) => {
         state.isLoading = true;

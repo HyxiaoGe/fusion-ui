@@ -1,6 +1,7 @@
 import { FileWithPreview, revokeFilePreview } from '@/lib/utils/fileHelpers';
 import { createSlice, PayloadAction, createSelector } from '@reduxjs/toolkit';
 import { RootState } from '../store';
+import { accountSessionSwitchStarted } from '@/redux/actions/authSessionActions';
 
 // 文件处理状态
 export type FileProcessingStatus = 'pending' | 'uploading' | 'parsing' | 'processed' | 'error';
@@ -212,6 +213,12 @@ const fileUploadSlice = createSlice({
       state.error = null;
       state.processingFiles = {};
     },
+  },
+  extraReducers: (builder) => {
+    builder.addCase(accountSessionSwitchStarted, (state) => {
+      Object.values(state.files).flat().forEach(revokeFilePreview);
+      Object.assign(state, initialState);
+    });
   },
 });
 

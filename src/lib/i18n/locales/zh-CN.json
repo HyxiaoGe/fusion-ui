@@ -13,6 +13,15 @@
       "configurationMissing": "登录配置缺失，请稍后再试",
       "loginFailed": "登录失败，请重试",
       "closeDialog": "关闭登录",
+      "accountSwitch": {
+        "syncingTitle": "正在同步登录账户",
+        "syncingDescription": "检测到其他应用中的账户已变更，正在安全切换。",
+        "blockedTitle": "账户同步未完成",
+        "blockedDescription": "旧账户请求已暂停，请重试同步或重新登录。",
+        "retry": "重试同步",
+        "completed": "登录账户已切换",
+        "completedWithEmail": "登录账户已切换为 {{email}}"
+      },
       "emailCode": {
         "title": "邮箱验证码登录",
         "description": "输入邮箱地址，我们会向你发送登录验证码。首次使用该邮箱将自动创建账户。",

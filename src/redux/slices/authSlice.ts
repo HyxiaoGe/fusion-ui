@@ -7,9 +7,20 @@ import {
   getStoredAccessToken,
   getValidAccessToken,
   probeSessionLiveness,
+  reconcileSsoSession,
   revokeSsoSession,
 } from '@/lib/auth/authService';
 import { isSafeReturnPath, markSsoProbed, takeSsoReturnPath } from '@/lib/auth/sso-probe';
+import {
+  accountSessionSwitchBlocked,
+  accountSessionSwitchCompleted,
+  accountSessionSwitchStarted,
+} from '@/redux/actions/authSessionActions';
+import {
+  beginAuthSessionTransition,
+  blockAuthSessionTransition,
+  completeAuthSessionTransition,
+} from '@/lib/auth/sessionTransition';
 
 interface AuthState {
   isAuthenticated: boolean;
@@ -21,6 +32,9 @@ interface AuthState {
   // 可能正由静默 SSO / 刷新恢复会话）。未定论期间 UI 不画登出终态（「登录」按钮），只占中性位，
   // 避免「登录成功却先闪一下登录按钮」——恢复在途的窗口本就不是登出。
   sessionResolved: boolean;
+  accountSwitchStatus: 'stable' | 'synchronizing' | 'blocked';
+  accountSwitchError: string | null;
+  switchedAccountEmail: string | null;
 }
 
 interface DecodedToken {
@@ -67,6 +81,9 @@ const getInitialAuthState = (): AuthState => {
     // 客户端首帧若本地无有效 token：会话尚未定论（可能正静默恢复），先不暴露登出终态。
     // 服务端渲染同样走这里（无 window），与客户端首帧一致，避免水合不一致。
     sessionResolved: false,
+    accountSwitchStatus: 'stable',
+    accountSwitchError: null,
+    switchedAccountEmail: null,
   };
 
   // 服务端渲染时直接返回默认状态
@@ -95,6 +112,9 @@ const getInitialAuthState = (): AuthState => {
           error: null,
           // 本地有未过期 token：会话已定论为「登入」。
           sessionResolved: true,
+          accountSwitchStatus: 'stable',
+          accountSwitchError: null,
+          switchedAccountEmail: null,
         };
       } else {
         clearAuthStorage();
@@ -236,6 +256,9 @@ const authSlice = createSlice({
       state.error = null;
       // 显式登出 = 已定论为登出，应露出「登录」终态。
       state.sessionResolved = true;
+      state.accountSwitchStatus = 'stable';
+      state.accountSwitchError = null;
+      state.switchedAccountEmail = null;
     },
     // 把会话标记为「已定论」（不改登入/登出本身）。加载侧确认「未发起静默恢复、就是登出」后派发，
     // 用以解锁头像菜单的登出终态；静默恢复在途时绝不派发，以维持中性占位、杜绝登录按钮闪烁。
@@ -245,6 +268,19 @@ const authSlice = createSlice({
   },
   extraReducers: (builder) => {
     builder
+      .addCase(accountSessionSwitchStarted, (state) => {
+        state.accountSwitchStatus = 'synchronizing';
+        state.accountSwitchError = null;
+      })
+      .addCase(accountSessionSwitchBlocked, (state, action) => {
+        state.accountSwitchStatus = 'blocked';
+        state.accountSwitchError = action.payload;
+      })
+      .addCase(accountSessionSwitchCompleted, (state, action) => {
+        state.accountSwitchStatus = 'stable';
+        state.accountSwitchError = null;
+        state.switchedAccountEmail = action.payload.email;
+      })
       .addCase(fetchUserProfile.pending, (state) => {
         state.status = 'loading';
       })
@@ -338,6 +374,61 @@ function isAuthRejection(err: unknown): boolean {
   return /\b40[13]\b/.test(message);
 }
 
+function isBlockingReconcileFailure(err: unknown): boolean {
+  return typeof err === 'object' && err !== null && 'blocking' in err && err.blocking === true;
+}
+
+function tokenSubject(token: string): string | null {
+  try {
+    const decoded = jwtDecode<Partial<DecodedToken>>(token);
+    return typeof decoded.sub === 'string' && decoded.sub.length > 0 ? decoded.sub : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * 采用 SDK 已原子提交到共享 localStorage 的新会话。
+ *
+ * 该入口同时服务当前标签的 reconcile 与同源兄弟标签通知。token 已一致时直接返回，
+ * 避免当前标签在 SDK subscriber 与 reconcile promise 两条路径上重复清缓存、重复拉 profile。
+ */
+export const adoptCommittedSsoSession = createAsyncThunk<
+  string | null,
+  { email?: string },
+  { state: { auth: AuthState } }
+>('auth/adoptCommittedSsoSession', async ({ email }, { dispatch, getState }) => {
+  const switchedToken = getStoredAccessToken();
+  if (!switchedToken) {
+    blockAuthSessionTransition();
+    dispatch(accountSessionSwitchBlocked('账户换票完成后缺少访问令牌，请重新登录'));
+    return null;
+  }
+  const switchedSubject = tokenSubject(switchedToken);
+  if (switchedSubject === null) {
+    blockAuthSessionTransition();
+    dispatch(accountSessionSwitchBlocked('账户换票返回了无效访问令牌，请重新登录'));
+    return null;
+  }
+
+  const current = getState().auth;
+  if (current.token === switchedToken && current.user?.id === switchedSubject) {
+    return switchedToken;
+  }
+
+  if (current.accountSwitchStatus === 'stable') {
+    beginAuthSessionTransition();
+    dispatch(accountSessionSwitchStarted());
+  }
+  dispatch(setToken(switchedToken));
+  // 新 token 已落库且旧用户缓存已同步清空，随后才开放新身份请求。
+  completeAuthSessionTransition();
+  await dispatch(fetchUserProfile({ expectedToken: switchedToken }));
+  const adoptedEmail = email ?? getState().auth.user?.email ?? '';
+  dispatch(accountSessionSwitchCompleted({ email: adoptedEmail }));
+  return switchedToken;
+});
+
 // 跨应用单点登出（SLO）的前端存活探测：别处登出后，本标签页手里的 access token 在过期前签名仍然
 // 有效、本地无从察觉。标签页重新聚焦/可见或低频定时器触发时调用——【绝不强制轮换 refresh token】
 // （旧版 revalidateToken 调 forceRefreshAccessToken 每次切标签都轮换一张一次性 refresh token，慢隧道
@@ -351,7 +442,55 @@ function isAuthRejection(err: unknown): boolean {
 //   - getValidAccessToken 抛错（瞬时网络故障）→ 保持现状，绝不登出；
 //   - 探测 401/403（别处登出）→ logout；探测 5xx / 网络抖动 / 解析失败 → 保持登录。
 // 401 重试仍走 fetchWithAuth 的 forceRefreshAccessToken（那里必须强制刷新拿服务端轮换后的新票重试）。
-export const checkLiveness = createAsyncThunk('auth/checkLiveness', async (_, { dispatch }) => {
+export const checkLiveness = createAsyncThunk<
+  string | null | undefined,
+  void,
+  { state: { auth: AuthState } }
+>('auth/checkLiveness', async (_, { dispatch, getState }) => {
+  try {
+    const reconciliation = await reconcileSsoSession({
+      beforeCommit: () => {
+        beginAuthSessionTransition();
+        dispatch(accountSessionSwitchStarted());
+      },
+    });
+    if (reconciliation.status === 'switched') {
+      const switchedToken = getStoredAccessToken();
+      if (!switchedToken) {
+        blockAuthSessionTransition();
+        dispatch(accountSessionSwitchBlocked('账户换票完成后缺少访问令牌，请重新登录'));
+        return null;
+      }
+      const switchedSubject = tokenSubject(switchedToken);
+      if (switchedSubject === null) {
+        blockAuthSessionTransition();
+        dispatch(accountSessionSwitchBlocked('账户换票返回了无效访问令牌，请重新登录'));
+        return null;
+      }
+      // SDK subscriber 可能已先采用同一次提交；避免当前 reconcile promise 重复清理/拉取。
+      if (
+        getState().auth.token === switchedToken
+        && getState().auth.user?.id === switchedSubject
+      ) {
+        return switchedToken;
+      }
+      dispatch(setToken(switchedToken));
+      completeAuthSessionTransition();
+      await dispatch(fetchUserProfile({ expectedToken: switchedToken }));
+      dispatch(accountSessionSwitchCompleted({ email: reconciliation.user.email ?? '' }));
+      return switchedToken;
+    }
+  } catch (err) {
+    if (isBlockingReconcileFailure(err)) {
+      blockAuthSessionTransition();
+      dispatch(accountSessionSwitchBlocked(
+        err instanceof Error ? err.message : '账户同步未完成，请重试',
+      ));
+      return null;
+    }
+    // 尚未确认身份分叉的网络故障不改变现有会话，继续用资源服务做只读存活检查。
+  }
+
   let token: string | null;
   try {
     token = await getValidAccessToken();
@@ -383,6 +522,7 @@ export const logoutWithSso = createAsyncThunk('auth/logoutWithSso', async (_, { 
   } catch {
     // best-effort：撤销失败绝不能把用户卡在「本地已登录」
   }
+  completeAuthSessionTransition();
   dispatch(logout());
 });
 

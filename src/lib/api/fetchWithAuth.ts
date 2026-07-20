@@ -6,6 +6,13 @@ import {
 } from '@/lib/auth/authService';
 import { ApiError } from '@/types/api';
 import type { ApiResponse } from '@/types/api';
+import {
+  assertAuthSessionStable,
+  bindResponseToAuthSession,
+  captureAuthSessionEpoch,
+  registerAuthBoundRequest,
+  type AuthBoundRequest,
+} from '@/lib/auth/sessionTransition';
 
 // 取一个可用的 access token：优先走 SDK 的按需刷新（过期临界会自动续期）。
 // 续期途中遇到瞬时网络错误时，退回到本地已存 token，把真正的过期交给 401 分支处理——
@@ -24,21 +31,45 @@ async function resolveToken(): Promise<string | null> {
   }
 }
 
+async function runAuthBoundFetch(
+  url: string,
+  options: RequestInit,
+  headers: Headers,
+  expectedEpoch: number,
+): Promise<{ response: Response; request: AuthBoundRequest }> {
+  const request = registerAuthBoundRequest(options.signal, expectedEpoch);
+  try {
+    const response = await fetch(url, {
+      ...options,
+      headers,
+      signal: request.signal,
+    });
+    assertAuthSessionStable(request.epoch);
+    return { response, request };
+  } catch (error) {
+    request.release();
+    throw error;
+  }
+}
+
 async function fetchWithAuth(url: string, options: RequestInit = {}): Promise<Response> {
+  // 必须在读取 token 之前捕获 epoch。若 await token 期间 A→B 已完整切换又回到
+  // stable，注册请求时的 CAS 仍会拒绝把旧 A token 绑定到新 B epoch。
+  const tokenEpoch = captureAuthSessionEpoch();
   const token = await resolveToken();
+  assertAuthSessionStable(tokenEpoch);
 
   const headers = new Headers(options.headers || {});
   if (token) {
     headers.set('Authorization', `Bearer ${token}`);
   }
 
-  const response = await fetch(url, {
-    ...options,
-    headers,
-  });
+  let { response, request } = await runAuthBoundFetch(url, options, headers, tokenEpoch);
 
   // 401 时强制刷新（SDK 内部会合并并发刷新），成功则用新 token 重试原请求
   if (response.status === 401) {
+    request.release();
+    const refreshEpoch = captureAuthSessionEpoch();
     let newToken: string | null;
     try {
       newToken = await forceRefreshAccessToken();
@@ -48,9 +79,11 @@ async function fetchWithAuth(url: string, options: RequestInit = {}): Promise<Re
     }
 
     if (newToken) {
+      assertAuthSessionStable(refreshEpoch);
       const retryHeaders = new Headers(options.headers || {});
       retryHeaders.set('Authorization', `Bearer ${newToken}`);
-      return fetch(url, { ...options, headers: retryHeaders });
+      ({ response, request } = await runAuthBoundFetch(url, options, retryHeaders, refreshEpoch));
+      return bindResponseToAuthSession(response, request);
     }
 
     // 刷新被服务端确定性拒绝：SDK 已清掉自身 token，这里再清掉 fusion 侧 profile 等键
@@ -58,7 +91,7 @@ async function fetchWithAuth(url: string, options: RequestInit = {}): Promise<Re
     throw new Error('Unauthorized');
   }
 
-  return response;
+  return bindResponseToAuthSession(response, request);
 }
 
 async function readApiResponse<T>(response: Response): Promise<ApiResponse<T>> {

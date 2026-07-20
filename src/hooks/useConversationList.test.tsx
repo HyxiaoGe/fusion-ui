@@ -69,6 +69,9 @@ function createStore(isAuthenticated = false, userId = 'user-a') {
         status: 'idle' as const,
         error: null,
         sessionResolved: true,
+        accountSwitchStatus: 'stable' as const,
+        accountSwitchError: null,
+        switchedAccountEmail: null,
       },
     },
   });
