@@ -17,6 +17,7 @@ const {
 vi.mock('@/lib/auth/auth-sdk', () => ({ isAuthConfigured: () => true }));
 vi.mock('@/lib/auth/authService', () => ({
   clearAuthStorage: vi.fn(),
+  clearFusionProfileStorage: vi.fn(),
   completeSsoCallback: vi.fn(),
   getEmailLoginCapabilities: vi.fn(async () => ({ headless: true })),
   getStoredAccessToken: getStoredAccessTokenMock,

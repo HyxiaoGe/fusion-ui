@@ -9,6 +9,8 @@ const {
   getAccessTokenMock,
   refreshMock,
   logoutMock,
+  resumeSessionMock,
+  clearLocalSessionMock,
 } = vi.hoisted(() => ({
   configureAuthMock: vi.fn(),
   isAuthConfiguredMock: vi.fn(() => true),
@@ -18,6 +20,8 @@ const {
   getAccessTokenMock: vi.fn(),
   refreshMock: vi.fn(),
   logoutMock: vi.fn(async () => undefined),
+  resumeSessionMock: vi.fn(),
+  clearLocalSessionMock: vi.fn(),
 }));
 
 vi.mock('./auth-sdk', () => ({
@@ -35,6 +39,8 @@ vi.mock('auth-client-web', () => ({
   getAccessToken: getAccessTokenMock,
   refresh: refreshMock,
   logout: logoutMock,
+  resumeSession: resumeSessionMock,
+  clearLocalSessionIfCurrent: clearLocalSessionMock,
   tokenStore: () => ({
     getAccessToken: () => localStorage.getItem('auth_token'),
     getRefreshToken: () => localStorage.getItem('auth_refresh_token'),
@@ -59,6 +65,7 @@ vi.mock('../config', () => ({
 
 import {
   clearAuthStorage,
+  clearRemoteSsoSession,
   completeSsoCallback,
   forceRefreshAccessToken,
   getEmailLoginCapabilities,
@@ -68,6 +75,7 @@ import {
   isEmailHeadlessRuntime,
   probeSessionLiveness,
   revokeSsoSession,
+  resumeCentralSession,
   startSsoLogin,
 } from './authService';
 
@@ -192,6 +200,25 @@ describe('authService SDK adapter', () => {
     // shared IdP session so logging out of fusion logs the user out of every SSO app
     // (「一处登出、处处登出」). A bare logout() would only revoke this app's token.
     expect(logoutMock).toHaveBeenCalledWith({ global: true });
+  });
+
+  it('clearRemoteSsoSession conditionally clears only the rejected token and preserves the central Cookie', async () => {
+    clearLocalSessionMock.mockResolvedValue({ status: 'cleared' });
+
+    await expect(clearRemoteSsoSession('AT-A')).resolves.toEqual({ status: 'cleared' });
+
+    expect(configureAuthMock).toHaveBeenCalledTimes(1);
+    expect(clearLocalSessionMock).toHaveBeenCalledWith('AT-A');
+    expect(logoutMock).not.toHaveBeenCalled();
+  });
+
+  it('resumeCentralSession forwards the pre-commit cleanup boundary to the SDK', async () => {
+    const beforeCommit = vi.fn();
+    resumeSessionMock.mockResolvedValue({ status: 'no_session' });
+
+    await resumeCentralSession({ beforeCommit });
+
+    expect(resumeSessionMock).toHaveBeenCalledWith({ beforeCommit });
   });
 
   it('probeSessionLiveness GETs the denylist-protected /api/auth/me with the bearer token and resolves on 2xx', async () => {

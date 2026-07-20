@@ -19,6 +19,7 @@ const {
   reconcileSsoSessionMock,
   getStoredAccessTokenMock,
   fetchUserProfileAPIMock,
+  clearRemoteSsoSessionMock,
 } = vi.hoisted(() => ({
   getValidAccessTokenMock: vi.fn(),
   probeSessionLivenessMock: vi.fn(),
@@ -27,6 +28,7 @@ const {
   reconcileSsoSessionMock: vi.fn(),
   getStoredAccessTokenMock: vi.fn<() => string | null>(() => null),
   fetchUserProfileAPIMock: vi.fn(),
+  clearRemoteSsoSessionMock: vi.fn(async () => ({ status: 'cleared' as const })),
 }));
 
 vi.mock('@/lib/auth/authService', () => ({
@@ -35,11 +37,14 @@ vi.mock('@/lib/auth/authService', () => ({
   // 把强制刷新也桩出来：若日后回归把它塞回 checkLiveness，下面 not.toHaveBeenCalled 会立刻报红。
   forceRefreshAccessToken: forceRefreshAccessTokenMock,
   clearAuthStorage: clearAuthStorageMock,
+  clearFusionProfileStorage: vi.fn(),
   reconcileSsoSession: reconcileSsoSessionMock,
   // authSlice 在模块加载时还会引用这些导出（getInitialAuthState 等），给出惰性桩。
   completeSsoCallback: vi.fn(),
   getStoredAccessToken: getStoredAccessTokenMock,
   revokeSsoSession: vi.fn(async () => undefined),
+  clearRemoteSsoSession: clearRemoteSsoSessionMock,
+  resumeCentralSession: vi.fn(),
 }));
 
 vi.mock('@/lib/auth/sso-probe', () => ({
@@ -87,6 +92,7 @@ describe('checkLiveness thunk (read-only SLO probe)', () => {
     reconcileSsoSessionMock.mockResolvedValue({ status: 'match' });
     getStoredAccessTokenMock.mockReturnValue(null);
     fetchUserProfileAPIMock.mockResolvedValue(AUTHED.user);
+    clearRemoteSsoSessionMock.mockResolvedValue({ status: 'cleared' });
   });
 
   it('flips to unauthenticated when getValidAccessToken returns null (definitive refresh failure)', async () => {
@@ -99,6 +105,8 @@ describe('checkLiveness thunk (read-only SLO probe)', () => {
     expect(store.getState().auth.token).toBeNull();
     expect(store.getState().auth.user).toBeNull();
     expect(probeSessionLivenessMock).not.toHaveBeenCalled(); // 无有效 token，不必探测
+    expect(clearRemoteSsoSessionMock).toHaveBeenCalledWith('cached-token');
+    expect(clearAuthStorageMock).not.toHaveBeenCalled();
   });
 
   it('stays authenticated when getValidAccessToken throws (a transient network blip must not log out)', async () => {
@@ -134,6 +142,7 @@ describe('checkLiveness thunk (read-only SLO probe)', () => {
 
     expect(store.getState().auth.isAuthenticated).toBe(false);
     expect(store.getState().auth.user).toBeNull();
+    expect(clearRemoteSsoSessionMock).toHaveBeenCalledWith('cached-token');
   });
 
   it('flips to unauthenticated when the probe is rejected with 403', async () => {
@@ -144,6 +153,35 @@ describe('checkLiveness thunk (read-only SLO probe)', () => {
     await store.dispatch(checkLiveness());
 
     expect(store.getState().auth.isAuthenticated).toBe(false);
+  });
+
+  it('preserves and adopts B when a sibling tab commits it before A cleanup', async () => {
+    const payload = btoa(JSON.stringify({
+      sub: 'u2',
+      email: 'b@example.com',
+      exp: Math.floor(Date.now() / 1000) + 900,
+    })).replace(/=/g, '');
+    const switchedToken = `header.${payload}.signature`;
+    getValidAccessTokenMock.mockResolvedValue('cached-token');
+    probeSessionLivenessMock.mockRejectedValue(new Error('liveness probe failed (401)'));
+    clearRemoteSsoSessionMock.mockResolvedValue({
+      status: 'changed',
+      user: { id: 'u2', email: 'b@example.com' },
+    });
+    getStoredAccessTokenMock.mockReturnValue(switchedToken);
+    fetchUserProfileAPIMock.mockResolvedValue({
+      ...AUTHED.user,
+      id: 'u2',
+      email: 'b@example.com',
+      username: 'b',
+    });
+    const store = makeStore();
+
+    await store.dispatch(checkLiveness());
+
+    expect(store.getState().auth.isAuthenticated).toBe(true);
+    expect(store.getState().auth.user?.id).toBe('u2');
+    expect(store.getState().auth.token).toBe(switchedToken);
   });
 
   it('flips to unauthenticated even when the probe rejects with a non-Error 401 string (String(err) fallback)', async () => {

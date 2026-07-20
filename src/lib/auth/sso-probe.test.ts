@@ -13,6 +13,7 @@ import { silentLogin } from 'auth-client-web';
 import { configureAuth } from '@/lib/auth/auth-sdk';
 
 import {
+  canAutoResumeSession,
   clearSsoReturn,
   hasPendingSsoReturn,
   isSafeReturnPath,
@@ -25,6 +26,7 @@ const mockedSilentLogin = vi.mocked(silentLogin);
 const mockedConfigureAuth = vi.mocked(configureAuth);
 
 const PROBED_KEY = 'fusion_sso_probed';
+const LOGGED_OUT_KEY = 'fusion_sso_logged_out';
 const RETURN_KEY = 'fusion_sso_return';
 const ACCESS_TOKEN_KEY = 'auth_token';
 
@@ -117,6 +119,15 @@ describe('sso-probe: one-shot silent SSO on app load', () => {
     expect(mockedSilentLogin).not.toHaveBeenCalled();
   });
 
+  it('allows JSON session resume without a local token', () => {
+    expect(canAutoResumeSession('/chat')).toBe(true);
+  });
+
+  it('blocks JSON session resume after explicit logout', () => {
+    markSsoProbed();
+    expect(canAutoResumeSession('/chat')).toBe(false);
+  });
+
   it('takeSsoReturnPath reads and clears the captured origin', () => {
     sessionStorage.setItem(RETURN_KEY, '/settings');
     expect(takeSsoReturnPath()).toBe('/settings');
@@ -126,8 +137,10 @@ describe('sso-probe: one-shot silent SSO on app load', () => {
 
   it('clearSsoReturn drops a stale captured origin (so it cannot hijack a later interactive login)', () => {
     sessionStorage.setItem(RETURN_KEY, '/chat');
+    sessionStorage.setItem(LOGGED_OUT_KEY, '1');
     clearSsoReturn();
     expect(sessionStorage.getItem(RETURN_KEY)).toBeNull();
+    expect(sessionStorage.getItem(LOGGED_OUT_KEY)).toBeNull();
   });
 
   it('writes the PROBED guard BEFORE firing the redirect (anti-loop ordering invariant)', () => {

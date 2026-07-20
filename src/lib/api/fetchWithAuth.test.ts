@@ -4,19 +4,22 @@ const {
   getValidAccessTokenMock,
   forceRefreshAccessTokenMock,
   getStoredAccessTokenMock,
-  clearAuthStorageMock,
+  clearFusionProfileStorageMock,
+  clearRemoteSsoSessionMock,
 } = vi.hoisted(() => ({
   getValidAccessTokenMock: vi.fn(),
   forceRefreshAccessTokenMock: vi.fn(),
   getStoredAccessTokenMock: vi.fn(),
-  clearAuthStorageMock: vi.fn(),
+  clearFusionProfileStorageMock: vi.fn(),
+  clearRemoteSsoSessionMock: vi.fn(async () => ({ status: 'cleared' as const })),
 }));
 
 vi.mock('@/lib/auth/authService', () => ({
   getValidAccessToken: getValidAccessTokenMock,
   forceRefreshAccessToken: forceRefreshAccessTokenMock,
   getStoredAccessToken: getStoredAccessTokenMock,
-  clearAuthStorage: clearAuthStorageMock,
+  clearFusionProfileStorage: clearFusionProfileStorageMock,
+  clearRemoteSsoSession: clearRemoteSsoSessionMock,
 }));
 
 import fetchWithAuth, { apiRequest } from './fetchWithAuth';
@@ -33,6 +36,8 @@ describe('fetchWithAuth (shared-SDK token lifecycle)', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    getStoredAccessTokenMock.mockReturnValue(null);
+    clearRemoteSsoSessionMock.mockResolvedValue({ status: 'cleared' });
     resetAuthSessionTransitionForTests();
     fetchMock = vi.fn();
     vi.stubGlobal('fetch', fetchMock);
@@ -66,7 +71,7 @@ describe('fetchWithAuth (shared-SDK token lifecycle)', () => {
     expect(new Headers(fetchMock.mock.calls[1][1].headers).get('Authorization')).toBe(
       'Bearer rotated-token'
     );
-    expect(clearAuthStorageMock).not.toHaveBeenCalled();
+    expect(clearRemoteSsoSessionMock).not.toHaveBeenCalled();
   });
 
   it('clears storage and throws when a 401 refresh fails definitively', async () => {
@@ -75,7 +80,8 @@ describe('fetchWithAuth (shared-SDK token lifecycle)', () => {
     fetchMock.mockResolvedValueOnce(res(401));
 
     await expect(fetchWithAuth('/api/test')).rejects.toThrow('Unauthorized');
-    expect(clearAuthStorageMock).toHaveBeenCalledTimes(1);
+    expect(clearRemoteSsoSessionMock).toHaveBeenCalledWith('stale-token');
+    expect(clearFusionProfileStorageMock).toHaveBeenCalledTimes(1);
   });
 
   it('keeps the session (no clear) when the 401 refresh fails on a TRANSIENT network error', async () => {
@@ -84,7 +90,7 @@ describe('fetchWithAuth (shared-SDK token lifecycle)', () => {
     fetchMock.mockResolvedValueOnce(res(401));
 
     await expect(fetchWithAuth('/api/test')).rejects.toThrow('Unauthorized');
-    expect(clearAuthStorageMock).not.toHaveBeenCalled();
+    expect(clearRemoteSsoSessionMock).not.toHaveBeenCalled();
   });
 
   it('falls back to the stored token when proactive refresh throws transiently', async () => {
@@ -99,6 +105,18 @@ describe('fetchWithAuth (shared-SDK token lifecycle)', () => {
     );
   });
 
+  it('SDK 检测到 A/B 存储竞态时不回退到 B token，也不发送业务请求', async () => {
+    getValidAccessTokenMock.mockRejectedValue(
+      Object.assign(new Error('session switch pending'), { blocking: true })
+    );
+    getStoredAccessTokenMock.mockReturnValue('token-b');
+
+    await expect(fetchWithAuth('/api/private', { method: 'POST', body: 'account-a-write' }))
+      .rejects.toMatchObject({ blocking: true });
+
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   it('clears fusion storage when proactive resolution yields null (definitive SDK teardown), even without a 401', async () => {
     // SDK refresh failed definitively and already wiped its own keys; getValidAccessToken returns null.
     // The request still goes out (unauthenticated). For a PUBLIC endpoint it returns 200, so the 401
@@ -108,7 +126,8 @@ describe('fetchWithAuth (shared-SDK token lifecycle)', () => {
 
     await fetchWithAuth('/api/models/');
 
-    expect(clearAuthStorageMock).toHaveBeenCalledTimes(1);
+    expect(clearRemoteSsoSessionMock).toHaveBeenCalledWith(null);
+    expect(clearFusionProfileStorageMock).toHaveBeenCalledTimes(1);
     expect(new Headers(fetchMock.mock.calls[0][1].headers).get('Authorization')).toBeNull();
   });
 
@@ -125,6 +144,21 @@ describe('fetchWithAuth (shared-SDK token lifecycle)', () => {
 
     await expect(pending).rejects.toMatchObject({ code: 'AUTH_SESSION_TRANSITION' });
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('401 清理落后于兄弟标签 B 提交时只做条件清理，不调用裸 tokenStore.clear', async () => {
+    getValidAccessTokenMock.mockResolvedValue('stale-token-a');
+    forceRefreshAccessTokenMock.mockResolvedValue(null);
+    clearRemoteSsoSessionMock.mockResolvedValue({
+      status: 'changed',
+      user: { id: 'user-b' },
+    });
+    fetchMock.mockResolvedValueOnce(res(401));
+
+    await expect(fetchWithAuth('/api/private')).rejects.toThrow('Unauthorized');
+
+    expect(clearRemoteSsoSessionMock).toHaveBeenCalledWith('stale-token-a');
+    expect(clearFusionProfileStorageMock).toHaveBeenCalledTimes(1);
   });
 });
 

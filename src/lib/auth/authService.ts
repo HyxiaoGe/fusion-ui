@@ -8,7 +8,9 @@
  */
 
 import {
+  clearLocalSessionIfCurrent as sdkClearLocalSessionIfCurrent,
   reconcileSession as sdkReconcileSession,
+  resumeSession as sdkResumeSession,
   getAccessToken as sdkGetAccessToken,
   handleCallback as sdkHandleCallback,
   login as sdkLogin,
@@ -20,6 +22,8 @@ import {
   type CallbackResult,
   type ReconcileSessionOptions,
   type ReconcileSessionResult,
+  type ResumeSessionOptions,
+  type ClearLocalSessionResult,
 } from 'auth-client-web';
 import { configureAuth } from './auth-sdk';
 import { clearSsoReturn } from './sso-probe';
@@ -119,6 +123,12 @@ export function reconcileSsoSession(
   return sdkReconcileSession(options);
 }
 
+/** 无顶层跳转地恢复中央会话；SDK 负责 PKCE 与 token/user 原子提交。 */
+export function resumeCentralSession(options?: ResumeSessionOptions) {
+  configureAuth();
+  return sdkResumeSession(options);
+}
+
 /** 订阅 SDK 的同步临界态，让宿主能在换票前先封住旧用户请求。 */
 export function subscribeSsoState(listener: (state: SdkAuthState) => void): () => void {
   configureAuth();
@@ -155,9 +165,26 @@ export async function revokeSsoSession(): Promise<void> {
   await sdkLogout({ global: true });
 }
 
+/**
+ * 中央会话已明确失效时，只收敛当前应用的 SDK 会话，不销毁新的中央 Cookie 会话。
+ * 这不是用户显式登出，因此宿主不得写“禁止自动重登”守卫；否则 A 登出后中央切到 B，
+ * 当前标签将无法自动恢复 B。
+ */
+export async function clearRemoteSsoSession(
+  expectedAccessToken: string | null,
+): Promise<ClearLocalSessionResult> {
+  configureAuth();
+  return sdkClearLocalSessionIfCurrent(expectedAccessToken);
+}
+
 export function clearAuthStorage(): void {
   configureAuth();
   sdkTokenStore().clear();
+  clearFusionProfileStorage();
+}
+
+/** 只清 Fusion 自己的富用户资料缓存，不触碰 SDK 的共享 token store。 */
+export function clearFusionProfileStorage(): void {
   localStorage.removeItem(USER_PROFILE_KEY);
   localStorage.removeItem(USER_PROFILE_TIMESTAMP_KEY);
 }

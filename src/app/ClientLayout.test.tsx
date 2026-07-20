@@ -14,10 +14,12 @@ const {
   checkUserStateMock,
   fetchUserProfileMock,
   checkLivenessMock,
+  resumeSsoSessionMock,
   adoptCommittedSsoSessionMock,
   resolveSessionMock,
   setGlobalToastMock,
   maybeSilentLoginMock,
+  canAutoResumeSessionMock,
   subscribeSsoStateMock,
   beginAuthSessionTransitionMock,
   routerReplaceMock,
@@ -46,6 +48,7 @@ const {
   checkUserStateMock: vi.fn(() => ({ type: 'auth/checkUserState' })),
   fetchUserProfileMock: vi.fn(() => ({ type: 'auth/fetchUserProfile' })),
   checkLivenessMock: vi.fn(() => ({ type: 'auth/checkLiveness' })),
+  resumeSsoSessionMock: vi.fn(() => ({ type: 'auth/resumeSsoSession' })),
   adoptCommittedSsoSessionMock: vi.fn((payload: unknown) => ({
     type: 'auth/adoptCommittedSsoSession',
     payload,
@@ -53,6 +56,7 @@ const {
   resolveSessionMock: vi.fn(() => ({ type: 'auth/resolveSession' })),
   setGlobalToastMock: vi.fn(),
   maybeSilentLoginMock: vi.fn(() => false),
+  canAutoResumeSessionMock: vi.fn(() => true),
   subscribeSsoStateMock: vi.fn(() => vi.fn()),
   beginAuthSessionTransitionMock: vi.fn(),
   routerReplaceMock: vi.fn(),
@@ -97,6 +101,7 @@ vi.mock('@/redux/slices/authSlice', () => ({
   checkUserState: checkUserStateMock,
   fetchUserProfile: fetchUserProfileMock,
   checkLiveness: checkLivenessMock,
+  resumeSsoSession: resumeSsoSessionMock,
   adoptCommittedSsoSession: adoptCommittedSsoSessionMock,
   resolveSession: resolveSessionMock,
   setToken: vi.fn(),
@@ -104,6 +109,7 @@ vi.mock('@/redux/slices/authSlice', () => ({
 
 vi.mock('@/lib/auth/sso-probe', () => ({
   maybeSilentLogin: maybeSilentLoginMock,
+  canAutoResumeSession: canAutoResumeSessionMock,
 }));
 
 vi.mock('@/lib/auth/authService', () => ({
@@ -164,11 +170,14 @@ describe('ClientLayout', () => {
     checkUserStateMock.mockClear();
     fetchUserProfileMock.mockClear();
     checkLivenessMock.mockClear();
+    resumeSsoSessionMock.mockClear();
     adoptCommittedSsoSessionMock.mockClear();
     resolveSessionMock.mockClear();
     setGlobalToastMock.mockClear();
     maybeSilentLoginMock.mockReset();
     maybeSilentLoginMock.mockReturnValue(false);
+    canAutoResumeSessionMock.mockReset();
+    canAutoResumeSessionMock.mockReturnValue(true);
     subscribeSsoStateMock.mockClear();
     beginAuthSessionTransitionMock.mockClear();
     routerReplaceMock.mockClear();
@@ -358,7 +367,7 @@ describe('ClientLayout', () => {
     });
   });
 
-  it('does NOT probe on focus when unauthenticated (no token to verify)', async () => {
+  it('resumes the central session on focus when unauthenticated', async () => {
     currentAuthState.isAuthenticated = false;
 
     render(
@@ -370,6 +379,45 @@ describe('ClientLayout', () => {
     await new Promise(resolve => setTimeout(resolve, 50));
 
     expect(appDispatchMock).not.toHaveBeenCalledWith({ type: 'auth/checkLiveness' });
+    expect(appDispatchMock).toHaveBeenCalledWith({ type: 'auth/resumeSsoSession' });
+  });
+
+  it('does NOT resume after explicit logout or on an exempt route', async () => {
+    currentAuthState.isAuthenticated = false;
+    canAutoResumeSessionMock.mockReturnValue(false);
+
+    render(
+      React.createElement(ClientLayout, null, React.createElement('div', null, 'child'))
+    );
+    appDispatchMock.mockClear();
+
+    window.dispatchEvent(new Event('focus'));
+    await new Promise(resolve => setTimeout(resolve, 50));
+
+    expect(canAutoResumeSessionMock).toHaveBeenCalledWith(
+      window.location.pathname + window.location.search
+    );
+    expect(appDispatchMock).not.toHaveBeenCalledWith({ type: 'auth/resumeSsoSession' });
+  });
+
+  it('coalesces unauthenticated focus + visibilitychange into one resume', async () => {
+    currentAuthState.isAuthenticated = false;
+    const now = vi.spyOn(Date, 'now').mockReturnValue(10_000);
+
+    render(
+      React.createElement(ClientLayout, null, React.createElement('div', null, 'child'))
+    );
+    appDispatchMock.mockClear();
+    now.mockReturnValue(14_000);
+
+    window.dispatchEvent(new Event('focus'));
+    Object.defineProperty(document, 'visibilityState', { value: 'visible', configurable: true });
+    document.dispatchEvent(new Event('visibilitychange'));
+
+    const resumeDispatches = appDispatchMock.mock.calls.filter(
+      (call) => call[0] && call[0].type === 'auth/resumeSsoSession'
+    );
+    expect(resumeDispatches).toHaveLength(1);
   });
 
   it('runs the low-frequency liveness probe on the 5-minute backstop timer when authenticated', async () => {
@@ -390,6 +438,21 @@ describe('ClientLayout', () => {
     await vi.advanceTimersByTimeAsync(5 * 60 * 1000);
 
     expect(appDispatchMock).toHaveBeenCalledWith({ type: 'auth/checkLiveness' });
+  });
+
+  it('runs the low-frequency session resume fallback when unauthenticated', async () => {
+    vi.useFakeTimers();
+    currentAuthState.isAuthenticated = false;
+
+    render(
+      React.createElement(ClientLayout, null, React.createElement('div', null, 'child'))
+    );
+    await vi.advanceTimersByTimeAsync(0);
+    appDispatchMock.mockClear();
+
+    await vi.advanceTimersByTimeAsync(5 * 60 * 1000);
+
+    expect(appDispatchMock).toHaveBeenCalledWith({ type: 'auth/resumeSsoSession' });
   });
 
   it('does NOT open the login dialog when the silent SSO probe fires (page is navigating away)', async () => {
