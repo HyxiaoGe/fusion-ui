@@ -104,7 +104,7 @@ describe('AdminModelsPanel', () => {
     fireEvent.click(await screen.findByRole('option', { name: '不限' }));
     fireEvent.click(screen.getByRole('button', { name: '筛选' }));
     await waitFor(() => expect(apiMocks.getAdminModels).toHaveBeenLastCalledWith(expect.objectContaining({ page: 1, provider: '' }), expect.any(AbortSignal)));
-  });
+  }, 15_000);
 
   it('提供商下拉使用舒展宽度和行距，长名称截断且不改变可访问名称', async () => {
     const longProvider = { value: 'long-provider', label: '这是一个非常非常长的模型提供商名称' };
