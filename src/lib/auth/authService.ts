@@ -8,21 +8,23 @@
  */
 
 import {
+  reconcileSession as sdkReconcileSession,
   getAccessToken as sdkGetAccessToken,
   handleCallback as sdkHandleCallback,
   login as sdkLogin,
   logout as sdkLogout,
   refresh as sdkRefresh,
+  subscribe as sdkSubscribe,
+  tokenStore as sdkTokenStore,
+  type AuthState as SdkAuthState,
   type CallbackResult,
+  type ReconcileSessionOptions,
+  type ReconcileSessionResult,
 } from 'auth-client-web';
 import { configureAuth } from './auth-sdk';
 import { clearSsoReturn } from './sso-probe';
 import { API_CONFIG, AUTH_SERVICE_CONFIG, getAuthCallbackUrl } from '../config';
 
-const ACCESS_TOKEN_KEY = 'auth_token';
-const REFRESH_TOKEN_KEY = 'auth_refresh_token';
-const EXPIRES_AT_KEY = 'auth_token_expiry';
-const SDK_USER_KEY = 'auth_user_info';
 const USER_PROFILE_KEY = 'user_profile';
 const USER_PROFILE_TIMESTAMP_KEY = 'user_profile_timestamp';
 
@@ -109,6 +111,20 @@ export function forceRefreshAccessToken(): Promise<string | null> {
   return sdkRefresh();
 }
 
+/** 对账当前应用 token 与中央 IdP cookie；换号时由 SDK 在内存中完成 PKCE 换票。 */
+export function reconcileSsoSession(
+  options?: ReconcileSessionOptions,
+): Promise<ReconcileSessionResult> {
+  configureAuth();
+  return sdkReconcileSession(options);
+}
+
+/** 订阅 SDK 的同步临界态，让宿主能在换票前先封住旧用户请求。 */
+export function subscribeSsoState(listener: (state: SdkAuthState) => void): () => void {
+  configureAuth();
+  return sdkSubscribe(listener);
+}
+
 /**
  * Read-only single-logout liveness probe. Hits a denylist-protected fusion-api endpoint
  * (`/api/auth/me` → `get_current_user`, which consults the shared-Redis SLO revocation marker)
@@ -140,18 +156,18 @@ export async function revokeSsoSession(): Promise<void> {
 }
 
 export function clearAuthStorage(): void {
-  localStorage.removeItem(ACCESS_TOKEN_KEY);
-  localStorage.removeItem(REFRESH_TOKEN_KEY);
-  localStorage.removeItem(EXPIRES_AT_KEY);
-  localStorage.removeItem(SDK_USER_KEY);
+  configureAuth();
+  sdkTokenStore().clear();
   localStorage.removeItem(USER_PROFILE_KEY);
   localStorage.removeItem(USER_PROFILE_TIMESTAMP_KEY);
 }
 
 export function getStoredAccessToken(): string | null {
-  return localStorage.getItem(ACCESS_TOKEN_KEY);
+  configureAuth();
+  return sdkTokenStore().getAccessToken();
 }
 
 export function getStoredRefreshToken(): string | null {
-  return localStorage.getItem(REFRESH_TOKEN_KEY);
+  configureAuth();
+  return sdkTokenStore().getRefreshToken();
 }

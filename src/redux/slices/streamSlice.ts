@@ -7,6 +7,7 @@ import type {
 } from '@/types/conversation';
 import type { ContextUsagePhase } from '@/lib/chat/contextUsage';
 import { logout } from '@/redux/slices/authSlice';
+import { accountSessionSwitchStarted } from '@/redux/actions/authSessionActions';
 import type {
   AgentEvidenceItem,
   AgentPlanItem,
@@ -746,6 +747,7 @@ const streamSlice = createSlice({
   },
   extraReducers: builder => {
     builder.addCase(logout, () => initialState);
+    builder.addCase(accountSessionSwitchStarted, () => initialState);
   },
 });
 

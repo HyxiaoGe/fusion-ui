@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const {
@@ -14,14 +14,28 @@ const {
   checkUserStateMock,
   fetchUserProfileMock,
   checkLivenessMock,
+  adoptCommittedSsoSessionMock,
   resolveSessionMock,
   setGlobalToastMock,
   maybeSilentLoginMock,
+  subscribeSsoStateMock,
+  beginAuthSessionTransitionMock,
+  routerReplaceMock,
+  toastSuccessMock,
 } = vi.hoisted(() => ({
   currentAuthState: {
     isAuthenticated: false,
     status: 'idle',
-  } as { isAuthenticated: boolean; status: 'idle' | 'loading' | 'succeeded' | 'failed' },
+    accountSwitchStatus: 'stable',
+    accountSwitchError: null,
+    switchedAccountEmail: null,
+  } as {
+    isAuthenticated: boolean;
+    status: 'idle' | 'loading' | 'succeeded' | 'failed';
+    accountSwitchStatus: 'stable' | 'synchronizing' | 'blocked';
+    accountSwitchError: string | null;
+    switchedAccountEmail: string | null;
+  },
   appDispatchMock: vi.fn(),
   reduxDispatchMock: vi.fn(),
   useAppDispatchMock: vi.fn(),
@@ -32,13 +46,29 @@ const {
   checkUserStateMock: vi.fn(() => ({ type: 'auth/checkUserState' })),
   fetchUserProfileMock: vi.fn(() => ({ type: 'auth/fetchUserProfile' })),
   checkLivenessMock: vi.fn(() => ({ type: 'auth/checkLiveness' })),
+  adoptCommittedSsoSessionMock: vi.fn((payload: unknown) => ({
+    type: 'auth/adoptCommittedSsoSession',
+    payload,
+  })),
   resolveSessionMock: vi.fn(() => ({ type: 'auth/resolveSession' })),
   setGlobalToastMock: vi.fn(),
   maybeSilentLoginMock: vi.fn(() => false),
+  subscribeSsoStateMock: vi.fn(() => vi.fn()),
+  beginAuthSessionTransitionMock: vi.fn(),
+  routerReplaceMock: vi.fn(),
+  toastSuccessMock: vi.fn(),
 }));
 
 vi.mock('next/dynamic', () => ({
   default: () => () => null,
+}));
+
+vi.mock('next/navigation', () => ({
+  useRouter: () => ({ replace: routerReplaceMock }),
+}));
+
+vi.mock('react-i18next', () => ({
+  useTranslation: () => ({ t: (key: string) => key }),
 }));
 
 vi.mock('@/redux/hooks', () => ({
@@ -67,12 +97,21 @@ vi.mock('@/redux/slices/authSlice', () => ({
   checkUserState: checkUserStateMock,
   fetchUserProfile: fetchUserProfileMock,
   checkLiveness: checkLivenessMock,
+  adoptCommittedSsoSession: adoptCommittedSsoSessionMock,
   resolveSession: resolveSessionMock,
   setToken: vi.fn(),
 }));
 
 vi.mock('@/lib/auth/sso-probe', () => ({
   maybeSilentLogin: maybeSilentLoginMock,
+}));
+
+vi.mock('@/lib/auth/authService', () => ({
+  subscribeSsoState: subscribeSsoStateMock,
+}));
+
+vi.mock('@/lib/auth/sessionTransition', () => ({
+  beginAuthSessionTransition: beginAuthSessionTransitionMock,
 }));
 
 vi.mock('@/components/ui/toast', () => ({
@@ -98,6 +137,7 @@ vi.mock('@/components/settings/SettingsDialog', () => ({
 }));
 
 vi.mock('react-hot-toast', () => ({
+  default: { success: toastSuccessMock },
   Toaster: () => null,
 }));
 
@@ -107,6 +147,9 @@ describe('ClientLayout', () => {
   beforeEach(() => {
     currentAuthState.isAuthenticated = false;
     currentAuthState.status = 'idle';
+    currentAuthState.accountSwitchStatus = 'stable';
+    currentAuthState.accountSwitchError = null;
+    currentAuthState.switchedAccountEmail = null;
     appDispatchMock.mockReset();
     reduxDispatchMock.mockReset();
     useAppDispatchMock.mockReturnValue(appDispatchMock);
@@ -121,14 +164,20 @@ describe('ClientLayout', () => {
     checkUserStateMock.mockClear();
     fetchUserProfileMock.mockClear();
     checkLivenessMock.mockClear();
+    adoptCommittedSsoSessionMock.mockClear();
     resolveSessionMock.mockClear();
     setGlobalToastMock.mockClear();
     maybeSilentLoginMock.mockReset();
     maybeSilentLoginMock.mockReturnValue(false);
+    subscribeSsoStateMock.mockClear();
+    beginAuthSessionTransitionMock.mockClear();
+    routerReplaceMock.mockClear();
+    toastSuccessMock.mockClear();
   });
 
   afterEach(() => {
     vi.useRealTimers();
+    vi.restoreAllMocks();
   });
 
   it('refreshes user profile when authenticated state is stale', async () => {
@@ -211,12 +260,17 @@ describe('ClientLayout', () => {
     currentAuthState.isAuthenticated = true;
     currentAuthState.status = 'succeeded';
 
+    const now = vi.spyOn(Date, 'now').mockReturnValue(10_000);
     render(
       React.createElement(ClientLayout, null, React.createElement('div', null, 'child'))
     );
 
-    await waitFor(() => expect(checkUserStateMock).toHaveBeenCalled());
+    await waitFor(() => {
+      expect(checkUserStateMock).toHaveBeenCalled();
+      expect(appDispatchMock).toHaveBeenCalledWith({ type: 'auth/checkLiveness' });
+    });
     appDispatchMock.mockClear(); // 隔离 focus 触发的派发
+    now.mockReturnValue(14_000);
 
     window.dispatchEvent(new Event('focus'));
 
@@ -229,12 +283,14 @@ describe('ClientLayout', () => {
     currentAuthState.isAuthenticated = true;
     currentAuthState.status = 'succeeded';
 
+    const now = vi.spyOn(Date, 'now').mockReturnValue(10_000);
     render(
       React.createElement(ClientLayout, null, React.createElement('div', null, 'child'))
     );
 
-    await waitFor(() => expect(checkUserStateMock).toHaveBeenCalled());
+    await waitFor(() => expect(appDispatchMock).toHaveBeenCalledWith({ type: 'auth/checkLiveness' }));
     appDispatchMock.mockClear();
+    now.mockReturnValue(14_000);
 
     Object.defineProperty(document, 'visibilityState', { value: 'visible', configurable: true });
     document.dispatchEvent(new Event('visibilitychange'));
@@ -249,12 +305,14 @@ describe('ClientLayout', () => {
     currentAuthState.isAuthenticated = true;
     currentAuthState.status = 'succeeded';
 
+    const now = vi.spyOn(Date, 'now').mockReturnValue(10_000);
     render(
       React.createElement(ClientLayout, null, React.createElement('div', null, 'child'))
     );
 
-    await waitFor(() => expect(checkUserStateMock).toHaveBeenCalled());
+    await waitFor(() => expect(appDispatchMock).toHaveBeenCalledWith({ type: 'auth/checkLiveness' }));
     appDispatchMock.mockClear();
+    now.mockReturnValue(14_000);
 
     window.dispatchEvent(new Event('focus'));
     Object.defineProperty(document, 'visibilityState', { value: 'visible', configurable: true });
@@ -267,6 +325,37 @@ describe('ClientLayout', () => {
       (c) => c[0] && c[0].type === 'auth/checkLiveness'
     );
     expect(probeDispatches).toHaveLength(1);
+  });
+
+  it('blocks and adopts the SDK session committed by a sibling tab', async () => {
+    currentAuthState.isAuthenticated = true;
+    currentAuthState.status = 'succeeded';
+    let listener: ((state: {
+      status: 'synchronizing' | 'authenticated';
+      user: { email?: string } | null;
+    }) => void) | null = null;
+    (subscribeSsoStateMock as unknown as {
+      mockImplementation: (implementation: (next: typeof listener) => () => void) => void;
+    }).mockImplementation((next: typeof listener) => {
+      listener = next;
+      return vi.fn();
+    });
+
+    render(
+      React.createElement(ClientLayout, null, React.createElement('div', null, 'child'))
+    );
+
+    await waitFor(() => expect(subscribeSsoStateMock).toHaveBeenCalledTimes(1));
+    act(() => listener?.({ status: 'synchronizing', user: null }));
+    expect(beginAuthSessionTransitionMock).toHaveBeenCalledTimes(1);
+    expect(appDispatchMock).toHaveBeenCalledWith({ type: 'auth/accountSessionSwitchStarted' });
+
+    act(() => listener?.({ status: 'authenticated', user: { email: 'b@example.com' } }));
+    expect(adoptCommittedSsoSessionMock).toHaveBeenCalledWith({ email: 'b@example.com' });
+    expect(appDispatchMock).toHaveBeenCalledWith({
+      type: 'auth/adoptCommittedSsoSession',
+      payload: { email: 'b@example.com' },
+    });
   });
 
   it('does NOT probe on focus when unauthenticated (no token to verify)', async () => {

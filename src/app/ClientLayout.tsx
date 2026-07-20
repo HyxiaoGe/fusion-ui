@@ -1,7 +1,7 @@
 'use client';
 
 import { ToastProvider, setGlobalToast, useToast } from "@/components/ui/toast";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { initializeModels } from "@/lib/config/modelConfig";
 import { useDispatch } from "react-redux";
 import { updateModels, updateProviders } from "@/redux/slices/modelsSlice";
@@ -9,9 +9,23 @@ import dynamic from 'next/dynamic';
 import { useAppDispatch, useAppSelector } from "@/redux/hooks";
 import { selectIsAuthenticated } from "@/redux/selectors";
 
-import { Toaster } from "react-hot-toast";
-import { checkUserState, checkLiveness, fetchUserProfile, resolveSession } from "@/redux/slices/authSlice";
+import toast, { Toaster } from "react-hot-toast";
+import { useRouter } from "next/navigation";
+import { useTranslation } from "react-i18next";
+import {
+  adoptCommittedSsoSession,
+  checkUserState,
+  checkLiveness,
+  fetchUserProfile,
+  resolveSession,
+} from "@/redux/slices/authSlice";
 import { maybeSilentLogin } from "@/lib/auth/sso-probe";
+import { subscribeSsoState } from "@/lib/auth/authService";
+import { beginAuthSessionTransition } from "@/lib/auth/sessionTransition";
+import {
+  accountSessionSwitchCompleted,
+  accountSessionSwitchStarted,
+} from "@/redux/actions/authSessionActions";
 import { LoginDialog } from "@/components/auth/LoginDialog";
 import { SettingsDialog } from "@/components/settings/SettingsDialog";
 
@@ -56,16 +70,39 @@ function ModelConfigInitializer() {
 }
 
 const ClientLayout = ({ children }: { children: React.ReactNode }) => {
+  const router = useRouter();
+  const { t } = useTranslation();
   const dispatch = useAppDispatch();
   const isAuthenticated = useAppSelector(selectIsAuthenticated);
   const status = useAppSelector((state) => state.auth.status);
+  const accountSwitchStatus = useAppSelector((state) => state.auth.accountSwitchStatus);
+  const accountSwitchError = useAppSelector((state) => state.auth.accountSwitchError);
+  const switchedAccountEmail = useAppSelector((state) => state.auth.switchedAccountEmail);
   const [isLoginDialogOpen, setIsLoginDialogOpen] = useState(false);
   const [hasShownInitialLogin, setHasShownInitialLogin] = useState(false);
+  const sdkSwitchObserved = useRef(false);
   
   // 导出函数供其他组件使用
   (globalThis as any).triggerLoginDialog = () => {
     setIsLoginDialogOpen(true);
   };
+
+  useEffect(() => {
+    return subscribeSsoState((sdkState) => {
+      if (sdkState.status === 'synchronizing') {
+        sdkSwitchObserved.current = true;
+        // 服务端已经确认中央账号与本地账号不同；必须在换票完成前先阻断旧请求并清缓存。
+        beginAuthSessionTransition();
+        dispatch(accountSessionSwitchStarted());
+        return;
+      }
+      if (sdkState.status === 'authenticated' && sdkState.user && sdkSwitchObserved.current) {
+        sdkSwitchObserved.current = false;
+        // 同源兄弟标签完成换票时，SDK localStorage 已更新；宿主也必须采用新 token/profile。
+        void dispatch(adoptCommittedSsoSession({ email: sdkState.user.email ?? '' }));
+      }
+    });
+  }, [dispatch]);
 
   useEffect(() => {
     // 只在登录态发生变化时重新检查，避免资料请求状态变化触发认证检查循环。
@@ -100,12 +137,24 @@ const ClientLayout = ({ children }: { children: React.ReactNode }) => {
     window.addEventListener("focus", runLivenessProbe);
     document.addEventListener("visibilitychange", onVisibility);
     const interval = window.setInterval(runLivenessProbe, 5 * 60 * 1000);
+    runLivenessProbe();
     return () => {
       window.removeEventListener("focus", runLivenessProbe);
       document.removeEventListener("visibilitychange", onVisibility);
       window.clearInterval(interval);
     };
   }, [dispatch, isAuthenticated]);
+
+  useEffect(() => {
+    if (switchedAccountEmail === null) return;
+    router.replace('/chat/new');
+    toast.success(
+      switchedAccountEmail
+        ? t('auth.accountSwitch.completedWithEmail', { email: switchedAccountEmail })
+        : t('auth.accountSwitch.completed'),
+    );
+    dispatch(accountSessionSwitchCompleted({ email: null }));
+  }, [dispatch, router, switchedAccountEmail, t]);
 
   useEffect(() => {
     // 如果用户已登录，关闭登录弹窗
@@ -153,6 +202,36 @@ const ClientLayout = ({ children }: { children: React.ReactNode }) => {
       <div className="w-full h-screen overflow-hidden text-sm flex-1">
         {children}
       </div>
+      {accountSwitchStatus !== 'stable' && (
+        <div
+          className="fixed inset-0 z-[10000] flex items-center justify-center bg-background/85 px-6 backdrop-blur-sm"
+          role="status"
+          aria-live="assertive"
+        >
+          <div className="w-full max-w-sm rounded-2xl border border-border bg-card p-6 text-center shadow-2xl">
+            <div className="mx-auto mb-4 h-8 w-8 animate-spin rounded-full border-2 border-muted border-t-primary" />
+            <p className="font-medium text-foreground">
+              {accountSwitchStatus === 'blocked'
+                ? t('auth.accountSwitch.blockedTitle')
+                : t('auth.accountSwitch.syncingTitle')}
+            </p>
+            <p className="mt-2 text-sm text-muted-foreground">
+              {accountSwitchStatus === 'blocked'
+                ? accountSwitchError || t('auth.accountSwitch.blockedDescription')
+                : t('auth.accountSwitch.syncingDescription')}
+            </p>
+            {accountSwitchStatus === 'blocked' && (
+              <button
+                type="button"
+                className="mt-5 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground"
+                onClick={() => dispatch(checkLiveness())}
+              >
+                {t('auth.accountSwitch.retry')}
+              </button>
+            )}
+          </div>
+        </div>
+      )}
       <Toaster position="bottom-center" />
       <LoginDialog open={isLoginDialogOpen} onOpenChange={handleDialogVisibilityChange} />
       <SettingsDialog />

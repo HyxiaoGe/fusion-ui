@@ -16,11 +16,17 @@ const {
   probeSessionLivenessMock,
   forceRefreshAccessTokenMock,
   clearAuthStorageMock,
+  reconcileSsoSessionMock,
+  getStoredAccessTokenMock,
+  fetchUserProfileAPIMock,
 } = vi.hoisted(() => ({
   getValidAccessTokenMock: vi.fn(),
   probeSessionLivenessMock: vi.fn(),
   forceRefreshAccessTokenMock: vi.fn(),
   clearAuthStorageMock: vi.fn(),
+  reconcileSsoSessionMock: vi.fn(),
+  getStoredAccessTokenMock: vi.fn<() => string | null>(() => null),
+  fetchUserProfileAPIMock: vi.fn(),
 }));
 
 vi.mock('@/lib/auth/authService', () => ({
@@ -29,9 +35,10 @@ vi.mock('@/lib/auth/authService', () => ({
   // 把强制刷新也桩出来：若日后回归把它塞回 checkLiveness，下面 not.toHaveBeenCalled 会立刻报红。
   forceRefreshAccessToken: forceRefreshAccessTokenMock,
   clearAuthStorage: clearAuthStorageMock,
+  reconcileSsoSession: reconcileSsoSessionMock,
   // authSlice 在模块加载时还会引用这些导出（getInitialAuthState 等），给出惰性桩。
   completeSsoCallback: vi.fn(),
-  getStoredAccessToken: vi.fn(() => null),
+  getStoredAccessToken: getStoredAccessTokenMock,
   revokeSsoSession: vi.fn(async () => undefined),
 }));
 
@@ -42,7 +49,7 @@ vi.mock('@/lib/auth/sso-probe', () => ({
 }));
 
 vi.mock('../../lib/api/user', () => ({
-  fetchUserProfileAPI: vi.fn(),
+  fetchUserProfileAPI: fetchUserProfileAPIMock,
   updateUserSettingsAPI: vi.fn(),
 }));
 
@@ -64,6 +71,9 @@ const AUTHED = {
   status: 'succeeded' as const,
   error: null,
   sessionResolved: true,
+  accountSwitchStatus: 'stable' as const,
+  accountSwitchError: null,
+  switchedAccountEmail: null,
 };
 
 const makeStore = () =>
@@ -74,6 +84,9 @@ describe('checkLiveness thunk (read-only SLO probe)', () => {
     vi.clearAllMocks();
     localStorage.clear();
     probeSessionLivenessMock.mockResolvedValue(undefined);
+    reconcileSsoSessionMock.mockResolvedValue({ status: 'match' });
+    getStoredAccessTokenMock.mockReturnValue(null);
+    fetchUserProfileAPIMock.mockResolvedValue(AUTHED.user);
   });
 
   it('flips to unauthenticated when getValidAccessToken returns null (definitive refresh failure)', async () => {
@@ -171,5 +184,54 @@ describe('checkLiveness thunk (read-only SLO probe)', () => {
 
     expect(getValidAccessTokenMock).toHaveBeenCalledTimes(1);
     expect(forceRefreshAccessTokenMock).not.toHaveBeenCalled();
+  });
+
+  it('在 SDK 提交新会话前清缓存，并把 Redux 原子切换到新账户', async () => {
+    const payload = btoa(JSON.stringify({
+      sub: 'u2',
+      email: 'b@example.com',
+      aud: 'fusion-web',
+      exp: Math.floor(Date.now() / 1000) + 900,
+    })).replace(/=/g, '');
+    const switchedToken = `header.${payload}.signature`;
+    getStoredAccessTokenMock.mockReturnValue(switchedToken);
+    fetchUserProfileAPIMock.mockResolvedValue({
+      ...AUTHED.user,
+      id: 'u2',
+      username: 'b',
+      email: 'b@example.com',
+      nickname: 'B',
+    });
+    reconcileSsoSessionMock.mockImplementation(async (options) => {
+      await options.beforeCommit();
+      return {
+        status: 'switched',
+        previousUser: { id: 'u1', email: 'a@b.c' },
+        user: { id: 'u2', email: 'b@example.com' },
+      };
+    });
+    const store = makeStore();
+
+    await store.dispatch(checkLiveness());
+
+    expect(store.getState().auth.token).toBe(switchedToken);
+    expect(store.getState().auth.user?.id).toBe('u2');
+    expect(store.getState().auth.accountSwitchStatus).toBe('stable');
+    expect(store.getState().auth.switchedAccountEmail).toBe('b@example.com');
+    expect(probeSessionLivenessMock).not.toHaveBeenCalled();
+  });
+
+  it('已确认账号不一致但换票失败时保持阻塞，绝不继续旧身份探测', async () => {
+    reconcileSsoSessionMock.mockRejectedValue(
+      Object.assign(new Error('switch failed'), { blocking: true }),
+    );
+    const store = makeStore();
+
+    await store.dispatch(checkLiveness());
+
+    expect(store.getState().auth.accountSwitchStatus).toBe('blocked');
+    expect(store.getState().auth.isAuthenticated).toBe(true);
+    expect(getValidAccessTokenMock).not.toHaveBeenCalled();
+    expect(probeSessionLivenessMock).not.toHaveBeenCalled();
   });
 });

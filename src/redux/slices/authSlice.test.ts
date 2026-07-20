@@ -80,6 +80,10 @@ describe('authSlice', () => {
         token: 'token-123',
         status: 'succeeded',
         error: null,
+        sessionResolved: true,
+        accountSwitchStatus: 'stable',
+        accountSwitchError: null,
+        switchedAccountEmail: null,
       },
       checkUserState()
     );
@@ -106,6 +110,10 @@ describe('authSlice', () => {
         token: 'token-123',
         status: 'succeeded',
         error: null,
+        sessionResolved: true,
+        accountSwitchStatus: 'stable',
+        accountSwitchError: null,
+        switchedAccountEmail: null,
       },
       logout()
     );
@@ -117,6 +125,9 @@ describe('authSlice', () => {
       status: 'idle',
       error: null,
       sessionResolved: true,
+      accountSwitchStatus: 'stable',
+      accountSwitchError: null,
+      switchedAccountEmail: null,
     });
     expect(localStorage.getItem('auth_token')).toBeNull();
     expect(localStorage.getItem('user_profile')).toBeNull();
