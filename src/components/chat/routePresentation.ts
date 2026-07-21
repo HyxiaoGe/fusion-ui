@@ -7,7 +7,7 @@ export interface RoutePresentation {
   initialSelectedIndex: number;
 }
 
-export function findRecommendedRouteIndex(
+export function findFastestRouteIndex(
   routes: readonly ProviderRouteResult[],
 ): number | null {
   const timedRoutes = routes.flatMap((route, index) => (

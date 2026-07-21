@@ -1,23 +1,23 @@
 import { describe, expect, it } from 'vitest';
 import type { ProviderRouteResult } from '@/types/conversation';
-import { buildRoutePresentation, findRecommendedRouteIndex } from './routePresentation';
+import { buildRoutePresentation, findFastestRouteIndex } from './routePresentation';
 
-describe('findRecommendedRouteIndex', () => {
-  it('仅在至少两个方案中存在唯一最快方案时给出推荐', () => {
-    expect(findRecommendedRouteIndex([
+describe('findFastestRouteIndex', () => {
+  it('仅在至少两个方案中存在唯一最快方案时返回该方案', () => {
+    expect(findFastestRouteIndex([
       { mode: 'driving', duration_s: 1_080 },
       { mode: 'transit', duration_s: 1_980 },
       { mode: 'bicycling', duration_s: 2_220 },
     ])).toBe(0);
   });
 
-  it('单方案、并列最快或可比较用时不足时不推荐', () => {
-    expect(findRecommendedRouteIndex([{ mode: 'driving', duration_s: 1_080 }])).toBeNull();
-    expect(findRecommendedRouteIndex([
+  it('单方案、并列最快或可比较用时不足时不标记用时最短', () => {
+    expect(findFastestRouteIndex([{ mode: 'driving', duration_s: 1_080 }])).toBeNull();
+    expect(findFastestRouteIndex([
       { mode: 'driving', duration_s: 1_080 },
       { mode: 'transit', duration_s: 1_080 },
     ])).toBeNull();
-    expect(findRecommendedRouteIndex([
+    expect(findFastestRouteIndex([
       { mode: 'driving', duration_s: 1_080 },
       { mode: 'transit' },
     ])).toBeNull();

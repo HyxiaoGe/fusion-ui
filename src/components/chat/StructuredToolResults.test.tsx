@@ -261,6 +261,17 @@ describe('StructuredToolResults', () => {
     expect(within(region).getByText('部分路线可用')).toBeInTheDocument();
   });
 
+  it('路线卡片底部展示未按指定出发时间实时计算的边界说明', () => {
+    render(<StructuredToolResults blocks={[routeBlock({
+      limitations: ['未按指定出发时间的实时路况或班次计算'],
+    })]} />);
+
+    const region = screen.getByRole('region', { name: '路线对比结果' });
+    const limitation = within(region).getByText('未按指定出发时间的实时路况或班次计算');
+    expect(limitation).toHaveClass('mt-2', 'text-muted-foreground');
+    expect(region.lastElementChild).toBe(limitation);
+  });
+
   it('路线结果使用窄屏单列、宽屏两到三列的顶端对齐网格，并允许标题与指标换行', () => {
     render(<StructuredToolResults blocks={[routeBlock({
       routes: [
@@ -286,13 +297,15 @@ describe('StructuredToolResults', () => {
     expect(screen.getByText('驾车')).toHaveClass('min-w-0', 'break-words');
     expect(screen.getByText(/约 167 分钟/)).toHaveClass('min-w-0', 'break-words');
     const routeItems = within(screen.getByTestId('route-results-grid')).getAllByRole('article');
-    expect(within(routeItems[2]).getByText('AI 推荐')).toHaveClass(
+    expect(within(routeItems[2]).getByText('用时最短')).toHaveClass(
       'border-violet-300/70',
       'bg-gradient-to-r',
       'text-violet-600',
     );
-    expect(within(routeItems[0]).queryByText('AI 推荐')).toBeNull();
-    expect(within(routeItems[1]).queryByText('AI 推荐')).toBeNull();
+    expect(within(routeItems[2]).getByLabelText('本次返回方案中用时最短')).toBeInTheDocument();
+    expect(within(routeItems[0]).queryByText('用时最短')).toBeNull();
+    expect(within(routeItems[1]).queryByText('用时最短')).toBeNull();
+    expect(screen.queryByText('AI 推荐')).toBeNull();
   });
 
   it('三方案中仅公交有复杂详情时默认选中公交，并可在稳定详情面板切换方案', () => {
@@ -358,9 +371,11 @@ describe('StructuredToolResults', () => {
     expect(within(drivingSummary).getByTestId('route-mode-icon-driving')).toBeInTheDocument();
     expect(within(transitSummary).getByTestId('route-mode-icon-bus')).toBeInTheDocument();
     expect(within(cyclingSummary).getByTestId('route-mode-icon-bicycling')).toBeInTheDocument();
-    expect(within(drivingSummary).getByText('AI 推荐')).toBeInTheDocument();
-    expect(within(transitSummary).queryByText('AI 推荐')).toBeNull();
-    expect(within(cyclingSummary).queryByText('AI 推荐')).toBeNull();
+    expect(within(drivingSummary).getByText('用时最短')).toBeInTheDocument();
+    expect(within(drivingSummary).getByLabelText('本次返回方案中用时最短')).toBeInTheDocument();
+    expect(within(transitSummary).queryByText('用时最短')).toBeNull();
+    expect(within(cyclingSummary).queryByText('用时最短')).toBeNull();
+    expect(screen.queryByText('AI 推荐')).toBeNull();
 
     const detailPanel = screen.getByTestId('route-detail-panel');
     expect(within(detailPanel).getByText('公交')).toBeInTheDocument();

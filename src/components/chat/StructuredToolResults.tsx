@@ -21,7 +21,7 @@ import {
   Plus,
   Route,
   Ship,
-  Sparkles,
+  Timer,
   Train,
   TrainFront,
   TramFront,
@@ -48,7 +48,7 @@ import type {
   StructuredToolResultBlock,
 } from '@/types/conversation';
 import { cn } from '@/lib/utils';
-import { buildRoutePresentation, findRecommendedRouteIndex } from './routePresentation';
+import { buildRoutePresentation, findFastestRouteIndex } from './routePresentation';
 import {
   resolveTransportModePresentation,
   type TransportIconKind,
@@ -423,7 +423,7 @@ function RouteResults({ block }: { block: RouteResultsBlock }) {
 
 function RouteResultList({ routes }: { routes: ProviderRouteResult[] }) {
   const presentation = buildRoutePresentation(routes);
-  const recommendedRouteIndex = findRecommendedRouteIndex(routes);
+  const fastestRouteIndex = findFastestRouteIndex(routes);
   const [selectedRouteIndex, setSelectedRouteIndex] = useState<number | null>(null);
 
   if (presentation.variant === 'summary-detail') {
@@ -447,7 +447,7 @@ function RouteResultList({ routes }: { routes: ProviderRouteResult[] }) {
               key={`${route.mode || 'route'}-${index}`}
               route={route}
               selected={index === effectiveSelectedIndex}
-              recommended={index === recommendedRouteIndex}
+              fastest={index === fastestRouteIndex}
               onSelect={() => setSelectedRouteIndex(index)}
             />
           ))}
@@ -477,7 +477,7 @@ function RouteResultList({ routes }: { routes: ProviderRouteResult[] }) {
           <RouteResultItem
             key={`${route.mode || 'route'}-${index}`}
             route={route}
-            recommended={index === recommendedRouteIndex}
+            fastest={index === fastestRouteIndex}
           />
         ))}
       </div>
@@ -491,7 +491,7 @@ function RouteResultList({ routes }: { routes: ProviderRouteResult[] }) {
           <RouteResultItem
             key={`${route.mode || 'route'}-${index}`}
             route={route}
-            recommended={index === recommendedRouteIndex}
+            fastest={index === fastestRouteIndex}
           />
         ))}
       </div>
@@ -508,12 +508,12 @@ function RouteResultList({ routes }: { routes: ProviderRouteResult[] }) {
 function RouteSummaryButton({
   route,
   selected,
-  recommended,
+  fastest,
   onSelect,
 }: {
   route: ProviderRouteResult;
   selected: boolean;
-  recommended: boolean;
+  fastest: boolean;
   onSelect: () => void;
 }) {
   const label = routeModeLabel(route.mode, route.transit_type);
@@ -538,7 +538,7 @@ function RouteSummaryButton({
         <span className="min-w-0 break-words text-sm font-medium text-foreground">
           {label}
         </span>
-        {recommended ? <RouteRecommendationBadge /> : null}
+        {fastest ? <RouteFastestBadge /> : null}
       </span>
       {details ? (
         <span className="mt-1 block min-w-0 break-words text-xs text-muted-foreground">
@@ -625,11 +625,11 @@ const TRANSPORT_TONES: Record<TransportTone, string> = {
 
 function RouteResultItem({
   route,
-  recommended = false,
+  fastest = false,
   expandLegsByDefault = false,
 }: {
   route: ProviderRouteResult;
-  recommended?: boolean;
+  fastest?: boolean;
   expandLegsByDefault?: boolean;
 }) {
   const details = buildRouteDetails(route);
@@ -641,7 +641,7 @@ function RouteResultItem({
           <h4 className="min-w-0 break-words text-sm font-medium text-foreground">
             {routeModeLabel(route.mode, route.transit_type)}
           </h4>
-          {recommended ? <RouteRecommendationBadge /> : null}
+          {fastest ? <RouteFastestBadge /> : null}
         </div>
         {details ? (
           <span className="min-w-0 max-w-full break-words text-right text-xs text-muted-foreground">
@@ -658,14 +658,14 @@ function RouteResultItem({
   );
 }
 
-function RouteRecommendationBadge() {
+function RouteFastestBadge() {
   return (
     <span
-      aria-label="AI 推荐：本次返回方案中用时最短"
+      aria-label="本次返回方案中用时最短"
       className="inline-flex shrink-0 items-center gap-1 rounded-full border border-violet-300/70 bg-gradient-to-r from-violet-50 to-sky-50 px-1.5 py-0.5 text-[10px] font-medium leading-none text-violet-600 shadow-[0_1px_2px_rgba(124,58,237,0.08)] dark:border-violet-500/30 dark:from-violet-500/10 dark:to-sky-500/10 dark:text-violet-300"
     >
-      <Sparkles className="h-2.5 w-2.5" aria-hidden="true" />
-      AI 推荐
+      <Timer className="h-2.5 w-2.5" aria-hidden="true" />
+      用时最短
     </span>
   );
 }
