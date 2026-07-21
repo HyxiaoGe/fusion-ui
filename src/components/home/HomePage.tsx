@@ -3,15 +3,18 @@ import {
   ArrowUpRight,
   BarChart3,
   BookOpenCheck,
+  CalendarRange,
   Code2,
   FileText,
   Languages,
   Library,
   ListChecks,
+  MapPinned,
   PenLine,
   RefreshCw,
   Search,
   Sparkles,
+  UtensilsCrossed,
   type LucideIcon,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -115,6 +118,33 @@ const FALLBACK_STARTER_PROMPTS: StarterPrompt[] = [
     icon: Languages,
     tone: 'bg-fuchsia-500/10 text-fuchsia-600 dark:text-fuchsia-400',
   },
+  {
+    id: 'commute-planning',
+    title: '规划通勤',
+    description: '对比路线、耗时和换乘成本',
+    prompt: '我从【出发地】前往【目的地】，计划【出发时间】出发。请比较驾车、公共交通、骑行和步行等可用方式，给出具体路线，并根据用时、距离、换乘和步行距离推荐合适方案。',
+    category: '出行',
+    icon: MapPinned,
+    tone: 'bg-sky-500/10 text-sky-600 dark:text-sky-400',
+  },
+  {
+    id: 'weekend-itinerary',
+    title: '安排周末行程',
+    description: '串联地点、时间和交通路线',
+    prompt: '我计划【日期/时间】从【出发地】出发，想去【地点1、地点2、地点3】，一共【人数】人，偏好【兴趣】，预算【预算】。请推荐合理的游玩顺序，并规划每段路线和时间安排。',
+    category: '出行',
+    icon: CalendarRange,
+    tone: 'bg-orange-500/10 text-orange-600 dark:text-orange-400',
+  },
+  {
+    id: 'dining-entertainment',
+    title: '聚餐与娱乐',
+    description: '推荐地点并规划饭后转场',
+    prompt: '我计划【日期/时间】在【区域】和【人数】人聚餐，偏好【餐饮类型】，总预算【预算】，饭后想【娱乐活动】。请推荐合适地点，并规划聚餐与娱乐之间的转场路线。',
+    category: '出行',
+    icon: UtensilsCrossed,
+    tone: 'bg-teal-500/10 text-teal-600 dark:text-teal-400',
+  },
 ];
 
 // 后端灵感目录仍是真源；这组内容只负责保证 SSR 首帧有真实可用的入口，避免强刷后整块内容后插入。
@@ -155,6 +185,9 @@ const ICONS_BY_KEY: Record<string, LucideIcon> = {
   'list-checks': ListChecks,
   'book-open-check': BookOpenCheck,
   languages: Languages,
+  'map-pinned': MapPinned,
+  'calendar-range': CalendarRange,
+  'utensils-crossed': UtensilsCrossed,
 };
 
 const TONES_BY_KEY: Record<string, string> = {
@@ -166,6 +199,9 @@ const TONES_BY_KEY: Record<string, string> = {
   rose: 'bg-rose-500/10 text-rose-600 dark:text-rose-400',
   indigo: 'bg-indigo-500/10 text-indigo-600 dark:text-indigo-400',
   fuchsia: 'bg-fuchsia-500/10 text-fuchsia-600 dark:text-fuchsia-400',
+  sky: 'bg-sky-500/10 text-sky-600 dark:text-sky-400',
+  orange: 'bg-orange-500/10 text-orange-600 dark:text-orange-400',
+  teal: 'bg-teal-500/10 text-teal-600 dark:text-teal-400',
 };
 
 const FALLBACK_LIBRARY_TEMPLATES: PromptTemplateListItem[] = [
@@ -270,7 +306,7 @@ interface HomePageProps {
 
 const HomePage: React.FC<HomePageProps> = ({ onSelectPrompt }) => {
   useRenderProbe('HomePage');
-  const [pageIndex, setPageIndex] = useState(0);
+  const [starterStartIndex, setStarterStartIndex] = useState(0);
   const [starterPrompts, setStarterPrompts] = useState(FALLBACK_STARTER_PROMPTS);
   const [areStartersFlipped, setAreStartersFlipped] = useState(false);
   const [isStarterPaused, setIsStarterPaused] = useState(false);
@@ -291,11 +327,15 @@ const HomePage: React.FC<HomePageProps> = ({ onSelectPrompt }) => {
   const inspirationMeasureRef = useRef<HTMLDivElement>(null);
   const starterFlipTimeoutsRef = useRef<Array<ReturnType<typeof setTimeout>>>([]);
   const flipTimeoutsRef = useRef<Array<ReturnType<typeof setTimeout>>>([]);
-  const pageCount = Math.max(1, Math.ceil(starterPrompts.length / STARTER_PAGE_SIZE));
   const visibleStarters = useMemo(() => {
-    const start = pageIndex * STARTER_PAGE_SIZE;
-    return starterPrompts.slice(start, start + STARTER_PAGE_SIZE);
-  }, [pageIndex, starterPrompts]);
+    if (starterPrompts.length <= STARTER_PAGE_SIZE) {
+      return starterPrompts;
+    }
+    return Array.from(
+      { length: STARTER_PAGE_SIZE },
+      (_, offset) => starterPrompts[(starterStartIndex + offset) % starterPrompts.length],
+    );
+  }, [starterPrompts, starterStartIndex]);
   const inspirations = useMemo(() => fitInspirationRows(
     inspirationPool,
     inspirationStartIndex,
@@ -333,9 +373,9 @@ const HomePage: React.FC<HomePageProps> = ({ onSelectPrompt }) => {
           .map(toStarterPrompt);
         const remoteTemplates = enabledItems.map(toLibraryTemplate);
 
-        if (remoteStarters.length > 0) {
+        if (remoteStarters.length >= STARTER_PAGE_SIZE) {
           setStarterPrompts(remoteStarters);
-          setPageIndex(0);
+          setStarterStartIndex(0);
         }
         if (remoteTemplates.length > 0) {
           setLibraryTemplates(remoteTemplates);
@@ -430,7 +470,7 @@ const HomePage: React.FC<HomePageProps> = ({ onSelectPrompt }) => {
   ]);
 
   const showNextPage = useCallback(() => {
-    if (pageCount <= 1 || visibleStarters.length === 0) return;
+    if (starterPrompts.length <= STARTER_PAGE_SIZE) return;
 
     starterFlipTimeoutsRef.current.forEach(clearTimeout);
     starterFlipTimeoutsRef.current = [];
@@ -439,18 +479,20 @@ const HomePage: React.FC<HomePageProps> = ({ onSelectPrompt }) => {
     const replaceDelay = visibleStarters.length * CAROUSEL_FLIP_STAGGER
       + CAROUSEL_REPLACE_PADDING;
     starterFlipTimeoutsRef.current.push(setTimeout(() => {
-      setPageIndex((current) => (current + 1) % pageCount);
+      setStarterStartIndex((current) => (
+        (current + STARTER_PAGE_SIZE) % starterPrompts.length
+      ));
       starterFlipTimeoutsRef.current.push(setTimeout(() => {
         setAreStartersFlipped(false);
       }, CAROUSEL_FLIP_BACK_DELAY));
     }, replaceDelay));
-  }, [pageCount, visibleStarters]);
+  }, [starterPrompts.length, visibleStarters.length]);
 
   useEffect(() => {
-    if (isStarterPaused || pageCount <= 1) return undefined;
+    if (isStarterPaused || starterPrompts.length <= STARTER_PAGE_SIZE) return undefined;
     const intervalId = window.setInterval(showNextPage, STARTER_ROTATE_INTERVAL);
     return () => window.clearInterval(intervalId);
-  }, [isStarterPaused, pageCount, showNextPage]);
+  }, [isStarterPaused, showNextPage, starterPrompts.length]);
 
   const selectTemplate = useCallback((content: string) => {
     setTemplatesOpen(false);
