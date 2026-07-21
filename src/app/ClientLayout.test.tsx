@@ -16,12 +16,15 @@ const {
   checkLivenessMock,
   resumeSsoSessionMock,
   adoptCommittedSsoSessionMock,
+  settleSdkUnauthenticatedSessionMock,
   resolveSessionMock,
   setGlobalToastMock,
   maybeSilentLoginMock,
   canAutoResumeSessionMock,
   subscribeSsoStateMock,
   beginAuthSessionTransitionMock,
+  isAuthSessionTransitionErrorMock,
+  waitForAuthSessionStableMock,
   routerReplaceMock,
   toastSuccessMock,
 } = vi.hoisted(() => ({
@@ -53,12 +56,24 @@ const {
     type: 'auth/adoptCommittedSsoSession',
     payload,
   })),
+  settleSdkUnauthenticatedSessionMock: vi.fn(() => ({
+    type: 'auth/settleSdkUnauthenticatedSession',
+  })),
   resolveSessionMock: vi.fn(() => ({ type: 'auth/resolveSession' })),
   setGlobalToastMock: vi.fn(),
   maybeSilentLoginMock: vi.fn(() => false),
   canAutoResumeSessionMock: vi.fn(() => true),
   subscribeSsoStateMock: vi.fn(() => vi.fn()),
   beginAuthSessionTransitionMock: vi.fn(),
+  isAuthSessionTransitionErrorMock: vi.fn(
+    (error: unknown) => (
+      typeof error === 'object'
+      && error !== null
+      && 'code' in error
+      && error.code === 'AUTH_SESSION_TRANSITION'
+    ),
+  ),
+  waitForAuthSessionStableMock: vi.fn(() => Promise.resolve()),
   routerReplaceMock: vi.fn(),
   toastSuccessMock: vi.fn(),
 }));
@@ -103,6 +118,7 @@ vi.mock('@/redux/slices/authSlice', () => ({
   checkLiveness: checkLivenessMock,
   resumeSsoSession: resumeSsoSessionMock,
   adoptCommittedSsoSession: adoptCommittedSsoSessionMock,
+  settleSdkUnauthenticatedSession: settleSdkUnauthenticatedSessionMock,
   resolveSession: resolveSessionMock,
   setToken: vi.fn(),
 }));
@@ -118,6 +134,8 @@ vi.mock('@/lib/auth/authService', () => ({
 
 vi.mock('@/lib/auth/sessionTransition', () => ({
   beginAuthSessionTransition: beginAuthSessionTransitionMock,
+  isAuthSessionTransitionError: isAuthSessionTransitionErrorMock,
+  waitForAuthSessionStable: waitForAuthSessionStableMock,
 }));
 
 vi.mock('@/components/ui/toast', () => ({
@@ -172,6 +190,7 @@ describe('ClientLayout', () => {
     checkLivenessMock.mockClear();
     resumeSsoSessionMock.mockClear();
     adoptCommittedSsoSessionMock.mockClear();
+    settleSdkUnauthenticatedSessionMock.mockClear();
     resolveSessionMock.mockClear();
     setGlobalToastMock.mockClear();
     maybeSilentLoginMock.mockReset();
@@ -180,6 +199,9 @@ describe('ClientLayout', () => {
     canAutoResumeSessionMock.mockReturnValue(true);
     subscribeSsoStateMock.mockClear();
     beginAuthSessionTransitionMock.mockClear();
+    isAuthSessionTransitionErrorMock.mockClear();
+    waitForAuthSessionStableMock.mockReset();
+    waitForAuthSessionStableMock.mockResolvedValue();
     routerReplaceMock.mockClear();
     toastSuccessMock.mockClear();
   });
@@ -264,6 +286,42 @@ describe('ClientLayout', () => {
     });
   });
 
+  it('waits for a stable auth session and retries model initialization without logging a transition error', async () => {
+    const transitionError = Object.assign(new Error('账户正在同步'), {
+      code: 'AUTH_SESSION_TRANSITION',
+    });
+    let releaseStable!: () => void;
+    initializeModelsMock
+      .mockRejectedValueOnce(transitionError)
+      .mockResolvedValueOnce({
+        models: [{ id: 'model-after-switch' }],
+        providers: [{ id: 'qwen', name: '通义千问', order: 1 }],
+      });
+    waitForAuthSessionStableMock.mockReturnValue(new Promise<void>((resolve) => {
+      releaseStable = resolve;
+    }));
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    render(
+      React.createElement(ClientLayout, null, React.createElement('div', null, 'child'))
+    );
+
+    await waitFor(() => {
+      expect(initializeModelsMock).toHaveBeenCalledTimes(1);
+      expect(waitForAuthSessionStableMock).toHaveBeenCalledTimes(1);
+    });
+    expect(updateModelsMock).not.toHaveBeenCalled();
+    expect(consoleError).not.toHaveBeenCalled();
+
+    releaseStable();
+
+    await waitFor(() => {
+      expect(initializeModelsMock).toHaveBeenCalledTimes(2);
+      expect(updateModelsMock).toHaveBeenCalledWith([{ id: 'model-after-switch' }]);
+    });
+    expect(consoleError).not.toHaveBeenCalled();
+  });
+
   it('runs a read-only liveness probe on window focus when authenticated (SLO)', async () => {
     // 跨应用单点登出：别处登出后本标签页令牌仍密码学有效，重新聚焦时做一次【只读】存活探测。
     currentAuthState.isAuthenticated = true;
@@ -336,7 +394,7 @@ describe('ClientLayout', () => {
     expect(probeDispatches).toHaveLength(1);
   });
 
-  it('blocks and adopts the SDK session committed by a sibling tab', async () => {
+  it('blocks and adopts the SDK session committed by a sibling tab only once for duplicate authenticated notifications', async () => {
     currentAuthState.isAuthenticated = true;
     currentAuthState.status = 'succeeded';
     let listener: ((state: {
@@ -360,10 +418,39 @@ describe('ClientLayout', () => {
     expect(appDispatchMock).toHaveBeenCalledWith({ type: 'auth/accountSessionSwitchStarted' });
 
     act(() => listener?.({ status: 'authenticated', user: { email: 'b@example.com' } }));
+    act(() => listener?.({ status: 'authenticated', user: { email: 'b@example.com' } }));
     expect(adoptCommittedSsoSessionMock).toHaveBeenCalledWith({ email: 'b@example.com' });
+    expect(adoptCommittedSsoSessionMock).toHaveBeenCalledTimes(1);
     expect(appDispatchMock).toHaveBeenCalledWith({
       type: 'auth/adoptCommittedSsoSession',
       payload: { email: 'b@example.com' },
+    });
+  });
+
+  it('settles the host Redux session when the SDK reports a definitive unauthenticated state', async () => {
+    currentAuthState.isAuthenticated = true;
+    currentAuthState.status = 'succeeded';
+    let listener: ((state: {
+      status: 'unauthenticated';
+      user: null;
+    }) => void) | null = null;
+    (subscribeSsoStateMock as unknown as {
+      mockImplementation: (implementation: (next: typeof listener) => () => void) => void;
+    }).mockImplementation((next: typeof listener) => {
+      listener = next;
+      return vi.fn();
+    });
+
+    render(
+      React.createElement(ClientLayout, null, React.createElement('div', null, 'child'))
+    );
+    await waitFor(() => expect(subscribeSsoStateMock).toHaveBeenCalledTimes(1));
+
+    act(() => listener?.({ status: 'unauthenticated', user: null }));
+
+    expect(settleSdkUnauthenticatedSessionMock).toHaveBeenCalledTimes(1);
+    expect(appDispatchMock).toHaveBeenCalledWith({
+      type: 'auth/settleSdkUnauthenticatedSession',
     });
   });
 

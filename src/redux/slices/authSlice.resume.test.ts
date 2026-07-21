@@ -5,17 +5,19 @@ const {
   resumeCentralSessionMock,
   getStoredAccessTokenMock,
   fetchUserProfileAPIMock,
+  clearFusionProfileStorageMock,
 } = vi.hoisted(() => ({
   resumeCentralSessionMock: vi.fn(),
   getStoredAccessTokenMock: vi.fn<() => string | null>(() => null),
   fetchUserProfileAPIMock: vi.fn(),
+  clearFusionProfileStorageMock: vi.fn(),
 }));
 
 vi.mock('@/lib/auth/authService', () => ({
   resumeCentralSession: resumeCentralSessionMock,
   getStoredAccessToken: getStoredAccessTokenMock,
   clearAuthStorage: vi.fn(),
-  clearFusionProfileStorage: vi.fn(),
+  clearFusionProfileStorage: clearFusionProfileStorageMock,
   completeSsoCallback: vi.fn(),
   getValidAccessToken: vi.fn(),
   probeSessionLiveness: vi.fn(),
@@ -35,7 +37,18 @@ vi.mock('../../lib/api/user', () => ({
   updateUserSettingsAPI: vi.fn(),
 }));
 
-import authReducer, { resumeSsoSession } from './authSlice';
+import {
+  beginAuthSessionTransition,
+  getAuthSessionTransitionState,
+  resetAuthSessionTransitionForTests,
+} from '@/lib/auth/sessionTransition';
+import { accountSessionSwitchStarted } from '@/redux/actions/authSessionActions';
+import authReducer, {
+  adoptCommittedSsoSession,
+  resumeSsoSession,
+  setToken,
+  settleSdkUnauthenticatedSession,
+} from './authSlice';
 
 const PROFILE = {
   id: 'user-resumed',
@@ -61,7 +74,27 @@ describe('resumeSsoSession thunk', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     localStorage.clear();
+    resetAuthSessionTransitionForTests();
     fetchUserProfileAPIMock.mockResolvedValue(PROFILE);
+  });
+
+  it('closes an already-adopted sibling session transition instead of leaving the overlay spinning', async () => {
+    const token = tokenFor(PROFILE.id);
+    getStoredAccessTokenMock.mockReturnValue(token);
+    const store = configureStore({ reducer: { auth: authReducer } });
+    store.dispatch(setToken(token));
+    beginAuthSessionTransition();
+    store.dispatch(accountSessionSwitchStarted());
+
+    const result = await store.dispatch(adoptCommittedSsoSession({
+      email: PROFILE.email,
+    })).unwrap();
+
+    expect(result).toBe(token);
+    expect(getAuthSessionTransitionState()).toBe('stable');
+    expect(store.getState().auth.accountSwitchStatus).toBe('stable');
+    expect(store.getState().auth.switchedAccountEmail).toBe(PROFILE.email);
+    expect(fetchUserProfileAPIMock).not.toHaveBeenCalled();
   });
 
   it('adopts the SDK atomically committed token and enters authenticated state', async () => {
@@ -105,5 +138,48 @@ describe('resumeSsoSession thunk', () => {
     expect(store.getState().auth.isAuthenticated).toBe(true);
     expect(store.getState().auth.user?.id).toBe(PROFILE.id);
     expect(store.getState().auth.accountSwitchStatus).toBe('stable');
+  });
+
+  it('blocks a transition when central resume rejects after beforeCommit instead of spinning forever', async () => {
+    resumeCentralSessionMock.mockImplementation(async (options) => {
+      await options?.beforeCommit?.({ user: PROFILE });
+      throw new Error('central resume failed');
+    });
+    const store = configureStore({ reducer: { auth: authReducer } });
+
+    await expect(store.dispatch(resumeSsoSession()).unwrap()).rejects.toThrow(
+      'central resume failed',
+    );
+
+    expect(getAuthSessionTransitionState()).toBe('blocked');
+    expect(store.getState().auth.accountSwitchStatus).toBe('blocked');
+    expect(store.getState().auth.accountSwitchError).toBe('central resume failed');
+  });
+
+  it('settles Redux immediately when the SDK definitively clears its stored session', async () => {
+    const token = tokenFor(PROFILE.id);
+    const store = configureStore({ reducer: { auth: authReducer } });
+    store.dispatch(setToken(token));
+    getStoredAccessTokenMock.mockReturnValue(null);
+
+    await store.dispatch(settleSdkUnauthenticatedSession());
+
+    expect(store.getState().auth.isAuthenticated).toBe(false);
+    expect(store.getState().auth.token).toBeNull();
+    expect(store.getState().auth.accountSwitchStatus).toBe('stable');
+    expect(clearFusionProfileStorageMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('ignores a stale SDK unauthenticated notification when a newer stored session already exists', async () => {
+    const token = tokenFor(PROFILE.id);
+    getStoredAccessTokenMock.mockReturnValue(token);
+    const store = configureStore({ reducer: { auth: authReducer } });
+    store.dispatch(setToken(token));
+
+    await store.dispatch(settleSdkUnauthenticatedSession());
+
+    expect(store.getState().auth.isAuthenticated).toBe(true);
+    expect(store.getState().auth.token).toBe(token);
+    expect(clearFusionProfileStorageMock).not.toHaveBeenCalled();
   });
 });

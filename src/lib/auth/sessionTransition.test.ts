@@ -12,6 +12,7 @@ import {
   registerAuthBoundRequest,
   resetAuthSessionTransitionForTests,
   subscribeAuthSessionTransition,
+  waitForAuthSessionStable,
 } from './sessionTransition';
 
 afterEach(() => {
@@ -49,6 +50,21 @@ describe('认证会话切换栅栏', () => {
     expect(listener).toHaveBeenNthCalledWith(1, 'synchronizing');
     expect(listener).toHaveBeenNthCalledWith(2, 'blocked');
     expect(() => assertAuthSessionStable()).toThrow(AuthSessionTransitionError);
+  });
+
+  it('只在会话重新稳定后唤醒等待方', async () => {
+    beginAuthSessionTransition();
+    let resolved = false;
+    const pending = waitForAuthSessionStable().then(() => {
+      resolved = true;
+    });
+
+    await Promise.resolve();
+    expect(resolved).toBe(false);
+
+    completeAuthSessionTransition();
+    await pending;
+    expect(resolved).toBe(true);
   });
 
   it('旧身份响应即使已经返回，也不能在切换后继续读取', async () => {

@@ -16,6 +16,17 @@ export class AuthSessionTransitionError extends Error {
   }
 }
 
+export function isAuthSessionTransitionError(
+  error: unknown,
+): error is AuthSessionTransitionError {
+  return error instanceof AuthSessionTransitionError || (
+    typeof error === 'object'
+    && error !== null
+    && 'code' in error
+    && error.code === 'AUTH_SESSION_TRANSITION'
+  );
+}
+
 function publish(next: AuthSessionTransitionState): void {
   transitionState = next;
   transitionEpoch += 1;
@@ -144,6 +155,46 @@ export function bindResponseToAuthSession(
 export function subscribeAuthSessionTransition(listener: TransitionListener): () => void {
   listeners.add(listener);
   return () => listeners.delete(listener);
+}
+
+export function waitForAuthSessionStable(signal?: AbortSignal): Promise<void> {
+  if (transitionState === 'stable') return Promise.resolve();
+
+  return new Promise<void>((resolve, reject) => {
+    let settled = false;
+    let unsubscribe: () => void = () => undefined;
+
+    const cleanup = () => {
+      unsubscribe();
+      signal?.removeEventListener('abort', onAbort);
+    };
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      resolve();
+    };
+    const onAbort = () => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      reject(signal?.reason instanceof Error
+        ? signal.reason
+        : new DOMException('等待认证会话稳定已取消', 'AbortError'));
+    };
+
+    unsubscribe = subscribeAuthSessionTransition((state) => {
+      if (state === 'stable') finish();
+    });
+    signal?.addEventListener('abort', onAbort, { once: true });
+
+    // 订阅建立前后的状态可能恰好完成切换；二次读取避免错过 stable 通知。
+    if (signal?.aborted) {
+      onAbort();
+    } else if (transitionState === 'stable') {
+      finish();
+    }
+  });
 }
 
 export function resetAuthSessionTransitionForTests(): void {

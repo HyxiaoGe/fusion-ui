@@ -19,10 +19,15 @@ import {
   fetchUserProfile,
   resolveSession,
   resumeSsoSession,
+  settleSdkUnauthenticatedSession,
 } from "@/redux/slices/authSlice";
 import { canAutoResumeSession, maybeSilentLogin } from "@/lib/auth/sso-probe";
 import { subscribeSsoState } from "@/lib/auth/authService";
-import { beginAuthSessionTransition } from "@/lib/auth/sessionTransition";
+import {
+  beginAuthSessionTransition,
+  isAuthSessionTransitionError,
+  waitForAuthSessionStable,
+} from "@/lib/auth/sessionTransition";
 import {
   accountSessionSwitchCompleted,
   accountSessionSwitchStarted,
@@ -53,18 +58,34 @@ function ModelConfigInitializer() {
   const dispatch = useDispatch();
   
   useEffect(() => {
+    const abortController = new AbortController();
 
     const initializeAppModels = async () => {
-      try {
-        const { models, providers } = await initializeModels();
-        dispatch(updateModels(models));
-        dispatch(updateProviders(providers));
-      } catch (error) {
-        console.error('Failed to initialize models:', error);
+      while (!abortController.signal.aborted) {
+        try {
+          const { models, providers } = await initializeModels();
+          if (abortController.signal.aborted) return;
+          dispatch(updateModels(models));
+          dispatch(updateProviders(providers));
+          return;
+        } catch (error) {
+          if (!isAuthSessionTransitionError(error)) {
+            console.error('Failed to initialize models:', error);
+            return;
+          }
+          // 账户切换会主动中止旧身份请求。这是预期控制流：等待新会话稳定后
+          // 重新读取模型配置，不能把它上报成开发错误或让初始化永久失败。
+          try {
+            await waitForAuthSessionStable(abortController.signal);
+          } catch {
+            return;
+          }
+        }
       }
     };
     
-    initializeAppModels();
+    void initializeAppModels();
+    return () => abortController.abort();
   }, [dispatch]);
   
   return null;
@@ -101,6 +122,13 @@ const ClientLayout = ({ children }: { children: React.ReactNode }) => {
         sdkSwitchObserved.current = false;
         // 同源兄弟标签完成换票时，SDK localStorage 已更新；宿主也必须采用新 token/profile。
         void dispatch(adoptCommittedSsoSession({ email: sdkState.user.email ?? '' }));
+        return;
+      }
+      if (sdkState.status === 'unauthenticated') {
+        sdkSwitchObserved.current = false;
+        // refresh/logout 的确定性清理会先落共享存储再发布状态；宿主同步重读后收敛 Redux，
+        // 避免 SDK 已登出而页面仍保留旧头像和旧用户权限。
+        void dispatch(settleSdkUnauthenticatedSession());
       }
     });
   }, [dispatch]);

@@ -454,6 +454,14 @@ export const adoptCommittedSsoSession = createAsyncThunk<
 
   const current = getState().auth;
   if (current.token === switchedToken && current.user?.id === switchedSubject) {
+    // SDK subscriber 与 reconcile promise 可能同时采用同一次提交。即使 token/user 已一致，
+    // 当前路径仍负责关闭此前 synchronizing 屏障；否则遮罩会永久停留。
+    completeAuthSessionTransition();
+    if (current.accountSwitchStatus !== 'stable') {
+      dispatch(accountSessionSwitchCompleted({
+        email: email ?? current.user.email ?? '',
+      }));
+    }
     return switchedToken;
   }
 
@@ -479,19 +487,48 @@ export const resumeSsoSession = createAsyncThunk<
   void,
   { state: { auth: AuthState } }
 >('auth/resumeSsoSession', async (_, { dispatch }) => {
-  const result = await resumeCentralSession({
-    beforeCommit: () => {
-      // SDK 尚未落 B 票据；先封住 A 的请求并让所有用户绑定 slice 清空。
-      beginAuthSessionTransition();
-      dispatch(accountSessionSwitchStarted());
-    },
-  });
+  let transitionStarted = false;
+  let result: Awaited<ReturnType<typeof resumeCentralSession>>;
+  try {
+    result = await resumeCentralSession({
+      beforeCommit: () => {
+        // SDK 尚未落 B 票据；先封住 A 的请求并让所有用户绑定 slice 清空。
+        transitionStarted = true;
+        beginAuthSessionTransition();
+        dispatch(accountSessionSwitchStarted());
+      },
+    });
+  } catch (error) {
+    // beforeCommit 之后失败说明旧会话已被封锁但新会话没有提交，必须把无限转圈
+    // 收敛为可重试的 blocked 终态；beforeCommit 之前的普通网络错误不改变现有 UI。
+    if (transitionStarted) {
+      blockAuthSessionTransition();
+      dispatch(accountSessionSwitchBlocked(
+        error instanceof Error ? error.message : '中央会话恢复失败，请重试',
+      ));
+    }
+    throw error;
+  }
   if (result.status === 'no_session') return 'no_session';
   await dispatch(adoptCommittedSsoSession({
     email: result.status === 'resumed' ? result.user.email ?? '' : '',
   }));
   return result.status;
 });
+
+/**
+ * SDK 已确定性进入 unauthenticated 时，同步收敛 Fusion 自己的 Redux/profile。
+ * 通知可能晚于兄弟标签提交 B，因此必须先同步重读共享存储；只要已有新 token 就忽略旧通知。
+ */
+export const settleSdkUnauthenticatedSession = createAsyncThunk(
+  'auth/settleSdkUnauthenticatedSession',
+  async (_, { dispatch }) => {
+    if (getStoredAccessToken() !== null) return;
+    clearFusionProfileStorage();
+    completeAuthSessionTransition();
+    dispatch(remoteSessionCleared());
+  },
+);
 
 /**
  * 服务端已明确拒绝当前票据时的本地收敛。与显式 logoutWithSso 不同：不写登出守卫、
@@ -554,6 +591,7 @@ export const checkLiveness = createAsyncThunk<
   { state: { auth: AuthState } }
 >('auth/checkLiveness', async (_, { dispatch, getState }) => {
   let expectedAccessToken = getState().auth.token ?? getStoredAccessToken();
+  let reconciliationConfirmedMatch = false;
   try {
     const reconciliation = await reconcileSsoSession({
       beforeCommit: () => {
@@ -587,6 +625,7 @@ export const checkLiveness = createAsyncThunk<
       dispatch(accountSessionSwitchCompleted({ email: reconciliation.user.email ?? '' }));
       return switchedToken;
     }
+    reconciliationConfirmedMatch = reconciliation.status === 'match';
   } catch (err) {
     if (isBlockingReconcileFailure(err)) {
       blockAuthSessionTransition();
@@ -610,6 +649,17 @@ export const checkLiveness = createAsyncThunk<
   }
   try {
     await probeSessionLiveness(token);
+    // blocked 重试只有在中央会话明确 match 且资源服务确认当前票据仍存活时才能开放。
+    // 网络降级路径没有中央身份结论，绝不能借一次 200 擅自解除已确认的账号分叉屏障。
+    if (
+      reconciliationConfirmedMatch
+      && getState().auth.accountSwitchStatus !== 'stable'
+    ) {
+      completeAuthSessionTransition();
+      dispatch(accountSessionSwitchCompleted({
+        email: getState().auth.user?.email ?? '',
+      }));
+    }
   } catch (err) {
     if (isAuthRejection(err)) {
       expectedAccessToken = token;

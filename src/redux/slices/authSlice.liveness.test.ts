@@ -59,6 +59,12 @@ vi.mock('../../lib/api/user', () => ({
 }));
 
 import authReducer, { checkLiveness } from './authSlice';
+import {
+  beginAuthSessionTransition,
+  blockAuthSessionTransition,
+  getAuthSessionTransitionState,
+  resetAuthSessionTransitionForTests,
+} from '@/lib/auth/sessionTransition';
 
 const AUTHED = {
   isAuthenticated: true,
@@ -88,6 +94,7 @@ describe('checkLiveness thunk (read-only SLO probe)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     localStorage.clear();
+    resetAuthSessionTransitionForTests();
     probeSessionLivenessMock.mockResolvedValue(undefined);
     reconcileSsoSessionMock.mockResolvedValue({ status: 'match' });
     getStoredAccessTokenMock.mockReturnValue(null);
@@ -271,5 +278,29 @@ describe('checkLiveness thunk (read-only SLO probe)', () => {
     expect(store.getState().auth.isAuthenticated).toBe(true);
     expect(getValidAccessTokenMock).not.toHaveBeenCalled();
     expect(probeSessionLivenessMock).not.toHaveBeenCalled();
+  });
+
+  it('重试确认中央会话匹配且存活后关闭 blocked 屏障', async () => {
+    beginAuthSessionTransition();
+    blockAuthSessionTransition();
+    getValidAccessTokenMock.mockResolvedValue('cached-token');
+    reconcileSsoSessionMock.mockResolvedValue({ status: 'match' });
+    probeSessionLivenessMock.mockResolvedValue(undefined);
+    const store = configureStore({
+      reducer: { auth: authReducer },
+      preloadedState: {
+        auth: {
+          ...AUTHED,
+          accountSwitchStatus: 'blocked' as const,
+          accountSwitchError: 'switch failed',
+        },
+      },
+    });
+
+    await store.dispatch(checkLiveness());
+
+    expect(getAuthSessionTransitionState()).toBe('stable');
+    expect(store.getState().auth.accountSwitchStatus).toBe('stable');
+    expect(store.getState().auth.accountSwitchError).toBeNull();
   });
 });
