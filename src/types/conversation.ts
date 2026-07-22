@@ -103,6 +103,16 @@ export interface ProviderPlacePhoto {
   title?: string | null;
 }
 
+export interface StructuredResultAttribution {
+  label: string;
+}
+
+export interface StructuredResultAction {
+  kind: 'open_external';
+  label: string;
+  url: string;
+}
+
 export interface ProviderPlaceResult {
   provider_place_id?: string | null;
   name?: string | null;
@@ -116,6 +126,8 @@ export interface ProviderPlaceResult {
   reference_cost_yuan?: number | null;
   open_hours?: string | null;
   detail_status?: 'enriched' | 'unavailable' | 'budget_limited' | 'not_requested' | null;
+  actions?: StructuredResultAction[] | null;
+  /** 兼容早期地点结果；运行时会转换为 actions。 */
   platform_url?: string | null;
 }
 
@@ -124,6 +136,7 @@ export interface PlaceResultsBlock {
   id: string;
   schema_version: 1;
   provider?: string | null;
+  attribution?: StructuredResultAttribution | null;
   query?: string | null;
   near?: string | null;
   status?: 'success' | 'degraded' | null;
@@ -182,6 +195,7 @@ export interface RouteResultsBlock {
   id: string;
   schema_version: 1;
   provider?: string | null;
+  attribution?: StructuredResultAttribution | null;
   origin?: ProviderRouteEndpoint | null;
   destination?: ProviderRouteEndpoint | null;
   routes?: ProviderRouteResult[] | null;
@@ -191,7 +205,18 @@ export interface RouteResultsBlock {
   tool_call_log_id?: string | null;
 }
 
-export type StructuredToolResultBlock = PlaceResultsBlock | RouteResultsBlock;
+export interface UnsupportedResultBlock {
+  type: 'unsupported_result';
+  id: string;
+  source_type: string;
+  source_schema_version?: number;
+  reason: 'unsupported_type' | 'unsupported_version' | 'invalid_payload';
+}
+
+export type StructuredToolResultBlock =
+  | PlaceResultsBlock
+  | RouteResultsBlock
+  | UnsupportedResultBlock;
 
 export type ContentBlock =
   | TextBlock

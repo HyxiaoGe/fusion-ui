@@ -59,13 +59,44 @@ interface StructuredToolResultsProps {
   blocks: StructuredToolResultBlock[];
 }
 
+type StructuredToolResultRendererRegistry = {
+  [Type in StructuredToolResultBlock['type']]: (
+    block: Extract<StructuredToolResultBlock, { type: Type }>,
+  ) => ReactNode;
+};
+
+const STRUCTURED_TOOL_RESULT_RENDERERS = {
+  place_results: block => <PlaceResults key={block.id} block={block} />,
+  route_results: block => <RouteResults key={block.id} block={block} />,
+  unsupported_result: block => <UnsupportedResult key={block.id} />,
+} satisfies StructuredToolResultRendererRegistry;
+
+export const STRUCTURED_TOOL_RESULT_RENDERER_TYPES = Object.freeze(
+  Object.keys(STRUCTURED_TOOL_RESULT_RENDERERS) as StructuredToolResultBlock['type'][],
+);
+
 export default function StructuredToolResults({ blocks }: StructuredToolResultsProps) {
   if (blocks.length === 0) return null;
   return (
     <div className="mb-3 w-full space-y-3" data-testid="structured-tool-results">
-      {blocks.map(block => block.type === 'place_results'
-        ? <PlaceResults key={block.id} block={block} />
-        : <RouteResults key={block.id} block={block} />)}
+      {blocks.map(renderStructuredToolResult)}
+    </div>
+  );
+}
+
+function renderStructuredToolResult(block: StructuredToolResultBlock): ReactNode {
+  if (block.type === 'place_results') return STRUCTURED_TOOL_RESULT_RENDERERS.place_results(block);
+  if (block.type === 'route_results') return STRUCTURED_TOOL_RESULT_RENDERERS.route_results(block);
+  return STRUCTURED_TOOL_RESULT_RENDERERS.unsupported_result(block);
+}
+
+function UnsupportedResult() {
+  return (
+    <div
+      className="rounded-xl border border-border/70 bg-muted/30 px-4 py-3 text-sm text-muted-foreground"
+      data-testid="unsupported-structured-result"
+    >
+      此结果暂不受当前版本支持，请刷新页面或稍后再试。
     </div>
   );
 }
@@ -84,7 +115,7 @@ function PlaceResults({ block }: { block: PlaceResultsBlock }) {
       <ResultHeader
         icon={<MapPin className="h-4 w-4 text-teal" aria-hidden="true" />}
         title={buildPlaceTitle(block)}
-        provider={block.provider}
+        attribution={block.attribution}
         status={block.status}
         statusText={block.status === 'degraded' ? '部分地点可用' : `${resultCount} 个地点`}
       />
@@ -125,7 +156,7 @@ function PlaceResultItem({ place }: { place: ProviderPlaceResult }) {
   const name = safeText(place.name) || '地点信息待补充';
   const photos = securePhotos(place.photos);
   const showImageLayout = photos.length > 0;
-  const platformUrl = safeAmapUrl(place.platform_url);
+  const primaryAction = secureExternalActions(place.actions)[0];
   const metadata = compact([
     safeText(place.category),
     formatDistance(place.distance_m),
@@ -156,15 +187,15 @@ function PlaceResultItem({ place }: { place: ProviderPlaceResult }) {
               <p className="mt-0.5 line-clamp-1 text-xs text-muted-foreground">{place.open_hours}</p>
             ) : null}
           </div>
-          {platformUrl ? (
+          {primaryAction ? (
             <a
-              href={platformUrl}
+              href={primaryAction.url}
               target="_blank"
               rel="noopener noreferrer"
-              aria-label="高德查看"
+              aria-label={primaryAction.label}
               className="inline-flex shrink-0 items-center gap-1 rounded-full border border-border/50 px-2 py-1 text-[11px] font-medium text-foreground hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
             >
-              高德查看
+              {primaryAction.label}
               <ExternalLink className="h-3 w-3" aria-hidden="true" />
             </a>
           ) : null}
@@ -396,7 +427,7 @@ function RouteResults({ block }: { block: RouteResultsBlock }) {
       <ResultHeader
         icon={<Route className="h-4 w-4 text-info" aria-hidden="true" />}
         title={routeTitle}
-        provider={block.provider}
+        attribution={block.attribution}
         status={block.status}
         statusText={routeStatusText(block.status, routes.length)}
       />
@@ -837,13 +868,13 @@ function TransitLegItem({ leg }: { leg: ProviderTransitLeg }) {
 function ResultHeader({
   icon,
   title,
-  provider,
+  attribution,
   status,
   statusText,
 }: {
   icon: ReactNode;
   title: string;
-  provider?: string | null;
+  attribution?: { label?: string | null } | null;
   status?: NetworkSourceStatus | null;
   statusText: string;
 }) {
@@ -853,7 +884,9 @@ function ResultHeader({
         <span className="mt-0.5 shrink-0">{icon}</span>
         <div className="min-w-0">
           <h3 className="truncate text-sm font-medium text-foreground" title={title}>{title}</h3>
-          <p className="mt-0.5 text-[11px] text-muted-foreground">{providerLabel(provider)}</p>
+          <p className="mt-0.5 text-[11px] text-muted-foreground">
+            {safeText(attribution?.label) || '地图服务'}
+          </p>
         </div>
       </div>
       <span className={cn(
@@ -890,10 +923,6 @@ function buildPlaceTitle(block: PlaceResultsBlock): string {
   return query || near || '地点推荐';
 }
 
-function providerLabel(provider?: string | null): string {
-  return safeText(provider).toLowerCase() === 'amap' ? '高德地图' : '地图服务';
-}
-
 function securePhotos(photos?: ProviderPlacePhoto[] | null): ProviderPlacePhoto[] {
   const seen = new Set<string>();
   return (photos ?? []).reduce<ProviderPlacePhoto[]>((result, photo) => {
@@ -907,12 +936,19 @@ function securePhotos(photos?: ProviderPlacePhoto[] | null): ProviderPlacePhoto[
   }, []);
 }
 
-function safeAmapUrl(value?: string | null): string | null {
-  const parsed = parseHttpsUrl(value);
-  if (!parsed) return null;
-  return parsed.hostname === 'uri.amap.com' || parsed.hostname === 'www.amap.com'
-    ? parsed.toString()
-    : null;
+function secureExternalActions(
+  actions?: ProviderPlaceResult['actions'],
+): Array<{ kind: 'open_external'; label: string; url: string }> {
+  return (actions ?? []).reduce<Array<{ kind: 'open_external'; label: string; url: string }>>(
+    (result, action) => {
+      if (action?.kind !== 'open_external') return result;
+      const label = safeText(action.label);
+      const url = parseHttpsUrl(action.url)?.toString();
+      if (label && url) result.push({ kind: 'open_external', label, url });
+      return result;
+    },
+    [],
+  ).slice(0, 2);
 }
 
 function parseHttpsUrl(value?: string | null): URL | null {
@@ -993,7 +1029,7 @@ function formatRating(value?: number | null): string {
 
 function formatReferenceCost(value?: number | null): string {
   return typeof value === 'number' && Number.isFinite(value) && value >= 0
-    ? `高德参考消费 ¥${Math.round(value)}`
+    ? `参考消费 ¥${Math.round(value)}`
     : '';
 }
 

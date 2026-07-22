@@ -13,7 +13,7 @@ import type {
   SseEnvelope,
   SubmitAgentContextResultInput,
 } from '@/types/agentRun';
-import type { ContentBlock, StructuredToolResultBlock } from '@/types/conversation';
+import type { ContentBlock } from '@/types/conversation';
 import type { ContextUsage } from '@/types/conversation';
 import { normalizeContextUsage, type ContextUsagePhase } from '@/lib/chat/contextUsage';
 
@@ -322,9 +322,9 @@ export interface StreamCallbacks {
   onContentBlockUpserted?: (
     ev: AgentEventEnvelope & {
       protocol_version: 2;
-      content_block: StructuredToolResultBlock;
+      content_block: unknown;
       /** 兼容早期实验事件；正式契约固定为 content_block。 */
-      block?: StructuredToolResultBlock;
+      block?: unknown;
     },
   ) => void;
   onContentBlockDiscarded?: (

@@ -1,8 +1,4 @@
-import type {
-  Conversation, Message, ContentBlock,
-  TextBlock, ThinkingBlock, FileBlock, NetworkSourceStatus, SearchBlock,
-  SearchSourceSummary, SourceReference, UrlBlock,
-} from '@/types/conversation';
+import type { Conversation, Message } from '@/types/conversation';
 import type {
   AgentEvidenceItem,
   AgentPlanItem,
@@ -14,37 +10,9 @@ import type {
 } from '@/types/agentRun';
 import { parseTimestamp } from '@/lib/utils/parseTimestamp';
 import { normalizeContextUsage } from '@/lib/chat/contextUsage';
-import { normalizeStructuredToolResultBlock } from '@/lib/chat/structuredToolResults';
+import { normalizeContentBlocks } from '@/lib/chat/contentBlockRegistry';
 
 // 服务端返回的原始类型（对齐后端 schema）
-interface ServerBlock {
-  type: 'text' | 'thinking' | 'file' | 'search' | 'url_read' | 'place_results' | 'route_results';
-  id: string;
-  [key: string]: unknown;
-  text?: string;
-  thinking?: string;
-  file_id?: string;
-  filename?: string;
-  mime_type?: string;
-  thumbnail_url?: string | null;
-  width?: number | null;
-  height?: number | null;
-  query?: string;
-  tool_call_log_id?: string;
-  sources?: SearchSourceSummary[];
-  status?: NetworkSourceStatus;
-  error_message?: string | null;
-  source_count?: number;
-  source_refs?: SourceReference[];
-  requested_provider?: string | null;
-  result_provider?: string | null;
-  fallback_used?: boolean;
-  provider_chain?: string[];
-  url?: string;
-  title?: string;
-  favicon?: string;
-}
-
 interface ServerUsage {
   input_tokens: number;
   output_tokens: number;
@@ -119,7 +87,7 @@ interface ServerAgentEvidenceItem {
 interface ServerMessage {
   id: string;
   role: 'user' | 'assistant';
-  content: ServerBlock[];
+  content: unknown[];
   sequence?: number | null;
   model_id?: string | null;
   usage?: ServerUsage | null;
@@ -139,63 +107,9 @@ interface ServerConversation {
 
 export const parseServerTimestamp = parseTimestamp;
 
-function buildContentBlocks(serverBlocks: ServerBlock[]): ContentBlock[] {
-  const blocks: ContentBlock[] = [];
-  for (const b of serverBlocks) {
-    if (b.type === 'text' && b.text != null) {
-      blocks.push({ type: 'text', id: b.id, text: b.text } satisfies TextBlock);
-    } else if (b.type === 'thinking' && b.thinking != null) {
-      blocks.push({ type: 'thinking', id: b.id, thinking: b.thinking } satisfies ThinkingBlock);
-    } else if (b.type === 'file' && b.file_id) {
-      blocks.push({
-        type: 'file',
-        id: b.id,
-        file_id: b.file_id,
-        filename: b.filename ?? '',
-        mime_type: b.mime_type ?? '',
-        ...(b.thumbnail_url != null ? { thumbnail_url: b.thumbnail_url } : {}),
-        ...(b.width != null ? { width: b.width } : {}),
-        ...(b.height != null ? { height: b.height } : {}),
-      } satisfies FileBlock);
-    } else if (b.type === 'search' && b.query != null) {
-      blocks.push({
-        type: 'search',
-        id: b.id,
-        query: b.query,
-        tool_call_log_id: b.tool_call_log_id,
-        sources: b.sources ?? [],
-        status: b.status,
-        error_message: b.error_message,
-        source_count: b.source_count,
-        source_refs: b.source_refs,
-        requested_provider: b.requested_provider,
-        result_provider: b.result_provider,
-        fallback_used: b.fallback_used,
-        provider_chain: b.provider_chain,
-      } satisfies SearchBlock);
-    } else if (b.type === 'url_read' && b.url) {
-      blocks.push({
-        type: 'url_read',
-        id: b.id,
-        url: b.url,
-        title: b.title,
-        favicon: b.favicon,
-        tool_call_log_id: b.tool_call_log_id,
-        status: b.status,
-        error_message: b.error_message,
-        source_count: b.source_count,
-        source_refs: b.source_refs,
-      } satisfies UrlBlock);
-    } else if (b.type === 'place_results' || b.type === 'route_results') {
-      const resultBlock = normalizeStructuredToolResultBlock(b);
-      if (resultBlock) blocks.push(resultBlock);
-    }
-  }
-  return blocks;
-}
-
 function buildMessage(serverMessage: ServerMessage, conversationId: string): Message {
-  const hasThinking = serverMessage.content.some(b => b.type === 'thinking');
+  const content = normalizeContentBlocks(serverMessage.content);
+  const hasThinking = content.some(block => block.type === 'thinking');
   const contextUsage = normalizeContextUsage(serverMessage.usage?.context);
   const usage = serverMessage.usage
     ? {
@@ -207,7 +121,7 @@ function buildMessage(serverMessage: ServerMessage, conversationId: string): Mes
   return {
     id: serverMessage.id,
     role: serverMessage.role,
-    content: buildContentBlocks(serverMessage.content),
+    content,
     ...(typeof serverMessage.sequence === 'number' ? { sequence: serverMessage.sequence } : {}),
     chatId: conversationId,
     model_id: serverMessage.model_id ?? null,

@@ -27,7 +27,8 @@ import type {
   LimitReachedReason,
   ToolCallResultSummary,
 } from '@/types/agentRun';
-import { normalizeStructuredToolResultBlock } from '@/lib/chat/structuredToolResults';
+import { normalizeContentBlock } from '@/lib/chat/contentBlockRegistry';
+import { isStructuredToolResultBlock } from '@/lib/chat/structuredToolResults';
 
 type DispatchLike = (action: unknown) => unknown;
 type RunStartedEvent = Parameters<NonNullable<StreamCallbacks['onRunStarted']>>[0];
@@ -211,8 +212,8 @@ export function createAgentStreamEventHandlers({
     },
     onContentBlockUpserted: ev => {
       if (!isActive()) return;
-      const block = normalizeStructuredToolResultBlock(ev.content_block ?? ev.block);
-      if (!block) return;
+      const block = normalizeContentBlock(ev.content_block ?? ev.block);
+      if (!block || !isStructuredToolResultBlock(block)) return;
       dispatch(upsertStaticContentBlock({
         runId: ev.run_id,
         sequence: ev.sequence,

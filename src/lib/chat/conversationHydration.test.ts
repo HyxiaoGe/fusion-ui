@@ -236,6 +236,59 @@ describe('conversationHydration', () => {
     expect(chat.messages[1].content[1]).toMatchObject({ type: 'text', text: 'world' });
   });
 
+  it('未来富结果不会让历史消息变空，也不会把原始 payload 带入页面', () => {
+    const chat = buildChatFromServerConversation({
+      id: 'chat-future-result',
+      title: 'Future result chat',
+      model_id: 'qwen-max-latest',
+      messages: [{
+        id: 'assistant-future',
+        role: 'assistant',
+        content: [{
+          type: 'future_private_result',
+          id: 'future-1',
+          schema_version: 8,
+          access_token: 'should-never-reach-ui-state',
+        }],
+      }],
+    });
+
+    expect(chat.messages[0].content).toEqual([{
+      type: 'unsupported_result',
+      id: 'future-1',
+      source_type: 'future_private_result',
+      source_schema_version: 8,
+      reason: 'unsupported_type',
+    }]);
+    expect(JSON.stringify(chat.messages[0].content)).not.toContain('should-never-reach-ui-state');
+  });
+
+  it('历史恢复把缺少 type 的损坏结果降级为安全占位', () => {
+    const chat = buildChatFromServerConversation({
+      id: 'chat-invalid-result',
+      title: 'Invalid result chat',
+      model_id: 'qwen-max-latest',
+      messages: [{
+        id: 'assistant-invalid',
+        role: 'assistant',
+        content: [{
+          id: 'broken-1',
+          schema_version: 1,
+          secret: 'must-not-reach-ui-state',
+        }],
+      }],
+    });
+
+    expect(chat.messages[0].content).toEqual([{
+      type: 'unsupported_result',
+      id: 'broken-1',
+      source_type: 'unknown',
+      source_schema_version: 1,
+      reason: 'invalid_payload',
+    }]);
+    expect(JSON.stringify(chat.messages[0].content)).not.toContain('must-not-reach-ui-state');
+  });
+
   it('强刷后恢复地点与路线结果块，并保留可选字段的安全缺省', () => {
     const chat = buildChatFromServerConversation({
       id: 'chat-results',
@@ -319,7 +372,9 @@ describe('conversationHydration', () => {
             id: 'places-1',
             schema_version: 1,
             provider: 'amap',
+            query: '深圳民治烤肉',
             status: 'success',
+            result_count: 1,
             places: [{ provider_place_id: 'p1', name: '民治烤肉店' }],
           },
           { type: 'text', id: 'answer-1', text: '推荐如下。' },

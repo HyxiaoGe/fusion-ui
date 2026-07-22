@@ -262,6 +262,93 @@ describe('createAgentStreamEventHandlers', () => {
     }));
   });
 
+  it('把未来版本流式结果降级为不含原始 payload 的安全占位', () => {
+    const dispatch = vi.fn();
+    const handlers = createAgentStreamEventHandlers({
+      dispatch,
+      isActive: () => true,
+      resolveMessageId: ev => ev.message_id,
+      resolveConversationId: () => 'c1',
+    });
+
+    handlers.onContentBlockUpserted?.({
+      type: 'content_block_upserted',
+      protocol_version: 2,
+      run_id: 'r1',
+      parent_run_id: null,
+      step_id: 's1',
+      parent_step_id: null,
+      tool_call_id: 'tc-future',
+      sequence: 5,
+      trace_id: 'r1',
+      ts: 0,
+      content_block: {
+        type: 'future_private_result',
+        id: 'future-1',
+        schema_version: 4,
+        secret: 'must-not-reach-redux',
+      },
+    });
+
+    const action = dispatch.mock.calls[0]?.[0];
+    expect(action).toEqual(expect.objectContaining({
+      type: 'stream/upsertStaticContentBlock',
+      payload: expect.objectContaining({
+        block: {
+          type: 'unsupported_result',
+          id: 'future-1',
+          source_type: 'future_private_result',
+          source_schema_version: 4,
+          reason: 'unsupported_type',
+        },
+      }),
+    }));
+    expect(JSON.stringify(action)).not.toContain('must-not-reach-redux');
+  });
+
+  it('流式链路把缺少 type 的同一损坏结果降级为与历史恢复一致的安全占位', () => {
+    const dispatch = vi.fn();
+    const handlers = createAgentStreamEventHandlers({
+      dispatch,
+      isActive: () => true,
+      resolveMessageId: ev => ev.message_id,
+      resolveConversationId: () => 'c1',
+    });
+
+    handlers.onContentBlockUpserted?.({
+      type: 'content_block_upserted',
+      protocol_version: 2,
+      run_id: 'r1',
+      parent_run_id: null,
+      step_id: 's1',
+      parent_step_id: null,
+      tool_call_id: 'tc-invalid',
+      sequence: 6,
+      trace_id: 'r1',
+      ts: 0,
+      content_block: {
+        id: 'broken-1',
+        schema_version: 1,
+        secret: 'must-not-reach-redux',
+      },
+    });
+
+    const action = dispatch.mock.calls[0]?.[0];
+    expect(action).toEqual(expect.objectContaining({
+      type: 'stream/upsertStaticContentBlock',
+      payload: expect.objectContaining({
+        block: {
+          type: 'unsupported_result',
+          id: 'broken-1',
+          source_type: 'unknown',
+          source_schema_version: 1,
+          reason: 'invalid_payload',
+        },
+      }),
+    }));
+    expect(JSON.stringify(action)).not.toContain('must-not-reach-redux');
+  });
+
   it('把 context_status_updated 作为单轮快照写入当前会话', () => {
     const dispatch = vi.fn();
     const handlers = createAgentStreamEventHandlers({

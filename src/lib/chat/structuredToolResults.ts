@@ -1,4 +1,5 @@
 import type {
+  ContentBlock,
   PlaceResultsBlock,
   ProviderPlacePhoto,
   ProviderPlaceResult,
@@ -9,8 +10,59 @@ import type {
   ProviderTransitLegKind,
   ProviderTransitType,
   RouteResultsBlock,
+  StructuredResultAction,
+  StructuredResultAttribution,
   StructuredToolResultBlock,
+  UnsupportedResultBlock,
 } from '@/types/conversation';
+
+export const STRUCTURED_TOOL_RESULT_CONTRACTS = [
+  { type: 'place_results', schemaVersion: 1 },
+  { type: 'route_results', schemaVersion: 1 },
+  { type: 'unsupported_result', schemaVersion: null },
+] as const;
+
+export type StructuredToolResultType = typeof STRUCTURED_TOOL_RESULT_CONTRACTS[number]['type'];
+
+export function isStructuredToolResultType(value: unknown): value is StructuredToolResultType {
+  return STRUCTURED_TOOL_RESULT_CONTRACTS.some(contract => contract.type === value);
+}
+
+export function isStructuredToolResultBlock(block: ContentBlock): block is StructuredToolResultBlock {
+  return isStructuredToolResultType(block.type);
+}
+
+export function collectStructuredToolResultBlocks(
+  blocks: readonly ContentBlock[],
+): StructuredToolResultBlock[] {
+  return blocks.filter(isStructuredToolResultBlock);
+}
+
+export function hasUsableStructuredToolResult(blocks: readonly ContentBlock[]): boolean {
+  return collectStructuredToolResultBlocks(blocks).some(block => {
+    if (block.type === 'place_results') return (block.places?.length ?? 0) > 0;
+    if (block.type === 'route_results') return (block.routes?.length ?? 0) > 0;
+    return true;
+  });
+}
+
+export function normalizeUnsupportedResultBlock(value: unknown): UnsupportedResultBlock | null {
+  const source = asRecord(value);
+  if (!source || source.type !== 'unsupported_result') return null;
+  const id = boundedString(source.id, 160);
+  const sourceType = boundedString(source.source_type, 80);
+  const reason = unsupportedReason(source.reason);
+  if (!id || !sourceType || !reason) return null;
+  return {
+    type: 'unsupported_result',
+    id,
+    source_type: sourceType,
+    ...(Number.isInteger(source.source_schema_version) && Number(source.source_schema_version) >= 0
+      ? { source_schema_version: Number(source.source_schema_version) }
+      : {}),
+    reason,
+  };
+}
 
 export function normalizeStructuredToolResultBlock(value: unknown): StructuredToolResultBlock | null {
   const source = asRecord(value);
@@ -24,6 +76,10 @@ export function normalizeStructuredToolResultBlock(value: unknown): StructuredTo
       id,
       schema_version: 1,
       ...optionalField('provider', optionalString(source.provider)),
+      ...optionalField(
+        'attribution',
+        normalizeAttribution(source.attribution) ?? normalizeLegacyAttribution(source.provider),
+      ),
       ...optionalField('query', optionalString(source.query)),
       ...optionalField('near', optionalString(source.near)),
       ...optionalField('status', productResultStatus(source.status)),
@@ -41,6 +97,10 @@ export function normalizeStructuredToolResultBlock(value: unknown): StructuredTo
       id,
       schema_version: 1,
       ...optionalField('provider', optionalString(source.provider)),
+      ...optionalField(
+        'attribution',
+        normalizeAttribution(source.attribution) ?? normalizeLegacyAttribution(source.provider),
+      ),
       ...optionalField('origin', normalizeEndpoint(source.origin)),
       ...optionalField('destination', normalizeEndpoint(source.destination)),
       routes: normalizeArray(source.routes, normalizeRoute, 3),
@@ -58,6 +118,14 @@ export function normalizeStructuredToolResultBlock(value: unknown): StructuredTo
 function normalizePlace(value: unknown): ProviderPlaceResult | null {
   const source = asRecord(value);
   if (!source) return null;
+  const actions = normalizeArray(source.actions, normalizeExternalAction, 2);
+  const legacyAction = actions.length === 0
+    ? normalizeExternalAction({
+      kind: 'open_external',
+      label: '查看详情',
+      url: source.platform_url,
+    })
+    : null;
   return {
     ...optionalField('provider_place_id', optionalString(source.provider_place_id)),
     ...optionalField('name', optionalString(source.name)),
@@ -71,8 +139,40 @@ function normalizePlace(value: unknown): ProviderPlaceResult | null {
     ...optionalField('reference_cost_yuan', nonNegativeNumber(source.reference_cost_yuan)),
     ...optionalField('open_hours', optionalString(source.open_hours)),
     ...optionalField('detail_status', detailStatus(source.detail_status)),
-    ...optionalField('platform_url', optionalString(source.platform_url)),
+    actions: legacyAction ? [legacyAction] : actions,
   };
+}
+
+function normalizeAttribution(value: unknown): StructuredResultAttribution | undefined {
+  const source = asRecord(value);
+  const label = source ? boundedString(source.label, 80) : undefined;
+  return label ? { label } : undefined;
+}
+
+function normalizeLegacyAttribution(value: unknown): StructuredResultAttribution | undefined {
+  const provider = optionalString(value)?.toLowerCase();
+  if (!provider) return undefined;
+  return { label: provider === 'amap' ? '高德地图' : '地图服务' };
+}
+
+function normalizeExternalAction(value: unknown): StructuredResultAction | null {
+  const source = asRecord(value);
+  if (!source || source.kind !== 'open_external') return null;
+  const label = boundedString(source.label, 40);
+  const url = safeHttpsUrl(source.url);
+  return label && url ? { kind: 'open_external', label, url } : null;
+}
+
+function safeHttpsUrl(value: unknown): string | undefined {
+  const normalized = boundedString(value, 2048);
+  if (!normalized) return undefined;
+  try {
+    const parsed = new URL(normalized);
+    if (parsed.protocol !== 'https:' || parsed.username || parsed.password) return undefined;
+    return parsed.toString();
+  } catch {
+    return undefined;
+  }
 }
 
 function normalizePhoto(value: unknown): ProviderPlacePhoto | null {
@@ -177,6 +277,11 @@ function optionalString(value: unknown): string | undefined {
   return normalized || undefined;
 }
 
+function boundedString(value: unknown, maxLength: number): string | undefined {
+  const normalized = optionalString(value);
+  return normalized && normalized.length <= maxLength ? normalized : undefined;
+}
+
 function nonNegativeNumber(value: unknown): number | undefined {
   return typeof value === 'number' && Number.isFinite(value) && value >= 0
     ? value
@@ -214,6 +319,16 @@ function transitLegKind(value: unknown): ProviderTransitLegKind | undefined {
     || value === 'subway'
     || value === 'bus'
     || value === 'other'
+    ? value
+    : undefined;
+}
+
+function unsupportedReason(
+  value: unknown,
+): UnsupportedResultBlock['reason'] | undefined {
+  return value === 'unsupported_type'
+    || value === 'unsupported_version'
+    || value === 'invalid_payload'
     ? value
     : undefined;
 }

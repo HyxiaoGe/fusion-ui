@@ -15,6 +15,7 @@ import type {
   UrlBlock,
 } from '@/types/conversation';
 import { extractTextFromBlocks, extractThinkingFromBlocks } from '@/types/conversation';
+import { collectStructuredToolResultBlocks } from '@/lib/chat/structuredToolResults';
 
 import { deriveAssistantActivity } from './assistantActivity';
 import type { AssistantActivity } from './assistantActivity';
@@ -87,7 +88,7 @@ export function deriveStaticAssistantMessageViewModel({
   });
   const displayText = extractTextFromBlocks(blocksToRender);
   const displayThinking = extractThinkingFromBlocks(blocksToRender);
-  const structuredResults = collectStructuredResults(blocksToRender);
+  const structuredResults = collectStructuredToolResultBlocks(blocksToRender);
 
   return {
     blocksToRender,
@@ -186,7 +187,10 @@ export function useAssistantMessageViewModel({
 
   const displayText = useMemo(() => extractTextFromBlocks(blocksToRender), [blocksToRender]);
   const displayThinking = useMemo(() => extractThinkingFromBlocks(blocksToRender), [blocksToRender]);
-  const structuredResults = useMemo(() => collectStructuredResults(blocksToRender), [blocksToRender]);
+  const structuredResults = useMemo(
+    () => collectStructuredToolResultBlocks(blocksToRender),
+    [blocksToRender],
+  );
   const suppressThinking = isCurrentlyStreaming && (
     activity.kind === 'tool_running' || activity.kind === 'waiting'
   );
@@ -213,12 +217,6 @@ export function useAssistantMessageViewModel({
 
 function collectSearchBlocks(contentBlocks: ContentBlock[]): SearchBlock[] {
   return contentBlocks.filter((block): block is SearchBlock => block.type === 'search');
-}
-
-function collectStructuredResults(contentBlocks: ContentBlock[]): StructuredToolResultBlock[] {
-  return contentBlocks.filter((block): block is StructuredToolResultBlock => (
-    block.type === 'place_results' || block.type === 'route_results'
-  ));
 }
 
 function collectSearchSources(searchBlocks: SearchBlock[]): SearchSourceSummary[] {

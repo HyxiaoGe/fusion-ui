@@ -166,7 +166,8 @@ describe('normalizeStructuredToolResultBlock', () => {
       id: 'places-2',
       schema_version: 1,
       provider: 'amap',
-      places: [{ name: '餐厅', photos: [] }],
+      attribution: { label: '高德地图' },
+      places: [{ name: '餐厅', photos: [], actions: [] }],
       limitations: [],
     });
   });

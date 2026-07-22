@@ -2,8 +2,11 @@ import React from 'react';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import type { PlaceResultsBlock, RouteResultsBlock } from '@/types/conversation';
-import { normalizeStructuredToolResultBlock } from '@/lib/chat/structuredToolResults';
-import StructuredToolResults from './StructuredToolResults';
+import {
+  normalizeStructuredToolResultBlock,
+  STRUCTURED_TOOL_RESULT_CONTRACTS,
+} from '@/lib/chat/structuredToolResults';
+import StructuredToolResults, { STRUCTURED_TOOL_RESULT_RENDERER_TYPES } from './StructuredToolResults';
 
 function placeBlock(overrides: Partial<PlaceResultsBlock> = {}): PlaceResultsBlock {
   return {
@@ -11,6 +14,7 @@ function placeBlock(overrides: Partial<PlaceResultsBlock> = {}): PlaceResultsBlo
     id: 'places-1',
     schema_version: 1,
     provider: 'amap',
+    attribution: { label: '高德地图' },
     query: '烤肉',
     near: '深圳民治',
     status: 'success',
@@ -20,7 +24,15 @@ function placeBlock(overrides: Partial<PlaceResultsBlock> = {}): PlaceResultsBlo
       name: `餐厅 ${index + 1}`,
       address: `民治大道 ${index + 1} 号`,
       distance_m: 500 + index * 100,
-      platform_url: index < 5 ? `https://www.amap.com/place/${index + 1}` : 'http://unsafe.example.com',
+      actions: index < 5 ? [{
+        kind: 'open_external',
+        label: '查看详情',
+        url: `https://www.amap.com/place/${index + 1}`,
+      }] : [{
+        kind: 'open_external',
+        label: '查看详情',
+        url: 'http://unsafe.example.com',
+      }],
     })),
     limitations: ['不包含实时排队信息'],
     tool_call_log_id: 'tc-place',
@@ -34,6 +46,7 @@ function routeBlock(overrides: Partial<RouteResultsBlock> = {}): RouteResultsBlo
     id: 'routes-1',
     schema_version: 1,
     provider: 'amap',
+    attribution: { label: '高德地图' },
     status: 'degraded',
     origin: { label: '民治地铁站', city: '深圳' },
     destination: { label: '星河 WORLD', city: '深圳' },
@@ -46,6 +59,27 @@ function routeBlock(overrides: Partial<RouteResultsBlock> = {}): RouteResultsBlo
 }
 
 describe('StructuredToolResults', () => {
+  it('每个已注册富结果协议都有对应渲染器', () => {
+    expect([...STRUCTURED_TOOL_RESULT_RENDERER_TYPES].sort()).toEqual(
+      STRUCTURED_TOOL_RESULT_CONTRACTS.map(contract => contract.type).sort(),
+    );
+  });
+
+  it('未知富结果只展示低干扰提示，不泄露原始类型', () => {
+    render(<StructuredToolResults blocks={[{
+      type: 'unsupported_result',
+      id: 'future-1',
+      source_type: 'private_provider_result',
+      source_schema_version: 9,
+      reason: 'unsupported_version',
+    }]} />);
+
+    expect(screen.getByTestId('unsupported-structured-result')).toHaveTextContent(
+      '此结果暂不受当前版本支持，请刷新页面或稍后再试。',
+    );
+    expect(screen.queryByText(/private_provider_result/)).not.toBeInTheDocument();
+  });
+
   it('结构化结果占满消息可用宽度，不再限制超宽屏宽度', () => {
     render(<StructuredToolResults blocks={[placeBlock()]} />);
 
@@ -85,12 +119,12 @@ describe('StructuredToolResults', () => {
     expect(screen.getByRole('region', { name: '地点推荐结果' })).toBeInTheDocument();
     expect(screen.getAllByTestId('place-result-item')).toHaveLength(3);
     expect(screen.queryByRole('img')).toBeNull();
-    expect(screen.getAllByRole('link', { name: '高德查看' })).toHaveLength(3);
+    expect(screen.getAllByRole('link', { name: '查看详情' })).toHaveLength(3);
 
     fireEvent.click(screen.getByRole('button', { name: '展开更多地点' }));
 
     expect(screen.getAllByTestId('place-result-item')).toHaveLength(5);
-    expect(screen.getAllByRole('link', { name: '高德查看' })).toHaveLength(5);
+    expect(screen.getAllByRole('link', { name: '查看详情' })).toHaveLength(5);
     expect(screen.queryByText('餐厅 6')).toBeNull();
     expect(screen.queryByRole('tab')).toBeNull();
   });
@@ -142,7 +176,7 @@ describe('StructuredToolResults', () => {
       'group-hover:opacity-100',
       'group-focus-visible:opacity-100',
     );
-    expect(screen.getByText(/高德参考消费 ¥128/)).toBeInTheDocument();
+    expect(screen.getByText(/参考消费 ¥128/)).toBeInTheDocument();
     expect(screen.getAllByTestId('place-result-item')).toHaveLength(2);
     expect(screen.queryByLabelText('地点图片占位')).toBeNull();
     screen.getAllByTestId('place-result-content').forEach(content => {
@@ -230,6 +264,7 @@ describe('StructuredToolResults', () => {
   it('部分字段缺失时安全降级，不显示内部 alias 或不安全链接', () => {
     render(<StructuredToolResults blocks={[placeBlock({
       provider: 'mcp_internal_provider',
+      attribution: undefined,
       query: undefined,
       near: undefined,
       result_count: undefined,
@@ -247,6 +282,30 @@ describe('StructuredToolResults', () => {
     expect(screen.getByText('地图服务')).toBeInTheDocument();
     expect(screen.queryByRole('link')).toBeNull();
     expect(document.body.textContent).not.toMatch(/mcp_internal|mcp_private|mcp_secret/i);
+  });
+
+  it('通过通用归因和 HTTPS action 展示非高德地点提供商', () => {
+    render(<StructuredToolResults blocks={[placeBlock({
+      provider: 'future-map-provider',
+      attribution: { label: '城市地图服务' },
+      result_count: 1,
+      places: [{
+        provider_place_id: 'future-place-1',
+        name: '未来餐厅',
+        actions: [{
+          kind: 'open_external',
+          label: '打开地图',
+          url: 'https://maps.example.com/place/1',
+        }],
+      }],
+    })]} />);
+
+    expect(screen.getByText('城市地图服务')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: '打开地图' })).toHaveAttribute(
+      'href',
+      'https://maps.example.com/place/1',
+    );
+    expect(document.body.textContent).not.toContain('future-map-provider');
   });
 
   it('路线降级时同时展示可用路线和不可用方式', () => {

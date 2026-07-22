@@ -1,6 +1,7 @@
 import type { AgentRunState, ToolCallState } from '@/types/agentRun';
 import type { ContentBlock, SearchBlock, UrlBlock } from '@/types/conversation';
 import { getToolMeta, hasToolMeta } from '@/lib/agent/toolRegistry';
+import { hasUsableStructuredToolResult } from '@/lib/chat/structuredToolResults';
 
 export type AssistantActivityKind =
   | 'waiting'
@@ -64,11 +65,7 @@ export function deriveAssistantActivity(input: DeriveAssistantActivityInput): As
   const urlBlocks = input.contentBlocks.filter((block): block is UrlBlock => block.type === 'url_read');
   const hasText = input.contentBlocks.some(block => block.type === 'text' && block.text.length > 0);
   const hasThinking = input.contentBlocks.some(block => block.type === 'thinking' && block.thinking.length > 0);
-  const hasUsableStructuredResult = input.contentBlocks.some(block => (
-    block.type === 'place_results' && (block.places?.length ?? 0) > 0
-  ) || (
-    block.type === 'route_results' && (block.routes?.length ?? 0) > 0
-  ));
+  const hasUsableStructuredResult = hasUsableStructuredToolResult(input.contentBlocks);
   const runningTool = findLatestToolCall(input.currentRun, call => call.status === 'running');
   const runningToolActivity = runningTool ? toToolActivity(runningTool) : null;
   const issue = deriveIssue(input.currentRun, searchBlock, hasUsableStructuredResult);
