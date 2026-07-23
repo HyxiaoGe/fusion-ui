@@ -18,11 +18,12 @@ import {
   checkLiveness,
   fetchUserProfile,
   resolveSession,
+  restoreLocalSession,
   resumeSsoSession,
   settleSdkUnauthenticatedSession,
 } from "@/redux/slices/authSlice";
 import { canAutoResumeSession, maybeSilentLogin } from "@/lib/auth/sso-probe";
-import { subscribeSsoState } from "@/lib/auth/authService";
+import { getStoredAccessToken, subscribeSsoState } from "@/lib/auth/authService";
 import {
   beginAuthSessionTransition,
   isAuthSessionTransitionError,
@@ -43,6 +44,8 @@ const PerformanceMonitor = dynamic(
     loading: () => null 
   }
 );
+
+const INITIAL_LOCAL_RECOVERY_DELAYS_MS = [1000, 3000, 10000] as const;
 
 function ToastInitializer() {
   const toastContext = useToast();
@@ -103,6 +106,7 @@ const ClientLayout = ({ children }: { children: React.ReactNode }) => {
   const [isLoginDialogOpen, setIsLoginDialogOpen] = useState(false);
   const [hasShownInitialLogin, setHasShownInitialLogin] = useState(false);
   const sdkSwitchObserved = useRef(false);
+  const initialLocalRecoveryInFlight = useRef(false);
   
   // 导出函数供其他组件使用
   (globalThis as any).triggerLoginDialog = () => {
@@ -126,6 +130,9 @@ const ClientLayout = ({ children }: { children: React.ReactNode }) => {
       }
       if (sdkState.status === 'unauthenticated') {
         sdkSwitchObserved.current = false;
+        // 冷启动 refresh 返回 null 后还要继续尝试中央 SSO；此窗口不能提前把
+        // sessionResolved 翻成 true，否则导航前会短暂露出「登录」终态。
+        if (initialLocalRecoveryInFlight.current) return;
         // refresh/logout 的确定性清理会先落共享存储再发布状态；宿主同步重读后收敛 Redux，
         // 避免 SDK 已登出而页面仍保留旧头像和旧用户权限。
         void dispatch(settleSdkUnauthenticatedSession());
@@ -154,13 +161,42 @@ const ClientLayout = ({ children }: { children: React.ReactNode }) => {
     // 已登录时做 SLO/换号对账；未登录时只做无跳转的中央会话恢复。切回标签页常同时触发
     // focus + visibilitychange，两条路径共用 3 秒去抖窗口。
     let lastAt = 0;
+    const recoverUnauthenticatedSession = async () => {
+      if (initialLocalRecoveryInFlight.current) return;
+      initialLocalRecoveryInFlight.current = true;
+      try {
+        const hasStoredToken = getStoredAccessToken() !== null;
+        if (hasStoredToken) {
+          const localResult = await dispatch(restoreLocalSession({
+            deferNoSessionResolution: true,
+          })).unwrap();
+          if (localResult === 'restored') return;
+        }
+
+        const centralResult = await dispatch(resumeSsoSession()).unwrap();
+        if (centralResult === 'no_session') {
+          dispatch(resolveSession());
+        }
+      } catch {
+        // 本地票据仍由 SDK 保留；中央恢复也失败时不能让页面无限停在未定论 loading。
+        // 收敛为可交互的登录终态，下一次 focus/定时探测仍会再次尝试恢复。
+        dispatch(resolveSession());
+      } finally {
+        initialLocalRecoveryInFlight.current = false;
+      }
+    };
+
     const runSessionProbe = () => {
       const path = window.location.pathname + window.location.search;
       if (!isAuthenticated && !canAutoResumeSession(path)) return;
       const now = Date.now();
       if (now - lastAt < 3000) return;
       lastAt = now;
-      dispatch(isAuthenticated ? checkLiveness() : resumeSsoSession());
+      if (isAuthenticated) {
+        dispatch(checkLiveness());
+        return;
+      }
+      void recoverUnauthenticatedSession();
     };
     const onVisibility = () => {
       if (document.visibilityState === "visible") runSessionProbe();
@@ -196,32 +232,126 @@ const ClientLayout = ({ children }: { children: React.ReactNode }) => {
     }
 
     // 只在首次访问且未登录时弹出登录窗口
-    // 检查 localStorage 是否有 token，避免 SSR hydration 期间误弹
+    // 检查 SDK 权威会话是否仍有 token，避免 SSR hydration 期间误弹。
     if (!hasShownInitialLogin) {
-      const hasStoredToken = typeof window !== 'undefined' && Boolean(localStorage.getItem('auth_token'));
-      if (hasStoredToken) {
-        // token 存在但 Redux 还没 hydrate，等一下再判断
-        return;
-      }
-      // 无本地 token：先做一次性静默 SSO 探测（跨应用免登）。命中则页面正在跳走，
-      // 不再弹登录框；未命中/已探测过/无 sessionStorage 时回落到原弹框逻辑。
-      const path = window.location.pathname + window.location.search;
-      if (maybeSilentLogin(path)) {
-        // 静默 SSO 恢复已发起（页面正跳走换码）：会话尚未定论，保持未定论 → 头像菜单显示中性占位，
-        // 绝不在此刻露出「登录」按钮，否则恢复成功翻头像就成了「登录成功还闪一下登录按钮」。
-        return;
-      }
-      // 没有发起静默恢复（本标签页已探测过 / 无 sessionStorage 等）：会话已定论为登出，
-      // 解锁头像菜单的「登录」终态（在此之前一直是中性占位）。
-      dispatch(resolveSession());
-      const timer = setTimeout(() => {
-        setIsLoginDialogOpen(true);
-        setHasShownInitialLogin(true);
-      }, 1500);
+      let cancelled = false;
+      let loginTimer: ReturnType<typeof setTimeout> | null = null;
+      let recoveryTimer: ReturnType<typeof setTimeout> | null = null;
 
-      return () => clearTimeout(timer);
+      const hasStoredToken = typeof window !== 'undefined' && getStoredAccessToken() !== null;
+
+      const revealLoginTerminal = () => {
+        if (cancelled) return;
+        dispatch(resolveSession());
+        if (loginTimer !== null) return;
+        loginTimer = setTimeout(() => {
+          setIsLoginDialogOpen(true);
+          setHasShownInitialLogin(true);
+        }, 1500);
+      };
+
+      const continueWithCentralSession = () => {
+        if (cancelled) return;
+        // 本地 SDK 已确定性无会话后，再做一次性静默 SSO 探测（跨应用免登）。
+        const path = window.location.pathname + window.location.search;
+        if (maybeSilentLogin(path)) {
+          // 静默 SSO 恢复已发起（页面正跳走换码）：会话尚未定论，保持未定论 → 头像菜单显示中性占位。
+          return;
+        }
+        // 本地 refresh 和中央 SSO 均未恢复：此时才把会话定论为登出。
+        revealLoginTerminal();
+      };
+
+      const resumeCentralWithoutNavigation = async (attempt = 0) => {
+        if (cancelled) return;
+        initialLocalRecoveryInFlight.current = true;
+        try {
+          const result = await dispatch(resumeSsoSession()).unwrap();
+          if (cancelled) {
+            initialLocalRecoveryInFlight.current = false;
+            return;
+          }
+          initialLocalRecoveryInFlight.current = false;
+          if (result === 'no_session') {
+            // auth-service 已明确响应且没有中央 Cookie，会话协议兼容才需要顶层 prompt=none。
+            continueWithCentralSession();
+          }
+        } catch {
+          const retryDelay = INITIAL_LOCAL_RECOVERY_DELAYS_MS[attempt];
+          if (!cancelled && retryDelay !== undefined) {
+            recoveryTimer = setTimeout(() => {
+              recoveryTimer = null;
+              void resumeCentralWithoutNavigation(attempt + 1);
+            }, retryDelay);
+          } else {
+            initialLocalRecoveryInFlight.current = false;
+            // auth/tunnel 持续不可用时留在 Fusion 内，进入可交互终态；不把浏览器导航到连接错误页。
+            revealLoginTerminal();
+          }
+        }
+      };
+
+      const restoreOrProbe = async (attempt = 0) => {
+        if (hasStoredToken) {
+          initialLocalRecoveryInFlight.current = true;
+          try {
+            const result = await dispatch(restoreLocalSession({
+              deferNoSessionResolution: true,
+            })).unwrap();
+            if (cancelled) {
+              initialLocalRecoveryInFlight.current = false;
+              return;
+            }
+            if (result === 'restored') {
+              initialLocalRecoveryInFlight.current = false;
+              return;
+            }
+            if (result === 'central_recovery_required') {
+              void resumeCentralWithoutNavigation();
+              return;
+            }
+            if (result === 'transient_failure') {
+              const retryDelay = INITIAL_LOCAL_RECOVERY_DELAYS_MS[attempt];
+              if (retryDelay !== undefined) {
+                recoveryTimer = setTimeout(() => {
+                  recoveryTimer = null;
+                  void restoreOrProbe(attempt + 1);
+                }, retryDelay);
+              } else {
+                initialLocalRecoveryInFlight.current = false;
+                continueWithCentralSession();
+              }
+              return;
+            }
+            initialLocalRecoveryInFlight.current = false;
+          } catch {
+            const retryDelay = INITIAL_LOCAL_RECOVERY_DELAYS_MS[attempt];
+            if (!cancelled && retryDelay !== undefined) {
+              recoveryTimer = setTimeout(() => {
+                recoveryTimer = null;
+                void restoreOrProbe(attempt + 1);
+              }, retryDelay);
+            } else {
+              initialLocalRecoveryInFlight.current = false;
+              continueWithCentralSession();
+            }
+            // 未分类异常同样按瞬时失败处理：保留 SDK session，不得回落到登出或中央 SSO。
+            return;
+          }
+        }
+        continueWithCentralSession();
+      };
+
+      void restoreOrProbe();
+
+      return () => {
+        cancelled = true;
+        initialLocalRecoveryInFlight.current = false;
+        if (loginTimer !== null) clearTimeout(loginTimer);
+        if (recoveryTimer !== null) clearTimeout(recoveryTimer);
+      };
     }
-  }, [isAuthenticated, hasShownInitialLogin]);
+  }, [dispatch, isAuthenticated, hasShownInitialLogin]);
 
   const handleDialogVisibilityChange = (open: boolean) => {
     setIsLoginDialogOpen(open);

@@ -17,11 +17,13 @@ const {
   resumeSsoSessionMock,
   adoptCommittedSsoSessionMock,
   settleSdkUnauthenticatedSessionMock,
+  restoreLocalSessionMock,
   resolveSessionMock,
   setGlobalToastMock,
   maybeSilentLoginMock,
   canAutoResumeSessionMock,
   subscribeSsoStateMock,
+  getStoredAccessTokenMock,
   beginAuthSessionTransitionMock,
   isAuthSessionTransitionErrorMock,
   waitForAuthSessionStableMock,
@@ -34,12 +36,14 @@ const {
     accountSwitchStatus: 'stable',
     accountSwitchError: null,
     switchedAccountEmail: null,
+    sessionResolved: false,
   } as {
     isAuthenticated: boolean;
     status: 'idle' | 'loading' | 'succeeded' | 'failed';
     accountSwitchStatus: 'stable' | 'synchronizing' | 'blocked';
     accountSwitchError: string | null;
     switchedAccountEmail: string | null;
+    sessionResolved: boolean;
   },
   appDispatchMock: vi.fn(),
   reduxDispatchMock: vi.fn(),
@@ -59,11 +63,15 @@ const {
   settleSdkUnauthenticatedSessionMock: vi.fn(() => ({
     type: 'auth/settleSdkUnauthenticatedSession',
   })),
+  restoreLocalSessionMock: vi.fn(() => ({
+    type: 'auth/restoreLocalSession',
+  })),
   resolveSessionMock: vi.fn(() => ({ type: 'auth/resolveSession' })),
   setGlobalToastMock: vi.fn(),
   maybeSilentLoginMock: vi.fn(() => false),
   canAutoResumeSessionMock: vi.fn(() => true),
   subscribeSsoStateMock: vi.fn(() => vi.fn()),
+  getStoredAccessTokenMock: vi.fn<() => string | null>(() => null),
   beginAuthSessionTransitionMock: vi.fn(),
   isAuthSessionTransitionErrorMock: vi.fn(
     (error: unknown) => (
@@ -119,6 +127,7 @@ vi.mock('@/redux/slices/authSlice', () => ({
   resumeSsoSession: resumeSsoSessionMock,
   adoptCommittedSsoSession: adoptCommittedSsoSessionMock,
   settleSdkUnauthenticatedSession: settleSdkUnauthenticatedSessionMock,
+  restoreLocalSession: restoreLocalSessionMock,
   resolveSession: resolveSessionMock,
   setToken: vi.fn(),
 }));
@@ -130,6 +139,7 @@ vi.mock('@/lib/auth/sso-probe', () => ({
 
 vi.mock('@/lib/auth/authService', () => ({
   subscribeSsoState: subscribeSsoStateMock,
+  getStoredAccessToken: getStoredAccessTokenMock,
 }));
 
 vi.mock('@/lib/auth/sessionTransition', () => ({
@@ -174,6 +184,8 @@ describe('ClientLayout', () => {
     currentAuthState.accountSwitchStatus = 'stable';
     currentAuthState.accountSwitchError = null;
     currentAuthState.switchedAccountEmail = null;
+    currentAuthState.sessionResolved = false;
+    localStorage.clear();
     appDispatchMock.mockReset();
     reduxDispatchMock.mockReset();
     useAppDispatchMock.mockReturnValue(appDispatchMock);
@@ -191,6 +203,7 @@ describe('ClientLayout', () => {
     resumeSsoSessionMock.mockClear();
     adoptCommittedSsoSessionMock.mockClear();
     settleSdkUnauthenticatedSessionMock.mockClear();
+    restoreLocalSessionMock.mockClear();
     resolveSessionMock.mockClear();
     setGlobalToastMock.mockClear();
     maybeSilentLoginMock.mockReset();
@@ -198,6 +211,8 @@ describe('ClientLayout', () => {
     canAutoResumeSessionMock.mockReset();
     canAutoResumeSessionMock.mockReturnValue(true);
     subscribeSsoStateMock.mockClear();
+    getStoredAccessTokenMock.mockReset();
+    getStoredAccessTokenMock.mockReturnValue(null);
     beginAuthSessionTransitionMock.mockClear();
     isAuthSessionTransitionErrorMock.mockClear();
     waitForAuthSessionStableMock.mockReset();
@@ -591,5 +606,325 @@ describe('ClientLayout', () => {
     await new Promise(resolve => setTimeout(resolve, 50));
 
     expect(appDispatchMock).not.toHaveBeenCalledWith({ type: 'auth/resolveSession' });
+  });
+
+  it('restores a preserved local refresh session before attempting silent SSO', async () => {
+    getStoredAccessTokenMock.mockReturnValue('expired-token');
+    appDispatchMock.mockImplementation((action) => {
+      if (action?.type === 'auth/restoreLocalSession') {
+        return { unwrap: () => Promise.resolve('restored') };
+      }
+      return action;
+    });
+
+    render(
+      React.createElement(ClientLayout, null, React.createElement('div', null, 'child'))
+    );
+
+    await waitFor(() => {
+      expect(restoreLocalSessionMock).toHaveBeenCalledTimes(1);
+    });
+    expect(maybeSilentLoginMock).not.toHaveBeenCalled();
+    expect(resolveSessionMock).not.toHaveBeenCalled();
+  });
+
+  it('uses no-navigation central resume after an unknown refresh outcome', async () => {
+    getStoredAccessTokenMock.mockReturnValue('expired-token');
+    appDispatchMock.mockImplementation((action) => {
+      if (action?.type === 'auth/restoreLocalSession') {
+        return { unwrap: () => Promise.resolve('central_recovery_required') };
+      }
+      if (action?.type === 'auth/resumeSsoSession') {
+        return { unwrap: () => Promise.resolve('resumed') };
+      }
+      return action;
+    });
+
+    render(
+      React.createElement(ClientLayout, null, React.createElement('div', null, 'child'))
+    );
+
+    await waitFor(() => expect(resumeSsoSessionMock).toHaveBeenCalledTimes(1));
+    expect(restoreLocalSessionMock).toHaveBeenCalledTimes(1);
+    expect(maybeSilentLoginMock).not.toHaveBeenCalled();
+    expect(resolveSessionMock).not.toHaveBeenCalled();
+  });
+
+  it('stays inside Fusion when bounded central recovery also remains unavailable', async () => {
+    vi.useFakeTimers();
+    getStoredAccessTokenMock.mockReturnValue('expired-token');
+    appDispatchMock.mockImplementation((action) => {
+      if (action?.type === 'auth/restoreLocalSession') {
+        return { unwrap: () => Promise.resolve('central_recovery_required') };
+      }
+      if (action?.type === 'auth/resumeSsoSession') {
+        return { unwrap: () => Promise.reject(new TypeError('auth unavailable')) };
+      }
+      return action;
+    });
+
+    render(
+      React.createElement(ClientLayout, null, React.createElement('div', null, 'child'))
+    );
+
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+      await vi.advanceTimersByTimeAsync(14_000);
+    });
+
+    expect(restoreLocalSessionMock).toHaveBeenCalledTimes(1);
+    expect(resumeSsoSessionMock).toHaveBeenCalledTimes(4);
+    expect(maybeSilentLoginMock).not.toHaveBeenCalled();
+    expect(resolveSessionMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not resolve or start central SSO when the local refresh fails transiently', async () => {
+    getStoredAccessTokenMock.mockReturnValue('expired-token');
+    appDispatchMock.mockImplementation((action) => {
+      if (action?.type === 'auth/restoreLocalSession') {
+        return { unwrap: () => Promise.resolve('transient_failure') };
+      }
+      return action;
+    });
+
+    render(
+      React.createElement(ClientLayout, null, React.createElement('div', null, 'child'))
+    );
+
+    await waitFor(() => {
+      expect(restoreLocalSessionMock).toHaveBeenCalledTimes(1);
+    });
+    expect(maybeSilentLoginMock).not.toHaveBeenCalled();
+    expect(resolveSessionMock).not.toHaveBeenCalled();
+  });
+
+  it('automatically retries a transient local refresh while auth-service restarts', async () => {
+    vi.useFakeTimers();
+    getStoredAccessTokenMock.mockReturnValue('expired-token');
+    let attempts = 0;
+    appDispatchMock.mockImplementation((action) => {
+      if (action?.type === 'auth/restoreLocalSession') {
+        attempts += 1;
+        return {
+          unwrap: () => Promise.resolve(
+            attempts === 1 ? 'transient_failure' : 'restored',
+          ),
+        };
+      }
+      return action;
+    });
+
+    render(
+      React.createElement(ClientLayout, null, React.createElement('div', null, 'child'))
+    );
+
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(restoreLocalSessionMock).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      vi.advanceTimersByTime(1000);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(restoreLocalSessionMock).toHaveBeenCalledTimes(2);
+    expect(maybeSilentLoginMock).not.toHaveBeenCalled();
+    expect(resolveSessionMock).not.toHaveBeenCalled();
+  });
+
+  it('falls back to central SSO after all transient local retries are exhausted', async () => {
+    vi.useFakeTimers();
+    getStoredAccessTokenMock.mockReturnValue('expired-token');
+    appDispatchMock.mockImplementation((action) => {
+      if (action?.type === 'auth/restoreLocalSession') {
+        return { unwrap: () => Promise.resolve('transient_failure') };
+      }
+      return action;
+    });
+    maybeSilentLoginMock.mockReturnValue(true);
+
+    render(
+      React.createElement(ClientLayout, null, React.createElement('div', null, 'child'))
+    );
+
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+      await vi.advanceTimersByTimeAsync(14_000);
+    });
+
+    expect(restoreLocalSessionMock).toHaveBeenCalledTimes(4);
+    expect(maybeSilentLoginMock).toHaveBeenCalledTimes(1);
+    expect(resolveSessionMock).not.toHaveBeenCalled();
+  });
+
+  it('does not start a duplicate focus recovery while the initial transient retry is scheduled', async () => {
+    getStoredAccessTokenMock.mockReturnValue('expired-token');
+    appDispatchMock.mockImplementation((action) => {
+      if (action?.type === 'auth/restoreLocalSession') {
+        return { unwrap: () => Promise.resolve('transient_failure') };
+      }
+      return action;
+    });
+
+    render(
+      React.createElement(ClientLayout, null, React.createElement('div', null, 'child'))
+    );
+    await waitFor(() => expect(restoreLocalSessionMock).toHaveBeenCalledTimes(1));
+    restoreLocalSessionMock.mockClear();
+    appDispatchMock.mockClear();
+
+    window.dispatchEvent(new Event('focus'));
+
+    await new Promise(resolve => setTimeout(resolve, 50));
+    expect(restoreLocalSessionMock).not.toHaveBeenCalled();
+    expect(resumeSsoSessionMock).not.toHaveBeenCalled();
+  });
+
+  it('falls through from a definitive focus refresh miss to central SSO in the same probe', async () => {
+    render(
+      React.createElement(ClientLayout, null, React.createElement('div', null, 'child'))
+    );
+    await waitFor(() => expect(maybeSilentLoginMock).toHaveBeenCalledTimes(1));
+
+    getStoredAccessTokenMock.mockReturnValue('expired-token');
+    restoreLocalSessionMock.mockClear();
+    resumeSsoSessionMock.mockClear();
+    resolveSessionMock.mockClear();
+    appDispatchMock.mockClear();
+    appDispatchMock.mockImplementation((action) => {
+      if (action?.type === 'auth/restoreLocalSession') {
+        return { unwrap: () => Promise.resolve('no_session') };
+      }
+      if (action?.type === 'auth/resumeSsoSession') {
+        return { unwrap: () => Promise.resolve('no_session') };
+      }
+      return action;
+    });
+
+    window.dispatchEvent(new Event('focus'));
+
+    await waitFor(() => expect(resumeSsoSessionMock).toHaveBeenCalledTimes(1));
+    expect(restoreLocalSessionMock).toHaveBeenCalledTimes(1);
+    expect(resolveSessionMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('falls through from a transient focus refresh failure to central SSO in the same probe', async () => {
+    render(
+      React.createElement(ClientLayout, null, React.createElement('div', null, 'child'))
+    );
+    await waitFor(() => expect(maybeSilentLoginMock).toHaveBeenCalledTimes(1));
+
+    getStoredAccessTokenMock.mockReturnValue('expired-token');
+    restoreLocalSessionMock.mockClear();
+    resumeSsoSessionMock.mockClear();
+    resolveSessionMock.mockClear();
+    appDispatchMock.mockClear();
+    appDispatchMock.mockImplementation((action) => {
+      if (action?.type === 'auth/restoreLocalSession') {
+        return { unwrap: () => Promise.resolve('transient_failure') };
+      }
+      if (action?.type === 'auth/resumeSsoSession') {
+        return { unwrap: () => Promise.resolve('no_session') };
+      }
+      return action;
+    });
+
+    window.dispatchEvent(new Event('focus'));
+
+    await waitFor(() => expect(resumeSsoSessionMock).toHaveBeenCalledTimes(1));
+    expect(restoreLocalSessionMock).toHaveBeenCalledTimes(1);
+    expect(resolveSessionMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('reveals a retryable login terminal when local and central focus recovery both fail', async () => {
+    render(
+      React.createElement(ClientLayout, null, React.createElement('div', null, 'child'))
+    );
+    await waitFor(() => expect(maybeSilentLoginMock).toHaveBeenCalledTimes(1));
+
+    getStoredAccessTokenMock.mockReturnValue('expired-token');
+    resolveSessionMock.mockClear();
+    appDispatchMock.mockClear();
+    appDispatchMock.mockImplementation((action) => {
+      if (action?.type === 'auth/restoreLocalSession') {
+        return { unwrap: () => Promise.resolve('transient_failure') };
+      }
+      if (action?.type === 'auth/resumeSsoSession') {
+        return { unwrap: () => Promise.reject(new TypeError('auth unavailable')) };
+      }
+      return action;
+    });
+
+    window.dispatchEvent(new Event('focus'));
+
+    await waitFor(() => expect(resolveSessionMock).toHaveBeenCalledTimes(1));
+    expect(restoreLocalSessionMock).toHaveBeenCalledTimes(1);
+    expect(resumeSsoSessionMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('falls back to silent SSO only after the SDK definitively reports no local session', async () => {
+    getStoredAccessTokenMock.mockReturnValue('expired-token');
+    appDispatchMock.mockImplementation((action) => {
+      if (action?.type === 'auth/restoreLocalSession') {
+        return { unwrap: () => Promise.resolve('no_session') };
+      }
+      return action;
+    });
+    maybeSilentLoginMock.mockReturnValue(true);
+
+    render(
+      React.createElement(ClientLayout, null, React.createElement('div', null, 'child'))
+    );
+
+    await waitFor(() => {
+      expect(maybeSilentLoginMock).toHaveBeenCalledTimes(1);
+    });
+    expect(resolveSessionMock).not.toHaveBeenCalled();
+  });
+
+  it('keeps the session unresolved while a definitive local miss is falling back to silent SSO', async () => {
+    getStoredAccessTokenMock.mockReturnValue('expired-token');
+    let listener: ((state: {
+      status: 'unauthenticated';
+      user: null;
+    }) => void) | null = null;
+    let finishRecovery!: (result: 'no_session') => void;
+    const recovery = new Promise<'no_session'>((resolve) => {
+      finishRecovery = resolve;
+    });
+    (subscribeSsoStateMock as unknown as {
+      mockImplementation: (implementation: (next: typeof listener) => () => void) => void;
+    }).mockImplementation((next: typeof listener) => {
+      listener = next;
+      return vi.fn();
+    });
+    appDispatchMock.mockImplementation((action) => {
+      if (action?.type === 'auth/restoreLocalSession') {
+        return { unwrap: () => recovery };
+      }
+      return action;
+    });
+    maybeSilentLoginMock.mockReturnValue(true);
+
+    render(
+      React.createElement(ClientLayout, null, React.createElement('div', null, 'child'))
+    );
+    await waitFor(() => expect(restoreLocalSessionMock).toHaveBeenCalledTimes(1));
+
+    window.dispatchEvent(new Event('focus'));
+    await new Promise(resolve => setTimeout(resolve, 50));
+    expect(restoreLocalSessionMock).toHaveBeenCalledTimes(1);
+
+    act(() => listener?.({ status: 'unauthenticated', user: null }));
+    expect(settleSdkUnauthenticatedSessionMock).not.toHaveBeenCalled();
+
+    finishRecovery('no_session');
+    await waitFor(() => expect(maybeSilentLoginMock).toHaveBeenCalledTimes(1));
+    expect(resolveSessionMock).not.toHaveBeenCalled();
   });
 });

@@ -6,6 +6,7 @@ import {
   clearFusionProfileStorage,
   clearRemoteSsoSession,
   completeSsoCallback,
+  forceRefreshAccessToken,
   getStoredAccessToken,
   getValidAccessToken,
   probeSessionLiveness,
@@ -127,13 +128,10 @@ const getInitialAuthState = (): AuthState => {
           accountSwitchError: null,
           switchedAccountEmail: null,
         };
-      } else {
-        clearAuthStorage();
       }
     }
   } catch (error) {
     console.error("Error initializing auth state:", error);
-    clearAuthStorage();
   }
 
   return defaultState;
@@ -428,6 +426,21 @@ function tokenSubject(token: string): string | null {
   }
 }
 
+function isUsableAccessToken(token: string): boolean {
+  try {
+    const decoded = jwtDecode<Partial<DecodedToken>>(token);
+    return (
+      typeof decoded.sub === 'string'
+      && decoded.sub.length > 0
+      && typeof decoded.exp === 'number'
+      && Number.isFinite(decoded.exp)
+      && decoded.exp * 1000 > Date.now()
+    );
+  } catch {
+    return false;
+  }
+}
+
 /**
  * 采用 SDK 已原子提交到共享 localStorage 的新会话。
  *
@@ -514,6 +527,72 @@ export const resumeSsoSession = createAsyncThunk<
     email: result.status === 'resumed' ? result.user.email ?? '' : '',
   }));
   return result.status;
+});
+
+/**
+ * 冷启动时恢复 SDK 已持久化、但 access token 已过期或无法解码的本地会话。
+ *
+ * getInitialAuthState 只能同步判断 access token，不能据此删除仍可轮换的 refresh token。
+ * 该异步边界强制交给 SDK 做一次带跨标签锁的 refresh：
+ *   - 新 token：灌入 Redux 并刷新 Fusion profile；
+ *   - null：SDK 已确定性判定 refresh 不存在/被拒，才收敛为登出；
+ *   - outcome unknown：SDK 隔离不可重放票据，宿主改走无导航中央 SSO；
+ *   - 其它 throw：保留完整本地会话与未定论 UI，等待有界重试。
+ */
+interface RestoreLocalSessionInput {
+  deferNoSessionResolution?: boolean;
+}
+
+function isRefreshOutcomeUnknown(error: unknown): boolean {
+  return (
+    typeof error === 'object'
+    && error !== null
+    && 'code' in error
+    && error.code === 'token_refresh_outcome_unknown'
+  );
+}
+
+export const restoreLocalSession = createAsyncThunk<
+  'restored' | 'no_session' | 'transient_failure' | 'central_recovery_required',
+  RestoreLocalSessionInput | void,
+  { state: { auth: AuthState } }
+>('auth/restoreLocalSession', async (input, { dispatch }) => {
+  let token: string | null;
+  try {
+    token = await forceRefreshAccessToken();
+  } catch (error) {
+    // SDK 已经在统一 mutation 锁内隔离了不可再安全重放的旧 refresh token。
+    // 这里必须把它当作“本地会话不可用”并立即回落中央 Cookie SSO；若归为瞬时故障，
+    // 自动重试会再次发送结果未知的旧 token，触发服务端 reuse 检测并撤销当前应用会话。
+    if (isRefreshOutcomeUnknown(error)) {
+      clearFusionProfileStorage();
+      if (!input?.deferNoSessionResolution) {
+        completeAuthSessionTransition();
+        dispatch(remoteSessionCleared());
+      }
+      return 'central_recovery_required';
+    }
+    return 'transient_failure';
+  }
+
+  if (token === null) {
+    clearFusionProfileStorage();
+    if (!input?.deferNoSessionResolution) {
+      completeAuthSessionTransition();
+      dispatch(remoteSessionCleared());
+    }
+    return 'no_session';
+  }
+
+  // SDK 已原子持久化本次轮换得到的新 refresh token；若 access token 本身异常，
+  // 不能调用 setToken 触发全量清理。保留新会话，等待后续重试再次轮换恢复。
+  if (!isUsableAccessToken(token)) {
+    return 'transient_failure';
+  }
+
+  dispatch(setToken(token));
+  await dispatch(fetchUserProfile({ expectedToken: token }));
+  return 'restored';
 });
 
 /**

@@ -206,4 +206,44 @@ describe('authSlice', () => {
     expect(localStorage.getItem('user_profile')).toBeNull();
     expect(localStorage.getItem('user_profile_timestamp')).toBeNull();
   });
+
+  it('cold start preserves the SDK refresh session when the stored access token is expired', async () => {
+    localStorage.setItem('auth_token', 'expired-token');
+    localStorage.setItem('auth_refresh_token', 'refresh-token');
+    localStorage.setItem('auth_token_expiry', String(Date.now() - 60_000));
+    localStorage.setItem('auth_user_info', JSON.stringify({ id: 'user-1' }));
+    jwtDecodeMock.mockReturnValue({
+      sub: 'user-1',
+      email: 'fusion-user@example.com',
+      exp: Math.floor(Date.now() / 1000) - 60,
+    });
+
+    vi.resetModules();
+    const { default: coldStartReducer } = await import('./authSlice');
+    const state = coldStartReducer(undefined, { type: '@@test/init' });
+
+    expect(state.isAuthenticated).toBe(false);
+    expect(state.sessionResolved).toBe(false);
+    expect(localStorage.getItem('auth_token')).toBe('expired-token');
+    expect(localStorage.getItem('auth_refresh_token')).toBe('refresh-token');
+  });
+
+  it('cold start preserves the SDK refresh session when the stored access token is malformed', async () => {
+    localStorage.setItem('auth_token', 'malformed-token');
+    localStorage.setItem('auth_refresh_token', 'refresh-token');
+    localStorage.setItem('auth_token_expiry', String(Date.now() + 60_000));
+    localStorage.setItem('auth_user_info', JSON.stringify({ id: 'user-1' }));
+    jwtDecodeMock.mockImplementation(() => {
+      throw new Error('invalid jwt');
+    });
+
+    vi.resetModules();
+    const { default: coldStartReducer } = await import('./authSlice');
+    const state = coldStartReducer(undefined, { type: '@@test/init' });
+
+    expect(state.isAuthenticated).toBe(false);
+    expect(state.sessionResolved).toBe(false);
+    expect(localStorage.getItem('auth_token')).toBe('malformed-token');
+    expect(localStorage.getItem('auth_refresh_token')).toBe('refresh-token');
+  });
 });
