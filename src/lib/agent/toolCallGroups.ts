@@ -57,9 +57,9 @@ export function groupToolCalls(calls: ToolCallState[]): ToolCallGroup[] {
       0,
     );
     const modeCount = groupCalls.reduce((sum, call) => sum + (call.resultSummary?.mode_count ?? 0), 0);
-    const provider = groupCalls
+    const provider = publicProviderKey(groupCalls
       .map(call => call.resultSummary?.provider?.trim())
-      .find(Boolean);
+      .find(Boolean));
     const details = groupCalls.map(toGroupDetail);
     const hasExpandableDetails = shouldHaveExpandableDetails(groupCalls, status);
 
@@ -177,6 +177,12 @@ function buildSummary(
     if (toolName === 'route_compare' && modeCount > 0) {
       return `${registeredLabel} ${count} 次 · ${modeCount} 种方案`;
     }
+    if (toolName === 'search_flights' && resultCount > 0) {
+      return `${registeredLabel} ${count} 次 · ${resultCount} 个航班`;
+    }
+    if (toolName === 'search_trains' && resultCount > 0) {
+      return `${registeredLabel} ${count} 次 · ${resultCount} 个车次`;
+    }
     return `${registeredLabel} ${count} 次`;
   }
 
@@ -237,6 +243,12 @@ function getProductResultDetail(call: ToolCallState): string | undefined {
   if (call.toolName === 'route_compare' && typeof modeCount === 'number' && modeCount >= 0) {
     parts.push(`${Math.floor(modeCount)} 种方案`);
   }
+  if (call.toolName === 'search_flights' && typeof resultCount === 'number' && resultCount >= 0) {
+    parts.push(`${Math.floor(resultCount)} 个航班`);
+  }
+  if (call.toolName === 'search_trains' && typeof resultCount === 'number' && resultCount >= 0) {
+    parts.push(`${Math.floor(resultCount)} 个车次`);
+  }
   const detail = parts.filter(Boolean).join(' · ');
   return detail || undefined;
 }
@@ -244,6 +256,10 @@ function getProductResultDetail(call: ToolCallState): string | undefined {
 function getProviderLabel(provider: string | undefined): string | undefined {
   if (provider?.trim().toLowerCase() === 'amap') return '高德';
   return undefined;
+}
+
+function publicProviderKey(provider: string | undefined): string | undefined {
+  return provider?.toLowerCase() === 'amap' ? 'amap' : undefined;
 }
 
 function getSafeExternalResultTitle(call: ToolCallState): string | undefined {

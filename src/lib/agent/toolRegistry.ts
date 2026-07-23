@@ -6,7 +6,7 @@
  * icon 用 Lucide component reference 而不是字符串——保证类型安全 + tree-shaking 友好。
  */
 
-import { Search, Globe, MapPin, Route, Wrench } from 'lucide-react';
+import { Search, Globe, MapPin, Plane, Route, Train, Wrench } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 
 export type SemanticColor = 'info' | 'success' | 'warn' | 'danger' | 'teal' | 'neutral';
@@ -53,6 +53,18 @@ export const TOOL_REGISTRY: Record<string, ToolMeta> = {
       return origin || destination || '路线方案';
     },
   },
+  search_flights: {
+    label: '查询航班',
+    icon: Plane,
+    color: 'info',
+    summarize: summarizeTravelQuery,
+  },
+  search_trains: {
+    label: '查询高铁',
+    icon: Train,
+    color: 'teal',
+    summarize: summarizeTravelQuery,
+  },
 };
 
 const FALLBACK: ToolMeta = {
@@ -83,4 +95,12 @@ function firstStringArgument(args: Record<string, unknown>, keys: string[]): str
 function joinSummaryParts(first: string, second: string, fallback: string): string {
   if (first && second) return `${first} · ${second}`;
   return first || second || fallback;
+}
+
+function summarizeTravelQuery(args: Record<string, unknown>): string {
+  const origin = firstStringArgument(args, ['origin', 'from']);
+  const destination = firstStringArgument(args, ['destination', 'to']);
+  const date = firstStringArgument(args, ['departure_date', 'date']);
+  const route = origin && destination ? `${origin} → ${destination}` : origin || destination;
+  return joinSummaryParts(route, date, '出行方案');
 }

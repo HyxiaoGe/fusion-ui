@@ -2,6 +2,7 @@
 
 import { useId, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   AlertTriangle,
   Bike,
@@ -37,6 +38,7 @@ import {
 } from '@/components/ui/dialog';
 import type {
   NetworkSourceStatus,
+  FlightResultsBlock,
   PlaceResultsBlock,
   ProviderPlacePhoto,
   ProviderPlaceResult,
@@ -45,7 +47,11 @@ import type {
   ProviderTransitLeg,
   ProviderTransitType,
   RouteResultsBlock,
+  StructuredResultAction,
   StructuredToolResultBlock,
+  TrainResultsBlock,
+  TravelEndpoint,
+  TravelMoney,
 } from '@/types/conversation';
 import { cn } from '@/lib/utils';
 import { buildRoutePresentation, findFastestRouteIndex } from './routePresentation';
@@ -68,6 +74,8 @@ type StructuredToolResultRendererRegistry = {
 const STRUCTURED_TOOL_RESULT_RENDERERS = {
   place_results: block => <PlaceResults key={block.id} block={block} />,
   route_results: block => <RouteResults key={block.id} block={block} />,
+  flight_results: block => <FlightResults key={block.id} block={block} />,
+  train_results: block => <TrainResults key={block.id} block={block} />,
   unsupported_result: block => <UnsupportedResult key={block.id} />,
 } satisfies StructuredToolResultRendererRegistry;
 
@@ -87,6 +95,8 @@ export default function StructuredToolResults({ blocks }: StructuredToolResultsP
 function renderStructuredToolResult(block: StructuredToolResultBlock): ReactNode {
   if (block.type === 'place_results') return STRUCTURED_TOOL_RESULT_RENDERERS.place_results(block);
   if (block.type === 'route_results') return STRUCTURED_TOOL_RESULT_RENDERERS.route_results(block);
+  if (block.type === 'flight_results') return STRUCTURED_TOOL_RESULT_RENDERERS.flight_results(block);
+  if (block.type === 'train_results') return STRUCTURED_TOOL_RESULT_RENDERERS.train_results(block);
   return STRUCTURED_TOOL_RESULT_RENDERERS.unsupported_result(block);
 }
 
@@ -450,6 +460,265 @@ function RouteResults({ block }: { block: RouteResultsBlock }) {
       <Limitations items={block.limitations} />
     </section>
   );
+}
+
+function FlightResults({ block }: { block: FlightResultsBlock }) {
+  const { t } = useTranslation();
+  const flights = (block.flights ?? []).slice(0, 5);
+  return (
+    <section
+      aria-label={t('structuredResults.flight.region')}
+      className="rounded-lg border border-border/50 bg-card/40 p-3"
+    >
+      <ResultHeader
+        icon={<Plane className="h-4 w-4 text-info" aria-hidden="true" />}
+        title={travelResultTitle(
+          block.origin,
+          block.destination,
+          block.departure_date,
+          t('structuredResults.common.tripPending'),
+        )}
+        attribution={block.attribution}
+        fallbackAttribution={t('structuredResults.common.travelService')}
+        status={block.status}
+        statusText={block.status === 'degraded'
+          ? t('structuredResults.flight.degraded')
+          : t('structuredResults.flight.count', { count: safeCount(block.result_count) ?? flights.length })}
+      />
+
+      {flights.length > 0 ? (
+        <div
+          data-testid="flight-results-grid"
+          className="mt-3 grid grid-cols-1 items-start gap-2 xl:grid-cols-2 2xl:grid-cols-3"
+        >
+          {flights.map((flight, index) => (
+            <TravelOptionCard
+              key={safeText(flight.option_id) || `${block.id}-${index}`}
+              kind="flight"
+              number={flight.flight_no}
+              operator={flight.airline_name}
+              departure={flight.departure}
+              arrival={flight.arrival}
+              durationS={flight.duration_s}
+              travelClass={flight.cabin_class}
+              stops={flight.stops}
+              price={flight.price}
+              actions={flight.actions}
+              departureDate={block.departure_date}
+            />
+          ))}
+        </div>
+      ) : (
+        <EmptyResult text={t('structuredResults.flight.empty')} />
+      )}
+
+      <TravelFreshness observedAt={block.observed_at} />
+      <Limitations items={block.limitations} />
+    </section>
+  );
+}
+
+function TrainResults({ block }: { block: TrainResultsBlock }) {
+  const { t } = useTranslation();
+  const trains = (block.trains ?? []).slice(0, 5);
+  return (
+    <section
+      aria-label={t('structuredResults.train.region')}
+      className="rounded-lg border border-border/50 bg-card/40 p-3"
+    >
+      <ResultHeader
+        icon={<Train className="h-4 w-4 text-teal" aria-hidden="true" />}
+        title={travelResultTitle(
+          block.origin,
+          block.destination,
+          block.departure_date,
+          t('structuredResults.common.tripPending'),
+        )}
+        attribution={block.attribution}
+        fallbackAttribution={t('structuredResults.common.travelService')}
+        status={block.status}
+        statusText={block.status === 'degraded'
+          ? t('structuredResults.train.degraded')
+          : t('structuredResults.train.count', { count: safeCount(block.result_count) ?? trains.length })}
+      />
+
+      {trains.length > 0 ? (
+        <div
+          data-testid="train-results-grid"
+          className="mt-3 grid grid-cols-1 items-start gap-2 xl:grid-cols-2 2xl:grid-cols-3"
+        >
+          {trains.map((train, index) => (
+            <TravelOptionCard
+              key={safeText(train.option_id) || `${block.id}-${index}`}
+              kind="train"
+              number={train.train_no}
+              operator={train.train_type}
+              departure={train.departure}
+              arrival={train.arrival}
+              durationS={train.duration_s}
+              travelClass={train.seat_class}
+              stops={train.stops}
+              price={train.price}
+              actions={train.actions}
+              departureDate={block.departure_date}
+            />
+          ))}
+        </div>
+      ) : (
+        <EmptyResult text={t('structuredResults.train.empty')} />
+      )}
+
+      <TravelFreshness observedAt={block.observed_at} />
+      <Limitations items={block.limitations} />
+    </section>
+  );
+}
+
+function TravelOptionCard({
+  kind,
+  number,
+  operator,
+  departure,
+  arrival,
+  durationS,
+  travelClass,
+  stops,
+  price,
+  actions,
+  departureDate,
+}: {
+  kind: 'flight' | 'train';
+  number?: string | null;
+  operator?: string | null;
+  departure?: TravelEndpoint | null;
+  arrival?: TravelEndpoint | null;
+  durationS?: number | null;
+  travelClass?: string | null;
+  stops?: 0 | null;
+  price?: TravelMoney | null;
+  actions?: StructuredResultAction[] | null;
+  departureDate?: string | null;
+}) {
+  const { t } = useTranslation();
+  const safeNumber = safeText(number) || t(`structuredResults.${kind}.unknownNumber`);
+  const heading = kind === 'flight'
+    ? compact([safeText(operator), safeNumber])
+    : compact([safeNumber, safeText(operator)]);
+  const primaryAction = secureTravelActions(actions)[0];
+  const Icon = kind === 'flight' ? Plane : Train;
+  const duration = formatTravelDuration(durationS, {
+    minutes: value => t('structuredResults.common.duration.minutes', { count: value }),
+    hours: value => t('structuredResults.common.duration.hours', { count: value }),
+    hoursMinutes: (hours, minutes) => t(
+      'structuredResults.common.duration.hoursMinutes',
+      { hours, minutes },
+    ),
+  });
+  const actionLabel = t(`structuredResults.${kind}.viewDetails`);
+
+  return (
+    <article className="min-w-0 rounded-md border border-border/40 bg-background/70 px-3 py-3">
+      <div className="flex min-w-0 items-start justify-between gap-3">
+        <div className="flex min-w-0 items-center gap-2">
+          <span className={cn(
+            'flex h-7 w-7 shrink-0 items-center justify-center rounded-md',
+            kind === 'flight' ? 'bg-info-bg text-info' : 'bg-teal/10 text-teal',
+          )}>
+            <Icon className="h-3.5 w-3.5" aria-hidden="true" />
+          </span>
+          <h4 className="min-w-0 break-words text-sm font-medium text-foreground">{heading}</h4>
+        </div>
+        <span className="shrink-0 text-sm font-semibold text-foreground">{formatTravelPrice(price, t('structuredResults.common.priceUnavailable'))}</span>
+      </div>
+
+      <div className="mt-3 grid min-w-0 grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-start gap-2">
+        <TravelEndpointSummary endpoint={departure} align="left" departureDate={departureDate} />
+        <div className="flex min-w-[4.5rem] flex-col items-center px-1 pt-0.5 text-center text-[11px] text-muted-foreground">
+          <span>{duration}</span>
+          <span className="my-1 h-px w-full bg-border/60" aria-hidden="true" />
+          <span aria-hidden="true">•</span>
+        </div>
+        <TravelEndpointSummary endpoint={arrival} align="right" departureDate={departureDate} />
+      </div>
+
+      <div className="mt-3 flex min-w-0 flex-wrap items-center justify-between gap-2 border-t border-border/30 pt-2">
+        <div className="flex min-w-0 flex-wrap gap-1.5">
+          {safeText(travelClass) ? (
+            <span className="rounded-full bg-muted/60 px-2 py-0.5 text-[11px] text-muted-foreground">
+              {safeText(travelClass)}
+            </span>
+          ) : null}
+          {stops === 0 ? (
+            <span className="rounded-full bg-success/10 px-2 py-0.5 text-[11px] text-success">
+              {t('structuredResults.common.direct')}
+            </span>
+          ) : null}
+        </div>
+        {primaryAction ? (
+          <a
+            href={primaryAction.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            aria-label={actionLabel}
+            className="inline-flex shrink-0 items-center gap-1 rounded-full border border-primary/30 bg-primary/5 px-2.5 py-1 text-[11px] font-medium text-primary hover:bg-primary/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+          >
+            {actionLabel}
+            <ExternalLink className="h-3 w-3" aria-hidden="true" />
+          </a>
+        ) : null}
+      </div>
+    </article>
+  );
+}
+
+function TravelEndpointSummary({
+  endpoint,
+  align,
+  departureDate,
+}: {
+  endpoint?: TravelEndpoint | null;
+  align: 'left' | 'right';
+  departureDate?: string | null;
+}) {
+  const { t } = useTranslation();
+  const station = safeText(endpoint?.station_name) || t('structuredResults.common.stationPending');
+  const stationMeta = compact([safeText(endpoint?.station_code), safeText(endpoint?.terminal)]);
+  const schedule = formatTravelSchedule(
+    endpoint?.scheduled_at,
+    departureDate,
+    t('structuredResults.common.timePending'),
+  );
+  const dayOffsetText = schedule.dayOffset === 1
+    ? t('structuredResults.common.nextDay')
+    : schedule.dayOffset > 1
+      ? t('structuredResults.common.dayOffset', { count: schedule.dayOffset })
+      : '';
+  return (
+    <div className={cn('min-w-0', align === 'right' && 'text-right')}>
+      <p className={cn(
+        'flex items-baseline gap-1 text-lg font-semibold leading-none text-foreground',
+        align === 'right' && 'justify-end',
+      )}>
+        <span>{schedule.time}</span>
+        {dayOffsetText ? (
+          <span className="text-[10px] font-medium text-warn">{dayOffsetText}</span>
+        ) : null}
+      </p>
+      <p className="mt-1 break-words text-xs font-medium text-foreground">
+        {stationMeta ? `${station} · ${stationMeta}` : station}
+      </p>
+      {safeText(endpoint?.city) ? (
+        <p className="mt-0.5 truncate text-[11px] text-muted-foreground">{safeText(endpoint?.city)}</p>
+      ) : null}
+    </div>
+  );
+}
+
+function TravelFreshness({ observedAt }: { observedAt?: string | null }) {
+  const { t, i18n } = useTranslation();
+  const value = formatObservedAt(observedAt, i18n.resolvedLanguage || i18n.language);
+  if (!value) return null;
+  return <p className="mt-2 text-[11px] text-muted-foreground">{t('structuredResults.common.observedAt', { value })}</p>;
 }
 
 function RouteResultList({ routes }: { routes: ProviderRouteResult[] }) {
@@ -869,12 +1138,14 @@ function ResultHeader({
   icon,
   title,
   attribution,
+  fallbackAttribution = '地图服务',
   status,
   statusText,
 }: {
   icon: ReactNode;
   title: string;
   attribution?: { label?: string | null } | null;
+  fallbackAttribution?: string;
   status?: NetworkSourceStatus | null;
   statusText: string;
 }) {
@@ -885,7 +1156,7 @@ function ResultHeader({
         <div className="min-w-0">
           <h3 className="truncate text-sm font-medium text-foreground" title={title}>{title}</h3>
           <p className="mt-0.5 text-[11px] text-muted-foreground">
-            {safeText(attribution?.label) || '地图服务'}
+            {safeText(attribution?.label) || fallbackAttribution}
           </p>
         </div>
       </div>
@@ -937,7 +1208,7 @@ function securePhotos(photos?: ProviderPlacePhoto[] | null): ProviderPlacePhoto[
 }
 
 function secureExternalActions(
-  actions?: ProviderPlaceResult['actions'],
+  actions?: StructuredResultAction[] | null,
 ): Array<{ kind: 'open_external'; label: string; url: string }> {
   return (actions ?? []).reduce<Array<{ kind: 'open_external'; label: string; url: string }>>(
     (result, action) => {
@@ -949,6 +1220,148 @@ function secureExternalActions(
     },
     [],
   ).slice(0, 2);
+}
+
+function travelResultTitle(
+  origin?: string | null,
+  destination?: string | null,
+  departureDate?: string | null,
+  fallback = '',
+): string {
+  const route = safeText(origin) && safeText(destination)
+    ? `${safeText(origin)} → ${safeText(destination)}`
+    : safeText(origin) || safeText(destination) || fallback;
+  return compact([route, safeText(departureDate)]);
+}
+
+function formatTravelSchedule(
+  value: string | null | undefined,
+  departureDate: string | null | undefined,
+  fallback: string,
+): { time: string; dayOffset: number } {
+  const date = new Date(safeText(value));
+  if (!Number.isFinite(date.getTime())) return { time: fallback, dayOffset: 0 };
+
+  try {
+    const parts = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Asia/Shanghai',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      hourCycle: 'h23',
+    }).formatToParts(date);
+    const year = dateTimePart(parts, 'year');
+    const month = dateTimePart(parts, 'month');
+    const day = dateTimePart(parts, 'day');
+    const hour = dateTimePart(parts, 'hour');
+    const minute = dateTimePart(parts, 'minute');
+    if (!year || !month || !day || !hour || !minute) {
+      return { time: fallback, dayOffset: 0 };
+    }
+
+    const scheduledDay = isoDateDayNumber(`${year}-${month}-${day}`);
+    const departureDay = isoDateDayNumber(departureDate);
+    const dayOffset = scheduledDay !== null && departureDay !== null
+      ? Math.max(0, scheduledDay - departureDay)
+      : 0;
+    return { time: `${hour}:${minute}`, dayOffset };
+  } catch {
+    return { time: fallback, dayOffset: 0 };
+  }
+}
+
+function dateTimePart(
+  parts: Intl.DateTimeFormatPart[],
+  type: Intl.DateTimeFormatPartTypes,
+): string {
+  return parts.find(part => part.type === type)?.value || '';
+}
+
+function isoDateDayNumber(value: string | null | undefined): number | null {
+  const match = safeText(value).match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return null;
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  if (
+    date.getUTCFullYear() !== year
+    || date.getUTCMonth() !== month - 1
+    || date.getUTCDate() !== day
+  ) {
+    return null;
+  }
+  return Math.floor(date.getTime() / 86_400_000);
+}
+
+function formatObservedAt(value: string | null | undefined, language: string): string {
+  const date = new Date(safeText(value));
+  if (!Number.isFinite(date.getTime())) return '';
+  try {
+    return new Intl.DateTimeFormat(language || 'zh-CN', {
+      timeZone: 'Asia/Shanghai',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    }).format(date);
+  } catch {
+    return '';
+  }
+}
+
+function formatTravelDuration(
+  value: number | null | undefined,
+  formatters: {
+    minutes: (minutes: number) => string;
+    hours: (hours: number) => string;
+    hoursMinutes: (hours: number, minutes: number) => string;
+  },
+): string {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) return '';
+  const minutes = Math.max(1, Math.round(value / 60));
+  const hours = Math.floor(minutes / 60);
+  const remainder = minutes % 60;
+  if (hours === 0) return formatters.minutes(minutes);
+  if (remainder === 0) return formatters.hours(hours);
+  return formatters.hoursMinutes(hours, remainder);
+}
+
+function formatTravelPrice(price: TravelMoney | null | undefined, fallback: string): string {
+  if (
+    !price
+    || price.currency !== 'CNY'
+    || !Number.isInteger(price.amount_minor)
+    || price.amount_minor < 0
+  ) {
+    return fallback;
+  }
+  const amount = price.amount_minor / 100;
+  return `¥${Number.isInteger(amount) ? amount.toFixed(0) : amount.toFixed(2)}`;
+}
+
+function secureTravelActions(
+  actions?: StructuredResultAction[] | null,
+): Array<{ kind: 'open_external'; url: string }> {
+  return (actions ?? []).reduce<Array<{ kind: 'open_external'; url: string }>>((result, action) => {
+    if (action?.kind !== 'open_external') return result;
+    const parsed = parseHttpsUrl(action.url);
+    if (
+      !parsed
+      || parsed.hostname.toLowerCase() !== 'a.feizhu.com'
+      || parsed.username
+      || parsed.password
+      || (parsed.port && parsed.port !== '443')
+    ) {
+      return result;
+    }
+    result.push({ kind: 'open_external', url: parsed.toString() });
+    return result;
+  }, []).slice(0, 1);
 }
 
 function parseHttpsUrl(value?: string | null): URL | null {

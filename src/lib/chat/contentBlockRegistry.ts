@@ -106,7 +106,73 @@ function hasRequiredStructuredResultFields(source: Record<string, unknown>): boo
     });
   }
 
+  if (source.type === 'flight_results' || source.type === 'train_results') {
+    if (source.provider !== 'flyai' || !hasRequiredTravelResultBase(source)) return false;
+    const collectionKey = source.type === 'flight_results' ? 'flights' : 'trains';
+    const numberKey = source.type === 'flight_results' ? 'flight_no' : 'train_no';
+    const options = source[collectionKey];
+    const resultCount = boundedInteger(source.result_count, 0, 5);
+    if (!Array.isArray(options) || resultCount === null || options.length !== resultCount) return false;
+    return options.every(option => {
+      const item = asRecord(option);
+      return Boolean(
+        item
+        && boundedRequiredString(item.option_id, 80)
+        && boundedRequiredString(item[numberKey], 40)
+        && item.stops === 0
+        && boundedInteger(item.duration_s, 0, 172_800) !== null
+        && hasRequiredTravelEndpoint(item.departure)
+        && hasRequiredTravelEndpoint(item.arrival)
+        && hasValidTravelMoney(item.price),
+      );
+    });
+  }
+
   return false;
+}
+
+function hasRequiredTravelResultBase(source: Record<string, unknown>): boolean {
+  return Boolean(
+    boundedRequiredString(source.origin, 80)
+    && boundedRequiredString(source.destination, 80)
+    && isIsoDate(source.departure_date)
+    && isIsoDateTime(source.observed_at),
+  );
+}
+
+function hasRequiredTravelEndpoint(value: unknown): boolean {
+  const endpoint = asRecord(value);
+  return Boolean(
+    endpoint
+    && boundedRequiredString(endpoint.city, 80)
+    && boundedRequiredString(endpoint.station_name, 120)
+    && isIsoDateTime(endpoint.scheduled_at),
+  );
+}
+
+function hasValidTravelMoney(value: unknown): boolean {
+  if (value === undefined || value === null) return true;
+  const money = asRecord(value);
+  return Boolean(
+    money
+    && money.currency === 'CNY'
+    && boundedInteger(money.amount_minor, 0, 100_000_000) !== null,
+  );
+}
+
+function isIsoDate(value: unknown): boolean {
+  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const [year, month, day] = value.split('-').map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  return date.getUTCFullYear() === year
+    && date.getUTCMonth() === month - 1
+    && date.getUTCDate() === day;
+}
+
+function isIsoDateTime(value: unknown): boolean {
+  return typeof value === 'string'
+    && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/.test(value)
+    && Number.isFinite(Date.parse(value));
 }
 
 function hasRequiredRouteEndpoint(value: unknown): boolean {

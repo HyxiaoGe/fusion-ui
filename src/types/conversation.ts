@@ -205,6 +205,79 @@ export interface RouteResultsBlock {
   tool_call_log_id?: string | null;
 }
 
+export interface TravelEndpoint {
+  city?: string | null;
+  station_name?: string | null;
+  station_code?: string | null;
+  terminal?: string | null;
+  scheduled_at?: string | null;
+}
+
+export interface TravelMoney {
+  currency: 'CNY';
+  amount_minor: number;
+}
+
+export interface ProviderFlightResult {
+  option_id?: string | null;
+  airline_name?: string | null;
+  flight_no?: string | null;
+  departure?: TravelEndpoint | null;
+  arrival?: TravelEndpoint | null;
+  duration_s?: number | null;
+  cabin_class?: string | null;
+  stops?: 0 | null;
+  price?: TravelMoney | null;
+  actions?: StructuredResultAction[] | null;
+}
+
+export interface FlightResultsBlock {
+  type: 'flight_results';
+  id: string;
+  schema_version: 1;
+  provider?: string | null;
+  attribution?: StructuredResultAttribution | null;
+  status?: 'success' | 'degraded' | null;
+  origin?: string | null;
+  destination?: string | null;
+  departure_date?: string | null;
+  observed_at?: string | null;
+  result_count?: number | null;
+  flights?: ProviderFlightResult[] | null;
+  limitations?: string[] | null;
+  tool_call_log_id?: string | null;
+}
+
+export interface ProviderTrainResult {
+  option_id?: string | null;
+  train_no?: string | null;
+  train_type?: string | null;
+  departure?: TravelEndpoint | null;
+  arrival?: TravelEndpoint | null;
+  duration_s?: number | null;
+  seat_class?: string | null;
+  stops?: 0 | null;
+  price?: TravelMoney | null;
+  actions?: StructuredResultAction[] | null;
+}
+
+export interface TrainResultsBlock {
+  type: 'train_results';
+  id: string;
+  schema_version: 1;
+  provider?: string | null;
+  attribution?: StructuredResultAttribution | null;
+  status?: 'success' | 'degraded' | null;
+  origin?: string | null;
+  destination?: string | null;
+  departure_date?: string | null;
+  observed_at?: string | null;
+  result_count?: number | null;
+  trains?: ProviderTrainResult[] | null;
+  limitations?: string[] | null;
+  tool_call_log_id?: string | null;
+}
+
 export interface UnsupportedResultBlock {
   type: 'unsupported_result';
   id: string;
@@ -216,6 +289,8 @@ export interface UnsupportedResultBlock {
 export type StructuredToolResultBlock =
   | PlaceResultsBlock
   | RouteResultsBlock
+  | FlightResultsBlock
+  | TrainResultsBlock
   | UnsupportedResultBlock;
 
 export type ContentBlock =

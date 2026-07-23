@@ -67,6 +67,40 @@
       "placeholder": "输入您的问题...",
       "newChatTitle": "新的对话"
     },
+    "structuredResults": {
+      "common": {
+        "travelService": "出行服务",
+        "tripPending": "行程待确认",
+        "direct": "直达",
+        "priceUnavailable": "价格暂不可用",
+        "stationPending": "站点待确认",
+        "timePending": "时间待确认",
+        "nextDay": "次日",
+        "dayOffset": "+{{count}} 天",
+        "observedAt": "查询于 {{value}}",
+        "duration": {
+          "minutes": "{{count}} 分钟",
+          "hours": "{{count}} 小时",
+          "hoursMinutes": "{{hours}} 小时 {{minutes}} 分钟"
+        }
+      },
+      "flight": {
+        "region": "航班查询结果",
+        "count": "{{count}} 个航班",
+        "degraded": "部分航班可用",
+        "empty": "暂未找到符合条件的航班",
+        "unknownNumber": "航班号待确认",
+        "viewDetails": "查看详情"
+      },
+      "train": {
+        "region": "高铁查询结果",
+        "count": "{{count}} 个车次",
+        "degraded": "部分车次可用",
+        "empty": "暂未找到符合条件的高铁车次",
+        "unknownNumber": "车次待确认",
+        "viewDetails": "查看详情"
+      }
+    },
     "models": {
       "title": "AI模型",
       "ernie": "文心一言",

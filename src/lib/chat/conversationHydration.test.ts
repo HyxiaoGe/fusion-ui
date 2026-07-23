@@ -350,6 +350,66 @@ describe('conversationHydration', () => {
     ]);
   });
 
+  it('强刷后恢复航班和高铁富结果及安全预订动作', () => {
+    const common = {
+      schema_version: 1,
+      provider: 'flyai',
+      attribution: { label: '飞猪旅行' },
+      status: 'success',
+      departure_date: '2026-08-01',
+      observed_at: '2026-07-22T15:00:00+08:00',
+      result_count: 1,
+    };
+    const chat = buildChatFromServerConversation({
+      id: 'chat-travel-results',
+      title: '跨城出行结果',
+      model_id: 'qwen-max-latest',
+      messages: [{
+        id: 'assistant-travel-results',
+        role: 'assistant',
+        content: [
+          {
+            ...common,
+            type: 'flight_results',
+            id: 'flights-1',
+            origin: '深圳',
+            destination: '上海',
+            flights: [{
+              option_id: 'flight-1',
+              flight_no: 'CZ1234',
+              departure: { city: '深圳', station_name: '深圳宝安国际机场', scheduled_at: '2026-08-01T08:30:00+08:00' },
+              arrival: { city: '上海', station_name: '上海虹桥国际机场', scheduled_at: '2026-08-01T10:45:00+08:00' },
+              duration_s: 8_100,
+              stops: 0,
+              actions: [{ kind: 'open_external', label: '安全预订', url: 'https://a.feizhu.com/flight/1' }],
+            }],
+          },
+          {
+            ...common,
+            type: 'train_results',
+            id: 'trains-1',
+            origin: '深圳北',
+            destination: '广州南',
+            trains: [{
+              option_id: 'train-1',
+              train_no: 'G100',
+              departure: { city: '深圳', station_name: '深圳北站', scheduled_at: '2026-08-01T09:00:00+08:00' },
+              arrival: { city: '广州', station_name: '广州南站', scheduled_at: '2026-08-01T09:32:00+08:00' },
+              duration_s: 1_920,
+              stops: 0,
+              actions: [],
+            }],
+          },
+        ],
+      }],
+    });
+
+    expect(chat.messages[0].content).toEqual([
+      expect.objectContaining({ type: 'flight_results', flights: [expect.objectContaining({ flight_no: 'CZ1234' })] }),
+      expect.objectContaining({ type: 'train_results', trains: [expect.objectContaining({ train_no: 'G100' })] }),
+    ]);
+  });
+
   it('强刷后同时保留失败搜索状态和可用地点结果，供活动状态按整体结果派生', () => {
     const chat = buildChatFromServerConversation({
       id: 'chat-partial-results',

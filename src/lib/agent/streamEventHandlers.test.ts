@@ -262,6 +262,56 @@ describe('createAgentStreamEventHandlers', () => {
     }));
   });
 
+  it('把航班富结果事件规范化后写入 stream staticBlocks', () => {
+    const dispatch = vi.fn();
+    const handlers = createAgentStreamEventHandlers({
+      dispatch,
+      isActive: () => true,
+      resolveMessageId: ev => ev.message_id,
+      resolveConversationId: () => 'c1',
+    });
+
+    handlers.onContentBlockUpserted?.({
+      type: 'content_block_upserted',
+      protocol_version: 2,
+      run_id: 'r1',
+      parent_run_id: null,
+      step_id: 's1',
+      parent_step_id: null,
+      tool_call_id: 'tc-flight',
+      sequence: 7,
+      trace_id: 'r1',
+      ts: 0,
+      content_block: {
+        type: 'flight_results',
+        id: 'flights-1',
+        schema_version: 1,
+        provider: 'flyai',
+        status: 'success',
+        origin: '深圳',
+        destination: '上海',
+        departure_date: '2026-08-01',
+        observed_at: '2026-07-22T15:00:00+08:00',
+        result_count: 1,
+        flights: [{
+          option_id: 'flight-1',
+          flight_no: 'CZ1234',
+          departure: { city: '深圳', station_name: '深圳宝安国际机场', scheduled_at: '2026-08-01T08:30:00+08:00' },
+          arrival: { city: '上海', station_name: '上海虹桥国际机场', scheduled_at: '2026-08-01T10:45:00+08:00' },
+          duration_s: 8_100,
+          stops: 0,
+        }],
+      },
+    });
+
+    expect(dispatch).toHaveBeenCalledWith(expect.objectContaining({
+      type: 'stream/upsertStaticContentBlock',
+      payload: expect.objectContaining({
+        block: expect.objectContaining({ type: 'flight_results', id: 'flights-1' }),
+      }),
+    }));
+  });
+
   it('把未来版本流式结果降级为不含原始 payload 的安全占位', () => {
     const dispatch = vi.fn();
     const handlers = createAgentStreamEventHandlers({

@@ -1,7 +1,13 @@
 import React from 'react';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
-import type { PlaceResultsBlock, RouteResultsBlock } from '@/types/conversation';
+import { beforeEach, describe, expect, it } from 'vitest';
+import type {
+  FlightResultsBlock,
+  PlaceResultsBlock,
+  RouteResultsBlock,
+  TrainResultsBlock,
+} from '@/types/conversation';
+import i18n from '@/lib/i18n';
 import {
   normalizeStructuredToolResultBlock,
   STRUCTURED_TOOL_RESULT_CONTRACTS,
@@ -58,7 +64,97 @@ function routeBlock(overrides: Partial<RouteResultsBlock> = {}): RouteResultsBlo
   };
 }
 
+function flightBlock(overrides: Partial<FlightResultsBlock> = {}): FlightResultsBlock {
+  return {
+    type: 'flight_results',
+    id: 'flights-1',
+    schema_version: 1,
+    provider: 'flyai',
+    attribution: { label: '飞猪旅行' },
+    status: 'success',
+    origin: '深圳',
+    destination: '上海',
+    departure_date: '2026-08-01',
+    observed_at: '2026-07-22T15:00:00+08:00',
+    result_count: 2,
+    flights: [
+      {
+        option_id: 'flight-1',
+        airline_name: '南方航空',
+        flight_no: 'CZ1234',
+        departure: {
+          city: '深圳',
+          station_name: '深圳宝安国际机场',
+          station_code: 'SZX',
+          terminal: 'T3',
+          scheduled_at: '2026-08-01T08:30:00+08:00',
+        },
+        arrival: {
+          city: '上海',
+          station_name: '上海虹桥国际机场',
+          station_code: 'SHA',
+          terminal: 'T2',
+          scheduled_at: '2026-08-01T10:45:00+08:00',
+        },
+        duration_s: 8_100,
+        cabin_class: '经济舱',
+        stops: 0,
+        price: { currency: 'CNY', amount_minor: 88_000 },
+        actions: [{ kind: 'open_external', label: '安全预订', url: 'https://a.feizhu.com/flight/1' }],
+      },
+      {
+        option_id: 'flight-2',
+        airline_name: '东方航空',
+        flight_no: 'MU5678',
+        departure: { city: '深圳', station_name: '深圳宝安国际机场', scheduled_at: '2026-08-01T12:00:00+08:00' },
+        arrival: { city: '上海', station_name: '上海浦东国际机场', scheduled_at: '2026-08-01T14:30:00+08:00' },
+        duration_s: 9_000,
+        stops: 0,
+        actions: [],
+      },
+    ],
+    limitations: ['价格和班次以预订页为准'],
+    tool_call_log_id: 'tc-flight',
+    ...overrides,
+  };
+}
+
+function trainBlock(overrides: Partial<TrainResultsBlock> = {}): TrainResultsBlock {
+  return {
+    type: 'train_results',
+    id: 'trains-1',
+    schema_version: 1,
+    provider: 'flyai',
+    attribution: { label: '飞猪旅行' },
+    status: 'success',
+    origin: '深圳北',
+    destination: '广州南',
+    departure_date: '2026-08-01',
+    observed_at: '2026-07-22T15:00:00+08:00',
+    result_count: 1,
+    trains: [{
+      option_id: 'train-1',
+      train_no: 'G100',
+      train_type: '高速动车',
+      departure: { city: '深圳', station_name: '深圳北站', scheduled_at: '2026-08-01T09:00:00+08:00' },
+      arrival: { city: '广州', station_name: '广州南站', scheduled_at: '2026-08-01T09:32:00+08:00' },
+      duration_s: 1_920,
+      seat_class: '二等座',
+      stops: 0,
+      price: { currency: 'CNY', amount_minor: 7_450 },
+      actions: [{ kind: 'open_external', label: '安全预订', url: 'https://a.feizhu.com/train/1' }],
+    }],
+    limitations: [],
+    tool_call_log_id: 'tc-train',
+    ...overrides,
+  };
+}
+
 describe('StructuredToolResults', () => {
+  beforeEach(async () => {
+    await i18n.changeLanguage('zh-CN');
+  });
+
   it('每个已注册富结果协议都有对应渲染器', () => {
     expect([...STRUCTURED_TOOL_RESULT_RENDERER_TYPES].sort()).toEqual(
       STRUCTURED_TOOL_RESULT_CONTRACTS.map(contract => contract.type).sort(),
@@ -85,6 +181,173 @@ describe('StructuredToolResults', () => {
 
     expect(screen.getByTestId('structured-tool-results')).toHaveClass('w-full');
     expect(screen.getByTestId('structured-tool-results')).not.toHaveClass('max-w-4xl');
+  });
+
+  it('航班卡片以行程决策为中心展示两列摘要、完整细节和安全预订动作', () => {
+    render(<StructuredToolResults blocks={[flightBlock()]} />);
+
+    const region = screen.getByRole('region', { name: '航班查询结果' });
+    expect(within(region).getByText('深圳 → 上海 · 2026-08-01')).toBeInTheDocument();
+    expect(within(region).getByText('飞猪旅行')).toBeInTheDocument();
+    expect(within(region).getByTestId('flight-results-grid')).toHaveClass(
+      'grid-cols-1',
+      'xl:grid-cols-2',
+      '2xl:grid-cols-3',
+    );
+    expect(within(region).getByText('南方航空 · CZ1234')).toBeInTheDocument();
+    expect(within(region).getByText('08:30')).toBeInTheDocument();
+    expect(within(region).getByText('10:45')).toBeInTheDocument();
+    expect(within(region).getByText('深圳宝安国际机场 · SZX · T3')).toBeInTheDocument();
+    expect(within(region).getByText('上海虹桥国际机场 · SHA · T2')).toBeInTheDocument();
+    expect(within(region).getByText('2 小时 15 分钟')).toBeInTheDocument();
+    expect(within(region).getByText('经济舱')).toBeInTheDocument();
+    expect(within(region).getAllByText('直达')).toHaveLength(2);
+    expect(within(region).getByText('¥880')).toBeInTheDocument();
+    expect(within(region).getByText('价格暂不可用')).toBeInTheDocument();
+    expect(within(region).getByRole('link', { name: '查看详情' })).toHaveAttribute(
+      'href',
+      'https://a.feizhu.com/flight/1',
+    );
+    expect(within(region).getByRole('link', { name: '查看详情' })).toHaveAttribute('target', '_blank');
+    expect(within(region).queryByText('安全预订')).toBeNull();
+    expect(within(region).getByText(/查询于/)).toBeInTheDocument();
+    expect(region.textContent).not.toMatch(/flyai|search_flights/i);
+  });
+
+  it('高铁卡片展示车次、车站、席别和价格，窄屏单列且缺字段不制造空白', () => {
+    const { rerender } = render(<StructuredToolResults blocks={[trainBlock()]} />);
+
+    const region = screen.getByRole('region', { name: '高铁查询结果' });
+    expect(within(region).getByTestId('train-results-grid')).toHaveClass(
+      'grid-cols-1',
+      'xl:grid-cols-2',
+      '2xl:grid-cols-3',
+    );
+    expect(within(region).getByText('G100 · 高速动车')).toBeInTheDocument();
+    expect(within(region).getByText('深圳北站')).toBeInTheDocument();
+    expect(within(region).getByText('广州南站')).toBeInTheDocument();
+    expect(within(region).getByText('32 分钟')).toBeInTheDocument();
+    expect(within(region).getByText('二等座')).toBeInTheDocument();
+    expect(within(region).getByText('¥74.50')).toBeInTheDocument();
+
+    rerender(<StructuredToolResults blocks={[trainBlock({
+      attribution: undefined,
+      result_count: 1,
+      trains: [{
+        option_id: 'train-minimal',
+        train_no: 'D2288',
+        departure: { station_name: '深圳北站', scheduled_at: '2026-08-01T18:00:00+08:00' },
+        arrival: { station_name: '厦门北站', scheduled_at: '2026-08-01T21:30:00+08:00' },
+        stops: 0,
+        actions: [{ kind: 'open_external', label: '危险链接', url: 'https://evil.example/redirect' }],
+      }],
+    })]} />);
+
+    expect(screen.getByText('出行服务')).toBeInTheDocument();
+    expect(screen.getByText('D2288')).toBeInTheDocument();
+    expect(screen.getByText('价格暂不可用')).toBeInTheDocument();
+    expect(screen.queryByRole('link')).toBeNull();
+    expect(screen.queryByText(/undefined|null/)).toBeNull();
+  });
+
+  it('航班与高铁空结果展示低干扰空状态', () => {
+    render(<StructuredToolResults blocks={[
+      flightBlock({ result_count: 0, flights: [] }),
+      trainBlock({ result_count: 0, trains: [] }),
+    ]} />);
+
+    expect(screen.getByText('暂未找到符合条件的航班')).toBeInTheDocument();
+    expect(screen.getByText('暂未找到符合条件的高铁车次')).toBeInTheDocument();
+  });
+
+  it('航班和高铁新增文案在英文资源中完整渲染，不混入后端中文标签', async () => {
+    await i18n.changeLanguage('en-US');
+    const { unmount } = render(<StructuredToolResults blocks={[
+      flightBlock({
+        origin: undefined,
+        destination: undefined,
+        observed_at: '2026-07-22T15:00:00Z',
+        result_count: 1,
+        flights: [flightBlock().flights![0]],
+      }),
+      trainBlock({ result_count: 0, trains: [] }),
+    ]} />);
+
+    expect(screen.getByRole('region', { name: 'Flight search results' })).toBeInTheDocument();
+    expect(screen.getByText('Trip pending · 2026-08-01')).toBeInTheDocument();
+    expect(screen.getByText('2 hr 15 min')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'View details' })).toHaveAttribute(
+      'href',
+      'https://a.feizhu.com/flight/1',
+    );
+    expect(screen.getByText('Checked at 07/22/2026, 23:00')).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'High-speed rail results' })).toBeInTheDocument();
+    expect(screen.getByText('No matching high-speed trains found')).toBeInTheDocument();
+    expect(document.body.textContent).not.toContain('structuredResults.');
+    expect(document.body.textContent).not.toMatch(/行程待确认|小时|分钟|安全预订/);
+
+    unmount();
+    await i18n.changeLanguage('zh-CN');
+  });
+
+  it('查询时间按 Asia/Shanghai 展示，不直接截取 UTC 时刻', () => {
+    render(<StructuredToolResults blocks={[flightBlock({
+      observed_at: '2026-07-22T15:00:00Z',
+    })]} />);
+
+    expect(screen.getByText('查询于 2026/07/22 23:00')).toBeInTheDocument();
+    expect(screen.queryByText(/15:00/)).toBeNull();
+  });
+
+  it('班次时刻按 Asia/Shanghai 转换，并基于出发日期标记次日', () => {
+    render(<StructuredToolResults blocks={[flightBlock({
+      departure_date: '2026-08-01',
+      result_count: 1,
+      flights: [{
+        ...flightBlock().flights![0],
+        departure: {
+          city: '深圳',
+          station_name: '深圳宝安国际机场',
+          scheduled_at: '2026-08-01T15:30:00Z',
+        },
+        arrival: {
+          city: '上海',
+          station_name: '上海虹桥国际机场',
+          scheduled_at: '2026-08-01T17:45:00Z',
+        },
+      }],
+    })]} />);
+
+    expect(screen.getByText('23:30')).toBeInTheDocument();
+    expect(screen.getByText('01:45')).toBeInTheDocument();
+    expect(screen.getByText('次日')).toBeInTheDocument();
+    expect(screen.queryByText('15:30')).toBeNull();
+    expect(screen.queryByText('17:45')).toBeNull();
+  });
+
+  it('跨多日班次使用 +N 天标识，并提供英文文案', async () => {
+    await i18n.changeLanguage('en-US');
+    render(<StructuredToolResults blocks={[trainBlock({
+      departure_date: '2026-08-01',
+      result_count: 1,
+      trains: [{
+        ...trainBlock().trains![0],
+        departure: {
+          city: '深圳',
+          station_name: '深圳北站',
+          scheduled_at: '2026-08-01T01:00:00Z',
+        },
+        arrival: {
+          city: '北京',
+          station_name: '北京西站',
+          scheduled_at: '2026-08-03T02:00:00Z',
+        },
+      }],
+    })]} />);
+
+    expect(screen.getByText('09:00')).toBeInTheDocument();
+    expect(screen.getByText('10:00')).toBeInTheDocument();
+    expect(screen.getByText('+2 days')).toBeInTheDocument();
   });
 
   it('有图和无图地点都使用窄屏单列、宽屏最多三列的自适应网格', () => {

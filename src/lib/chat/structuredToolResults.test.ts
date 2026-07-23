@@ -2,6 +2,113 @@ import { describe, expect, it } from 'vitest';
 import { normalizeStructuredToolResultBlock } from './structuredToolResults';
 
 describe('normalizeStructuredToolResultBlock', () => {
+  it('航班与高铁结果只保留产品字段、最多 5 项和单个安全预订动作', () => {
+    const flight = normalizeStructuredToolResultBlock({
+      type: 'flight_results',
+      id: 'flights-1',
+      schema_version: 1,
+      provider: 'flyai',
+      attribution: { label: '飞猪旅行' },
+      status: 'success',
+      origin: '深圳',
+      destination: '上海',
+      departure_date: '2026-08-01',
+      observed_at: '2026-07-22T15:00:00+08:00',
+      result_count: 6,
+      flights: Array.from({ length: 6 }, (_, index) => ({
+        option_id: `flight-${index + 1}`,
+        airline_name: '南方航空',
+        flight_no: `CZ${1234 + index}`,
+        departure: {
+          city: '深圳',
+          station_name: '深圳宝安国际机场',
+          station_code: 'SZX',
+          terminal: 'T3',
+          scheduled_at: '2026-08-01T08:30:00+08:00',
+          private_gate: 'hidden',
+        },
+        arrival: {
+          city: '上海',
+          station_name: '上海虹桥国际机场',
+          station_code: 'SHA',
+          terminal: 'T2',
+          scheduled_at: '2026-08-01T10:45:00+08:00',
+        },
+        duration_s: 8_100,
+        cabin_class: '经济舱',
+        stops: 0,
+        price: { currency: 'CNY', amount_minor: 88_000, private_quote: 'hidden' },
+        actions: [
+          { kind: 'open_external', label: '安全预订', url: 'https://a.feizhu.com/flight/1' },
+          { kind: 'open_external', label: '不安全链接', url: 'http://unsafe.example.com/1' },
+        ],
+        raw: 'hidden',
+      })),
+      limitations: ['价格和班次以预订页为准'],
+      tool_call_log_id: 'tc-flight',
+      raw_payload: 'hidden',
+    });
+
+    expect(flight?.type).toBe('flight_results');
+    if (flight?.type !== 'flight_results') throw new Error('应返回航班结果块');
+    expect(flight.flights).toHaveLength(5);
+    expect(flight.flights?.[0]).toEqual({
+      option_id: 'flight-1',
+      airline_name: '南方航空',
+      flight_no: 'CZ1234',
+      departure: {
+        city: '深圳',
+        station_name: '深圳宝安国际机场',
+        station_code: 'SZX',
+        terminal: 'T3',
+        scheduled_at: '2026-08-01T08:30:00+08:00',
+      },
+      arrival: {
+        city: '上海',
+        station_name: '上海虹桥国际机场',
+        station_code: 'SHA',
+        terminal: 'T2',
+        scheduled_at: '2026-08-01T10:45:00+08:00',
+      },
+      duration_s: 8_100,
+      cabin_class: '经济舱',
+      stops: 0,
+      price: { currency: 'CNY', amount_minor: 88_000 },
+      actions: [{ kind: 'open_external', label: '安全预订', url: 'https://a.feizhu.com/flight/1' }],
+    });
+    expect(JSON.stringify(flight)).not.toMatch(/private_gate|private_quote|raw_payload|"raw"/);
+
+    const train = normalizeStructuredToolResultBlock({
+      type: 'train_results',
+      id: 'trains-1',
+      schema_version: 1,
+      provider: 'flyai',
+      status: 'success',
+      origin: '深圳北',
+      destination: '广州南',
+      departure_date: '2026-08-01',
+      observed_at: '2026-07-22T15:00:00+08:00',
+      result_count: 1,
+      trains: [{
+        option_id: 'train-1',
+        train_no: 'G100',
+        train_type: '高速动车',
+        departure: { city: '深圳', station_name: '深圳北站', scheduled_at: '2026-08-01T09:00:00+08:00' },
+        arrival: { city: '广州', station_name: '广州南站', scheduled_at: '2026-08-01T09:32:00+08:00' },
+        duration_s: 1_920,
+        seat_class: '二等座',
+        stops: 0,
+        price: { currency: 'CNY', amount_minor: 7_450 },
+        actions: [],
+      }],
+    });
+
+    expect(train).toMatchObject({
+      type: 'train_results',
+      trains: [expect.objectContaining({ train_no: 'G100', seat_class: '二等座' })],
+    });
+  });
+
   it('地点结果限制为 5 项，且每个地点最多保留 5 张图片供预览与降级', () => {
     const block = normalizeStructuredToolResultBlock({
       type: 'place_results',

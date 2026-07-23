@@ -42,6 +42,17 @@ describe('toolRegistry', () => {
     })).toBe('民治地铁站 → 星河 WORLD');
   });
 
+  it('包含航班与高铁查询的稳定产品工具元数据', () => {
+    expect(TOOL_REGISTRY.search_flights).toMatchObject({ label: '查询航班', color: 'info' });
+    expect(TOOL_REGISTRY.search_trains).toMatchObject({ label: '查询高铁', color: 'teal' });
+    expect(TOOL_REGISTRY.search_flights.summarize({
+      origin: '深圳', destination: '上海', departure_date: '2026-08-01',
+    })).toBe('深圳 → 上海 · 2026-08-01');
+    expect(TOOL_REGISTRY.search_trains.summarize({
+      origin: '深圳北', destination: '广州南', departure_date: '2026-08-01',
+    })).toBe('深圳北 → 广州南 · 2026-08-01');
+  });
+
   it('getToolMeta 未知工具返回兜底元数据', () => {
     const meta = getToolMeta('mcp__learn__microsoft_docs_search');
     expect(meta.label).toBe('外部工具');

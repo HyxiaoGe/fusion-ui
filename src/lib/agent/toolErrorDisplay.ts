@@ -3,6 +3,8 @@ import type { ToolCallStatus } from '@/types/agentRun';
 const SAFE_EXTERNAL_TOOL_NAMES = new Set([
   'local_place_search',
   'route_compare',
+  'search_flights',
+  'search_trains',
 ]);
 
 export function getToolErrorDisplay(

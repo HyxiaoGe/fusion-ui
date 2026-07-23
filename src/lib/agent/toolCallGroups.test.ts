@@ -242,6 +242,39 @@ describe('groupToolCalls', () => {
     expect(findGroup(groups, 'route_compare').details[0].primary).toBe('民治地铁站 → 星河 WORLD');
   });
 
+  it('航班与高铁工具分别展示产品状态、目标和结果数', () => {
+    const groups = groupToolCalls([
+      tc({
+        toolCallId: 'flight-1',
+        toolName: 'search_flights',
+        arguments: { origin: '深圳', destination: '上海', departure_date: '2026-08-01' },
+        resultSummary: { kind: 'external_tool', provider: 'flyai', result_count: 5, truncated: false },
+      }),
+      tc({
+        toolCallId: 'train-1',
+        toolName: 'search_trains',
+        status: 'failed',
+        arguments: { origin: '深圳北', destination: '广州南', departure_date: '2026-08-01' },
+        resultSummary: undefined,
+        error: 'flyai upstream unauthorized',
+      }),
+    ]);
+
+    expect(findGroup(groups, 'search_flights')).toMatchObject({
+      label: '查询航班',
+      summary: '查询航班 1 次 · 5 个航班',
+    });
+    expect(findGroup(groups, 'search_flights').details[0]).toMatchObject({
+      primary: '深圳 → 上海 · 2026-08-01',
+      secondary: '5 个航班',
+    });
+    expect(findGroup(groups, 'search_trains')).toMatchObject({
+      label: '查询高铁',
+      summary: '查询高铁未取得可用结果 · 1 个任务',
+    });
+    expect(JSON.stringify(findGroup(groups, 'search_trains'))).not.toMatch(/flyai|upstream|unauthorized/i);
+  });
+
   it('消费 provider 与产品结果数量，同时保留用户调用目标', () => {
     const groups = groupToolCalls([
       tc({

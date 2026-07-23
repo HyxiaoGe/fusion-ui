@@ -15,6 +15,8 @@ describe('contentBlockRegistry', () => {
       { type: 'url_read', schemaVersion: null },
       { type: 'place_results', schemaVersion: 1 },
       { type: 'route_results', schemaVersion: 1 },
+      { type: 'flight_results', schemaVersion: 1 },
+      { type: 'train_results', schemaVersion: 1 },
       { type: 'unsupported_result', schemaVersion: null },
     ]);
   });
@@ -181,5 +183,51 @@ describe('contentBlockRegistry', () => {
       source_schema_version: 1,
       reason: 'invalid_payload',
     });
+  });
+
+  it('航班和高铁结果校验行程、数量及最低必填字段，并允许空结果', () => {
+    const common = {
+      schema_version: 1,
+      provider: 'flyai',
+      status: 'success',
+      origin: '深圳',
+      destination: '上海',
+      departure_date: '2026-08-01',
+      observed_at: '2026-07-22T15:00:00+08:00',
+    };
+
+    expect(normalizeContentBlock({
+      ...common,
+      type: 'flight_results',
+      id: 'flights-empty',
+      result_count: 0,
+      flights: [],
+    })).toEqual(expect.objectContaining({ type: 'flight_results', flights: [] }));
+
+    expect(normalizeContentBlock({
+      ...common,
+      type: 'train_results',
+      id: 'trains-1',
+      result_count: 1,
+      trains: [{
+        option_id: 'train-1',
+        train_no: 'G100',
+        departure: { city: '深圳', station_name: '深圳北站', scheduled_at: '2026-08-01T09:00:00+08:00' },
+        arrival: { city: '上海', station_name: '上海虹桥站', scheduled_at: '2026-08-01T16:00:00+08:00' },
+        duration_s: 25_200,
+        stops: 0,
+      }],
+    })).toEqual(expect.objectContaining({ type: 'train_results', result_count: 1 }));
+
+    expect(normalizeContentBlock({
+      ...common,
+      type: 'flight_results',
+      id: 'flights-count-mismatch',
+      result_count: 2,
+      flights: [{ flight_no: 'CZ1234' }],
+    })).toEqual(expect.objectContaining({
+      type: 'unsupported_result',
+      reason: 'invalid_payload',
+    }));
   });
 });

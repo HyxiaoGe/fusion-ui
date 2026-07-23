@@ -67,6 +67,40 @@
       "placeholder": "Enter your question...",
       "newChatTitle": "New Conversation"
     },
+    "structuredResults": {
+      "common": {
+        "travelService": "Travel service",
+        "tripPending": "Trip pending",
+        "direct": "Direct",
+        "priceUnavailable": "Price unavailable",
+        "stationPending": "Station pending",
+        "timePending": "Time pending",
+        "nextDay": "Next day",
+        "dayOffset": "+{{count}} days",
+        "observedAt": "Checked at {{value}}",
+        "duration": {
+          "minutes": "{{count}} min",
+          "hours": "{{count}} hr",
+          "hoursMinutes": "{{hours}} hr {{minutes}} min"
+        }
+      },
+      "flight": {
+        "region": "Flight search results",
+        "count": "{{count}} flights",
+        "degraded": "Some flights available",
+        "empty": "No matching flights found",
+        "unknownNumber": "Flight number pending",
+        "viewDetails": "View details"
+      },
+      "train": {
+        "region": "High-speed rail results",
+        "count": "{{count}} trains",
+        "degraded": "Some trains available",
+        "empty": "No matching high-speed trains found",
+        "unknownNumber": "Train number pending",
+        "viewDetails": "View details"
+      }
+    },
     "models": {
       "title": "AI Models",
       "ernie": "ERNIE",

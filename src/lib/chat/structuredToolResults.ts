@@ -1,6 +1,8 @@
 import type {
   ContentBlock,
+  FlightResultsBlock,
   PlaceResultsBlock,
+  ProviderFlightResult,
   ProviderPlacePhoto,
   ProviderPlaceResult,
   ProviderRouteEndpoint,
@@ -9,16 +11,22 @@ import type {
   ProviderTransitLeg,
   ProviderTransitLegKind,
   ProviderTransitType,
+  ProviderTrainResult,
   RouteResultsBlock,
   StructuredResultAction,
   StructuredResultAttribution,
   StructuredToolResultBlock,
+  TrainResultsBlock,
+  TravelEndpoint,
+  TravelMoney,
   UnsupportedResultBlock,
 } from '@/types/conversation';
 
 export const STRUCTURED_TOOL_RESULT_CONTRACTS = [
   { type: 'place_results', schemaVersion: 1 },
   { type: 'route_results', schemaVersion: 1 },
+  { type: 'flight_results', schemaVersion: 1 },
+  { type: 'train_results', schemaVersion: 1 },
   { type: 'unsupported_result', schemaVersion: null },
 ] as const;
 
@@ -42,6 +50,8 @@ export function hasUsableStructuredToolResult(blocks: readonly ContentBlock[]): 
   return collectStructuredToolResultBlocks(blocks).some(block => {
     if (block.type === 'place_results') return (block.places?.length ?? 0) > 0;
     if (block.type === 'route_results') return (block.routes?.length ?? 0) > 0;
+    if (block.type === 'flight_results') return (block.flights?.length ?? 0) > 0;
+    if (block.type === 'train_results') return (block.trains?.length ?? 0) > 0;
     return true;
   });
 }
@@ -112,7 +122,101 @@ export function normalizeStructuredToolResultBlock(value: unknown): StructuredTo
     return block;
   }
 
+  if (source.type === 'flight_results') {
+    const block: FlightResultsBlock = {
+      type: 'flight_results',
+      id,
+      schema_version: 1,
+      ...normalizeTravelResultBase(source),
+      flights: normalizeArray(source.flights, normalizeFlight, 5),
+    };
+    return block;
+  }
+
+  if (source.type === 'train_results') {
+    const block: TrainResultsBlock = {
+      type: 'train_results',
+      id,
+      schema_version: 1,
+      ...normalizeTravelResultBase(source),
+      trains: normalizeArray(source.trains, normalizeTrain, 5),
+    };
+    return block;
+  }
+
   return null;
+}
+
+function normalizeTravelResultBase(source: Record<string, unknown>) {
+  return {
+    ...optionalField('provider', boundedString(source.provider, 40)),
+    ...optionalField(
+      'attribution',
+      normalizeAttribution(source.attribution) ?? normalizeTravelAttribution(source.provider),
+    ),
+    ...optionalField('status', productResultStatus(source.status)),
+    ...optionalField('origin', boundedString(source.origin, 80)),
+    ...optionalField('destination', boundedString(source.destination, 80)),
+    ...optionalField('departure_date', boundedString(source.departure_date, 10)),
+    ...optionalField('observed_at', boundedString(source.observed_at, 48)),
+    ...optionalField('result_count', nonNegativeNumber(source.result_count)),
+    limitations: normalizeBoundedStringArray(source.limitations, 8, 240),
+    ...optionalField('tool_call_log_id', boundedString(source.tool_call_log_id, 160)),
+  };
+}
+
+function normalizeFlight(value: unknown): ProviderFlightResult | null {
+  const source = asRecord(value);
+  if (!source) return null;
+  return {
+    ...optionalField('option_id', boundedString(source.option_id, 80)),
+    ...optionalField('airline_name', boundedString(source.airline_name, 100)),
+    ...optionalField('flight_no', boundedString(source.flight_no, 40)),
+    ...optionalField('departure', normalizeTravelEndpoint(source.departure)),
+    ...optionalField('arrival', normalizeTravelEndpoint(source.arrival)),
+    ...optionalField('duration_s', nonNegativeNumber(source.duration_s)),
+    ...optionalField('cabin_class', boundedString(source.cabin_class, 80)),
+    ...optionalField('stops', directStops(source.stops)),
+    ...optionalField('price', normalizeMoney(source.price)),
+    actions: normalizeArray(source.actions, normalizeExternalAction, 1),
+  };
+}
+
+function normalizeTrain(value: unknown): ProviderTrainResult | null {
+  const source = asRecord(value);
+  if (!source) return null;
+  return {
+    ...optionalField('option_id', boundedString(source.option_id, 80)),
+    ...optionalField('train_no', boundedString(source.train_no, 40)),
+    ...optionalField('train_type', boundedString(source.train_type, 100)),
+    ...optionalField('departure', normalizeTravelEndpoint(source.departure)),
+    ...optionalField('arrival', normalizeTravelEndpoint(source.arrival)),
+    ...optionalField('duration_s', nonNegativeNumber(source.duration_s)),
+    ...optionalField('seat_class', boundedString(source.seat_class, 80)),
+    ...optionalField('stops', directStops(source.stops)),
+    ...optionalField('price', normalizeMoney(source.price)),
+    actions: normalizeArray(source.actions, normalizeExternalAction, 1),
+  };
+}
+
+function normalizeTravelEndpoint(value: unknown): TravelEndpoint | undefined {
+  const source = asRecord(value);
+  if (!source) return undefined;
+  const endpoint: TravelEndpoint = {
+    ...optionalField('city', boundedString(source.city, 80)),
+    ...optionalField('station_name', boundedString(source.station_name, 120)),
+    ...optionalField('station_code', boundedString(source.station_code, 16)),
+    ...optionalField('terminal', boundedString(source.terminal, 32)),
+    ...optionalField('scheduled_at', boundedString(source.scheduled_at, 48)),
+  };
+  return Object.keys(endpoint).length > 0 ? endpoint : undefined;
+}
+
+function normalizeMoney(value: unknown): TravelMoney | undefined {
+  const source = asRecord(value);
+  if (!source || source.currency !== 'CNY') return undefined;
+  const amountMinor = nonNegativeInteger(source.amount_minor, 100_000_000);
+  return amountMinor === undefined ? undefined : { currency: 'CNY', amount_minor: amountMinor };
 }
 
 function normalizePlace(value: unknown): ProviderPlaceResult | null {
@@ -153,6 +257,12 @@ function normalizeLegacyAttribution(value: unknown): StructuredResultAttribution
   const provider = optionalString(value)?.toLowerCase();
   if (!provider) return undefined;
   return { label: provider === 'amap' ? '高德地图' : '地图服务' };
+}
+
+function normalizeTravelAttribution(value: unknown): StructuredResultAttribution | undefined {
+  const provider = optionalString(value)?.toLowerCase();
+  if (!provider) return undefined;
+  return provider === 'flyai' ? { label: '飞猪旅行' } : { label: '出行服务' };
 }
 
 function normalizeExternalAction(value: unknown): StructuredResultAction | null {
@@ -265,6 +375,14 @@ function normalizeStringArray(value: unknown, limit: number): string[] {
     .filter((item): item is string => Boolean(item));
 }
 
+function normalizeBoundedStringArray(value: unknown, limit: number, maxLength: number): string[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .slice(0, limit)
+    .map(item => boundedString(item, maxLength))
+    .filter((item): item is string => Boolean(item));
+}
+
 function asRecord(value: unknown): Record<string, unknown> | null {
   return value && typeof value === 'object' && !Array.isArray(value)
     ? value as Record<string, unknown>
@@ -286,6 +404,16 @@ function nonNegativeNumber(value: unknown): number | undefined {
   return typeof value === 'number' && Number.isFinite(value) && value >= 0
     ? value
     : undefined;
+}
+
+function nonNegativeInteger(value: unknown, maximum = Number.MAX_SAFE_INTEGER): number | undefined {
+  return Number.isInteger(value) && Number(value) >= 0 && Number(value) <= maximum
+    ? Number(value)
+    : undefined;
+}
+
+function directStops(value: unknown): 0 | undefined {
+  return value === 0 ? 0 : undefined;
 }
 
 function productResultStatus(value: unknown): 'success' | 'degraded' | undefined {
