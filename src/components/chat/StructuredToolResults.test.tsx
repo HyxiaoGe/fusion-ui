@@ -6,6 +6,7 @@ import type {
   PlaceResultsBlock,
   RouteResultsBlock,
   TrainResultsBlock,
+  WeatherResultsBlock,
 } from '@/types/conversation';
 import i18n from '@/lib/i18n';
 import {
@@ -146,6 +147,62 @@ function trainBlock(overrides: Partial<TrainResultsBlock> = {}): TrainResultsBlo
     }],
     limitations: [],
     tool_call_log_id: 'tc-train',
+    ...overrides,
+  };
+}
+
+function weatherBlock(overrides: Partial<WeatherResultsBlock> = {}): WeatherResultsBlock {
+  return {
+    type: 'weather_results',
+    id: 'weather-1',
+    schema_version: 1,
+    provider: 'amap',
+    attribution: { label: '高德地图' },
+    status: 'success',
+    query: '南景新村',
+    resolved_location: '龙华区',
+    day_count: 4,
+    forecast_days: [
+      {
+        date: '2026-07-23',
+        weekday: 4,
+        day_weather: '雷阵雨',
+        night_weather: '雷阵雨',
+        high_c: 32,
+        low_c: 27,
+        day_wind_direction: '南',
+        night_wind_direction: '南',
+        day_wind_power: '1-3',
+        night_wind_power: '1-3',
+      },
+      {
+        date: '2026-07-24',
+        weekday: 5,
+        day_weather: '多云',
+        night_weather: '多云',
+        high_c: 33,
+        low_c: 27,
+      },
+      {
+        date: '2026-07-25',
+        weekday: 6,
+        day_weather: '晴',
+        night_weather: '多云',
+        high_c: 34,
+        low_c: 28,
+      },
+      {
+        date: '2026-07-26',
+        weekday: 7,
+        day_weather: '阵雨',
+        night_weather: '阵雨',
+        high_c: 32,
+        low_c: 27,
+      },
+    ],
+    fetched_at: '2026-07-23T12:00:00+08:00',
+    limitations: ['天气预报仅供出行参考'],
+    tool_call_log_id: 'tc-weather',
     ...overrides,
   };
 }
@@ -317,6 +374,85 @@ describe('StructuredToolResults', () => {
 
     expect(screen.getByText('暂未找到符合条件的航班')).toBeInTheDocument();
     expect(screen.getByText('暂未找到符合条件的高铁车次')).toBeInTheDocument();
+  });
+
+  it('天气卡片以窄屏两列和桌面四列展示四天预报，并高亮今天', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-07-23T04:00:00Z'));
+    try {
+      render(<StructuredToolResults blocks={[weatherBlock()]} />);
+
+      const region = screen.getByRole('region', { name: '天气预报结果' });
+      expect(within(region).getByText('龙华区 · 四天天气')).toBeInTheDocument();
+      expect(within(region).getByText('高德地图')).toBeInTheDocument();
+      expect(within(region).getByText('4 天预报')).toBeInTheDocument();
+
+      const grid = within(region).getByTestId('weather-results-grid');
+      expect(grid).toHaveClass('grid-cols-2', 'lg:grid-cols-4');
+      const days = within(grid).getAllByTestId('weather-forecast-day');
+      expect(days).toHaveLength(4);
+      expect(days[0]).toHaveAttribute('data-today', 'true');
+      expect(days[0]).toHaveClass('border-primary/40', 'bg-primary/5');
+      expect(within(days[0]).getByText('今天')).toBeInTheDocument();
+      expect(within(days[0]).getByText('7月23日')).toBeInTheDocument();
+      expect(within(days[0]).getByText('星期四')).toBeInTheDocument();
+      expect(within(days[0]).getByTestId('weather-icon-thunder')).toBeInTheDocument();
+      expect(within(days[0]).getByText('白天 雷阵雨')).toBeInTheDocument();
+      expect(within(days[0]).getByText('夜间 雷阵雨')).toBeInTheDocument();
+      expect(within(days[0]).getByText('27° – 32°')).toBeInTheDocument();
+      expect(within(days[0]).getByText('白天 南风 1-3 级')).toBeInTheDocument();
+      expect(within(days[0]).getByText('夜间 南风 1-3 级')).toBeInTheDocument();
+      expect(within(days[3]).getByTestId('weather-icon-rain')).toBeInTheDocument();
+      expect(within(region).getByText('获取于 2026/07/23 12:00')).toBeInTheDocument();
+      expect(within(region).getByText('天气预报仅供出行参考')).toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('天气部分结果显示降级状态和实际天数，缺少风字段时不制造占位信息', () => {
+    const allDays = weatherBlock().forecast_days;
+    render(<StructuredToolResults blocks={[weatherBlock({
+      status: 'degraded',
+      day_count: 3,
+      forecast_days: allDays.slice(0, 3).map(day => ({
+        ...day,
+        day_wind_direction: undefined,
+        night_wind_direction: undefined,
+        day_wind_power: undefined,
+        night_wind_power: undefined,
+      })),
+      limitations: ['仅取得三天有效预报'],
+    })]} />);
+
+    const region = screen.getByRole('region', { name: '天气预报结果' });
+    expect(within(region).getByText('龙华区 · 三天天气')).toBeInTheDocument();
+    expect(within(region).getByText('部分预报可用')).toBeInTheDocument();
+    expect(within(region).getAllByTestId('weather-forecast-day')).toHaveLength(3);
+    expect(region.textContent).not.toMatch(/风向待确认|风力待确认|undefined|null/);
+    expect(within(region).getByText('仅取得三天有效预报')).toBeInTheDocument();
+  });
+
+  it('天气卡片英文资源完整，不把获取时间描述为供应商更新时间', async () => {
+    await i18n.changeLanguage('en-US');
+    const firstDay = weatherBlock().forecast_days[0];
+    const { unmount } = render(<StructuredToolResults blocks={[weatherBlock({
+      status: 'degraded',
+      day_count: 1,
+      forecast_days: [firstDay],
+    })]} />);
+
+    const region = screen.getByRole('region', { name: 'Weather forecast results' });
+    expect(within(region).getByText('龙华区 · 1-day forecast')).toBeInTheDocument();
+    expect(within(region).getByText('Partial forecast available')).toBeInTheDocument();
+    expect(within(region).getByText('Thursday')).toBeInTheDocument();
+    expect(within(region).getByText('Day 雷阵雨')).toBeInTheDocument();
+    expect(within(region).getByText('Night 雷阵雨')).toBeInTheDocument();
+    expect(within(region).getByText('Fetched at 07/23/2026, 12:00')).toBeInTheDocument();
+    expect(region.textContent).not.toMatch(/updated|更新时间/i);
+
+    unmount();
+    await i18n.changeLanguage('zh-CN');
   });
 
   it('航班和高铁新增文案在英文资源中完整渲染，不混入后端中文标签', async () => {

@@ -648,4 +648,82 @@ describe('normalizeStructuredToolResultBlock', () => {
       limitations: [],
     });
   });
+
+  it('天气结果只白名单保留四天预报字段，并为高德补充安全归因', () => {
+    const block = normalizeStructuredToolResultBlock({
+      type: 'weather_results',
+      id: 'weather-1',
+      schema_version: 1,
+      provider: 'amap',
+      status: 'degraded',
+      query: '南景新村',
+      resolved_location: '龙华区',
+      day_count: 2,
+      forecast_days: [
+        {
+          date: '2026-07-23',
+          weekday: 4,
+          day_weather: '雷阵雨',
+          night_weather: '雷阵雨',
+          high_c: 32,
+          low_c: 27,
+          day_wind_direction: '南',
+          night_wind_direction: '南',
+          day_wind_power: '1-3',
+          night_wind_power: '1-3',
+          internal_code: 'hidden-day',
+        },
+        {
+          date: '2026-07-24',
+          weekday: 5,
+          day_weather: '多云',
+          night_weather: '晴',
+          high_c: 33.5,
+          low_c: 27.5,
+        },
+      ],
+      fetched_at: '2026-07-23T12:00:00+08:00',
+      limitations: ['当前仅取得两天有效预报'],
+      tool_call_log_id: 'tc-weather',
+      raw_payload: 'hidden-block',
+    });
+
+    expect(block).toEqual({
+      type: 'weather_results',
+      id: 'weather-1',
+      schema_version: 1,
+      provider: 'amap',
+      attribution: { label: '高德地图' },
+      status: 'degraded',
+      query: '南景新村',
+      resolved_location: '龙华区',
+      day_count: 2,
+      forecast_days: [
+        {
+          date: '2026-07-23',
+          weekday: 4,
+          day_weather: '雷阵雨',
+          night_weather: '雷阵雨',
+          high_c: 32,
+          low_c: 27,
+          day_wind_direction: '南',
+          night_wind_direction: '南',
+          day_wind_power: '1-3',
+          night_wind_power: '1-3',
+        },
+        {
+          date: '2026-07-24',
+          weekday: 5,
+          day_weather: '多云',
+          night_weather: '晴',
+          high_c: 33.5,
+          low_c: 27.5,
+        },
+      ],
+      fetched_at: '2026-07-23T12:00:00+08:00',
+      limitations: ['当前仅取得两天有效预报'],
+      tool_call_log_id: 'tc-weather',
+    });
+    expect(JSON.stringify(block)).not.toMatch(/internal_code|raw_payload|hidden-/);
+  });
 });

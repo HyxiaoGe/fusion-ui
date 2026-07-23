@@ -312,6 +312,61 @@ describe('createAgentStreamEventHandlers', () => {
     }));
   });
 
+  it('把天气预报事件规范化后写入 stream staticBlocks', () => {
+    const dispatch = vi.fn();
+    const handlers = createAgentStreamEventHandlers({
+      dispatch,
+      isActive: () => true,
+      resolveMessageId: ev => ev.message_id,
+      resolveConversationId: () => 'c1',
+    });
+
+    handlers.onContentBlockUpserted?.({
+      type: 'content_block_upserted',
+      protocol_version: 2,
+      run_id: 'r1',
+      parent_run_id: null,
+      step_id: 's1',
+      parent_step_id: null,
+      tool_call_id: 'tc-weather',
+      sequence: 8,
+      trace_id: 'r1',
+      ts: 0,
+      content_block: {
+        type: 'weather_results',
+        id: 'weather-1',
+        schema_version: 1,
+        provider: 'amap',
+        attribution: { label: '高德地图' },
+        status: 'degraded',
+        query: '南景新村',
+        resolved_location: '龙华区',
+        day_count: 1,
+        forecast_days: [{
+          date: '2026-07-23',
+          weekday: 4,
+          day_weather: '雷阵雨',
+          night_weather: '雷阵雨',
+          high_c: 32,
+          low_c: 27,
+        }],
+        fetched_at: '2026-07-23T12:00:00+08:00',
+        limitations: ['当前仅取得一天有效预报'],
+      },
+    });
+
+    expect(dispatch).toHaveBeenCalledWith(expect.objectContaining({
+      type: 'stream/upsertStaticContentBlock',
+      payload: expect.objectContaining({
+        block: expect.objectContaining({
+          type: 'weather_results',
+          id: 'weather-1',
+          forecast_days: [expect.objectContaining({ day_weather: '雷阵雨' })],
+        }),
+      }),
+    }));
+  });
+
   it('把未来版本流式结果降级为不含原始 payload 的安全占位', () => {
     const dispatch = vi.fn();
     const handlers = createAgentStreamEventHandlers({

@@ -99,6 +99,25 @@
         "empty": "No matching high-speed trains found",
         "unknownNumber": "Train number pending",
         "viewDetails": "View details"
+      },
+      "weather": {
+        "region": "Weather forecast results",
+        "title": "{{location}} · {{dayLabel}}-day forecast",
+        "count": "{{count}}-day forecast",
+        "degraded": "Partial forecast available",
+        "today": "Today",
+        "daytime": "Day",
+        "nighttime": "Night",
+        "fetchedAt": "Fetched at {{value}}",
+        "weekdays": {
+          "1": "Monday",
+          "2": "Tuesday",
+          "3": "Wednesday",
+          "4": "Thursday",
+          "5": "Friday",
+          "6": "Saturday",
+          "7": "Sunday"
+        }
       }
     },
     "models": {

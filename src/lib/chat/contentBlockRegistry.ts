@@ -106,6 +106,10 @@ function hasRequiredStructuredResultFields(source: Record<string, unknown>): boo
     });
   }
 
+  if (source.type === 'weather_results') {
+    return normalizeStructuredToolResultBlock(source)?.type === 'weather_results';
+  }
+
   if (source.type === 'flight_results' || source.type === 'train_results') {
     if (source.provider !== 'flyai' || !hasRequiredTravelResultBase(source)) return false;
     const collectionKey = source.type === 'flight_results' ? 'flights' : 'trains';

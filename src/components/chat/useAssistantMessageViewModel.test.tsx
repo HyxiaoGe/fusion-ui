@@ -126,6 +126,46 @@ describe('useAssistantMessageViewModel', () => {
     expect(result.current.structuredResults).toEqual([placeResult]);
   });
 
+  it('静态消息与流式 staticBlocks 都派生天气预报结果', () => {
+    const weatherResult = {
+      type: 'weather_results',
+      id: 'weather-1',
+      schema_version: 1,
+      provider: 'amap',
+      status: 'degraded',
+      query: '南景新村',
+      resolved_location: '龙华区',
+      day_count: 1,
+      forecast_days: [{
+        date: '2026-07-23',
+        weekday: 4,
+        day_weather: '雷阵雨',
+        night_weather: '雷阵雨',
+        high_c: 32,
+        low_c: 27,
+      }],
+      fetched_at: '2026-07-23T12:00:00+08:00',
+      limitations: ['当前仅取得一天有效预报'],
+    } as unknown as Message['content'][number];
+    const message: Message = {
+      id: 'assistant-weather',
+      role: 'assistant',
+      content: [weatherResult, { type: 'text', id: 'text-1', text: '未来有雷阵雨。' }],
+    };
+
+    const staticModel = deriveStaticAssistantMessageViewModel({
+      message,
+      isLoadingQuestions: false,
+      suggestedQuestionsCount: 0,
+    });
+    expect(staticModel.structuredResults).toEqual([weatherResult]);
+
+    selectorState.stream.messageId = message.id;
+    selectorState.stream.staticBlocks = [weatherResult];
+    const { result } = renderViewModel(message, { isStreaming: true, isLastMessage: true });
+    expect(result.current.structuredResults).toEqual([weatherResult]);
+  });
+
   it('实时与刷新后的静态消息使用同一规则合并并去重高铁结果', () => {
     const firstTrainResult = {
       type: 'train_results' as const,

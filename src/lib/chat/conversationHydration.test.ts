@@ -410,6 +410,93 @@ describe('conversationHydration', () => {
     ]);
   });
 
+  it('强刷后恢复天气预报富结果及全部安全日预报字段', () => {
+    const chat = buildChatFromServerConversation({
+      id: 'chat-weather-results',
+      title: '龙华天气预报',
+      model_id: 'qwen-max-latest',
+      messages: [{
+        id: 'assistant-weather-results',
+        role: 'assistant',
+        content: [{
+          type: 'weather_results',
+          id: 'weather-1',
+          schema_version: 1,
+          provider: 'amap',
+          attribution: { label: '高德地图' },
+          status: 'degraded',
+          query: '南景新村',
+          resolved_location: '龙华区',
+          day_count: 2,
+          forecast_days: [
+            {
+              date: '2026-07-23',
+              weekday: 4,
+              day_weather: '雷阵雨',
+              night_weather: '雷阵雨',
+              high_c: 32,
+              low_c: 27,
+              day_wind_direction: '南',
+              night_wind_direction: '南',
+              day_wind_power: '1-3',
+              night_wind_power: '1-3',
+            },
+            {
+              date: '2026-07-24',
+              weekday: 5,
+              day_weather: '多云',
+              night_weather: '晴',
+              high_c: 33,
+              low_c: 27,
+            },
+          ],
+          fetched_at: '2026-07-23T12:00:00+08:00',
+          limitations: ['当前仅取得两天有效预报'],
+          tool_call_log_id: 'tc-weather',
+        }],
+      }],
+    });
+
+    expect(chat.messages[0].content).toEqual([
+      {
+        type: 'weather_results',
+        id: 'weather-1',
+        schema_version: 1,
+        provider: 'amap',
+        attribution: { label: '高德地图' },
+        status: 'degraded',
+        query: '南景新村',
+        resolved_location: '龙华区',
+        day_count: 2,
+        forecast_days: [
+          {
+            date: '2026-07-23',
+            weekday: 4,
+            day_weather: '雷阵雨',
+            night_weather: '雷阵雨',
+            high_c: 32,
+            low_c: 27,
+            day_wind_direction: '南',
+            night_wind_direction: '南',
+            day_wind_power: '1-3',
+            night_wind_power: '1-3',
+          },
+          {
+            date: '2026-07-24',
+            weekday: 5,
+            day_weather: '多云',
+            night_weather: '晴',
+            high_c: 33,
+            low_c: 27,
+          },
+        ],
+        fetched_at: '2026-07-23T12:00:00+08:00',
+        limitations: ['当前仅取得两天有效预报'],
+        tool_call_log_id: 'tc-weather',
+      },
+    ]);
+  });
+
   it('强刷后同时保留失败搜索状态和可用地点结果，供活动状态按整体结果派生', () => {
     const chat = buildChatFromServerConversation({
       id: 'chat-partial-results',

@@ -1,5 +1,6 @@
 import type {
   ContentBlock,
+  ForecastDay,
   FlightResultsBlock,
   PlaceResultsBlock,
   ProviderFlightResult,
@@ -20,6 +21,7 @@ import type {
   TravelEndpoint,
   TravelMoney,
   UnsupportedResultBlock,
+  WeatherResultsBlock,
 } from '@/types/conversation';
 
 export const STRUCTURED_TOOL_RESULT_CONTRACTS = [
@@ -27,6 +29,7 @@ export const STRUCTURED_TOOL_RESULT_CONTRACTS = [
   { type: 'route_results', schemaVersion: 1 },
   { type: 'flight_results', schemaVersion: 1 },
   { type: 'train_results', schemaVersion: 1 },
+  { type: 'weather_results', schemaVersion: 1 },
   { type: 'unsupported_result', schemaVersion: null },
 ] as const;
 
@@ -250,6 +253,7 @@ export function hasUsableStructuredToolResult(blocks: readonly ContentBlock[]): 
     if (block.type === 'route_results') return (block.routes?.length ?? 0) > 0;
     if (block.type === 'flight_results') return (block.flights?.length ?? 0) > 0;
     if (block.type === 'train_results') return (block.trains?.length ?? 0) > 0;
+    if (block.type === 'weather_results') return block.forecast_days.length > 0;
     return true;
   });
 }
@@ -342,6 +346,10 @@ export function normalizeStructuredToolResultBlock(value: unknown): StructuredTo
     return block;
   }
 
+  if (source.type === 'weather_results') {
+    return normalizeWeatherResultBlock(source, id);
+  }
+
   return null;
 }
 
@@ -360,6 +368,102 @@ function normalizeTravelResultBase(source: Record<string, unknown>) {
     ...optionalField('result_count', nonNegativeNumber(source.result_count)),
     limitations: normalizeBoundedStringArray(source.limitations, 8, 240),
     ...optionalField('tool_call_log_id', boundedString(source.tool_call_log_id, 160)),
+  };
+}
+
+function normalizeWeatherResultBlock(
+  source: Record<string, unknown>,
+  id: string,
+): WeatherResultsBlock | null {
+  if (source.provider !== 'amap') return null;
+  const status = productResultStatus(source.status);
+  const query = boundedString(source.query, 120);
+  const resolvedLocation = boundedString(source.resolved_location, 120);
+  const dayCount = integerInRange(source.day_count, 1, 4);
+  const fetchedAt = boundedString(source.fetched_at, 48);
+  if (
+    !status
+    || !query
+    || !resolvedLocation
+    || dayCount === undefined
+    || !fetchedAt
+    || !isZonedIsoDateTime(fetchedAt)
+    || !Array.isArray(source.forecast_days)
+    || source.forecast_days.length !== dayCount
+    || source.forecast_days.length > 4
+    || status !== (dayCount === 4 ? 'success' : 'degraded')
+  ) {
+    return null;
+  }
+
+  const normalizedDays = source.forecast_days.map(normalizeForecastDay);
+  if (normalizedDays.some(day => day === null)) return null;
+  const forecastDays = normalizedDays as ForecastDay[];
+  if (forecastDays.some((day, index) => index > 0 && day.date <= forecastDays[index - 1].date)) {
+    return null;
+  }
+
+  return {
+    type: 'weather_results',
+    id,
+    schema_version: 1,
+    provider: 'amap',
+    attribution: normalizeAttribution(source.attribution)
+      ?? normalizeLegacyAttribution(source.provider),
+    status,
+    query,
+    resolved_location: resolvedLocation,
+    day_count: dayCount as WeatherResultsBlock['day_count'],
+    forecast_days: forecastDays,
+    fetched_at: fetchedAt,
+    limitations: normalizeBoundedStringArray(source.limitations, 8, 240),
+    ...optionalField('tool_call_log_id', boundedString(source.tool_call_log_id, 160)),
+  };
+}
+
+function normalizeForecastDay(value: unknown): ForecastDay | null {
+  const source = asRecord(value);
+  if (!source) return null;
+  const date = boundedString(source.date, 10);
+  const weekday = integerInRange(source.weekday, 1, 7);
+  const dayWeather = boundedString(source.day_weather, 80);
+  const nightWeather = boundedString(source.night_weather, 80);
+  const highC = finiteNumberInRange(source.high_c, -100, 100);
+  const lowC = finiteNumberInRange(source.low_c, -100, 100);
+  const dayWindDirection = boundedString(source.day_wind_direction, 40);
+  const nightWindDirection = boundedString(source.night_wind_direction, 40);
+  const dayWindPower = boundedString(source.day_wind_power, 40);
+  const nightWindPower = boundedString(source.night_wind_power, 40);
+  const expectedWeekday = date ? isoWeekday(date) : undefined;
+  if (
+    !date
+    || expectedWeekday === undefined
+    || weekday === undefined
+    || weekday !== expectedWeekday
+    || !dayWeather
+    || !nightWeather
+    || highC === undefined
+    || lowC === undefined
+    || highC < lowC
+    || hasInvalidOptionalString(source.day_wind_direction, dayWindDirection)
+    || hasInvalidOptionalString(source.night_wind_direction, nightWindDirection)
+    || hasInvalidOptionalString(source.day_wind_power, dayWindPower)
+    || hasInvalidOptionalString(source.night_wind_power, nightWindPower)
+  ) {
+    return null;
+  }
+
+  return {
+    date,
+    weekday: weekday as ForecastDay['weekday'],
+    day_weather: dayWeather,
+    night_weather: nightWeather,
+    high_c: highC,
+    low_c: lowC,
+    ...optionalField('day_wind_direction', dayWindDirection),
+    ...optionalField('night_wind_direction', nightWindDirection),
+    ...optionalField('day_wind_power', dayWindPower),
+    ...optionalField('night_wind_power', nightWindPower),
   };
 }
 
@@ -598,6 +702,13 @@ function boundedString(value: unknown, maxLength: number): string | undefined {
   return normalized && normalized.length <= maxLength ? normalized : undefined;
 }
 
+function hasInvalidOptionalString(
+  rawValue: unknown,
+  normalizedValue: string | undefined,
+): boolean {
+  return rawValue !== undefined && rawValue !== null && normalizedValue === undefined;
+}
+
 function nonNegativeNumber(value: unknown): number | undefined {
   return typeof value === 'number' && Number.isFinite(value) && value >= 0
     ? value
@@ -608,6 +719,49 @@ function nonNegativeInteger(value: unknown, maximum = Number.MAX_SAFE_INTEGER): 
   return Number.isInteger(value) && Number(value) >= 0 && Number(value) <= maximum
     ? Number(value)
     : undefined;
+}
+
+function integerInRange(
+  value: unknown,
+  minimum: number,
+  maximum: number,
+): number | undefined {
+  return Number.isInteger(value) && Number(value) >= minimum && Number(value) <= maximum
+    ? Number(value)
+    : undefined;
+}
+
+function finiteNumberInRange(
+  value: unknown,
+  minimum: number,
+  maximum: number,
+): number | undefined {
+  return typeof value === 'number'
+    && Number.isFinite(value)
+    && value >= minimum
+    && value <= maximum
+    ? value
+    : undefined;
+}
+
+function isoWeekday(value: string): ForecastDay['weekday'] | undefined {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return undefined;
+  const [year, month, day] = value.split('-').map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  if (
+    date.getUTCFullYear() !== year
+    || date.getUTCMonth() !== month - 1
+    || date.getUTCDate() !== day
+  ) {
+    return undefined;
+  }
+  const weekday = date.getUTCDay();
+  return (weekday === 0 ? 7 : weekday) as ForecastDay['weekday'];
+}
+
+function isZonedIsoDateTime(value: string): boolean {
+  return /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/.test(value)
+    && Number.isFinite(Date.parse(value));
 }
 
 function directStops(value: unknown): 0 | undefined {

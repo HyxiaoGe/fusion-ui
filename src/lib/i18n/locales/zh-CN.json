@@ -99,6 +99,25 @@
         "empty": "暂未找到符合条件的高铁车次",
         "unknownNumber": "车次待确认",
         "viewDetails": "查看详情"
+      },
+      "weather": {
+        "region": "天气预报结果",
+        "title": "{{location}} · {{dayLabel}}天天气",
+        "count": "{{count}} 天预报",
+        "degraded": "部分预报可用",
+        "today": "今天",
+        "daytime": "白天",
+        "nighttime": "夜间",
+        "fetchedAt": "获取于 {{value}}",
+        "weekdays": {
+          "1": "星期一",
+          "2": "星期二",
+          "3": "星期三",
+          "4": "星期四",
+          "5": "星期五",
+          "6": "星期六",
+          "7": "星期日"
+        }
       }
     },
     "models": {

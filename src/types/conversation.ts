@@ -278,6 +278,35 @@ export interface TrainResultsBlock {
   tool_call_log_id?: string | null;
 }
 
+export interface ForecastDay {
+  date: string;
+  weekday: 1 | 2 | 3 | 4 | 5 | 6 | 7;
+  day_weather: string;
+  night_weather: string;
+  high_c: number;
+  low_c: number;
+  day_wind_direction?: string | null;
+  night_wind_direction?: string | null;
+  day_wind_power?: string | null;
+  night_wind_power?: string | null;
+}
+
+export interface WeatherResultsBlock {
+  type: 'weather_results';
+  id: string;
+  schema_version: 1;
+  provider: 'amap';
+  attribution?: StructuredResultAttribution | null;
+  status: 'success' | 'degraded';
+  query: string;
+  resolved_location: string;
+  day_count: 1 | 2 | 3 | 4;
+  forecast_days: ForecastDay[];
+  fetched_at: string;
+  limitations?: string[] | null;
+  tool_call_log_id?: string | null;
+}
+
 export interface UnsupportedResultBlock {
   type: 'unsupported_result';
   id: string;
@@ -291,6 +320,7 @@ export type StructuredToolResultBlock =
   | RouteResultsBlock
   | FlightResultsBlock
   | TrainResultsBlock
+  | WeatherResultsBlock
   | UnsupportedResultBlock;
 
 export type ContentBlock =

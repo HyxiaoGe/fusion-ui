@@ -12,6 +12,12 @@ import {
   CarTaxiFront,
   ChevronLeft,
   ChevronRight,
+  Cloud,
+  CloudFog,
+  CloudLightning,
+  CloudRain,
+  CloudSnow,
+  CloudSun,
   ExternalLink,
   Footprints,
   Gauge,
@@ -22,6 +28,7 @@ import {
   Plus,
   Route,
   Ship,
+  Sun,
   Timer,
   Train,
   TrainFront,
@@ -38,6 +45,7 @@ import {
 } from '@/components/ui/dialog';
 import type {
   NetworkSourceStatus,
+  ForecastDay,
   FlightResultsBlock,
   PlaceResultsBlock,
   ProviderPlacePhoto,
@@ -52,6 +60,7 @@ import type {
   TrainResultsBlock,
   TravelEndpoint,
   TravelMoney,
+  WeatherResultsBlock,
 } from '@/types/conversation';
 import { cn } from '@/lib/utils';
 import { buildRoutePresentation, findFastestRouteIndex } from './routePresentation';
@@ -76,6 +85,7 @@ const STRUCTURED_TOOL_RESULT_RENDERERS = {
   route_results: block => <RouteResults key={block.id} block={block} />,
   flight_results: block => <FlightResults key={block.id} block={block} />,
   train_results: block => <TrainResults key={block.id} block={block} />,
+  weather_results: block => <WeatherResults key={block.id} block={block} />,
   unsupported_result: block => <UnsupportedResult key={block.id} />,
 } satisfies StructuredToolResultRendererRegistry;
 
@@ -97,6 +107,7 @@ function renderStructuredToolResult(block: StructuredToolResultBlock): ReactNode
   if (block.type === 'route_results') return STRUCTURED_TOOL_RESULT_RENDERERS.route_results(block);
   if (block.type === 'flight_results') return STRUCTURED_TOOL_RESULT_RENDERERS.flight_results(block);
   if (block.type === 'train_results') return STRUCTURED_TOOL_RESULT_RENDERERS.train_results(block);
+  if (block.type === 'weather_results') return STRUCTURED_TOOL_RESULT_RENDERERS.weather_results(block);
   return STRUCTURED_TOOL_RESULT_RENDERERS.unsupported_result(block);
 }
 
@@ -584,6 +595,154 @@ function TrainResults({ block }: { block: TrainResultsBlock }) {
       <Limitations items={block.limitations} />
     </section>
   );
+}
+
+function WeatherResults({ block }: { block: WeatherResultsBlock }) {
+  const { t, i18n } = useTranslation();
+  const forecastDays = block.forecast_days.slice(0, 4);
+  const count = forecastDays.length;
+  const dayLabel = localizedWeatherDayCount(count, i18n.language);
+  return (
+    <section
+      aria-label={t('structuredResults.weather.region')}
+      className="rounded-lg border border-border/50 bg-card/40 p-3"
+    >
+      <ResultHeader
+        icon={<CloudSun className="h-4 w-4 text-info" aria-hidden="true" />}
+        title={t('structuredResults.weather.title', {
+          location: safeText(block.resolved_location),
+          dayLabel,
+        })}
+        attribution={block.attribution}
+        status={block.status}
+        statusText={block.status === 'degraded'
+          ? t('structuredResults.weather.degraded')
+          : t('structuredResults.weather.count', { count })}
+      />
+
+      <div
+        data-testid="weather-results-grid"
+        className="mt-3 grid grid-cols-2 gap-2 lg:grid-cols-4"
+      >
+        {forecastDays.map(day => (
+          <WeatherForecastDay
+            key={day.date}
+            day={day}
+            language={i18n.language}
+          />
+        ))}
+      </div>
+
+      <WeatherFreshness fetchedAt={block.fetched_at} language={i18n.language} />
+      <Limitations items={block.limitations} />
+    </section>
+  );
+}
+
+function WeatherForecastDay({
+  day,
+  language,
+}: {
+  day: ForecastDay;
+  language: string;
+}) {
+  const { t } = useTranslation();
+  const today = day.date === currentShanghaiDate();
+  const dayWind = formatWeatherWind(day.day_wind_direction, day.day_wind_power);
+  const nightWind = formatWeatherWind(day.night_wind_direction, day.night_wind_power);
+  return (
+    <article
+      data-testid="weather-forecast-day"
+      data-today={today ? 'true' : 'false'}
+      className={cn(
+        'min-w-0 rounded-lg border border-border/50 bg-background/50 p-3',
+        today && 'border-primary/40 bg-primary/5',
+      )}
+    >
+      <header className="flex min-w-0 items-start justify-between gap-1">
+        <div className="min-w-0">
+          <p className="text-xs font-medium text-foreground">
+            {formatWeatherDate(day.date, language)}
+          </p>
+          <p className="mt-0.5 text-[11px] text-muted-foreground">
+            {t(`structuredResults.weather.weekdays.${day.weekday}`)}
+          </p>
+        </div>
+        {today ? (
+          <span className="shrink-0 rounded-full bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary">
+            {t('structuredResults.weather.today')}
+          </span>
+        ) : null}
+      </header>
+
+      <div className="mt-3 flex items-center justify-between gap-2">
+        <WeatherPhenomenonIcon weather={`${day.day_weather} ${day.night_weather}`} />
+        <p className="text-base font-semibold tabular-nums text-foreground">
+          {formatTemperatureRange(day.low_c, day.high_c)}
+        </p>
+      </div>
+
+      <div className="mt-3 space-y-1 text-[11px]">
+        <p className="text-foreground">
+          {t('structuredResults.weather.daytime')} {safeText(day.day_weather)}
+        </p>
+        <p className="text-muted-foreground">
+          {t('structuredResults.weather.nighttime')} {safeText(day.night_weather)}
+        </p>
+      </div>
+
+      {dayWind || nightWind ? (
+        <div className="mt-2 space-y-0.5 border-t border-border/40 pt-2 text-[10px] text-muted-foreground">
+          {dayWind ? (
+            <p>{t('structuredResults.weather.daytime')} {dayWind}</p>
+          ) : null}
+          {nightWind ? (
+            <p>{t('structuredResults.weather.nighttime')} {nightWind}</p>
+          ) : null}
+        </div>
+      ) : null}
+    </article>
+  );
+}
+
+function WeatherPhenomenonIcon({ weather }: { weather: string }) {
+  const normalized = safeText(weather);
+  const className = 'h-7 w-7';
+  if (normalized.includes('雷')) {
+    return <CloudLightning data-testid="weather-icon-thunder" className={cn(className, 'text-warn')} aria-hidden="true" />;
+  }
+  if (normalized.includes('雪') || normalized.includes('冰雹')) {
+    return <CloudSnow data-testid="weather-icon-snow" className={cn(className, 'text-info')} aria-hidden="true" />;
+  }
+  if (normalized.includes('雨')) {
+    return <CloudRain data-testid="weather-icon-rain" className={cn(className, 'text-info')} aria-hidden="true" />;
+  }
+  if (normalized.includes('雾') || normalized.includes('霾')) {
+    return <CloudFog data-testid="weather-icon-fog" className={cn(className, 'text-muted-foreground')} aria-hidden="true" />;
+  }
+  if (normalized.includes('晴')) {
+    return <Sun data-testid="weather-icon-sun" className={cn(className, 'text-warn')} aria-hidden="true" />;
+  }
+  if (normalized.includes('云') || normalized.includes('阴')) {
+    return <Cloud data-testid="weather-icon-cloud" className={cn(className, 'text-muted-foreground')} aria-hidden="true" />;
+  }
+  return <CloudSun data-testid="weather-icon-mixed" className={cn(className, 'text-info')} aria-hidden="true" />;
+}
+
+function WeatherFreshness({
+  fetchedAt,
+  language,
+}: {
+  fetchedAt: string;
+  language: string;
+}) {
+  const { t } = useTranslation();
+  const formatted = formatObservedAt(fetchedAt, language);
+  return formatted ? (
+    <p className="mt-2 text-[11px] text-muted-foreground">
+      {t('structuredResults.weather.fetchedAt', { value: formatted })}
+    </p>
+  ) : null;
 }
 
 function TravelOptionCard({
@@ -1259,6 +1418,70 @@ function travelOptionRenderKey(
     safeText(optionId) || fallback,
     safeText(travelClass),
   ].join('\0');
+}
+
+function localizedWeatherDayCount(count: number, language: string): string {
+  if (language.toLowerCase().startsWith('zh')) {
+    return ['零', '一', '二', '三', '四'][count] ?? String(count);
+  }
+  return String(count);
+}
+
+function currentShanghaiDate(): string {
+  try {
+    const parts = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Asia/Shanghai',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).formatToParts(new Date());
+    const year = dateTimePart(parts, 'year');
+    const month = dateTimePart(parts, 'month');
+    const day = dateTimePart(parts, 'day');
+    return year && month && day ? `${year}-${month}-${day}` : '';
+  } catch {
+    return '';
+  }
+}
+
+function formatWeatherDate(value: string, language: string): string {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
+  const date = new Date(`${value}T00:00:00+08:00`);
+  if (!Number.isFinite(date.getTime())) return value;
+  try {
+    return new Intl.DateTimeFormat(language || 'zh-CN', {
+      timeZone: 'Asia/Shanghai',
+      month: 'short',
+      day: 'numeric',
+    }).format(date);
+  } catch {
+    return value;
+  }
+}
+
+function formatTemperatureRange(low: number, high: number): string {
+  return `${formatTemperature(low)}° – ${formatTemperature(high)}°`;
+}
+
+function formatTemperature(value: number): string {
+  return Number.isInteger(value)
+    ? value.toFixed(0)
+    : value.toFixed(1).replace(/\.0$/, '');
+}
+
+function formatWeatherWind(
+  direction: string | null | undefined,
+  power: string | null | undefined,
+): string {
+  const normalizedDirection = safeText(direction);
+  const normalizedPower = safeText(power);
+  const directionLabel = normalizedDirection
+    ? `${normalizedDirection}${normalizedDirection.endsWith('风') ? '' : '风'}`
+    : '';
+  const powerLabel = normalizedPower
+    ? `${normalizedPower}${normalizedPower.endsWith('级') ? '' : ' 级'}`
+    : '';
+  return [directionLabel, powerLabel].filter(Boolean).join(' ');
 }
 
 function formatTravelSchedule(
