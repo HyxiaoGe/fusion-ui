@@ -126,6 +126,77 @@ describe('useAssistantMessageViewModel', () => {
     expect(result.current.structuredResults).toEqual([placeResult]);
   });
 
+  it('实时与刷新后的静态消息使用同一规则合并并去重高铁结果', () => {
+    const firstTrainResult = {
+      type: 'train_results' as const,
+      id: 'trains-morning',
+      schema_version: 1 as const,
+      provider: 'flyai',
+      status: 'success' as const,
+      origin: '深圳北',
+      destination: '广州南',
+      departure_date: '2026-08-01',
+      observed_at: '2026-07-22T15:00:00+08:00',
+      result_count: 1,
+      trains: [{
+        option_id: 'opt-g2902-a',
+        train_no: 'G2902',
+        departure: { city: '深圳', station_name: '深圳北站', scheduled_at: '2026-08-01T09:00:00+08:00' },
+        arrival: { city: '广州', station_name: '广州南站', scheduled_at: '2026-08-01T09:35:00+08:00' },
+        duration_s: 2_100,
+        stops: 0 as const,
+        actions: [],
+      }],
+      limitations: [],
+    };
+    const secondTrainResult = {
+      ...firstTrainResult,
+      id: 'trains-later',
+      result_count: 2,
+      trains: [
+        {
+          ...firstTrainResult.trains[0],
+          option_id: 'opt-g2902-b',
+          departure: { city: '深圳', station_name: '深圳北站', scheduled_at: '2026-08-01T01:00:00Z' },
+          arrival: { city: '广州', station_name: '广州南站', scheduled_at: '2026-08-01T01:35:00Z' },
+        },
+        {
+          ...firstTrainResult.trains[0],
+          option_id: 'opt-g6012',
+          train_no: 'G6012',
+          departure: { city: '深圳', station_name: '深圳北站', scheduled_at: '2026-08-01T10:00:00+08:00' },
+          arrival: { city: '广州', station_name: '广州南站', scheduled_at: '2026-08-01T10:40:00+08:00' },
+        },
+      ],
+    };
+    const message: Message = {
+      id: 'assistant-trains',
+      role: 'assistant',
+      content: [firstTrainResult, secondTrainResult, { type: 'text', id: 'text-1', text: '推荐 G2902。' }],
+    };
+
+    const staticModel = deriveStaticAssistantMessageViewModel({
+      message,
+      isLoadingQuestions: false,
+      suggestedQuestionsCount: 0,
+    });
+    selectorState.stream.messageId = message.id;
+    selectorState.stream.staticBlocks = message.content;
+    const { result } = renderViewModel(message, { isStreaming: true, isLastMessage: true });
+
+    expect(staticModel.structuredResults).toEqual(result.current.structuredResults);
+    expect(staticModel.structuredResults).toEqual([
+      expect.objectContaining({
+        id: 'trains-morning',
+        result_count: 2,
+        trains: [
+          expect.objectContaining({ train_no: 'G2902', option_id: 'opt-g2902-a' }),
+          expect.objectContaining({ train_no: 'G6012' }),
+        ],
+      }),
+    ]);
+  });
+
   it('从 SearchBlock 的最终 provider 派生回答依据提供方文案', () => {
     const message: Message = {
       id: 'assistant-1',

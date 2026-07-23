@@ -464,7 +464,7 @@ function RouteResults({ block }: { block: RouteResultsBlock }) {
 
 function FlightResults({ block }: { block: FlightResultsBlock }) {
   const { t } = useTranslation();
-  const flights = (block.flights ?? []).slice(0, 5);
+  const flights = block.flights ?? [];
   return (
     <section
       aria-label={t('structuredResults.flight.region')}
@@ -493,7 +493,13 @@ function FlightResults({ block }: { block: FlightResultsBlock }) {
         >
           {flights.map((flight, index) => (
             <TravelOptionCard
-              key={safeText(flight.option_id) || `${block.id}-${index}`}
+              key={travelOptionRenderKey(
+                block.provider,
+                block.attribution?.label,
+                flight.option_id,
+                flight.cabin_class,
+                `${block.id}-${index}`,
+              )}
               kind="flight"
               number={flight.flight_no}
               operator={flight.airline_name}
@@ -520,7 +526,7 @@ function FlightResults({ block }: { block: FlightResultsBlock }) {
 
 function TrainResults({ block }: { block: TrainResultsBlock }) {
   const { t } = useTranslation();
-  const trains = (block.trains ?? []).slice(0, 5);
+  const trains = block.trains ?? [];
   return (
     <section
       aria-label={t('structuredResults.train.region')}
@@ -549,7 +555,13 @@ function TrainResults({ block }: { block: TrainResultsBlock }) {
         >
           {trains.map((train, index) => (
             <TravelOptionCard
-              key={safeText(train.option_id) || `${block.id}-${index}`}
+              key={travelOptionRenderKey(
+                block.provider,
+                block.attribution?.label,
+                train.option_id,
+                train.seat_class,
+                `${block.id}-${index}`,
+              )}
               kind="train"
               number={train.train_no}
               operator={train.train_type}
@@ -1232,6 +1244,21 @@ function travelResultTitle(
     ? `${safeText(origin)} → ${safeText(destination)}`
     : safeText(origin) || safeText(destination) || fallback;
   return compact([route, safeText(departureDate)]);
+}
+
+function travelOptionRenderKey(
+  provider: string | null | undefined,
+  attribution: string | null | undefined,
+  optionId: string | null | undefined,
+  travelClass: string | null | undefined,
+  fallback: string,
+): string {
+  return [
+    safeText(provider),
+    safeText(attribution),
+    safeText(optionId) || fallback,
+    safeText(travelClass),
+  ].join('\0');
 }
 
 function formatTravelSchedule(

@@ -1,7 +1,377 @@
 import { describe, expect, it } from 'vitest';
-import { normalizeStructuredToolResultBlock } from './structuredToolResults';
+import type { FlightResultsBlock, TrainResultsBlock } from '@/types/conversation';
+import {
+  collectStructuredToolResultBlocks,
+  normalizeStructuredToolResultBlock,
+} from './structuredToolResults';
+
+function trainResultBlock({
+  id,
+  origin = '深圳北',
+  destination = '广州南',
+  departureDate = '2026-08-01',
+  provider = 'flyai',
+  attribution = { label: '飞猪旅行' },
+  trains,
+}: {
+  id: string;
+  origin?: string;
+  destination?: string;
+  departureDate?: string;
+  provider?: string | null;
+  attribution?: TrainResultsBlock['attribution'];
+  trains: TrainResultsBlock['trains'];
+}): TrainResultsBlock {
+  return {
+    type: 'train_results',
+    id,
+    schema_version: 1,
+    provider,
+    attribution,
+    status: 'success',
+    origin,
+    destination,
+    departure_date: departureDate,
+    observed_at: '2026-07-22T15:00:00+08:00',
+    result_count: trains?.length ?? 0,
+    trains,
+    limitations: [],
+  };
+}
+
+function trainOption(
+  optionId: string,
+  trainNo: string,
+  departureAt: string,
+  arrivalAt: string,
+  seatClass?: string,
+): NonNullable<TrainResultsBlock['trains']>[number] {
+  return {
+    option_id: optionId,
+    train_no: trainNo,
+    departure: { city: '深圳', station_name: '深圳北站', scheduled_at: departureAt },
+    arrival: { city: '广州', station_name: '广州南站', scheduled_at: arrivalAt },
+    duration_s: 1_920,
+    seat_class: seatClass,
+    stops: 0,
+    actions: [],
+  };
+}
 
 describe('normalizeStructuredToolResultBlock', () => {
+  it('同一回答内按出行查询维度合并班次，并按稳定班次身份去重且保留首次顺序', () => {
+    const first = trainResultBlock({
+      id: 'trains-morning',
+      trains: [
+        trainOption('opt-g100', 'G100', '2026-08-01T08:00:00+08:00', '2026-08-01T08:32:00+08:00'),
+        trainOption('opt-g2902-a', 'G2902', '2026-08-01T09:00:00+08:00', '2026-08-01T09:35:00+08:00'),
+      ],
+    });
+    const later = trainResultBlock({
+      id: 'trains-later',
+      trains: [
+        trainOption('opt-g2902-b', 'G2902', '2026-08-01T01:00:00Z', '2026-08-01T01:35:00Z'),
+        trainOption('opt-g6012', 'G6012', '2026-08-01T10:00:00+08:00', '2026-08-01T10:40:00+08:00'),
+      ],
+    });
+
+    const collected = collectStructuredToolResultBlocks([first, later]);
+
+    expect(collected).toHaveLength(1);
+    expect(collected[0]).toMatchObject({
+      id: 'trains-morning',
+      type: 'train_results',
+      result_count: 3,
+      trains: [
+        expect.objectContaining({ train_no: 'G100' }),
+        expect.objectContaining({ train_no: 'G2902', option_id: 'opt-g2902-a' }),
+        expect.objectContaining({ train_no: 'G6012' }),
+      ],
+    });
+  });
+
+  it('航班结果使用同一查询与班次身份规则合并去重', () => {
+    const common = {
+      type: 'flight_results' as const,
+      schema_version: 1 as const,
+      provider: 'flyai',
+      status: 'success' as const,
+      origin: '深圳',
+      destination: '上海',
+      departure_date: '2026-08-01',
+      observed_at: '2026-07-22T15:00:00+08:00',
+      limitations: [],
+    };
+    const cz1234 = {
+      option_id: 'flight-cz-a',
+      flight_no: 'CZ1234',
+      departure: { city: '深圳', station_name: '深圳宝安国际机场', scheduled_at: '2026-08-01T08:30:00+08:00' },
+      arrival: { city: '上海', station_name: '上海虹桥国际机场', scheduled_at: '2026-08-01T10:45:00+08:00' },
+      duration_s: 8_100,
+      stops: 0 as const,
+      actions: [],
+    };
+    const first: FlightResultsBlock = {
+      ...common,
+      id: 'flights-first',
+      result_count: 1,
+      flights: [cz1234],
+    };
+    const later: FlightResultsBlock = {
+      ...common,
+      id: 'flights-later',
+      result_count: 2,
+      flights: [
+        {
+          ...cz1234,
+          option_id: 'flight-cz-b',
+          departure: { ...cz1234.departure, scheduled_at: '2026-08-01T00:30:00Z' },
+          arrival: { ...cz1234.arrival, scheduled_at: '2026-08-01T02:45:00Z' },
+        },
+        {
+          ...cz1234,
+          option_id: 'flight-mu',
+          flight_no: 'MU5678',
+          departure: { ...cz1234.departure, scheduled_at: '2026-08-01T12:00:00+08:00' },
+          arrival: { ...cz1234.arrival, scheduled_at: '2026-08-01T14:30:00+08:00' },
+        },
+      ],
+    };
+
+    expect(collectStructuredToolResultBlocks([first, later])).toEqual([
+      expect.objectContaining({
+        id: 'flights-first',
+        result_count: 2,
+        flights: [
+          expect.objectContaining({ flight_no: 'CZ1234', option_id: 'flight-cz-a' }),
+          expect.objectContaining({ flight_no: 'MU5678' }),
+        ],
+      }),
+    ]);
+  });
+
+  it('不同供应商或归属标识的同路线结果保持隔离，归属完全未知时保守不合并', () => {
+    const sharedTrain = trainOption(
+      'opt-g100',
+      'G100',
+      '2026-08-01T08:00:00+08:00',
+      '2026-08-01T08:32:00+08:00',
+    );
+    const blocks = [
+      trainResultBlock({ id: 'flyai', trains: [sharedTrain] }),
+      trainResultBlock({
+        id: 'other-provider',
+        provider: 'other-provider',
+        trains: [sharedTrain],
+      }),
+      trainResultBlock({
+        id: 'other-attribution',
+        attribution: { label: '其他旅行服务' },
+        trains: [sharedTrain],
+      }),
+      trainResultBlock({
+        id: 'unknown-source-a',
+        provider: null,
+        attribution: null,
+        trains: [sharedTrain],
+      }),
+      trainResultBlock({
+        id: 'unknown-source-b',
+        provider: null,
+        attribution: null,
+        trains: [sharedTrain],
+      }),
+    ];
+
+    expect(collectStructuredToolResultBlocks(blocks).map(block => block.id)).toEqual([
+      'flyai',
+      'other-provider',
+      'other-attribution',
+      'unknown-source-a',
+      'unknown-source-b',
+    ]);
+  });
+
+  it('同一车次不折叠不同席别，同一航班不折叠不同舱等', () => {
+    const trainFirst = trainResultBlock({
+      id: 'train-seat-first',
+      trains: [
+        trainOption(
+          'train-second-class',
+          'G100',
+          '2026-08-01T08:00:00+08:00',
+          '2026-08-01T08:32:00+08:00',
+          '二等座',
+        ),
+      ],
+    });
+    const trainLater = trainResultBlock({
+      id: 'train-seat-later',
+      trains: [
+        trainOption(
+          'train-business-class',
+          'G100',
+          '2026-08-01T08:00:00+08:00',
+          '2026-08-01T08:32:00+08:00',
+          '商务座',
+        ),
+      ],
+    });
+    const flightCommon = {
+      type: 'flight_results' as const,
+      schema_version: 1 as const,
+      provider: 'flyai',
+      attribution: { label: '飞猪旅行' },
+      status: 'success' as const,
+      origin: '深圳',
+      destination: '上海',
+      departure_date: '2026-08-01',
+      observed_at: '2026-07-22T15:00:00+08:00',
+      limitations: [],
+    };
+    const flightOption = {
+      flight_no: 'CZ1234',
+      departure: {
+        city: '深圳',
+        station_name: '深圳宝安国际机场',
+        scheduled_at: '2026-08-01T08:30:00+08:00',
+      },
+      arrival: {
+        city: '上海',
+        station_name: '上海虹桥国际机场',
+        scheduled_at: '2026-08-01T10:45:00+08:00',
+      },
+      duration_s: 8_100,
+      stops: 0 as const,
+      actions: [],
+    };
+    const flightFirst: FlightResultsBlock = {
+      ...flightCommon,
+      id: 'flight-cabin-first',
+      result_count: 1,
+      flights: [{ ...flightOption, option_id: 'flight-economy', cabin_class: '经济舱' }],
+    };
+    const flightLater: FlightResultsBlock = {
+      ...flightCommon,
+      id: 'flight-cabin-later',
+      result_count: 1,
+      flights: [{ ...flightOption, option_id: 'flight-business', cabin_class: '商务舱' }],
+    };
+
+    const trainCollected = collectStructuredToolResultBlocks([trainFirst, trainLater]);
+    const flightCollected = collectStructuredToolResultBlocks([flightFirst, flightLater]);
+
+    expect(trainCollected).toHaveLength(1);
+    expect(trainCollected[0]).toMatchObject({
+      result_count: 2,
+      trains: [
+        expect.objectContaining({ seat_class: '二等座' }),
+        expect.objectContaining({ seat_class: '商务座' }),
+      ],
+    });
+    expect(flightCollected).toHaveLength(1);
+    expect(flightCollected[0]).toMatchObject({
+      result_count: 2,
+      flights: [
+        expect.objectContaining({ cabin_class: '经济舱' }),
+        expect.objectContaining({ cabin_class: '商务舱' }),
+      ],
+    });
+  });
+
+  it('班次时刻不完整时，option_id 回退身份仍保留舱等和席别', () => {
+    const trainFirst = trainResultBlock({
+      id: 'train-fallback-first',
+      trains: [{ option_id: 'shared-train', train_no: 'G100', seat_class: '二等座' }],
+    });
+    const trainLater = trainResultBlock({
+      id: 'train-fallback-later',
+      trains: [{ option_id: 'shared-train', train_no: 'G100', seat_class: '商务座' }],
+    });
+    const flightCommon = {
+      type: 'flight_results' as const,
+      schema_version: 1 as const,
+      provider: 'flyai',
+      attribution: { label: '飞猪旅行' },
+      status: 'success' as const,
+      origin: '深圳',
+      destination: '上海',
+      departure_date: '2026-08-01',
+      observed_at: '2026-07-22T15:00:00+08:00',
+      limitations: [],
+    };
+    const flightFirst: FlightResultsBlock = {
+      ...flightCommon,
+      id: 'flight-fallback-first',
+      result_count: 1,
+      flights: [{ option_id: 'shared-flight', flight_no: 'CZ1234', cabin_class: '经济舱' }],
+    };
+    const flightLater: FlightResultsBlock = {
+      ...flightCommon,
+      id: 'flight-fallback-later',
+      result_count: 1,
+      flights: [{ option_id: 'shared-flight', flight_no: 'CZ1234', cabin_class: '商务舱' }],
+    };
+
+    expect(collectStructuredToolResultBlocks([trainFirst, trainLater])[0]).toMatchObject({
+      result_count: 2,
+      trains: [
+        expect.objectContaining({ seat_class: '二等座' }),
+        expect.objectContaining({ seat_class: '商务座' }),
+      ],
+    });
+    expect(collectStructuredToolResultBlocks([flightFirst, flightLater])[0]).toMatchObject({
+      result_count: 2,
+      flights: [
+        expect.objectContaining({ cabin_class: '经济舱' }),
+        expect.objectContaining({ cabin_class: '商务舱' }),
+      ],
+    });
+  });
+
+  it('不同结果类型、路线或日期保持为独立结果块', () => {
+    const baseTrain = trainResultBlock({
+      id: 'trains-base',
+      trains: [trainOption('opt-base', 'G100', '2026-08-01T08:00:00+08:00', '2026-08-01T08:32:00+08:00')],
+    });
+    const differentDate = trainResultBlock({
+      id: 'trains-next-day',
+      departureDate: '2026-08-02',
+      trains: [trainOption('opt-next-day', 'G100', '2026-08-02T08:00:00+08:00', '2026-08-02T08:32:00+08:00')],
+    });
+    const differentRoute = trainResultBlock({
+      id: 'trains-other-route',
+      destination: '厦门北',
+      trains: [trainOption('opt-other-route', 'D2288', '2026-08-01T10:00:00+08:00', '2026-08-01T13:30:00+08:00')],
+    });
+    const flight = {
+      type: 'flight_results' as const,
+      id: 'flights-base',
+      schema_version: 1 as const,
+      provider: 'flyai',
+      status: 'success' as const,
+      origin: '深圳北',
+      destination: '广州南',
+      departure_date: '2026-08-01',
+      observed_at: '2026-07-22T15:00:00+08:00',
+      result_count: 0,
+      flights: [],
+      limitations: [],
+    };
+
+    expect(collectStructuredToolResultBlocks([
+      baseTrain,
+      differentDate,
+      differentRoute,
+      flight,
+    ]).map(block => block.id)).toEqual([
+      'trains-base',
+      'trains-next-day',
+      'trains-other-route',
+      'flights-base',
+    ]);
+  });
+
   it('航班与高铁结果只保留产品字段、最多 5 项和单个安全预订动作', () => {
     const flight = normalizeStructuredToolResultBlock({
       type: 'flight_results',

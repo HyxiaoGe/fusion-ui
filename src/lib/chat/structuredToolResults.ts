@@ -43,7 +43,205 @@ export function isStructuredToolResultBlock(block: ContentBlock): block is Struc
 export function collectStructuredToolResultBlocks(
   blocks: readonly ContentBlock[],
 ): StructuredToolResultBlock[] {
-  return blocks.filter(isStructuredToolResultBlock);
+  const collected: StructuredToolResultBlock[] = [];
+  const travelBlockIndex = new Map<string, number>();
+
+  blocks.forEach(block => {
+    if (!isStructuredToolResultBlock(block)) return;
+    if (!isTravelResultBlock(block)) {
+      collected.push(block);
+      return;
+    }
+
+    const queryKey = travelResultQueryKey(block);
+    if (!queryKey) {
+      collected.push(block);
+      return;
+    }
+
+    const existingIndex = travelBlockIndex.get(queryKey);
+    if (existingIndex === undefined) {
+      travelBlockIndex.set(queryKey, collected.length);
+      collected.push(dedupeTravelResultBlock(block));
+      return;
+    }
+
+    const existing = collected[existingIndex];
+    if (!isTravelResultBlock(existing) || existing.type !== block.type) {
+      collected.push(block);
+      return;
+    }
+    collected[existingIndex] = mergeTravelResultBlocks(existing, block);
+  });
+
+  return collected;
+}
+
+type TravelResultBlock = FlightResultsBlock | TrainResultsBlock;
+
+function isTravelResultBlock(block: StructuredToolResultBlock): block is TravelResultBlock {
+  return block.type === 'flight_results' || block.type === 'train_results';
+}
+
+function travelResultQueryKey(block: TravelResultBlock): string | null {
+  const provider = canonicalTravelKeyPart(block.provider);
+  const attribution = canonicalTravelKeyPart(block.attribution?.label);
+  const origin = canonicalTravelKeyPart(block.origin);
+  const destination = canonicalTravelKeyPart(block.destination);
+  const departureDate = canonicalTravelKeyPart(block.departure_date);
+  if (
+    (!provider && !attribution)
+    || !origin
+    || !destination
+    || !departureDate
+  ) {
+    return null;
+  }
+  return [
+    block.type,
+    provider,
+    attribution,
+    origin,
+    destination,
+    departureDate,
+  ].join('\0');
+}
+
+function canonicalTravelKeyPart(value: string | null | undefined): string {
+  return value?.trim().normalize('NFKC').toLocaleLowerCase('zh-CN') ?? '';
+}
+
+function dedupeTravelResultBlock(block: TravelResultBlock): TravelResultBlock {
+  if (block.type === 'flight_results') {
+    const flights = dedupeTravelOptions(block.flights ?? [], flightIdentity);
+    return flights.length === (block.flights?.length ?? 0)
+      ? block
+      : { ...block, result_count: flights.length, flights };
+  }
+  const trains = dedupeTravelOptions(block.trains ?? [], trainIdentity);
+  return trains.length === (block.trains?.length ?? 0)
+    ? block
+    : { ...block, result_count: trains.length, trains };
+}
+
+function mergeTravelResultBlocks(
+  existing: TravelResultBlock,
+  incoming: TravelResultBlock,
+): TravelResultBlock {
+  const shared = {
+    status: existing.status === 'degraded' || incoming.status === 'degraded'
+      ? 'degraded' as const
+      : existing.status ?? incoming.status,
+    observed_at: latestObservedAt(existing.observed_at, incoming.observed_at),
+    limitations: mergeUniqueStrings(existing.limitations, incoming.limitations, 8),
+  };
+
+  if (existing.type === 'flight_results' && incoming.type === 'flight_results') {
+    const flights = dedupeTravelOptions(
+      [...(existing.flights ?? []), ...(incoming.flights ?? [])],
+      flightIdentity,
+    );
+    return { ...existing, ...shared, result_count: flights.length, flights };
+  }
+  if (existing.type === 'train_results' && incoming.type === 'train_results') {
+    const trains = dedupeTravelOptions(
+      [...(existing.trains ?? []), ...(incoming.trains ?? [])],
+      trainIdentity,
+    );
+    return { ...existing, ...shared, result_count: trains.length, trains };
+  }
+  return existing;
+}
+
+function dedupeTravelOptions<T>(
+  options: readonly T[],
+  identity: (option: T) => string | null,
+): T[] {
+  const seen = new Set<string>();
+  return options.filter(option => {
+    const key = identity(option);
+    if (!key) return true;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function flightIdentity(option: ProviderFlightResult): string | null {
+  return travelOptionIdentity(
+    option.flight_no,
+    option.departure,
+    option.arrival,
+    option.cabin_class,
+    option.option_id,
+  );
+}
+
+function trainIdentity(option: ProviderTrainResult): string | null {
+  return travelOptionIdentity(
+    option.train_no,
+    option.departure,
+    option.arrival,
+    option.seat_class,
+    option.option_id,
+  );
+}
+
+function travelOptionIdentity(
+  number: string | null | undefined,
+  departure: TravelEndpoint | null | undefined,
+  arrival: TravelEndpoint | null | undefined,
+  travelClass: string | null | undefined,
+  optionId: string | null | undefined,
+): string | null {
+  const normalizedNumber = canonicalTravelKeyPart(number);
+  const departureAt = canonicalInstant(departure?.scheduled_at);
+  const arrivalAt = canonicalInstant(arrival?.scheduled_at);
+  if (normalizedNumber && departureAt && arrivalAt) {
+    return [
+      'schedule',
+      normalizedNumber,
+      departureAt,
+      arrivalAt,
+      canonicalTravelKeyPart(travelClass),
+    ].join('\0');
+  }
+  const normalizedOptionId = optionId?.trim();
+  return normalizedOptionId
+    ? ['option', normalizedOptionId, canonicalTravelKeyPart(travelClass)].join('\0')
+    : null;
+}
+
+function canonicalInstant(value: string | null | undefined): string {
+  const normalized = value?.trim();
+  if (!normalized) return '';
+  const timestamp = Date.parse(normalized);
+  return Number.isFinite(timestamp) ? new Date(timestamp).toISOString() : normalized;
+}
+
+function latestObservedAt(
+  existing: string | null | undefined,
+  incoming: string | null | undefined,
+): string | null | undefined {
+  const existingTime = Date.parse(existing ?? '');
+  const incomingTime = Date.parse(incoming ?? '');
+  if (!Number.isFinite(incomingTime)) return existing;
+  if (!Number.isFinite(existingTime) || incomingTime > existingTime) return incoming;
+  return existing;
+}
+
+function mergeUniqueStrings(
+  existing: string[] | null | undefined,
+  incoming: string[] | null | undefined,
+  limit: number,
+): string[] {
+  const seen = new Set<string>();
+  return [...(existing ?? []), ...(incoming ?? [])].filter(item => {
+    const normalized = item.trim();
+    if (!normalized || seen.has(normalized) || seen.size >= limit) return false;
+    seen.add(normalized);
+    return true;
+  });
 }
 
 export function hasUsableStructuredToolResult(blocks: readonly ContentBlock[]): boolean {

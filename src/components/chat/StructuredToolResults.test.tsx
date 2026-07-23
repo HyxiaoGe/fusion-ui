@@ -1,6 +1,6 @@
 import React from 'react';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type {
   FlightResultsBlock,
   PlaceResultsBlock,
@@ -248,6 +248,65 @@ describe('StructuredToolResults', () => {
     expect(screen.getByText('价格暂不可用')).toBeInTheDocument();
     expect(screen.queryByRole('link')).toBeNull();
     expect(screen.queryByText(/undefined|null/)).toBeNull();
+  });
+
+  it('合并后的高铁结果完整展示所有唯一车次，不再按单次查询上限截断', () => {
+    const trains = Array.from({ length: 6 }, (_, index) => ({
+      option_id: `train-${index + 1}`,
+      train_no: `G${100 + index}`,
+      departure: {
+        city: '深圳',
+        station_name: '深圳北站',
+        scheduled_at: `2026-08-01T${String(8 + index).padStart(2, '0')}:00:00+08:00`,
+      },
+      arrival: {
+        city: '广州',
+        station_name: '广州南站',
+        scheduled_at: `2026-08-01T${String(8 + index).padStart(2, '0')}:32:00+08:00`,
+      },
+      duration_s: 1_920,
+      stops: 0 as const,
+      actions: [],
+    }));
+
+    render(<StructuredToolResults blocks={[trainBlock({ result_count: trains.length, trains })]} />);
+
+    expect(screen.getByText('G100')).toBeInTheDocument();
+    expect(screen.getByText('G105')).toBeInTheDocument();
+  });
+
+  it('同一供应商同一 option_id 的不同舱等或席别使用唯一渲染键', () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    try {
+      const commonFlight = flightBlock().flights![0];
+      const commonTrain = trainBlock().trains![0];
+      render(<StructuredToolResults blocks={[
+        flightBlock({
+          result_count: 2,
+          flights: [
+            { ...commonFlight, option_id: 'shared-flight', cabin_class: '经济舱' },
+            { ...commonFlight, option_id: 'shared-flight', cabin_class: '商务舱' },
+          ],
+        }),
+        trainBlock({
+          result_count: 2,
+          trains: [
+            { ...commonTrain, option_id: 'shared-train', seat_class: '二等座' },
+            { ...commonTrain, option_id: 'shared-train', seat_class: '商务座' },
+          ],
+        }),
+      ]} />);
+
+      expect(screen.getByText('经济舱')).toBeInTheDocument();
+      expect(screen.getByText('商务舱')).toBeInTheDocument();
+      expect(screen.getByText('二等座')).toBeInTheDocument();
+      expect(screen.getByText('商务座')).toBeInTheDocument();
+      expect(consoleError.mock.calls.flat().join(' ')).not.toContain(
+        'Encountered two children with the same key',
+      );
+    } finally {
+      consoleError.mockRestore();
+    }
   });
 
   it('航班与高铁空结果展示低干扰空状态', () => {
