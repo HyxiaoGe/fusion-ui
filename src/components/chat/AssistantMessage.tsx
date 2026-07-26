@@ -160,6 +160,7 @@ function AssistantMessageFrame({
     searchQueries,
     answerEvidence,
     structuredResults,
+    rawStructuredResults,
     displayText,
     displayThinking,
     suppressThinking,
@@ -169,6 +170,7 @@ function AssistantMessageFrame({
     isStreamingReasoning,
     isThinkingPhaseComplete,
   } = viewModel;
+  const renderableStructuredResults = rawStructuredResults ?? structuredResults;
 
   const { copied, copy } = useMessageCopy({ text: displayText });
   const isCurrentMessageStreaming = viewModel.isCurrentlyStreaming || isStreaming;
@@ -293,7 +295,7 @@ function AssistantMessageFrame({
             onRetry={handleRetry}
             onContinueAgentRun={handleContinue}
             answerEvidence={answerEvidence}
-            structuredResults={structuredResults}
+            structuredResults={renderableStructuredResults}
             answerEvidenceSidebar={answerEvidenceSidebar}
             searchQueries={searchQueries}
             onSourceClick={handleCitationClick}

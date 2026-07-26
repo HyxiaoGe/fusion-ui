@@ -205,6 +205,7 @@ const streamSlice = createSlice({
         delete state.blockTypes[blockId];
         state.blockOrder = state.blockOrder.filter(existingId => existingId !== blockId);
       }
+      state.staticBlocks = state.staticBlocks.filter(block => block.id !== blockId);
       for (const step of run.steps) {
         step.contentBlockIds = step.contentBlockIds.filter(existingId => existingId !== blockId);
       }

@@ -118,6 +118,41 @@
           "6": "星期六",
           "7": "星期日"
         }
+      },
+      "itinerary": {
+        "region": "智能行程方案",
+        "oneWay": "单程",
+        "roundTrip": "往返",
+        "complete": "方案完整",
+        "partial": "部分可用",
+        "planSwitcher": "切换行程方案",
+        "lowestPricePlan": "省预算方案",
+        "shortestDurationPlan": "省时间方案",
+        "lowestPrice": "最低参考价",
+        "shortestDuration": "班次耗时最短",
+        "available": "结果可用",
+        "partiallyAvailable": "部分结果可用",
+        "unavailableTitle": "以下结果暂未取得",
+        "availabilityLabel": "{{journey}} · {{mode}}",
+        "details": "查看详细班次与路线",
+        "sources": "数据来源：{{sources}}",
+        "modes": {
+          "flight": "航班",
+          "train": "高铁",
+          "weather": "天气",
+          "route": "路线"
+        },
+        "sections": {
+          "outbound_transport": "去程",
+          "return_transport": "返程",
+          "destination_weather": "目的地天气",
+          "local_route": "当地路线"
+        },
+        "weatherCoverage": {
+          "full": "覆盖行程日期",
+          "partial": "仅覆盖部分行程日期",
+          "outside_range": "当前预报窗口未覆盖"
+        }
       }
     },
     "models": {

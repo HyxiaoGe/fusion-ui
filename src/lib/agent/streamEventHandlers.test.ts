@@ -312,6 +312,88 @@ describe('createAgentStreamEventHandlers', () => {
     }));
   });
 
+  it('把 itinerary 富结果事件按稳定 id 写入 stream staticBlocks', () => {
+    const dispatch = vi.fn();
+    const handlers = createAgentStreamEventHandlers({
+      dispatch,
+      isActive: () => true,
+      resolveMessageId: ev => ev.message_id,
+      resolveConversationId: () => 'c1',
+    });
+
+    handlers.onContentBlockUpserted?.({
+      type: 'content_block_upserted',
+      protocol_version: 2,
+      run_id: 'r1',
+      parent_run_id: null,
+      step_id: 's1',
+      parent_step_id: null,
+      tool_call_id: 'tc-itinerary',
+      sequence: 8,
+      trace_id: 'r1',
+      ts: 0,
+      content_block: {
+        type: 'itinerary_results',
+        id: 'itinerary-1',
+        schema_version: 1,
+        provider: 'fusion',
+        status: 'degraded',
+        trip_type: 'one_way',
+        origin: '深圳',
+        destination: '上海',
+        start_date: '2026-08-01',
+        end_date: null,
+        recommended_plan_id: null,
+        plans: [{
+          id: 'lowest-price',
+          title: '最低参考价方案',
+          status: 'partial',
+          strategy: 'lowest_reference_price',
+          tags: ['lowest_reference_price'],
+          known_cost: { currency: 'CNY', amount_minor: 58_000 },
+          known_duration_s: 8_400,
+          sections: [{
+            id: 'outbound',
+            kind: 'outbound_transport',
+            status: 'complete',
+            title: '去程',
+            coverage: null,
+            result_refs: [{
+              block_id: 'flight-outbound',
+              item_ids: ['flight-1'],
+            }],
+          }],
+        }],
+        availability: [
+          { journey: 'outbound', mode: 'flight', status: 'available' },
+          { journey: 'destination_weather', mode: 'weather', status: 'unavailable' },
+        ],
+        limitations: ['未取得目的地天气'],
+      },
+    });
+
+    expect(dispatch).toHaveBeenCalledWith(expect.objectContaining({
+      type: 'stream/upsertStaticContentBlock',
+      payload: expect.objectContaining({
+        runId: 'r1',
+        sequence: 8,
+        block: expect.objectContaining({
+          type: 'itinerary_results',
+          id: 'itinerary-1',
+          status: 'degraded',
+          plans: [expect.objectContaining({
+            sections: [expect.objectContaining({
+              result_refs: [{
+                block_id: 'flight-outbound',
+                item_ids: ['flight-1'],
+              }],
+            })],
+          })],
+        }),
+      }),
+    }));
+  });
+
   it('把天气预报事件规范化后写入 stream staticBlocks', () => {
     const dispatch = vi.fn();
     const handlers = createAgentStreamEventHandlers({

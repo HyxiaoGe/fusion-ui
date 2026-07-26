@@ -6,6 +6,49 @@ import {
   parseServerTimestamp,
   shouldHydrateConversation,
 } from './conversationHydration';
+import { deriveItineraryResultPresentation } from './itineraryResultPresentation';
+
+function itineraryPayload() {
+  return {
+    type: 'itinerary_results',
+    id: 'itinerary-1',
+    schema_version: 1,
+    provider: 'fusion',
+    status: 'success',
+    trip_type: 'one_way',
+    origin: '深圳',
+    destination: '上海',
+    start_date: '2026-08-01',
+    end_date: null,
+    recommended_plan_id: null,
+    plans: [{
+      id: 'lowest-price',
+      title: '最低参考价方案',
+      status: 'complete',
+      strategy: 'lowest_reference_price',
+      tags: ['lowest_reference_price'],
+      known_cost: { currency: 'CNY', amount_minor: 58_000 },
+      known_duration_s: 8_400,
+      sections: [{
+        id: 'outbound',
+        kind: 'outbound_transport',
+        status: 'complete',
+        title: '去程',
+        coverage: null,
+        result_refs: [{
+          block_id: 'flight-outbound',
+          item_ids: ['flight-1'],
+        }],
+      }],
+    }],
+    availability: [{
+      journey: 'outbound',
+      mode: 'flight',
+      status: 'available',
+    }],
+    limitations: ['参考票价不等于完整旅行总预算'],
+  };
+}
 
 describe('conversationHydration', () => {
   it('从最新 assistant message usage.context 恢复上下文状态，旧历史保持兼容', () => {
@@ -261,6 +304,63 @@ describe('conversationHydration', () => {
       reason: 'unsupported_type',
     }]);
     expect(JSON.stringify(chat.messages[0].content)).not.toContain('should-never-reach-ui-state');
+  });
+
+  it('强刷后按稳定 id 恢复 itinerary 与源引用，并继续收拢源卡', () => {
+    const chat = buildChatFromServerConversation({
+      id: 'chat-itinerary',
+      title: '上海行程',
+      model_id: 'deepseek-v4',
+      messages: [{
+        id: 'assistant-itinerary',
+        role: 'assistant',
+        content: [
+          {
+            type: 'flight_results',
+            id: 'flight-outbound',
+            schema_version: 1,
+            provider: 'flyai',
+            status: 'success',
+            origin: '深圳',
+            destination: '上海',
+            departure_date: '2026-08-01',
+            observed_at: '2026-07-26T09:00:00+08:00',
+            result_count: 1,
+            flights: [{
+              option_id: 'flight-1',
+              flight_no: 'ZH9501',
+              departure: {
+                city: '深圳',
+                station_name: '深圳宝安国际机场',
+                scheduled_at: '2026-08-01T08:00:00+08:00',
+              },
+              arrival: {
+                city: '上海',
+                station_name: '上海虹桥国际机场',
+                scheduled_at: '2026-08-01T10:20:00+08:00',
+              },
+              duration_s: 8_400,
+              stops: 0,
+              price: { currency: 'CNY', amount_minor: 58_000 },
+            }],
+            limitations: [],
+          },
+          itineraryPayload(),
+          { type: 'text', id: 'answer-1', text: '建议选择该航班。' },
+        ],
+      }],
+    });
+
+    const presentation = deriveItineraryResultPresentation(chat.messages[0].content);
+    expect(presentation.items).toHaveLength(1);
+    expect(presentation.items[0]).toMatchObject({
+      kind: 'itinerary',
+      block: { id: 'itinerary-1' },
+      consumedBlockIds: ['flight-outbound'],
+    });
+    expect(chat.messages[0].content).toEqual(expect.arrayContaining([
+      expect.objectContaining({ type: 'text', text: '建议选择该航班。' }),
+    ]));
   });
 
   it('历史恢复把缺少 type 的损坏结果降级为安全占位', () => {

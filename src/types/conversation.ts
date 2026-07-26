@@ -307,6 +307,64 @@ export interface WeatherResultsBlock {
   tool_call_log_id?: string | null;
 }
 
+export type ItineraryStrategy =
+  | 'lowest_reference_price'
+  | 'shortest_scheduled_duration';
+
+export type ItinerarySectionKind =
+  | 'outbound_transport'
+  | 'return_transport'
+  | 'destination_weather'
+  | 'local_route';
+
+export interface ItineraryResultRef {
+  block_id: string;
+  item_ids: string[];
+}
+
+export interface ItinerarySection {
+  id: string;
+  kind: ItinerarySectionKind;
+  status: 'complete' | 'partial' | 'unavailable';
+  title: string;
+  coverage: 'full' | 'partial' | 'outside_range' | null;
+  result_refs: ItineraryResultRef[];
+}
+
+export interface ItineraryPlan {
+  id: string;
+  title: string;
+  status: 'complete' | 'partial';
+  strategy: ItineraryStrategy;
+  tags: ItineraryStrategy[];
+  known_cost: TravelMoney | null;
+  known_duration_s: number | null;
+  sections: ItinerarySection[];
+}
+
+export interface ItineraryAvailability {
+  journey: 'outbound' | 'return' | 'destination_weather' | 'local_route';
+  mode: 'flight' | 'train' | 'weather' | 'route';
+  status: 'available' | 'unavailable';
+}
+
+export interface ItineraryResultsBlock {
+  type: 'itinerary_results';
+  id: string;
+  schema_version: 1;
+  provider: 'fusion';
+  status: 'success' | 'degraded';
+  trip_type: 'one_way' | 'round_trip';
+  origin: string;
+  destination: string;
+  start_date: string;
+  end_date: string | null;
+  recommended_plan_id: null;
+  plans: ItineraryPlan[];
+  availability: ItineraryAvailability[];
+  limitations: string[];
+}
+
 export interface UnsupportedResultBlock {
   type: 'unsupported_result';
   id: string;
@@ -321,6 +379,7 @@ export type StructuredToolResultBlock =
   | FlightResultsBlock
   | TrainResultsBlock
   | WeatherResultsBlock
+  | ItineraryResultsBlock
   | UnsupportedResultBlock;
 
 export type ContentBlock =

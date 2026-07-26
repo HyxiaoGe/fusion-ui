@@ -118,6 +118,41 @@
           "6": "Saturday",
           "7": "Sunday"
         }
+      },
+      "itinerary": {
+        "region": "Smart itinerary",
+        "oneWay": "One way",
+        "roundTrip": "Round trip",
+        "complete": "Complete plan",
+        "partial": "Partially available",
+        "planSwitcher": "Switch itinerary plan",
+        "lowestPricePlan": "Budget plan",
+        "shortestDurationPlan": "Time-saving plan",
+        "lowestPrice": "Lowest reference price",
+        "shortestDuration": "Shortest scheduled time",
+        "available": "Result available",
+        "partiallyAvailable": "Partial result available",
+        "unavailableTitle": "The following results are unavailable",
+        "availabilityLabel": "{{journey}} · {{mode}}",
+        "details": "View schedules and routes",
+        "sources": "Sources: {{sources}}",
+        "modes": {
+          "flight": "Flight",
+          "train": "Train",
+          "weather": "Weather",
+          "route": "Route"
+        },
+        "sections": {
+          "outbound_transport": "Outbound",
+          "return_transport": "Return",
+          "destination_weather": "Destination weather",
+          "local_route": "Local route"
+        },
+        "weatherCoverage": {
+          "full": "Covers trip dates",
+          "partial": "Covers some trip dates",
+          "outside_range": "Outside the current forecast window"
+        }
       }
     },
     "models": {

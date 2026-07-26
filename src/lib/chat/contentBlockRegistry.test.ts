@@ -61,6 +61,50 @@ function weatherPayload(overrides: Record<string, unknown> = {}) {
   };
 }
 
+function itineraryPayload(overrides: Record<string, unknown> = {}) {
+  return {
+    type: 'itinerary_results',
+    id: 'itinerary-1',
+    schema_version: 1,
+    provider: 'fusion',
+    status: 'success',
+    trip_type: 'one_way',
+    origin: '深圳',
+    destination: '上海',
+    start_date: '2026-08-01',
+    end_date: null,
+    recommended_plan_id: null,
+    plans: [{
+      id: 'lowest-price',
+      title: '最低参考价组合',
+      status: 'complete',
+      strategy: 'lowest_reference_price',
+      tags: ['lowest_reference_price'],
+      known_cost: { currency: 'CNY', amount_minor: 108_000 },
+      known_duration_s: 98_040,
+      sections: [{
+        id: 'outbound',
+        kind: 'outbound_transport',
+        status: 'complete',
+        title: '去程',
+        coverage: null,
+        result_refs: [{
+          block_id: 'train-outbound',
+          item_ids: ['train-option-id'],
+        }],
+      }],
+    }],
+    availability: [{
+      journey: 'outbound',
+      mode: 'train',
+      status: 'available',
+    }],
+    limitations: ['班次时长不包含前后接驳、安检或候车时间'],
+    secret_payload: { upstream: 'must-not-reach-ui' },
+    ...overrides,
+  };
+}
+
 describe('contentBlockRegistry', () => {
   it('注册现有核心、依据和富结果契约', () => {
     expect(registeredContentBlockContracts()).toEqual([
@@ -74,6 +118,7 @@ describe('contentBlockRegistry', () => {
       { type: 'flight_results', schemaVersion: 1 },
       { type: 'train_results', schemaVersion: 1 },
       { type: 'weather_results', schemaVersion: 1 },
+      { type: 'itinerary_results', schemaVersion: 1 },
       { type: 'unsupported_result', schemaVersion: null },
     ]);
   });
@@ -239,6 +284,139 @@ describe('contentBlockRegistry', () => {
       source_type: 'route_results',
       source_schema_version: 1,
       reason: 'invalid_payload',
+    });
+  });
+
+  it('严格恢复引用型 itinerary v1 且只保留产品白名单字段', () => {
+    const block = normalizeContentBlock(itineraryPayload());
+
+    expect(block).toEqual({
+      type: 'itinerary_results',
+      id: 'itinerary-1',
+      schema_version: 1,
+      provider: 'fusion',
+      status: 'success',
+      trip_type: 'one_way',
+      origin: '深圳',
+      destination: '上海',
+      start_date: '2026-08-01',
+      end_date: null,
+      recommended_plan_id: null,
+      plans: [{
+        id: 'lowest-price',
+        title: '最低参考价组合',
+        status: 'complete',
+        strategy: 'lowest_reference_price',
+        tags: ['lowest_reference_price'],
+        known_cost: { currency: 'CNY', amount_minor: 108_000 },
+        known_duration_s: 98_040,
+        sections: [{
+          id: 'outbound',
+          kind: 'outbound_transport',
+          status: 'complete',
+          title: '去程',
+          coverage: null,
+          result_refs: [{
+            block_id: 'train-outbound',
+            item_ids: ['train-option-id'],
+          }],
+        }],
+      }],
+      availability: [{
+        journey: 'outbound',
+        mode: 'train',
+        status: 'available',
+      }],
+      limitations: ['班次时长不包含前后接驳、安检或候车时间'],
+    });
+    expect(JSON.stringify(block)).not.toContain('secret_payload');
+    expect(JSON.stringify(block)).not.toContain('upstream');
+  });
+
+  it('itinerary 拒绝未来版本、越界数组、非法标签和损坏引用', () => {
+    const future = normalizeContentBlock(itineraryPayload({ schema_version: 2 }));
+    expect(future).toEqual({
+      type: 'unsupported_result',
+      id: 'itinerary-1',
+      source_type: 'itinerary_results',
+      source_schema_version: 2,
+      reason: 'unsupported_version',
+    });
+
+    const overPlanLimit = normalizeContentBlock(itineraryPayload({
+      plans: [
+        itineraryPayload().plans[0],
+        { ...itineraryPayload().plans[0], id: 'shortest' },
+        { ...itineraryPayload().plans[0], id: 'third' },
+      ],
+    }));
+    expect(overPlanLimit).toEqual(expect.objectContaining({
+      type: 'unsupported_result',
+      source_type: 'itinerary_results',
+      reason: 'invalid_payload',
+    }));
+
+    const invalidTag = normalizeContentBlock(itineraryPayload({
+      plans: [{
+        ...itineraryPayload().plans[0],
+        tags: ['popular'],
+      }],
+    }));
+    expect(invalidTag).toEqual(expect.objectContaining({
+      type: 'unsupported_result',
+      source_type: 'itinerary_results',
+      reason: 'invalid_payload',
+    }));
+
+    const invalidReference = normalizeContentBlock(itineraryPayload({
+      plans: [{
+        ...itineraryPayload().plans[0],
+        sections: [{
+          ...itineraryPayload().plans[0].sections[0],
+          result_refs: [{
+            block_id: '',
+            item_ids: ['train-option-id'],
+          }],
+        }],
+      }],
+    }));
+    expect(invalidReference).toEqual(expect.objectContaining({
+      type: 'unsupported_result',
+      source_type: 'itinerary_results',
+      reason: 'invalid_payload',
+    }));
+  });
+
+  it('itinerary 日期、provider、strategy 和天气 coverage 必须符合冻结契约', () => {
+    const invalidCases = [
+      itineraryPayload({ provider: 'amap' }),
+      itineraryPayload({ start_date: '2026-02-30' }),
+      itineraryPayload({ end_date: '2026-07-31' }),
+      itineraryPayload({
+        plans: [{
+          ...itineraryPayload().plans[0],
+          strategy: 'shortest_scheduled_duration',
+          tags: ['lowest_reference_price'],
+        }],
+      }),
+      itineraryPayload({
+        plans: [{
+          ...itineraryPayload().plans[0],
+          sections: [{
+            ...itineraryPayload().plans[0].sections[0],
+            kind: 'destination_weather',
+            coverage: null,
+          }],
+        }],
+      }),
+    ];
+
+    invalidCases.forEach(payload => {
+      expect(normalizeContentBlock(payload)).toEqual(expect.objectContaining({
+        type: 'unsupported_result',
+        source_type: 'itinerary_results',
+        reason: 'invalid_payload',
+      }));
     });
   });
 

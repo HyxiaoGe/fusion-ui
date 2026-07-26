@@ -47,6 +47,7 @@ import type {
   NetworkSourceStatus,
   ForecastDay,
   FlightResultsBlock,
+  ItineraryResultsBlock,
   PlaceResultsBlock,
   ProviderPlacePhoto,
   ProviderPlaceResult,
@@ -63,6 +64,11 @@ import type {
   WeatherResultsBlock,
 } from '@/types/conversation';
 import { cn } from '@/lib/utils';
+import {
+  deriveItineraryResultPresentation,
+  type ItineraryPresentationItem,
+} from '@/lib/chat/itineraryResultPresentation';
+import ItineraryResults from './ItineraryResults';
 import { buildRoutePresentation, findFastestRouteIndex } from './routePresentation';
 import {
   resolveTransportModePresentation,
@@ -75,10 +81,15 @@ interface StructuredToolResultsProps {
 }
 
 type StructuredToolResultRendererRegistry = {
-  [Type in StructuredToolResultBlock['type']]: (
-    block: Extract<StructuredToolResultBlock, { type: Type }>,
+  [Type in StandaloneStructuredToolResultBlock['type']]: (
+    block: Extract<StandaloneStructuredToolResultBlock, { type: Type }>,
   ) => ReactNode;
 };
+
+type StandaloneStructuredToolResultBlock = Exclude<
+  StructuredToolResultBlock,
+  ItineraryResultsBlock
+>;
 
 const STRUCTURED_TOOL_RESULT_RENDERERS = {
   place_results: block => <PlaceResults key={block.id} block={block} />,
@@ -89,20 +100,44 @@ const STRUCTURED_TOOL_RESULT_RENDERERS = {
   unsupported_result: block => <UnsupportedResult key={block.id} />,
 } satisfies StructuredToolResultRendererRegistry;
 
-export const STRUCTURED_TOOL_RESULT_RENDERER_TYPES = Object.freeze(
-  Object.keys(STRUCTURED_TOOL_RESULT_RENDERERS) as StructuredToolResultBlock['type'][],
-);
+export const STRUCTURED_TOOL_RESULT_RENDERER_TYPES: readonly StructuredToolResultBlock['type'][] =
+  Object.freeze([
+    'place_results',
+    'route_results',
+    'flight_results',
+    'train_results',
+    'weather_results',
+    'itinerary_results',
+    'unsupported_result',
+  ]);
 
 export default function StructuredToolResults({ blocks }: StructuredToolResultsProps) {
   if (blocks.length === 0) return null;
+  const presentation = deriveItineraryResultPresentation(blocks);
   return (
     <div className="mb-3 w-full space-y-3" data-testid="structured-tool-results">
-      {blocks.map(renderStructuredToolResult)}
+      {presentation.items.map(item => item.kind === 'itinerary'
+        ? renderItineraryResult(item)
+        : renderStructuredToolResult(item.block))}
     </div>
   );
 }
 
-function renderStructuredToolResult(block: StructuredToolResultBlock): ReactNode {
+function renderItineraryResult(item: ItineraryPresentationItem): ReactNode {
+  return (
+    <ItineraryResults
+      key={item.block.id}
+      item={item}
+      renderSourceBlocks={sourceBlocks => (
+        <div className="space-y-3">
+          {sourceBlocks.map(renderStructuredToolResult)}
+        </div>
+      )}
+    />
+  );
+}
+
+function renderStructuredToolResult(block: StandaloneStructuredToolResultBlock): ReactNode {
   if (block.type === 'place_results') return STRUCTURED_TOOL_RESULT_RENDERERS.place_results(block);
   if (block.type === 'route_results') return STRUCTURED_TOOL_RESULT_RENDERERS.route_results(block);
   if (block.type === 'flight_results') return STRUCTURED_TOOL_RESULT_RENDERERS.flight_results(block);

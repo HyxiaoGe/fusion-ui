@@ -2,6 +2,12 @@ import type {
   ContentBlock,
   ForecastDay,
   FlightResultsBlock,
+  ItineraryAvailability,
+  ItineraryPlan,
+  ItineraryResultRef,
+  ItineraryResultsBlock,
+  ItinerarySection,
+  ItineraryStrategy,
   PlaceResultsBlock,
   ProviderFlightResult,
   ProviderPlacePhoto,
@@ -30,6 +36,7 @@ export const STRUCTURED_TOOL_RESULT_CONTRACTS = [
   { type: 'flight_results', schemaVersion: 1 },
   { type: 'train_results', schemaVersion: 1 },
   { type: 'weather_results', schemaVersion: 1 },
+  { type: 'itinerary_results', schemaVersion: 1 },
   { type: 'unsupported_result', schemaVersion: null },
 ] as const;
 
@@ -350,7 +357,267 @@ export function normalizeStructuredToolResultBlock(value: unknown): StructuredTo
     return normalizeWeatherResultBlock(source, id);
   }
 
+  if (source.type === 'itinerary_results') {
+    return normalizeItineraryResultBlock(source, id);
+  }
+
   return null;
+}
+
+function normalizeItineraryResultBlock(
+  source: Record<string, unknown>,
+  id: string,
+): ItineraryResultsBlock | null {
+  if (source.provider !== 'fusion') return null;
+  const status = productResultStatus(source.status);
+  const tripType = source.trip_type === 'one_way' || source.trip_type === 'round_trip'
+    ? source.trip_type
+    : null;
+  const origin = boundedString(source.origin, 80);
+  const destination = boundedString(source.destination, 80);
+  const startDate = boundedString(source.start_date, 10);
+  const endDate = source.end_date === null ? null : boundedString(source.end_date, 10);
+  if (
+    !status
+    || !tripType
+    || !origin
+    || !destination
+    || !startDate
+    || isoWeekday(startDate) === undefined
+    || (endDate !== null && (!endDate || isoWeekday(endDate) === undefined))
+    || (tripType === 'one_way' && endDate !== null)
+    || (tripType === 'round_trip' && (!endDate || endDate <= startDate))
+    || source.recommended_plan_id !== null
+    || !Array.isArray(source.plans)
+    || source.plans.length < 1
+    || source.plans.length > 2
+    || !Array.isArray(source.availability)
+    || source.availability.length > 8
+    || !Array.isArray(source.limitations)
+    || source.limitations.length > 8
+  ) {
+    return null;
+  }
+
+  const plans = source.plans.map(normalizeItineraryPlan);
+  const availability = source.availability.map(normalizeItineraryAvailability);
+  const limitations = normalizeBoundedStringArray(source.limitations, 8, 240);
+  if (
+    plans.some(plan => plan === null)
+    || availability.some(item => item === null)
+    || limitations.length !== source.limitations.length
+  ) {
+    return null;
+  }
+  const normalizedPlans = plans as ItineraryPlan[];
+  const normalizedAvailability = availability as ItineraryAvailability[];
+  if (
+    new Set(normalizedPlans.map(plan => plan.id)).size !== normalizedPlans.length
+    || new Set(normalizedPlans.map(plan => plan.strategy)).size !== normalizedPlans.length
+    || new Set(normalizedAvailability.map(item => `${item.journey}\0${item.mode}`)).size
+      !== normalizedAvailability.length
+    || new Set(limitations).size !== limitations.length
+  ) {
+    return null;
+  }
+  const hasReturn = normalizedPlans.some(plan =>
+    plan.sections.some(section => section.kind === 'return_transport'));
+  if (
+    (tripType === 'one_way' && hasReturn)
+    || (tripType === 'round_trip' && normalizedPlans.some(
+      plan => plan.status === 'complete'
+        && !plan.sections.some(section => section.kind === 'return_transport'),
+    ))
+  ) {
+    return null;
+  }
+
+  return {
+    type: 'itinerary_results',
+    id,
+    schema_version: 1,
+    provider: 'fusion',
+    status,
+    trip_type: tripType,
+    origin,
+    destination,
+    start_date: startDate,
+    end_date: endDate,
+    recommended_plan_id: null,
+    plans: normalizedPlans,
+    availability: normalizedAvailability,
+    limitations,
+  };
+}
+
+function normalizeItineraryPlan(value: unknown): ItineraryPlan | null {
+  const source = asRecord(value);
+  if (!source) return null;
+  const id = boundedString(source.id, 80);
+  const title = boundedString(source.title, 80);
+  const status = source.status === 'complete' || source.status === 'partial'
+    ? source.status
+    : null;
+  const strategy = itineraryStrategy(source.strategy);
+  const knownCost = source.known_cost === null ? null : normalizeMoney(source.known_cost);
+  const knownDuration = source.known_duration_s === null
+    ? null
+    : integerInRange(source.known_duration_s, 0, 604_800);
+  if (
+    !id
+    || !title
+    || !status
+    || !strategy
+    || (source.known_cost !== null && !knownCost)
+    || (source.known_duration_s !== null && knownDuration === undefined)
+    || !Array.isArray(source.tags)
+    || source.tags.length !== 1
+    || source.tags[0] !== strategy
+    || !Array.isArray(source.sections)
+    || source.sections.length < 1
+    || source.sections.length > 4
+  ) {
+    return null;
+  }
+  const sections = source.sections.map(normalizeItinerarySection);
+  if (sections.some(section => section === null)) return null;
+  const normalizedSections = sections as ItinerarySection[];
+  if (
+    !normalizedSections.some(section => section.kind === 'outbound_transport')
+    || new Set(normalizedSections.map(section => section.kind)).size !== normalizedSections.length
+  ) {
+    return null;
+  }
+  return {
+    id,
+    title,
+    status,
+    strategy,
+    tags: [strategy],
+    known_cost: knownCost ?? null,
+    known_duration_s: knownDuration ?? null,
+    sections: normalizedSections,
+  };
+}
+
+function normalizeItinerarySection(value: unknown): ItinerarySection | null {
+  const source = asRecord(value);
+  if (!source) return null;
+  const id = boundedString(source.id, 80);
+  const title = boundedString(source.title, 80);
+  const kind = itinerarySectionKind(source.kind);
+  const status = source.status === 'complete'
+    || source.status === 'partial'
+    || source.status === 'unavailable'
+    ? source.status
+    : null;
+  const coverage = source.coverage === null
+    ? null
+    : source.coverage === 'full'
+      || source.coverage === 'partial'
+      || source.coverage === 'outside_range'
+      ? source.coverage
+      : undefined;
+  if (
+    !id
+    || !title
+    || !kind
+    || !status
+    || coverage === undefined
+    || !Array.isArray(source.result_refs)
+    || source.result_refs.length < 1
+    || source.result_refs.length > 8
+  ) {
+    return null;
+  }
+  if (
+    (kind === 'destination_weather'
+      && (coverage === null
+        || (coverage === 'full' && status !== 'complete')
+        || (coverage !== 'full' && status === 'complete')))
+    || (kind !== 'destination_weather' && coverage !== null)
+  ) {
+    return null;
+  }
+  const refs = source.result_refs.map(normalizeItineraryResultRef);
+  if (refs.some(ref => ref === null)) return null;
+  const resultRefs = refs as ItineraryResultRef[];
+  if (
+    new Set(resultRefs.map(ref => `${ref.block_id}\0${ref.item_ids.join('\0')}`)).size
+      !== resultRefs.length
+    || (kind === 'destination_weather' && resultRefs.some(ref => ref.item_ids.length > 0))
+  ) {
+    return null;
+  }
+  return {
+    id,
+    kind,
+    status,
+    title,
+    coverage,
+    result_refs: resultRefs,
+  };
+}
+
+function normalizeItineraryResultRef(value: unknown): ItineraryResultRef | null {
+  const source = asRecord(value);
+  if (!source) return null;
+  const blockId = boundedString(source.block_id, 160);
+  if (
+    !blockId
+    || !Array.isArray(source.item_ids)
+    || source.item_ids.length > 5
+  ) {
+    return null;
+  }
+  const itemIds = normalizeBoundedStringArray(source.item_ids, 5, 80);
+  if (itemIds.length !== source.item_ids.length || new Set(itemIds).size !== itemIds.length) {
+    return null;
+  }
+  return { block_id: blockId, item_ids: itemIds };
+}
+
+function normalizeItineraryAvailability(value: unknown): ItineraryAvailability | null {
+  const source = asRecord(value);
+  if (!source) return null;
+  const journey = source.journey;
+  const mode = source.mode;
+  const status = source.status;
+  const allowedModes = {
+    outbound: ['flight', 'train'],
+    return: ['flight', 'train'],
+    destination_weather: ['weather'],
+    local_route: ['route'],
+  } as const;
+  if (
+    typeof journey !== 'string'
+    || !(journey in allowedModes)
+    || (status !== 'available' && status !== 'unavailable')
+  ) {
+    return null;
+  }
+  const typedJourney = journey as ItineraryAvailability['journey'];
+  if (!(allowedModes[typedJourney] as readonly unknown[]).includes(mode)) return null;
+  return {
+    journey: typedJourney,
+    mode: mode as ItineraryAvailability['mode'],
+    status,
+  };
+}
+
+function itineraryStrategy(value: unknown): ItineraryStrategy | null {
+  return value === 'lowest_reference_price' || value === 'shortest_scheduled_duration'
+    ? value
+    : null;
+}
+
+function itinerarySectionKind(value: unknown): ItinerarySection['kind'] | null {
+  return value === 'outbound_transport'
+    || value === 'return_transport'
+    || value === 'destination_weather'
+    || value === 'local_route'
+    ? value
+    : null;
 }
 
 function normalizeTravelResultBase(source: Record<string, unknown>) {

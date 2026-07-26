@@ -75,6 +75,59 @@ describe('streamSlice — content blocks selector', () => {
     expect(state.currentRun?.steps[0].contentBlockIds).toEqual([]);
   });
 
+  it('content_block_discarded 同时移除静态富结果块且保留其他块', () => {
+    let state = reducer(initial(), startStream({ conversationId: 'c1', messageId: 'm1' }));
+    state = reducer(state, initRun({
+      runId: 'r1',
+      messageId: 'm1',
+      config: baseConfig,
+      sequence: 0,
+    }));
+    state = reducer(state, upsertStaticContentBlock({
+      runId: 'r1',
+      sequence: 1,
+      block: {
+        type: 'place_results',
+        id: 'places-old',
+        schema_version: 1,
+        provider: 'amap',
+        query: '旧结果',
+        status: 'success',
+        result_count: 1,
+        places: [{ provider_place_id: 'p-old', name: '旧地点' }],
+        limitations: [],
+      },
+    }));
+    state = reducer(state, upsertStaticContentBlock({
+      runId: 'r1',
+      sequence: 2,
+      block: {
+        type: 'place_results',
+        id: 'places-keep',
+        schema_version: 1,
+        provider: 'amap',
+        query: '保留结果',
+        status: 'success',
+        result_count: 1,
+        places: [{ provider_place_id: 'p-keep', name: '保留地点' }],
+        limitations: [],
+      },
+    }));
+
+    state = reducer(state, discardContentBlock({
+      runId: 'r1',
+      blockId: 'places-old',
+      sequence: 3,
+    }));
+
+    expect(state.staticBlocks).toEqual([
+      expect.objectContaining({ id: 'places-keep' }),
+    ]);
+    expect(selectFullStreamContentBlocks(state)).toEqual([
+      expect.objectContaining({ id: 'places-keep' }),
+    ]);
+  });
+
   it('在模型正文到达前 upsert 结构化结果块，并按 id 替换而不重复', () => {
     let state = reducer(initial(), startStream({ conversationId: 'c1', messageId: 'm1' }));
     state = reducer(state, initRun({

@@ -15,7 +15,10 @@ import type {
   UrlBlock,
 } from '@/types/conversation';
 import { extractTextFromBlocks, extractThinkingFromBlocks } from '@/types/conversation';
-import { collectStructuredToolResultBlocks } from '@/lib/chat/structuredToolResults';
+import {
+  collectStructuredToolResultBlocks,
+  isStructuredToolResultBlock,
+} from '@/lib/chat/structuredToolResults';
 
 import { deriveAssistantActivity } from './assistantActivity';
 import type { AssistantActivity } from './assistantActivity';
@@ -39,6 +42,7 @@ export interface AssistantMessageViewModel {
   searchQueries: string[];
   answerEvidence: AnswerEvidenceModel | null;
   structuredResults: StructuredToolResultBlock[];
+  rawStructuredResults?: StructuredToolResultBlock[];
   displayText: string;
   displayThinking: string;
   suppressThinking: boolean;
@@ -89,6 +93,7 @@ export function deriveStaticAssistantMessageViewModel({
   const displayText = extractTextFromBlocks(blocksToRender);
   const displayThinking = extractThinkingFromBlocks(blocksToRender);
   const structuredResults = collectStructuredToolResultBlocks(blocksToRender);
+  const rawStructuredResults = blocksToRender.filter(isStructuredToolResultBlock);
 
   return {
     blocksToRender,
@@ -98,6 +103,7 @@ export function deriveStaticAssistantMessageViewModel({
     searchQueries,
     answerEvidence,
     structuredResults,
+    rawStructuredResults,
     displayText,
     displayThinking,
     suppressThinking: false,
@@ -191,6 +197,10 @@ export function useAssistantMessageViewModel({
     () => collectStructuredToolResultBlocks(blocksToRender),
     [blocksToRender],
   );
+  const rawStructuredResults = useMemo(
+    () => blocksToRender.filter(isStructuredToolResultBlock),
+    [blocksToRender],
+  );
   const suppressThinking = isCurrentlyStreaming && (
     activity.kind === 'tool_running' || activity.kind === 'waiting'
   );
@@ -204,6 +214,7 @@ export function useAssistantMessageViewModel({
     searchQueries,
     answerEvidence,
     structuredResults,
+    rawStructuredResults,
     displayText,
     displayThinking,
     suppressThinking,
