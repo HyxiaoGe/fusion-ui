@@ -50,8 +50,9 @@ vi.mock('@/components/prompts/PromptTemplateList', () => ({
 import HomePage from './HomePage';
 
 const COMMUTE_CONTENT = '我从【出发地】前往【目的地】，计划【出发时间】出发。请比较驾车、公共交通、骑行和步行等可用方式，给出具体路线，并根据用时、距离、换乘和步行距离推荐合适方案。';
+const WEATHER_CONTENT = '请查询【城市+区县】在【日期】的天气预报，说明气温、降水和风力，并结合【计划的活动】给出穿衣、雨具和出行建议。';
 
-function createTravelCatalogItems() {
+function createLocationCatalogItems() {
   const baseStarters = Array.from({ length: 8 }, (_, index) => ({
     id: `remote-base-${index + 1}`,
     kind: 'starter',
@@ -103,6 +104,19 @@ function createTravelCatalogItems() {
       icon_key: 'utensils-crossed',
       tone: 'teal',
       sort_order: 110,
+      enabled: true,
+      required_capabilities: [],
+    },
+    {
+      id: 'weather-planning',
+      kind: 'starter',
+      title: '天气与出行',
+      description: '查看预报并安排合适活动',
+      content: WEATHER_CONTENT,
+      category: '出行',
+      icon_key: 'cloud-sun',
+      tone: 'cyan',
+      sort_order: 120,
       enabled: true,
       required_capabilities: [],
     },
@@ -312,13 +326,13 @@ describe('HomePage', () => {
     expect(onSelectPrompt).toHaveBeenLastCalledWith('后端任务提示词');
   });
 
-  it('十一条后端任务手动跨过尾页后按真实起点继续轮换，并从两个入口只预填内容', async () => {
+  it('十二条后端任务手动轮换到出行页，并从两个入口只预填内容', async () => {
     vi.useFakeTimers();
     const onSelectPrompt = vi.fn();
     fetchPromptTemplatesMock.mockResolvedValue({
-      items: createTravelCatalogItems(),
+      items: createLocationCatalogItems(),
       source: 'db',
-      version: '2026-07-21.travel-v1',
+      version: '2026-07-26.weather-v1',
     });
 
     try {
@@ -339,6 +353,7 @@ describe('HomePage', () => {
       const commuteButton = within(starterRegion).getByRole('button', { name: /规划通勤/ });
       const weekendButton = within(starterRegion).getByRole('button', { name: /安排周末行程/ });
       const diningButton = within(starterRegion).getByRole('button', { name: /聚餐与娱乐/ });
+      const weatherButton = within(starterRegion).getByRole('button', { name: /天气与出行/ });
       expect(commuteButton.querySelector('.lucide-map-pinned')?.parentElement).toHaveClass(
         'bg-sky-500/10',
         'text-sky-600',
@@ -351,6 +366,10 @@ describe('HomePage', () => {
         'bg-teal-500/10',
         'text-teal-600',
       );
+      expect(weatherButton.querySelector('.lucide-cloud-sun')?.parentElement).toHaveClass(
+        'bg-cyan-500/10',
+        'text-cyan-600',
+      );
 
       fireEvent.click(commuteButton);
       expect(onSelectPrompt).toHaveBeenCalledTimes(1);
@@ -358,32 +377,31 @@ describe('HomePage', () => {
 
       fireEvent.click(screen.getByRole('button', { name: '更多模板' }));
       expect(screen.getByTestId('template-list-items')).toHaveTextContent(
-        '规划通勤|安排周末行程|聚餐与娱乐',
+        '规划通勤|安排周末行程|聚餐与娱乐|天气与出行',
       );
-      fireEvent.click(screen.getByRole('button', { name: '使用模板：规划通勤' }));
+      fireEvent.click(screen.getByRole('button', { name: '使用模板：天气与出行' }));
       expect(onSelectPrompt).toHaveBeenCalledTimes(2);
-      expect(onSelectPrompt).toHaveBeenLastCalledWith(COMMUTE_CONTENT);
+      expect(onSelectPrompt).toHaveBeenLastCalledWith(WEATHER_CONTENT);
 
       fireEvent.click(screen.getByRole('button', { name: '换一批' }));
       await act(async () => {
         await vi.advanceTimersByTimeAsync(700);
       });
       expect(within(starterRegion).getAllByTestId('starter-card')).toHaveLength(4);
-      expect(within(starterRegion).getByRole('button', { name: /基础任务 2/ })).toBeInTheDocument();
-      expect(within(starterRegion).getByRole('button', { name: /基础任务 5/ })).toBeInTheDocument();
-      expect(within(starterRegion).queryByRole('button', { name: /基础任务 1/ })).toBeNull();
+      expect(within(starterRegion).getByRole('button', { name: /基础任务 1/ })).toBeInTheDocument();
+      expect(within(starterRegion).getByRole('button', { name: /基础任务 4/ })).toBeInTheDocument();
       expect(within(starterRegion).queryByRole('button', { name: /规划通勤/ })).toBeNull();
     } finally {
       vi.useRealTimers();
     }
   });
 
-  it('十一条后端任务自动跨过尾页后从下一个真实起点继续轮换', async () => {
+  it('十二条后端任务自动轮换三次后回到真实起点', async () => {
     vi.useFakeTimers();
     fetchPromptTemplatesMock.mockResolvedValue({
-      items: createTravelCatalogItems(),
+      items: createLocationCatalogItems(),
       source: 'db',
-      version: '2026-07-21.travel-v1',
+      version: '2026-07-26.weather-v1',
     });
 
     try {
@@ -403,9 +421,8 @@ describe('HomePage', () => {
 
       const starterRegion = screen.getByTestId('starter-prompts');
       expect(within(starterRegion).getAllByTestId('starter-card')).toHaveLength(4);
-      expect(within(starterRegion).getByRole('button', { name: /基础任务 2/ })).toBeInTheDocument();
-      expect(within(starterRegion).getByRole('button', { name: /基础任务 5/ })).toBeInTheDocument();
-      expect(within(starterRegion).queryByRole('button', { name: /基础任务 1/ })).toBeNull();
+      expect(within(starterRegion).getByRole('button', { name: /基础任务 1/ })).toBeInTheDocument();
+      expect(within(starterRegion).getByRole('button', { name: /基础任务 4/ })).toBeInTheDocument();
       expect(within(starterRegion).queryByRole('button', { name: /规划通勤/ })).toBeNull();
     } finally {
       vi.useRealTimers();
@@ -415,7 +432,7 @@ describe('HomePage', () => {
   it('远端启用任务不足四条时首页保留四卡兜底，更多模板仍使用远端完整目录', async () => {
     fetchPromptTemplatesMock.mockResolvedValue({
       items: [
-        ...createTravelCatalogItems().slice(8),
+        ...createLocationCatalogItems().slice(9),
         {
           id: 'remote-template',
           kind: 'template',
@@ -446,7 +463,7 @@ describe('HomePage', () => {
 
     fireEvent.click(screen.getByRole('button', { name: '更多模板' }));
     const templateItems = screen.getByTestId('template-list-items');
-    expect(templateItems).toHaveTextContent('规划通勤|安排周末行程|聚餐与娱乐|后端补充模板');
+    expect(templateItems).toHaveTextContent('安排周末行程|聚餐与娱乐|天气与出行|后端补充模板');
     expect(templateItems).not.toHaveTextContent('深度调研');
   });
 
@@ -462,7 +479,7 @@ describe('HomePage', () => {
     expect(screen.getByTestId('template-list-items')).toHaveTextContent('深度调研');
     expect(screen.getByTestId('template-list-items')).toHaveTextContent('代码解释');
     expect(screen.getByTestId('template-list-items')).toHaveTextContent(
-      '规划通勤|安排周末行程|聚餐与娱乐',
+      '规划通勤|安排周末行程|聚餐与娱乐|天气与出行',
     );
     fireEvent.click(screen.getByRole('button', { name: '使用模板' }));
 

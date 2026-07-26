@@ -4,6 +4,7 @@ import {
   BarChart3,
   BookOpenCheck,
   CalendarRange,
+  CloudSun,
   Code2,
   FileText,
   Languages,
@@ -145,6 +146,15 @@ const FALLBACK_STARTER_PROMPTS: StarterPrompt[] = [
     icon: UtensilsCrossed,
     tone: 'bg-teal-500/10 text-teal-600 dark:text-teal-400',
   },
+  {
+    id: 'weather-planning',
+    title: '天气与出行',
+    description: '查看预报并安排合适活动',
+    prompt: '请查询【城市+区县】在【日期】的天气预报，说明气温、降水和风力，并结合【计划的活动】给出穿衣、雨具和出行建议。',
+    category: '出行',
+    icon: CloudSun,
+    tone: 'bg-cyan-500/10 text-cyan-600 dark:text-cyan-400',
+  },
 ];
 
 // 后端灵感目录仍是真源；这组内容只负责保证 SSR 首帧有真实可用的入口，避免强刷后整块内容后插入。
@@ -188,6 +198,7 @@ const ICONS_BY_KEY: Record<string, LucideIcon> = {
   'map-pinned': MapPinned,
   'calendar-range': CalendarRange,
   'utensils-crossed': UtensilsCrossed,
+  'cloud-sun': CloudSun,
 };
 
 const TONES_BY_KEY: Record<string, string> = {
