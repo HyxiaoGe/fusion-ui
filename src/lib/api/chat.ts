@@ -301,6 +301,8 @@ export interface StreamCallbacks {
       key_findings?: string[];
       source_refs?: string[];
       truncated: boolean;
+      repair_state?: 'retrying' | 'requires_user_input' | 'exhausted' | 'resolved';
+      repair_id?: string;
     },
   ) => void;
   onEvidenceItemUpserted?: (

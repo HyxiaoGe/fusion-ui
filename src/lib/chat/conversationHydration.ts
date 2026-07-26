@@ -70,6 +70,8 @@ interface ServerAgentToolDigest {
   key_findings?: string[] | null;
   source_refs?: string[] | null;
   truncated?: boolean | null;
+  repair_state?: AgentToolDigest['repairState'] | null;
+  repair_id?: string | null;
 }
 
 interface ServerAgentEvidenceItem {
@@ -183,7 +185,7 @@ function buildAgentProgressPatch(
     };
   }
   if (snapshot.tool_digests) {
-    patch.toolDigests = snapshot.tool_digests.map(mapToolDigest);
+    patch.toolDigests = reconcileToolDigests(snapshot.tool_digests.map(mapToolDigest));
   }
   if (snapshot.evidence) {
     patch.evidence = snapshot.evidence.map(mapEvidenceItem);
@@ -213,7 +215,21 @@ function mapToolDigest(digest: ServerAgentToolDigest): AgentToolDigest {
     keyFindings: digest.key_findings ?? [],
     sourceRefs: digest.source_refs ?? [],
     truncated: digest.truncated ?? false,
+    repairState: digest.repair_state ?? undefined,
+    repairId: digest.repair_id ?? undefined,
   };
+}
+
+function reconcileToolDigests(digests: AgentToolDigest[]): AgentToolDigest[] {
+  const reconciled: AgentToolDigest[] = [];
+  for (const digest of digests) {
+    if (digest.repairId) {
+      const previousIndex = reconciled.findIndex(item => item.repairId === digest.repairId);
+      if (previousIndex >= 0) reconciled.splice(previousIndex, 1);
+    }
+    reconciled.push(digest);
+  }
+  return reconciled;
 }
 
 function mapEvidenceItem(item: ServerAgentEvidenceItem): AgentEvidenceItem {

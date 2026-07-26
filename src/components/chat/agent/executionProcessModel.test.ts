@@ -223,10 +223,10 @@ describe('executionProcessModel 场景矩阵', () => {
     }));
 
     expect(model.digestRows[0]).toMatchObject({
-      title: '高德地图 / maps_text_search',
+      title: '外部工具',
       summary: '部分外部工具结果未能使用。',
     });
-    expect(JSON.stringify(model)).not.toMatch(/MCP|upstream|quota/i);
+    expect(JSON.stringify(model)).not.toMatch(/MCP|upstream|quota|高德|maps_text_search/i);
   });
 
   it('实时 MCP 调用和同一 digest 按 toolCallId 去重计数', () => {

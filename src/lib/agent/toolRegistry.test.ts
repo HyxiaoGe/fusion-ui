@@ -53,6 +53,17 @@ describe('toolRegistry', () => {
     })).toBe('深圳北 → 广州南 · 2026-08-01');
   });
 
+  it('天气摘要只展示完整 location，旧事件仅在缺少 location 时回退 city', () => {
+    expect(TOOL_REGISTRY.weather_forecast.summarize({
+      location: '深圳市南山区',
+      location_source: 'named',
+      city: '不应展示的旧参数',
+    })).toBe('深圳市南山区');
+    expect(TOOL_REGISTRY.weather_forecast.summarize({
+      city: '深圳市',
+    })).toBe('深圳市');
+  });
+
   it('getToolMeta 未知工具返回兜底元数据', () => {
     const meta = getToolMeta('mcp__learn__microsoft_docs_search');
     expect(meta.label).toBe('外部工具');

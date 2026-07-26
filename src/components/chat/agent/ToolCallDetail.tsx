@@ -19,6 +19,7 @@ export function ToolCallDetail({ call }: { call: ToolCallState }) {
 
   const isErrorStatus = call.status === 'failed' || call.status === 'interrupted';
   const errorDisplay = getToolErrorDisplay(call.toolName, call.status, call.error);
+  const repairState = call.resultSummary?.repair_state;
 
   return (
     <div className="space-y-2 pl-2 border-l border-border/50">
@@ -42,7 +43,16 @@ export function ToolCallDetail({ call }: { call: ToolCallState }) {
       )}
 
       {/* degraded：部分结果不可用 */}
-      {call.status === 'degraded' && (
+      {repairState === 'retrying' && (
+        <div className="text-xs text-info">参数校验未通过，正在自动修正后重试</div>
+      )}
+      {repairState === 'requires_user_input' && (
+        <div className="text-xs text-warn">需要补充查询条件后才能继续</div>
+      )}
+      {repairState === 'exhausted' && (
+        <div className="text-xs text-warn">参数未能自动修正，本次未使用工具结果</div>
+      )}
+      {call.status === 'degraded' && !repairState && (
         <div className="text-xs text-warn">部分结果暂时无法使用</div>
       )}
 

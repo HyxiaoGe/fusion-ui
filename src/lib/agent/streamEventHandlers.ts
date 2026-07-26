@@ -199,6 +199,8 @@ export function createAgentStreamEventHandlers({
           keyFindings: ev.key_findings ?? [],
           sourceRefs: ev.source_refs ?? [],
           truncated: ev.truncated,
+          repairState: ev.repair_state,
+          repairId: ev.repair_id,
         },
       }));
     },

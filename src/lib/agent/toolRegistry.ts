@@ -6,7 +6,7 @@
  * icon 用 Lucide component reference 而不是字符串——保证类型安全 + tree-shaking 友好。
  */
 
-import { Search, Globe, MapPin, Plane, Route, Train, Wrench } from 'lucide-react';
+import { CloudSun, Search, Globe, MapPin, Plane, Route, Train, Wrench } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 
 export type SemanticColor = 'info' | 'success' | 'warn' | 'danger' | 'teal' | 'neutral';
@@ -52,6 +52,12 @@ export const TOOL_REGISTRY: Record<string, ToolMeta> = {
       if (origin && destination) return `${origin} → ${destination}`;
       return origin || destination || '路线方案';
     },
+  },
+  weather_forecast: {
+    label: '查询天气',
+    icon: CloudSun,
+    color: 'info',
+    summarize: summarizeWeatherQuery,
   },
   search_flights: {
     label: '查询航班',
@@ -103,4 +109,10 @@ function summarizeTravelQuery(args: Record<string, unknown>): string {
   const date = firstStringArgument(args, ['departure_date', 'date']);
   const route = origin && destination ? `${origin} → ${destination}` : origin || destination;
   return joinSummaryParts(route, date, '出行方案');
+}
+
+function summarizeWeatherQuery(args: Record<string, unknown>): string {
+  const location = firstStringArgument(args, ['location']);
+  const legacyCity = firstStringArgument(args, ['city']);
+  return location || legacyCity || '天气预报';
 }

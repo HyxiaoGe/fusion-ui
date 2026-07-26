@@ -39,6 +39,7 @@ export interface ExecutionDigestRow {
   kind: ToolCallGroupKind;
   title: string;
   status: AgentToolDigest['status'];
+  repairState?: AgentToolDigest['repairState'];
   summary: string;
 }
 
@@ -82,6 +83,9 @@ export function buildExecutionProcessModel(
 }
 
 export function sanitizeExecutionTitle(digest: AgentToolDigest): string {
+  if (digest.repairState === 'retrying') return '正在修正工具参数';
+  if (digest.repairState === 'requires_user_input') return '需要补充查询条件';
+  if (digest.repairState === 'exhausted') return '参数未能自动修正';
   if (digest.toolName === 'web_search') {
     return digest.status === 'success' ? '搜索完成' : '搜索结果未完整使用';
   }
@@ -97,15 +101,13 @@ export function sanitizeExecutionTitle(digest: AgentToolDigest): string {
     ? getToolMeta(digest.toolName).label
     : null;
   if (registeredLabel) return registeredLabel;
-
-  const title = digest.title.trim();
-  if (!title || containsInternalToolAlias(title, digest.toolName)) {
-    return '外部工具';
-  }
-  return sanitizeInternalText(title);
+  return '外部工具';
 }
 
 export function sanitizeExecutionSummary(digest: AgentToolDigest): string {
+  if (digest.repairState === 'retrying') return '参数校验未通过，正在自动修正后重试。';
+  if (digest.repairState === 'requires_user_input') return '需要补充查询条件后才能继续。';
+  if (digest.repairState === 'exhausted') return '参数未能自动修正，本次未使用工具结果。';
   if (digest.toolName === 'url_read' && digest.status === 'success') {
     return '已读取网页内容，供后续回答核验。';
   }
@@ -133,12 +135,7 @@ export function sanitizeExecutionSummary(digest: AgentToolDigest): string {
       ? '外部工具调用已中断。'
       : '部分外部工具结果未能使用。';
   }
-
-  const summary = digest.summary.trim();
-  if (!summary || containsInternalToolAlias(summary, digest.toolName)) {
-    return `${getToolMeta(digest.toolName).label}已完成。`;
-  }
-  return sanitizeInternalText(summary);
+  return '外部工具已完成。';
 }
 
 function getRegisteredToolSummary(
@@ -348,6 +345,7 @@ function toDigestRow(digest: AgentToolDigest): ExecutionDigestRow {
     kind: getDigestKind(digest.toolName),
     title: sanitizeExecutionTitle(digest),
     status: digest.status,
+    repairState: digest.repairState,
     summary: sanitizeExecutionSummary(digest),
   };
 }

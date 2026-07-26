@@ -847,4 +847,107 @@ describe('conversationHydration', () => {
       ],
     });
   });
+
+  it('刷新恢复时移除已解决 repair 的旧进行中摘要', () => {
+    const chat = buildChatFromServerConversation({
+      id: 'chat-repair',
+      title: 'Repair chat',
+      model_id: 'deepseek-chat',
+      messages: [
+        {
+          id: 'assistant-repair',
+          role: 'assistant',
+          content: [{ type: 'text', id: 'answer', text: '天气结果' }],
+          agent_run: {
+            run_id: 'run-repair',
+            status: 'completed',
+            progress: {
+              tool_digests: [
+                {
+                  tool_call_id: 'tc-old',
+                  tool_name: 'weather_forecast',
+                  status: 'degraded',
+                  title: '正在修正工具参数',
+                  summary: '参数修正中',
+                  repair_state: 'retrying',
+                  repair_id: 'repair_aaaaaaaaaaaaaaaa',
+                },
+                {
+                  tool_call_id: 'tc-other',
+                  tool_name: 'weather_forecast',
+                  status: 'degraded',
+                  title: '正在修正工具参数',
+                  summary: '参数修正中',
+                  repair_state: 'retrying',
+                  repair_id: 'repair_bbbbbbbbbbbbbbbb',
+                },
+                {
+                  tool_call_id: 'tc-success',
+                  tool_name: 'weather_forecast',
+                  status: 'success',
+                  title: '天气查询完成',
+                  summary: '工具返回了可用结果。',
+                  repair_state: 'resolved',
+                  repair_id: 'repair_aaaaaaaaaaaaaaaa',
+                },
+              ],
+            },
+          },
+        } as any,
+      ],
+    });
+
+    expect(chat.messages[0].agent_run?.toolDigests?.map(digest => digest.toolCallId)).toEqual([
+      'tc-other',
+      'tc-success',
+    ]);
+  });
+
+  it('刷新恢复时同 repair_id 的后续修正状态覆盖旧 resolved', () => {
+    const chat = buildChatFromServerConversation({
+      id: 'chat-repair-again',
+      title: 'Repair again',
+      model_id: 'deepseek-chat',
+      messages: [
+        {
+          id: 'assistant-repair-again',
+          role: 'assistant',
+          content: [{ type: 'text', id: 'answer', text: '天气结果' }],
+          agent_run: {
+            run_id: 'run-repair-again',
+            status: 'completed',
+            progress: {
+              tool_digests: [
+                {
+                  tool_call_id: 'tc-resolved',
+                  tool_name: 'weather_forecast',
+                  status: 'success',
+                  title: '查询天气',
+                  summary: '参数已修正',
+                  repair_state: 'resolved',
+                  repair_id: 'repair_aaaaaaaaaaaaaaaa',
+                },
+                {
+                  tool_call_id: 'tc-retry-again',
+                  tool_name: 'weather_forecast',
+                  status: 'degraded',
+                  title: '正在修正工具参数',
+                  summary: '参数修正中',
+                  repair_state: 'retrying',
+                  repair_id: 'repair_aaaaaaaaaaaaaaaa',
+                },
+              ],
+            },
+          },
+        } as any,
+      ],
+    });
+
+    expect(chat.messages[0].agent_run?.toolDigests).toEqual([
+      expect.objectContaining({
+        toolCallId: 'tc-retry-again',
+        repairState: 'retrying',
+      }),
+    ]);
+  });
 });

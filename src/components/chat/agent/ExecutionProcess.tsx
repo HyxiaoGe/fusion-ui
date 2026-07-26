@@ -5,6 +5,7 @@ import { AlertTriangle, CheckCircle2, FileSearch, Search, Globe2, Wrench, X } fr
 import type { AgentRunState } from '@/types/agentRun';
 import { cn } from '@/lib/utils';
 import type { ToolCallGroupDetail } from '@/lib/agent/toolCallGroups';
+import { getToolMeta } from '@/lib/agent/toolRegistry';
 import { useChatDetailOverlayRegistration } from '../ChatDetailOverlayContext';
 import { ChatDetailOverlayPortal } from '../ChatDetailOverlayPortal';
 import {
@@ -149,11 +150,7 @@ function ExecutionProcessSidebar({
               {model.groups.map(group => (
                 <section key={group.id}>
                   <h4 className="mb-2 flex items-center gap-1.5 text-xs font-medium text-foreground">
-                    {group.kind === 'url_read'
-                      ? <Globe2 className="h-3.5 w-3.5 text-teal" aria-hidden="true" />
-                      : group.kind === 'web_search'
-                        ? <Search className="h-3.5 w-3.5 text-info" aria-hidden="true" />
-                        : <Wrench className="h-3.5 w-3.5 text-muted-foreground" aria-hidden="true" />}
+                    <ProcessGroupIcon group={group} />
                     {groupSectionTitle(group)}
                   </h4>
                   <div className="space-y-2">
@@ -200,7 +197,7 @@ function ProcessDetailItem({ detail }: { detail: ToolCallGroupDetail }) {
             {detail.primary}
           </span>
           <span className="shrink-0 rounded-full border border-border/30 px-1.5 py-0.5 text-[10px] text-muted-foreground">
-            {statusText(detail.status)}
+            {processDetailStatusText(detail)}
           </span>
         </div>
         <p className="line-clamp-2 text-xs text-muted-foreground" title={groupDetailStatusText(detail)}>
@@ -209,6 +206,25 @@ function ProcessDetailItem({ detail }: { detail: ToolCallGroupDetail }) {
       </div>
     </div>
   );
+}
+
+function ProcessGroupIcon({ group }: { group: ExecutionProcessModel['groups'][number] }) {
+  if (group.kind === 'url_read') {
+    return <Globe2 className="h-3.5 w-3.5 text-teal" aria-hidden="true" />;
+  }
+  if (group.kind === 'web_search') {
+    return <Search className="h-3.5 w-3.5 text-info" aria-hidden="true" />;
+  }
+  const Icon = getToolMeta(group.toolName).icon;
+  return <Icon className="h-3.5 w-3.5 text-muted-foreground" aria-hidden="true" />;
+}
+
+function processDetailStatusText(detail: ToolCallGroupDetail): string {
+  if (detail.repairState === 'retrying') return '修正中';
+  if (detail.repairState === 'requires_user_input') return '待补充';
+  if (detail.repairState === 'exhausted') return '未修正';
+  if (detail.repairState === 'resolved') return '已修正';
+  return statusText(detail.status);
 }
 
 function DigestOnlyList({
@@ -299,7 +315,7 @@ function ExternalToolDigestItem({ row }: { row: ExecutionProcessModel['digestRow
             {row.title}
           </span>
           <span className="shrink-0 rounded-full border border-border/30 px-1.5 py-0.5 text-[10px] text-muted-foreground">
-            {statusText(row.status)}
+            {digestStatusText(row)}
           </span>
         </div>
         <p className="line-clamp-2 text-xs text-muted-foreground" title={row.summary}>
@@ -308,6 +324,13 @@ function ExternalToolDigestItem({ row }: { row: ExecutionProcessModel['digestRow
       </div>
     </div>
   );
+}
+
+function digestStatusText(row: ExecutionProcessModel['digestRows'][number]): string {
+  if (row.repairState === 'retrying') return '修正中';
+  if (row.repairState === 'requires_user_input') return '待补充';
+  if (row.repairState === 'exhausted') return '未修正';
+  return statusText(row.status);
 }
 
 function SearchSourceProcessSummary({

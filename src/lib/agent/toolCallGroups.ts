@@ -16,6 +16,7 @@ export interface ToolCallGroupDetail {
   primary: string;
   secondary?: string;
   status: ToolCallStatus;
+  repairState?: 'retrying' | 'requires_user_input' | 'exhausted' | 'resolved';
   truncated: boolean;
   fullValue?: string;
 }
@@ -24,7 +25,6 @@ export interface ToolCallGroup {
   id: string;
   kind: ToolCallGroupKind;
   toolName: string;
-  provider?: string;
   label: string;
   count: number;
   resultCount: number;
@@ -57,9 +57,6 @@ export function groupToolCalls(calls: ToolCallState[]): ToolCallGroup[] {
       0,
     );
     const modeCount = groupCalls.reduce((sum, call) => sum + (call.resultSummary?.mode_count ?? 0), 0);
-    const provider = publicProviderKey(groupCalls
-      .map(call => call.resultSummary?.provider?.trim())
-      .find(Boolean));
     const details = groupCalls.map(toGroupDetail);
     const hasExpandableDetails = shouldHaveExpandableDetails(groupCalls, status);
 
@@ -67,7 +64,6 @@ export function groupToolCalls(calls: ToolCallState[]): ToolCallGroup[] {
       id,
       kind,
       toolName: first.toolName,
-      ...(provider ? { provider } : {}),
       label: meta.label,
       count: groupCalls.length,
       resultCount,
@@ -82,6 +78,7 @@ export function groupToolCalls(calls: ToolCallState[]): ToolCallGroup[] {
         countByStatus(groupCalls, 'failed'),
         registeredLabel,
         first.toolName,
+        groupCalls,
       ),
       details,
       hasExpandableDetails,
@@ -146,7 +143,17 @@ function buildSummary(
   failedCount: number,
   registeredLabel: string | null,
   toolName: string,
+  calls: ToolCallState[],
 ): string {
+  const repairState = calls
+    .map(call => call.resultSummary?.repair_state)
+    .find(state => state && state !== 'resolved');
+  const repairLabel = registeredLabel
+    ?? calls.map(getSafeExternalResultTitle).find(Boolean)
+    ?? '工具';
+  if (repairState === 'retrying') return `${repairLabel}参数正在自动修正`;
+  if (repairState === 'requires_user_input') return `${repairLabel}需要补充查询条件`;
+  if (repairState === 'exhausted') return `${repairLabel}参数未能自动修正`;
   if (kind === 'web_search') {
     if (status === 'running') return `正在搜索 · ${count} 个查询`;
     if (status === 'partial') return `搜索 ${count} 次 · ${failedCount} 次未使用`;
@@ -202,14 +209,31 @@ function toGroupDetail(call: ToolCallState): ToolCallGroupDetail {
   return {
     id: call.toolCallId,
     primary: target.short,
-    secondary: issueText
+    secondary: getRepairDetail(call)
+      || issueText
       || productResultDetail
       || (resultTitle !== target.short ? resultTitle : undefined)
       || getStatusText(call.status),
     status: call.status,
+    repairState: call.resultSummary?.repair_state,
     truncated: call.resultSummary?.truncated === true,
     fullValue: target.full,
   };
+}
+
+function getRepairDetail(call: ToolCallState): string | undefined {
+  switch (call.resultSummary?.repair_state) {
+    case 'retrying':
+      return '参数修正中';
+    case 'requires_user_input':
+      return '需要补充查询条件';
+    case 'exhausted':
+      return '参数未能自动修正';
+    case 'resolved':
+      return '参数已修正';
+    default:
+      return undefined;
+  }
 }
 
 function getTarget(call: ToolCallState): { short: string; full: string } {
@@ -233,10 +257,9 @@ function getTarget(call: ToolCallState): { short: string; full: string } {
 
 function getProductResultDetail(call: ToolCallState): string | undefined {
   if (!hasToolMeta(call.toolName)) return undefined;
-  const provider = getProviderLabel(call.resultSummary?.provider);
   const resultCount = call.resultSummary?.result_count;
   const modeCount = call.resultSummary?.mode_count;
-  const parts = [provider];
+  const parts: string[] = [];
   if (call.toolName === 'local_place_search' && typeof resultCount === 'number' && resultCount >= 0) {
     parts.push(`${Math.floor(resultCount)} 个地点`);
   }
@@ -253,30 +276,12 @@ function getProductResultDetail(call: ToolCallState): string | undefined {
   return detail || undefined;
 }
 
-function getProviderLabel(provider: string | undefined): string | undefined {
-  if (provider?.trim().toLowerCase() === 'amap') return '高德';
-  return undefined;
-}
-
-function publicProviderKey(provider: string | undefined): string | undefined {
-  return provider?.toLowerCase() === 'amap' ? 'amap' : undefined;
-}
-
 function getSafeExternalResultTitle(call: ToolCallState): string | undefined {
   const title = call.resultSummary?.title?.trim();
   if (!title || call.toolName === 'web_search' || call.toolName === 'url_read') {
     return title || undefined;
   }
-
-  const normalizedTitle = title.toLowerCase();
-  const normalizedToolName = call.toolName.trim().toLowerCase();
-  if (
-    (normalizedToolName && normalizedTitle.includes(normalizedToolName))
-    || /(?:^|[^a-z0-9])mcp(?:__|[_:-])[a-z0-9_.:-]+/i.test(title)
-  ) {
-    return undefined;
-  }
-  return title;
+  return undefined;
 }
 
 function getHostname(rawUrl: string): string {

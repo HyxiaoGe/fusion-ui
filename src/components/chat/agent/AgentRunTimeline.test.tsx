@@ -439,7 +439,7 @@ describe('AgentRunTimeline', () => {
     expect(screen.queryByText('搜索记录')).not.toBeInTheDocument();
   });
 
-  it('completed + 实时 MCP 工具使用外部工具分组和友好结果标题', () => {
+  it('completed + 实时 MCP 工具不展示不可信远端标题', () => {
     const internalAlias = 'mcp__learn__microsoft_docs_search';
     renderTimeline(run({
       status: 'completed',
@@ -464,8 +464,8 @@ describe('AgentRunTimeline', () => {
     expect(screen.getByText('执行过程 · 调用 1 个外部工具')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: '查看执行过程' }));
 
-    expect(screen.getByText('外部工具')).toBeInTheDocument();
-    expect(screen.getByText('找到 2 篇官方文档')).toBeInTheDocument();
+    expect(screen.getAllByText('外部工具').length).toBeGreaterThan(0);
+    expect(screen.queryByText('找到 2 篇官方文档')).not.toBeInTheDocument();
     expect(screen.queryByText(new RegExp(internalAlias, 'i'))).not.toBeInTheDocument();
   });
 
@@ -785,6 +785,82 @@ describe('AgentRunTimeline', () => {
     expect(screen.getAllByText('外部工具').length).toBeGreaterThan(0);
     expect(screen.getByText('外部工具已完成。')).toBeInTheDocument();
     expect(screen.queryByText(new RegExp(internalAlias, 'i'))).not.toBeInTheDocument();
+  });
+
+  it('completed 修参 digest 在执行过程侧栏显示修正中而不是部分可用', () => {
+    renderTimeline(run({
+      status: 'completed',
+      steps: [],
+      totalSteps: 1,
+      totalToolCalls: 1,
+      toolDigests: [
+        {
+          toolCallId: 'weather-repair',
+          toolName: 'weather_forecast',
+          status: 'degraded',
+          title: '地点信息待确认',
+          summary: '参数可安全修正，Agent 将在下一轮补齐后重试。',
+          keyFindings: [],
+          sourceRefs: [],
+          truncated: false,
+          repairState: 'retrying',
+          repairId: 'repair_0123456789abcdef',
+        },
+      ],
+    }));
+
+    fireEvent.click(screen.getByRole('button', { name: '查看执行过程' }));
+
+    expect(screen.getByText('正在修正工具参数')).toBeInTheDocument();
+    expect(screen.getByText('修正中')).toBeInTheDocument();
+    expect(screen.getByText('参数校验未通过，正在自动修正后重试。')).toBeInTheDocument();
+    expect(screen.queryByText('部分可用')).not.toBeInTheDocument();
+    expect(screen.queryByText('地点信息待确认')).not.toBeInTheDocument();
+  });
+
+  it('completed 修参 step 与刷新后的 digest 使用同一状态文案', () => {
+    renderTimeline(run({
+      status: 'completed',
+      steps: [
+        step({
+          toolCalls: [
+            toolCall({
+              toolCallId: 'weather-repair-live',
+              toolName: 'weather_forecast',
+              arguments: { location: '南山区' },
+              status: 'degraded',
+              resultSummary: {
+                kind: 'external_tool',
+                title: '地点信息待确认',
+                truncated: false,
+                repair_state: 'retrying',
+                repair_id: 'repair_abcdef0123456789',
+              },
+            }),
+          ],
+        }),
+      ],
+      toolDigests: [
+        {
+          toolCallId: 'weather-repair-live',
+          toolName: 'weather_forecast',
+          status: 'degraded',
+          title: '地点信息待确认',
+          summary: '参数可安全修正，Agent 将在下一轮补齐后重试。',
+          keyFindings: [],
+          sourceRefs: [],
+          truncated: false,
+          repairState: 'retrying',
+          repairId: 'repair_abcdef0123456789',
+        },
+      ],
+    }));
+
+    fireEvent.click(screen.getByRole('button', { name: '查看执行过程' }));
+
+    expect(screen.getByText('修正中')).toBeInTheDocument();
+    expect(screen.queryByText('部分可用')).not.toBeInTheDocument();
+    expect(screen.queryByText('地点信息待确认')).not.toBeInTheDocument();
   });
 
   it('completed 但存在 failed step 时仍渲染 timeline', () => {

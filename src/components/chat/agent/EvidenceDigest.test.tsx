@@ -127,4 +127,30 @@ describe('EvidenceDigest', () => {
     expect(screen.queryByText(/工具返回/)).not.toBeInTheDocument();
     expect(screen.queryByText(/url_read/)).not.toBeInTheDocument();
   });
+
+  it('参数自动修正不显示为部分可用', () => {
+    render(<EvidenceDigest run={{
+      ...baseRun,
+      status: 'running',
+      toolDigests: [
+        {
+          toolCallId: 'tc-repair',
+          toolName: 'weather_forecast',
+          status: 'degraded',
+          title: '天气查询',
+          summary: '工具降级返回',
+          keyFindings: [],
+          sourceRefs: [],
+          truncated: false,
+          repairState: 'retrying',
+          repairId: 'repair_0123456789abcdef',
+        },
+      ],
+    }} />);
+
+    expect(screen.getByText('正在修正工具参数')).toBeInTheDocument();
+    expect(screen.getByText('修正中')).toBeInTheDocument();
+    expect(screen.getByText('参数校验未通过，正在自动修正后重试。')).toBeInTheDocument();
+    expect(screen.queryByText('部分可用')).not.toBeInTheDocument();
+  });
 });

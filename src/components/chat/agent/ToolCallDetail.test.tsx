@@ -22,4 +22,20 @@ describe('ToolCallDetail', () => {
     expect(screen.getByText('网页暂时无法读取')).toBeInTheDocument();
     expect(screen.queryByText(/reader-service/)).not.toBeInTheDocument();
   });
+
+  it('参数修正中不显示部分结果不可用', () => {
+    render(<ToolCallDetail call={call({
+      status: 'degraded',
+      error: undefined,
+      resultSummary: {
+        kind: 'weather',
+        truncated: false,
+        repair_state: 'retrying',
+        repair_id: 'repair_0123456789abcdef',
+      },
+    })} />);
+
+    expect(screen.getByText('参数校验未通过，正在自动修正后重试')).toBeInTheDocument();
+    expect(screen.queryByText('部分结果暂时无法使用')).not.toBeInTheDocument();
+  });
 });

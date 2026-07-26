@@ -122,6 +122,32 @@ describe('groupToolCalls', () => {
     expect(read.shouldShowDetailsByDefault).toBe(true);
   });
 
+  it('参数修正状态优先于 degraded 的部分可用文案', () => {
+    const groups = groupToolCalls([
+      tc({
+        toolCallId: 'weather-repair',
+        toolName: 'weather_forecast',
+        status: 'degraded',
+        arguments: { location: '南山区', city: '不应展示的旧参数' },
+        resultSummary: {
+          kind: 'weather',
+          title: '地点信息待确认',
+          truncated: false,
+          repair_state: 'retrying',
+          repair_id: 'repair_0123456789abcdef',
+        },
+      }),
+    ]);
+
+    const weather = findGroup(groups, 'weather_forecast');
+    expect(weather.label).toBe('查询天气');
+    expect(weather.summary).toBe('查询天气参数正在自动修正');
+    expect(weather.details[0].primary).toBe('南山区');
+    expect(weather.details[0].secondary).toBe('参数修正中');
+    expect(weather.summary).not.toContain('部分可用');
+    expect(JSON.stringify(weather)).not.toContain('地点信息待确认');
+  });
+
   it('interrupted 状态显示已中断摘要', () => {
     const groups = groupToolCalls([
       tc({ toolCallId: 'u1', toolName: 'url_read', status: 'interrupted', arguments: { url: 'https://example.com/a' }, resultSummary: undefined }),
@@ -133,7 +159,7 @@ describe('groupToolCalls', () => {
     expect(read.shouldShowDetailsByDefault).toBe(true);
   });
 
-  it('未知工具按 toolName 聚合，优先用结果标题且不显示内部 alias', () => {
+  it('未知工具按 toolName 聚合且不信任远端结果标题', () => {
     const groups = groupToolCalls([
       tc({ toolCallId: 'x1', toolName: 'mcp__learn__microsoft_docs_search', arguments: { query: 'Responses API' }, resultSummary: { kind: 'mcp', title: '找到 2 篇官方文档', truncated: false } }),
       tc({ toolCallId: 'x2', toolName: 'mcp__learn__microsoft_docs_search', arguments: { query: 'Agents SDK' }, resultSummary: { kind: 'mcp', title: '找到 3 篇官方文档', truncated: false } }),
@@ -144,9 +170,10 @@ describe('groupToolCalls', () => {
     expect(groups[0].kind).toBe('other');
     expect(groups[0].summary).toBe('调用 2 个工具');
     expect(groups[0].details.map(detail => detail.primary)).toEqual([
-      '找到 2 篇官方文档',
-      '找到 3 篇官方文档',
+      '外部工具',
+      '外部工具',
     ]);
+    expect(JSON.stringify(groups[0].details)).not.toContain('找到 2 篇官方文档');
     expect(JSON.stringify(groups[0].details)).not.toContain('mcp__learn__microsoft_docs_search');
   });
 
@@ -275,7 +302,7 @@ describe('groupToolCalls', () => {
     expect(JSON.stringify(findGroup(groups, 'search_trains'))).not.toMatch(/flyai|upstream|unauthorized/i);
   });
 
-  it('消费 provider 与产品结果数量，同时保留用户调用目标', () => {
+  it('消费产品结果数量并保留用户调用目标，但不在执行过程展示供应商', () => {
     const groups = groupToolCalls([
       tc({
         toolCallId: 'place-1',
@@ -304,20 +331,21 @@ describe('groupToolCalls', () => {
     ]);
 
     const place = findGroup(groups, 'local_place_search');
-    expect(place).toMatchObject({ provider: 'amap', resultCount: 5 });
+    expect(place).toMatchObject({ resultCount: 5 });
     expect(place.summary).toBe('搜索附近地点 1 次 · 5 个地点');
     expect(place.details[0]).toMatchObject({
       primary: '深圳民治 · 烤肉',
-      secondary: '高德 · 5 个地点',
+      secondary: '5 个地点',
     });
 
     const route = findGroup(groups, 'route_compare');
-    expect(route).toMatchObject({ provider: 'amap', modeCount: 2 });
+    expect(route).toMatchObject({ modeCount: 2 });
     expect(route.summary).toBe('比较路线 1 次 · 2 种方案');
     expect(route.details[0]).toMatchObject({
       primary: '民治地铁站 → 星河 WORLD',
-      secondary: '高德 · 2 种方案',
+      secondary: '2 种方案',
     });
+    expect(JSON.stringify(groups)).not.toContain('高德');
   });
 
   it.each([

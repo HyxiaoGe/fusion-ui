@@ -687,6 +687,103 @@ describe('streamSlice — agent run timeline', () => {
     expect(s.currentRun?.toolDigests).toHaveLength(1);
   });
 
+  it('修参成功即使后续 digest 事件丢失也立即清理匹配摘要并恢复对应 tool call', () => {
+    let s = reducer(initial(), initRun({ runId: 'r1', messageId: 'm1', config: baseConfig, sequence: 0 }));
+    s = reducer(s, pushStep({ runId: 'r1', stepId: 's1', stepNumber: 1, sequence: 1 }));
+    for (const [startSequence, completeSequence, digestSequence, toolCallId, repairId] of [
+      [2, 3, 4, 'tc-a', 'repair_aaaaaaaaaaaaaaaa'],
+      [5, 6, 7, 'tc-b', 'repair_bbbbbbbbbbbbbbbb'],
+    ] as const) {
+      s = reducer(s, pushToolCall({
+        runId: 'r1',
+        stepId: 's1',
+        toolCallId,
+        toolName: 'weather_forecast',
+        arguments: { location: '南山区' },
+        sequence: startSequence,
+      }));
+      s = reducer(s, finalizeToolCall({
+        runId: 'r1',
+        toolCallId,
+        status: 'degraded',
+        durationMs: 0,
+        resultSummary: {
+          kind: 'weather',
+          truncated: false,
+          repair_state: 'retrying',
+          repair_id: repairId,
+        },
+        sequence: completeSequence,
+      }));
+      s = reducer(s, upsertToolDigest({
+        runId: 'r1',
+        sequence: digestSequence,
+        digest: {
+          toolCallId,
+          toolName: 'weather_forecast',
+          status: 'degraded',
+          title: '正在修正工具参数',
+          summary: '参数修正中',
+          keyFindings: [],
+          sourceRefs: [],
+          truncated: false,
+          repairState: 'retrying',
+          repairId,
+        },
+      }));
+    }
+    s = reducer(s, pushToolCall({
+      runId: 'r1',
+      stepId: 's1',
+      toolCallId: 'tc-success',
+      toolName: 'weather_forecast',
+      arguments: { location: '深圳市南山区', location_source: 'named' },
+      sequence: 8,
+    }));
+    s = reducer(s, finalizeToolCall({
+      runId: 'r1',
+      toolCallId: 'tc-success',
+      status: 'success',
+      durationMs: 12,
+      resultSummary: {
+        kind: 'weather',
+        truncated: false,
+        repair_state: 'resolved',
+        resolves_repair_id: 'repair_aaaaaaaaaaaaaaaa',
+      },
+      sequence: 9,
+    }));
+
+    expect(s.currentRun?.toolDigests?.map(digest => digest.toolCallId)).toEqual(['tc-b']);
+    let calls = s.currentRun?.steps.flatMap(step => step.toolCalls) ?? [];
+    expect(calls.find(call => call.toolCallId === 'tc-a')?.status).toBe('success');
+    expect(calls.find(call => call.toolCallId === 'tc-a')?.resultSummary?.repair_state).toBe('resolved');
+    expect(calls.find(call => call.toolCallId === 'tc-b')?.status).toBe('degraded');
+
+    s = reducer(s, upsertToolDigest({
+      runId: 'r1',
+      sequence: 10,
+      digest: {
+        toolCallId: 'tc-success',
+        toolName: 'weather_forecast',
+        status: 'success',
+        title: '天气查询完成',
+        summary: '工具返回了可用结果。',
+        keyFindings: [],
+        sourceRefs: [],
+        truncated: false,
+        repairState: 'resolved',
+        repairId: 'repair_aaaaaaaaaaaaaaaa',
+      },
+    }));
+
+    expect(s.currentRun?.toolDigests?.map(digest => digest.toolCallId)).toEqual(['tc-b', 'tc-success']);
+    calls = s.currentRun?.steps.flatMap(step => step.toolCalls) ?? [];
+    expect(calls.find(call => call.toolCallId === 'tc-a')?.status).toBe('success');
+    expect(calls.find(call => call.toolCallId === 'tc-a')?.resultSummary?.repair_state).toBe('resolved');
+    expect(calls.find(call => call.toolCallId === 'tc-b')?.status).toBe('degraded');
+  });
+
   it('upsertEvidenceItem 接收 selected/read_success evidence 状态', () => {
     let s = reducer(initial(), initRun({ runId: 'r1', messageId: 'm1', config: baseConfig, sequence: 0 }));
     s = reducer(s, upsertEvidenceItem({

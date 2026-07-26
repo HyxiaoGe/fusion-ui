@@ -25,7 +25,7 @@ function ToolDigestRow({ digest }: { digest: AgentToolDigest }) {
       <div className="flex items-center gap-1.5 min-w-0">
         <span className="truncate text-foreground/85">{getDigestTitle(digest)}</span>
         <span className="shrink-0 text-muted-foreground">·</span>
-        <span className="shrink-0 text-muted-foreground">{getStatusText(digest.status)}</span>
+        <span className="shrink-0 text-muted-foreground">{getStatusText(digest)}</span>
       </div>
       <div className="mt-0.5 truncate text-muted-foreground" title={sanitizeExecutionSummary(digest)}>
         {sanitizeExecutionSummary(digest)}
@@ -34,8 +34,11 @@ function ToolDigestRow({ digest }: { digest: AgentToolDigest }) {
   );
 }
 
-function getStatusText(status: AgentToolDigest['status']): string {
-  switch (status) {
+function getStatusText(digest: AgentToolDigest): string {
+  if (digest.repairState === 'retrying') return '修正中';
+  if (digest.repairState === 'requires_user_input') return '待补充';
+  if (digest.repairState === 'exhausted') return '未修正';
+  switch (digest.status) {
     case 'success':
       return '完成';
     case 'degraded':
@@ -45,13 +48,16 @@ function getStatusText(status: AgentToolDigest['status']): string {
     case 'interrupted':
       return '中断';
     default: {
-      void (status as never);
+      void (digest.status as never);
       return '完成';
     }
   }
 }
 
 function getDigestTitle(digest: AgentToolDigest): string {
+  if (digest.repairState === 'retrying') return '正在修正工具参数';
+  if (digest.repairState === 'requires_user_input') return '需要补充查询条件';
+  if (digest.repairState === 'exhausted') return '参数未能自动修正';
   if (digest.toolName === 'web_search' && digest.status === 'success') {
     return '搜索完成';
   }

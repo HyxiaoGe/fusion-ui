@@ -411,6 +411,9 @@ const streamSlice = createSlice({
       run.lastSequence = sequence;
       run.protocolVersion = 2;
       run.toolDigests = run.toolDigests ?? [];
+      if (digest.repairId) {
+        run.toolDigests = run.toolDigests.filter(existing => existing.repairId !== digest.repairId);
+      }
       const index = run.toolDigests.findIndex(existing => existing.toolCallId === digest.toolCallId);
       if (index >= 0) {
         run.toolDigests[index] = digest;
@@ -559,6 +562,23 @@ const streamSlice = createSlice({
           tc.completedAt = Date.now();
           if (resultSummary) tc.resultSummary = resultSummary;
           if (error) tc.error = error;
+          const resolvedRepairId = resultSummary?.resolves_repair_id;
+          if (status === 'success' && resolvedRepairId) {
+            run.toolDigests = (run.toolDigests ?? []).filter(
+              digest => digest.repairId !== resolvedRepairId,
+            );
+            for (const existingStep of run.steps) {
+              for (const existingCall of existingStep.toolCalls) {
+                if (existingCall.resultSummary?.repair_id !== resolvedRepairId) continue;
+                existingCall.status = 'success';
+                existingCall.resultSummary = {
+                  ...existingCall.resultSummary,
+                  repair_state: 'resolved',
+                };
+                delete existingCall.error;
+              }
+            }
+          }
           // duration_ms 暂不映射到 ToolCallState（信息可由 startedAt/completedAt 推算）
           void durationMs;
           return;
