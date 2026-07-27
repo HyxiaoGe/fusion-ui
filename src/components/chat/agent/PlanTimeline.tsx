@@ -22,7 +22,7 @@ export function PlanTimeline({ run }: { run: AgentRunState }) {
   if (!items.length) return null;
 
   const completedCount = items.filter(item => item.status === 'completed').length;
-  const currentItem = getCurrentItem(items);
+  const overview = getPlanOverview(run, items, completedCount);
 
   function handleMouseEnter() {
     isHoveredRef.current = true;
@@ -69,7 +69,7 @@ export function PlanTimeline({ run }: { run: AgentRunState }) {
         aria-controls={panelId}
         aria-expanded={isOpen}
         aria-haspopup="dialog"
-        aria-label={`查看计划流程，已完成 ${completedCount}/${items.length}，当前步骤：${currentItem.title}`}
+        aria-label={overview.ariaLabel}
         className="group flex max-w-full items-center gap-2 rounded-lg border border-border/40 bg-background/60 px-2 py-1.5 text-left transition-colors duration-fast hover:border-border/70 hover:bg-muted/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
         onClick={togglePinned}
       >
@@ -85,9 +85,11 @@ export function PlanTimeline({ run }: { run: AgentRunState }) {
             </span>
           </span>
           <span className="mt-1 flex min-w-0 items-center gap-1.5">
-            <span className="shrink-0 text-[10px] text-muted-foreground">当前步骤</span>
+            <span className="shrink-0 text-[10px] text-muted-foreground">
+              {overview.label}
+            </span>
             <span className="truncate text-xs font-medium text-foreground/90">
-              {currentItem.title}
+              {overview.detail}
             </span>
           </span>
         </span>
@@ -129,6 +131,59 @@ export function PlanTimeline({ run }: { run: AgentRunState }) {
       )}
     </div>
   );
+}
+
+interface PlanOverviewContent {
+  ariaLabel: string;
+  label: string;
+  detail: string;
+}
+
+function getPlanOverview(
+  run: AgentRunState,
+  items: AgentPlanItem[],
+  completedCount: number,
+): PlanOverviewContent {
+  const totalCount = items.length;
+  if (run.status === 'running') {
+    const currentItem = getCurrentItem(items);
+    return {
+      ariaLabel: `查看计划流程，已完成 ${completedCount}/${totalCount}，当前步骤：${currentItem.title}`,
+      label: '当前步骤',
+      detail: currentItem.title,
+    };
+  }
+
+  if (run.status === 'interrupted') {
+    return {
+      ariaLabel: `查看计划流程，计划已停止，已完成 ${completedCount}/${totalCount}`,
+      label: '计划已停止',
+      detail: '已保留完成结果',
+    };
+  }
+
+  const failedCount = items.filter(item => item.status === 'failed').length;
+  if (failedCount > 0) {
+    return {
+      ariaLabel: `查看计划流程，计划已结束，已完成 ${completedCount}/${totalCount}，${failedCount} 项失败`,
+      label: '计划已结束',
+      detail: `${failedCount} 项失败`,
+    };
+  }
+
+  if (completedCount === totalCount) {
+    return {
+      ariaLabel: `查看计划流程，计划已完成 ${completedCount}/${totalCount}`,
+      label: '计划已完成',
+      detail: '全部步骤已完成',
+    };
+  }
+
+  return {
+    ariaLabel: `查看计划流程，计划已结束，已完成 ${completedCount}/${totalCount}`,
+    label: '计划已结束',
+    detail: '部分步骤未完成',
+  };
 }
 
 function PlanProgressRing({

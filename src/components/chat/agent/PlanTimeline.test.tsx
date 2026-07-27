@@ -78,6 +78,135 @@ describe('PlanTimeline', () => {
     expect(screen.getByTestId('plan-progress-value')).toHaveAttribute('stroke-dashoffset', '50');
   });
 
+  it('计划部分失败并结束后展示终态摘要，不把失败步骤标成当前步骤', () => {
+    render(<PlanTimeline run={createRun([
+      {
+        id: 'outbound-flight',
+        title: '查询去程航班',
+        status: 'failed',
+        kind: 'other',
+        toolNames: [],
+        evidenceItemIds: [],
+      },
+      {
+        id: 'outbound-train',
+        title: '查询去程高铁',
+        status: 'completed',
+        kind: 'other',
+        toolNames: [],
+        evidenceItemIds: [],
+      },
+      {
+        id: 'return-flight',
+        title: '查询返程航班',
+        status: 'failed',
+        kind: 'other',
+        toolNames: [],
+        evidenceItemIds: [],
+      },
+      {
+        id: 'return-train',
+        title: '查询返程高铁',
+        status: 'completed',
+        kind: 'other',
+        toolNames: [],
+        evidenceItemIds: [],
+      },
+      {
+        id: 'weather',
+        title: '查询天气',
+        status: 'completed',
+        kind: 'other',
+        toolNames: [],
+        evidenceItemIds: [],
+      },
+      {
+        id: 'answer',
+        title: '整理行程建议',
+        status: 'completed',
+        kind: 'answer',
+        toolNames: [],
+        evidenceItemIds: [],
+      },
+    ], {
+      status: 'completed',
+    }, {
+      source: 'model',
+    })} />);
+
+    expect(screen.getByRole('button', {
+      name: '查看计划流程，计划已结束，已完成 4/6，2 项失败',
+    })).toBeInTheDocument();
+    expect(screen.getByText('计划已结束')).toBeInTheDocument();
+    expect(screen.getByText('2 项失败')).toBeInTheDocument();
+    expect(screen.queryByText('当前步骤')).not.toBeInTheDocument();
+    expect(screen.queryByText('查询去程航班')).not.toBeInTheDocument();
+  });
+
+  it('计划全部完成后展示完成终态', () => {
+    render(<PlanTimeline run={createRun([
+      {
+        id: 'research',
+        title: '查询资料',
+        status: 'completed',
+        kind: 'search',
+        toolNames: [],
+        evidenceItemIds: [],
+      },
+      {
+        id: 'answer',
+        title: '整理回答',
+        status: 'completed',
+        kind: 'answer',
+        toolNames: [],
+        evidenceItemIds: [],
+      },
+    ], {
+      status: 'completed',
+    }, {
+      source: 'model',
+    })} />);
+
+    expect(screen.getByRole('button', {
+      name: '查看计划流程，计划已完成 2/2',
+    })).toBeInTheDocument();
+    expect(screen.getByText('计划已完成')).toBeInTheDocument();
+    expect(screen.getByText('全部步骤已完成')).toBeInTheDocument();
+    expect(screen.queryByText('当前步骤')).not.toBeInTheDocument();
+  });
+
+  it('计划被中断后展示停止终态并保留完成进度', () => {
+    render(<PlanTimeline run={createRun([
+      {
+        id: 'research',
+        title: '查询资料',
+        status: 'completed',
+        kind: 'search',
+        toolNames: [],
+        evidenceItemIds: [],
+      },
+      {
+        id: 'answer',
+        title: '整理回答',
+        status: 'pending',
+        kind: 'answer',
+        toolNames: [],
+        evidenceItemIds: [],
+      },
+    ], {
+      status: 'interrupted',
+    }, {
+      source: 'model',
+    })} />);
+
+    expect(screen.getByRole('button', {
+      name: '查看计划流程，计划已停止，已完成 1/2',
+    })).toBeInTheDocument();
+    expect(screen.getByText('计划已停止')).toBeInTheDocument();
+    expect(screen.getByText('已保留完成结果')).toBeInTheDocument();
+    expect(screen.queryByText('当前步骤')).not.toBeInTheDocument();
+  });
+
   it('运行中的直接回答计划只展示实际步骤，不补造搜索或读取', () => {
     render(<PlanTimeline run={createRun([
       {

@@ -440,6 +440,7 @@ describe('AgentRunTimeline', () => {
       },
     }));
 
+    fireEvent.click(screen.getByRole('button', { name: /查看计划流程/ }));
     expect(screen.getByText('比较候选路线并给出结论')).toBeInTheDocument();
     expect(screen.queryByText(/执行过程 ·/)).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: '查看执行过程' })).not.toBeInTheDocument();
@@ -1003,6 +1004,7 @@ describe('AgentRunTimeline', () => {
     }));
 
     expect(screen.getByText('本次检索用时较长，已结束当前检索')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /查看计划流程/ }));
     expect(screen.getByText('整理回答')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: '查看执行过程' })).not.toBeInTheDocument();
   });
