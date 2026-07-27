@@ -68,6 +68,120 @@ describe('createAgentStreamEventHandlers', () => {
     });
   });
 
+  it('新旧 plan 事件归一化为同一 Redux 状态结构', () => {
+    const dispatch = vi.fn();
+    const handlers = createAgentStreamEventHandlers({
+      dispatch,
+      isActive: () => true,
+      resolveMessageId: ev => ev.message_id,
+      resolveConversationId: () => 'c1',
+    });
+    const envelope = {
+      protocol_version: 2 as const,
+      run_id: 'r1',
+      parent_run_id: null,
+      step_id: null,
+      parent_step_id: null,
+      tool_call_id: null,
+      trace_id: 'r1',
+      ts: 0,
+    };
+
+    handlers.onPlanSnapshot?.({
+      ...envelope,
+      type: 'plan_snapshot',
+      sequence: 1,
+      plan_id: 'plan-model',
+      revision: 2,
+      mode: 'on',
+      source: 'model',
+      reason: 'model_update',
+      items: [{
+        id: 'research',
+        title: '研究资料',
+        status: 'running',
+        kind: 'other',
+        tool_names: [],
+        evidence_item_ids: [],
+        depends_on: ['understand'],
+        planned_tools: ['web_search'],
+      }],
+    } as Parameters<NonNullable<typeof handlers.onPlanSnapshot>>[0]);
+    handlers.onPlanSnapshot?.({
+      ...envelope,
+      type: 'plan_snapshot',
+      sequence: 2,
+      plan_id: 'plan-legacy',
+      revision: 1,
+      items: [],
+    });
+    handlers.onPlanStepUpdated?.({
+      ...envelope,
+      type: 'plan_step_updated',
+      sequence: 3,
+      plan_id: 'plan-model',
+      revision: 3,
+      mode: 'on',
+      source: 'model',
+      reason: 'model_update',
+      item: {
+        id: 'research',
+        title: '研究资料',
+        status: 'completed',
+        kind: 'other',
+        depends_on: ['understand'],
+        planned_tools: ['web_search'],
+      },
+    } as Parameters<NonNullable<typeof handlers.onPlanStepUpdated>>[0]);
+
+    expect(dispatch.mock.calls[0][0]).toMatchObject({
+      type: 'stream/applyPlanSnapshot',
+      payload: {
+        runId: 'r1',
+        sequence: 1,
+        plan: {
+          planId: 'plan-model',
+          revision: 2,
+          mode: 'on',
+          source: 'model',
+          reason: 'model_update',
+          items: [{
+            id: 'research',
+            dependsOn: ['understand'],
+            plannedTools: ['web_search'],
+          }],
+        },
+      },
+    });
+    expect(dispatch.mock.calls[1][0]).toMatchObject({
+      type: 'stream/applyPlanSnapshot',
+      payload: {
+        plan: {
+          planId: 'plan-legacy',
+          mode: 'auto',
+          source: 'observed',
+          reason: 'legacy_observed',
+          items: [],
+        },
+      },
+    });
+    expect(dispatch.mock.calls[2][0]).toMatchObject({
+      type: 'stream/updatePlanStep',
+      payload: {
+        planId: 'plan-model',
+        revision: 3,
+        mode: 'on',
+        source: 'model',
+        reason: 'model_update',
+        item: {
+          id: 'research',
+          dependsOn: ['understand'],
+          plannedTools: ['web_search'],
+        },
+      },
+    });
+  });
+
   it('inactive 时忽略所有 agent event', () => {
     const dispatch = vi.fn();
     const handlers = createAgentStreamEventHandlers({
@@ -131,6 +245,78 @@ describe('createAgentStreamEventHandlers', () => {
         sequence: 3,
       },
     }));
+  });
+
+  it('把工具事件的 plan_item_id 归一化为 Redux 的 planItemId', () => {
+    const dispatch = vi.fn();
+    const handlers = createAgentStreamEventHandlers({
+      dispatch,
+      isActive: () => true,
+      resolveMessageId: ev => ev.message_id,
+      resolveConversationId: () => 'c1',
+    });
+    const envelope = {
+      protocol_version: 2 as const,
+      run_id: 'r1',
+      parent_run_id: null,
+      step_id: 's1',
+      parent_step_id: null,
+      tool_call_id: 'tc-route',
+      trace_id: 'r1',
+      ts: 0,
+      plan_item_id: 'compare-routes',
+    };
+
+    handlers.onToolCallStarted?.({
+      ...envelope,
+      type: 'tool_call_started',
+      sequence: 2,
+      tool_name: 'route_compare',
+      arguments: { origin: '深圳', destination: '上海' },
+    });
+    handlers.onToolCallCompleted?.({
+      ...envelope,
+      type: 'tool_call_completed',
+      sequence: 3,
+      tool_name: 'route_compare',
+      status: 'success',
+      duration_ms: 100,
+      result_summary: { kind: 'route', truncated: false },
+    });
+    handlers.onToolResultDigest?.({
+      ...envelope,
+      type: 'tool_result_digest',
+      sequence: 4,
+      tool_name: 'route_compare',
+      status: 'success',
+      title: '路线比较完成',
+      summary: '已比较 3 种出行方式',
+      truncated: false,
+    });
+
+    expect(dispatch.mock.calls[0][0]).toMatchObject({
+      type: 'stream/pushToolCall',
+      payload: {
+        toolCallId: 'tc-route',
+        planItemId: 'compare-routes',
+      },
+    });
+    expect(dispatch.mock.calls[1][0]).toMatchObject({
+      type: 'stream/finalizeToolCall',
+      payload: {
+        toolCallId: 'tc-route',
+        planItemId: 'compare-routes',
+      },
+    });
+    expect(dispatch.mock.calls[2][0]).toMatchObject({
+      type: 'stream/upsertToolDigest',
+      payload: {
+        digest: {
+          toolCallId: 'tc-route',
+          planItemId: 'compare-routes',
+        },
+      },
+    });
   });
 
   it('把 content_block_discarded 映射为精确的 block 撤回', () => {

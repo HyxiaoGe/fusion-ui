@@ -55,6 +55,10 @@ export type AgentPlanItemKind =
   | 'answer'
   | 'other';
 
+export type AgentPlanMode = 'auto' | 'on' | 'off';
+
+export type AgentPlanSource = 'model' | 'observed';
+
 export interface AgentProgressState {
   phase: AgentProgressPhase;
   label: string;
@@ -72,11 +76,21 @@ export interface AgentPlanItem {
   summary?: string;
   toolNames: string[];
   evidenceItemIds: string[];
+  /** 新计划协议的依赖关系；旧 observed plan 缺失时按空数组处理。 */
+  dependsOn?: string[];
+  /** 模型计划声明的候选工具，不代表工具已经真实执行。 */
+  plannedTools?: string[];
 }
 
 export interface AgentPlanState {
   planId: string;
   revision: number;
+  /** 发送端计划控制模式；旧快照缺失时归一化为 auto。 */
+  mode?: AgentPlanMode;
+  /** plan 的事实来源；model 计划终态必须以服务端 item 状态为准。 */
+  source?: AgentPlanSource;
+  /** 机器可读短码；允许空字符串。 */
+  reason?: string;
   items: AgentPlanItem[];
 }
 
@@ -94,6 +108,7 @@ export interface AgentEvidenceItem {
 
 export interface AgentToolDigest {
   toolCallId: string;
+  planItemId?: string;
   toolName: string;
   status: 'success' | 'failed' | 'degraded' | 'interrupted';
   title: string;
@@ -121,6 +136,7 @@ export interface ToolCallResultSummary {
 
 export interface ToolCallState {
   toolCallId: string;
+  planItemId?: string;
   toolName: string;
   arguments: Record<string, unknown>;
   status: ToolCallStatus;

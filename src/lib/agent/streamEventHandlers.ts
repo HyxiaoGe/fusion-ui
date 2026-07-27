@@ -22,13 +22,17 @@ import {
 } from '@/redux/slices/streamSlice';
 import type {
   AgentEvidenceItem,
-  AgentPlanItem,
   FinalizeToolCallStatus,
   LimitReachedReason,
   ToolCallResultSummary,
 } from '@/types/agentRun';
 import { normalizeContentBlock } from '@/lib/chat/contentBlockRegistry';
 import { isStructuredToolResultBlock } from '@/lib/chat/structuredToolResults';
+import {
+  mapWireAgentPlan,
+  mapWireAgentPlanItem,
+  normalizeAgentPlanMetadata,
+} from '@/lib/agent/planState';
 
 type DispatchLike = (action: unknown) => unknown;
 type RunStartedEvent = Parameters<NonNullable<StreamCallbacks['onRunStarted']>>[0];
@@ -79,6 +83,7 @@ export function createAgentStreamEventHandlers({
         runId: ev.run_id,
         stepId: ev.step_id,
         toolCallId: ev.tool_call_id,
+        planItemId: ev.plan_item_id ?? undefined,
         toolName: ev.tool_name,
         arguments: ev.arguments,
         sequence: ev.sequence,
@@ -98,6 +103,7 @@ export function createAgentStreamEventHandlers({
       dispatch(finalizeToolCall({
         runId: ev.run_id,
         toolCallId: ev.tool_call_id,
+        planItemId: ev.plan_item_id ?? undefined,
         status: ev.status as FinalizeToolCallStatus,
         durationMs: ev.duration_ms,
         resultSummary: ev.result_summary as unknown as ToolCallResultSummary | undefined,
@@ -168,11 +174,7 @@ export function createAgentStreamEventHandlers({
       dispatch(applyPlanSnapshot({
         runId: ev.run_id,
         sequence: ev.sequence,
-        plan: {
-          planId: ev.plan_id,
-          revision: ev.revision,
-          items: ev.items.map(mapPlanItem),
-        },
+        plan: mapWireAgentPlan(ev),
       }));
     },
     onPlanStepUpdated: ev => {
@@ -182,7 +184,8 @@ export function createAgentStreamEventHandlers({
         sequence: ev.sequence,
         planId: ev.plan_id,
         revision: ev.revision,
-        item: mapPlanItem(ev.item),
+        ...normalizeAgentPlanMetadata(ev),
+        item: mapWireAgentPlanItem(ev.item),
       }));
     },
     onToolResultDigest: ev => {
@@ -192,6 +195,7 @@ export function createAgentStreamEventHandlers({
         sequence: ev.sequence,
         digest: {
           toolCallId: ev.tool_call_id,
+          planItemId: ev.plan_item_id ?? undefined,
           toolName: ev.tool_name,
           status: ev.status,
           title: ev.title,
@@ -278,26 +282,6 @@ export function createAgentStreamEventHandlers({
         phase: ev.phase,
       }));
     },
-  };
-}
-
-function mapPlanItem(item: {
-  id: string;
-  title: string;
-  status: AgentPlanItem['status'];
-  kind: AgentPlanItem['kind'];
-  summary?: string | null;
-  tool_names?: string[];
-  evidence_item_ids?: string[];
-}): AgentPlanItem {
-  return {
-    id: item.id,
-    title: item.title,
-    status: item.status,
-    kind: item.kind,
-    summary: item.summary ?? undefined,
-    toolNames: item.tool_names ?? [],
-    evidenceItemIds: item.evidence_item_ids ?? [],
   };
 }
 

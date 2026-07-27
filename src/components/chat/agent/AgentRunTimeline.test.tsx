@@ -369,6 +369,8 @@ describe('AgentRunTimeline', () => {
 
     expect(screen.getByText('正在制定执行计划')).toBeInTheDocument();
     expect(screen.getByText('制定执行计划')).toBeInTheDocument();
+    expect(screen.queryByText('搜索：iPhone为什么要换USB-C接口')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /查看计划流程/ }));
     expect(screen.getByText('搜索：iPhone为什么要换USB-C接口')).toBeInTheDocument();
     expect(screen.queryByText(/执行过程 ·/)).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: '查看执行过程' })).not.toBeInTheDocument();
@@ -407,6 +409,64 @@ describe('AgentRunTimeline', () => {
 
     expect(screen.getByText('执行过程 · 搜索 1 次')).toBeInTheDocument();
     expect(screen.queryByText(/整理答复/)).not.toBeInTheDocument();
+  });
+
+  it('completed model plan 保留服务端计划，不被 ExecutionProcess 替换', () => {
+    renderTimeline(run({
+      protocolVersion: 2,
+      status: 'completed',
+      progress: {
+        phase: 'answering',
+        label: '计划执行完成',
+        completedSteps: 2,
+        totalSteps: 2,
+      },
+      plan: {
+        planId: 'plan-model-r1',
+        revision: 5,
+        mode: 'on',
+        source: 'model',
+        reason: 'model_update',
+        items: [{
+          id: 'compare',
+          title: '比较候选路线并给出结论',
+          status: 'completed',
+          kind: 'other',
+          toolNames: ['route_compare'],
+          evidenceItemIds: [],
+          dependsOn: ['research'],
+          plannedTools: ['route_compare'],
+        }],
+      },
+    }));
+
+    expect(screen.getByText('比较候选路线并给出结论')).toBeInTheDocument();
+    expect(screen.queryByText(/执行过程 ·/)).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '查看执行过程' })).not.toBeInTheDocument();
+  });
+
+  it('completed off observed plan 继续沿用低干扰 ExecutionProcess', () => {
+    renderTimeline(run({
+      status: 'completed',
+      plan: {
+        planId: 'plan-off-r1',
+        revision: 1,
+        mode: 'off',
+        source: 'observed',
+        reason: 'control_rejected',
+        items: [{
+          id: 'search',
+          title: '查找资料',
+          status: 'completed',
+          kind: 'search',
+          toolNames: ['web_search'],
+          evidenceItemIds: [],
+        }],
+      },
+    }));
+
+    expect(screen.getByText('执行过程 · 搜索 1 次')).toBeInTheDocument();
+    expect(screen.queryByText('查找资料')).not.toBeInTheDocument();
   });
 
   it('completed + 真实 url_read 成功时展示读取过程，不伪造搜索过程', () => {

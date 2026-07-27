@@ -6,6 +6,7 @@ import type {
   Message,
   Pagination,
 } from '@/types/conversation';
+import type { AgentPlanMode } from '@/types/agentRun';
 
 export interface ConversationMetadataSnapshot {
   title: string;
@@ -69,6 +70,7 @@ export interface ConversationState {
   pendingConversationId: string | null;
   animatingTitleId: string | null;
   reasoningEnabled: boolean;
+  agentPlanMode: Extract<AgentPlanMode, 'auto' | 'on'>;
   globalError: string | null;
   searchResults: Conversation[] | null;  // null = 未搜索；[] = 搜了但无结果
   isSearching: boolean;
@@ -92,6 +94,7 @@ const initialState: ConversationState = {
   pendingConversationId: null,
   animatingTitleId: null,
   reasoningEnabled: true,
+  agentPlanMode: 'auto',
   globalError: null,
   searchResults: null,
   isSearching: false,
@@ -247,10 +250,11 @@ const conversationSlice = createSlice({
       });
     },
     resetConversationListForAuthChange(state) {
-      const { reasoningEnabled, conversationListEpoch } = state;
+      const { reasoningEnabled, agentPlanMode, conversationListEpoch } = state;
       Object.assign(state, {
         ...initialState,
         reasoningEnabled,
+        agentPlanMode,
         conversationListEpoch: conversationListEpoch + 1,
       });
     },
@@ -510,24 +514,29 @@ const conversationSlice = createSlice({
     setReasoningEnabled(state, action: PayloadAction<boolean>) {
       state.reasoningEnabled = action.payload;
     },
+    setAgentPlanMode(state, action: PayloadAction<Extract<AgentPlanMode, 'auto' | 'on'>>) {
+      state.agentPlanMode = action.payload;
+    },
     setGlobalError(state, action: PayloadAction<string | null>) {
       state.globalError = action.payload;
     },
     resetConversationState(state) {
-      const { reasoningEnabled, conversationListEpoch } = state;
+      const { reasoningEnabled, agentPlanMode, conversationListEpoch } = state;
       Object.assign(state, {
         ...initialState,
         reasoningEnabled,
+        agentPlanMode,
         conversationListEpoch: conversationListEpoch + 1,
       });
     },
   },
   extraReducers: (builder) => {
     builder.addCase(accountSessionSwitchStarted, (state) => {
-      const { reasoningEnabled, conversationListEpoch } = state;
+      const { reasoningEnabled, agentPlanMode, conversationListEpoch } = state;
       Object.assign(state, {
         ...initialState,
         reasoningEnabled,
+        agentPlanMode,
         conversationListEpoch: conversationListEpoch + 1,
       });
     });
@@ -557,6 +566,7 @@ export const {
   setLoadingList,
   setLoadingMore,
   setPendingConversationId,
+  setAgentPlanMode,
   setReasoningEnabled,
   setSearchError,
   setSearchLoading,

@@ -165,6 +165,7 @@ export function useSendMessage() {
   const models = useAppSelector((state) => state.models.models);
   const selectedModelId = useAppSelector((state) => state.models.selectedModelId);
   const reasoningEnabled = useAppSelector((state) => state.conversation.reasoningEnabled);
+  const agentPlanMode = useAppSelector((state) => state.conversation.agentPlanMode);
   const authSessionKey = useAppSelector(selectAuthSessionKey);
   const conversationEpoch = useAppSelector(
     (state) => state.conversation.conversationListEpoch
@@ -394,6 +395,9 @@ export function useSendMessage() {
         dispatch(setGlobalError('没有可用的模型，请先在设置中启用一个模型'));
         return;
       }
+      const effectiveAgentPlanMode = enabledModel.capabilities?.functionCalling
+        ? agentPlanMode
+        : 'off';
 
       const nextGeneration = sendGenerationRef.current + 1;
       const sendContext = captureSendSessionContext(store.getState(), nextGeneration);
@@ -685,7 +689,10 @@ export function useSendMessage() {
               user_message_id: userMessageId,
               assistant_message_id: assistantMessageId,
               stream: true,
-              options: { use_reasoning: useReasoning },
+              options: {
+                use_reasoning: useReasoning,
+                plan_mode: effectiveAgentPlanMode,
+              },
               file_ids: fileIds,
             },
             wrappedCallbacks,
@@ -773,6 +780,7 @@ export function useSendMessage() {
     },
     [
       dispatch,
+      agentPlanMode,
       hydrateAuthoritativeConversation,
       models,
       reasoningEnabled,

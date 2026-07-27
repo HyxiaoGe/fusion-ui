@@ -8,6 +8,7 @@ import reducer, {
   requestConversationListRefresh,
   resetConversationState,
   acknowledgeConversationListRefresh,
+  setAgentPlanMode,
   setConversationList,
   setHydrationStatus,
   setLastReadyConversationSnapshot,
@@ -39,6 +40,14 @@ function textMessage(id: string): Message {
 }
 
 describe('conversationSlice', () => {
+  it('切换计划模式并在会话状态重置后保留用户选择', () => {
+    const enabled = reducer(undefined, setAgentPlanMode('on'));
+    const reset = reducer(enabled, resetConversationState());
+
+    expect(enabled.agentPlanMode).toBe('on');
+    expect(reset.agentPlanMode).toBe('on');
+  });
+
   it('会话列表 dirty id 去重排队，并只确认已完成的 id', () => {
     let state = reducer(undefined, requestConversationListRefresh('conv-1'));
     state = reducer(state, requestConversationListRefresh('conv-1'));
@@ -255,6 +264,7 @@ describe('conversationSlice', () => {
       pendingConversationId: null,
       animatingTitleId: null,
       reasoningEnabled: true,
+      agentPlanMode: 'auto',
       globalError: null,
       searchResults: null,
       isSearching: false,
@@ -314,6 +324,7 @@ describe('conversationSlice', () => {
       pendingConversationId: null,
       animatingTitleId: null,
       reasoningEnabled: true,
+      agentPlanMode: 'auto',
       globalError: null,
       searchResults: null,
       isSearching: false,
@@ -363,6 +374,7 @@ describe('conversationSlice', () => {
       pendingConversationId: 'temp',
       animatingTitleId: null,
       reasoningEnabled: true,
+      agentPlanMode: 'auto',
       globalError: null,
       searchResults: null,
       isSearching: false,

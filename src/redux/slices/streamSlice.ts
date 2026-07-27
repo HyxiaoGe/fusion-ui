@@ -11,6 +11,8 @@ import { accountSessionSwitchStarted } from '@/redux/actions/authSessionActions'
 import type {
   AgentEvidenceItem,
   AgentPlanItem,
+  AgentPlanMode,
+  AgentPlanSource,
   AgentPlanState,
   AgentProgressState,
   AgentRunState,
@@ -24,6 +26,11 @@ import type {
   LimitReachedReason,
   ToolCallResultSummary,
 } from '@/types/agentRun';
+import {
+  normalizeAgentPlanItem,
+  normalizeAgentPlanMetadata,
+  normalizeAgentPlanState,
+} from '@/lib/agent/planState';
 
 export interface StreamState {
   // ── 流元信息 ──
@@ -372,9 +379,14 @@ const streamSlice = createSlice({
       const run = state.currentRun;
       const { runId, sequence, plan } = action.payload;
       if (!run || run.runId !== runId || sequence <= run.lastSequence) return;
+      if (
+        run.plan
+        && run.plan.planId === plan.planId
+        && plan.revision <= run.plan.revision
+      ) return;
       run.lastSequence = sequence;
       run.protocolVersion = 2;
-      run.plan = plan;
+      run.plan = normalizeAgentPlanState(plan);
     },
 
     updatePlanStep(
@@ -384,22 +396,29 @@ const streamSlice = createSlice({
         sequence: number;
         planId: string;
         revision: number;
+        mode?: AgentPlanMode;
+        source?: AgentPlanSource;
+        reason?: string;
         item: AgentPlanItem;
       }>
     ) {
       const run = state.currentRun;
-      const { runId, sequence, planId, revision, item } = action.payload;
+      const { runId, sequence, planId, revision, item, mode, source, reason } = action.payload;
       if (!run || run.runId !== runId || sequence <= run.lastSequence) return;
       if (!run.plan || run.plan.planId !== planId || revision <= run.plan.revision) return;
       run.lastSequence = sequence;
       run.protocolVersion = 2;
+      const normalizedItem = normalizeAgentPlanItem(item);
       const index = run.plan.items.findIndex(existing => existing.id === item.id);
       if (index >= 0) {
-        run.plan.items[index] = item;
+        run.plan.items[index] = normalizedItem;
       } else {
-        run.plan.items.push(item);
+        run.plan.items.push(normalizedItem);
       }
       run.plan.revision = revision;
+      if (mode !== undefined || source !== undefined || reason !== undefined) {
+        Object.assign(run.plan, normalizeAgentPlanMetadata({ mode, source, reason }));
+      }
     },
 
     upsertToolDigest(
@@ -417,7 +436,12 @@ const streamSlice = createSlice({
       }
       const index = run.toolDigests.findIndex(existing => existing.toolCallId === digest.toolCallId);
       if (index >= 0) {
-        run.toolDigests[index] = digest;
+        const existingPlanItemId = run.toolDigests[index].planItemId;
+        run.toolDigests[index] = (
+          digest.planItemId === undefined && existingPlanItemId !== undefined
+            ? { ...digest, planItemId: existingPlanItemId }
+            : digest
+        );
       } else {
         run.toolDigests.push(digest);
       }
@@ -487,19 +511,29 @@ const streamSlice = createSlice({
         runId: string;
         stepId: string;
         toolCallId: string;
+        planItemId?: string;
         toolName: string;
         arguments: Record<string, unknown>;
         sequence: number;
       }>
     ) {
       const run = state.currentRun;
-      const { runId, stepId, toolCallId, toolName, arguments: args, sequence } = action.payload;
+      const {
+        runId,
+        stepId,
+        toolCallId,
+        planItemId,
+        toolName,
+        arguments: args,
+        sequence,
+      } = action.payload;
       if (!run || run.runId !== runId || sequence <= run.lastSequence) return;
       run.lastSequence = sequence;
       const step = run.steps.find(s => s.stepId === stepId);
       if (!step) return; // defensive: step 应该已存在
       step.toolCalls.push({
         toolCallId,
+        ...(planItemId ? { planItemId } : {}),
         toolName,
         arguments: args,
         status: 'running',
@@ -544,6 +578,7 @@ const streamSlice = createSlice({
       action: PayloadAction<{
         runId: string;
         toolCallId: string;
+        planItemId?: string;
         status: 'success' | 'failed' | 'degraded';
         durationMs: number;
         resultSummary?: ToolCallResultSummary;
@@ -552,13 +587,22 @@ const streamSlice = createSlice({
       }>
     ) {
       const run = state.currentRun;
-      const { runId, toolCallId, status, durationMs, resultSummary, error, sequence } =
-        action.payload;
+      const {
+        runId,
+        toolCallId,
+        planItemId,
+        status,
+        durationMs,
+        resultSummary,
+        error,
+        sequence,
+      } = action.payload;
       if (!run || run.runId !== runId || sequence <= run.lastSequence) return;
       run.lastSequence = sequence;
       for (const step of run.steps) {
         const tc = step.toolCalls.find(t => t.toolCallId === toolCallId);
         if (tc) {
+          if (planItemId) tc.planItemId = planItemId;
           tc.status = status;
           tc.completedAt = Date.now();
           if (resultSummary) tc.resultSummary = resultSummary;

@@ -573,6 +573,149 @@ describe('streamSlice — agent run timeline', () => {
     expect(s.currentRun?.plan?.items[0].status).toBe('completed');
   });
 
+  it('plan snapshot 同时按 sequence 和 revision 防乱序，并允许新 plan 重置 revision', () => {
+    let s = reducer(initial(), initRun({
+      runId: 'r1',
+      messageId: 'm1',
+      config: baseConfig,
+      sequence: 0,
+    }));
+    s = reducer(s, applyPlanSnapshot({
+      runId: 'r1',
+      sequence: 5,
+      plan: {
+        planId: 'plan-r1',
+        revision: 3,
+        mode: 'on',
+        source: 'model',
+        reason: 'model_update',
+        items: [{
+          id: 'research',
+          title: '研究最新资料',
+          status: 'running',
+          kind: 'other',
+          toolNames: [],
+          evidenceItemIds: [],
+          dependsOn: [],
+          plannedTools: ['web_search'],
+        }],
+      },
+    }));
+
+    s = reducer(s, applyPlanSnapshot({
+      runId: 'r1',
+      sequence: 9,
+      plan: {
+        planId: 'plan-r1',
+        revision: 2,
+        mode: 'on',
+        source: 'model',
+        reason: 'model_update',
+        items: [{
+          id: 'research',
+          title: '旧计划不得覆盖',
+          status: 'pending',
+          kind: 'other',
+          toolNames: [],
+          evidenceItemIds: [],
+        }],
+      },
+    }));
+
+    expect(s.currentRun?.plan?.revision).toBe(3);
+    expect(s.currentRun?.plan?.items[0].title).toBe('研究最新资料');
+    expect(s.currentRun?.lastSequence).toBe(5);
+
+    s = reducer(s, updateRunProgress({
+      runId: 'r1',
+      sequence: 9,
+      progress: { phase: 'researching', label: '同 sequence 的有效事件' },
+    }));
+    expect(s.currentRun?.progress?.label).toBe('同 sequence 的有效事件');
+    expect(s.currentRun?.lastSequence).toBe(9);
+
+    s = reducer(s, applyPlanSnapshot({
+      runId: 'r1',
+      sequence: 8,
+      plan: {
+        planId: 'plan-r1',
+        revision: 4,
+        items: [],
+      },
+    }));
+    expect(s.currentRun?.plan?.revision).toBe(3);
+
+    s = reducer(s, applyPlanSnapshot({
+      runId: 'r1',
+      sequence: 10,
+      plan: {
+        planId: 'plan-r2',
+        revision: 1,
+        mode: 'auto',
+        source: 'observed',
+        reason: 'legacy_observed',
+        items: [],
+      },
+    }));
+    expect(s.currentRun?.plan).toMatchObject({
+      planId: 'plan-r2',
+      revision: 1,
+      mode: 'auto',
+      source: 'observed',
+      reason: 'legacy_observed',
+    });
+    expect(s.currentRun?.lastSequence).toBe(10);
+  });
+
+  it('plan step update 同步根元数据与 item 依赖工具信息', () => {
+    let s = reducer(initial(), initRun({
+      runId: 'r1',
+      messageId: 'm1',
+      config: baseConfig,
+      sequence: 0,
+    }));
+    s = reducer(s, applyPlanSnapshot({
+      runId: 'r1',
+      sequence: 1,
+      plan: {
+        planId: 'plan-r1',
+        revision: 1,
+        items: [],
+      },
+    }));
+    s = reducer(s, updatePlanStep({
+      runId: 'r1',
+      sequence: 2,
+      planId: 'plan-r1',
+      revision: 2,
+      mode: 'on',
+      source: 'model',
+      reason: 'plan_required',
+      item: {
+        id: 'compare',
+        title: '比较候选方案',
+        status: 'running',
+        kind: 'other',
+        toolNames: [],
+        evidenceItemIds: [],
+        dependsOn: ['research'],
+        plannedTools: ['route_compare'],
+      },
+    }));
+
+    expect(s.currentRun?.plan).toMatchObject({
+      revision: 2,
+      mode: 'on',
+      source: 'model',
+      reason: 'plan_required',
+      items: [{
+        id: 'compare',
+        dependsOn: ['research'],
+        plannedTools: ['route_compare'],
+      }],
+    });
+  });
+
   it('agent plan v2 实时推进搜索、读取、整理回答状态', () => {
     let s = reducer(initial(), initRun({ runId: 'r1', messageId: 'm1', config: baseConfig, sequence: 0 }));
     s = reducer(s, applyPlanSnapshot({
@@ -888,6 +1031,88 @@ describe('streamSlice — agent run timeline', () => {
     expect(s.currentRun?.steps[0].toolCalls).toHaveLength(1);
     expect(s.currentRun?.steps[0].toolCalls[0].status).toBe('running');
     expect(s.currentRun?.totalToolCalls).toBe(1);
+  });
+
+  it('工具调用和摘要保留 planItemId，completed 可为重连中的 started 事件补回关联', () => {
+    let s = reducer(initial(), initRun({ runId: 'r1', messageId: 'm1', config: baseConfig, sequence: 0 }));
+    s = reducer(s, pushStep({ runId: 'r1', stepId: 's1', stepNumber: 1, sequence: 1 }));
+    s = reducer(s, pushToolCall({
+      runId: 'r1',
+      stepId: 's1',
+      toolCallId: 't1',
+      toolName: 'route_compare',
+      arguments: {},
+      sequence: 2,
+    }));
+    s = reducer(s, finalizeToolCall({
+      runId: 'r1',
+      toolCallId: 't1',
+      planItemId: 'compare-routes',
+      status: 'success',
+      durationMs: 42,
+      sequence: 3,
+    }));
+    s = reducer(s, upsertToolDigest({
+      runId: 'r1',
+      sequence: 4,
+      digest: {
+        toolCallId: 't1',
+        planItemId: 'compare-routes',
+        toolName: 'route_compare',
+        status: 'success',
+        title: '路线比较完成',
+        summary: '已比较 3 种出行方式',
+        keyFindings: [],
+        sourceRefs: [],
+        truncated: false,
+      },
+    }));
+    s = reducer(s, upsertToolDigest({
+      runId: 'r1',
+      sequence: 5,
+      digest: {
+        toolCallId: 't1',
+        toolName: 'route_compare',
+        status: 'success',
+        title: '路线比较已更新',
+        summary: '补充了路线细节',
+        keyFindings: [],
+        sourceRefs: [],
+        truncated: false,
+      },
+    }));
+
+    expect(s.currentRun?.steps[0].toolCalls[0]).toMatchObject({
+      toolCallId: 't1',
+      planItemId: 'compare-routes',
+      status: 'success',
+    });
+    expect(s.currentRun?.toolDigests?.[0]).toMatchObject({
+      toolCallId: 't1',
+      planItemId: 'compare-routes',
+    });
+  });
+
+  it('旧工具事件缺少 planItemId 时保持兼容', () => {
+    let s = reducer(initial(), initRun({ runId: 'r1', messageId: 'm1', config: baseConfig, sequence: 0 }));
+    s = reducer(s, pushStep({ runId: 'r1', stepId: 's1', stepNumber: 1, sequence: 1 }));
+    s = reducer(s, pushToolCall({
+      runId: 'r1',
+      stepId: 's1',
+      toolCallId: 't1',
+      toolName: 'web_search',
+      arguments: {},
+      sequence: 2,
+    }));
+    s = reducer(s, finalizeToolCall({
+      runId: 'r1',
+      toolCallId: 't1',
+      status: 'success',
+      durationMs: 42,
+      sequence: 3,
+    }));
+
+    expect(s.currentRun?.steps[0].toolCalls[0]).not.toHaveProperty('planItemId');
   });
 
   it('mergeToolCallDelta 浅合并字段不覆盖 status', () => {

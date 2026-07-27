@@ -8,7 +8,7 @@ import { startPollingFileStatus, stopPollingFileStatus } from "@/lib/api/FileSta
 import { useAppDispatch, useAppSelector } from "@/redux/hooks";
 import type { RootState } from "@/redux/store";
 import { selectAuthSessionKey, selectChatModel, selectIsAuthenticated } from "@/redux/selectors";
-import { setReasoningEnabled } from "@/redux/slices/conversationSlice";
+import { setAgentPlanMode, setReasoningEnabled } from "@/redux/slices/conversationSlice";
 import {
   addFileId,
   clearFiles,
@@ -17,7 +17,7 @@ import {
   updateFileStatus,
   type FileProcessingStatus,
 } from "@/redux/slices/fileUploadSlice";
-import { ArrowUp, Lightbulb, PaperclipIcon, Square } from "lucide-react";
+import { ArrowUp, Lightbulb, ListChecks, PaperclipIcon, Square } from "lucide-react";
 import ImageViewer from "./ImageViewer";
 import ModelSelector from "@/components/models/ModelSelector";
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
@@ -158,6 +158,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
   const previousAuthIdentityRef = useRef<string | null>(authIdentity);
   const processingFiles = useAppSelector((state) => state.fileUpload.processingFiles);
   const reasoningEnabled = useAppSelector((state) => state.conversation.reasoningEnabled);
+  const agentPlanMode = useAppSelector((state) => state.conversation.agentPlanMode);
   const isStreaming = useAppSelector((state) => state.stream.isStreaming);
   const selectContextStatus = useMemo(
     () => makeSelectConversationContextStatus(activeChatId),
@@ -193,6 +194,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
   const isComposerBlocked = disabled || isCurrentModelUnavailable;
 
   const supportsReasoning = hasHydrated && Boolean(selectedModel?.capabilities?.deepThinking);
+  const supportsAgentPlan = hasHydrated && Boolean(selectedModel?.capabilities?.functionCalling);
   const supportsFileUpload = hasHydrated && Boolean(selectedModel?.capabilities?.vision);
 
   useEffect(() => {
@@ -1093,6 +1095,30 @@ const ChatInput: React.FC<ChatInputProps> = ({
             >
               <Lightbulb className={`h-4 w-4 ${reasoningEnabled && supportsReasoning ? "text-info" : ""}`} />
               <span className="hidden text-xs min-[420px]:inline">{reasoningEnabled && supportsReasoning ? "思考已开" : "思考"}</span>
+            </Button>
+
+            {/* 计划模式按钮：开启后要求模型在复杂执行前给出语义计划 */}
+            <Button
+              variant="ghost"
+              size="sm"
+              className={`h-8 px-2 gap-1.5 text-muted-foreground hover:text-foreground ${!supportsAgentPlan ? "opacity-50 cursor-not-allowed" : ""}`}
+              onClick={() => {
+                if (!supportsAgentPlan || isComposerBlocked) return;
+                dispatch(setAgentPlanMode(agentPlanMode === "on" ? "auto" : "on"));
+              }}
+              disabled={!supportsAgentPlan || isComposerBlocked}
+              aria-label="计划模式"
+              aria-pressed={agentPlanMode === "on" && supportsAgentPlan}
+              title={
+                supportsAgentPlan
+                  ? (agentPlanMode === "on" ? "回答前生成执行计划" : "按任务复杂度自动规划")
+                  : "当前模型不支持计划模式"
+              }
+            >
+              <ListChecks className={`h-4 w-4 ${agentPlanMode === "on" && supportsAgentPlan ? "text-primary" : ""}`} />
+              <span className="hidden text-xs min-[520px]:inline">
+                {agentPlanMode === "on" && supportsAgentPlan ? "计划已开" : "计划"}
+              </span>
             </Button>
 
           </div>

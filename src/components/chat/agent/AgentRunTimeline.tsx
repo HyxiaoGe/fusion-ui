@@ -150,6 +150,7 @@ function AgentRunTimelineContent({
 function shouldRenderCompletedProcess(run: AgentRunState, hasExecutionProcess: boolean): boolean {
   return run.status === 'completed'
     && !run.limitReachedReason
+    && !hasModelPlan(run)
     && hasExecutionProcess;
 }
 
@@ -170,6 +171,9 @@ function shouldHideCompletedRun(run: AgentRunState): boolean {
 }
 
 function hasReadableProgress(run: AgentRunState): boolean {
+  if (hasModelPlan(run)) {
+    return true;
+  }
   if (run.status === 'completed' && !run.limitReachedReason) {
     return false;
   }
@@ -180,4 +184,8 @@ function hasReadableProgress(run: AgentRunState): boolean {
     || run.toolDigests?.length
     || run.evidence?.length
   );
+}
+
+function hasModelPlan(run: AgentRunState): boolean {
+  return run.plan?.source === 'model' && Boolean(run.plan.items.length);
 }

@@ -1,7 +1,10 @@
 import type { Conversation, Message } from '@/types/conversation';
 import type {
   AgentEvidenceItem,
-  AgentPlanItem,
+  AgentPlanItemKind,
+  AgentPlanItemStatus,
+  AgentPlanMode,
+  AgentPlanSource,
   AgentProgressState,
   AgentRunState,
   AgentRunStatus,
@@ -11,6 +14,7 @@ import type {
 import { parseTimestamp } from '@/lib/utils/parseTimestamp';
 import { normalizeContextUsage } from '@/lib/chat/contextUsage';
 import { normalizeContentBlocks } from '@/lib/chat/contentBlockRegistry';
+import { mapWireAgentPlan } from '@/lib/agent/planState';
 
 // 服务端返回的原始类型（对齐后端 schema）
 interface ServerUsage {
@@ -45,6 +49,9 @@ interface ServerAgentProgressSnapshot {
   plan?: {
     plan_id: string;
     revision: number;
+    mode?: AgentPlanMode | null;
+    source?: AgentPlanSource | null;
+    reason?: string | null;
     items: ServerAgentPlanItem[];
   } | null;
   tool_digests?: ServerAgentToolDigest[] | null;
@@ -54,15 +61,18 @@ interface ServerAgentProgressSnapshot {
 interface ServerAgentPlanItem {
   id: string;
   title: string;
-  status: AgentPlanItem['status'];
-  kind: AgentPlanItem['kind'];
+  status: AgentPlanItemStatus;
+  kind: AgentPlanItemKind;
   summary?: string | null;
   tool_names?: string[] | null;
   evidence_item_ids?: string[] | null;
+  depends_on?: string[] | null;
+  planned_tools?: string[] | null;
 }
 
 interface ServerAgentToolDigest {
   tool_call_id: string;
+  plan_item_id?: string | null;
   tool_name: string;
   status: AgentToolDigest['status'];
   title: string;
@@ -178,11 +188,7 @@ function buildAgentProgressPatch(
     };
   }
   if (snapshot.plan) {
-    patch.plan = {
-      planId: snapshot.plan.plan_id,
-      revision: snapshot.plan.revision,
-      items: snapshot.plan.items.map(mapPlanItem),
-    };
+    patch.plan = mapWireAgentPlan(snapshot.plan);
   }
   if (snapshot.tool_digests) {
     patch.toolDigests = reconcileToolDigests(snapshot.tool_digests.map(mapToolDigest));
@@ -193,21 +199,10 @@ function buildAgentProgressPatch(
   return patch;
 }
 
-function mapPlanItem(item: ServerAgentPlanItem): AgentPlanItem {
-  return {
-    id: item.id,
-    title: item.title,
-    status: item.status,
-    kind: item.kind,
-    summary: item.summary ?? undefined,
-    toolNames: item.tool_names ?? [],
-    evidenceItemIds: item.evidence_item_ids ?? [],
-  };
-}
-
 function mapToolDigest(digest: ServerAgentToolDigest): AgentToolDigest {
   return {
     toolCallId: digest.tool_call_id,
+    ...(digest.plan_item_id ? { planItemId: digest.plan_item_id } : {}),
     toolName: digest.tool_name,
     status: digest.status,
     title: digest.title,

@@ -18,6 +18,7 @@ const {
   startPollingFileStatusMock,
   stopPollingFileStatusMock,
   setReasoningEnabledMock,
+  setAgentPlanModeMock,
   clearFilesMock,
   addFileIdMock,
   updateFileStatusMock,
@@ -36,6 +37,7 @@ const {
       },
       conversation: {
         reasoningEnabled: false,
+        agentPlanMode: 'auto',
         byId: {},
       },
       stream: {
@@ -74,6 +76,7 @@ const {
     startPollingFileStatusMock: vi.fn(),
     stopPollingFileStatusMock: vi.fn(),
     setReasoningEnabledMock: action('conversation/setReasoningEnabled'),
+    setAgentPlanModeMock: action('conversation/setAgentPlanMode'),
     clearFilesMock: action('fileUpload/clearFiles'),
     addFileIdMock: action('fileUpload/addFileId'),
     updateFileStatusMock: action('fileUpload/updateFileStatus'),
@@ -106,6 +109,7 @@ vi.mock('@/components/ui/toast', () => ({
 
 vi.mock('@/redux/slices/conversationSlice', () => ({
   setReasoningEnabled: setReasoningEnabledMock,
+  setAgentPlanMode: setAgentPlanModeMock,
 }));
 
 vi.mock('@/redux/slices/fileUploadSlice', () => ({
@@ -171,6 +175,7 @@ function configureAuthenticatedVisionModel(userId = 'user-a') {
       capabilities: {
         vision: true,
         deepThinking: true,
+        functionCalling: true,
       },
     },
   ];
@@ -215,6 +220,7 @@ describe('ChatInput', () => {
     startPollingFileStatusMock.mockReset();
     stopPollingFileStatusMock.mockReset();
     setReasoningEnabledMock.mockClear();
+    setAgentPlanModeMock.mockClear();
     clearFilesMock.mockClear();
     addFileIdMock.mockClear();
     updateFileStatusMock.mockClear();
@@ -224,6 +230,7 @@ describe('ChatInput', () => {
     currentState.models.selectedModelId = null;
     currentState.models.isLoading = false;
     currentState.conversation.reasoningEnabled = false;
+    currentState.conversation.agentPlanMode = 'auto';
     currentState.conversation.byId = {};
     currentState.stream.isStreaming = false;
     currentState.stream.conversationId = null;
@@ -622,6 +629,7 @@ describe('ChatInput', () => {
         capabilities: {
           vision: true,
           deepThinking: true,
+          functionCalling: true,
         },
       },
     ];
@@ -658,6 +666,7 @@ describe('ChatInput', () => {
         capabilities: {
           vision: true,
           deepThinking: true,
+          functionCalling: true,
         },
       },
     ];
@@ -1519,6 +1528,7 @@ describe('ChatInput', () => {
         capabilities: {
           vision: true,
           deepThinking: true,
+          functionCalling: true,
         },
       },
     ];
@@ -1535,10 +1545,13 @@ describe('ChatInput', () => {
 
     expect(screen.getByRole('button', { name: '上传图片' })).toBeEnabled();
     expect(screen.getByRole('button', { name: '思考模式' })).toHaveAttribute('aria-pressed', 'false');
+    expect(screen.getByRole('button', { name: '计划模式' })).toHaveAttribute('aria-pressed', 'false');
     expect(screen.getByRole('button', { name: '发送消息' })).toBeDisabled();
 
     fireEvent.click(screen.getByRole('button', { name: '思考模式' }));
     expect(setReasoningEnabledMock).toHaveBeenCalledWith(true);
+    fireEvent.click(screen.getByRole('button', { name: '计划模式' }));
+    expect(setAgentPlanModeMock).toHaveBeenCalledWith('on');
 
     fireEvent.change(screen.getByPlaceholderText('发消息给 Fusion AI（Enter 发送）'), {
       target: {
@@ -1551,6 +1564,7 @@ describe('ChatInput', () => {
     expect(onSendMessage).toHaveBeenCalledWith('你好');
 
     currentState.conversation.reasoningEnabled = true;
+    currentState.conversation.agentPlanMode = 'on';
     rerender(
       <ChatInput
         onSendMessage={onSendMessage}
@@ -1560,6 +1574,7 @@ describe('ChatInput', () => {
     );
 
     expect(screen.getByRole('button', { name: '思考模式' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: '计划模式' })).toHaveAttribute('aria-pressed', 'true');
 
     currentState.stream.isStreaming = true;
     rerender(

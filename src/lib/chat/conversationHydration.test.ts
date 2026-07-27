@@ -851,6 +851,9 @@ describe('conversationHydration', () => {
               plan: {
                 plan_id: 'plan-run-1',
                 revision: 2,
+                mode: 'on',
+                source: 'model',
+                reason: 'model_update',
                 items: [
                   {
                     id: 'search',
@@ -860,12 +863,15 @@ describe('conversationHydration', () => {
                     summary: '找到 2 条来源',
                     tool_names: ['web_search'],
                     evidence_item_ids: ['ev-1'],
+                    depends_on: ['understand'],
+                    planned_tools: ['web_search', 'url_read'],
                   },
                 ],
               },
               tool_digests: [
                 {
                   tool_call_id: 'tc-1',
+                  plan_item_id: 'search',
                   tool_name: 'web_search',
                   status: 'success',
                   title: '搜索资料',
@@ -908,6 +914,9 @@ describe('conversationHydration', () => {
       plan: {
         planId: 'plan-run-1',
         revision: 2,
+        mode: 'on',
+        source: 'model',
+        reason: 'model_update',
         items: [
           {
             id: 'search',
@@ -917,12 +926,15 @@ describe('conversationHydration', () => {
             summary: '找到 2 条来源',
             toolNames: ['web_search'],
             evidenceItemIds: ['ev-1'],
+            dependsOn: ['understand'],
+            plannedTools: ['web_search', 'url_read'],
           },
         ],
       },
       toolDigests: [
         {
           toolCallId: 'tc-1',
+          planItemId: 'search',
           toolName: 'web_search',
           status: 'success',
           title: '搜索资料',
@@ -945,6 +957,54 @@ describe('conversationHydration', () => {
           usedByFinalAnswer: true,
         },
       ],
+    });
+  });
+
+  it('旧历史 plan 缺少新元数据时归一化为 observed 兼容状态', () => {
+    const chat = buildChatFromServerConversation({
+      id: 'chat-legacy-plan',
+      title: 'Legacy plan',
+      model_id: 'deepseek-chat',
+      messages: [{
+        id: 'assistant-legacy',
+        role: 'assistant',
+        content: [{ type: 'text', id: 'answer', text: '旧回答' }],
+        agent_run: {
+          run_id: 'run-legacy',
+          status: 'completed',
+          progress: {
+            plan: {
+              plan_id: 'plan-legacy',
+              revision: 1,
+              items: [{
+                id: 'answer',
+                title: '整理回答',
+                status: 'completed',
+                kind: 'answer',
+              }],
+            },
+          },
+        },
+      } as any],
+    });
+
+    expect(chat.messages[0].agent_run?.plan).toEqual({
+      planId: 'plan-legacy',
+      revision: 1,
+      mode: 'auto',
+      source: 'observed',
+      reason: 'legacy_observed',
+      items: [{
+        id: 'answer',
+        title: '整理回答',
+        status: 'completed',
+        kind: 'answer',
+        summary: undefined,
+        toolNames: [],
+        evidenceItemIds: [],
+        dependsOn: [],
+        plannedTools: [],
+      }],
     });
   });
 

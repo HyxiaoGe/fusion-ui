@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import authReducer, { logout } from '@/redux/slices/authSlice';
 import conversationReducer, {
   appendMessage,
+  setAgentPlanMode,
   setHydrationStatus,
 } from '@/redux/slices/conversationSlice';
 import modelsReducer from '@/redux/slices/modelsSlice';
@@ -14,6 +15,7 @@ import streamReducer from '@/redux/slices/streamSlice';
 import { resetConversationState, upsertConversation } from '@/redux/slices/conversationSlice';
 import { useSendMessage } from './useSendMessage';
 import type { StreamCallbacks } from '@/lib/api/chat';
+import type { Message } from '@/types/conversation';
 import {
   loadConversationDetail,
   resetConversationDetailResource,
@@ -66,7 +68,7 @@ function createUser(id: string) {
   };
 }
 
-function createStore() {
+function createStore({ functionCalling = true }: { functionCalling?: boolean } = {}) {
   return configureStore({
     reducer: {
       auth: authReducer,
@@ -97,6 +99,7 @@ function createStore() {
             capabilities: {
               deepThinking: true,
               fileSupport: false,
+              functionCalling,
             },
           },
         ],
@@ -110,7 +113,10 @@ function createStore() {
 
 function createWrapper(store: ReturnType<typeof createStore>) {
   return function TestWrapper({ children }: { children: React.ReactNode }) {
-    return React.createElement(Provider, { store }, children);
+    const TypedProvider = Provider as React.ComponentType<{
+      store: ReturnType<typeof createStore>;
+    }>;
+    return React.createElement(TypedProvider, { store }, children);
   };
 }
 
@@ -222,6 +228,67 @@ describe('useSendMessage', () => {
     });
   });
 
+  it('把用户开启的计划模式作为受控请求选项发送给后端', async () => {
+    const store = createStore();
+    store.dispatch(setAgentPlanMode('on'));
+    sendMessageStreamMock.mockImplementation(
+      async (_payload: any, callbacks: StreamCallbacks) => {
+        callbacks.onReady({ messageId: 'assistant-1', conversationId: 'server-conv' });
+        callbacks.onAnswering({ block_id: 'blk_c', delta: 'answer' });
+        callbacks.onDone({ messageId: 'assistant-1', conversationId: 'server-conv' });
+      }
+    );
+
+    const { result } = renderHook(() => useSendMessage(), {
+      wrapper: createWrapper(store),
+    });
+
+    await act(async () => {
+      await result.current.sendMessage('规划一次复杂行程', { conversationId: null });
+    });
+
+    expect(sendMessageStreamMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        options: expect.objectContaining({
+          use_reasoning: true,
+          plan_mode: 'on',
+        }),
+      }),
+      expect.any(Object),
+      expect.any(AbortSignal),
+    );
+  });
+
+  it('切换到不支持工具调用的模型后不会发送不可满足的强制计划模式', async () => {
+    const store = createStore({ functionCalling: false });
+    store.dispatch(setAgentPlanMode('on'));
+    sendMessageStreamMock.mockImplementation(
+      async (_payload: any, callbacks: StreamCallbacks) => {
+        callbacks.onReady({ messageId: 'assistant-1', conversationId: 'server-conv' });
+        callbacks.onAnswering({ block_id: 'blk_c', delta: 'answer' });
+        callbacks.onDone({ messageId: 'assistant-1', conversationId: 'server-conv' });
+      }
+    );
+
+    const { result } = renderHook(() => useSendMessage(), {
+      wrapper: createWrapper(store),
+    });
+
+    await act(async () => {
+      await result.current.sendMessage('直接回答', { conversationId: null });
+    });
+
+    expect(sendMessageStreamMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        options: expect.objectContaining({
+          plan_mode: 'off',
+        }),
+      }),
+      expect.any(Object),
+      expect.any(AbortSignal),
+    );
+  });
+
   it('发送开始会让发送前详情请求失效，并立即解除旧 loading 状态', async () => {
     const store = createStore();
     store.dispatch(
@@ -280,7 +347,7 @@ describe('useSendMessage', () => {
       name: 'StaleConversationDetailRequestError',
     });
     expect(
-      store.getState().conversation.byId['existing-conv'].messages.map((message) => message.id)
+      store.getState().conversation.byId['existing-conv'].messages.map((message: Message) => message.id)
     ).toEqual(['local-user', 'local-assistant']);
 
     await act(async () => {
@@ -351,7 +418,7 @@ describe('useSendMessage', () => {
 
     await waitFor(() => {
       expect(
-        store.getState().conversation.byId['existing-conv'].messages.map((message) => message.id)
+        store.getState().conversation.byId['existing-conv'].messages.map((message: Message) => message.id)
       ).toEqual([
         'history-user',
         'history-assistant',
@@ -359,7 +426,7 @@ describe('useSendMessage', () => {
         'server-assistant',
       ]);
     });
-    const messages = store.getState().conversation.byId['existing-conv'].messages;
+    const messages = store.getState().conversation.byId['existing-conv'].messages as Message[];
     expect(messages.map((message) => message.sequence)).toEqual([1, 2, 3, 4]);
     expect(messages.some((message) => message.id === 'local-user')).toBe(false);
     expect(messages.some((message) => message.id === 'local-assistant')).toBe(false);
@@ -444,7 +511,7 @@ describe('useSendMessage', () => {
 
     await waitFor(() => {
       expect(
-        store.getState().conversation.byId['existing-conv'].messages.map((message) => message.id)
+        store.getState().conversation.byId['existing-conv'].messages.map((message: Message) => message.id)
       ).toEqual(['local-user', 'local-assistant', 'later-user']);
     });
     expect(store.getState().conversation.byId['existing-conv'].messages[1]).toEqual(

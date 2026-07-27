@@ -9,6 +9,8 @@ import type {
   AgentEventEnvelope,
   AgentPlanItemKind,
   AgentPlanItemStatus,
+  AgentPlanMode,
+  AgentPlanSource,
   AgentProgressPhase,
   SseEnvelope,
   SubmitAgentContextResultInput,
@@ -32,6 +34,7 @@ export interface ChatRequest {
   stream?: boolean;
   options?: {
     use_reasoning?: boolean;
+    plan_mode?: AgentPlanMode;
     temperature?: number;
     max_tokens?: number;
     [key: string]: unknown;
@@ -211,6 +214,7 @@ export interface StreamCallbacks {
   onToolCallStarted?: (
     ev: AgentEventEnvelope & {
       tool_name: string;
+      plan_item_id?: string | null;
       arguments: Record<string, unknown>;
     },
   ) => void;
@@ -223,6 +227,7 @@ export interface StreamCallbacks {
   onToolCallCompleted?: (
     ev: AgentEventEnvelope & {
       tool_name: string;
+      plan_item_id?: string | null;
       status: string;
       duration_ms: number;
       result_summary: Record<string, unknown>;
@@ -264,6 +269,9 @@ export interface StreamCallbacks {
       protocol_version: 2;
       plan_id: string;
       revision: number;
+      mode?: AgentPlanMode;
+      source?: AgentPlanSource;
+      reason?: string | null;
       items: Array<{
         id: string;
         title: string;
@@ -272,6 +280,8 @@ export interface StreamCallbacks {
         summary?: string | null;
         tool_names?: string[];
         evidence_item_ids?: string[];
+        depends_on?: string[];
+        planned_tools?: string[];
       }>;
     },
   ) => void;
@@ -280,6 +290,9 @@ export interface StreamCallbacks {
       protocol_version: 2;
       plan_id: string;
       revision: number;
+      mode?: AgentPlanMode;
+      source?: AgentPlanSource;
+      reason?: string | null;
       item: {
         id: string;
         title: string;
@@ -288,6 +301,8 @@ export interface StreamCallbacks {
         summary?: string | null;
         tool_names?: string[];
         evidence_item_ids?: string[];
+        depends_on?: string[];
+        planned_tools?: string[];
       };
     },
   ) => void;
@@ -295,6 +310,7 @@ export interface StreamCallbacks {
     ev: AgentEventEnvelope & {
       protocol_version: 2;
       tool_name: string;
+      plan_item_id?: string | null;
       status: 'success' | 'failed' | 'degraded' | 'interrupted';
       title: string;
       summary: string;

@@ -569,6 +569,7 @@ describe('sendMessageStream — 新 envelope 协议', () => {
           'tool_call_started',
           {
             tool_call_id: 't1',
+            plan_item_id: 'search',
             step_id: 's1',
             tool_name: 'web_search',
             arguments: { q: 'x' },
@@ -589,6 +590,7 @@ describe('sendMessageStream — 新 envelope 协议', () => {
           'tool_call_completed',
           {
             tool_call_id: 't1',
+            plan_item_id: 'search',
             step_id: 's1',
             tool_name: 'web_search',
             status: 'success',
@@ -640,8 +642,14 @@ describe('sendMessageStream — 新 envelope 协议', () => {
     expect(cbs.onRunStarted).toHaveBeenCalledTimes(1);
     expect(cbs.onStepStarted).toHaveBeenCalledTimes(1);
     expect(cbs.onToolCallStarted).toHaveBeenCalledTimes(1);
+    expect(cbs.onToolCallStarted).toHaveBeenCalledWith(expect.objectContaining({
+      plan_item_id: 'search',
+    }));
     expect(cbs.onToolCallDelta).toHaveBeenCalledTimes(1);
     expect(cbs.onToolCallCompleted).toHaveBeenCalledTimes(1);
+    expect(cbs.onToolCallCompleted).toHaveBeenCalledWith(expect.objectContaining({
+      plan_item_id: 'search',
+    }));
     expect(cbs.onStepCompleted).toHaveBeenCalledTimes(1);
     expect(cbs.onRunLimitReached).toHaveBeenCalledTimes(1);
     expect(cbs.onRunInterrupted).toHaveBeenCalledTimes(1);
@@ -865,6 +873,9 @@ describe('sendMessageStream — 新 envelope 协议', () => {
           protocol_version: 2,
           plan_id: 'plan-r1',
           revision: 1,
+          mode: 'on',
+          source: 'model',
+          reason: 'model_update',
           items: [
             {
               id: 'search',
@@ -873,6 +884,8 @@ describe('sendMessageStream — 新 envelope 协议', () => {
               kind: 'search',
               tool_names: ['web_search'],
               evidence_item_ids: [],
+              depends_on: ['understand'],
+              planned_tools: ['web_search'],
             },
           ],
         }, 1),
@@ -892,6 +905,7 @@ describe('sendMessageStream — 新 envelope 协议', () => {
         agentEvent('tool_result_digest', {
           protocol_version: 2,
           tool_call_id: 'tc1',
+          plan_item_id: 'search',
           tool_name: 'web_search',
           status: 'success',
           title: '找到 2 条结果',
@@ -935,8 +949,20 @@ describe('sendMessageStream — 新 envelope 协议', () => {
     expect(cbs.onReady).not.toHaveBeenCalled();
     expect(cbs.onRunProgressUpdated).toHaveBeenCalledTimes(1);
     expect(cbs.onPlanSnapshot).toHaveBeenCalledTimes(1);
+    expect(cbs.onPlanSnapshot).toHaveBeenCalledWith(expect.objectContaining({
+      mode: 'on',
+      source: 'model',
+      reason: 'model_update',
+      items: [expect.objectContaining({
+        depends_on: ['understand'],
+        planned_tools: ['web_search'],
+      })],
+    }));
     expect(cbs.onPlanStepUpdated).toHaveBeenCalledTimes(1);
     expect(cbs.onToolResultDigest).toHaveBeenCalledTimes(1);
+    expect(cbs.onToolResultDigest).toHaveBeenCalledWith(expect.objectContaining({
+      plan_item_id: 'search',
+    }));
     expect(cbs.onEvidenceItemUpserted).toHaveBeenCalledTimes(1);
   });
 
@@ -1216,6 +1242,135 @@ describe('reconnectStream — 新 envelope 协议', () => {
       expect.any(Object),
     );
     warn.mockRestore();
+  });
+
+  it('重连 replay 保留完整 plan mode 元数据', async () => {
+    fetchWithAuthMock.mockResolvedValue(
+      createStreamResponse([
+        agentEvent(
+          'plan_snapshot',
+          {
+            protocol_version: 2,
+            plan_id: 'plan-reconnect',
+            revision: 4,
+            mode: 'on',
+            source: 'model',
+            reason: 'model_update',
+            items: [{
+              id: 'compare',
+              title: '比较候选方案',
+              status: 'running',
+              kind: 'other',
+              depends_on: ['research'],
+              planned_tools: ['route_compare'],
+            }],
+          },
+          12,
+          'r1',
+        ),
+        envelope('done', {}),
+        'data: [DONE]\n\n',
+      ]),
+    );
+    const onPlanSnapshot = vi.fn();
+
+    await reconnectStream('c', '10-1', {
+      onReady: vi.fn(),
+      onPlanSnapshot,
+      onReasoning: vi.fn(),
+      onAnswering: vi.fn(),
+      onDone: vi.fn(),
+      onError: vi.fn(),
+    });
+
+    expect(onPlanSnapshot).toHaveBeenCalledWith(expect.objectContaining({
+      plan_id: 'plan-reconnect',
+      revision: 4,
+      mode: 'on',
+      source: 'model',
+      reason: 'model_update',
+      items: [expect.objectContaining({
+        depends_on: ['research'],
+        planned_tools: ['route_compare'],
+      })],
+    }));
+  });
+
+  it('重连 replay 保留工具调用与计划项关联', async () => {
+    fetchWithAuthMock.mockResolvedValue(
+      createStreamResponse([
+        agentEvent(
+          'tool_call_started',
+          {
+            tool_call_id: 'tc-route',
+            plan_item_id: 'compare-routes',
+            step_id: 's1',
+            tool_name: 'route_compare',
+            arguments: { origin: '深圳', destination: '上海' },
+          },
+          13,
+          'r1',
+        ),
+        agentEvent(
+          'tool_call_completed',
+          {
+            tool_call_id: 'tc-route',
+            plan_item_id: 'compare-routes',
+            step_id: 's1',
+            tool_name: 'route_compare',
+            status: 'success',
+            duration_ms: 100,
+            result_summary: { kind: 'route', truncated: false },
+          },
+          14,
+          'r1',
+        ),
+        agentEvent(
+          'tool_result_digest',
+          {
+            protocol_version: 2,
+            tool_call_id: 'tc-route',
+            plan_item_id: 'compare-routes',
+            tool_name: 'route_compare',
+            status: 'success',
+            title: '路线比较完成',
+            summary: '已比较 3 种出行方式',
+            truncated: false,
+          },
+          15,
+          'r1',
+        ),
+        envelope('done', {}),
+        'data: [DONE]\n\n',
+      ]),
+    );
+    const onToolCallStarted = vi.fn();
+    const onToolCallCompleted = vi.fn();
+    const onToolResultDigest = vi.fn();
+
+    await reconnectStream('c', '10-1', {
+      onReady: vi.fn(),
+      onToolCallStarted,
+      onToolCallCompleted,
+      onToolResultDigest,
+      onReasoning: vi.fn(),
+      onAnswering: vi.fn(),
+      onDone: vi.fn(),
+      onError: vi.fn(),
+    });
+
+    expect(onToolCallStarted).toHaveBeenCalledWith(expect.objectContaining({
+      tool_call_id: 'tc-route',
+      plan_item_id: 'compare-routes',
+    }));
+    expect(onToolCallCompleted).toHaveBeenCalledWith(expect.objectContaining({
+      tool_call_id: 'tc-route',
+      plan_item_id: 'compare-routes',
+    }));
+    expect(onToolResultDigest).toHaveBeenCalledWith(expect.objectContaining({
+      tool_call_id: 'tc-route',
+      plan_item_id: 'compare-routes',
+    }));
   });
 
   it('404 视为不可恢复，503 视为可退避重试', async () => {
