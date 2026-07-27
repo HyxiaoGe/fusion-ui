@@ -15,6 +15,7 @@ import type { AdminModelDetail, AdminModelSummary } from '@/types/adminAudit';
 import {
   AdminEmpty, AdminError, AdminLoading, AdminPagination, AdminPanelHeader, formatAdminDate, formatNumber,
 } from './AdminPanelPrimitives';
+import ItineraryStabilityPanel from './ItineraryStabilityPanel';
 
 interface AdminModelsPanelProps {
   active?: boolean;
@@ -67,6 +68,7 @@ export default function AdminModelsPanel({
         description="会话统计当前选择该模型。Token 仅为当前已持久化助手消息用量，不等同平台全部调用或计费账单。"
         action={<Button variant="outline" size="sm" onClick={resource.reload} aria-label="刷新模型列表"><RefreshCw />刷新</Button>}
       />
+      <ItineraryStabilityPanel onForbidden={onForbidden} />
       <form className="mb-4 grid max-w-3xl gap-2 md:grid-cols-[1fr_1fr_1fr_auto]" onSubmit={event => {
         event.preventDefault();
         setPage(1);

@@ -2,7 +2,11 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import { useState } from 'react';
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const apiMocks = vi.hoisted(() => ({ getAdminModels: vi.fn(), getAdminModel: vi.fn() }));
+const apiMocks = vi.hoisted(() => ({
+  getAdminModels: vi.fn(),
+  getAdminModel: vi.fn(),
+  getAdminItineraryStability: vi.fn(),
+}));
 vi.mock('@/lib/api/adminAudit', () => apiMocks);
 vi.mock('@/components/models/ProviderIcon', () => ({
   default: ({ providerId, size }: { providerId: string; size?: number }) => <span data-testid="provider-icon" data-size={size}>{providerId}</span>,
@@ -34,6 +38,33 @@ const detail = {
   cost_tier: 'medium',
   recommended_for: ['长文本', 'Agent'],
 };
+const emptyStability = {
+  scope: {
+    created_from: '2026-07-11T00:00:00+08:00',
+    created_to: '2026-07-12T00:00:00+08:00',
+    timezone: 'Asia/Shanghai',
+    sample_definition: 'terminal_run_with_travel_tool',
+    excluded_running_count: 0,
+  },
+  summary: {
+    itinerary: { total: 0, complete: 0, partial: 0, failed: 0 },
+    run_latency_ms: { sample_count: 0, p50_ms: null, p95_ms: null },
+    product_tools: { total: 0, success: 0, degraded: 0, failed: 0 },
+    tool_latency_ms: { sample_count: 0, p50_ms: null, p95_ms: null },
+    signals: {
+      upstream_error: 0,
+      repair_required: 0,
+      repair_retryable: 0,
+      repair_requires_user_input: 0,
+      repair_retry_exhausted: 0,
+      travel_budget_exhausted: 0,
+      server_budget_exhausted: 0,
+      agent_limit_reached: 0,
+    },
+  },
+  by_model: [],
+  by_tool: [],
+};
 const noop = () => undefined;
 
 function ControlledModelsPanel({ onViewConversations = noop, initialModelId = null }: {
@@ -52,6 +83,7 @@ describe('AdminModelsPanel', () => {
   beforeEach(() => {
     apiMocks.getAdminModels.mockReset().mockResolvedValue(page);
     apiMocks.getAdminModel.mockReset().mockResolvedValue(detail);
+    apiMocks.getAdminItineraryStability.mockReset().mockResolvedValue(emptyStability);
   });
 
   it('列表紧凑展示模型健康、能力和使用摘要，不泄露配置凭据', async () => {
@@ -84,6 +116,7 @@ describe('AdminModelsPanel', () => {
     expect(within(table).queryByRole('columnheader', { name: '提供商' })).toBeNull();
     expect(within(table).queryByRole('columnheader', { name: 'Token' })).toBeNull();
     expect(screen.getByText(/Token 仅为当前已持久化助手消息用量，不等同平台全部调用或计费账单。/)).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: '智能行程稳定性' })).toBeInTheDocument();
   });
 
   it('提供商筛选使用后端全量选项，支持选择与恢复不限', async () => {

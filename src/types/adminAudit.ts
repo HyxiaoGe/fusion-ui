@@ -278,6 +278,74 @@ export interface AdminModelsPage extends AdminPage<AdminModelSummary> {
   provider_options: Array<{ value: string; label: string }>;
 }
 
+export interface AdminItineraryOutcomeCounts {
+  total: number;
+  complete: number;
+  partial: number;
+  failed: number;
+}
+
+export interface AdminProductToolOutcomeCounts {
+  total: number;
+  success: number;
+  degraded: number;
+  failed: number;
+  timeout?: number;
+}
+
+export interface AdminLatencyPercentiles {
+  sample_count: number;
+  p50_ms: number | null;
+  p95_ms: number | null;
+}
+
+export interface AdminItineraryStabilitySignals {
+  upstream_error: number;
+  repair_required: number;
+  repair_retryable: number;
+  repair_requires_user_input: number;
+  repair_retry_exhausted: number;
+  travel_budget_exhausted: number;
+  server_budget_exhausted: number;
+  agent_limit_reached: number;
+  other_safe_error?: number;
+}
+
+export interface AdminItineraryStabilityMetrics {
+  itinerary: AdminItineraryOutcomeCounts;
+  run_latency_ms: AdminLatencyPercentiles;
+  product_tools: AdminProductToolOutcomeCounts;
+  tool_latency_ms: AdminLatencyPercentiles;
+  signals: AdminItineraryStabilitySignals;
+}
+
+export interface AdminItineraryStabilityModelItem extends AdminItineraryStabilityMetrics {
+  model_id: string;
+}
+
+export interface AdminItineraryStabilityToolItem {
+  tool_name: string;
+  calls: AdminProductToolOutcomeCounts;
+  latency_ms: AdminLatencyPercentiles;
+  upstream_error: number;
+  budget_exhausted: number;
+}
+
+export interface AdminItineraryStabilityResponse {
+  scope: {
+    created_from: string;
+    created_to: string;
+    timezone: 'Asia/Shanghai';
+    sample_definition: 'terminal_run_with_travel_tool';
+    excluded_running_count: number;
+    excluded_interrupted_count: number;
+    excluded_unlinked_count: number;
+  };
+  summary: AdminItineraryStabilityMetrics;
+  by_model: AdminItineraryStabilityModelItem[];
+  by_tool: AdminItineraryStabilityToolItem[];
+}
+
 export interface PerformanceRunImportPayload {
   schema_version: number;
   run_id: string;
@@ -337,4 +405,10 @@ export interface AdminModelsQuery extends AdminConversationSectionQuery {
   provider?: string;
   catalog_status?: string;
   health_status?: string;
+}
+
+export interface AdminItineraryStabilityQuery {
+  created_from: string;
+  created_to: string;
+  model_id?: string;
 }

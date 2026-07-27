@@ -78,6 +78,8 @@ import {
 
 interface StructuredToolResultsProps {
   blocks: StructuredToolResultBlock[];
+  isLoading?: boolean;
+  onFollowUp?: (question: string) => void;
 }
 
 type StructuredToolResultRendererRegistry = {
@@ -111,23 +113,33 @@ export const STRUCTURED_TOOL_RESULT_RENDERER_TYPES: readonly StructuredToolResul
     'unsupported_result',
   ]);
 
-export default function StructuredToolResults({ blocks }: StructuredToolResultsProps) {
+export default function StructuredToolResults({
+  blocks,
+  isLoading = false,
+  onFollowUp,
+}: StructuredToolResultsProps) {
   if (blocks.length === 0) return null;
   const presentation = deriveItineraryResultPresentation(blocks);
   return (
     <div className="mb-3 w-full space-y-3" data-testid="structured-tool-results">
       {presentation.items.map(item => item.kind === 'itinerary'
-        ? renderItineraryResult(item)
+        ? renderItineraryResult(item, isLoading, onFollowUp)
         : renderStructuredToolResult(item.block))}
     </div>
   );
 }
 
-function renderItineraryResult(item: ItineraryPresentationItem): ReactNode {
+function renderItineraryResult(
+  item: ItineraryPresentationItem,
+  isLoading: boolean,
+  onFollowUp?: (question: string) => void,
+): ReactNode {
   return (
     <ItineraryResults
       key={item.block.id}
       item={item}
+      isLoading={isLoading}
+      onFollowUp={onFollowUp}
       renderSourceBlocks={sourceBlocks => (
         <div className="space-y-3">
           {sourceBlocks.map(renderStructuredToolResult)}

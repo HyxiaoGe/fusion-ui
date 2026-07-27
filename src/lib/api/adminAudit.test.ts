@@ -16,6 +16,7 @@ import {
   getAdminPerformanceRuns,
   getAdminModel,
   getAdminModels,
+  getAdminItineraryStability,
   getAdminUsers,
   importAdminPerformanceRun,
 } from './adminAudit';
@@ -116,5 +117,20 @@ describe('管理员审计 API', () => {
       ['/api/admin/audit/models?page=2&page_size=25&q=kimi&provider=moonshot&catalog_status=active', { signal }],
       ['/api/admin/audit/models/model%2Fa%20b', { signal }],
     ]);
+  });
+
+  it('行程稳定性只发送时间窗口和精确模型 ID', async () => {
+    const signal = new AbortController().signal;
+
+    await getAdminItineraryStability({
+      created_from: '2026-07-26T10:00:00.000+08:00',
+      created_to: '2026-07-27T10:00:00.000+08:00',
+      model_id: ' kimi-k2.5 ',
+    }, signal);
+
+    expect(apiRequestMock).toHaveBeenCalledWith(
+      '/api/admin/audit/itinerary-stability?created_from=2026-07-26T10%3A00%3A00.000%2B08%3A00&created_to=2026-07-27T10%3A00%3A00.000%2B08%3A00&model_id=kimi-k2.5',
+      { signal },
+    );
   });
 });

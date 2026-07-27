@@ -37,6 +37,29 @@ describe('/admin 防点击劫持响应头', () => {
     expect(headers.pragma).toBe('no-cache');
   });
 
+  it('只在本地开发模式允许 Next 开发运行时求值，生产与测试保持严格 CSP', async () => {
+    const previous = process.env.NODE_ENV;
+    try {
+      process.env.NODE_ENV = 'development';
+      const developmentRules = await nextConfig.headers();
+      const developmentCsp = developmentRules
+        .find(rule => rule.source === '/admin/:path*')
+        ?.headers.find(header => header.key === 'Content-Security-Policy')?.value;
+      expect(developmentCsp).toContain("script-src 'self' 'unsafe-inline' 'unsafe-eval'");
+
+      process.env.NODE_ENV = 'production';
+      const productionRules = await nextConfig.headers();
+      const productionCsp = productionRules
+        .find(rule => rule.source === '/admin/:path*')
+        ?.headers.find(header => header.key === 'Content-Security-Policy')?.value;
+      expect(productionCsp).toContain("script-src 'self' 'unsafe-inline'");
+      expect(productionCsp).not.toContain("'unsafe-eval'");
+    } finally {
+      if (previous === undefined) delete process.env.NODE_ENV;
+      else process.env.NODE_ENV = previous;
+    }
+  });
+
   it('不会把 X-Frame-Options 全局扩散到普通页面规则', async () => {
     const rules = await nextConfig.headers();
     const globalRule = rules.find(rule => rule.source === '/:path*');

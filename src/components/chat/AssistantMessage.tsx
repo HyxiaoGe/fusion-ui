@@ -296,6 +296,10 @@ function AssistantMessageFrame({
             onContinueAgentRun={handleContinue}
             answerEvidence={answerEvidence}
             structuredResults={renderableStructuredResults}
+            structuredResultsLoading={isCurrentMessageStreaming}
+            onStructuredResultFollowUp={
+              isLastMessage && !isCurrentMessageStreaming ? onSelectQuestion : undefined
+            }
             answerEvidenceSidebar={answerEvidenceSidebar}
             searchQueries={searchQueries}
             onSourceClick={handleCitationClick}

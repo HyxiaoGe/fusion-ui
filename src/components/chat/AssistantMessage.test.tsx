@@ -48,6 +48,8 @@ vi.mock('./AssistantResponseStack', () => ({
     onSourceClick: (index: number) => void;
     onOpenSources: () => void;
     onRetry?: () => void;
+    onStructuredResultFollowUp?: (question: string) => void;
+    structuredResultsLoading?: boolean;
   }) => {
     assistantResponseStackMock(props);
     const {
@@ -585,10 +587,15 @@ describe('AssistantMessage', () => {
   });
 
   it('最后一条非流式助手消息且可选择问题时显示推荐问题', () => {
-    renderAssistant({ onSelectQuestion: vi.fn() });
+    const onSelectQuestion = vi.fn();
+    renderAssistant({ onSelectQuestion });
 
     expect(screen.getByTestId('suggested-questions')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '继续问什么？' })).toBeInTheDocument();
+    expect(assistantResponseStackMock.mock.calls.at(-1)?.[0]).toMatchObject({
+      onStructuredResultFollowUp: onSelectQuestion,
+      structuredResultsLoading: false,
+    });
   });
 
   it('非最后一条或流式中不显示推荐问题', () => {
@@ -598,6 +605,8 @@ describe('AssistantMessage', () => {
     });
 
     expect(screen.queryByTestId('suggested-questions')).toBeNull();
+    expect(assistantResponseStackMock.mock.calls.at(-1)?.[0].onStructuredResultFollowUp)
+      .toBeUndefined();
 
     rerender(
       <AssistantMessage
@@ -613,5 +622,9 @@ describe('AssistantMessage', () => {
     );
 
     expect(screen.queryByTestId('suggested-questions')).toBeNull();
+    expect(assistantResponseStackMock.mock.calls.at(-1)?.[0]).toMatchObject({
+      onStructuredResultFollowUp: undefined,
+      structuredResultsLoading: true,
+    });
   });
 });

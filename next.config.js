@@ -24,6 +24,9 @@ function configuredAuthOrigin() {
 function buildAdminContentSecurityPolicy() {
   const authOrigin = configuredAuthOrigin()
   const authCapableSources = ["'self'", ...(authOrigin ? [authOrigin] : [])].join(' ')
+  const scriptSources = process.env.NODE_ENV === 'development'
+    ? "'self' 'unsafe-inline' 'unsafe-eval'"
+    : "'self' 'unsafe-inline'"
   return [
     "default-src 'self'",
     "object-src 'none'",
@@ -31,7 +34,7 @@ function buildAdminContentSecurityPolicy() {
     `form-action ${authCapableSources}`,
     "frame-ancestors 'none'",
     `connect-src ${authCapableSources}`,
-    "script-src 'self' 'unsafe-inline'",
+    `script-src ${scriptSources}`,
     "style-src 'self' 'unsafe-inline'",
     "img-src 'self' data: blob: https:",
     "font-src 'self' data: https://fonts.gstatic.com",

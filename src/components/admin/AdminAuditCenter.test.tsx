@@ -16,6 +16,7 @@ const apiMocks = vi.hoisted(() => ({
   getAdminAuditEvents: vi.fn(),
   getAdminModels: vi.fn(),
   getAdminModel: vi.fn(),
+  getAdminItineraryStability: vi.fn(),
 }));
 
 const navigationMocks = vi.hoisted(() => ({
@@ -99,10 +100,38 @@ const modelSummary = {
   conversation_count: 1, user_count: 1, assistant_message_count: 2, input_tokens: 3, output_tokens: 4,
   last_used_at: null, agent_run_count: 0, agent_error_count: 0, latest_performance_run: null,
 };
+const emptyStability = {
+  scope: {
+    created_from: '2026-07-11T00:00:00+08:00',
+    created_to: '2026-07-12T00:00:00+08:00',
+    timezone: 'Asia/Shanghai',
+    sample_definition: 'terminal_run_with_travel_tool',
+    excluded_running_count: 0,
+  },
+  summary: {
+    itinerary: { total: 0, complete: 0, partial: 0, failed: 0 },
+    run_latency_ms: { sample_count: 0, p50_ms: null, p95_ms: null },
+    product_tools: { total: 0, success: 0, degraded: 0, failed: 0 },
+    tool_latency_ms: { sample_count: 0, p50_ms: null, p95_ms: null },
+    signals: {
+      upstream_error: 0,
+      repair_required: 0,
+      repair_retryable: 0,
+      repair_requires_user_input: 0,
+      repair_retry_exhausted: 0,
+      travel_budget_exhausted: 0,
+      server_budget_exhausted: 0,
+      agent_limit_reached: 0,
+    },
+  },
+  by_model: [],
+  by_tool: [],
+};
 
 describe('AdminAuditCenter', () => {
   beforeEach(() => {
     Object.values(apiMocks).forEach(mock => mock.mockReset().mockResolvedValue(emptyPage));
+    apiMocks.getAdminItineraryStability.mockResolvedValue(emptyStability);
     navigationMocks.push.mockReset().mockImplementation((url: string) => navigationMocks.pushUrl(url));
     navigationMocks.replace.mockReset().mockImplementation((url: string) => navigationMocks.replaceUrl(url));
     navigationMocks.back.mockReset().mockImplementation(() => navigationMocks.backUrl());

@@ -31,6 +31,8 @@ interface AssistantResponseStackProps {
   onContinueAgentRun?: (previousRunId?: string) => void;
   answerEvidence: AnswerEvidenceModel | null;
   structuredResults?: StructuredToolResultBlock[];
+  structuredResultsLoading?: boolean;
+  onStructuredResultFollowUp?: (question: string) => void;
   answerEvidenceSidebar?: AnswerEvidenceSidebarModel | null;
   searchQueries?: string[];
   onSourceClick: (index: number) => void;
@@ -52,6 +54,8 @@ function AssistantResponseStack({
   onContinueAgentRun,
   answerEvidence,
   structuredResults = [],
+  structuredResultsLoading = false,
+  onStructuredResultFollowUp,
   answerEvidenceSidebar,
   searchQueries,
   onSourceClick,
@@ -99,7 +103,11 @@ function AssistantResponseStack({
 
       <AgentRunTimeline {...agentRunTimelineProps} />
 
-      <StructuredToolResults blocks={structuredResults} />
+      <StructuredToolResults
+        blocks={structuredResults}
+        isLoading={structuredResultsLoading}
+        onFollowUp={onStructuredResultFollowUp}
+      />
 
       <AnswerEvidence
         evidence={answerEvidence}

@@ -16,6 +16,8 @@ import type {
   AdminModelDetail,
   AdminModelsPage,
   AdminModelsQuery,
+  AdminItineraryStabilityQuery,
+  AdminItineraryStabilityResponse,
   AdminToolCallRecord,
   AdminUserDetail,
   AdminUsersQuery,
@@ -134,6 +136,10 @@ export function getAdminModels(query: AdminModelsQuery = {}, signal?: AbortSigna
 
 export function getAdminModel(modelId: string, signal?: AbortSignal) {
   return get<AdminModelDetail>(`/models/${encodedId(modelId)}`, signal);
+}
+
+export function getAdminItineraryStability(query: AdminItineraryStabilityQuery, signal?: AbortSignal) {
+  return get<AdminItineraryStabilityResponse>(`/itinerary-stability${buildQuery(query)}`, signal);
 }
 
 export function importAdminPerformanceRun(payload: PerformanceRunImportPayload) {
