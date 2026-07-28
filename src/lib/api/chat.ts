@@ -12,6 +12,7 @@ import type {
   AgentPlanMode,
   AgentPlanSource,
   AgentProgressPhase,
+  AgentTaskMode,
   SseEnvelope,
   SubmitAgentContextResultInput,
 } from '@/types/agentRun';
@@ -35,6 +36,7 @@ export interface ChatRequest {
   options?: {
     use_reasoning?: boolean;
     plan_mode?: AgentPlanMode;
+    task_mode?: AgentTaskMode;
     temperature?: number;
     max_tokens?: number;
     [key: string]: unknown;
@@ -331,6 +333,7 @@ export interface StreamCallbacks {
         title: string;
         url?: string;
         domain?: string;
+        citation_index?: number;
         claim: string;
         snippet?: string;
         used_by_final_answer?: boolean;

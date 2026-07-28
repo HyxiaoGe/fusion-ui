@@ -151,6 +151,39 @@ describe('conversationHydration', () => {
     expect(chat.messages.every((message) => message.sequence === undefined)).toBe(true);
   });
 
+  it('强刷后保留来源的稳定 evidence_id 与 citation_index', () => {
+    const chat = buildChatFromServerConversation({
+      id: 'chat-stable-citations',
+      title: 'Stable citations',
+      model_id: 'gpt',
+      messages: [{
+        id: 'assistant-1',
+        role: 'assistant',
+        content: [{
+          type: 'search',
+          id: 'search-1',
+          query: '稳定引用',
+          sources: [],
+          source_refs: [{
+            kind: 'search',
+            title: '第一来源',
+            url: 'https://example.com/one',
+            evidence_id: 'ev-one',
+            citation_index: 1,
+          }],
+        }],
+      }],
+    });
+
+    expect(chat.messages[0].content[0]).toMatchObject({
+      type: 'search',
+      source_refs: [{
+        evidence_id: 'ev-one',
+        citation_index: 1,
+      }],
+    });
+  });
+
   it('requests hydration for missing or empty local chats', () => {
     expect(shouldHydrateConversation(null)).toBe(true);
     expect(shouldHydrateConversation({ messages: [] })).toBe(true);
@@ -800,7 +833,14 @@ describe('conversationHydration', () => {
           agent_run: {
             run_id: 'run-1',
             status: 'limit_reached',
-            config: { max_steps: 3, max_tool_calls: 5, timeout_s: 60 },
+            config: {
+              max_steps: 3,
+              max_tool_calls: 5,
+              timeout_s: 60,
+              task_mode: 'deep_research',
+              network_profile: 'deep_research',
+              evidence_policy: 'deep_research_v1',
+            },
             total_steps: 3,
             total_tool_calls: 5,
             limit_reason: 'max_steps',
@@ -814,7 +854,14 @@ describe('conversationHydration', () => {
       messageId: 'assistant-1',
       serverMessageId: 'assistant-1',
       status: 'limit_reached',
-      config: { maxSteps: 3, maxToolCalls: 5, timeoutS: 60 },
+      config: {
+        maxSteps: 3,
+        maxToolCalls: 5,
+        timeoutS: 60,
+        taskMode: 'deep_research',
+        networkProfile: 'deep_research',
+        evidencePolicy: 'deep_research_v1',
+      },
       totalSteps: 3,
       totalToolCalls: 5,
       limitReachedReason: 'max_steps',
@@ -891,6 +938,7 @@ describe('conversationHydration', () => {
                   domain: 'example.com',
                   claim: 'G7 讨论 AI 标准',
                   snippet: '来源摘要',
+                  citation_index: 3,
                   used_by_final_answer: true,
                 },
               ],
@@ -954,6 +1002,7 @@ describe('conversationHydration', () => {
           domain: 'example.com',
           claim: 'G7 讨论 AI 标准',
           snippet: '来源摘要',
+          citationIndex: 3,
           usedByFinalAnswer: true,
         },
       ],

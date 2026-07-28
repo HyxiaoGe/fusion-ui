@@ -325,6 +325,8 @@ function normalizeSourceReference(value: unknown): SourceReference | null {
     kind: source.kind,
     title: optionalString(source.title) ?? '',
     url: optionalString(source.url) ?? '',
+    ...optionalField('evidence_id', optionalString(source.evidence_id)),
+    ...optionalField('citation_index', positiveInteger(source.citation_index)),
     ...optionalField('domain', optionalString(source.domain)),
     ...optionalField('favicon', optionalString(source.favicon)),
     ...optionalField('status', networkSourceStatus(source.status)),
@@ -377,6 +379,12 @@ function optionalBoolean(value: unknown): boolean | undefined {
 
 function nonNegativeNumber(value: unknown): number | undefined {
   return typeof value === 'number' && Number.isFinite(value) && value >= 0
+    ? value
+    : undefined;
+}
+
+function positiveInteger(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isInteger(value) && value > 0
     ? value
     : undefined;
 }

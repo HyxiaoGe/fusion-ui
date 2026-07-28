@@ -465,6 +465,84 @@ describe('useAssistantMessageViewModel', () => {
     ]);
   });
 
+  it('多次搜索与读取乱序重复时按稳定引用索引恢复正文映射', () => {
+    const result = deriveStaticAssistantMessageViewModel({
+      message: {
+        id: 'assistant-stable-citations',
+        role: 'assistant',
+        content: [
+          {
+            type: 'search',
+            id: 'search-2',
+            query: '第二轮',
+            sources: [],
+            source_refs: [{
+              kind: 'search',
+              title: '第二来源',
+              url: 'https://example.com/two',
+              evidence_id: 'ev-two',
+              citation_index: 2,
+            }],
+          },
+          {
+            type: 'url_read',
+            id: 'read-1',
+            url: 'https://example.com/one',
+            source_refs: [{
+              kind: 'url_read',
+              title: '第一来源深读',
+              url: 'https://example.com/one',
+              evidence_id: 'ev-one',
+              citation_index: 1,
+            }],
+          },
+          {
+            type: 'search',
+            id: 'search-1',
+            query: '第一轮',
+            sources: [],
+            source_refs: [{
+              kind: 'search',
+              title: '第一来源',
+              url: 'https://example.com/one',
+              evidence_id: 'ev-one',
+              citation_index: 1,
+            }],
+          },
+          { type: 'text', id: 'text-1', text: '第一条 [1]，第二条 [2]。' },
+        ],
+      },
+      isLoadingQuestions: false,
+      suggestedQuestionsCount: 0,
+    });
+
+    expect(result.answerEvidence?.items).toEqual([
+      expect.objectContaining({
+        evidenceId: 'ev-one',
+        citationIndex: 1,
+        sourceIndex: 0,
+        deepRead: true,
+      }),
+      expect.objectContaining({
+        evidenceId: 'ev-two',
+        citationIndex: 2,
+        sourceIndex: 1,
+      }),
+    ]);
+    expect(result.searchSources).toEqual([
+      expect.objectContaining({
+        title: '第一来源',
+        evidence_id: 'ev-one',
+        citation_index: 1,
+      }),
+      expect.objectContaining({
+        title: '第二来源',
+        evidence_id: 'ev-two',
+        citation_index: 2,
+      }),
+    ]);
+  });
+
   it('静态历史消息派生不订阅 stream 状态', () => {
     const message: Message = {
       id: 'assistant-1',
@@ -617,6 +695,38 @@ describe('useAssistantMessageViewModel', () => {
     expect(result.current.activity.kind).toBe('reasoning');
     expect(result.current.displayThinking).toBe('我需要搜索一下，但这里没有真实工具调用。');
     expect(result.current.hasThinking).toBe(true);
+    expect(result.current.searchSources).toEqual([]);
+    expect(result.current.answerEvidence).toBeNull();
+  });
+
+  it('深度研究完成但没有真实来源时不伪造回答依据', () => {
+    selectorState.stream.currentRun = {
+      runId: 'run-deep-empty',
+      messageId: 'assistant-1',
+      status: 'completed',
+      config: {
+        maxSteps: 8,
+        maxToolCalls: 20,
+        timeoutS: 300,
+        taskMode: 'deep_research',
+        networkProfile: 'deep_research',
+        evidencePolicy: 'deep_research_v1',
+      },
+      totalSteps: 1,
+      totalToolCalls: 0,
+      lastSequence: 3,
+      steps: [],
+      evidence: [],
+    };
+
+    const { result } = renderViewModel({
+      id: 'assistant-1',
+      role: 'assistant',
+      content: [{ type: 'text', id: 'text-1', text: '未找到可验证来源。' }],
+      timestamp: 1,
+    });
+
+    expect(result.current.activity.kind).toBe('completed');
     expect(result.current.searchSources).toEqual([]);
     expect(result.current.answerEvidence).toBeNull();
   });

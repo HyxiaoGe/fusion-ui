@@ -138,6 +138,40 @@ describe('MarkdownRenderer — citation 行为（contract §9）', () => {
     expect(onCite).toHaveBeenNthCalledWith(2, 1);
   });
 
+  it('优先按 citation_index 映射乱序且有缺口的来源并回传真实侧边栏索引', () => {
+    const onCite = vi.fn();
+    render(
+      <MarkdownRenderer
+        content="Third [3], first [1], missing [2]"
+        sources={[
+          {
+            url: 'https://three.example.com',
+            title: '第三来源',
+            evidence_id: 'ev-three',
+            citation_index: 3,
+          },
+          {
+            url: 'https://one.example.com',
+            title: '第一来源',
+            evidence_id: 'ev-one',
+            citation_index: 1,
+          },
+        ]}
+        onCitationClick={onCite}
+      />
+    );
+
+    const third = screen.getByRole('button', { name: /参考资料 3：第三来源/ });
+    const first = screen.getByRole('button', { name: /参考资料 1：第一来源/ });
+    fireEvent.click(third);
+    fireEvent.click(first);
+
+    expect(onCite).toHaveBeenNthCalledWith(1, 0);
+    expect(onCite).toHaveBeenNthCalledWith(2, 1);
+    expect(screen.queryByRole('button', { name: /参考资料 2/ })).toBeNull();
+    expect(screen.getByText(/missing \[2\]/)).toBeTruthy();
+  });
+
   it('h2 标题内的 [1] 也渲染为 chip（processChildren 覆盖标题）', () => {
     render(
       <MarkdownRenderer

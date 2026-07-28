@@ -5,6 +5,8 @@ export type AnswerEvidenceKind = 'search_source' | 'url_read';
 
 interface BaseAnswerEvidenceItem {
   id: string;
+  evidenceId?: string;
+  citationIndex?: number;
   title: string;
   url: string;
   domain: string;
@@ -63,7 +65,7 @@ export function deriveAnswerEvidence(input: DeriveAnswerEvidenceInput): AnswerEv
   const searchItems = unifiedItems?.searchItems ?? legacyItems?.searchItems ?? [];
   const urlItems = unifiedItems?.urlItems ?? legacyItems?.urlItems ?? [];
   const urlCount = unifiedItems?.urlCount ?? legacyItems?.urlCount ?? urlItems.length;
-  const items = [...searchItems, ...urlItems];
+  const items = unifiedItems?.items ?? [...searchItems, ...urlItems];
 
   if (items.length === 0) {
     return null;
@@ -94,11 +96,15 @@ function deriveAgentEvidenceModel(input: DeriveAnswerEvidenceInput): AnswerEvide
 
   const context = buildAgentEvidenceContext(input, evidence);
   const usedEvidence = evidence.filter(item => item.usedByFinalAnswer || item.status === 'used');
-  const usedItems = dedupeEvidenceItems(usedEvidence.map((item, index) => toAgentEvidenceItem(item, index, context)));
+  const usedItems = sortEvidenceItemsByCitation(
+    dedupeEvidenceItems(usedEvidence.map((item, index) => toAgentEvidenceItem(item, index, context))),
+  );
   const usedKeys = new Set(usedItems.map(item => normalizeUrlKey(item.url)).filter(Boolean));
   const candidateEvidence = evidence.filter(item => isCandidateAgentEvidence(item) && !usedKeys.has(normalizeUrlKey(item.url)));
-  const candidateItems = dedupeEvidenceItems(
-    candidateEvidence.map((item, index) => toAgentEvidenceItem(item, index + usedItems.length, context)),
+  const candidateItems = sortEvidenceItemsByCitation(
+    dedupeEvidenceItems(
+      candidateEvidence.map((item, index) => toAgentEvidenceItem(item, index + usedItems.length, context)),
+    ),
   );
   const primaryItems = usedItems.length > 0 ? usedItems : candidateItems;
 
@@ -136,6 +142,8 @@ interface AgentEvidenceContext {
   searchIndexByUrl: Map<string, number>;
   faviconByUrl: Map<string, string>;
   deepReadUrls: Set<string>;
+  citationIndexByEvidenceId: Map<string, number>;
+  citationIndexByUrl: Map<string, number>;
 }
 
 function buildAgentEvidenceContext(
@@ -145,6 +153,8 @@ function buildAgentEvidenceContext(
   const searchIndexByUrl = new Map<string, number>();
   const faviconByUrl = new Map<string, string>();
   const deepReadUrls = new Set<string>();
+  const citationIndexByEvidenceId = new Map<string, number>();
+  const citationIndexByUrl = new Map<string, number>();
   let searchIndex = 0;
 
   const addSearch = (url: string | undefined, favicon?: string) => {
@@ -169,6 +179,15 @@ function buildAgentEvidenceContext(
   };
 
   input.sourceRefs?.forEach(ref => {
+    const urlKey = normalizeUrlKey(ref.url);
+    if (ref.citation_index) {
+      if (ref.evidence_id) {
+        citationIndexByEvidenceId.set(ref.evidence_id, ref.citation_index);
+      }
+      if (urlKey) {
+        citationIndexByUrl.set(urlKey, ref.citation_index);
+      }
+    }
     if (ref.kind === 'search' && isUsableSourceRef(ref)) {
       addSearch(ref.url, ref.favicon);
     } else if (ref.kind === 'url_read' && isUsableSourceRef(ref)) {
@@ -181,7 +200,13 @@ function buildAgentEvidenceContext(
     .filter(item => item.status === 'read_success')
     .forEach(item => addDeepRead(item.url, undefined));
 
-  return { searchIndexByUrl, faviconByUrl, deepReadUrls };
+  return {
+    searchIndexByUrl,
+    faviconByUrl,
+    deepReadUrls,
+    citationIndexByEvidenceId,
+    citationIndexByUrl,
+  };
 }
 
 function toAgentEvidenceItem(
@@ -196,6 +221,10 @@ function toAgentEvidenceItem(
   const domain = normalizeDomain(evidence.domain, url);
   const base = {
     id: `agent-evidence-${evidence.id || fallbackIndex}`,
+    evidenceId: evidence.id || undefined,
+    citationIndex: evidence.citationIndex
+      ?? context.citationIndexByEvidenceId.get(evidence.id)
+      ?? context.citationIndexByUrl.get(urlKey),
     title: normalizeTitle(evidence.title, url),
     url,
     domain,
@@ -221,12 +250,30 @@ function dedupeEvidenceItems(items: AnswerEvidenceItem[]): AnswerEvidenceItem[] 
   const deduped: AnswerEvidenceItem[] = [];
   const seen = new Set<string>();
   for (const item of items) {
-    const key = normalizeUrlKey(item.url) || item.id;
+    const key = item.evidenceId || normalizeUrlKey(item.url) || item.id;
     if (seen.has(key)) continue;
     seen.add(key);
     deduped.push(item);
   }
   return deduped;
+}
+
+function sortEvidenceItemsByCitation(items: AnswerEvidenceItem[]): AnswerEvidenceItem[] {
+  return items
+    .map((item, stableIndex) => ({ item, stableIndex }))
+    .sort((left, right) => {
+      const leftCitation = left.item.citationIndex;
+      const rightCitation = right.item.citationIndex;
+      if (leftCitation != null && rightCitation != null) {
+        return leftCitation - rightCitation || left.stableIndex - right.stableIndex;
+      }
+      if (leftCitation != null) return -1;
+      if (rightCitation != null) return 1;
+      return left.stableIndex - right.stableIndex;
+    })
+    .map(({ item }, index) => item.kind === 'search_source'
+      ? { ...item, sourceIndex: index }
+      : item);
 }
 
 function isRenderableAgentWebEvidence(item: AgentEvidenceItem): boolean {
@@ -252,6 +299,8 @@ function toSearchEvidenceItem(
 ): SearchAnswerEvidenceItem {
   return {
     id: `search-${index}`,
+    evidenceId: source.evidence_id,
+    citationIndex: source.citation_index,
     kind: 'search_source',
     title: normalizeTitle(source.title, source.url),
     url: source.url,
@@ -277,11 +326,11 @@ function toSourceRefEvidenceItems(
   sourceRefs: SourceReference[],
   faviconFallbacks: FaviconFallbacks,
 ): {
+  items: AnswerEvidenceItem[];
   searchItems: SearchAnswerEvidenceItem[];
   urlItems: UrlReadAnswerEvidenceItem[];
   urlCount: number;
 } {
-  let searchIndex = 0;
   const urlReadRefs = sourceRefs.filter(source => source.kind === 'url_read');
   const deepReadUrls = new Set(urlReadRefs.map(source => normalizeUrlKey(source.url)).filter(Boolean));
   const searchUrls = new Set(
@@ -293,9 +342,31 @@ function toSourceRefEvidenceItems(
   const searchItems: SearchAnswerEvidenceItem[] = [];
   const urlItems: UrlReadAnswerEvidenceItem[] = [];
 
-  sourceRefs.forEach((source, index) => {
+  const canonicalRefs = dedupeSourceReferences(sourceRefs);
+  const orderedRefs = canonicalRefs.some(source => source.citation_index != null)
+    ? canonicalRefs
+        .map((source, stableIndex) => ({ source, stableIndex }))
+        .sort((left, right) => {
+          const leftCitation = left.source.citation_index;
+          const rightCitation = right.source.citation_index;
+          if (leftCitation != null && rightCitation != null) {
+            return leftCitation - rightCitation || left.stableIndex - right.stableIndex;
+          }
+          if (leftCitation != null) return -1;
+          if (rightCitation != null) return 1;
+          return left.stableIndex - right.stableIndex;
+        })
+        .map(({ source }) => source)
+    : [
+        ...canonicalRefs.filter(source => source.kind === 'search'),
+        ...canonicalRefs.filter(source => source.kind === 'url_read'),
+      ];
+
+  orderedRefs.forEach((source, index) => {
     const base = {
-      id: `source-ref-${index}`,
+      id: source.evidence_id ? `source-ref-${source.evidence_id}` : `source-ref-${index}`,
+      evidenceId: source.evidence_id,
+      citationIndex: source.citation_index,
       title: normalizeTitle(source.title, source.url),
       url: source.url,
       domain: normalizeDomain(source.domain, source.url),
@@ -307,10 +378,9 @@ function toSourceRefEvidenceItems(
       searchItems.push({
         ...base,
         kind: 'search_source',
-        sourceIndex: searchIndex,
+        sourceIndex: index,
         deepRead: deepReadUrls.has(urlKey),
       });
-      searchIndex += 1;
     } else {
       const urlKey = normalizeUrlKey(source.url);
       if (searchUrls.has(urlKey)) {
@@ -324,10 +394,41 @@ function toSourceRefEvidenceItems(
   });
 
   return {
+    items: sortEvidenceItemsByCitation([...searchItems, ...urlItems]),
     searchItems,
     urlItems,
     urlCount: deepReadUrls.size,
   };
+}
+
+function dedupeSourceReferences(sourceRefs: SourceReference[]): SourceReference[] {
+  const result: SourceReference[] = [];
+  const indexByKey = new Map<string, number>();
+
+  sourceRefs.forEach((source, sourceIndex) => {
+    const key = source.evidence_id || normalizeUrlKey(source.url) || `source-${sourceIndex}`;
+    const existingIndex = indexByKey.get(key);
+    if (existingIndex == null) {
+      indexByKey.set(key, result.length);
+      result.push(source);
+      return;
+    }
+
+    const existing = result[existingIndex];
+    const preferSearch = existing.kind === 'url_read' && source.kind === 'search';
+    const preferred = preferSearch ? source : existing;
+    const fallback = preferSearch ? existing : source;
+    result[existingIndex] = {
+      ...fallback,
+      ...preferred,
+      evidence_id: preferred.evidence_id ?? fallback.evidence_id,
+      citation_index: preferred.citation_index ?? fallback.citation_index,
+      favicon: preferred.favicon ?? fallback.favicon,
+      domain: preferred.domain ?? fallback.domain,
+    };
+  });
+
+  return result;
 }
 
 function toLegacyEvidenceItems(

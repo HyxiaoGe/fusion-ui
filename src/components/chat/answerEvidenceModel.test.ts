@@ -51,6 +51,59 @@ describe('deriveAnswerEvidence', () => {
     expect(deriveAnswerEvidence({ searchSources: [], urlBlocks: [] })).toBeNull();
   });
 
+  it('按稳定 citation_index 排序多轮搜索与读取来源，并按 evidence_id 去重', () => {
+    const evidence = deriveAnswerEvidence({
+      sourceRefs: [
+        {
+          kind: 'search',
+          title: '第二来源',
+          url: 'https://example.com/two',
+          evidence_id: 'ev-two',
+          citation_index: 2,
+        },
+        {
+          kind: 'url_read',
+          title: '第一来源深读',
+          url: 'https://example.com/one',
+          evidence_id: 'ev-one',
+          citation_index: 1,
+        },
+        {
+          kind: 'search',
+          title: '第一来源',
+          url: 'https://example.com/one',
+          evidence_id: 'ev-one',
+          citation_index: 1,
+        },
+        {
+          kind: 'search',
+          title: '第二来源重复',
+          url: 'https://example.com/two?duplicate=1',
+          evidence_id: 'ev-two',
+          citation_index: 2,
+        },
+      ],
+      searchSources: [],
+      urlBlocks: [],
+    });
+
+    expect(evidence?.items).toEqual([
+      expect.objectContaining({
+        evidenceId: 'ev-one',
+        citationIndex: 1,
+        kind: 'search_source',
+        sourceIndex: 0,
+        deepRead: true,
+      }),
+      expect.objectContaining({
+        evidenceId: 'ev-two',
+        citationIndex: 2,
+        kind: 'search_source',
+        sourceIndex: 1,
+      }),
+    ]);
+  });
+
   it('优先使用 agent evidence 区分已使用来源和候选来源', () => {
     const agentEvidence: AgentEvidenceItem[] = [
       {
@@ -105,6 +158,50 @@ describe('deriveAnswerEvidence', () => {
       sourceIndex: 0,
       deepRead: true,
     });
+  });
+
+  it('仅靠乱序 agent evidence 事件也按 citationIndex 保持引用编号', () => {
+    const evidence = deriveAnswerEvidence({
+      agentEvidence: [
+        {
+          id: 'ev-three',
+          kind: 'web',
+          status: 'used',
+          title: '第三来源',
+          url: 'https://example.com/three',
+          domain: 'example.com',
+          claim: '第三条证据。',
+          citationIndex: 3,
+          usedByFinalAnswer: true,
+        },
+        {
+          id: 'ev-one',
+          kind: 'web',
+          status: 'used',
+          title: '第一来源',
+          url: 'https://example.com/one',
+          domain: 'example.com',
+          claim: '第一条证据。',
+          citationIndex: 1,
+          usedByFinalAnswer: true,
+        },
+      ],
+      searchSources: [],
+      urlBlocks: [],
+    });
+
+    expect(evidence?.items).toEqual([
+      expect.objectContaining({
+        evidenceId: 'ev-one',
+        citationIndex: 1,
+        title: '第一来源',
+      }),
+      expect.objectContaining({
+        evidenceId: 'ev-three',
+        citationIndex: 3,
+        title: '第三来源',
+      }),
+    ]);
   });
 
   it('agent evidence 没有 used 时预览候选来源但不伪装成已使用', () => {

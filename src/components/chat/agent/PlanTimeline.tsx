@@ -80,6 +80,11 @@ export function PlanTimeline({ run }: { run: AgentRunState }) {
         <span className="min-w-0">
           <span className="flex items-center gap-1.5 text-[10px] leading-none text-muted-foreground">
             <span>计划进度</span>
+            {run.config.taskMode === 'deep_research' ? (
+              <span className="rounded-full border border-info/25 bg-info-bg px-1.5 py-0.5 font-medium text-info">
+                深度研究
+              </span>
+            ) : null}
             <span className="font-medium tabular-nums text-foreground/80">
               {completedCount}/{items.length}
             </span>

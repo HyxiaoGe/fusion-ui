@@ -15,6 +15,7 @@ import { parseTimestamp } from '@/lib/utils/parseTimestamp';
 import { normalizeContextUsage } from '@/lib/chat/contextUsage';
 import { normalizeContentBlocks } from '@/lib/chat/contentBlockRegistry';
 import { mapWireAgentPlan } from '@/lib/agent/planState';
+import { normalizeAgentRunConfig } from '@/lib/agent/runConfig';
 
 // 服务端返回的原始类型（对齐后端 schema）
 interface ServerUsage {
@@ -30,6 +31,9 @@ interface ServerAgentRunSummary {
     max_steps?: number;
     max_tool_calls?: number;
     timeout_s?: number;
+    task_mode?: string;
+    network_profile?: string;
+    evidence_policy?: string;
   } | null;
   total_steps?: number | null;
   total_tool_calls?: number | null;
@@ -91,6 +95,7 @@ interface ServerAgentEvidenceItem {
   title: string;
   url?: string | null;
   domain?: string | null;
+  citation_index?: number | null;
   claim: string;
   snippet?: string | null;
   used_by_final_answer?: boolean | null;
@@ -157,11 +162,7 @@ function buildAgentRunState(
     messageId,
     serverMessageId: messageId,
     status: serverRun.status === 'error' ? 'failed' : serverRun.status,
-    config: {
-      maxSteps: config.max_steps ?? 0,
-      maxToolCalls: config.max_tool_calls ?? 0,
-      timeoutS: config.timeout_s ?? 0,
-    },
+    config: normalizeAgentRunConfig(config),
     totalSteps: serverRun.total_steps ?? 0,
     totalToolCalls: serverRun.total_tool_calls ?? 0,
     steps: [],
@@ -235,10 +236,17 @@ function mapEvidenceItem(item: ServerAgentEvidenceItem): AgentEvidenceItem {
     title: item.title,
     url: item.url ?? undefined,
     domain: item.domain ?? undefined,
+    citationIndex: normalizeCitationIndex(item.citation_index),
     claim: item.claim,
     snippet: item.snippet ?? undefined,
     usedByFinalAnswer: item.used_by_final_answer ?? false,
   };
+}
+
+function normalizeCitationIndex(value: number | null | undefined): number | undefined {
+  return typeof value === 'number' && Number.isInteger(value) && value > 0
+    ? value
+    : undefined;
 }
 
 export function buildChatFromServerConversation(

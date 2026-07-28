@@ -44,6 +44,8 @@ export interface SearchSourceSummary {
   title: string;
   url: string;
   favicon?: string;
+  evidence_id?: string;
+  citation_index?: number;
 }
 
 export type NetworkSourceStatus = 'success' | 'failed' | 'degraded' | 'interrupted';
@@ -52,6 +54,8 @@ export interface SourceReference {
   kind: 'search' | 'url_read';
   title: string;
   url: string;
+  evidence_id?: string;
+  citation_index?: number;
   domain?: string;
   favicon?: string;
   status?: NetworkSourceStatus;

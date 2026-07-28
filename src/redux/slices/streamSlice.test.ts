@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { buildChatFromServerConversation } from '@/lib/chat/conversationHydration';
 import streamSliceReducer, {
   startStream,
   applyPlanSnapshot,
@@ -851,12 +852,20 @@ describe('streamSlice — agent run timeline', () => {
     });
   });
 
-  it('upsertEvidenceItem 和 upsertToolDigest 不重复', () => {
+  it('upsertEvidenceItem 和 upsertToolDigest 不重复，并在后续事件省略编号时保留 citationIndex', () => {
     let s = reducer(initial(), initRun({ runId: 'r1', messageId: 'm1', config: baseConfig, sequence: 0 }));
     s = reducer(s, upsertEvidenceItem({
       runId: 'r1',
       sequence: 1,
-      evidence: { id: 'ev-1', kind: 'web', status: 'candidate', title: '来源', claim: '发现', usedByFinalAnswer: false },
+      evidence: {
+        id: 'ev-1',
+        kind: 'web',
+        status: 'candidate',
+        title: '来源',
+        claim: '发现',
+        citationIndex: 3,
+        usedByFinalAnswer: false,
+      },
     }));
     s = reducer(s, upsertEvidenceItem({
       runId: 'r1',
@@ -880,7 +889,253 @@ describe('streamSlice — agent run timeline', () => {
 
     expect(s.currentRun?.evidence).toHaveLength(1);
     expect(s.currentRun?.evidence?.[0].status).toBe('used');
+    expect(s.currentRun?.evidence?.[0].citationIndex).toBe(3);
     expect(s.currentRun?.toolDigests).toHaveLength(1);
+  });
+
+  it('selected 后到达 candidate 不会把状态和主要字段降级', () => {
+    let s = reducer(initial(), initRun({ runId: 'r1', messageId: 'm1', config: baseConfig, sequence: 0 }));
+    s = reducer(s, upsertEvidenceItem({
+      runId: 'r1',
+      sequence: 1,
+      evidence: {
+        id: 'ev-1',
+        kind: 'web',
+        status: 'selected',
+        title: '已选来源',
+        url: 'https://example.com/selected',
+        domain: 'example.com',
+        citationIndex: 2,
+        claim: '已选结论',
+        snippet: '已选摘要',
+        usedByFinalAnswer: false,
+      },
+    }));
+    s = reducer(s, upsertEvidenceItem({
+      runId: 'r1',
+      sequence: 2,
+      evidence: {
+        id: 'ev-1',
+        kind: 'web',
+        status: 'candidate',
+        title: '迟到候选',
+        url: 'https://example.com/candidate',
+        domain: 'candidate.example.com',
+        citationIndex: 9,
+        claim: '候选结论',
+        snippet: '候选摘要',
+        usedByFinalAnswer: false,
+      },
+    }));
+
+    expect(s.currentRun?.evidence?.[0]).toMatchObject({
+      status: 'selected',
+      title: '已选来源',
+      url: 'https://example.com/selected',
+      citationIndex: 2,
+      claim: '已选结论',
+      snippet: '已选摘要',
+    });
+  });
+
+  it('read_success 后到达 read_failed 不会把读取状态降级', () => {
+    let s = reducer(initial(), initRun({ runId: 'r1', messageId: 'm1', config: baseConfig, sequence: 0 }));
+    s = reducer(s, upsertEvidenceItem({
+      runId: 'r1',
+      sequence: 1,
+      evidence: {
+        id: 'ev-1',
+        kind: 'web',
+        status: 'read_success',
+        title: '成功读取',
+        url: 'https://example.com/report',
+        claim: '已读取全文',
+        snippet: '正文摘要',
+        usedByFinalAnswer: false,
+      },
+    }));
+    s = reducer(s, upsertEvidenceItem({
+      runId: 'r1',
+      sequence: 2,
+      evidence: {
+        id: 'ev-1',
+        kind: 'web',
+        status: 'read_failed',
+        title: '读取失败',
+        claim: '稍后到达的失败事件',
+        usedByFinalAnswer: false,
+      },
+    }));
+
+    expect(s.currentRun?.evidence?.[0]).toMatchObject({
+      status: 'read_success',
+      title: '成功读取',
+      url: 'https://example.com/report',
+      claim: '已读取全文',
+      snippet: '正文摘要',
+    });
+  });
+
+  it('高优先级事件的空字段由旧事件补齐', () => {
+    let s = reducer(initial(), initRun({ runId: 'r1', messageId: 'm1', config: baseConfig, sequence: 0 }));
+    s = reducer(s, upsertEvidenceItem({
+      runId: 'r1',
+      sequence: 1,
+      evidence: {
+        id: 'ev-1',
+        kind: 'web',
+        status: 'candidate',
+        title: '旧标题',
+        url: 'https://example.com/report',
+        domain: 'example.com',
+        citationIndex: 7,
+        claim: '旧结论',
+        snippet: '旧摘要',
+        usedByFinalAnswer: false,
+      },
+    }));
+    s = reducer(s, upsertEvidenceItem({
+      runId: 'r1',
+      sequence: 2,
+      evidence: {
+        id: 'ev-1',
+        kind: 'web',
+        status: 'selected',
+        title: '',
+        url: '',
+        claim: '',
+        snippet: '',
+        usedByFinalAnswer: false,
+      },
+    }));
+
+    expect(s.currentRun?.evidence?.[0]).toMatchObject({
+      status: 'selected',
+      title: '旧标题',
+      url: 'https://example.com/report',
+      domain: 'example.com',
+      citationIndex: 7,
+      claim: '旧结论',
+      snippet: '旧摘要',
+    });
+  });
+
+  it('反向到达的高优先级事件升级状态，并只用旧事件补自身缺失字段', () => {
+    let s = reducer(initial(), initRun({ runId: 'r1', messageId: 'm1', config: baseConfig, sequence: 0 }));
+    s = reducer(s, upsertEvidenceItem({
+      runId: 'r1',
+      sequence: 1,
+      evidence: {
+        id: 'ev-1',
+        kind: 'web',
+        status: 'candidate',
+        title: '候选标题',
+        url: 'https://example.com/report',
+        domain: 'example.com',
+        citationIndex: 4,
+        claim: '候选结论',
+        snippet: '候选摘要',
+        usedByFinalAnswer: false,
+      },
+    }));
+    s = reducer(s, upsertEvidenceItem({
+      runId: 'r1',
+      sequence: 2,
+      evidence: {
+        id: 'ev-1',
+        kind: 'web',
+        status: 'used',
+        title: '最终标题',
+        claim: '最终结论',
+        snippet: '',
+        usedByFinalAnswer: true,
+      },
+    }));
+
+    expect(s.currentRun?.evidence?.[0]).toMatchObject({
+      status: 'used',
+      title: '最终标题',
+      url: 'https://example.com/report',
+      domain: 'example.com',
+      citationIndex: 4,
+      claim: '最终结论',
+      snippet: '候选摘要',
+      usedByFinalAnswer: true,
+    });
+  });
+
+  it('流式 evidence 应用合并后 cap，并与后端历史 snapshot 的 12 条结果等价', () => {
+    let s = reducer(initial(), initRun({ runId: 'r1', messageId: 'm1', config: baseConfig, sequence: 0 }));
+    for (let index = 1; index <= 14; index += 1) {
+      s = reducer(s, upsertEvidenceItem({
+        runId: 'r1',
+        sequence: index,
+        evidence: {
+          id: `ev-${index}`,
+          kind: 'web',
+          status: index === 1 ? 'used' : index === 2 ? 'read_success' : 'candidate',
+          title: `来源 ${index}`,
+          url: `https://example.com/${index}`,
+          domain: 'example.com',
+          citationIndex: index,
+          claim: `发现 ${index}`,
+          snippet: `摘要 ${index}`,
+          usedByFinalAnswer: index === 1,
+        },
+      }));
+    }
+
+    const expectedIds = [
+      'ev-1',
+      'ev-2',
+      'ev-5',
+      'ev-6',
+      'ev-7',
+      'ev-8',
+      'ev-9',
+      'ev-10',
+      'ev-11',
+      'ev-12',
+      'ev-13',
+      'ev-14',
+    ];
+    expect(s.currentRun?.evidence).toHaveLength(12);
+    expect(s.currentRun?.evidence?.map(item => item.id)).toEqual(expectedIds);
+
+    const historical = buildChatFromServerConversation({
+      id: 'chat-1',
+      title: '历史快照',
+      model_id: 'gpt',
+      messages: [{
+        id: 'm1',
+        role: 'assistant',
+        content: [],
+        agent_run: {
+          run_id: 'r1',
+          status: 'completed',
+          config: {},
+          progress: {
+            evidence: expectedIds.map((id) => {
+              const index = Number(id.slice(3));
+              return {
+                id,
+                kind: 'web',
+                status: index === 1 ? 'used' : index === 2 ? 'read_success' : 'candidate',
+                title: `来源 ${index}`,
+                url: `https://example.com/${index}`,
+                domain: 'example.com',
+                citation_index: index,
+                claim: `发现 ${index}`,
+                snippet: `摘要 ${index}`,
+                used_by_final_answer: index === 1,
+              };
+            }),
+          },
+        },
+      }],
+    } as any);
+
+    expect(s.currentRun?.evidence).toEqual(historical.messages[0].agent_run?.evidence);
   });
 
   it('修参成功即使后续 digest 事件丢失也立即清理匹配摘要并恢复对应 tool call', () => {

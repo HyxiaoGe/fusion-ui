@@ -18,11 +18,13 @@ import {
   updateMessage,
   upsertConversation,
 } from '@/redux/slices/conversationSlice';
+import { resolveComposerAgentMode } from '@/lib/agent/composerAgentMode';
 import {
   appendTextDelta,
   appendThinkingDelta,
   completeThinkingPhase,
   endStream,
+  finalizeRun,
   migrateStreamConversation,
   selectFullStreamContentBlocks,
   selectStreamContentBlocks,
@@ -68,6 +70,7 @@ type SendMessageOptions = {
 
 const STOP_BEFORE_READY_RETRY_DELAYS_MS = [50, 150] as const;
 const STOP_OPERATION_TIMEOUT_MS = 500;
+const INTERRUPTED_HYDRATION_RETRY_MS = 300;
 
 interface SendSessionContext {
   authSessionKey: string;
@@ -132,6 +135,21 @@ function normalizeSendErrorMessage(message: string): string {
   return message;
 }
 
+function isInterruptedStreamSignal(value: unknown): boolean {
+  const candidate = (
+    typeof value === 'object' && value !== null
+      ? value as { code?: unknown; message?: unknown }
+      : {}
+  );
+  return (
+    candidate.code === 'stream_interrupted' ||
+    (
+      candidate.code === 'stream_error' &&
+      candidate.message === '用户中止'
+    )
+  );
+}
+
 async function postStreamActions(
   conversationId: string,
   dispatch: ReturnType<typeof useAppDispatch>,
@@ -165,7 +183,7 @@ export function useSendMessage() {
   const models = useAppSelector((state) => state.models.models);
   const selectedModelId = useAppSelector((state) => state.models.selectedModelId);
   const reasoningEnabled = useAppSelector((state) => state.conversation.reasoningEnabled);
-  const agentPlanMode = useAppSelector((state) => state.conversation.agentPlanMode);
+  const composerAgentMode = useAppSelector((state) => state.conversation.composerAgentMode);
   const authSessionKey = useAppSelector(selectAuthSessionKey);
   const conversationEpoch = useAppSelector(
     (state) => state.conversation.conversationListEpoch
@@ -395,9 +413,10 @@ export function useSendMessage() {
         dispatch(setGlobalError('没有可用的模型，请先在设置中启用一个模型'));
         return;
       }
-      const effectiveAgentPlanMode = enabledModel.capabilities?.functionCalling
-        ? agentPlanMode
-        : 'off';
+      const agentModeResolution = resolveComposerAgentMode(
+        composerAgentMode,
+        enabledModel.capabilities,
+      );
 
       const nextGeneration = sendGenerationRef.current + 1;
       const sendContext = captureSendSessionContext(store.getState(), nextGeneration);
@@ -671,6 +690,9 @@ export function useSendMessage() {
               // 没有结构化 payload 的 error 来自 EOF/网络传输层，会进入有限自动续传；
               // 续传成功前不向用户闪现全局错误。
               if (!payload) return;
+              // stream_interrupted 是后端确认停止后的终态，由外层 catch 走
+              // “生成已停止 + 权威水合”路径，不应短暂闪现错误提示。
+              if (isInterruptedStreamSignal(payload)) return;
               const readableMessage = normalizeSendErrorMessage(message);
               dispatch(setGlobalError(readableMessage));
               dispatch(setStreamError({ message: readableMessage, code: payload?.code, data: payload?.data }));
@@ -691,7 +713,8 @@ export function useSendMessage() {
               stream: true,
               options: {
                 use_reasoning: useReasoning,
-                plan_mode: effectiveAgentPlanMode,
+                plan_mode: agentModeResolution.planMode,
+                task_mode: agentModeResolution.taskMode,
               },
               file_ids: fileIds,
             },
@@ -716,9 +739,72 @@ export function useSendMessage() {
         typewriterRef.current.stop();
         if (controller.signal.aborted || !isActiveSendCurrent()) return;
 
+        const effectiveConvIdOnError = activeConvIdRef.current ?? tempConvId;
+        if (isInterruptedStreamSignal(error)) {
+          // 用户可能从导航后的 ChatPage 实例发起停止，原始发送实例无法共享
+          // AbortController，只会收到后端持久化后的 stream_interrupted 终态。
+          // 这代表“生成已停止”，不是“用户消息发送失败”。
+          const streamState = (
+            store.getState() as {
+              stream: import('@/redux/slices/streamSlice').StreamState;
+            }
+          ).stream;
+          const partialBlocks = selectFullStreamContentBlocks(streamState);
+          if (partialBlocks.length > 0) {
+            dispatch(
+              updateMessage({
+                conversationId: effectiveConvIdOnError,
+                messageId: assistantMessageId,
+                patch: { content: partialBlocks },
+              })
+            );
+          }
+          if (streamState.currentRun?.status === 'running') {
+            dispatch(
+              finalizeRun({
+                runId: streamState.currentRun.runId,
+                status: 'interrupted',
+                reason: 'user_cancelled',
+                sequence: streamState.currentRun.lastSequence + 1,
+              })
+            );
+          }
+          dispatch(
+            updateMessage({
+              conversationId: effectiveConvIdOnError,
+              messageId: userMessageId,
+              patch: { status: null },
+            })
+          );
+          dispatch(endStream());
+          sendGenerationRef.current += 1;
+          activeSendContextRef.current = null;
+          abortControllerRef.current = null;
+          activeConvIdRef.current = null;
+          userMessageIdRef.current = null;
+          assistantMessageIdRef.current = null;
+          serverMessageIdRef.current = null;
+          assistantHasContentRef.current = false;
+          dispatch(requestConversationListRefresh(effectiveConvIdOnError));
+          void hydrateAuthoritativeConversation(
+            effectiveConvIdOnError,
+            isSessionCurrent
+          );
+          // /stop 先完成跨 worker 的 Redis CAS，再由被取消任务异步把
+          // Agent run 落为 interrupted。第一次详情读取可能恰好读到 running；
+          // 短暂等待后再取一次，避免必须刷新页面才能看到“计划已停止”。
+          setTimeout(() => {
+            if (!isSessionCurrent()) return;
+            void hydrateAuthoritativeConversation(
+              effectiveConvIdOnError,
+              isSessionCurrent
+            );
+          }, INTERRUPTED_HYDRATION_RETRY_MS);
+          return;
+        }
+
         const reconnectRetriesExhausted = isRecoverableStreamError(error);
 
-        const effectiveConvIdOnError = activeConvIdRef.current ?? tempConvId;
         if (assistantHasContentRef.current) {
           // 保留已有的 stream content blocks
           const streamState = (store.getState() as { stream: import('@/redux/slices/streamSlice').StreamState }).stream;
@@ -780,7 +866,7 @@ export function useSendMessage() {
     },
     [
       dispatch,
-      agentPlanMode,
+      composerAgentMode,
       hydrateAuthoritativeConversation,
       models,
       reasoningEnabled,

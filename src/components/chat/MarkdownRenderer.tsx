@@ -69,7 +69,11 @@ function renderWithCitations(
     }
 
     const num = parseInt(match[1], 10);
-    const source = sources[num - 1];
+    const hasStableCitationMap = sources.some(source => source.citation_index != null);
+    const sourceIndex = hasStableCitationMap
+      ? sources.findIndex(source => source.citation_index === num)
+      : num - 1;
+    const source = sourceIndex >= 0 ? sources[sourceIndex] : undefined;
 
     if (source) {
       let domain = '';
@@ -87,7 +91,7 @@ function renderWithCitations(
           type="button"
           onClick={(e) => {
             e.preventDefault();
-            onCitationClick(num - 1);
+            onCitationClick(sourceIndex);
           }}
           className={sharedClass}
           aria-label={`查看参考资料 ${num}：${source.title}`}

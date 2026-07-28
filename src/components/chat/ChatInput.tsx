@@ -5,10 +5,17 @@ import { Textarea } from "@/components/ui/textarea";
 import type { FileAttachment } from "@/lib/utils/fileHelpers";
 import { uploadFiles, deleteFile } from "@/lib/api/files";
 import { startPollingFileStatus, stopPollingFileStatus } from "@/lib/api/FileStatusPoller";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { useAppDispatch, useAppSelector } from "@/redux/hooks";
 import type { RootState } from "@/redux/store";
 import { selectAuthSessionKey, selectChatModel, selectIsAuthenticated } from "@/redux/selectors";
-import { setAgentPlanMode, setReasoningEnabled } from "@/redux/slices/conversationSlice";
+import { setComposerAgentMode, setReasoningEnabled } from "@/redux/slices/conversationSlice";
 import {
   addFileId,
   clearFiles,
@@ -36,6 +43,11 @@ import {
   type ConversationComposerAttachment,
   type UploadComposerAttachment,
 } from "./composerAttachments";
+import {
+  COMPOSER_AGENT_MODE_LABELS,
+  getComposerAgentModeAvailability,
+} from "@/lib/agent/composerAgentMode";
+import type { ComposerAgentMode } from "@/types/agentRun";
 
 interface ChatInputProps {
   onSendMessage: (
@@ -80,6 +92,14 @@ interface LocalFileWithStatus {
 
 const EMPTY_CONVERSATION_ATTACHMENTS: ConversationComposerAttachment[] = [];
 const IMAGE_UPLOAD_ONLY_MESSAGE = "当前仅支持上传图片，文件对话后续开放";
+const COMPOSER_AGENT_MODES: Array<{
+  value: ComposerAgentMode;
+  description: string;
+}> = [
+  { value: "auto", description: "按任务复杂度自动决定是否规划" },
+  { value: "plan", description: "回答前先生成并执行计划" },
+  { value: "deep_research", description: "多轮联网研究并整理来源" },
+];
 
 function getFileIdentity(file: File): string {
   return `${file.name}:${file.size}:${file.lastModified}`;
@@ -158,8 +178,9 @@ const ChatInput: React.FC<ChatInputProps> = ({
   const previousAuthIdentityRef = useRef<string | null>(authIdentity);
   const processingFiles = useAppSelector((state) => state.fileUpload.processingFiles);
   const reasoningEnabled = useAppSelector((state) => state.conversation.reasoningEnabled);
-  const agentPlanMode = useAppSelector((state) => state.conversation.agentPlanMode);
+  const composerAgentMode = useAppSelector((state) => state.conversation.composerAgentMode);
   const isStreaming = useAppSelector((state) => state.stream.isStreaming);
+  const currentRun = useAppSelector((state) => state.stream.currentRun);
   const selectContextStatus = useMemo(
     () => makeSelectConversationContextStatus(activeChatId),
     [activeChatId],
@@ -194,12 +215,35 @@ const ChatInput: React.FC<ChatInputProps> = ({
   const isComposerBlocked = disabled || isCurrentModelUnavailable;
 
   const supportsReasoning = hasHydrated && Boolean(selectedModel?.capabilities?.deepThinking);
-  const supportsAgentPlan = hasHydrated && Boolean(selectedModel?.capabilities?.functionCalling);
   const supportsFileUpload = hasHydrated && Boolean(selectedModel?.capabilities?.vision);
+  const isDeepResearchStreaming = Boolean(
+    isStreaming && currentRun?.config.taskMode === "deep_research",
+  );
 
   useEffect(() => {
     setHasHydrated(true);
   }, []);
+
+  useEffect(() => {
+    if (!hasHydrated || !selectedModel || composerAgentMode === "auto") {
+      return;
+    }
+
+    const availability = getComposerAgentModeAvailability(
+      composerAgentMode,
+      selectedModel.capabilities,
+    );
+    if (availability.enabled) {
+      return;
+    }
+
+    dispatch(setComposerAgentMode("auto"));
+    toast({
+      message: `已切换到自动模式：${availability.unavailableReason ?? "当前模型不支持所选模式"}`,
+      type: "warning",
+      duration: 3000,
+    });
+  }, [composerAgentMode, dispatch, hasHydrated, selectedModel, toast]);
 
   useLayoutEffect(() => {
     currentChatIdRef.current = chatId;
@@ -1097,29 +1141,73 @@ const ChatInput: React.FC<ChatInputProps> = ({
               <span className="hidden text-xs min-[420px]:inline">{reasoningEnabled && supportsReasoning ? "思考已开" : "思考"}</span>
             </Button>
 
-            {/* 计划模式按钮：开启后要求模型在复杂执行前给出语义计划 */}
-            <Button
-              variant="ghost"
-              size="sm"
-              className={`h-8 px-2 gap-1.5 text-muted-foreground hover:text-foreground ${!supportsAgentPlan ? "opacity-50 cursor-not-allowed" : ""}`}
-              onClick={() => {
-                if (!supportsAgentPlan || isComposerBlocked) return;
-                dispatch(setAgentPlanMode(agentPlanMode === "on" ? "auto" : "on"));
-              }}
-              disabled={!supportsAgentPlan || isComposerBlocked}
-              aria-label="计划模式"
-              aria-pressed={agentPlanMode === "on" && supportsAgentPlan}
-              title={
-                supportsAgentPlan
-                  ? (agentPlanMode === "on" ? "回答前生成执行计划" : "按任务复杂度自动规划")
-                  : "当前模型不支持计划模式"
-              }
-            >
-              <ListChecks className={`h-4 w-4 ${agentPlanMode === "on" && supportsAgentPlan ? "text-primary" : ""}`} />
-              <span className="hidden text-xs min-[520px]:inline">
-                {agentPlanMode === "on" && supportsAgentPlan ? "计划已开" : "计划"}
-              </span>
-            </Button>
+            <DropdownMenu modal={false}>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-8 min-w-0 gap-1.5 px-2 text-muted-foreground hover:text-foreground"
+                  disabled={isComposerBlocked}
+                  aria-label={`执行模式：${COMPOSER_AGENT_MODE_LABELS[composerAgentMode]}`}
+                  title={`当前执行模式：${COMPOSER_AGENT_MODE_LABELS[composerAgentMode]}`}
+                >
+                  <ListChecks
+                    className={`h-4 w-4 ${
+                      composerAgentMode === "deep_research"
+                        ? "text-info"
+                        : composerAgentMode === "plan"
+                          ? "text-primary"
+                          : ""
+                    }`}
+                  />
+                  <span className="max-w-[4.5rem] truncate text-xs">
+                    {COMPOSER_AGENT_MODE_LABELS[composerAgentMode]}
+                  </span>
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent
+                align="start"
+                side="top"
+                className="w-72"
+                aria-label="选择执行模式"
+              >
+                <DropdownMenuRadioGroup
+                  value={composerAgentMode}
+                  onValueChange={(value) => {
+                    dispatch(setComposerAgentMode(value as ComposerAgentMode));
+                  }}
+                >
+                  {COMPOSER_AGENT_MODES.map((mode) => {
+                    const availability = getComposerAgentModeAvailability(
+                      mode.value,
+                      selectedModel?.capabilities,
+                    );
+                    const disabledMode = !hasHydrated || !availability.enabled;
+                    const itemDescription = availability.enabled
+                      ? mode.description
+                      : availability.unavailableReason;
+                    return (
+                      <DropdownMenuRadioItem
+                        key={mode.value}
+                        value={mode.value}
+                        disabled={disabledMode}
+                        aria-label={`${COMPOSER_AGENT_MODE_LABELS[mode.value]}：${itemDescription}`}
+                        className="items-start py-2"
+                      >
+                        <span className="flex min-w-0 flex-col">
+                          <span className="font-medium">
+                            {COMPOSER_AGENT_MODE_LABELS[mode.value]}
+                          </span>
+                          <span className="mt-0.5 text-xs font-normal text-muted-foreground">
+                            {itemDescription}
+                          </span>
+                        </span>
+                      </DropdownMenuRadioItem>
+                    );
+                  })}
+                </DropdownMenuRadioGroup>
+              </DropdownMenuContent>
+            </DropdownMenu>
 
           </div>
 
@@ -1132,7 +1220,16 @@ const ChatInput: React.FC<ChatInputProps> = ({
               variant={isStreaming && onStopStreaming ? "secondary" : "default"}
               size="sm"
               className="h-8 w-8 p-0 rounded-lg"
-              aria-label={isStreaming && onStopStreaming ? "停止生成" : "发送消息"}
+              aria-label={
+                isStreaming && onStopStreaming
+                  ? (isDeepResearchStreaming ? "停止研究" : "停止生成")
+                  : "发送消息"
+              }
+              title={
+                isStreaming && onStopStreaming
+                  ? (isDeepResearchStreaming ? "停止研究" : "停止生成")
+                  : "发送消息"
+              }
             >
               {isStreaming && onStopStreaming ? (
                 <Square className="h-4 w-4" />

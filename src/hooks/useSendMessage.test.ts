@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import authReducer, { logout } from '@/redux/slices/authSlice';
 import conversationReducer, {
   appendMessage,
-  setAgentPlanMode,
+  setComposerAgentMode,
   setHydrationStatus,
 } from '@/redux/slices/conversationSlice';
 import modelsReducer from '@/redux/slices/modelsSlice';
@@ -68,7 +68,15 @@ function createUser(id: string) {
   };
 }
 
-function createStore({ functionCalling = true }: { functionCalling?: boolean } = {}) {
+function createStore({
+  functionCalling = true,
+  searchCapable = true,
+  agentTools = true,
+}: {
+  functionCalling?: boolean;
+  searchCapable?: boolean;
+  agentTools?: boolean;
+} = {}) {
   return configureStore({
     reducer: {
       auth: authReducer,
@@ -100,6 +108,8 @@ function createStore({ functionCalling = true }: { functionCalling?: boolean } =
               deepThinking: true,
               fileSupport: false,
               functionCalling,
+              searchCapable,
+              agentTools,
             },
           },
         ],
@@ -230,7 +240,7 @@ describe('useSendMessage', () => {
 
   it('把用户开启的计划模式作为受控请求选项发送给后端', async () => {
     const store = createStore();
-    store.dispatch(setAgentPlanMode('on'));
+    store.dispatch(setComposerAgentMode('plan'));
     sendMessageStreamMock.mockImplementation(
       async (_payload: any, callbacks: StreamCallbacks) => {
         callbacks.onReady({ messageId: 'assistant-1', conversationId: 'server-conv' });
@@ -252,6 +262,7 @@ describe('useSendMessage', () => {
         options: expect.objectContaining({
           use_reasoning: true,
           plan_mode: 'on',
+          task_mode: 'standard',
         }),
       }),
       expect.any(Object),
@@ -261,7 +272,7 @@ describe('useSendMessage', () => {
 
   it('切换到不支持工具调用的模型后不会发送不可满足的强制计划模式', async () => {
     const store = createStore({ functionCalling: false });
-    store.dispatch(setAgentPlanMode('on'));
+    store.dispatch(setComposerAgentMode('plan'));
     sendMessageStreamMock.mockImplementation(
       async (_payload: any, callbacks: StreamCallbacks) => {
         callbacks.onReady({ messageId: 'assistant-1', conversationId: 'server-conv' });
@@ -281,7 +292,70 @@ describe('useSendMessage', () => {
     expect(sendMessageStreamMock).toHaveBeenCalledWith(
       expect.objectContaining({
         options: expect.objectContaining({
-          plan_mode: 'off',
+          plan_mode: 'auto',
+          task_mode: 'standard',
+        }),
+      }),
+      expect.any(Object),
+      expect.any(AbortSignal),
+    );
+  });
+
+  it('深度研究发送强制计划并携带任务模式', async () => {
+    const store = createStore();
+    store.dispatch(setComposerAgentMode('deep_research'));
+    sendMessageStreamMock.mockImplementation(
+      async (_payload: any, callbacks: StreamCallbacks) => {
+        callbacks.onReady({ messageId: 'assistant-1', conversationId: 'server-conv' });
+        callbacks.onAnswering({ block_id: 'blk_c', delta: 'answer' });
+        callbacks.onDone({ messageId: 'assistant-1', conversationId: 'server-conv' });
+      }
+    );
+
+    const { result } = renderHook(() => useSendMessage(), {
+      wrapper: createWrapper(store),
+    });
+
+    await act(async () => {
+      await result.current.sendMessage('深入调查这个问题', { conversationId: null });
+    });
+
+    expect(sendMessageStreamMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        options: expect.objectContaining({
+          plan_mode: 'on',
+          task_mode: 'deep_research',
+        }),
+      }),
+      expect.any(Object),
+      expect.any(AbortSignal),
+    );
+  });
+
+  it('深度研究在模型缺少联网工具时发送前安全回退自动模式', async () => {
+    const store = createStore({ searchCapable: false, agentTools: false });
+    store.dispatch(setComposerAgentMode('deep_research'));
+    sendMessageStreamMock.mockImplementation(
+      async (_payload: any, callbacks: StreamCallbacks) => {
+        callbacks.onReady({ messageId: 'assistant-1', conversationId: 'server-conv' });
+        callbacks.onAnswering({ block_id: 'blk_c', delta: 'answer' });
+        callbacks.onDone({ messageId: 'assistant-1', conversationId: 'server-conv' });
+      }
+    );
+
+    const { result } = renderHook(() => useSendMessage(), {
+      wrapper: createWrapper(store),
+    });
+
+    await act(async () => {
+      await result.current.sendMessage('深入调查这个问题', { conversationId: null });
+    });
+
+    expect(sendMessageStreamMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        options: expect.objectContaining({
+          plan_mode: 'auto',
+          task_mode: 'standard',
         }),
       }),
       expect.any(Object),
@@ -1303,6 +1377,182 @@ describe('useSendMessage', () => {
     });
   });
 
+  it('把后端 stream_interrupted 终态视为用户停止并权威水合，不标记发送失败', async () => {
+    const store = createStore();
+    store.dispatch(
+      upsertConversation({
+        id: 'existing-conv',
+        title: 'Existing',
+        model_id: 'model-1',
+        messages: [],
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      })
+    );
+    const interruptedConversation = {
+      id: 'existing-conv',
+      title: 'Existing',
+      model_id: 'model-1',
+      messages: [
+        {
+          id: 'server-user',
+          role: 'user',
+          content: [{ type: 'text', id: 'question', text: 'hello' }],
+        },
+        {
+          id: 'server-assistant',
+          role: 'assistant',
+          content: [{ type: 'text', id: 'partial', text: '已停止前的部分结果' }],
+          agent_run: { status: 'interrupted' },
+        },
+      ],
+    };
+    getConversationMock.mockResolvedValue(interruptedConversation);
+    sendMessageStreamMock.mockImplementationOnce(
+      async (_payload: unknown, callbacks: StreamCallbacks) => {
+        callbacks.onReady({
+          messageId: 'assistant-1',
+          conversationId: 'existing-conv',
+        });
+        callbacks.onRunStarted?.({
+          type: 'run_started',
+          run_id: 'run-1',
+          parent_run_id: null,
+          step_id: null,
+          parent_step_id: null,
+          tool_call_id: null,
+          sequence: 1,
+          trace_id: 'trace-1',
+          ts: Date.now(),
+          conversation_id: 'existing-conv',
+          message_id: 'assistant-1',
+          model: 'model-1',
+          tools: ['web_search', 'url_read'],
+          config: {
+            max_steps: 8,
+            max_tool_calls: 20,
+            timeout_s: 300,
+            plan_mode: 'on',
+            task_mode: 'deep_research',
+          },
+        });
+        callbacks.onReasoning({
+          block_id: 'thinking',
+          delta: '正在研究',
+        });
+        callbacks.onError('用户中止', { code: 'stream_interrupted' });
+        throw Object.assign(new Error('用户中止'), {
+          recoverable: false,
+          code: 'stream_interrupted',
+        });
+      }
+    );
+
+    const { result } = renderHook(() => useSendMessage(), {
+      wrapper: createWrapper(store),
+    });
+
+    await act(async () => {
+      await result.current.sendMessage('hello', {
+        conversationId: 'existing-conv',
+      });
+    });
+
+    await waitFor(() => {
+      expect(getConversationMock).toHaveBeenCalledWith('existing-conv');
+    });
+    await act(async () => {
+      await new Promise((resolve) => {
+        setTimeout(resolve, 350);
+      });
+    });
+    expect(getConversationMock).toHaveBeenCalledTimes(2);
+    await waitFor(() => {
+      const state = store.getState();
+      expect(state.stream.isStreaming).toBe(false);
+      expect(state.stream.currentRun?.status).toBe('interrupted');
+      expect(state.conversation.globalError).toBeNull();
+      expect(
+        state.conversation.byId['existing-conv'].messages.some(
+          (message: Message) => message.status === 'failed'
+        )
+      ).toBe(false);
+      expect(
+        state.conversation.byId['existing-conv'].messages.map(
+          (message: Message) => message.id
+        )
+      ).toEqual(['server-user', 'server-assistant']);
+    });
+  });
+
+  it('兼容旧停止协议的 stream_error + 用户中止，不闪现错误态', async () => {
+    const store = createStore();
+    store.dispatch(
+      upsertConversation({
+        id: 'existing-conv',
+        title: 'Existing',
+        model_id: 'model-1',
+        messages: [],
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      })
+    );
+    getConversationMock.mockResolvedValueOnce({
+      id: 'existing-conv',
+      title: 'Existing',
+      model_id: 'model-1',
+      messages: [
+        {
+          id: 'server-user',
+          role: 'user',
+          content: [{ type: 'text', id: 'question', text: 'hello' }],
+        },
+        {
+          id: 'server-assistant',
+          role: 'assistant',
+          content: [],
+          agent_run: { status: 'interrupted' },
+        },
+      ],
+    });
+    sendMessageStreamMock.mockImplementationOnce(
+      async (_payload: unknown, callbacks: StreamCallbacks) => {
+        callbacks.onReady({
+          messageId: 'assistant-1',
+          conversationId: 'existing-conv',
+        });
+        callbacks.onError('用户中止', {
+          code: 'stream_error',
+          message: '用户中止',
+        });
+        throw Object.assign(new Error('用户中止'), {
+          recoverable: false,
+          code: 'stream_error',
+        });
+      }
+    );
+
+    const { result } = renderHook(() => useSendMessage(), {
+      wrapper: createWrapper(store),
+    });
+
+    await act(async () => {
+      await result.current.sendMessage('hello', {
+        conversationId: 'existing-conv',
+      });
+    });
+
+    await waitFor(() => {
+      expect(getConversationMock).toHaveBeenCalledWith('existing-conv');
+    });
+    expect(store.getState().conversation.globalError).toBeNull();
+    expect(
+      store.getState().conversation.byId['existing-conv'].messages.some(
+        (message: Message) => message.status === 'failed'
+      )
+    ).toBe(false);
+  });
+
   it('网络中断后从最后确认的 entry cursor 续传，复用同一占位消息且只生成一次标题', async () => {
     const store = createStore();
     const dispatchSpy = vi.spyOn(store, 'dispatch');
@@ -1744,7 +1994,14 @@ describe('useSendMessage', () => {
     });
 
     expect(runSnapshot?.runId).toBe('run-1');
-    expect(runSnapshot?.config).toEqual({ maxSteps: 5, maxToolCalls: 10, timeoutS: 60 });
+    expect(runSnapshot?.config).toEqual({
+      maxSteps: 5,
+      maxToolCalls: 10,
+      timeoutS: 60,
+      taskMode: 'standard',
+      networkProfile: 'standard',
+      evidencePolicy: 'standard',
+    });
 
     await act(async () => { releaseStream?.(); });
   });

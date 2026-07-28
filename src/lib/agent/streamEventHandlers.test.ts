@@ -27,7 +27,14 @@ describe('createAgentStreamEventHandlers', () => {
       message_id: 'm1',
       model: 'gpt',
       tools: [],
-      config: { max_steps: 8, max_tool_calls: 20, timeout_s: 300 },
+      config: {
+        max_steps: 8,
+        max_tool_calls: 20,
+        timeout_s: 300,
+        task_mode: 'deep_research',
+        network_profile: 'deep_research',
+        evidence_policy: 'deep_research_v1',
+      },
     });
     handlers.onRunProgressUpdated?.({
       type: 'run_progress_updated',
@@ -54,7 +61,14 @@ describe('createAgentStreamEventHandlers', () => {
         runId: 'r1',
         messageId: 'm1',
         serverMessageId: 'm1',
-        config: { maxSteps: 8, maxToolCalls: 20, timeoutS: 300 },
+        config: {
+          maxSteps: 8,
+          maxToolCalls: 20,
+          timeoutS: 300,
+          taskMode: 'deep_research',
+          networkProfile: 'deep_research',
+          evidencePolicy: 'deep_research_v1',
+        },
         sequence: 0,
       },
     });
@@ -381,6 +395,7 @@ describe('createAgentStreamEventHandlers', () => {
         domain: 'example.com',
         claim: '建议深读：官方来源',
         snippet: '来自搜索关键词：OpenAI',
+        citation_index: 3,
         used_by_final_answer: false,
       },
     });
@@ -393,6 +408,7 @@ describe('createAgentStreamEventHandlers', () => {
         evidence: expect.objectContaining({
           id: 'ev-web-1',
           status: 'selected',
+          citationIndex: 3,
           usedByFinalAnswer: false,
         }),
       }),
