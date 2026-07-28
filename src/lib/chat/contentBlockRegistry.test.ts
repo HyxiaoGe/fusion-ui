@@ -207,7 +207,13 @@ describe('contentBlockRegistry', () => {
       id: 'search-1',
       query: '深圳天气',
       sources: [{ title: '气象局', url: 'https://example.com/weather' }],
-      source_refs: [{ kind: 'search', title: '气象局', url: 'https://example.com/weather' }],
+      source_refs: [{
+        kind: 'search',
+        title: '气象局',
+        url: 'https://example.com/weather',
+        evidence_id: 'ev-weather',
+        citation_index: 2,
+      }],
       requested_count: 8,
       actual_count: 3,
       context_source_count: 2,
@@ -228,6 +234,10 @@ describe('contentBlockRegistry', () => {
       domains: ['example.com'],
       recency_days: 7,
       budget_limited: true,
+      source_refs: [expect.objectContaining({
+        evidence_id: 'ev-weather',
+        citation_index: 2,
+      })],
     }));
   });
 

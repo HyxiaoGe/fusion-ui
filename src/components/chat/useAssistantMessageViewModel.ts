@@ -81,7 +81,6 @@ export function deriveStaticAssistantMessageViewModel({
   });
   const searchBlocks = collectSearchBlocks(blocksToRender);
   const evidenceSearchSources = collectSearchSources(searchBlocks);
-  const searchSources = collectCitationSearchSources(searchBlocks, evidenceSearchSources);
   const searchQueries = collectSearchQueries(searchBlocks);
   const answerEvidence = deriveAnswerEvidence({
     sourceRefs: collectSourceRefs(searchBlocks, activity.urlBlocks),
@@ -90,6 +89,12 @@ export function deriveStaticAssistantMessageViewModel({
     agentEvidence: ownedRun?.evidence,
     searchProvider: collectSearchProvider(searchBlocks),
   });
+  const searchSources = collectCitationSources(
+    searchBlocks,
+    activity.urlBlocks,
+    evidenceSearchSources,
+    answerEvidence,
+  );
   const displayText = extractTextFromBlocks(blocksToRender);
   const displayThinking = extractThinkingFromBlocks(blocksToRender);
   const structuredResults = collectStructuredToolResultBlocks(blocksToRender);
@@ -166,29 +171,51 @@ export function useAssistantMessageViewModel({
     ],
   );
 
-  const searchSources: SearchSourceSummary[] = useMemo(() => {
-    if (isCurrentlyStreaming) return streamSearchSources;
-    const searchBlocks = collectSearchBlocks(blocksToRender);
-    return collectCitationSearchSources(searchBlocks, collectSearchSources(searchBlocks));
-  }, [isCurrentlyStreaming, streamSearchSources, blocksToRender]);
+  const searchBlocks = useMemo(
+    () => collectSearchBlocks(blocksToRender),
+    [blocksToRender],
+  );
+
+  const evidenceSearchSources = useMemo(
+    () => collectSearchSources(searchBlocks),
+    [searchBlocks],
+  );
 
   const searchQueries = useMemo(
-    () => collectSearchQueries(collectSearchBlocks(blocksToRender)),
-    [blocksToRender],
+    () => collectSearchQueries(searchBlocks),
+    [searchBlocks],
   );
 
   const answerEvidence = useMemo(
     () => {
-      const searchBlocks = collectSearchBlocks(blocksToRender);
       return deriveAnswerEvidence({
         sourceRefs: collectSourceRefs(searchBlocks, activity.urlBlocks),
-        searchSources: collectSearchSources(searchBlocks),
+        searchSources: evidenceSearchSources,
         urlBlocks: activity.urlBlocks,
         agentEvidence: ownedRun?.evidence,
         searchProvider: collectSearchProvider(searchBlocks),
       });
     },
-    [blocksToRender, activity.urlBlocks, ownedRun?.evidence],
+    [activity.urlBlocks, evidenceSearchSources, ownedRun?.evidence, searchBlocks],
+  );
+
+  const searchSources: SearchSourceSummary[] = useMemo(
+    () => collectCitationSources(
+      searchBlocks,
+      activity.urlBlocks,
+      isCurrentlyStreaming && streamSearchSources.length > 0
+        ? streamSearchSources
+        : evidenceSearchSources,
+      answerEvidence,
+    ),
+    [
+      activity.urlBlocks,
+      answerEvidence,
+      evidenceSearchSources,
+      isCurrentlyStreaming,
+      searchBlocks,
+      streamSearchSources,
+    ],
   );
 
   const displayText = useMemo(() => extractTextFromBlocks(blocksToRender), [blocksToRender]);
@@ -254,11 +281,27 @@ function collectSearchProvider(searchBlocks: SearchBlock[]): string | undefined 
     .find(Boolean);
 }
 
-function collectCitationSearchSources(
+function collectCitationSources(
   searchBlocks: SearchBlock[],
+  urlBlocks: UrlBlock[],
   fallbackSources: SearchSourceSummary[],
+  answerEvidence: AnswerEvidenceModel | null,
 ): SearchSourceSummary[] {
-  const sourceRefs = searchBlocks.flatMap(block => block.source_refs ?? []);
+  const stableItems = answerEvidence?.items.filter(item => item.citationIndex != null) ?? [];
+  if (stableItems.length > 0) {
+    return stableItems.map(item => ({
+      title: item.title,
+      url: item.url,
+      favicon: item.favicon,
+      evidence_id: item.evidenceId,
+      citation_index: item.citationIndex,
+    }));
+  }
+
+  const sourceRefs = [
+    ...searchBlocks.flatMap(block => block.source_refs ?? []),
+    ...urlBlocks.flatMap(block => block.source_refs ?? []),
+  ];
   if (sourceRefs.length === 0) {
     return fallbackSources;
   }

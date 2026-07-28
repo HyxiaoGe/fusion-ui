@@ -57,6 +57,16 @@ export type AgentPlanItemKind =
 
 export type AgentPlanMode = 'auto' | 'on' | 'off';
 
+/** 输入框面向用户的任务执行模式。 */
+export type ComposerAgentMode = 'auto' | 'plan' | 'deep_research';
+
+/** 发送给后端并由 run config 持久化的任务类型。 */
+export type AgentTaskMode = 'standard' | 'deep_research';
+
+export type AgentNetworkProfile = 'standard' | 'deep_research';
+
+export type AgentEvidencePolicy = 'standard' | 'deep_research_v1';
+
 export type AgentPlanSource = 'model' | 'observed';
 
 export interface AgentProgressState {
@@ -101,6 +111,8 @@ export interface AgentEvidenceItem {
   title: string;
   url?: string;
   domain?: string;
+  /** 当前 run 内稳定的正文引用编号，从 1 开始。 */
+  citationIndex?: number;
   claim: string;
   snippet?: string;
   usedByFinalAnswer: boolean;
@@ -160,6 +172,10 @@ export interface AgentRunConfig {
   maxSteps: number;
   maxToolCalls: number;
   timeoutS: number;
+  /** 旧历史可能缺失；SSE 与新历史会归一化为明确值。 */
+  taskMode?: AgentTaskMode;
+  networkProfile?: AgentNetworkProfile;
+  evidencePolicy?: AgentEvidencePolicy;
 }
 
 export interface AgentRunState {

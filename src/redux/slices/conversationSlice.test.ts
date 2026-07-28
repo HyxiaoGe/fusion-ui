@@ -8,7 +8,7 @@ import reducer, {
   requestConversationListRefresh,
   resetConversationState,
   acknowledgeConversationListRefresh,
-  setAgentPlanMode,
+  setComposerAgentMode,
   setConversationList,
   setHydrationStatus,
   setLastReadyConversationSnapshot,
@@ -40,12 +40,12 @@ function textMessage(id: string): Message {
 }
 
 describe('conversationSlice', () => {
-  it('切换计划模式并在会话状态重置后保留用户选择', () => {
-    const enabled = reducer(undefined, setAgentPlanMode('on'));
+  it('切换深度研究模式并在会话状态重置后保留用户选择', () => {
+    const enabled = reducer(undefined, setComposerAgentMode('deep_research'));
     const reset = reducer(enabled, resetConversationState());
 
-    expect(enabled.agentPlanMode).toBe('on');
-    expect(reset.agentPlanMode).toBe('on');
+    expect(enabled.composerAgentMode).toBe('deep_research');
+    expect(reset.composerAgentMode).toBe('deep_research');
   });
 
   it('会话列表 dirty id 去重排队，并只确认已完成的 id', () => {
@@ -264,7 +264,7 @@ describe('conversationSlice', () => {
       pendingConversationId: null,
       animatingTitleId: null,
       reasoningEnabled: true,
-      agentPlanMode: 'auto',
+      composerAgentMode: 'auto',
       globalError: null,
       searchResults: null,
       isSearching: false,
@@ -324,7 +324,7 @@ describe('conversationSlice', () => {
       pendingConversationId: null,
       animatingTitleId: null,
       reasoningEnabled: true,
-      agentPlanMode: 'auto',
+      composerAgentMode: 'auto',
       globalError: null,
       searchResults: null,
       isSearching: false,
@@ -374,7 +374,7 @@ describe('conversationSlice', () => {
       pendingConversationId: 'temp',
       animatingTitleId: null,
       reasoningEnabled: true,
-      agentPlanMode: 'auto',
+      composerAgentMode: 'auto',
       globalError: null,
       searchResults: null,
       isSearching: false,

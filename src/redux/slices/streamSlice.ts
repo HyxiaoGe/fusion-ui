@@ -15,6 +15,7 @@ import type {
   AgentPlanSource,
   AgentPlanState,
   AgentProgressState,
+  AgentRunConfig,
   AgentRunState,
   AgentRunStatus,
   AgentToolDigest,
@@ -110,6 +111,56 @@ const initialState: StreamState = {
   contextUsageInFlightMeta: null,
   pendingContextRequest: null,
 };
+
+const MAX_EVIDENCE_ITEMS = 12;
+
+function evidencePriority(item: AgentEvidenceItem): number {
+  if (item.status === 'used' || item.usedByFinalAnswer) return 5;
+  if (item.status === 'read_success') return 4;
+  if (item.status === 'selected') return 3;
+  if (item.status === 'read_degraded' || item.status === 'read_failed') return 2;
+  return 1;
+}
+
+function mergeEvidenceItems(
+  existing: AgentEvidenceItem,
+  incoming: AgentEvidenceItem,
+): AgentEvidenceItem {
+  const existingPriority = evidencePriority(existing);
+  const incomingPriority = evidencePriority(incoming);
+  const primary = incomingPriority >= existingPriority ? incoming : existing;
+  const secondary = primary === incoming ? existing : incoming;
+  const primaryRecord = primary as unknown as Record<string, unknown>;
+  const secondaryRecord = secondary as unknown as Record<string, unknown>;
+  const merged: Record<string, unknown> = {};
+
+  for (const [key, value] of Object.entries(primaryRecord)) {
+    merged[key] = value !== null && value !== undefined && value !== ''
+      ? value
+      : secondaryRecord[key];
+  }
+  for (const [key, value] of Object.entries(secondaryRecord)) {
+    if (!(key in merged)) {
+      merged[key] = value;
+    }
+  }
+
+  return merged as unknown as AgentEvidenceItem;
+}
+
+function capEvidenceItems(items: AgentEvidenceItem[]): AgentEvidenceItem[] {
+  if (items.length <= MAX_EVIDENCE_ITEMS) return items;
+
+  const kept = items
+    .map((item, index) => ({ item, index }))
+    .sort((left, right) => (
+      evidencePriority(right.item) - evidencePriority(left.item)
+      || right.index - left.index
+    ))
+    .slice(0, MAX_EVIDENCE_ITEMS)
+    .sort((left, right) => left.index - right.index);
+  return kept.map(entry => entry.item);
+}
 
 const streamSlice = createSlice({
   name: 'stream',
@@ -331,7 +382,7 @@ const streamSlice = createSlice({
         runId: string;
         messageId: string;
         serverMessageId?: string;
-        config: { maxSteps: number; maxToolCalls: number; timeoutS: number };
+        config: AgentRunConfig;
         sequence: number;
       }>
     ) {
@@ -459,10 +510,11 @@ const streamSlice = createSlice({
       run.evidence = run.evidence ?? [];
       const index = run.evidence.findIndex(existing => existing.id === evidence.id);
       if (index >= 0) {
-        run.evidence[index] = evidence;
+        run.evidence[index] = mergeEvidenceItems(run.evidence[index], evidence);
       } else {
         run.evidence.push(evidence);
       }
+      run.evidence = capEvidenceItems(run.evidence);
     },
 
     upsertStaticContentBlock(

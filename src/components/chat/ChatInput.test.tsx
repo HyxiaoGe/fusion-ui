@@ -1,8 +1,9 @@
 import React from 'react';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { hydrateRoot } from 'react-dom/client';
 import { renderToString } from 'react-dom/server';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const {
   currentState,
@@ -18,7 +19,7 @@ const {
   startPollingFileStatusMock,
   stopPollingFileStatusMock,
   setReasoningEnabledMock,
-  setAgentPlanModeMock,
+  setComposerAgentModeMock,
   clearFilesMock,
   addFileIdMock,
   updateFileStatusMock,
@@ -37,12 +38,13 @@ const {
       },
       conversation: {
         reasoningEnabled: false,
-        agentPlanMode: 'auto',
+        composerAgentMode: 'auto',
         byId: {},
       },
       stream: {
         isStreaming: false,
         conversationId: null,
+        currentRun: null,
         contextUsage: null,
         contextUsageMeta: null,
         contextUsageConversationId: null,
@@ -76,7 +78,7 @@ const {
     startPollingFileStatusMock: vi.fn(),
     stopPollingFileStatusMock: vi.fn(),
     setReasoningEnabledMock: action('conversation/setReasoningEnabled'),
-    setAgentPlanModeMock: action('conversation/setAgentPlanMode'),
+    setComposerAgentModeMock: action('conversation/setComposerAgentMode'),
     clearFilesMock: action('fileUpload/clearFiles'),
     addFileIdMock: action('fileUpload/addFileId'),
     updateFileStatusMock: action('fileUpload/updateFileStatus'),
@@ -109,7 +111,7 @@ vi.mock('@/components/ui/toast', () => ({
 
 vi.mock('@/redux/slices/conversationSlice', () => ({
   setReasoningEnabled: setReasoningEnabledMock,
-  setAgentPlanMode: setAgentPlanModeMock,
+  setComposerAgentMode: setComposerAgentModeMock,
 }));
 
 vi.mock('@/redux/slices/fileUploadSlice', () => ({
@@ -163,6 +165,16 @@ vi.mock('./FilePreviewList', () => ({
 
 import ChatInput from './ChatInput';
 
+beforeAll(() => {
+  // Radix DropdownMenu 依赖真实浏览器提供的指针与焦点 API。
+  // jsdom 缺少这些接口时菜单会在打开后立即卸载，测试应补齐环境而不是替换产品组件。
+  window.PointerEvent = MouseEvent as typeof PointerEvent;
+  HTMLElement.prototype.hasPointerCapture = () => false;
+  HTMLElement.prototype.setPointerCapture = () => {};
+  HTMLElement.prototype.releasePointerCapture = () => {};
+  HTMLElement.prototype.scrollIntoView = () => {};
+});
+
 function configureAuthenticatedVisionModel(userId = 'user-a') {
   currentState.auth.isAuthenticated = true;
   currentState.auth.user = { id: userId };
@@ -176,6 +188,8 @@ function configureAuthenticatedVisionModel(userId = 'user-a') {
         vision: true,
         deepThinking: true,
         functionCalling: true,
+        searchCapable: true,
+        agentTools: true,
       },
     },
   ];
@@ -220,7 +234,7 @@ describe('ChatInput', () => {
     startPollingFileStatusMock.mockReset();
     stopPollingFileStatusMock.mockReset();
     setReasoningEnabledMock.mockClear();
-    setAgentPlanModeMock.mockClear();
+    setComposerAgentModeMock.mockClear();
     clearFilesMock.mockClear();
     addFileIdMock.mockClear();
     updateFileStatusMock.mockClear();
@@ -230,10 +244,11 @@ describe('ChatInput', () => {
     currentState.models.selectedModelId = null;
     currentState.models.isLoading = false;
     currentState.conversation.reasoningEnabled = false;
-    currentState.conversation.agentPlanMode = 'auto';
+    currentState.conversation.composerAgentMode = 'auto';
     currentState.conversation.byId = {};
     currentState.stream.isStreaming = false;
     currentState.stream.conversationId = null;
+    currentState.stream.currentRun = null;
     currentState.stream.contextUsage = null;
     currentState.stream.contextUsageMeta = null;
     currentState.stream.contextUsageConversationId = null;
@@ -556,7 +571,116 @@ describe('ChatInput', () => {
     const toolbar = screen.getByRole('toolbar', { name: '消息工具栏' });
     expect(toolbar).toHaveClass('min-w-0');
     expect(screen.getByText('思考')).toHaveClass('hidden', 'min-[420px]:inline');
+    expect(screen.getByText('自动')).toHaveClass('max-w-[4.5rem]', 'truncate');
     expect(screen.getByTestId('model-selector-trigger')).toHaveClass('max-w-[112px]', 'sm:max-w-none');
+  });
+
+  it('执行模式菜单支持键盘打开与三态选择', async () => {
+    configureAuthenticatedVisionModel();
+    render(<ChatInput onSendMessage={vi.fn()} activeChatId="chat-a" />);
+
+    const user = userEvent.setup();
+    const trigger = screen.getByRole('button', { name: '执行模式：自动' });
+    trigger.focus();
+    await user.keyboard('{ArrowDown}');
+
+    const menu = await screen.findByRole('menu');
+    expect(menu).toHaveAttribute('aria-label', '选择执行模式');
+    const deepResearchItem = within(menu).getByRole('menuitemradio', { name: /深度研究/ });
+    expect(deepResearchItem).toHaveAttribute('aria-checked', 'false');
+
+    await user.keyboard('{End}');
+    expect(deepResearchItem).toHaveFocus();
+    await user.keyboard('{Enter}');
+
+    expect(setComposerAgentModeMock).toHaveBeenCalledWith('deep_research');
+  });
+
+  it('按模型能力禁用不兼容模式并说明原因', async () => {
+    currentState.auth.isAuthenticated = true;
+    currentState.models.selectedModelId = 'model-1';
+    currentState.models.models = [{
+      id: 'model-1',
+      provider: 'qwen',
+      capabilities: {
+        functionCalling: true,
+        searchCapable: false,
+        agentTools: false,
+      },
+    }];
+
+    render(<ChatInput onSendMessage={vi.fn()} activeChatId="chat-a" />);
+    fireEvent.pointerDown(screen.getByRole('button', { name: '执行模式：自动' }), {
+      button: 0,
+      ctrlKey: false,
+      pointerType: 'mouse',
+    });
+
+    expect(await screen.findByRole('menuitemradio', { name: /计划/ })).toBeEnabled();
+    const deepResearchItem = screen.getByRole('menuitemradio', { name: /深度研究/ });
+    expect(deepResearchItem).toHaveAttribute('data-disabled');
+    expect(deepResearchItem).toHaveTextContent('深度研究需要支持联网工具');
+  });
+
+  it('模型切换导致能力降级时回退自动模式并通过 toast 轻提示', async () => {
+    configureAuthenticatedVisionModel();
+    currentState.conversation.composerAgentMode = 'deep_research';
+
+    const { rerender } = render(<ChatInput onSendMessage={vi.fn()} activeChatId="chat-a" />);
+    setComposerAgentModeMock.mockClear();
+
+    currentState.models.models = [{
+      id: 'model-1',
+      provider: 'qwen',
+      capabilities: {
+        vision: true,
+        deepThinking: true,
+        functionCalling: true,
+        searchCapable: false,
+        agentTools: false,
+      },
+    }];
+    rerender(<ChatInput onSendMessage={vi.fn()} activeChatId="chat-a" />);
+
+    await waitFor(() => {
+      expect(setComposerAgentModeMock).toHaveBeenCalledWith('auto');
+      expect(toastMock).toHaveBeenCalledWith(expect.objectContaining({
+        message: '已切换到自动模式：深度研究需要支持联网工具',
+        type: 'warning',
+      }));
+    });
+    expect(screen.queryByTestId('composer-agent-mode-status')).toBeNull();
+  });
+
+  it('深度研究运行中的停止按钮使用研究语义', () => {
+    configureAuthenticatedVisionModel();
+    currentState.stream.isStreaming = true;
+    currentState.stream.currentRun = {
+      runId: 'run-deep',
+      messageId: 'assistant-1',
+      status: 'running',
+      config: {
+        maxSteps: 8,
+        maxToolCalls: 20,
+        timeoutS: 300,
+        taskMode: 'deep_research',
+      },
+      totalSteps: 0,
+      totalToolCalls: 0,
+      steps: [],
+      lastSequence: 1,
+    };
+
+    render(
+      <ChatInput
+        onSendMessage={vi.fn()}
+        onStopStreaming={vi.fn()}
+        activeChatId="chat-a"
+      />,
+    );
+
+    expect(screen.getByRole('button', { name: '停止研究' })).toHaveAttribute('title', '停止研究');
+    expect(screen.queryByRole('button', { name: '停止生成' })).toBeNull();
   });
 
   it('模型能力在服务端渲染后已于客户端加载时不会产生 hydration mismatch', async () => {
@@ -1545,13 +1669,18 @@ describe('ChatInput', () => {
 
     expect(screen.getByRole('button', { name: '上传图片' })).toBeEnabled();
     expect(screen.getByRole('button', { name: '思考模式' })).toHaveAttribute('aria-pressed', 'false');
-    expect(screen.getByRole('button', { name: '计划模式' })).toHaveAttribute('aria-pressed', 'false');
+    expect(screen.getByRole('button', { name: '执行模式：自动' })).toHaveTextContent('自动');
     expect(screen.getByRole('button', { name: '发送消息' })).toBeDisabled();
 
     fireEvent.click(screen.getByRole('button', { name: '思考模式' }));
     expect(setReasoningEnabledMock).toHaveBeenCalledWith(true);
-    fireEvent.click(screen.getByRole('button', { name: '计划模式' }));
-    expect(setAgentPlanModeMock).toHaveBeenCalledWith('on');
+    fireEvent.pointerDown(screen.getByRole('button', { name: '执行模式：自动' }), {
+      button: 0,
+      ctrlKey: false,
+      pointerType: 'mouse',
+    });
+    fireEvent.click(screen.getByRole('menuitemradio', { name: /计划/ }));
+    expect(setComposerAgentModeMock).toHaveBeenCalledWith('plan');
 
     fireEvent.change(screen.getByPlaceholderText('发消息给 Fusion AI（Enter 发送）'), {
       target: {
@@ -1564,7 +1693,7 @@ describe('ChatInput', () => {
     expect(onSendMessage).toHaveBeenCalledWith('你好');
 
     currentState.conversation.reasoningEnabled = true;
-    currentState.conversation.agentPlanMode = 'on';
+    currentState.conversation.composerAgentMode = 'plan';
     rerender(
       <ChatInput
         onSendMessage={onSendMessage}
@@ -1574,7 +1703,7 @@ describe('ChatInput', () => {
     );
 
     expect(screen.getByRole('button', { name: '思考模式' })).toHaveAttribute('aria-pressed', 'true');
-    expect(screen.getByRole('button', { name: '计划模式' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: '执行模式：计划' })).toHaveTextContent('计划');
 
     currentState.stream.isStreaming = true;
     rerender(

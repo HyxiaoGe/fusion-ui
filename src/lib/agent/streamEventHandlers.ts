@@ -33,6 +33,7 @@ import {
   mapWireAgentPlanItem,
   normalizeAgentPlanMetadata,
 } from '@/lib/agent/planState';
+import { normalizeAgentRunConfig } from '@/lib/agent/runConfig';
 
 type DispatchLike = (action: unknown) => unknown;
 type RunStartedEvent = Parameters<NonNullable<StreamCallbacks['onRunStarted']>>[0];
@@ -60,11 +61,7 @@ export function createAgentStreamEventHandlers({
         runId: ev.run_id,
         messageId: resolveMessageId(ev),
         serverMessageId: ev.message_id,
-        config: {
-          maxSteps: (ev.config.max_steps as number) ?? 0,
-          maxToolCalls: (ev.config.max_tool_calls as number) ?? 0,
-          timeoutS: (ev.config.timeout_s as number) ?? 0,
-        },
+        config: normalizeAgentRunConfig(ev.config),
         sequence: ev.sequence,
       }));
     },
@@ -292,6 +289,7 @@ function mapEvidenceItem(item: {
   title: string;
   url?: string;
   domain?: string;
+  citation_index?: number;
   claim: string;
   snippet?: string;
   used_by_final_answer?: boolean;
@@ -303,8 +301,15 @@ function mapEvidenceItem(item: {
     title: item.title,
     url: item.url,
     domain: item.domain,
+    citationIndex: normalizeCitationIndex(item.citation_index),
     claim: item.claim,
     snippet: item.snippet,
     usedByFinalAnswer: item.used_by_final_answer ?? false,
   };
+}
+
+function normalizeCitationIndex(value: number | undefined): number | undefined {
+  return typeof value === 'number' && Number.isInteger(value) && value > 0
+    ? value
+    : undefined;
 }
