@@ -230,6 +230,97 @@ describe('McpServerManager', () => {
     }));
   });
 
+  it('Context7 技术文档预设默认免密并提交空工具白名单', async () => {
+    apiMocks.create.mockResolvedValue({
+      ...server,
+      id: 'mcp-context7',
+      name: 'Context7 技术文档',
+      provider: 'context7',
+      endpoint_url: 'https://mcp.context7.com/mcp',
+      auth_type: 'none',
+      auth_name: null,
+      credential_ref: null,
+      allowed_tools: [],
+      discovered_tools: [],
+    });
+
+    render(<McpServerManager />);
+    await screen.findByText('高德地图');
+    fireEvent.click(screen.getByRole('button', { name: '新增 MCP 服务' }));
+    fireEvent.click(screen.getByRole('button', { name: '使用 Context7 技术文档预设' }));
+
+    expect(screen.getByLabelText('服务名称')).toHaveValue('Context7 技术文档');
+    expect(screen.getByLabelText('提供商')).toHaveValue('context7');
+    expect(screen.getByLabelText('Endpoint URL')).toHaveValue('https://mcp.context7.com/mcp');
+    expect(screen.getByLabelText('鉴权方式')).toHaveValue('none');
+    expect(screen.queryByLabelText('Header / Query 参数名')).toBeNull();
+    expect(screen.queryByLabelText('凭证引用')).toBeNull();
+    expect(screen.queryByLabelText(/API Key|明文密钥|secret|token/i)).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: '保存服务' }));
+
+    await waitFor(() => expect(apiMocks.create).toHaveBeenCalledWith({
+      name: 'Context7 技术文档',
+      provider: 'context7',
+      endpoint_url: 'https://mcp.context7.com/mcp',
+      transport: 'streamable_http',
+      auth_type: 'none',
+      auth_name: null,
+      credential_ref: null,
+      allowed_tools: [],
+    }));
+  });
+
+  it('免密 Context7 官方配置仍显示推荐文档工具', async () => {
+    const context7Server = {
+      ...server,
+      id: 'mcp-context7-no-auth',
+      name: 'Context7 技术文档',
+      provider: 'context7',
+      endpoint_url: 'https://mcp.context7.com/mcp',
+      auth_type: 'none' as const,
+      auth_name: null,
+      credential_ref: null,
+      allowed_tools: [],
+      discovered_tools: [
+        { name: 'resolve-library-id', description: '解析技术文档库 ID' },
+        { name: 'query-docs', description: '查询最新技术文档' },
+      ],
+    };
+    apiMocks.fetch.mockResolvedValue([context7Server]);
+
+    render(<McpServerManager />);
+    const card = await screen.findByTestId('mcp-server-mcp-context7-no-auth');
+    fireEvent.click(within(card).getByRole('button', { name: '编辑Context7 技术文档' }));
+
+    expect(screen.getByRole('button', { name: '一键选择推荐文档工具' })).toBeInTheDocument();
+  });
+
+  it('Context7 官方 hostname 尾点不会隐藏推荐文档工具', async () => {
+    const context7Server = {
+      ...server,
+      id: 'mcp-context7-dot',
+      name: 'Context7 技术文档',
+      provider: 'context7',
+      endpoint_url: 'https://mcp.context7.com./mcp',
+      auth_type: 'none' as const,
+      auth_name: null,
+      credential_ref: null,
+      allowed_tools: [],
+      discovered_tools: [
+        { name: 'resolve-library-id', description: '解析技术文档库 ID' },
+        { name: 'query-docs', description: '查询最新技术文档' },
+      ],
+    };
+    apiMocks.fetch.mockResolvedValue([context7Server]);
+
+    render(<McpServerManager />);
+    const card = await screen.findByTestId('mcp-server-mcp-context7-dot');
+    fireEvent.click(within(card).getByRole('button', { name: '编辑Context7 技术文档' }));
+
+    expect(screen.getByRole('button', { name: '一键选择推荐文档工具' })).toBeInTheDocument();
+  });
+
   it('编辑已发现高德服务时一键只选择发现快照中的推荐只读工具', async () => {
     const discoveredRecommendedTools = recommendedAmapReadOnlyTools.filter(
       (name) => name !== 'maps_weather',
@@ -263,6 +354,115 @@ describe('McpServerManager', () => {
       'mcp-1',
       expect.objectContaining({ allowed_tools: discoveredRecommendedTools }),
     ));
+  });
+
+  it('编辑 Context7 服务时一键只选择已发现的两个推荐文档工具', async () => {
+    const context7Server = {
+      ...server,
+      id: 'mcp-context7',
+      name: 'Context7 技术文档',
+      provider: 'context7',
+      endpoint_url: 'https://mcp.context7.com/mcp',
+      auth_type: 'header' as const,
+      auth_name: 'CONTEXT7_API_KEY',
+      credential_ref: 'CONTEXT7_API_KEY',
+      allowed_tools: ['provider_future_tool'],
+      discovered_tools: [
+        { name: 'resolve-library-id', description: '解析技术文档库 ID' },
+        { name: 'query-docs', description: '查询最新技术文档' },
+        { name: 'provider_future_tool', description: '未进入推荐集合的新工具' },
+      ],
+    };
+    apiMocks.fetch.mockResolvedValue([context7Server]);
+    apiMocks.update.mockResolvedValue(context7Server);
+
+    render(<McpServerManager />);
+    const card = await screen.findByTestId('mcp-server-mcp-context7');
+    fireEvent.click(within(card).getByRole('button', { name: '编辑Context7 技术文档' }));
+    fireEvent.click(screen.getByRole('button', { name: '一键选择推荐文档工具' }));
+
+    expect(screen.getByRole('checkbox', { name: /resolve-library-id/ })).toBeChecked();
+    expect(screen.getByRole('checkbox', { name: /query-docs/ })).toBeChecked();
+    expect(screen.getByRole('checkbox', { name: /provider_future_tool/ })).not.toBeChecked();
+
+    fireEvent.click(screen.getByRole('button', { name: '保存服务' }));
+    await waitFor(() => expect(apiMocks.update).toHaveBeenCalledWith(
+      'mcp-context7',
+      expect.objectContaining({ allowed_tools: ['resolve-library-id', 'query-docs'] }),
+    ));
+  });
+
+  it.each([
+    ['非官方 endpoint', { endpoint_url: 'https://example.com/mcp' }],
+    ['非 header 鉴权', { auth_type: 'bearer' as const }],
+    ['非官方 Header 名', { auth_name: 'X-API-Key' }],
+    ['非官方凭证引用', { credential_ref: 'OTHER_CONTEXT7_KEY' }],
+  ])('Context7 的%s不显示官方推荐操作', async (_label, override) => {
+    const disguisedContext7Server = {
+      ...server,
+      id: 'mcp-context7-disguised',
+      name: 'Context7 技术文档',
+      provider: 'context7',
+      endpoint_url: 'https://mcp.context7.com/mcp',
+      auth_type: 'header' as const,
+      auth_name: 'CONTEXT7_API_KEY',
+      credential_ref: 'CONTEXT7_API_KEY',
+      allowed_tools: [],
+      discovered_tools: [
+        { name: 'resolve-library-id', description: '解析技术文档库 ID' },
+        { name: 'query-docs', description: '查询最新技术文档' },
+      ],
+      ...override,
+    };
+    apiMocks.fetch.mockResolvedValue([disguisedContext7Server]);
+
+    render(<McpServerManager />);
+    const card = await screen.findByTestId('mcp-server-mcp-context7-disguised');
+    fireEvent.click(within(card).getByRole('button', { name: '编辑Context7 技术文档' }));
+
+    expect(screen.queryByRole('button', { name: '一键选择推荐文档工具' })).toBeNull();
+  });
+
+  it('Context7 推荐操作不会授权尚未发现的 query-docs', async () => {
+    const context7Server = {
+      ...server,
+      id: 'mcp-context7',
+      name: 'Context7 技术文档',
+      provider: 'context7',
+      endpoint_url: 'https://mcp.context7.com/mcp',
+      auth_type: 'header' as const,
+      auth_name: 'CONTEXT7_API_KEY',
+      credential_ref: 'CONTEXT7_API_KEY',
+      allowed_tools: [],
+      discovered_tools: [
+        { name: 'resolve-library-id', description: '解析技术文档库 ID' },
+      ],
+    };
+    apiMocks.fetch.mockResolvedValue([context7Server]);
+    apiMocks.update.mockResolvedValue(context7Server);
+
+    render(<McpServerManager />);
+    const card = await screen.findByTestId('mcp-server-mcp-context7');
+    fireEvent.click(within(card).getByRole('button', { name: '编辑Context7 技术文档' }));
+    fireEvent.click(screen.getByRole('button', { name: '一键选择推荐文档工具' }));
+
+    expect(screen.getByRole('checkbox', { name: /resolve-library-id/ })).toBeChecked();
+    expect(screen.queryByRole('checkbox', { name: /query-docs/ })).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: '保存服务' }));
+    await waitFor(() => expect(apiMocks.update).toHaveBeenCalledWith(
+      'mcp-context7',
+      expect.objectContaining({ allowed_tools: ['resolve-library-id'] }),
+    ));
+  });
+
+  it('已发现工具描述明确标记为远端服务声明', async () => {
+    render(<McpServerManager />);
+    const card = await screen.findByTestId('mcp-server-mcp-1');
+    fireEvent.click(within(card).getByRole('button', { name: '编辑高德地图' }));
+
+    expect(screen.getByText('远端服务声明：关键词搜索')).toBeInTheDocument();
+    expect(screen.queryByText('关键词搜索')).toBeNull();
   });
 
   it('新建服务不允许填写未发现工具并固定提交空白名单', async () => {

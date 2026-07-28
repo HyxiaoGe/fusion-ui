@@ -69,6 +69,16 @@ const amapSafePreset: ServerFormState = {
   allowedTools: "",
 };
 
+const context7SafePreset: ServerFormState = {
+  name: "Context7 技术文档",
+  provider: "context7",
+  endpointUrl: "https://mcp.context7.com/mcp",
+  authType: "none",
+  authName: "",
+  credentialRef: "",
+  allowedTools: "",
+};
+
 const recommendedAmapReadOnlyTools = [
   "maps_geo",
   "maps_regeocode",
@@ -81,6 +91,65 @@ const recommendedAmapReadOnlyTools = [
   "maps_text_search",
   "maps_around_search",
   "maps_search_detail",
+] as const;
+
+const recommendedToolProfiles: Record<
+  string,
+  { buttonLabel: string; tools: readonly string[] }
+> = {
+  amap: {
+    buttonLabel: "一键选择推荐只读工具",
+    tools: recommendedAmapReadOnlyTools,
+  },
+  context7: {
+    buttonLabel: "一键选择推荐文档工具",
+    tools: ["resolve-library-id", "query-docs"],
+  },
+};
+
+const getRecommendedToolProfile = (
+  server: McpServer,
+): { buttonLabel: string; tools: readonly string[] } | undefined => {
+  const provider = server.provider.trim().toLowerCase();
+  if (provider !== "context7") return recommendedToolProfiles[provider];
+
+  let hostname = "";
+  try {
+    hostname = new URL(server.endpoint_url).hostname.toLowerCase().replace(/\.$/, "");
+  } catch {
+    return undefined;
+  }
+
+  const hasOfficialNoAuth =
+    server.auth_type === "none"
+    && !server.auth_name
+    && !server.credential_ref;
+  const hasOfficialApiKey =
+    server.auth_type === "header"
+    && server.auth_name?.trim() === "CONTEXT7_API_KEY"
+    && server.credential_ref?.trim() === "CONTEXT7_API_KEY";
+  const isOfficialContext7Configuration =
+    hostname === "mcp.context7.com"
+    && (hasOfficialNoAuth || hasOfficialApiKey);
+
+  return isOfficialContext7Configuration
+    ? recommendedToolProfiles.context7
+    : undefined;
+};
+
+const safePresets = [
+  {
+    title: "高德地图",
+    description: "官方 Endpoint · Query 凭证引用",
+    actionLabel: "使用高德安全预设",
+    form: amapSafePreset,
+  },
+  {
+    title: "Context7 技术文档",
+    description: "公开技术文档 · 默认免密接入",
+    actionLabel: "使用 Context7 技术文档预设",
+    form: context7SafePreset,
+  },
 ] as const;
 
 const healthPresentation: Record<
@@ -287,8 +356,8 @@ export default function McpServerManager() {
     setEditorOpen(true);
   };
 
-  const applyAmapSafePreset = () => {
-    setForm(amapSafePreset);
+  const applySafePreset = (preset: ServerFormState) => {
+    setForm(preset);
     setFormErrors({});
     setActionError(null);
   };
@@ -357,9 +426,11 @@ export default function McpServerManager() {
     const discoveredNames = editingServer.discovered_tools.map((tool) => tool.name);
     return Array.from(new Set([...discoveredNames, ...parseAllowedTools(form.allowedTools)]));
   }, [connectionIdentityChanged, editingServer, form.allowedTools]);
-  const isEditingAmapServer = Boolean(
-    editingServer
-    && editingServer.provider.trim().toLowerCase() === "amap",
+  const recommendedToolProfile = useMemo(
+    () => editingServer
+      ? getRecommendedToolProfile(editingServer)
+      : undefined,
+    [editingServer],
   );
   const titleDetail = useMemo(
     () => hasServers ? `${servers.length} 个已配置服务` : "管理员专属配置",
@@ -374,10 +445,10 @@ export default function McpServerManager() {
     changeForm("allowedTools", next.join("\n"));
   };
 
-  const selectRecommendedAmapReadOnlyTools = () => {
-    if (!editingServer || !isEditingAmapServer || connectionIdentityChanged) return;
+  const selectRecommendedTools = () => {
+    if (!editingServer || !recommendedToolProfile || connectionIdentityChanged) return;
     const discoveredNames = new Set(editingServer.discovered_tools.map((tool) => tool.name));
-    const selected = recommendedAmapReadOnlyTools.filter((toolName) => discoveredNames.has(toolName));
+    const selected = recommendedToolProfile.tools.filter((toolName) => discoveredNames.has(toolName));
     changeForm("allowedTools", selected.join("\n"));
   };
 
@@ -575,14 +646,27 @@ export default function McpServerManager() {
               只保存环境变量名称，不会接收或保存明文密钥。
             </div>
             {!editingServer && (
-              <div className="flex flex-col gap-2 rounded-md border bg-muted/10 p-3 sm:flex-row sm:items-center sm:justify-between">
-                <div>
-                  <p className="text-sm font-medium text-foreground">高德地图安全预设</p>
-                  <p className="mt-1 text-xs text-muted-foreground">使用无查询参数的官方 Endpoint，仅引用部署环境中的 API Key。</p>
-                </div>
-                <Button type="button" size="sm" variant="outline" onClick={applyAmapSafePreset}>
-                  使用高德安全预设
-                </Button>
+              <div className="grid gap-2 sm:grid-cols-2">
+                {safePresets.map((preset) => (
+                  <div
+                    key={preset.form.provider}
+                    className="flex flex-col gap-2 rounded-md border bg-muted/10 p-3"
+                  >
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium text-foreground">{preset.title}</p>
+                      <p className="mt-1 text-xs text-muted-foreground">{preset.description}</p>
+                    </div>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      className="self-start"
+                      onClick={() => applySafePreset(preset.form)}
+                    >
+                      {preset.actionLabel}
+                    </Button>
+                  </div>
+                ))}
               </div>
             )}
             {editingServer && (
@@ -651,14 +735,14 @@ export default function McpServerManager() {
             <div className="space-y-2">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <Label htmlFor={selectableTools.length > 0 ? undefined : "mcp-allowed-tools"}>允许工具</Label>
-                {isEditingAmapServer && !connectionIdentityChanged && editingServer?.discovered_tools.length ? (
+                {recommendedToolProfile && !connectionIdentityChanged && editingServer?.discovered_tools.length ? (
                   <Button
                     type="button"
                     size="sm"
                     variant="outline"
-                    onClick={selectRecommendedAmapReadOnlyTools}
+                    onClick={selectRecommendedTools}
                   >
-                    一键选择推荐只读工具
+                    {recommendedToolProfile.buttonLabel}
                   </Button>
                 ) : null}
               </div>
@@ -678,7 +762,9 @@ export default function McpServerManager() {
                         <span className="min-w-0">
                           <span className="block break-all font-mono text-sm">{toolName}</span>
                           <span className="block text-xs text-muted-foreground">
-                            {tool?.description || (tool ? "已由远端服务发现" : "当前未被远端服务发现")}
+                            {tool?.description
+                              ? `远端服务声明：${tool.description}`
+                              : (tool ? "已由远端服务发现" : "当前未被远端服务发现")}
                           </span>
                         </span>
                       </label>
