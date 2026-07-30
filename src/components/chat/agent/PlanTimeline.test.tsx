@@ -1,5 +1,5 @@
-import { fireEvent, render, screen, within } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { describe, expect, it, vi } from 'vitest';
 import type { AgentPlanItem, AgentPlanState, AgentRunState } from '@/types/agentRun';
 import { PlanTimeline } from './PlanTimeline';
 
@@ -42,7 +42,7 @@ describe('PlanTimeline', () => {
     expect(container.firstChild).toBeNull();
   });
 
-  it('默认只显示紧凑环形进度、完成数和当前步骤', () => {
+  it('默认只显示单一紧凑入口和当前计划步骤编号', () => {
     render(<PlanTimeline run={createRun([
       {
         id: 'search',
@@ -63,13 +63,15 @@ describe('PlanTimeline', () => {
     ])} />);
 
     const trigger = screen.getByRole('button', {
-      name: '查看计划流程，已完成 1/2，当前步骤：整理行程建议',
+      name: '查看计划流程，第 2/2 步：整理行程建议',
     });
     const progress = screen.getByRole('progressbar', { name: '计划完成进度' });
 
     expect(trigger).toHaveAttribute('aria-expanded', 'false');
-    expect(screen.getByText('1/2')).toBeInTheDocument();
-    expect(screen.getByText('整理行程建议')).toBeInTheDocument();
+    expect(trigger).toHaveTextContent('第 2/2 步');
+    expect(trigger).toHaveTextContent('整理行程建议');
+    expect(screen.queryByText('计划进度')).not.toBeInTheDocument();
+    expect(screen.queryByText('当前步骤')).not.toBeInTheDocument();
     expect(screen.queryByText('搜索资料')).not.toBeInTheDocument();
     expect(screen.queryByRole('dialog', { name: '计划流程详情' })).not.toBeInTheDocument();
     expect(progress).toHaveAttribute('aria-valuenow', '1');
@@ -205,6 +207,7 @@ describe('PlanTimeline', () => {
     })).toBeInTheDocument();
     expect(screen.getByText('计划已完成')).toBeInTheDocument();
     expect(screen.getByText('全部步骤已完成')).toBeInTheDocument();
+    expect(screen.getByTestId('plan-progress-value')).toHaveClass('text-success');
     expect(screen.queryByText('当前步骤')).not.toBeInTheDocument();
   });
 
@@ -267,7 +270,7 @@ describe('PlanTimeline', () => {
     expect(within(dialog).queryByText('阅读')).not.toBeInTheDocument();
   });
 
-  it('点击后在不占正文布局的浮层展示步骤、类型和标题化依赖，不暴露内部工具名', () => {
+  it('点击后通过 Portal 浮层只展示高层步骤状态与完整标题', () => {
     render(<PlanTimeline run={createRun([
       {
         id: 'research',
@@ -294,16 +297,17 @@ describe('PlanTimeline', () => {
     const dialog = openPlanByClick();
 
     expect(screen.getByRole('button', { name: /查看计划流程/ })).toHaveAttribute('aria-expanded', 'true');
-    expect(dialog).toHaveClass('absolute');
+    expect(dialog.closest('[data-radix-popper-content-wrapper]')?.parentElement).toBe(document.body);
+    expect(dialog).toHaveClass('bg-popover');
     expect(within(dialog).getByText('收集出行信息')).toBeInTheDocument();
     expect(within(dialog).getByText('比较候选方案')).toBeInTheDocument();
-    expect(within(dialog).getByText('搜索')).toBeInTheDocument();
-    expect(within(dialog).getByText('整理')).toBeInTheDocument();
-    expect(within(dialog).getByText('依赖：收集出行信息')).toBeInTheDocument();
+    expect(within(dialog).queryByText('搜索')).not.toBeInTheDocument();
+    expect(within(dialog).queryByText('整理')).not.toBeInTheDocument();
+    expect(within(dialog).queryByText('依赖：收集出行信息')).not.toBeInTheDocument();
     expect(within(dialog).queryByText(/web_search|url_read|route_compare/)).not.toBeInTheDocument();
   });
 
-  it('鼠标悬停可临时展开，离开后收起', () => {
+  it('鼠标悬停可临时展开，离开后收起', async () => {
     render(<PlanTimeline run={createRun([{
       id: 'answer',
       title: '整理回答',
@@ -318,10 +322,12 @@ describe('PlanTimeline', () => {
     expect(screen.getByRole('dialog', { name: '计划流程详情' })).toBeInTheDocument();
 
     fireEvent.mouseLeave(overview);
-    expect(screen.queryByRole('dialog', { name: '计划流程详情' })).not.toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog', { name: '计划流程详情' })).not.toBeInTheDocument();
+    });
   });
 
-  it('键盘 focus 可临时展开，焦点离开后收起', () => {
+  it('键盘 focus 可临时展开，焦点离开后收起', async () => {
     render(<PlanTimeline run={createRun([{
       id: 'answer',
       title: '整理回答',
@@ -336,7 +342,9 @@ describe('PlanTimeline', () => {
     expect(screen.getByRole('dialog', { name: '计划流程详情' })).toBeInTheDocument();
 
     fireEvent.blur(trigger, { relatedTarget: document.body });
-    expect(screen.queryByRole('dialog', { name: '计划流程详情' })).not.toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog', { name: '计划流程详情' })).not.toBeInTheDocument();
+    });
   });
 
   it('点击可固定浮层，再次点击收起', () => {
@@ -448,13 +456,116 @@ describe('PlanTimeline', () => {
 
     expect(screen.getByTestId('plan-overview')).toHaveClass('max-w-full');
     expect(dialog).toHaveClass(
-      'w-[min(22rem,calc(100vw-2rem))]',
-      'max-w-[calc(100vw-2rem)]',
+      'w-[min(24rem,calc(100vw-2rem))]',
       'max-h-[min(26rem,calc(100vh-2rem))]',
       'overflow-y-auto',
       'motion-reduce:animate-none',
     );
     expect(screen.getByTestId('plan-progress-value')).toHaveClass('motion-reduce:transition-none');
+  });
+
+  it('completed 加 skipped 使用中性终态，跳过不计入完成进度', () => {
+    render(<PlanTimeline run={createRun([
+      {
+        id: 'research',
+        title: '核验关键资料',
+        status: 'completed',
+        kind: 'read',
+        toolNames: [],
+        evidenceItemIds: [],
+      },
+      {
+        id: 'optional-1',
+        title: '补充资料一',
+        status: 'skipped',
+        kind: 'search',
+        toolNames: [],
+        evidenceItemIds: [],
+      },
+      {
+        id: 'optional-2',
+        title: '补充资料二',
+        status: 'skipped',
+        kind: 'read',
+        toolNames: [],
+        evidenceItemIds: [],
+      },
+      {
+        id: 'optional-3',
+        title: '补充资料三',
+        status: 'skipped',
+        kind: 'synthesis',
+        toolNames: [],
+        evidenceItemIds: [],
+      },
+      {
+        id: 'optional-4',
+        title: '整理回答',
+        status: 'skipped',
+        kind: 'answer',
+        toolNames: [],
+        evidenceItemIds: [],
+      },
+    ], {
+      status: 'completed',
+    }, {
+      source: 'model',
+    })} />);
+
+    const trigger = screen.getByRole('button', {
+      name: '查看计划流程，完成 1/5，跳过 4',
+    });
+    expect(trigger).toHaveTextContent('完成 1/5');
+    expect(trigger).toHaveTextContent('跳过 4');
+    expect(trigger).not.toHaveTextContent('按需跳过');
+    expect(screen.queryByText('部分步骤未完成')).not.toBeInTheDocument();
+    const progress = screen.getByRole('progressbar', { name: '计划完成进度' });
+    expect(progress).toHaveAttribute('aria-valuenow', '1');
+    expect(progress).toHaveAttribute('aria-valuemax', '5');
+    expect(progress).toHaveAttribute('aria-valuetext', '已完成 1/5 个步骤');
+    expect(screen.getByTestId('plan-progress-value')).toHaveAttribute('stroke-dashoffset', '80');
+    expect(screen.getByTestId('plan-progress-value')).toHaveClass('text-muted-foreground');
+    expect(screen.getByTestId('plan-progress-value')).not.toHaveClass('text-success', 'text-danger');
+
+    const dialog = openPlanByClick();
+    expect(within(dialog).getByText('完成 1/5 · 跳过 4')).toBeInTheDocument();
+  });
+
+  it('hover 打开与延时关闭浮层都不抢占或恢复焦点', () => {
+    vi.useFakeTimers();
+    try {
+      render(
+        <>
+          <button type="button">外部操作</button>
+          <PlanTimeline run={createRun([{
+            id: 'answer',
+            title: '整理回答',
+            status: 'running',
+            kind: 'answer',
+            toolNames: [],
+            evidenceItemIds: [],
+          }])} />
+        </>,
+      );
+
+      const externalButton = screen.getByRole('button', { name: '外部操作' });
+      externalButton.focus();
+      expect(externalButton).toHaveFocus();
+
+      const overview = screen.getByTestId('plan-overview');
+      fireEvent.mouseEnter(overview);
+      expect(screen.getByRole('dialog', { name: '计划流程详情' })).toBeInTheDocument();
+      expect(externalButton).toHaveFocus();
+
+      fireEvent.mouseLeave(overview);
+      act(() => {
+        vi.advanceTimersByTime(100);
+      });
+      expect(screen.queryByRole('dialog', { name: '计划流程详情' })).not.toBeInTheDocument();
+      expect(externalButton).toHaveFocus();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('旧 observed plan 在终态仍归一化残留状态并展示紧凑总览', () => {
@@ -506,7 +617,8 @@ describe('PlanTimeline', () => {
       source: 'observed',
     })} />);
 
-    expect(screen.getByText('4/4')).toBeInTheDocument();
+    expect(screen.getByRole('progressbar', { name: '计划完成进度' }))
+      .toHaveAttribute('aria-valuetext', '已完成 4/4 个步骤');
     openPlanByClick();
     expect(screen.getByTestId('plan-status-understand')).toHaveTextContent('已完成');
     expect(screen.getByTestId('plan-status-search')).toHaveTextContent('已完成');
@@ -597,7 +709,8 @@ describe('PlanTimeline', () => {
       reason: 'model_update',
     })} />);
 
-    expect(screen.getByText('0/1')).toBeInTheDocument();
+    expect(screen.getByRole('progressbar', { name: '计划完成进度' }))
+      .toHaveAttribute('aria-valuetext', '已完成 0/1 个步骤');
     openPlanByClick();
     expect(screen.getByTestId('plan-status-compare')).toHaveTextContent('进行中');
     expect(screen.getByTestId('plan-status-compare').querySelector('svg')).toHaveClass('animate-spin');

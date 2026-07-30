@@ -120,6 +120,24 @@ vi.mock('../models/ProviderIcon', () => ({
 import ChatMessage from './ChatMessage';
 
 describe('ChatMessage', () => {
+  it('助手消息在宽屏限制结构化结果最大宽度，不再按视口百分比无限拉伸', () => {
+    const { container } = render(
+      <ChatMessage
+        message={{
+          id: 'assistant-width',
+          role: 'assistant',
+          content: [{ type: 'text', id: 'answer', text: '回答' }],
+          timestamp: 1,
+          chatId: 'chat-1',
+        }}
+      />,
+    );
+
+    const assistantColumn = container.querySelector('.max-w-\\[96rem\\]');
+    expect(assistantColumn).toBeInTheDocument();
+    expect(assistantColumn).not.toHaveClass('max-w-[85%]');
+  });
+
   beforeEach(() => {
     resetSelectorState();
     vi.useFakeTimers();

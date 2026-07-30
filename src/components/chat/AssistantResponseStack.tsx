@@ -82,26 +82,31 @@ function AssistantResponseStack({
       searchQueries,
       onOpenSources,
     };
+  const suppressAgentReasoning = agentRun?.config.planMode === 'on'
+    || agentRun?.plan?.source === 'model'
+    || agentRun?.config.taskMode === 'deep_research';
 
   return (
     <div
       data-testid="assistant-response-stack"
       className="w-full min-w-0 [&>*:last-child]:mb-0"
     >
-      {reasoning.shouldRender ? (
-        <ReasoningContent
-          content={reasoning.content}
-          isVisible={reasoning.isVisible}
-          onToggle={reasoning.onToggle}
-          isStreaming={reasoning.isStreaming}
-          startTime={reasoning.startTime}
-          endTime={reasoning.endTime}
-        />
-      ) : null}
+      <div className="w-full max-w-6xl">
+        {reasoning.shouldRender && !suppressAgentReasoning ? (
+          <ReasoningContent
+            content={reasoning.content}
+            isVisible={reasoning.isVisible}
+            onToggle={reasoning.onToggle}
+            isStreaming={reasoning.isStreaming}
+            startTime={reasoning.startTime}
+            endTime={reasoning.endTime}
+          />
+        ) : null}
 
-      <AssistantActivityStatus activity={activity} />
+        <AssistantActivityStatus activity={activity} />
 
-      <AgentRunTimeline {...agentRunTimelineProps} />
+        <AgentRunTimeline {...agentRunTimelineProps} />
+      </div>
 
       <StructuredToolResults
         blocks={structuredResults}
@@ -109,29 +114,31 @@ function AssistantResponseStack({
         onFollowUp={onStructuredResultFollowUp}
       />
 
-      <AnswerEvidence
-        evidence={answerEvidence}
-        onSourceClick={onSourceClick}
-        onOpenSources={onOpenSources}
-        hasSidebarContent={Boolean(answerEvidenceSidebar?.isRenderable)}
-        sidebarIssueCount={answerEvidenceSidebar?.summary.issueCount ?? 0}
-      />
+      <div className="w-full max-w-6xl">
+        <AnswerEvidence
+          evidence={answerEvidence}
+          onSourceClick={onSourceClick}
+          onOpenSources={onOpenSources}
+          hasSidebarContent={Boolean(answerEvidenceSidebar?.isRenderable)}
+          sidebarIssueCount={answerEvidenceSidebar?.summary.issueCount ?? 0}
+        />
 
-      <MarkdownRenderer
-        content={markdown.content}
-        className="prose-headings:border-0 prose-hr:border-border/30"
-        sources={markdown.sources}
-        onCitationClick={markdown.onCitationClick}
-      />
+        <MarkdownRenderer
+          content={markdown.content}
+          className="prose-headings:border-0 prose-hr:border-border/30"
+          sources={markdown.sources}
+          onCitationClick={markdown.onCitationClick}
+        />
 
-      {showStreamingCursor ? (
-        <span
-          data-testid="streaming-cursor"
-          className="animate-pulse motion-reduce:animate-none"
-        >
-          ▌
-        </span>
-      ) : null}
+        {showStreamingCursor ? (
+          <span
+            data-testid="streaming-cursor"
+            className="animate-pulse motion-reduce:animate-none"
+          >
+            ▌
+          </span>
+        ) : null}
+      </div>
     </div>
   );
 }

@@ -1998,6 +1998,7 @@ describe('useSendMessage', () => {
       maxSteps: 5,
       maxToolCalls: 10,
       timeoutS: 60,
+      planMode: 'auto',
       taskMode: 'standard',
       networkProfile: 'standard',
       evidencePolicy: 'standard',

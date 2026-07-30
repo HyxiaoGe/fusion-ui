@@ -205,6 +205,7 @@ export function useConversationList() {
   const dispatch = useAppDispatch();
   const store = useStore<RootState>();
   const authSessionKey = useAppSelector(selectAuthSessionKey);
+  const authSessionResolved = useAppSelector((state) => state.auth.sessionResolved);
   const conversationListVersion = useAppSelector(
     (state) => state.conversation.conversationListVersion
   );
@@ -222,6 +223,7 @@ export function useConversationList() {
   const fetchListRequestIdRef = useRef(0);
   const loadMoreInFlightRef = useRef<Promise<void> | null>(null);
   const searchAbortRef = useRef<AbortController | null>(null);
+  const initialListRequestedSessionKeyRef = useRef<string | null>(null);
   const metadataWorkerGenerationRef = useRef(0);
   const metadataActiveGenerationRef = useRef<number | null>(null);
   const metadataRetryRef = useRef<{
@@ -229,6 +231,13 @@ export function useConversationList() {
     resolve: (shouldContinue: boolean) => void;
   } | null>(null);
   const previousAuthSessionKeyRef = useRef(authSessionKey);
+  const isInitialListPending = conversations.length === 0 && (
+    !authSessionResolved
+    || Boolean(
+      authSessionKey
+      && initialListRequestedSessionKeyRef.current !== authSessionKey
+    )
+  );
 
   const cancelMetadataRetry = useCallback(() => {
     const pendingRetry = metadataRetryRef.current;
@@ -430,7 +439,11 @@ export function useConversationList() {
   }, [authSessionKey, cancelMetadataRetry, dispatch]);
 
   useEffect(() => {
-    if (!authSessionKey) return;
+    if (!authSessionKey) {
+      initialListRequestedSessionKeyRef.current = null;
+      return;
+    }
+    initialListRequestedSessionKeyRef.current = authSessionKey;
     void fetchList(1, CONVERSATION_PAGE_SIZE);
   }, [authSessionKey, fetchList]);
 
@@ -561,7 +574,7 @@ export function useConversationList() {
   return {
     conversations,
     pagination,
-    isLoadingList,
+    isLoadingList: isLoadingList || isInitialListPending,
     isLoadingMore,
     loadMore,
     refreshLoadedMetadata,

@@ -48,7 +48,11 @@ const ChatList: React.FC<ChatListProps> = ({
       ref={containerRef}
       onScroll={handleScroll}
     >
-      {chats.length === 0 ? (
+      {chats.length === 0 && isLoadingServerList ? (
+        <div className="p-4 text-center text-muted-foreground text-sm">
+          加载中...
+        </div>
+      ) : chats.length === 0 ? (
         <div className="text-sm text-muted-foreground mt-4 text-center">
           {searchQuery ? `未找到包含 "${searchQuery}" 的对话` : '暂无对话记录'}
         </div>
@@ -110,11 +114,6 @@ const ChatList: React.FC<ChatListProps> = ({
         <div ref={sentinelRef} className="h-4" aria-hidden="true" />
       )}
 
-      {isLoadingServerList && chats.length === 0 && (
-        <div className="p-4 text-center text-muted-foreground text-sm">
-          加载中...
-        </div>
-      )}
     </div>
   );
 };

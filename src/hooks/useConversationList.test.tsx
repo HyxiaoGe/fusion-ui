@@ -26,6 +26,7 @@ import {
   searchConversations,
 } from '@/lib/api/chat';
 import {
+  CONVERSATION_PAGE_SIZE,
   selectConversationListView,
   useConversationList,
 } from './useConversationList';
@@ -51,7 +52,11 @@ function createUser(id: string) {
   };
 }
 
-function createStore(isAuthenticated = false, userId = 'user-a') {
+function createStore(
+  isAuthenticated = false,
+  userId = 'user-a',
+  sessionResolved = true,
+) {
   return configureStore({
     reducer: {
       auth: authReducer,
@@ -68,7 +73,7 @@ function createStore(isAuthenticated = false, userId = 'user-a') {
         token: isAuthenticated ? `token-${userId}` : null,
         status: 'idle' as const,
         error: null,
-        sessionResolved: true,
+        sessionResolved,
         accountSwitchStatus: 'stable' as const,
         accountSwitchError: null,
         switchedAccountEmail: null,
@@ -245,6 +250,64 @@ describe('useConversationList', () => {
     });
 
     expect(getConversationsMock).toHaveBeenNthCalledWith(2, 2, 20);
+  });
+
+  it('已登录的真实初始 store 在首个列表请求完成前直接暴露加载态', () => {
+    getConversationsMock.mockReturnValue(new Promise(() => {}));
+    const store = createStore(true);
+    const renderedLoadingStates: boolean[] = [];
+
+    const { result } = renderHook(() => {
+      const view = useConversationList();
+      renderedLoadingStates.push(view.isLoadingList);
+      return view;
+    }, {
+      wrapper: createWrapper(store),
+    });
+
+    // 第一帧发生在请求 effect 之前；旧实现会先记录 false，再由 effect 改成 true。
+    expect(renderedLoadingStates[0]).toBe(true);
+    expect(result.current.conversations).toEqual([]);
+    expect(result.current.isLoadingList).toBe(true);
+    expect(getConversationsMock).toHaveBeenCalledWith(1, CONVERSATION_PAGE_SIZE);
+  });
+
+  it('冷启动认证尚未恢复时首帧保持加载态，不闪暂无对话', () => {
+    const store = createStore(false, 'user-a', false);
+
+    const { result } = renderHook(() => useConversationList(), {
+      wrapper: createWrapper(store),
+    });
+
+    expect(result.current.conversations).toEqual([]);
+    expect(result.current.isLoadingList).toBe(true);
+    expect(getConversationsMock).not.toHaveBeenCalled();
+  });
+
+  it('未登录的真实初始 store 不会永久停留在列表加载态', () => {
+    const store = createStore(false);
+
+    const { result } = renderHook(() => useConversationList(), {
+      wrapper: createWrapper(store),
+    });
+
+    expect(result.current.conversations).toEqual([]);
+    expect(result.current.isLoadingList).toBe(false);
+    expect(getConversationsMock).not.toHaveBeenCalled();
+  });
+
+  it('已有列表数据时首轮后台刷新仍保留列表而不切换为空加载页', () => {
+    getConversationsMock.mockReturnValue(new Promise(() => {}));
+    const store = createStore(true);
+    seedConversationList(store);
+
+    const { result } = renderHook(() => useConversationList(), {
+      wrapper: createWrapper(store),
+    });
+
+    expect(result.current.conversations).toHaveLength(1);
+    expect(result.current.conversations[0]?.id).toBe('conv-1');
+    expect(getConversationsMock).toHaveBeenCalledWith(1, CONVERSATION_PAGE_SIZE);
   });
 
   it('dirty conversation 只请求对应的单个 metadata', async () => {

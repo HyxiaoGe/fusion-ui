@@ -644,12 +644,24 @@ describe('ChatInput', () => {
 
     await waitFor(() => {
       expect(setComposerAgentModeMock).toHaveBeenCalledWith('auto');
+      expect(sessionStorage.getItem('fusion:composer-agent-mode')).toBe('auto');
       expect(toastMock).toHaveBeenCalledWith(expect.objectContaining({
         message: '已切换到自动模式：深度研究需要支持联网工具',
         type: 'warning',
       }));
     });
     expect(screen.queryByTestId('composer-agent-mode-status')).toBeNull();
+  });
+
+  it('从当前标签页恢复执行模式并继续交由模型能力检查', async () => {
+    configureAuthenticatedVisionModel();
+    sessionStorage.setItem('fusion:composer-agent-mode', 'plan');
+
+    render(<ChatInput onSendMessage={vi.fn()} activeChatId="chat-a" />);
+
+    await waitFor(() => {
+      expect(setComposerAgentModeMock).toHaveBeenCalledWith('plan');
+    });
   });
 
   it('深度研究运行中的停止按钮使用研究语义', () => {
@@ -1681,6 +1693,7 @@ describe('ChatInput', () => {
     });
     fireEvent.click(screen.getByRole('menuitemradio', { name: /计划/ }));
     expect(setComposerAgentModeMock).toHaveBeenCalledWith('plan');
+    expect(sessionStorage.getItem('fusion:composer-agent-mode')).toBe('plan');
 
     fireEvent.change(screen.getByPlaceholderText('发消息给 Fusion AI（Enter 发送）'), {
       target: {

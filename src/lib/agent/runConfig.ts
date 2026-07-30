@@ -4,6 +4,7 @@ interface WireRunConfig {
   max_steps?: unknown;
   max_tool_calls?: unknown;
   timeout_s?: unknown;
+  plan_mode?: unknown;
   task_mode?: unknown;
   network_profile?: unknown;
   evidence_policy?: unknown;
@@ -15,12 +16,16 @@ function nonNegativeNumber(value: unknown): number {
 
 export function normalizeAgentRunConfig(config: WireRunConfig | null | undefined): AgentRunConfig {
   const source = config ?? {};
+  const planMode = source.plan_mode === 'on' || source.plan_mode === 'off'
+    ? source.plan_mode
+    : 'auto';
   const taskMode = source.task_mode === 'deep_research' ? 'deep_research' : 'standard';
 
   return {
     maxSteps: nonNegativeNumber(source.max_steps),
     maxToolCalls: nonNegativeNumber(source.max_tool_calls),
     timeoutS: nonNegativeNumber(source.timeout_s),
+    planMode,
     taskMode,
     networkProfile: source.network_profile === 'deep_research' || taskMode === 'deep_research'
       ? 'deep_research'

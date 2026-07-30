@@ -74,4 +74,20 @@ describe("ChatList", () => {
 
     expect(mockChatItemRender).toHaveBeenCalledWith("chat-a", true);
   });
+
+  it("首屏列表加载中不错误显示暂无对话记录", () => {
+    const stableProps = createStableProps();
+
+    render(
+      <ChatList
+        {...stableProps}
+        chats={[]}
+        sortedAndGroupedChats={[]}
+        isLoadingServerList
+      />,
+    );
+
+    expect(screen.getByText("加载中...")).toBeInTheDocument();
+    expect(screen.queryByText("暂无对话记录")).not.toBeInTheDocument();
+  });
 });

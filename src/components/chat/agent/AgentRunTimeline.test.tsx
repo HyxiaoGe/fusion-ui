@@ -442,8 +442,67 @@ describe('AgentRunTimeline', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /查看计划流程/ }));
     expect(screen.getByText('比较候选路线并给出结论')).toBeInTheDocument();
-    expect(screen.queryByText(/执行过程 ·/)).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: '查看执行过程' })).not.toBeInTheDocument();
+    expect(screen.getByText('执行过程 · 搜索 1 次')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '查看执行过程' })).toBeInTheDocument();
+  });
+
+  it('模型计划只渲染单一计划入口，不重复展示运行头、进度条和原始步骤时间线', () => {
+    renderTimeline(run({
+      protocolVersion: 2,
+      status: 'running',
+      steps: [
+        step({
+          stepId: 's-search',
+          stepNumber: 2,
+          toolCalls: [toolCall({ toolCallId: 'search-1' })],
+        }),
+        step({
+          stepId: 's-summary',
+          stepNumber: 3,
+          toolCalls: [],
+          contentBlockIds: ['answer-1'],
+        }),
+      ],
+      progress: {
+        phase: 'researching',
+        label: '正在核验资料',
+        completedSteps: 1,
+        totalSteps: 2,
+      },
+      plan: {
+        planId: 'plan-model-running',
+        revision: 2,
+        mode: 'on',
+        source: 'model',
+        items: [
+          {
+            id: 'research',
+            title: '核验资料',
+            status: 'completed',
+            kind: 'search',
+            toolNames: ['web_search'],
+            evidenceItemIds: [],
+          },
+          {
+            id: 'answer',
+            title: '整理最终结论',
+            status: 'running',
+            kind: 'answer',
+            toolNames: [],
+            evidenceItemIds: [],
+          },
+        ],
+      },
+    }));
+
+    expect(screen.getByRole('button', {
+      name: '查看计划流程，第 2/2 步：整理最终结论',
+    })).toBeInTheDocument();
+    expect(screen.queryByText(/已用/)).not.toBeInTheDocument();
+    expect(screen.queryByText('正在核验资料')).not.toBeInTheDocument();
+    expect(screen.queryByText(/步骤 3 ·/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/整理答复/)).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '查看执行过程' })).toBeInTheDocument();
   });
 
   it('completed off observed plan 继续沿用低干扰 ExecutionProcess', () => {

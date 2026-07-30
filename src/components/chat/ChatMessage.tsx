@@ -65,7 +65,7 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, files, isLastMessage
     >
       <div className={cn(
         'flex flex-col space-y-1',
-        isUser ? 'w-full' : 'w-full max-w-[85%] min-w-0',
+        isUser ? 'w-full' : 'w-full max-w-[96rem] min-w-0',
         isUser ? 'items-end' : 'items-start'
       )}>
         {isUser ? (

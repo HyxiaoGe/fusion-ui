@@ -173,6 +173,8 @@ export interface AgentRunConfig {
   maxToolCalls: number;
   timeoutS: number;
   /** 旧历史可能缺失；SSE 与新历史会归一化为明确值。 */
+  planMode?: AgentPlanMode;
+  /** 旧历史可能缺失；SSE 与新历史会归一化为明确值。 */
   taskMode?: AgentTaskMode;
   networkProfile?: AgentNetworkProfile;
   evidencePolicy?: AgentEvidencePolicy;

@@ -191,6 +191,178 @@ const agentRun: AgentRunState = {
 };
 
 describe('AssistantResponseStack', () => {
+  it('模型计划运行时不展示原始思考，普通对话保持原思考展示', () => {
+    const plannedRun: AgentRunState = {
+      ...agentRun,
+      plan: {
+        planId: 'plan-1',
+        revision: 1,
+        source: 'model',
+        items: [{
+          id: 'research',
+          title: '核验资料',
+          status: 'running',
+          kind: 'search',
+          toolNames: [],
+          evidenceItemIds: [],
+        }],
+      },
+    };
+    const props = {
+      assistantMessageId: 'assistant-1',
+      reasoning: {
+        shouldRender: true,
+        content: '内部计划控制与工具协议',
+        isVisible: true,
+        isStreaming: true,
+        onToggle: vi.fn(),
+      },
+      activity: activity(),
+      onRetry: undefined,
+      answerEvidence: null,
+      onSourceClick: vi.fn(),
+      onOpenSources: vi.fn(),
+      markdown: { content: '', sources: [] },
+      showStreamingCursor: false,
+    };
+
+    const { rerender } = render(
+      <AssistantResponseStack {...props} agentRun={plannedRun} />,
+    );
+    expect(screen.queryByTestId('stack-reasoning')).not.toBeInTheDocument();
+
+    rerender(<AssistantResponseStack {...props} agentRun={agentRun} />);
+    expect(screen.getByTestId('stack-reasoning')).toHaveTextContent('内部计划控制与工具协议');
+  });
+
+  it.each([
+    'completed',
+    'incomplete',
+    'failed',
+    'limit_reached',
+    'interrupted',
+  ] as const)('模型计划进入 %s 或历史恢复后仍不回流原始思考', (status) => {
+    render(
+      <AssistantResponseStack
+        assistantMessageId="assistant-1"
+        reasoning={{
+          shouldRender: true,
+          content: '历史中的内部计划控制与工具协议',
+          isVisible: true,
+          isStreaming: false,
+          onToggle: vi.fn(),
+        }}
+        activity={activity({ kind: 'completed' })}
+        agentRun={{
+          ...agentRun,
+          status,
+          plan: {
+            planId: 'plan-history',
+            revision: 3,
+            source: 'model',
+            items: [{
+              id: 'answer',
+              title: '整理回答',
+              status: status === 'completed' ? 'completed' : 'failed',
+              kind: 'answer',
+              toolNames: [],
+              evidenceItemIds: [],
+            }],
+          },
+        }}
+        answerEvidence={null}
+        onSourceClick={vi.fn()}
+        onOpenSources={vi.fn()}
+        markdown={{ content: '最终回答', sources: [] }}
+        showStreamingCursor={false}
+      />,
+    );
+
+    expect(screen.queryByTestId('stack-reasoning')).not.toBeInTheDocument();
+  });
+
+  it('已结束的深度研究即使没有模型计划快照也不回流原始思考', () => {
+    render(
+      <AssistantResponseStack
+        assistantMessageId="assistant-1"
+        reasoning={{
+          shouldRender: true,
+          content: '深度研究内部搜索参数',
+          isVisible: true,
+          isStreaming: false,
+          onToggle: vi.fn(),
+        }}
+        activity={activity({ kind: 'completed' })}
+        agentRun={{
+          ...agentRun,
+          status: 'completed',
+          config: { ...agentRun.config, taskMode: 'deep_research' },
+        }}
+        answerEvidence={null}
+        onSourceClick={vi.fn()}
+        onOpenSources={vi.fn()}
+        markdown={{ content: '研究结论', sources: [] }}
+        showStreamingCursor={false}
+      />,
+    );
+
+    expect(screen.queryByTestId('stack-reasoning')).not.toBeInTheDocument();
+  });
+
+  it('深度研究在计划尚未生成时也不展示流式原始思考', () => {
+    render(
+      <AssistantResponseStack
+        assistantMessageId="assistant-1"
+        reasoning={{
+          shouldRender: true,
+          content: '准备构造内部搜索参数',
+          isVisible: true,
+          isStreaming: true,
+          onToggle: vi.fn(),
+        }}
+        activity={activity()}
+        agentRun={{
+          ...agentRun,
+          config: { ...agentRun.config, taskMode: 'deep_research' },
+        }}
+        answerEvidence={null}
+        onSourceClick={vi.fn()}
+        onOpenSources={vi.fn()}
+        markdown={{ content: '', sources: [] }}
+        showStreamingCursor={false}
+      />,
+    );
+
+    expect(screen.queryByTestId('stack-reasoning')).not.toBeInTheDocument();
+  });
+
+  it('强制计划模式在首个计划快照到达前不展示流式原始思考', () => {
+    render(
+      <AssistantResponseStack
+        assistantMessageId="assistant-1"
+        reasoning={{
+          shouldRender: true,
+          content: '正在生成内部执行计划',
+          isVisible: true,
+          isStreaming: true,
+          onToggle: vi.fn(),
+        }}
+        activity={activity()}
+        agentRun={{
+          ...agentRun,
+          config: { ...agentRun.config, planMode: 'on' },
+        }}
+        answerEvidence={null}
+        onSourceClick={vi.fn()}
+        onOpenSources={vi.fn()}
+        markdown={{ content: '', sources: [] }}
+        showStreamingCursor={false}
+      />,
+    );
+
+    expect(screen.queryByTestId('stack-reasoning')).not.toBeInTheDocument();
+  });
+
   it('把结构化工具结果放在执行过程之后、Markdown 正文之前', () => {
     const structuredResult: PlaceResultsBlock = {
       type: 'place_results',
@@ -223,13 +395,11 @@ describe('AssistantResponseStack', () => {
       />,
     );
 
-    const stack = screen.getByTestId('assistant-response-stack');
-    const children = [...stack.children];
-    const executionIndex = children.indexOf(screen.getByTestId('stack-agent'));
-    const resultIndex = children.indexOf(screen.getByTestId('structured-tool-results'));
-    const markdownIndex = children.indexOf(screen.getByTestId('stack-markdown'));
-    expect(executionIndex).toBeLessThan(resultIndex);
-    expect(resultIndex).toBeLessThan(markdownIndex);
+    const execution = screen.getByTestId('stack-agent');
+    const result = screen.getByTestId('structured-tool-results');
+    const markdown = screen.getByTestId('stack-markdown');
+    expect(execution.compareDocumentPosition(result) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(result.compareDocumentPosition(markdown) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
   it('按 assistant 内容栈顺序渲染，并收敛根节点和末尾间距', () => {
@@ -263,14 +433,13 @@ describe('AssistantResponseStack', () => {
 
     expect(stack).toHaveClass('w-full', 'min-w-0');
     expect(stack.className).toContain('[&>*:last-child]:mb-0');
-    expect([...stack.children].map(child => child.getAttribute('data-testid'))).toEqual([
-      'stack-reasoning',
-      'stack-activity',
-      'stack-agent',
-      'stack-evidence',
-      'stack-markdown',
-      'streaming-cursor',
-    ]);
+    expect(screen.getByTestId('stack-reasoning')).toBeInTheDocument();
+    expect(screen.getByTestId('stack-activity')).toBeInTheDocument();
+    expect(screen.getByTestId('stack-agent')).toBeInTheDocument();
+    expect(screen.getByTestId('stack-evidence')).toBeInTheDocument();
+    expect(screen.getByTestId('stack-markdown')).toBeInTheDocument();
+    expect(screen.getByTestId('streaming-cursor')).toBeInTheDocument();
+    expect(stack.querySelectorAll('.max-w-6xl')).toHaveLength(2);
     expect(screen.getByTestId('stack-agent')).toHaveAttribute('data-message-id', 'assistant-1');
   });
 

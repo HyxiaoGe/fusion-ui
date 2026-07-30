@@ -102,6 +102,29 @@ function AgentRunTimelineContent({
     return null;
   }
   const completedProcessModel = buildExecutionProcessModel(run, { searchSources, searchQueries });
+  if (hasModelPlan(run)) {
+    return (
+      <div
+        data-testid="agent-run-timeline"
+        className="mb-3 w-full max-w-6xl min-w-0"
+      >
+        <RunBanner
+          run={run}
+          onRetry={onRetry}
+          onContinue={onContinue ? () => onContinue(run.runId) : undefined}
+        />
+        <PlanTimeline run={run} />
+        {completedProcessModel.isRenderable ? (
+          <ExecutionProcess
+            run={run}
+            searchSources={searchSources}
+            searchQueries={searchQueries}
+            onOpenSources={onOpenSources}
+          />
+        ) : null}
+      </div>
+    );
+  }
   if (shouldRenderCompletedProcess(run, completedProcessModel.isRenderable)) {
     return (
       <div

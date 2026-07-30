@@ -47,6 +47,10 @@ import {
   COMPOSER_AGENT_MODE_LABELS,
   getComposerAgentModeAvailability,
 } from "@/lib/agent/composerAgentMode";
+import {
+  readComposerAgentMode,
+  writeComposerAgentMode,
+} from "@/lib/agent/composerAgentModeStorage";
 import type { ComposerAgentMode } from "@/types/agentRun";
 
 interface ChatInputProps {
@@ -225,6 +229,15 @@ const ChatInput: React.FC<ChatInputProps> = ({
   }, []);
 
   useEffect(() => {
+    const storedMode = readComposerAgentMode();
+    if (storedMode && storedMode !== composerAgentMode) {
+      dispatch(setComposerAgentMode(storedMode));
+    }
+    // 只在当前标签页首次挂载时恢复；后续变更由选择与能力降级路径同步写入。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dispatch]);
+
+  useEffect(() => {
     if (!hasHydrated || !selectedModel || composerAgentMode === "auto") {
       return;
     }
@@ -237,6 +250,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
       return;
     }
 
+    writeComposerAgentMode("auto");
     dispatch(setComposerAgentMode("auto"));
     toast({
       message: `已切换到自动模式：${availability.unavailableReason ?? "当前模型不支持所选模式"}`,
@@ -1174,7 +1188,9 @@ const ChatInput: React.FC<ChatInputProps> = ({
                 <DropdownMenuRadioGroup
                   value={composerAgentMode}
                   onValueChange={(value) => {
-                    dispatch(setComposerAgentMode(value as ComposerAgentMode));
+                    const nextMode = value as ComposerAgentMode;
+                    writeComposerAgentMode(nextMode);
+                    dispatch(setComposerAgentMode(nextMode));
                   }}
                 >
                   {COMPOSER_AGENT_MODES.map((mode) => {
