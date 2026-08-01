@@ -51,6 +51,10 @@ import {
   getConversationHydrationMetadata,
   getProtectedHydrationMessageIds,
 } from '@/lib/chat/conversationHydrationMerge';
+import {
+  getSendModelErrorMessage,
+  resolveSendModel,
+} from '@/lib/chat/sendModelResolution';
 import type { Message, ContentBlock } from '@/types/conversation';
 import type { FileAttachment } from '@/lib/utils/fileHelpers';
 import { selectAuthSessionKey } from '@/redux/selectors';
@@ -180,8 +184,6 @@ async function postStreamActions(
 export function useSendMessage() {
   const dispatch = useAppDispatch();
   const store = useStore<RootState>();
-  const models = useAppSelector((state) => state.models.models);
-  const selectedModelId = useAppSelector((state) => state.models.selectedModelId);
   const reasoningEnabled = useAppSelector((state) => state.conversation.reasoningEnabled);
   const composerAgentMode = useAppSelector((state) => state.conversation.composerAgentMode);
   const authSessionKey = useAppSelector(selectAuthSessionKey);
@@ -405,14 +407,16 @@ export function useSendMessage() {
         await stopStreaming();
       }
 
-      const enabledModel =
-        models.find((model) => model.id === selectedModelId && model.enabled) ??
-        models.find((model) => model.enabled);
-
-      if (!enabledModel) {
-        dispatch(setGlobalError('没有可用的模型，请先在设置中启用一个模型'));
+      const isDraft = options.isDraft ?? (options.conversationId === null);
+      const modelResolution = resolveSendModel(
+        store.getState(),
+        isDraft ? null : options.conversationId,
+      );
+      if (modelResolution.status !== 'ready') {
+        dispatch(setGlobalError(getSendModelErrorMessage(modelResolution)));
         return;
       }
+      const enabledModel = modelResolution.model;
       const agentModeResolution = resolveComposerAgentMode(
         composerAgentMode,
         enabledModel.capabilities,
@@ -429,7 +433,6 @@ export function useSendMessage() {
         isSessionCurrent()
       );
 
-      const isDraft = options.isDraft ?? (options.conversationId === null);
       const tempConvId = isDraft && !options.conversationId ? uuidv4() : options.conversationId!;
 
       // 发送开始后，发送前发出的详情 GET 已不再能代表当前会话。立即让它失效，
@@ -804,6 +807,7 @@ export function useSendMessage() {
         }
 
         const reconnectRetriesExhausted = isRecoverableStreamError(error);
+        const requestAccepted = materializedOnce || Boolean(serverMessageIdRef.current);
 
         if (assistantHasContentRef.current) {
           // 保留已有的 stream content blocks
@@ -820,7 +824,8 @@ export function useSendMessage() {
           );
         }
 
-        const preservePartialResponse = reconnectRetriesExhausted && assistantHasContentRef.current;
+        const preservePartialResponse = requestAccepted
+          || (reconnectRetriesExhausted && assistantHasContentRef.current);
         if (isDraft && serverConvId && !materializedOnce) {
           materializedOnce = true;
         }
@@ -833,6 +838,9 @@ export function useSendMessage() {
               patch: { status: null },
             }),
           );
+          if (requestAccepted) {
+            void hydrateAuthoritativeConversation(effectiveConvId, isSessionCurrent);
+          }
         } else if (materializedOnce || !isDraft) {
           dispatch(
             updateMessage({
@@ -868,9 +876,7 @@ export function useSendMessage() {
       dispatch,
       composerAgentMode,
       hydrateAuthoritativeConversation,
-      models,
       reasoningEnabled,
-      selectedModelId,
       stopStreaming,
       store,
     ]

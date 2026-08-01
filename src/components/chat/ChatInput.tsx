@@ -14,7 +14,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { useAppDispatch, useAppSelector } from "@/redux/hooks";
 import type { RootState } from "@/redux/store";
-import { selectAuthSessionKey, selectChatModel, selectIsAuthenticated } from "@/redux/selectors";
+import { selectAuthSessionKey, selectIsAuthenticated } from "@/redux/selectors";
 import { setComposerAgentMode, setReasoningEnabled } from "@/redux/slices/conversationSlice";
 import {
   addFileId,
@@ -35,6 +35,7 @@ import { useRenderProbe } from "@/lib/debug/perfProbe";
 import ComposerAttachmentList from "./ComposerAttachmentList";
 import ContextStatus from "./ContextStatus";
 import { makeSelectConversationContextStatus } from "@/lib/chat/contextUsage";
+import { resolveSendModel } from "@/lib/chat/sendModelResolution";
 import {
   isComposerAttachmentError,
   isComposerAttachmentProcessing,
@@ -52,6 +53,7 @@ import {
   writeComposerAgentMode,
 } from "@/lib/agent/composerAgentModeStorage";
 import type { ComposerAgentMode } from "@/types/agentRun";
+import { PlanTimeline } from "./agent/PlanTimeline";
 
 interface ChatInputProps {
   onSendMessage: (
@@ -212,10 +214,18 @@ const ChatInput: React.FC<ChatInputProps> = ({
   const effectiveChatId = activeChatId;
   const chatId = effectiveChatId || pendingChatIdRef.current;
   const currentChatIdRef = useRef<string>(chatId);
-  const selectedModel = useAppSelector((state) => selectChatModel(state, effectiveChatId));
+  const sendModelStatus = useAppSelector((state) => (
+    resolveSendModel(state, effectiveChatId ?? null).status
+  ));
+  const selectedModel = useAppSelector((state) => {
+    const resolution = resolveSendModel(state, effectiveChatId ?? null);
+    return resolution.status === 'ready' ? resolution.model : null;
+  });
   // 模型列表在浏览器挂载后异步写入 Redux；客户端导航时 Store 可能已有模型，而服务端仍为空。
   // 水合首帧先保持无能力的中性状态，避免按钮属性和文案因两端 Store 快照不同而失配。
-  const isCurrentModelUnavailable = hasHydrated && Boolean(selectedModel?.enabled === false);
+  const isCurrentModelUnavailable = hasHydrated
+    && isAuthenticated
+    && sendModelStatus !== 'ready';
   const isComposerBlocked = disabled || isCurrentModelUnavailable;
 
   const supportsReasoning = hasHydrated && Boolean(selectedModel?.capabilities?.deepThinking);
@@ -223,6 +233,13 @@ const ChatInput: React.FC<ChatInputProps> = ({
   const isDeepResearchStreaming = Boolean(
     isStreaming && currentRun?.config.taskMode === "deep_research",
   );
+  const activeAuthoritativePlanRun = (
+    isCurrentConversationStreaming
+    && currentRun?.plan?.source === "model"
+    && currentRun.plan.items.length > 0
+  )
+    ? currentRun
+    : null;
 
   useEffect(() => {
     setHasHydrated(true);
@@ -1062,6 +1079,18 @@ const ChatInput: React.FC<ChatInputProps> = ({
         </div>
       ) : null}
 
+      {activeAuthoritativePlanRun ? (
+        <div
+          data-testid="composer-plan-status"
+          role="status"
+          aria-live="polite"
+          aria-atomic="true"
+          className="flex min-h-8 items-center justify-center px-1"
+        >
+          <PlanTimeline run={activeAuthoritativePlanRun} className="mb-0" />
+        </div>
+      ) : null}
+
       {/* 外层卡片容器（支持拖拽上传） */}
       <div
         role="group"
@@ -1229,7 +1258,11 @@ const ChatInput: React.FC<ChatInputProps> = ({
 
           {/* 右侧：模型选择器 + 发送按钮 */}
           <div className="ml-auto flex min-w-0 items-center gap-1.5">
-            <ModelSelector toolbarMode onChange={onModelChange || (() => {})} />
+            <ModelSelector
+              toolbarMode
+              modelId={selectedModel?.id}
+              onChange={onModelChange || (() => {})}
+            />
             <Button
               onClick={isStreaming && onStopStreaming ? onStopStreaming : handleSendMessage}
               disabled={!canSend && !(isStreaming && onStopStreaming)}

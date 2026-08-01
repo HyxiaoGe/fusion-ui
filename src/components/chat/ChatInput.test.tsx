@@ -205,6 +205,16 @@ function createDeferred<T>() {
   return { promise, resolve, reject };
 }
 
+function createConversationBoundToSelectedModel(id: string) {
+  return {
+    id,
+    messages: [],
+    get model_id() {
+      return currentState.models.selectedModelId;
+    },
+  };
+}
+
 describe('ChatInput', () => {
   beforeEach(() => {
     localStorage.clear();
@@ -245,7 +255,10 @@ describe('ChatInput', () => {
     currentState.models.isLoading = false;
     currentState.conversation.reasoningEnabled = false;
     currentState.conversation.composerAgentMode = 'auto';
-    currentState.conversation.byId = {};
+    currentState.conversation.byId = {
+      'chat-1': createConversationBoundToSelectedModel('chat-1'),
+      'chat-a': createConversationBoundToSelectedModel('chat-a'),
+    };
     currentState.stream.isStreaming = false;
     currentState.stream.conversationId = null;
     currentState.stream.currentRun = null;
@@ -693,6 +706,88 @@ describe('ChatInput', () => {
 
     expect(screen.getByRole('button', { name: '停止研究' })).toHaveAttribute('title', '停止研究');
     expect(screen.queryByRole('button', { name: '停止生成' })).toBeNull();
+  });
+
+  it('只在当前会话的权威模型计划运行期间把计划固定到输入框上方', () => {
+    configureAuthenticatedVisionModel();
+    currentState.stream.isStreaming = true;
+    currentState.stream.conversationId = 'chat-a';
+    currentState.stream.currentRun = {
+      runId: 'run-plan',
+      messageId: 'assistant-1',
+      status: 'running',
+      config: { maxSteps: 8, maxToolCalls: 20, timeoutS: 300, planMode: 'on' },
+      totalSteps: 1,
+      totalToolCalls: 0,
+      steps: [],
+      lastSequence: 2,
+      plan: {
+        planId: 'plan-1',
+        revision: 1,
+        source: 'model',
+        mode: 'on',
+        items: [{
+          id: 'research',
+          title: '核验关键资料',
+          status: 'running',
+          kind: 'search',
+          toolNames: [],
+          evidenceItemIds: [],
+        }],
+      },
+    };
+
+    const { rerender } = render(
+      <ChatInput onSendMessage={vi.fn()} activeChatId="chat-a" />,
+    );
+
+    const planStatus = screen.getByTestId('composer-plan-status');
+    expect(planStatus.nextElementSibling).toBe(screen.getByRole('group', { name: '消息输入区' }));
+    expect(planStatus).toHaveAttribute('role', 'status');
+    expect(planStatus).toHaveAttribute('aria-live', 'polite');
+    expect(planStatus).toHaveAttribute('aria-atomic', 'true');
+    expect(within(planStatus).getByRole('button', {
+      name: '查看计划流程，第 1/1 步：核验关键资料',
+    })).toBeInTheDocument();
+
+    for (const status of ['completed', 'failed', 'interrupted'] as const) {
+      currentState.stream.currentRun = {
+        ...currentState.stream.currentRun,
+        status,
+      };
+      rerender(<ChatInput onSendMessage={vi.fn()} activeChatId="chat-a" />);
+      const terminalPlanStatus = screen.getByTestId('composer-plan-status');
+      expect(within(terminalPlanStatus).queryByTestId('plan-status-research')).toBeNull();
+      fireEvent.click(within(terminalPlanStatus).getByRole('button', { name: /查看计划流程/ }));
+      expect(within(screen.getByRole('dialog', { name: '计划流程详情' }))
+        .getByTestId('plan-status-research').querySelector('svg')).not.toHaveClass('animate-spin');
+      fireEvent.click(within(terminalPlanStatus).getByRole('button', { name: /查看计划流程/ }));
+    }
+
+    currentState.stream.currentRun = {
+      ...currentState.stream.currentRun,
+      status: 'running',
+      plan: {
+        ...currentState.stream.currentRun.plan,
+        source: 'observed',
+      },
+    };
+    rerender(<ChatInput onSendMessage={vi.fn()} activeChatId="chat-a" />);
+    expect(screen.queryByTestId('composer-plan-status')).toBeNull();
+
+    currentState.stream.currentRun = {
+      ...currentState.stream.currentRun,
+      plan: {
+        ...currentState.stream.currentRun.plan,
+        source: 'model',
+      },
+    };
+    rerender(<ChatInput onSendMessage={vi.fn()} activeChatId="chat-b" />);
+    expect(screen.queryByTestId('composer-plan-status')).toBeNull();
+
+    currentState.stream.isStreaming = false;
+    rerender(<ChatInput onSendMessage={vi.fn()} activeChatId="chat-a" />);
+    expect(screen.queryByTestId('composer-plan-status')).toBeNull();
   });
 
   it('模型能力在服务端渲染后已于客户端加载时不会产生 hydration mismatch', async () => {
@@ -1891,6 +1986,117 @@ describe('ChatInput', () => {
 
     expect(screen.getByPlaceholderText('当前会话模型不可用，请新建会话后继续')).toBeTruthy();
     expect(screen.getByText('当前会话绑定的模型已不可用。请新建会话后切换到可用模型再继续聊天。')).toBeTruthy();
+  });
+
+  it('新对话选中模型不健康时回退到健康模型并保持可发送', () => {
+    currentState.auth.isAuthenticated = true;
+    currentState.models.selectedModelId = 'unhealthy-model';
+    currentState.models.models = [
+      {
+        id: 'unhealthy-model',
+        name: '不健康模型',
+        provider: 'qwen',
+        enabled: true,
+        health: {
+          status: 'unhealthy',
+          error: '服务商认证失败',
+        },
+        capabilities: {
+          vision: false,
+          deepThinking: false,
+        },
+      },
+      {
+        id: 'healthy-model',
+        name: '健康回退模型',
+        provider: 'openai',
+        enabled: true,
+        health: {
+          status: 'healthy',
+        },
+        capabilities: {
+          vision: false,
+          deepThinking: true,
+        },
+      },
+    ];
+
+    render(<ChatInput onSendMessage={vi.fn()} />);
+
+    expect(screen.getByPlaceholderText('发消息给 Fusion AI（Enter 发送）')).not.toBeDisabled();
+    expect(screen.getByTestId('model-selector-trigger')).toHaveTextContent('健康回退模型');
+    expect(screen.getByTestId('model-selector-trigger')).not.toHaveTextContent('不健康模型');
+    expect(screen.queryByText('当前会话绑定的模型已不可用。请新建会话后切换到可用模型再继续聊天。')).toBeNull();
+  });
+
+  it('已有会话绑定的模型不健康时阻塞发送而不回退', () => {
+    currentState.auth.isAuthenticated = true;
+    currentState.models.selectedModelId = 'healthy-model';
+    currentState.models.models = [
+      {
+        id: 'unhealthy-model',
+        provider: 'qwen',
+        enabled: true,
+        health: {
+          status: 'unhealthy',
+          error: '服务商认证失败',
+        },
+        capabilities: {
+          vision: false,
+          deepThinking: false,
+        },
+      },
+      {
+        id: 'healthy-model',
+        provider: 'openai',
+        enabled: true,
+        health: {
+          status: 'healthy',
+        },
+        capabilities: {
+          vision: false,
+          deepThinking: true,
+        },
+      },
+    ];
+    currentState.conversation.byId = {
+      'chat-1': {
+        id: 'chat-1',
+        model_id: 'unhealthy-model',
+      },
+    };
+
+    render(<ChatInput onSendMessage={vi.fn()} activeChatId="chat-1" />);
+
+    expect(screen.getByPlaceholderText('当前会话模型不可用，请新建会话后继续')).toBeDisabled();
+  });
+
+  it('已有会话尚无模型绑定时阻塞发送', () => {
+    currentState.auth.isAuthenticated = true;
+    currentState.models.selectedModelId = 'healthy-model';
+    currentState.models.models = [
+      {
+        id: 'healthy-model',
+        provider: 'openai',
+        enabled: true,
+        health: {
+          status: 'healthy',
+        },
+        capabilities: {
+          vision: false,
+          deepThinking: true,
+        },
+      },
+    ];
+    currentState.conversation.byId = {
+      'chat-1': {
+        id: 'chat-1',
+      },
+    };
+
+    render(<ChatInput onSendMessage={vi.fn()} activeChatId="chat-1" />);
+
+    expect(screen.getByPlaceholderText('当前会话模型不可用，请新建会话后继续')).toBeDisabled();
   });
 
   it('skips duplicate files in the same batch and warns the user', async () => {

@@ -10,7 +10,10 @@ import conversationReducer, {
   setComposerAgentMode,
   setHydrationStatus,
 } from '@/redux/slices/conversationSlice';
-import modelsReducer from '@/redux/slices/modelsSlice';
+import modelsReducer, {
+  setSelectedModel,
+  updateModels,
+} from '@/redux/slices/modelsSlice';
 import streamReducer from '@/redux/slices/streamSlice';
 import { resetConversationState, upsertConversation } from '@/redux/slices/conversationSlice';
 import { useSendMessage } from './useSendMessage';
@@ -1372,9 +1375,155 @@ describe('useSendMessage', () => {
       expect(state.stream.isStreaming).toBe(false);
       expect(state.conversation.globalError).toBe('模型调用超时');
       expect(state.conversation.byId['existing-conv'].messages[0]).toEqual(
-        expect.objectContaining({ role: 'user', status: 'failed' })
+        expect.objectContaining({ role: 'user', status: null })
+      );
+      expect(state.conversation.byId['existing-conv'].messages[1]).toEqual(
+        expect.objectContaining({ role: 'assistant' })
       );
     });
+  });
+
+  it('已有对话始终使用会话模型，不沿用刚访问过的全局模型', async () => {
+    const store = createStore();
+    const baseModel = store.getState().models.models[0];
+    store.dispatch(updateModels([
+      baseModel,
+      {
+        ...baseModel,
+        id: 'model-2',
+        name: 'Model Two',
+      },
+    ]));
+    store.dispatch(setSelectedModel('model-2'));
+    store.dispatch(
+      upsertConversation({
+        id: 'existing-conv',
+        title: 'Existing',
+        model_id: 'model-1',
+        messages: [],
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      }),
+    );
+    sendMessageStreamMock.mockImplementationOnce(async (_payload: any, callbacks: StreamCallbacks) => {
+      callbacks.onReady({ messageId: 'assistant-1', conversationId: 'existing-conv' });
+      callbacks.onAnswering({ block_id: 'blk_c', delta: '使用会话模型回答' });
+      callbacks.onDone({ messageId: 'assistant-1', conversationId: 'existing-conv' });
+    });
+
+    const { result } = renderHook(() => useSendMessage(), {
+      wrapper: createWrapper(store),
+    });
+
+    await act(async () => {
+      await result.current.sendMessage('继续当前对话', { conversationId: 'existing-conv' });
+      tickIntervals(4);
+    });
+
+    expect(sendMessageStreamMock).toHaveBeenCalledWith(
+      expect.objectContaining({ model_id: 'model-1' }),
+      expect.any(Object),
+      expect.any(AbortSignal),
+    );
+  });
+
+  it('已有对话尚未水合时禁止回退到全局模型发送', async () => {
+    const store = createStore();
+    const { result } = renderHook(() => useSendMessage(), {
+      wrapper: createWrapper(store),
+    });
+
+    await act(async () => {
+      await result.current.sendMessage('继续尚未加载的对话', {
+        conversationId: 'not-hydrated-conv',
+      });
+    });
+
+    expect(sendMessageStreamMock).not.toHaveBeenCalled();
+    expect(store.getState().conversation.globalError).toBe('对话尚未加载完成，请稍后重试');
+    expect(store.getState().conversation.byId['not-hydrated-conv']).toBeUndefined();
+  });
+
+  it('已有对话模型健康状态异常时禁止发送', async () => {
+    const store = createStore();
+    const baseModel = store.getState().models.models[0];
+    store.dispatch(updateModels([
+      {
+        ...baseModel,
+        health: {
+          status: 'unhealthy',
+          error: '服务商认证失败',
+        },
+      },
+    ]));
+    store.dispatch(
+      upsertConversation({
+        id: 'existing-conv',
+        title: 'Existing',
+        model_id: 'model-1',
+        messages: [],
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      }),
+    );
+    const { result } = renderHook(() => useSendMessage(), {
+      wrapper: createWrapper(store),
+    });
+
+    await act(async () => {
+      await result.current.sendMessage('继续当前对话', {
+        conversationId: 'existing-conv',
+      });
+    });
+
+    expect(sendMessageStreamMock).not.toHaveBeenCalled();
+    expect(store.getState().conversation.globalError).toBe(
+      '该对话使用的模型当前不可用，请新建对话并选择其他模型',
+    );
+  });
+
+  it('新对话不会使用健康状态异常的全局模型并回退到可用模型', async () => {
+    const store = createStore();
+    const baseModel = store.getState().models.models[0];
+    store.dispatch(updateModels([
+      {
+        ...baseModel,
+        health: {
+          status: 'unhealthy',
+          error: '服务商认证失败',
+        },
+      },
+      {
+        ...baseModel,
+        id: 'healthy-model',
+        name: 'Healthy Model',
+        health: {
+          status: 'healthy',
+        },
+      },
+    ]));
+    store.dispatch(setSelectedModel('model-1'));
+    sendMessageStreamMock.mockImplementationOnce(async (_payload: any, callbacks: StreamCallbacks) => {
+      callbacks.onReady({ messageId: 'assistant-1', conversationId: 'server-conv' });
+      callbacks.onAnswering({ block_id: 'blk_c', delta: '使用健康模型回答' });
+      callbacks.onDone({ messageId: 'assistant-1', conversationId: 'server-conv' });
+    });
+    const { result } = renderHook(() => useSendMessage(), {
+      wrapper: createWrapper(store),
+    });
+
+    await act(async () => {
+      await result.current.sendMessage('创建新对话', {
+        conversationId: null,
+      });
+      tickIntervals(4);
+    });
+
+    expect(sendMessageStreamMock).toHaveBeenCalledWith(
+      expect.objectContaining({ model_id: 'healthy-model' }),
+      expect.any(Object),
+      expect.any(AbortSignal),
+    );
   });
 
   it('把后端 stream_interrupted 终态视为用户停止并权威水合，不标记发送失败', async () => {
@@ -1896,7 +2045,10 @@ describe('useSendMessage', () => {
       expect(state.conversation.globalError).toBe(friendlyMessage);
       expect(state.stream.lastError?.message).toBe(friendlyMessage);
       expect(state.conversation.byId['existing-conv'].messages[0]).toEqual(
-        expect.objectContaining({ role: 'user', status: 'failed' })
+        expect.objectContaining({ role: 'user', status: null })
+      );
+      expect(state.conversation.byId['existing-conv'].messages[1]).toEqual(
+        expect.objectContaining({ role: 'assistant' })
       );
     });
   });

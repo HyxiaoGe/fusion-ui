@@ -2,9 +2,14 @@
 import { useCallback } from 'react';
 import { useAppDispatch } from '@/redux/hooks';
 import { useStore } from 'react-redux';
-import { removeMessage } from '@/redux/slices/conversationSlice';
-import type { Message, TextBlock, FileBlock, Conversation } from '@/types/conversation';
+import { removeMessage, setGlobalError } from '@/redux/slices/conversationSlice';
+import {
+  getSendModelErrorMessage,
+  resolveSendModel,
+} from '@/lib/chat/sendModelResolution';
+import type { Message, TextBlock, FileBlock } from '@/types/conversation';
 import type { FileAttachment } from '@/lib/utils/fileHelpers';
+import type { RootState } from '@/redux/store';
 
 type SendMessageFn = (
   content: string,
@@ -38,9 +43,7 @@ export function useRetryMessage(sendMessage: SendMessageFn) {
 
   return useCallback(
     async (messageId: string, conversationId: string) => {
-      const state = store.getState() as {
-        conversation: { byId: Record<string, Conversation> };
-      };
+      const state = store.getState() as RootState;
       const conversation = state.conversation.byId[conversationId];
       if (!conversation) return;
 
@@ -49,6 +52,11 @@ export function useRetryMessage(sendMessage: SendMessageFn) {
       if (targetIndex === -1) return;
 
       const targetMsg = messages[targetIndex];
+      const modelResolution = resolveSendModel(state, conversationId);
+      if (modelResolution.status !== 'ready') {
+        dispatch(setGlobalError(getSendModelErrorMessage(modelResolution)));
+        return;
+      }
 
       if (targetMsg.role === 'assistant') {
         // 重新生成：向上找 user 消息，删除 assistant + user，重新发送
