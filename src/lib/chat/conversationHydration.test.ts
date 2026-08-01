@@ -944,6 +944,8 @@ describe('conversationHydration', () => {
                   {
                     id: 'search',
                     title: '搜索资料',
+                    phase_id: 'phase-search',
+                    phase_title: '搜索并收集资料',
                     status: 'completed',
                     kind: 'search',
                     summary: '找到 2 条来源',
@@ -1008,6 +1010,8 @@ describe('conversationHydration', () => {
           {
             id: 'search',
             title: '搜索资料',
+            phaseId: 'phase-search',
+            phaseTitle: '搜索并收集资料',
             status: 'completed',
             kind: 'search',
             summary: '找到 2 条来源',

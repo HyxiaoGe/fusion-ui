@@ -115,6 +115,8 @@ describe('createAgentStreamEventHandlers', () => {
       items: [{
         id: 'research',
         title: '研究资料',
+        phase_id: 'phase-research',
+        phase_title: '搜索并收集资料',
         status: 'running',
         kind: 'other',
         tool_names: [],
@@ -143,6 +145,8 @@ describe('createAgentStreamEventHandlers', () => {
       item: {
         id: 'research',
         title: '研究资料',
+        phase_id: 'phase-research',
+        phase_title: '搜索并收集资料',
         status: 'completed',
         kind: 'other',
         depends_on: ['understand'],
@@ -163,6 +167,8 @@ describe('createAgentStreamEventHandlers', () => {
           reason: 'model_update',
           items: [{
             id: 'research',
+            phaseId: 'phase-research',
+            phaseTitle: '搜索并收集资料',
             dependsOn: ['understand'],
             plannedTools: ['web_search'],
           }],

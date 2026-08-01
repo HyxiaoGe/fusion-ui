@@ -26,7 +26,7 @@ export function PlanTimeline({ run, className = '' }: { run: AgentRunState; clas
     if (closeTimerRef.current) clearTimeout(closeTimerRef.current);
   }, []);
 
-  const items = getDisplayItems(run);
+  const items = getDisplayPhases(run);
   if (!items.length) return null;
 
   const completedCount = items.filter(item => item.status === 'completed').length;
@@ -260,24 +260,120 @@ function PlanProgressRing({
   );
 }
 
-function PlanItemRow({ item }: { item: AgentPlanItem }) {
+interface DisplayPlanPhase extends AgentPlanItem {
+  tasks: AgentPlanItem[];
+}
+
+function PlanItemRow({ item }: { item: DisplayPlanPhase }) {
   const Icon = getStatusIcon(item.status);
+  const completedTaskCount = item.tasks.filter(task => task.status === 'completed').length;
 
   return (
-    <li className="flex min-w-0 items-start gap-2.5">
-      <span
-        data-testid={`plan-status-${item.id}`}
-        title={getStatusLabel(item.status)}
-        className={`mt-0.5 inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full ${getStatusToneClass(item.status)}`}
-      >
-        <Icon className={getStatusIconClass(item.status)} aria-hidden="true" />
-        <span className="sr-only">{getStatusLabel(item.status)}</span>
-      </span>
-      <span className="min-w-0 flex-1 break-words text-xs leading-5 text-foreground/90">
-        {item.title}
-      </span>
+    <li data-testid={`plan-phase-${item.id}`} className="min-w-0">
+      <div className="flex min-w-0 items-start gap-2.5">
+        <span
+          data-testid={`plan-status-${item.id}`}
+          title={getStatusLabel(item.status)}
+          className={`mt-0.5 inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full ${getStatusToneClass(item.status)}`}
+        >
+          <Icon className={getStatusIconClass(item.status)} aria-hidden="true" />
+          <span className="sr-only">{getStatusLabel(item.status)}</span>
+        </span>
+        <span className="min-w-0 flex-1 break-words text-xs leading-5 text-foreground/90">
+          {item.title}
+        </span>
+        {item.tasks.length > 1 ? (
+          <span className="shrink-0 text-[10px] tabular-nums text-muted-foreground">
+            {completedTaskCount}/{item.tasks.length}
+          </span>
+        ) : null}
+      </div>
+      {item.tasks.length > 1 ? (
+        <ol aria-label={`${item.title}阶段内任务`} className="ml-6 mt-1 space-y-1 border-l border-border/50 pl-2.5">
+          {item.tasks.map(task => <PlanTaskRow key={task.id} task={task} />)}
+        </ol>
+      ) : null}
     </li>
   );
+}
+
+function PlanTaskRow({ task }: { task: AgentPlanItem }) {
+  const Icon = getStatusIcon(task.status);
+  return (
+    <li
+      data-testid={`plan-task-${task.id}`}
+      className="flex min-w-0 items-center gap-2 text-[11px] leading-4 text-muted-foreground"
+    >
+      <Icon
+        aria-hidden="true"
+        className={`${getTaskStatusIconClass(task.status)} ${getTaskStatusToneClass(task.status)}`}
+      />
+      <span className="min-w-0 flex-1 break-words">{task.title}</span>
+      <span className="sr-only">{getStatusLabel(task.status)}</span>
+    </li>
+  );
+}
+
+function getDisplayPhases(run: AgentRunState): DisplayPlanPhase[] {
+  const tasks = getDisplayItems(run);
+  const phases: DisplayPlanPhase[] = [];
+  const phaseIndexes = new Map<string, number>();
+
+  for (const task of tasks) {
+    const phaseId = task.phaseId?.trim() || task.id;
+    const existingIndex = phaseIndexes.get(phaseId);
+    if (existingIndex === undefined) {
+      phaseIndexes.set(phaseId, phases.length);
+      phases.push({
+        ...task,
+        id: phaseId,
+        title: task.phaseTitle?.trim() || task.title,
+        tasks: [task],
+      });
+      continue;
+    }
+    const phase = phases[existingIndex];
+    const phaseTasks = [...phase.tasks, task];
+    phases[existingIndex] = {
+      ...phase,
+      status: aggregatePhaseStatus(phaseTasks, run.status),
+      tasks: phaseTasks,
+    };
+  }
+
+  return phases.map(phase => ({
+    ...phase,
+    status: aggregatePhaseStatus(phase.tasks, run.status),
+  }));
+}
+
+function aggregatePhaseStatus(
+  tasks: AgentPlanItem[],
+  runStatus: AgentRunState['status'],
+): AgentPlanItem['status'] {
+  if (runStatus !== 'running') {
+    if (tasks.some(task => task.status === 'failed')) return 'failed';
+    if (tasks.some(task => task.status === 'blocked')) return 'blocked';
+    if (tasks.some(task => task.status === 'pending' || task.status === 'running')) {
+      if (runStatus === 'interrupted') return 'skipped';
+      if (runStatus === 'failed') return 'failed';
+      return 'blocked';
+    }
+    if (tasks.every(task => task.status === 'skipped')) return 'skipped';
+    if (tasks.every(task => task.status === 'completed' || task.status === 'skipped')) return 'completed';
+    return 'blocked';
+  }
+  if (tasks.some(task => task.status === 'running')) return 'running';
+  if (tasks.every(task => task.status === 'completed')) return 'completed';
+  if (tasks.every(task => task.status === 'skipped')) return 'skipped';
+  if (tasks.every(task => task.status === 'completed' || task.status === 'skipped')) return 'completed';
+  if (tasks.some(task => task.status === 'pending')) {
+    return tasks.some(task => task.status !== 'pending') ? 'running' : 'pending';
+  }
+  if (tasks.some(task => task.status === 'failed')) return 'failed';
+  if (tasks.some(task => task.status === 'blocked')) return 'blocked';
+  if (tasks.every(task => task.status === 'skipped')) return 'skipped';
+  return 'blocked';
 }
 
 function getCurrentItem(items: AgentPlanItem[]): AgentPlanItem {
@@ -434,6 +530,21 @@ function getStatusToneClass(status: AgentPlanItem['status']): string {
   if (status === 'blocked') return 'bg-warn-bg/60 text-warn';
   if (status === 'failed') return 'bg-danger-bg/60 text-danger';
   return 'bg-muted/50 text-muted-foreground';
+}
+
+function getTaskStatusIconClass(status: AgentPlanItem['status']): string {
+  const baseClass = 'h-3 w-3 shrink-0';
+  return status === 'running'
+    ? `${baseClass} animate-spin motion-reduce:animate-none`
+    : baseClass;
+}
+
+function getTaskStatusToneClass(status: AgentPlanItem['status']): string {
+  if (status === 'running') return 'text-info';
+  if (status === 'completed') return 'text-success';
+  if (status === 'failed') return 'text-danger';
+  if (status === 'blocked') return 'text-warn';
+  return 'text-muted-foreground/60';
 }
 
 function getStatusLabel(status: AgentPlanItem['status']): string {

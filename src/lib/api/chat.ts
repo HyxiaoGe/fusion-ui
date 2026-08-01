@@ -277,6 +277,8 @@ export interface StreamCallbacks {
       items: Array<{
         id: string;
         title: string;
+        phase_id?: string | null;
+        phase_title?: string | null;
         status: AgentPlanItemStatus;
         kind: AgentPlanItemKind;
         summary?: string | null;
@@ -298,6 +300,8 @@ export interface StreamCallbacks {
       item: {
         id: string;
         title: string;
+        phase_id?: string | null;
+        phase_title?: string | null;
         status: AgentPlanItemStatus;
         kind: AgentPlanItemKind;
         summary?: string | null;

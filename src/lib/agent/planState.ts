@@ -12,6 +12,8 @@ export const LEGACY_PLAN_REASON = 'legacy_observed';
 interface WireAgentPlanItem {
   id: string;
   title: string;
+  phase_id?: string | null;
+  phase_title?: string | null;
   status: AgentPlanItemStatus;
   kind: AgentPlanItemKind;
   summary?: string | null;
@@ -53,6 +55,8 @@ export function mapWireAgentPlanItem(item: WireAgentPlanItem): AgentPlanItem {
   return {
     id: item.id,
     title: item.title,
+    phaseId: item.phase_id ?? undefined,
+    phaseTitle: item.phase_title ?? undefined,
     status: item.status,
     kind: item.kind,
     summary: item.summary ?? undefined,

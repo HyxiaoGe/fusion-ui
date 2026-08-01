@@ -81,6 +81,9 @@ export interface AgentProgressState {
 export interface AgentPlanItem {
   id: string;
   title: string;
+  /** 服务端推导的用户可见阶段；缺失时以当前任务作为独立阶段。 */
+  phaseId?: string;
+  phaseTitle?: string;
   status: AgentPlanItemStatus;
   kind: AgentPlanItemKind;
   summary?: string;

@@ -80,6 +80,76 @@ describe('PlanTimeline', () => {
     expect(screen.getByTestId('plan-progress-value')).toHaveAttribute('stroke-dashoffset', '50');
   });
 
+  it('把并行搜索和读取任务汇总为三个顶层阶段，并保留阶段内任务', () => {
+    const searchTasks: AgentPlanItem[] = [
+      ['search-a', '搜索官方说明', 'completed'],
+      ['search-b', '搜索社区反馈', 'completed'],
+      ['search-c', '搜索性能数据', 'running'],
+    ].map(([id, title, status]) => ({
+      id,
+      title,
+      phaseId: 'phase-search-a',
+      phaseTitle: '搜索并收集资料',
+      status: status as AgentPlanItem['status'],
+      kind: 'search',
+      toolNames: ['web_search'],
+      evidenceItemIds: [],
+    }));
+    const readTasks: AgentPlanItem[] = [
+      ['read-a', '读取官方来源'],
+      ['read-b', '读取独立来源'],
+    ].map(([id, title]) => ({
+      id,
+      title,
+      phaseId: 'phase-read-a',
+      phaseTitle: '读取并核验关键来源',
+      status: 'pending',
+      kind: 'read',
+      toolNames: ['url_read'],
+      evidenceItemIds: [],
+    }));
+    const answer: AgentPlanItem = {
+      id: 'answer',
+      title: '综合证据并输出结论',
+      phaseId: 'phase-answer',
+      phaseTitle: '综合证据并输出结论',
+      status: 'pending',
+      kind: 'answer',
+      toolNames: [],
+      evidenceItemIds: [],
+    };
+    const { rerender } = render(<PlanTimeline run={createRun([
+      ...searchTasks,
+      ...readTasks,
+      answer,
+    ])} />);
+
+    expect(screen.getByRole('button', {
+      name: '查看计划流程，第 1/3 步：搜索并收集资料',
+    })).toBeInTheDocument();
+    expect(screen.getByRole('progressbar', { name: '计划完成进度' })).toHaveAttribute('aria-valuemax', '3');
+    const dialog = openPlanByClick();
+    expect(within(dialog).getByText('搜索并收集资料')).toBeInTheDocument();
+    expect(within(dialog).getByText('读取并核验关键来源')).toBeInTheDocument();
+    expect(within(dialog).getByText('综合证据并输出结论')).toBeInTheDocument();
+    expect(within(dialog).getByTestId('plan-task-search-a')).toHaveTextContent('搜索官方说明');
+    expect(within(dialog).getByTestId('plan-task-search-b')).toHaveTextContent('搜索社区反馈');
+    expect(within(dialog).getByTestId('plan-task-search-c')).toHaveTextContent('搜索性能数据');
+
+    fireEvent.click(screen.getByRole('button', { name: /查看计划流程/ }));
+    rerender(<PlanTimeline run={createRun([
+      ...searchTasks.map(task => ({ ...task, status: 'completed' as const })),
+      { ...readTasks[0], status: 'running' },
+      readTasks[1],
+      answer,
+    ])} />);
+
+    expect(screen.getByRole('button', {
+      name: '查看计划流程，第 2/3 步：读取并核验关键来源',
+    })).toBeInTheDocument();
+    expect(screen.getByRole('progressbar', { name: '计划完成进度' })).toHaveAttribute('aria-valuenow', '1');
+  });
+
   it('深度研究 run 显示低干扰模式标签，普通 run 不显示', () => {
     const { rerender } = render(<PlanTimeline run={createRun([
       {
@@ -176,6 +246,94 @@ describe('PlanTimeline', () => {
     expect(screen.getByText('2 项失败')).toBeInTheDocument();
     expect(screen.queryByText('当前步骤')).not.toBeInTheDocument();
     expect(screen.queryByText('查询去程航班')).not.toBeInTheDocument();
+  });
+
+  it('终态阶段内混合失败与未完成任务时优先显示失败且不保留进行中状态', () => {
+    render(<PlanTimeline run={createRun([
+      {
+        id: 'search-a',
+        title: '搜索官方说明',
+        phaseId: 'phase-search',
+        phaseTitle: '搜索并收集资料',
+        status: 'completed',
+        kind: 'search',
+        toolNames: ['web_search'],
+        evidenceItemIds: [],
+      },
+      {
+        id: 'search-b',
+        title: '搜索社区反馈',
+        phaseId: 'phase-search',
+        phaseTitle: '搜索并收集资料',
+        status: 'failed',
+        kind: 'search',
+        toolNames: ['web_search'],
+        evidenceItemIds: [],
+      },
+      {
+        id: 'search-c',
+        title: '搜索性能数据',
+        phaseId: 'phase-search',
+        phaseTitle: '搜索并收集资料',
+        status: 'pending',
+        kind: 'search',
+        toolNames: ['web_search'],
+        evidenceItemIds: [],
+      },
+    ], {
+      status: 'completed',
+    }, {
+      source: 'model',
+    })} />);
+
+    expect(screen.getByRole('button', {
+      name: '查看计划流程，计划已结束，已完成 0/1，1 项失败',
+    })).toBeInTheDocument();
+    const dialog = openPlanByClick();
+    expect(within(dialog).getByTestId('plan-status-phase-search')).toHaveAttribute('title', '失败');
+    expect(within(dialog).queryByTitle('进行中')).toBeNull();
+  });
+
+  it('运行态阶段内已完成与已跳过任务不会短暂显示为阻塞', () => {
+    render(<PlanTimeline run={createRun([
+      {
+        id: 'search-a',
+        title: '搜索官方说明',
+        phaseId: 'phase-search',
+        phaseTitle: '搜索并收集资料',
+        status: 'completed',
+        kind: 'search',
+        toolNames: ['web_search'],
+        evidenceItemIds: [],
+      },
+      {
+        id: 'search-b',
+        title: '搜索补充说明',
+        phaseId: 'phase-search',
+        phaseTitle: '搜索并收集资料',
+        status: 'skipped',
+        kind: 'search',
+        toolNames: ['web_search'],
+        evidenceItemIds: [],
+      },
+      {
+        id: 'answer',
+        title: '整理回答',
+        phaseId: 'phase-answer',
+        phaseTitle: '整理回答',
+        status: 'running',
+        kind: 'answer',
+        toolNames: [],
+        evidenceItemIds: [],
+      },
+    ])} />);
+
+    expect(screen.getByRole('button', {
+      name: '查看计划流程，第 2/2 步：整理回答',
+    })).toBeInTheDocument();
+    const dialog = openPlanByClick();
+    expect(within(dialog).getByTestId('plan-status-phase-search')).toHaveAttribute('title', '已完成');
+    expect(within(dialog).queryByTitle('已阻塞')).toBeNull();
   });
 
   it('计划全部完成后展示完成终态', () => {
