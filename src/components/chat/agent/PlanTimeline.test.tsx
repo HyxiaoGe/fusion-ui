@@ -691,7 +691,7 @@ describe('PlanTimeline', () => {
     expect(screen.queryByText('正在整理关键来源')).not.toBeInTheDocument();
   });
 
-  it('已完成的模型计划严格展示服务端 item 终态', () => {
+  it('已完成的模型计划不会遗留 running spinner', () => {
     render(<PlanTimeline run={createRun([{
       id: 'compare',
       title: '比较多个候选方案',
@@ -712,8 +712,8 @@ describe('PlanTimeline', () => {
     expect(screen.getByRole('progressbar', { name: '计划完成进度' }))
       .toHaveAttribute('aria-valuetext', '已完成 0/1 个步骤');
     openPlanByClick();
-    expect(screen.getByTestId('plan-status-compare')).toHaveTextContent('进行中');
-    expect(screen.getByTestId('plan-status-compare').querySelector('svg')).toHaveClass('animate-spin');
+    expect(screen.getByTestId('plan-status-compare')).toHaveTextContent('已阻塞');
+    expect(screen.getByTestId('plan-status-compare').querySelector('svg')).not.toHaveClass('animate-spin');
   });
 
   it('旧 observed plan 不把计划中的工具名称当成真实执行结果', () => {

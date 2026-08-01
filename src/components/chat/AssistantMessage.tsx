@@ -36,6 +36,7 @@ interface AssistantMessageProps {
   onSelectQuestion?: (question: string) => void;
   onRefreshQuestions?: () => void;
   activeChatId: string | null;
+  modelId?: string | null;
   providerId?: string;
   modelName: string;
 }
@@ -53,6 +54,7 @@ function AssistantMessage({
   onSelectQuestion,
   onRefreshQuestions,
   activeChatId,
+  modelId,
   providerId,
   modelName,
 }: AssistantMessageProps) {
@@ -73,6 +75,7 @@ function AssistantMessage({
         onSelectQuestion={onSelectQuestion}
         onRefreshQuestions={onRefreshQuestions}
         activeChatId={activeChatId}
+        modelId={modelId}
         providerId={providerId}
         modelName={modelName}
       />
@@ -93,6 +96,7 @@ function AssistantMessage({
       onSelectQuestion={onSelectQuestion}
       onRefreshQuestions={onRefreshQuestions}
       activeChatId={activeChatId}
+      modelId={modelId}
       providerId={providerId}
       modelName={modelName}
     />
@@ -121,6 +125,8 @@ function StaticAssistantMessage(props: AssistantMessageProps) {
 function StreamingAssistantMessage(props: AssistantMessageProps) {
   const viewModel = useAssistantMessageViewModel({
     message: props.message,
+    modelId: props.message.model_id ?? props.modelId,
+    providerId: props.providerId,
     isStreaming: props.isStreaming,
     isLastMessage: props.isLastMessage,
     isLoadingQuestions: props.isLoadingQuestions,
@@ -144,6 +150,7 @@ function AssistantMessageFrame({
   onSelectQuestion,
   onRefreshQuestions,
   activeChatId,
+  modelId,
   providerId,
   modelName,
   viewModel,
@@ -289,6 +296,8 @@ function AssistantMessageFrame({
         <div className="w-full min-w-0">
           <AssistantResponseStack
             assistantMessageId={message.id}
+            modelId={message.model_id ?? modelId}
+            providerId={providerId}
             reasoning={reasoningProps}
             activity={activity}
             agentRun={agentRun}

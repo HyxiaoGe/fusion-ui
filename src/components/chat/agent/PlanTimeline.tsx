@@ -16,8 +16,9 @@ import {
   PopoverTrigger,
 } from '@/components/ui/popover';
 import type { AgentPlanItem, AgentRunState } from '@/types/agentRun';
+import { cn } from '@/lib/utils';
 
-export function PlanTimeline({ run }: { run: AgentRunState }) {
+export function PlanTimeline({ run, className = '' }: { run: AgentRunState; className?: string }) {
   const [isOpen, setIsOpen] = useState(false);
   const [isPinned, setIsPinned] = useState(false);
   const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -67,7 +68,7 @@ export function PlanTimeline({ run }: { run: AgentRunState }) {
     >
       <div
         data-testid="plan-overview"
-        className="mb-2 w-fit max-w-full"
+        className={cn('mb-2 w-fit max-w-full', className)}
         onMouseEnter={openTemporarily}
         onMouseLeave={closeTemporarily}
       >
@@ -291,11 +292,25 @@ function getDisplayItems(run: AgentRunState): AgentPlanItem[] {
   const items = run.plan?.items ?? [];
   if (!items.length) return items;
   // 模型计划的 item 状态由服务端计划执行器负责收口；前端不能根据 kind、
-  // 工具或 run 终态二次猜测，否则会把未完成步骤误标为成功。
-  if (run.plan?.source === 'model') return items;
+  // 工具推测是否成功。run 已进入终态时只执行协议不变量收口：终态不能保留
+  // running spinner，但不会把未知步骤猜成 completed。
+  if (run.plan?.source === 'model') {
+    if (run.status === 'running') return items;
+    return items.map(item => normalizeTerminalModelPlanItem(run.status, item));
+  }
   if (!shouldNormalizeTerminalPlan(run.status)) return items;
 
   return items.map(item => normalizeCompletedRunItem(run, item));
+}
+
+function normalizeTerminalModelPlanItem(
+  runStatus: AgentRunState['status'],
+  item: AgentPlanItem,
+): AgentPlanItem {
+  if (item.status !== 'running') return item;
+  if (runStatus === 'interrupted') return { ...item, status: 'skipped' };
+  if (runStatus === 'failed') return { ...item, status: 'failed' };
+  return { ...item, status: 'blocked' };
 }
 
 function shouldNormalizeTerminalPlan(status: AgentRunState['status']): boolean {

@@ -67,6 +67,9 @@ vi.mock('./ChatMessage', () => ({
       <div
         data-testid={`chat-message-${message.id}`}
         data-run-id={agentRun?.runId ?? ''}
+        data-run-status={agentRun?.status ?? ''}
+        data-run-max-steps={agentRun?.config.maxSteps ?? ''}
+        data-run-limit-reason={agentRun?.limitReachedReason ?? ''}
         data-streaming={isStreaming ? 'true' : 'false'}
       >
         <div>{message.content.filter(b => b.type === 'text').map(b => b.text).join('')}</div>
@@ -602,6 +605,121 @@ describe('ChatMessageList', () => {
     expect(screen.getByTestId('chat-message-assistant-1').dataset.runId).toBe('run-1');
     fireEvent.click(screen.getByText('继续查'));
     expect(onContinueAgentRun).toHaveBeenCalledWith('assistant-1', 'run-1');
+  });
+
+  it('终态 live run 不遮挡消息水合得到的权威 agent run', () => {
+    selectorState.stream.currentRun = {
+      runId: 'run-server',
+      messageId: 'assistant-1',
+      status: 'completed',
+      config: { maxSteps: 8, maxToolCalls: 20, timeoutS: 300 },
+      totalSteps: 1,
+      totalToolCalls: 0,
+      steps: [],
+      lastSequence: 9,
+    };
+
+    render(
+      <ChatMessageList
+        conversationId="chat-1"
+        messages={[{
+          id: 'assistant-1',
+          role: 'assistant',
+          content: [{ type: 'text' as const, id: 'blk_1', text: '权威回答' }],
+          timestamp: 1,
+          agent_run: {
+            runId: 'run-server',
+            status: 'limit_reached',
+            config: { maxSteps: 3, maxToolCalls: 5, timeoutS: 60 },
+            totalSteps: 3,
+            totalToolCalls: 5,
+            limitReachedReason: 'max_steps',
+          },
+        } as any]}
+      />,
+    );
+
+    const message = screen.getByTestId('chat-message-assistant-1');
+    expect(message).toHaveAttribute('data-run-id', 'run-server');
+    expect(message).toHaveAttribute('data-run-status', 'limit_reached');
+    expect(message).toHaveAttribute('data-run-max-steps', '3');
+    expect(message).toHaveAttribute('data-run-limit-reason', 'max_steps');
+  });
+
+  it('续跑产生的新 terminal currentRun 不被同消息的旧 hydrated run 遮挡', () => {
+    selectorState.stream.currentRun = {
+      runId: 'run-continuation',
+      messageId: 'assistant-1',
+      status: 'limit_reached',
+      config: { maxSteps: 8, maxToolCalls: 20, timeoutS: 300 },
+      totalSteps: 8,
+      totalToolCalls: 10,
+      steps: [],
+      lastSequence: 12,
+      limitReachedReason: 'max_steps',
+    };
+
+    render(
+      <ChatMessageList
+        conversationId="chat-1"
+        messages={[{
+          id: 'assistant-1',
+          role: 'assistant',
+          content: [{ type: 'text' as const, id: 'blk_1', text: '续跑后的回答' }],
+          timestamp: 1,
+          agent_run: {
+            runId: 'run-previous',
+            status: 'completed',
+            config: { maxSteps: 3, maxToolCalls: 5, timeoutS: 60 },
+            totalSteps: 3,
+            totalToolCalls: 2,
+          },
+        } as any]}
+      />,
+    );
+
+    expect(screen.getByTestId('chat-message-assistant-1'))
+      .toHaveAttribute('data-run-id', 'run-continuation');
+  });
+
+  it('同 runId 的 terminal currentRun 不被过期的 hydrated running 快照覆盖', () => {
+    selectorState.stream.currentRun = {
+      runId: 'run-server',
+      messageId: 'assistant-1',
+      status: 'limit_reached',
+      config: { maxSteps: 8, maxToolCalls: 20, timeoutS: 300 },
+      totalSteps: 8,
+      totalToolCalls: 10,
+      steps: [],
+      lastSequence: 12,
+      limitReachedReason: 'max_steps',
+    };
+
+    render(
+      <ChatMessageList
+        conversationId="chat-1"
+        messages={[{
+          id: 'assistant-1',
+          role: 'assistant',
+          content: [{ type: 'text' as const, id: 'blk_1', text: '终态回答' }],
+          timestamp: 1,
+          agent_run: {
+            runId: 'run-server',
+            status: 'running',
+            config: { maxSteps: 3, maxToolCalls: 5, timeoutS: 60 },
+            totalSteps: 7,
+            totalToolCalls: 9,
+          },
+        } as any]}
+      />,
+    );
+
+    expect(screen.getByTestId('chat-message-assistant-1'))
+      .toHaveAttribute('data-run-status', 'limit_reached');
+    expect(screen.getByTestId('chat-message-assistant-1'))
+      .toHaveAttribute('data-run-max-steps', '8');
+    expect(screen.getByTestId('chat-message-assistant-1'))
+      .toHaveAttribute('data-run-limit-reason', 'max_steps');
   });
 
   it('marks the message owning stream.messageId as streaming even when it is not last', () => {

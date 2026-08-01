@@ -30,6 +30,8 @@ vi.mock('../models/ProviderIcon', () => ({
 
 vi.mock('./AssistantResponseStack', () => ({
   default: (props: {
+    modelId?: string | null;
+    providerId?: string | null;
     reasoning: {
       shouldRender: boolean;
       content: string;
@@ -254,6 +256,24 @@ describe('AssistantMessage', () => {
 
     expect(screen.getByTestId('assistant-response-stack')).toBeInTheDocument();
     expect(screen.getByText('助手正文')).toBeInTheDocument();
+  });
+
+  it('流式占位消息缺少模型 ID 时把会话模型与提供商显式传给思考展示链路', () => {
+    renderAssistant({
+      message: assistantMessage({ content: [], model_id: null }),
+      modelId: 'kimi-k3',
+      providerId: 'moonshot',
+      isStreaming: true,
+    });
+
+    expect(useAssistantMessageViewModelMock).toHaveBeenCalledWith(expect.objectContaining({
+      modelId: 'kimi-k3',
+      providerId: 'moonshot',
+    }));
+    expect(assistantResponseStackMock).toHaveBeenCalledWith(expect.objectContaining({
+      modelId: 'kimi-k3',
+      providerId: 'moonshot',
+    }));
   });
 
   it('把 ViewModel 的搜索关键词传给 AssistantResponseStack', () => {

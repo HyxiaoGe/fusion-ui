@@ -3,6 +3,7 @@
 import { memo } from 'react';
 import type { SearchSourceSummary, StructuredToolResultBlock } from '@/types/conversation';
 import type { AgentRunState } from '@/types/agentRun';
+import { isKimiK3ReasoningModel } from '@/lib/chat/reasoningVisibility';
 import ReasoningContent from './ReasoningContent';
 import AssistantActivityStatus from './AssistantActivityStatus';
 import type { AssistantActivity } from './assistantActivity';
@@ -16,6 +17,8 @@ import StructuredToolResults from './StructuredToolResults';
 
 interface AssistantResponseStackProps {
   assistantMessageId: string;
+  modelId?: string | null;
+  providerId?: string | null;
   reasoning: {
     shouldRender: boolean;
     content: string;
@@ -47,6 +50,8 @@ interface AssistantResponseStackProps {
 
 function AssistantResponseStack({
   assistantMessageId,
+  modelId,
+  providerId,
   reasoning,
   activity,
   agentRun,
@@ -82,9 +87,13 @@ function AssistantResponseStack({
       searchQueries,
       onOpenSources,
     };
-  const suppressAgentReasoning = agentRun?.config.planMode === 'on'
+  const suppressAgentReasoning = !isKimiK3ReasoningModel({ modelId, providerId }) && Boolean(
+    agentRun?.config.planMode === 'on'
     || agentRun?.plan?.source === 'model'
-    || agentRun?.config.taskMode === 'deep_research';
+    || agentRun?.config.taskMode === 'deep_research',
+  );
+  const showReasoning = reasoning.shouldRender && !suppressAgentReasoning;
+  const showActivityStatus = activity.kind !== 'waiting' || !showReasoning;
 
   return (
     <div
@@ -92,7 +101,7 @@ function AssistantResponseStack({
       className="w-full min-w-0 [&>*:last-child]:mb-0"
     >
       <div className="w-full max-w-6xl">
-        {reasoning.shouldRender && !suppressAgentReasoning ? (
+        {showReasoning ? (
           <ReasoningContent
             content={reasoning.content}
             isVisible={reasoning.isVisible}
@@ -103,7 +112,7 @@ function AssistantResponseStack({
           />
         ) : null}
 
-        <AssistantActivityStatus activity={activity} />
+        {showActivityStatus ? <AssistantActivityStatus activity={activity} /> : null}
 
         <AgentRunTimeline {...agentRunTimelineProps} />
       </div>

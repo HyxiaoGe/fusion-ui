@@ -328,7 +328,7 @@ describe('AgentRunTimeline', () => {
     expect(screen.queryByText('欧盟统一充电接口法规')).not.toBeInTheDocument();
   });
 
-  it('running + 只有 plan/progress 且工具未开始时展示计划态，不展示完成态执行过程入口', () => {
+  it('running observed plan 只保留兼容进度，不渲染计划入口', () => {
     renderTimeline(run({
       protocolVersion: 2,
       status: 'running',
@@ -368,10 +368,7 @@ describe('AgentRunTimeline', () => {
     }));
 
     expect(screen.getByText('正在制定执行计划')).toBeInTheDocument();
-    expect(screen.getByText('制定执行计划')).toBeInTheDocument();
-    expect(screen.queryByText('搜索：iPhone为什么要换USB-C接口')).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: /查看计划流程/ }));
-    expect(screen.getByText('搜索：iPhone为什么要换USB-C接口')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /查看计划流程/ })).not.toBeInTheDocument();
     expect(screen.queryByText(/执行过程 ·/)).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: '查看执行过程' })).not.toBeInTheDocument();
   });
@@ -411,7 +408,7 @@ describe('AgentRunTimeline', () => {
     expect(screen.queryByText(/整理答复/)).not.toBeInTheDocument();
   });
 
-  it('completed model plan 保留服务端计划，不被 ExecutionProcess 替换', () => {
+  it('completed model plan 从消息内移除计划，只保留执行过程', () => {
     renderTimeline(run({
       protocolVersion: 2,
       status: 'completed',
@@ -440,13 +437,13 @@ describe('AgentRunTimeline', () => {
       },
     }));
 
-    fireEvent.click(screen.getByRole('button', { name: /查看计划流程/ }));
-    expect(screen.getByText('比较候选路线并给出结论')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /查看计划流程/ })).not.toBeInTheDocument();
+    expect(screen.queryByText('比较候选路线并给出结论')).not.toBeInTheDocument();
     expect(screen.getByText('执行过程 · 搜索 1 次')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '查看执行过程' })).toBeInTheDocument();
   });
 
-  it('模型计划只渲染单一计划入口，不重复展示运行头、进度条和原始步骤时间线', () => {
+  it('运行中的模型计划不在 assistant 消息内部渲染', () => {
     renderTimeline(run({
       protocolVersion: 2,
       status: 'running',
@@ -495,14 +492,9 @@ describe('AgentRunTimeline', () => {
       },
     }));
 
-    expect(screen.getByRole('button', {
-      name: '查看计划流程，第 2/2 步：整理最终结论',
-    })).toBeInTheDocument();
-    expect(screen.queryByText(/已用/)).not.toBeInTheDocument();
-    expect(screen.queryByText('正在核验资料')).not.toBeInTheDocument();
-    expect(screen.queryByText(/步骤 3 ·/)).not.toBeInTheDocument();
-    expect(screen.queryByText(/整理答复/)).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '查看执行过程' })).toBeInTheDocument();
+    expect(screen.queryByTestId('agent-run-timeline')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /查看计划流程/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '查看执行过程' })).not.toBeInTheDocument();
   });
 
   it('completed off observed plan 继续沿用低干扰 ExecutionProcess', () => {
@@ -1031,7 +1023,7 @@ describe('AgentRunTimeline', () => {
     expect(screen.getByText(/搜索/)).toBeInTheDocument();
   });
 
-  it('limit_reached + 只有 plan/progress 没有工具时仍保留触顶说明', () => {
+  it('limit_reached + 只有 observed plan/progress 时保留触顶说明但不渲染计划入口', () => {
     renderTimeline(run({
       protocolVersion: 2,
       status: 'limit_reached',
@@ -1063,8 +1055,7 @@ describe('AgentRunTimeline', () => {
     }));
 
     expect(screen.getByText('本次检索用时较长，已结束当前检索')).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: /查看计划流程/ }));
-    expect(screen.getByText('整理回答')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /查看计划流程/ })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: '查看执行过程' })).not.toBeInTheDocument();
   });
 });

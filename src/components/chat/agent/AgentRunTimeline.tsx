@@ -6,7 +6,6 @@ import { RunHeader } from './RunHeader';
 import { RunBanner } from './RunBanner';
 import { StepTimeline } from './StepTimeline';
 import { RunProgressStrip } from './RunProgressStrip';
-import { PlanTimeline } from './PlanTimeline';
 import { EvidenceDigest } from './EvidenceDigest';
 import { ExecutionProcess } from './ExecutionProcess';
 import { buildExecutionProcessModel, type ExecutionProcessSource } from './executionProcessModel';
@@ -103,17 +102,21 @@ function AgentRunTimelineContent({
   }
   const completedProcessModel = buildExecutionProcessModel(run, { searchSources, searchQueries });
   if (hasModelPlan(run)) {
+    if (run.status === 'running') return null;
+    const hasTerminalBanner = run.status !== 'completed' || Boolean(run.limitReachedReason);
+    if (!hasTerminalBanner && !completedProcessModel.isRenderable) return null;
     return (
       <div
         data-testid="agent-run-timeline"
         className="mb-3 w-full max-w-6xl min-w-0"
       >
-        <RunBanner
-          run={run}
-          onRetry={onRetry}
-          onContinue={onContinue ? () => onContinue(run.runId) : undefined}
-        />
-        <PlanTimeline run={run} />
+        {hasTerminalBanner ? (
+          <RunBanner
+            run={run}
+            onRetry={onRetry}
+            onContinue={onContinue ? () => onContinue(run.runId) : undefined}
+          />
+        ) : null}
         {completedProcessModel.isRenderable ? (
           <ExecutionProcess
             run={run}
@@ -163,7 +166,6 @@ function AgentRunTimelineContent({
         onRetry={onRetry}
         onContinue={onContinue ? () => onContinue(run.runId) : undefined}
       />
-      <PlanTimeline run={run} />
       <EvidenceDigest run={run} />
       <StepTimeline run={run} />
     </div>

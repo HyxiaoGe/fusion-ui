@@ -191,7 +191,7 @@ const agentRun: AgentRunState = {
 };
 
 describe('AssistantResponseStack', () => {
-  it('模型计划运行时不展示原始思考，普通对话保持原思考展示', () => {
+  it('仅 K3 在模型计划期间展示经后端净化的思考，其他模型仍抑制计划协议', () => {
     const plannedRun: AgentRunState = {
       ...agentRun,
       plan: {
@@ -212,7 +212,7 @@ describe('AssistantResponseStack', () => {
       assistantMessageId: 'assistant-1',
       reasoning: {
         shouldRender: true,
-        content: '内部计划控制与工具协议',
+        content: '正在核对问题边界',
         isVisible: true,
         isStreaming: true,
         onToggle: vi.fn(),
@@ -227,12 +227,66 @@ describe('AssistantResponseStack', () => {
     };
 
     const { rerender } = render(
-      <AssistantResponseStack {...props} agentRun={plannedRun} />,
+      <AssistantResponseStack
+        {...props}
+        modelId="kimi-k3"
+        providerId="moonshot"
+        agentRun={plannedRun}
+      />,
+    );
+    expect(screen.getByTestId('stack-reasoning')).toHaveTextContent('正在核对问题边界');
+
+    rerender(
+      <AssistantResponseStack
+        {...props}
+        modelId="qwen-max"
+        providerId="qwen"
+        agentRun={plannedRun}
+      />,
     );
     expect(screen.queryByTestId('stack-reasoning')).not.toBeInTheDocument();
 
-    rerender(<AssistantResponseStack {...props} agentRun={agentRun} />);
-    expect(screen.getByTestId('stack-reasoning')).toHaveTextContent('内部计划控制与工具协议');
+    rerender(
+      <AssistantResponseStack
+        {...props}
+        modelId="qwen-max"
+        providerId="qwen"
+        agentRun={agentRun}
+      />,
+    );
+    expect(screen.getByTestId('stack-reasoning')).toHaveTextContent('正在核对问题边界');
+  });
+
+  it.each([
+    ['kimi-k2.5', 'moonshot'],
+    ['kimi-k3', 'openrouter'],
+  ])('不会仅凭相近模型或提供商放开思考：%s / %s', (modelId, providerId) => {
+    render(
+      <AssistantResponseStack
+        assistantMessageId="assistant-1"
+        modelId={modelId}
+        providerId={providerId}
+        reasoning={{
+          shouldRender: true,
+          content: '不应展示的计划思考',
+          isVisible: true,
+          isStreaming: true,
+          onToggle: vi.fn(),
+        }}
+        activity={activity()}
+        agentRun={{
+          ...agentRun,
+          config: { ...agentRun.config, planMode: 'on' },
+        }}
+        answerEvidence={null}
+        onSourceClick={vi.fn()}
+        onOpenSources={vi.fn()}
+        markdown={{ content: '', sources: [] }}
+        showStreamingCursor={false}
+      />,
+    );
+
+    expect(screen.queryByTestId('stack-reasoning')).not.toBeInTheDocument();
   });
 
   it.each([
@@ -241,13 +295,15 @@ describe('AssistantResponseStack', () => {
     'failed',
     'limit_reached',
     'interrupted',
-  ] as const)('模型计划进入 %s 或历史恢复后仍不回流原始思考', (status) => {
+  ] as const)('K3 模型计划进入 %s 或历史恢复后仍展示净化后的思考', (status) => {
     render(
       <AssistantResponseStack
         assistantMessageId="assistant-1"
+        modelId="kimi-k3"
+        providerId="moonshot"
         reasoning={{
           shouldRender: true,
-          content: '历史中的内部计划控制与工具协议',
+          content: '已核对所需资料',
           isVisible: true,
           isStreaming: false,
           onToggle: vi.fn(),
@@ -278,13 +334,15 @@ describe('AssistantResponseStack', () => {
       />,
     );
 
-    expect(screen.queryByTestId('stack-reasoning')).not.toBeInTheDocument();
+    expect(screen.getByTestId('stack-reasoning')).toHaveTextContent('已核对所需资料');
   });
 
-  it('已结束的深度研究即使没有模型计划快照也不回流原始思考', () => {
+  it('其他模型已结束的深度研究仍抑制内部思考', () => {
     render(
       <AssistantResponseStack
         assistantMessageId="assistant-1"
+        modelId="qwen-max"
+        providerId="qwen"
         reasoning={{
           shouldRender: true,
           content: '深度研究内部搜索参数',
@@ -309,13 +367,15 @@ describe('AssistantResponseStack', () => {
     expect(screen.queryByTestId('stack-reasoning')).not.toBeInTheDocument();
   });
 
-  it('深度研究在计划尚未生成时也不展示流式原始思考', () => {
+  it('K3 深度研究在计划尚未生成时展示流式净化思考', () => {
     render(
       <AssistantResponseStack
         assistantMessageId="assistant-1"
+        modelId="kimi-k3"
+        providerId="moonshot"
         reasoning={{
           shouldRender: true,
-          content: '准备构造内部搜索参数',
+          content: '正在确认搜索范围',
           isVisible: true,
           isStreaming: true,
           onToggle: vi.fn(),
@@ -333,16 +393,18 @@ describe('AssistantResponseStack', () => {
       />,
     );
 
-    expect(screen.queryByTestId('stack-reasoning')).not.toBeInTheDocument();
+    expect(screen.getByTestId('stack-reasoning')).toHaveTextContent('正在确认搜索范围');
   });
 
-  it('强制计划模式在首个计划快照到达前不展示流式原始思考', () => {
+  it('K3 强制计划模式在首个计划快照到达前展示流式净化思考', () => {
     render(
       <AssistantResponseStack
         assistantMessageId="assistant-1"
+        modelId="kimi-k3"
+        providerId="moonshot"
         reasoning={{
           shouldRender: true,
-          content: '正在生成内部执行计划',
+          content: '正在整理执行步骤',
           isVisible: true,
           isStreaming: true,
           onToggle: vi.fn(),
@@ -360,7 +422,32 @@ describe('AssistantResponseStack', () => {
       />,
     );
 
-    expect(screen.queryByTestId('stack-reasoning')).not.toBeInTheDocument();
+    expect(screen.getByTestId('stack-reasoning')).toHaveTextContent('正在整理执行步骤');
+  });
+
+  it('已有真实思考时不再同时显示正在准备回答占位', () => {
+    render(
+      <AssistantResponseStack
+        assistantMessageId="assistant-1"
+        reasoning={{
+          shouldRender: true,
+          content: '正在核验问题边界',
+          isVisible: true,
+          isStreaming: true,
+          onToggle: vi.fn(),
+        }}
+        activity={activity({ kind: 'waiting', hasText: false })}
+        agentRun={agentRun}
+        answerEvidence={null}
+        onSourceClick={vi.fn()}
+        onOpenSources={vi.fn()}
+        markdown={{ content: '', sources: [] }}
+        showStreamingCursor={false}
+      />,
+    );
+
+    expect(screen.getByTestId('stack-reasoning')).toHaveTextContent('正在核验问题边界');
+    expect(screen.queryByTestId('stack-activity')).not.toBeInTheDocument();
   });
 
   it('把结构化工具结果放在执行过程之后、Markdown 正文之前', () => {

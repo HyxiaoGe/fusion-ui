@@ -699,6 +699,77 @@ describe('useAssistantMessageViewModel', () => {
     expect(result.current.answerEvidence).toBeNull();
   });
 
+  it.each([
+    {
+      label: 'K3',
+      modelId: 'kimi-k3',
+      providerId: 'moonshot',
+      expectedSuppression: false,
+      expectedThinking: true,
+    },
+    {
+      label: '其他模型',
+      modelId: 'qwen-max',
+      providerId: 'qwen',
+      expectedSuppression: true,
+      expectedThinking: false,
+    },
+  ])('$label 在工具运行期间按模型范围处理流式思考', ({
+    modelId,
+    providerId,
+    expectedSuppression,
+    expectedThinking,
+  }) => {
+    selectorState.stream.messageId = 'assistant-1';
+    selectorState.stream.thinkingBlocks = { 'thinking-1': '先核对公开资料。' };
+    selectorState.stream.blockOrder = ['thinking-1'];
+    selectorState.stream.blockTypes = { 'thinking-1': 'thinking' };
+    selectorState.stream.isStreamingReasoning = true;
+    selectorState.stream.currentRun = {
+      runId: 'run-1',
+      messageId: 'assistant-1',
+      status: 'running',
+      config: { maxSteps: 8, maxToolCalls: 20, timeoutS: 300, planMode: 'on' },
+      totalSteps: 1,
+      totalToolCalls: 0,
+      lastSequence: 1,
+      steps: [{
+        stepId: 'step-1',
+        stepNumber: 1,
+        status: 'running',
+        startedAt: 1,
+        contentBlockIds: ['thinking-1'],
+        toolCalls: [{
+          toolCallId: 'tool-1',
+          toolName: 'web_search',
+          arguments: { query: '公开资料' },
+          status: 'running',
+          startedAt: 1,
+        }],
+      }],
+    };
+
+    const { result } = renderViewModel(
+      {
+        id: 'assistant-1',
+        role: 'assistant',
+        content: [],
+        timestamp: 1,
+      },
+      {
+        isStreaming: true,
+        isLastMessage: true,
+        modelId,
+        providerId,
+      },
+    );
+
+    expect(result.current.activity.kind).toBe('tool_running');
+    expect(result.current.suppressThinking).toBe(expectedSuppression);
+    expect(result.current.hasThinking).toBe(expectedThinking);
+    expect(result.current.displayThinking).toBe('先核对公开资料。');
+  });
+
   it('深度研究完成但没有真实来源时不伪造回答依据', () => {
     selectorState.stream.currentRun = {
       runId: 'run-deep-empty',

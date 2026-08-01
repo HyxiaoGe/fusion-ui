@@ -62,6 +62,7 @@ interface ChatMessageRowProps {
   onContinueAgentRun?: (messageId: string, previousRunId?: string) => void;
   onEdit?: (messageId: string, content: string) => void;
   conversationId: string | null;
+  modelId?: string;
   providerId?: string;
   modelName: string;
   currentRun: AgentRunState | null;
@@ -73,7 +74,16 @@ interface ChatMessageRowProps {
 
 function getMessageRun(message: Message, currentRun: AgentRunState | null): AgentRunState | null {
   if (currentRun?.messageId === message.id || currentRun?.serverMessageId === message.id) {
-    return currentRun;
+    const hydratedRun = message.agent_run ?? null;
+    if (
+      currentRun.status === 'running'
+      || !hydratedRun
+      || hydratedRun.runId !== currentRun.runId
+      || hydratedRun.status === 'running'
+    ) {
+      return currentRun;
+    }
+    return hydratedRun;
   }
   return message.agent_run ?? null;
 }
@@ -88,6 +98,7 @@ const ChatMessageRow = React.memo(function ChatMessageRow({
   onContinueAgentRun,
   onEdit,
   conversationId,
+  modelId,
   providerId,
   modelName,
   currentRun,
@@ -108,6 +119,7 @@ const ChatMessageRow = React.memo(function ChatMessageRow({
         onContinueAgentRun={onContinueAgentRun}
         onEdit={onEdit}
         activeChatId={conversationId}
+        modelId={modelId}
         providerId={providerId}
         modelName={modelName}
         agentRun={getMessageRun(message, currentRun)}
@@ -130,6 +142,7 @@ function areChatMessageRowPropsEqual(prev: ChatMessageRowProps, next: ChatMessag
     && prev.onContinueAgentRun === next.onContinueAgentRun
     && prev.onEdit === next.onEdit
     && prev.conversationId === next.conversationId
+    && prev.modelId === next.modelId
     && prev.providerId === next.providerId
     && prev.modelName === next.modelName
     && getMessageRun(prev.message, prev.currentRun) === getMessageRun(next.message, next.currentRun)
@@ -291,6 +304,7 @@ const ChatMessageList: React.FC<ChatMessageListProps> = ({
   const currentRun = useAppSelector(state => state.stream.currentRun);
   const streamMessageId = useAppSelector(state => state.stream.messageId);
   const model = useAppSelector(state => selectChatModel(state, conversationId));
+  const modelId = model?.id;
   const providerId = model?.provider;
   const modelName = model?.name ?? 'AI助手';
   const isStreamingForMessage = (message: Message, index: number): boolean => {
@@ -406,6 +420,7 @@ const ChatMessageList: React.FC<ChatMessageListProps> = ({
             onContinueAgentRun={onContinueAgentRun}
             onEdit={onEdit}
             conversationId={conversationId}
+            modelId={modelId}
             providerId={providerId}
             modelName={modelName}
             currentRun={currentRun}
