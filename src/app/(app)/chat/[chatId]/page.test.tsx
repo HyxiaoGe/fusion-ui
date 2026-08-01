@@ -198,10 +198,6 @@ vi.mock('@/components/chat/ConversationFilesPanel', () => ({
   },
 }));
 
-vi.mock('@/lib/chat/suggestedQuestionTiming', () => ({
-  shouldAutoFetchSuggestedQuestions: () => false,
-}));
-
 vi.mock('@/lib/api/streamStatus', () => ({
   fetchStreamStatus: fetchStreamStatusMock,
 }));
@@ -494,6 +490,8 @@ describe('ChatPage 会话切换体验', () => {
     expect(reconnectStreamMock).toHaveBeenCalledTimes(1);
     expect(reconnectStreamMock.mock.calls[0][0]).toBe('chat-a');
     expect(reconnectStreamMock.mock.calls[0][1]).toBe('0');
+    expect(retryHydrationMock).toHaveBeenCalledTimes(1);
+    expect(fetchQuestionsMock).not.toHaveBeenCalled();
   });
 
   it('流状态查询临时失败时有限重试，最终 streaming 后继续恢复', async () => {
@@ -1599,6 +1597,7 @@ describe('ChatPage 会话切换体验', () => {
 
     expect(useConversationFilesState.refresh).toHaveBeenCalledTimes(2);
     expect(useConversationFilesState.refresh).toHaveBeenLastCalledWith('chat-a');
+    expect(fetchQuestionsMock).not.toHaveBeenCalled();
   });
 
   it('已有会话上传已处理文件后只加入本次提问，不自动打开资料面板', async () => {

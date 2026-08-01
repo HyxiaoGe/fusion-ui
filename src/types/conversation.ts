@@ -417,6 +417,8 @@ export interface ContextUsage {
   round_index: number | null;
 }
 
+export type SuggestedQuestionsStatus = 'idle' | 'pending' | 'ready' | 'failed';
+
 // ============================================================
 // Message
 // ============================================================
@@ -437,6 +439,8 @@ export interface Message {
   agent_run?: AgentRunState | null;
   // 持久化推荐问题，刷新后随消息恢复
   suggestedQuestions?: string[];
+  suggestedQuestionsStatus?: SuggestedQuestionsStatus;
+  suggestedQuestionsRevision?: number;
 }
 
 // ============================================================

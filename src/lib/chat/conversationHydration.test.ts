@@ -51,6 +51,43 @@ function itineraryPayload() {
 }
 
 describe('conversationHydration', () => {
+  it('恢复推荐问题的持久化状态与版本，旧消息缺失字段时保持兼容', () => {
+    const conversation = buildChatFromServerConversation({
+      id: 'conv-suggestions',
+      title: '推荐问题',
+      model_id: 'model-1',
+      messages: [
+        {
+          id: 'assistant-ready',
+          role: 'assistant',
+          content: [{ type: 'text', text: '回答' }],
+          created_at: '2026-08-01T08:01:00Z',
+          suggested_questions: ['继续了解'],
+          suggested_questions_status: 'ready',
+          suggested_questions_revision: 2,
+        },
+        {
+          id: 'assistant-legacy',
+          role: 'assistant',
+          content: [{ type: 'text', text: '历史回答' }],
+          created_at: '2026-08-01T08:00:00Z',
+          suggested_questions: ['历史推荐'],
+        },
+      ],
+    });
+
+    expect(conversation.messages[0]).toMatchObject({
+      suggestedQuestions: ['继续了解'],
+      suggestedQuestionsStatus: 'ready',
+      suggestedQuestionsRevision: 2,
+    });
+    expect(conversation.messages[1]).toMatchObject({
+      suggestedQuestions: ['历史推荐'],
+    });
+    expect(conversation.messages[1].suggestedQuestionsStatus).toBeUndefined();
+    expect(conversation.messages[1].suggestedQuestionsRevision).toBeUndefined();
+  });
+
   it('从最新 assistant message usage.context 恢复上下文状态，旧历史保持兼容', () => {
     const chat = buildChatFromServerConversation({
       id: 'chat-context',

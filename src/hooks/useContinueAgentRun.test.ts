@@ -554,6 +554,97 @@ describe('useContinueAgentRun', () => {
     });
   });
 
+  it('continuation 完成后的权威刷新同步推荐问题状态，使 pending 能被页面轮询', async () => {
+    const { store, dispatch } = createReducerBackedHarness();
+    vi.mocked(getConversation).mockResolvedValue({
+      id: 'conv-1',
+      title: '会话',
+      model_id: 'deepseek-chat',
+      messages: [{
+        id: 'msg-1',
+        role: 'assistant',
+        content: [{ type: 'text', id: 'db-text', text: '补充后的回答' }],
+        suggested_questions: ['上一批问题'],
+        suggested_questions_status: 'pending',
+        suggested_questions_revision: 3,
+      }],
+    });
+    vi.mocked(continueAgentRunStream).mockImplementation(async (_payload, callbacks) => {
+      callbacks.onDone({ messageId: 'msg-1', conversationId: 'conv-1' });
+    });
+
+    const { result } = renderHook(() => useContinueAgentRun({
+      dispatch: dispatch as never,
+      store: store as never,
+    }));
+
+    await act(async () => {
+      await result.current.continueAgentRun({
+        conversationId: 'conv-1',
+        assistantMessageId: 'msg-1',
+        previousRunId: 'run-1',
+      });
+    });
+
+    await waitFor(() => expect(
+      store.getState().conversation.byId['conv-1'].messages[0],
+    ).toMatchObject({
+      suggestedQuestions: ['上一批问题'],
+      suggestedQuestionsStatus: 'pending',
+      suggestedQuestionsRevision: 3,
+    }));
+  });
+
+  it('continuation 迟到权威快照不回退已由手动刷新推进的推荐问题 revision', async () => {
+    const { store, dispatch } = createReducerBackedHarness();
+    store.dispatch(updateMessage({
+      conversationId: 'conv-1',
+      messageId: 'msg-1',
+      patch: {
+        suggestedQuestions: ['手动新问题'],
+        suggestedQuestionsStatus: 'ready',
+        suggestedQuestionsRevision: 2,
+      },
+    }));
+    vi.mocked(getConversation).mockResolvedValue({
+      id: 'conv-1',
+      title: '会话',
+      model_id: 'deepseek-chat',
+      messages: [{
+        id: 'msg-1',
+        role: 'assistant',
+        content: [{ type: 'text', id: 'db-text', text: '补充后的回答' }],
+        suggested_questions: ['迟到自动问题'],
+        suggested_questions_status: 'pending',
+        suggested_questions_revision: 1,
+      }],
+    });
+    vi.mocked(continueAgentRunStream).mockImplementation(async (_payload, callbacks) => {
+      callbacks.onDone({ messageId: 'msg-1', conversationId: 'conv-1' });
+    });
+
+    const { result } = renderHook(() => useContinueAgentRun({
+      dispatch: dispatch as never,
+      store: store as never,
+    }));
+
+    await act(async () => {
+      await result.current.continueAgentRun({
+        conversationId: 'conv-1',
+        assistantMessageId: 'msg-1',
+      });
+    });
+
+    await waitFor(() => expect(
+      store.getState().conversation.byId['conv-1'].messages[0].content,
+    ).toEqual([{ type: 'text', id: 'db-text', text: '补充后的回答' }]));
+    expect(store.getState().conversation.byId['conv-1'].messages[0]).toMatchObject({
+      suggestedQuestions: ['手动新问题'],
+      suggestedQuestionsStatus: 'ready',
+      suggestedQuestionsRevision: 2,
+    });
+  });
+
   it('无工具 continuation 完成后也从 DB 刷新最新 usage.context', async () => {
     const { store, dispatch } = createReducerBackedHarness();
     vi.mocked(getConversation).mockResolvedValue({

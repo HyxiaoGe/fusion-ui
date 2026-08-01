@@ -15,6 +15,7 @@ import {
   shouldRecoverReasoningOnlyFinalBlocks,
 } from '@/lib/chat/contentBlocks';
 import { buildChatFromServerConversation } from '@/lib/chat/conversationHydration';
+import { shouldApplySuggestedQuestionsSnapshot } from '@/lib/chat/suggestedQuestionState';
 import { updateMessage } from '@/redux/slices/conversationSlice';
 import {
   advanceTypewriter,
@@ -70,7 +71,8 @@ function refreshContinuationMessage({
   conversationId,
   assistantMessageId,
   dispatch,
-}: Pick<ContinuationCallbackDeps, 'conversationId' | 'assistantMessageId' | 'dispatch'>): void {
+  store,
+}: Pick<ContinuationCallbackDeps, 'conversationId' | 'assistantMessageId' | 'dispatch' | 'store'>): void {
   void (async () => {
     try {
       const serverConversation = await getConversation(conversationId) as Parameters<
@@ -79,6 +81,15 @@ function refreshContinuationMessage({
       const refreshed = buildChatFromServerConversation(serverConversation);
       const dbMessage = refreshed.messages.find(message => message.id === assistantMessageId);
       if (dbMessage) {
+        const currentMessage = (
+          store.getState() as RootStateForContinuation
+        ).conversation.byId[conversationId]?.messages.find(
+          message => message.id === assistantMessageId,
+        );
+        const shouldApplySuggestedQuestions = shouldApplySuggestedQuestionsSnapshot(
+          currentMessage,
+          dbMessage,
+        );
         dispatch(updateMessage({
           conversationId,
           messageId: assistantMessageId,
@@ -87,6 +98,11 @@ function refreshContinuationMessage({
             model_id: dbMessage.model_id,
             usage: dbMessage.usage,
             agent_run: dbMessage.agent_run,
+            ...(shouldApplySuggestedQuestions ? {
+              suggestedQuestions: dbMessage.suggestedQuestions,
+              suggestedQuestionsStatus: dbMessage.suggestedQuestionsStatus,
+              suggestedQuestionsRevision: dbMessage.suggestedQuestionsRevision,
+            } : {}),
           },
         }));
       }
@@ -164,7 +180,7 @@ function buildContinuationStreamCallbacks({
         },
       }));
       dispatch(endStream());
-      refreshContinuationMessage({ conversationId, assistantMessageId, dispatch });
+      refreshContinuationMessage({ conversationId, assistantMessageId, dispatch, store });
     },
     onError: (message, payload) => {
       if (!isActive()) return;

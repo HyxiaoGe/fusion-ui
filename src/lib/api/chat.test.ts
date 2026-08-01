@@ -16,6 +16,7 @@ vi.mock('./fetchWithAuth', () => ({
 import {
   StreamRequestError,
   continueAgentRunStream,
+  fetchSuggestedQuestions,
   getConversation,
   isRecoverableStreamError,
   reconnectStream,
@@ -23,6 +24,45 @@ import {
   stopStream,
   submitAgentContextResult,
 } from './chat';
+
+describe('fetchSuggestedQuestions', () => {
+  beforeEach(() => {
+    apiRequestMock.mockReset();
+  });
+
+  it('把精确 assistant message id 和手动刷新意图传给后端', async () => {
+    apiRequestMock.mockResolvedValue({
+      questions: ['下一步是什么？'],
+      conversation_id: 'conv-1',
+      assistant_message_id: 'assistant-2',
+      status: 'ready',
+      revision: 3,
+    });
+
+    await expect(fetchSuggestedQuestions('conv-1', {
+      assistantMessageId: 'assistant-2',
+      forceRefresh: true,
+      options: { locale: 'zh-CN' },
+    })).resolves.toEqual({
+      questions: ['下一步是什么？'],
+      status: 'ready',
+      revision: 3,
+    });
+
+    expect(apiRequestMock).toHaveBeenCalledWith(
+      expect.stringContaining('/api/chat/suggest-questions'),
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({
+          conversation_id: 'conv-1',
+          assistant_message_id: 'assistant-2',
+          force_refresh: true,
+          options: { locale: 'zh-CN' },
+        }),
+      }),
+    );
+  });
+});
 
 describe('submitAgentContextResult', () => {
   beforeEach(() => {

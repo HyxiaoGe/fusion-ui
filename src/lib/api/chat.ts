@@ -16,7 +16,7 @@ import type {
   SseEnvelope,
   SubmitAgentContextResultInput,
 } from '@/types/agentRun';
-import type { ContentBlock } from '@/types/conversation';
+import type { ContentBlock, SuggestedQuestionsStatus } from '@/types/conversation';
 import type { ContextUsage } from '@/types/conversation';
 import { normalizeContextUsage, type ContextUsagePhase } from '@/lib/chat/contextUsage';
 
@@ -879,21 +879,48 @@ export async function deleteConversation(conversationId: string) {
   });
 }
 
+export interface FetchSuggestedQuestionsOptions {
+  assistantMessageId: string;
+  forceRefresh: boolean;
+  options?: Record<string, unknown>;
+}
+
+export interface SuggestedQuestionsResponse {
+  questions: string[];
+  status?: SuggestedQuestionsStatus;
+  revision?: number;
+}
+
 export const fetchSuggestedQuestions = async (
   conversationId: string,
-  options: Record<string, unknown> = {},
-  _forceRefresh: boolean = false,
-  _messageCount?: number
-): Promise<{ questions: string[] }> => {
-  void _forceRefresh;
-  void _messageCount;
-  const data = await apiRequest<{ questions: string[]; conversation_id: string }>(
+  {
+    assistantMessageId,
+    forceRefresh,
+    options = {},
+  }: FetchSuggestedQuestionsOptions,
+): Promise<SuggestedQuestionsResponse> => {
+  const data = await apiRequest<{
+    questions: string[];
+    conversation_id: string;
+    assistant_message_id?: string;
+    status?: SuggestedQuestionsStatus;
+    revision?: number;
+  }>(
     `${API_BASE_URL}/api/chat/suggest-questions`,
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ conversation_id: conversationId, options }),
+      body: JSON.stringify({
+        conversation_id: conversationId,
+        assistant_message_id: assistantMessageId,
+        force_refresh: forceRefresh,
+        options,
+      }),
     },
   );
-  return { questions: data.questions || [] };
+  return {
+    questions: data.questions || [],
+    ...(data.status ? { status: data.status } : {}),
+    ...(typeof data.revision === 'number' ? { revision: data.revision } : {}),
+  };
 };

@@ -111,6 +111,8 @@ interface ServerMessage {
   usage?: ServerUsage | null;
   created_at?: string | number | null;
   suggested_questions?: string[] | null;
+  suggested_questions_status?: Message['suggestedQuestionsStatus'] | null;
+  suggested_questions_revision?: number | null;
   agent_run?: ServerAgentRunSummary | null;
 }
 
@@ -147,6 +149,8 @@ function buildMessage(serverMessage: ServerMessage, conversationId: string): Mes
     timestamp: parseServerTimestamp(serverMessage.created_at),
     isReasoningVisible: hasThinking ? false : undefined,
     suggestedQuestions: serverMessage.suggested_questions ?? undefined,
+    suggestedQuestionsStatus: serverMessage.suggested_questions_status ?? undefined,
+    suggestedQuestionsRevision: serverMessage.suggested_questions_revision ?? undefined,
     agent_run: buildAgentRunState(serverMessage.agent_run, serverMessage.id),
   };
 }

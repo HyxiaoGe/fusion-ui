@@ -52,7 +52,6 @@ import {
   recoverReasoningOnlyFinalBlocks,
   shouldRecoverReasoningOnlyFinalBlocks,
 } from '@/lib/chat/contentBlocks';
-import { shouldAutoFetchSuggestedQuestions } from '@/lib/chat/suggestedQuestionTiming';
 import { CHAT_NEW_PATH } from '@/lib/routes/chatRoutes';
 import { deleteFile, type FileInfo } from '@/lib/api/files';
 
@@ -147,7 +146,6 @@ export default function ChatPage() {
     bufferedActions: Array<() => void>;
     streamTerminated: boolean;
   } | null>(null);
-  const fetchQuestionsRef = useRef<((force?: boolean) => Promise<void>) | undefined>(undefined);
   const isAuthenticated = useAppSelector(selectIsAuthenticated);
   const authSessionKey = useAppSelector(selectAuthSessionKey);
   const { conversation, hydrationView, hydrationError, retryHydration } = useConversation(chatId);
@@ -169,7 +167,6 @@ export default function ChatPage() {
     enabled: isAuthenticated,
     sessionKey: authSessionKey,
   });
-  fetchQuestionsRef.current = fetchQuestions;
   const conversationError = useAppSelector((state) => state.conversation.globalError);
   const isStreaming = useAppSelector((state) => state.stream.isStreaming);
   const lastReadyConversationSnapshot = useAppSelector(
@@ -432,18 +429,6 @@ export default function ChatPage() {
     };
   }, [chatId, isAuthenticated, hydrationDone]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  useEffect(() => {
-    if (!chatId || !conversation || isStreaming || isLoadingQuestions || suggestedQuestions.length > 0) {
-      return;
-    }
-
-    if (!shouldAutoFetchSuggestedQuestions(conversation.messages)) {
-      return;
-    }
-
-    void fetchQuestions();
-  }, [chatId, conversation, fetchQuestions, isLoadingQuestions, isStreaming, suggestedQuestions.length]);
-
   const showCompletionState = useTransientCompletionState({
     isStreaming,
     isLoadingQuestions,
@@ -464,8 +449,6 @@ export default function ChatPage() {
             void refreshConversationFiles(conversationId);
           }
           if (conversationId === latestChatIdRef.current) {
-            // 用 ref 避免闭包过期（长时间 agent 流结束后 hook 可能已切到新会话）
-            fetchQuestionsRef.current?.(true);
             if (!attachments || attachments.length === 0) {
               void refreshConversationFiles(conversationId);
             }
