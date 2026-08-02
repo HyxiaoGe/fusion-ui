@@ -2,7 +2,7 @@ import React from 'react';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { dispatchMock, pathnameMock, modelsStateMock } = vi.hoisted(() => ({
+const { dispatchMock, pathnameMock, modelsStateMock, conversationStateMock } = vi.hoisted(() => ({
   dispatchMock: vi.fn(),
   pathnameMock: vi.fn(),
   modelsStateMock: {
@@ -40,6 +40,12 @@ const { dispatchMock, pathnameMock, modelsStateMock } = vi.hoisted(() => ({
       ],
     } as any,
   },
+  conversationStateMock: {
+    current: {
+      byId: {},
+      hydrationStatus: {},
+    } as any,
+  },
 }));
 
 vi.mock('next/navigation', () => ({
@@ -51,9 +57,7 @@ vi.mock('@/redux/hooks', () => ({
   useAppSelector: (selector: (state: any) => unknown) =>
     selector({
       models: modelsStateMock.current,
-      conversation: {
-        byId: {},
-      },
+      conversation: conversationStateMock.current,
     }),
 }));
 
@@ -69,6 +73,7 @@ describe('ModelSelector 集成渲染', () => {
     pathnameMock.mockReturnValue('/chat/new');
     modelsStateMock.current = {
       selectedModelId: 'search-model',
+      loadStatus: 'ready',
       providers: [{ id: 'provider-a', name: 'Provider A', order: 1 }],
       models: [
         {
@@ -99,6 +104,10 @@ describe('ModelSelector 集成渲染', () => {
           },
         },
       ],
+    };
+    conversationStateMock.current = {
+      byId: {},
+      hydrationStatus: {},
     };
   });
 
@@ -135,6 +144,7 @@ describe('ModelSelector 集成渲染', () => {
   it('模型目录尚未加载时保留同尺寸且不可操作的选择器', () => {
     modelsStateMock.current = {
       selectedModelId: null,
+      loadStatus: 'loading',
       providers: [],
       models: [],
     };
@@ -144,5 +154,33 @@ describe('ModelSelector 集成渲染', () => {
     const trigger = screen.getByRole('button', { name: '模型加载中' });
     expect(trigger).toBeDisabled();
     expect(trigger).toHaveClass('h-8', 'w-[112px]', 'sm:h-[66px]', 'sm:w-64');
+  });
+
+  it('已有会话水合完成前不回退显示全局默认模型', () => {
+    pathnameMock.mockReturnValue('/chat/chat-1');
+    conversationStateMock.current = {
+      byId: {},
+      hydrationStatus: { 'chat-1': 'loading' },
+    };
+
+    const { rerender } = render(<ModelSelector toolbarMode />);
+
+    expect(screen.getByRole('button', { name: '模型加载中' })).toBeDisabled();
+    expect(screen.queryByText('Search Model')).toBeNull();
+
+    conversationStateMock.current = {
+      byId: {
+        'chat-1': {
+          id: 'chat-1',
+          model_id: 'plain-model',
+          messages: [{ id: 'message-1', role: 'user' }],
+        },
+      },
+      hydrationStatus: { 'chat-1': 'done' },
+    };
+    rerender(<ModelSelector toolbarMode />);
+
+    expect(screen.getByRole('button', { name: /Plain Model/ })).toBeDisabled();
+    expect(screen.queryByText('Search Model')).toBeNull();
   });
 });

@@ -35,11 +35,13 @@ const {
         providers: [],
         selectedModelId: null,
         isLoading: false,
+        loadStatus: 'ready',
       },
       conversation: {
         reasoningEnabled: false,
         composerAgentMode: 'auto',
         byId: {},
+        hydrationStatus: {},
       },
       stream: {
         isStreaming: false,
@@ -253,11 +255,16 @@ describe('ChatInput', () => {
     currentState.models.providers = [];
     currentState.models.selectedModelId = null;
     currentState.models.isLoading = false;
+    currentState.models.loadStatus = 'ready';
     currentState.conversation.reasoningEnabled = false;
     currentState.conversation.composerAgentMode = 'auto';
     currentState.conversation.byId = {
       'chat-1': createConversationBoundToSelectedModel('chat-1'),
       'chat-a': createConversationBoundToSelectedModel('chat-a'),
+    };
+    currentState.conversation.hydrationStatus = {
+      'chat-1': 'done',
+      'chat-a': 'done',
     };
     currentState.stream.isStreaming = false;
     currentState.stream.conversationId = null;
@@ -586,6 +593,21 @@ describe('ChatInput', () => {
     expect(screen.getByText('思考')).toHaveClass('hidden', 'min-[420px]:inline');
     expect(screen.getByText('自动')).toHaveClass('max-w-[4.5rem]', 'truncate');
     expect(screen.getByTestId('model-selector-trigger')).toHaveClass('max-w-[112px]', 'sm:max-w-none');
+  });
+
+  it.each([
+    ['auto', 'lucide-sparkles'],
+    ['plan', 'lucide-list-checks'],
+    ['deep_research', 'lucide-search'],
+  ] as const)('外层触发器在 %s 模式下显示对应图标', (mode, iconClass) => {
+    configureAuthenticatedVisionModel();
+    currentState.conversation.composerAgentMode = mode;
+
+    render(<ChatInput onSendMessage={vi.fn()} activeChatId="chat-a" />);
+
+    const icon = screen.getByTestId('composer-agent-mode-icon');
+    expect(icon).toHaveAttribute('data-mode', mode);
+    expect(icon).toHaveClass(iconClass);
   });
 
   it('执行模式菜单支持键盘打开与三态选择', async () => {
@@ -1988,6 +2010,51 @@ describe('ChatInput', () => {
     expect(screen.getByText('当前会话绑定的模型已不可用。请新建会话后切换到可用模型再继续聊天。')).toBeTruthy();
   });
 
+  it('刷新时模型目录仍在加载则静默阻塞，不误报绑定模型不可用', () => {
+    currentState.auth.isAuthenticated = true;
+    currentState.models.loadStatus = 'loading';
+    currentState.models.models = [];
+    currentState.conversation.byId = {
+      'chat-1': {
+        id: 'chat-1',
+        model_id: 'kimi-k3',
+      },
+    };
+
+    render(<ChatInput onSendMessage={vi.fn()} activeChatId="chat-1" />);
+
+    expect(screen.getByPlaceholderText('发消息给 Fusion AI（Enter 发送）')).toBeDisabled();
+    expect(screen.queryByText('当前会话绑定的模型已不可用。请新建会话后切换到可用模型再继续聊天。')).toBeNull();
+  });
+
+  it('会话绑定信息仍在水合时静默阻塞，不误报绑定模型不可用', () => {
+    configureAuthenticatedVisionModel();
+    currentState.conversation.byId = {};
+    currentState.conversation.hydrationStatus = { 'chat-1': 'loading' };
+
+    render(<ChatInput onSendMessage={vi.fn()} activeChatId="chat-1" />);
+
+    expect(screen.getByPlaceholderText('发消息给 Fusion AI（Enter 发送）')).toBeDisabled();
+    expect(screen.queryByText('当前会话绑定的模型已不可用。请新建会话后切换到可用模型再继续聊天。')).toBeNull();
+  });
+
+  it('模型目录加载失败时显示独立错误，不误报绑定模型不可用', () => {
+    currentState.auth.isAuthenticated = true;
+    currentState.models.loadStatus = 'failed';
+    currentState.models.models = [];
+    currentState.conversation.byId = {
+      'chat-1': {
+        id: 'chat-1',
+        model_id: 'kimi-k3',
+      },
+    };
+
+    render(<ChatInput onSendMessage={vi.fn()} activeChatId="chat-1" />);
+
+    expect(screen.getByText('模型列表加载失败，请刷新页面重试。')).toBeTruthy();
+    expect(screen.queryByText('当前会话绑定的模型已不可用。请新建会话后切换到可用模型再继续聊天。')).toBeNull();
+  });
+
   it('新对话选中模型不健康时回退到健康模型并保持可发送', () => {
     currentState.auth.isAuthenticated = true;
     currentState.models.selectedModelId = 'unhealthy-model';
@@ -2093,6 +2160,7 @@ describe('ChatInput', () => {
         id: 'chat-1',
       },
     };
+    currentState.conversation.hydrationStatus = { 'chat-1': 'done' };
 
     render(<ChatInput onSendMessage={vi.fn()} activeChatId="chat-1" />);
 

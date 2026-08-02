@@ -8,8 +8,10 @@ import { startPollingFileStatus, stopPollingFileStatus } from "@/lib/api/FileSta
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuLabel,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useAppDispatch, useAppSelector } from "@/redux/hooks";
@@ -24,7 +26,18 @@ import {
   updateFileStatus,
   type FileProcessingStatus,
 } from "@/redux/slices/fileUploadSlice";
-import { ArrowUp, Lightbulb, ListChecks, PaperclipIcon, Square } from "lucide-react";
+import {
+  ArrowUp,
+  Check,
+  ChevronDown,
+  Lightbulb,
+  ListChecks,
+  PaperclipIcon,
+  Search,
+  Sparkles,
+  Square,
+  type LucideIcon,
+} from "lucide-react";
 import ImageViewer from "./ImageViewer";
 import ModelSelector from "@/components/models/ModelSelector";
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
@@ -101,10 +114,23 @@ const IMAGE_UPLOAD_ONLY_MESSAGE = "当前仅支持上传图片，文件对话后
 const COMPOSER_AGENT_MODES: Array<{
   value: ComposerAgentMode;
   description: string;
+  icon: LucideIcon;
 }> = [
-  { value: "auto", description: "按任务复杂度自动决定是否规划" },
-  { value: "plan", description: "回答前先生成并执行计划" },
-  { value: "deep_research", description: "多轮联网研究并整理来源" },
+  {
+    value: "auto",
+    description: "根据任务复杂度选择直接回答或规划",
+    icon: Sparkles,
+  },
+  {
+    value: "plan",
+    description: "先生成执行计划，再按步骤完成任务",
+    icon: ListChecks,
+  },
+  {
+    value: "deep_research",
+    description: "多轮搜索与原文核验，适合复杂调研",
+    icon: Search,
+  },
 ];
 
 function getFileIdentity(file: File): string {
@@ -185,6 +211,11 @@ const ChatInput: React.FC<ChatInputProps> = ({
   const processingFiles = useAppSelector((state) => state.fileUpload.processingFiles);
   const reasoningEnabled = useAppSelector((state) => state.conversation.reasoningEnabled);
   const composerAgentMode = useAppSelector((state) => state.conversation.composerAgentMode);
+  const activeComposerAgentMode = COMPOSER_AGENT_MODES.find(
+    (mode) => mode.value === composerAgentMode,
+  )!;
+  const ActiveComposerAgentModeIcon = activeComposerAgentMode.icon;
+  const modelsLoadStatus = useAppSelector((state) => state.models.loadStatus);
   const isStreaming = useAppSelector((state) => state.stream.isStreaming);
   const currentRun = useAppSelector((state) => state.stream.currentRun);
   const selectContextStatus = useMemo(
@@ -217,16 +248,33 @@ const ChatInput: React.FC<ChatInputProps> = ({
   const sendModelStatus = useAppSelector((state) => (
     resolveSendModel(state, effectiveChatId ?? null).status
   ));
+  const activeConversationHydrationStatus = useAppSelector((state) => (
+    effectiveChatId
+      ? (state.conversation.hydrationStatus[effectiveChatId] ?? 'idle')
+      : 'done'
+  ));
   const selectedModel = useAppSelector((state) => {
     const resolution = resolveSendModel(state, effectiveChatId ?? null);
     return resolution.status === 'ready' ? resolution.model : null;
   });
   // 模型列表在浏览器挂载后异步写入 Redux；客户端导航时 Store 可能已有模型，而服务端仍为空。
   // 水合首帧先保持无能力的中性状态，避免按钮属性和文案因两端 Store 快照不同而失配。
+  const isModelCatalogLoadFailed = hasHydrated
+    && isAuthenticated
+    && modelsLoadStatus === 'failed';
   const isCurrentModelUnavailable = hasHydrated
     && isAuthenticated
-    && sendModelStatus !== 'ready';
-  const isComposerBlocked = disabled || isCurrentModelUnavailable;
+    && modelsLoadStatus === 'ready'
+    && (
+      effectiveChatId
+        ? activeConversationHydrationStatus === 'done' && sendModelStatus !== 'ready'
+        : sendModelStatus === 'no_enabled_model'
+    );
+  const isComposerBlocked = disabled || (
+    hasHydrated
+    && isAuthenticated
+    && (modelsLoadStatus !== 'ready' || sendModelStatus !== 'ready')
+  );
 
   const supportsReasoning = hasHydrated && Boolean(selectedModel?.capabilities?.deepThinking);
   const supportsFileUpload = hasHydrated && Boolean(selectedModel?.capabilities?.vision);
@@ -1128,7 +1176,13 @@ const ChatInput: React.FC<ChatInputProps> = ({
           onChange={(event) => setMessage(event.target.value)}
           onKeyDown={handleKeyDown}
           onPaste={handlePaste}
-          placeholder={isCurrentModelUnavailable ? "当前会话模型不可用，请新建会话后继续" : (placeholder || "发消息给 Fusion AI（Enter 发送）")}
+          placeholder={
+            isModelCatalogLoadFailed
+              ? "模型列表加载失败，请刷新页面重试"
+              : isCurrentModelUnavailable
+                ? "当前会话模型不可用，请新建会话后继续"
+                : (placeholder || "发消息给 Fusion AI（Enter 发送）")
+          }
           disabled={isComposerBlocked}
           className="min-h-[44px] max-h-[168px] resize-none border-0 shadow-none focus-visible:ring-0 px-4 pt-3 pb-2 text-sm"
           rows={1}
@@ -1194,7 +1248,9 @@ const ChatInput: React.FC<ChatInputProps> = ({
                   aria-label={`执行模式：${COMPOSER_AGENT_MODE_LABELS[composerAgentMode]}`}
                   title={`当前执行模式：${COMPOSER_AGENT_MODE_LABELS[composerAgentMode]}`}
                 >
-                  <ListChecks
+                  <ActiveComposerAgentModeIcon
+                    data-testid="composer-agent-mode-icon"
+                    data-mode={composerAgentMode}
                     className={`h-4 w-4 ${
                       composerAgentMode === "deep_research"
                         ? "text-info"
@@ -1206,14 +1262,23 @@ const ChatInput: React.FC<ChatInputProps> = ({
                   <span className="max-w-[4.5rem] truncate text-xs">
                     {COMPOSER_AGENT_MODE_LABELS[composerAgentMode]}
                   </span>
+                  <ChevronDown className="size-3 opacity-60" />
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent
                 align="start"
                 side="top"
-                className="w-72"
+                sideOffset={8}
+                className="w-[19rem] max-w-[calc(100vw-1rem)] rounded-xl border-border/70 bg-popover/95 p-1.5 shadow-xl backdrop-blur-sm"
                 aria-label="选择执行模式"
               >
+                <DropdownMenuLabel className="px-2.5 pb-2 pt-1.5">
+                  <span className="block text-xs font-semibold text-foreground">执行模式</span>
+                  <span className="mt-0.5 block text-[11px] font-normal leading-4 text-muted-foreground">
+                    选择 AI 处理任务时采用的规划深度
+                  </span>
+                </DropdownMenuLabel>
+                <DropdownMenuSeparator className="mx-0 mb-1.5" />
                 <DropdownMenuRadioGroup
                   value={composerAgentMode}
                   onValueChange={(value) => {
@@ -1231,19 +1296,43 @@ const ChatInput: React.FC<ChatInputProps> = ({
                     const itemDescription = availability.enabled
                       ? mode.description
                       : availability.unavailableReason;
+                    const isSelected = mode.value === composerAgentMode;
+                    const ModeIcon = mode.icon;
                     return (
                       <DropdownMenuRadioItem
                         key={mode.value}
                         value={mode.value}
                         disabled={disabledMode}
                         aria-label={`${COMPOSER_AGENT_MODE_LABELS[mode.value]}：${itemDescription}`}
-                        className="items-start py-2"
+                        className={`items-start gap-3 rounded-lg border px-2.5 py-2.5 pl-2.5 transition-colors [&>span:first-child]:hidden ${
+                          isSelected
+                            ? "border-primary/20 bg-primary/[0.07] focus:bg-primary/[0.1]"
+                            : "border-transparent focus:border-border/70 focus:bg-accent/60"
+                        }`}
                       >
-                        <span className="flex min-w-0 flex-col">
-                          <span className="font-medium">
-                            {COMPOSER_AGENT_MODE_LABELS[mode.value]}
+                        <span
+                          className={`mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-lg ${
+                            isSelected
+                              ? "bg-primary/10 text-primary"
+                              : "bg-muted/70 text-muted-foreground"
+                          }`}
+                        >
+                          <ModeIcon className="size-4" />
+                        </span>
+                        <span className="flex min-w-0 flex-1 flex-col">
+                          <span className="flex min-w-0 items-center gap-2">
+                            <span className="truncate text-[13px] font-medium">
+                              {COMPOSER_AGENT_MODE_LABELS[mode.value]}
+                            </span>
+                            <span className="ml-auto flex size-5 shrink-0 items-center justify-center">
+                              {isSelected && (
+                                <span className="flex size-5 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-sm">
+                                  <Check className="size-3" strokeWidth={2.5} />
+                                </span>
+                              )}
+                            </span>
                           </span>
-                          <span className="mt-0.5 text-xs font-normal text-muted-foreground">
+                          <span className="mt-0.5 text-xs font-normal leading-4 text-muted-foreground">
                             {itemDescription}
                           </span>
                         </span>
@@ -1291,7 +1380,11 @@ const ChatInput: React.FC<ChatInputProps> = ({
       </div>
 
       {/* 状态提示（卡片外部） */}
-      {isCurrentModelUnavailable ? (
+      {isModelCatalogLoadFailed ? (
+        <div className="rounded-md border border-amber-500/20 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-300">
+          模型列表加载失败，请刷新页面重试。
+        </div>
+      ) : isCurrentModelUnavailable ? (
         <div className="rounded-md border border-amber-500/20 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-300">
           当前会话绑定的模型已不可用。请新建会话后切换到可用模型再继续聊天。
         </div>

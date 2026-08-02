@@ -4,7 +4,11 @@ import { ToastProvider, setGlobalToast, useToast } from "@/components/ui/toast";
 import { useEffect, useRef, useState } from "react";
 import { initializeModels } from "@/lib/config/modelConfig";
 import { useDispatch } from "react-redux";
-import { updateModels, updateProviders } from "@/redux/slices/modelsSlice";
+import {
+  setModelsLoadStatus,
+  updateModels,
+  updateProviders,
+} from "@/redux/slices/modelsSlice";
 import dynamic from 'next/dynamic';
 import { useAppDispatch, useAppSelector } from "@/redux/hooks";
 import { selectIsAuthenticated } from "@/redux/selectors";
@@ -62,6 +66,7 @@ function ModelConfigInitializer() {
   
   useEffect(() => {
     const abortController = new AbortController();
+    dispatch(setModelsLoadStatus('loading'));
 
     const initializeAppModels = async () => {
       while (!abortController.signal.aborted) {
@@ -73,6 +78,7 @@ function ModelConfigInitializer() {
           return;
         } catch (error) {
           if (!isAuthSessionTransitionError(error)) {
+            dispatch(setModelsLoadStatus('failed'));
             console.error('Failed to initialize models:', error);
             return;
           }

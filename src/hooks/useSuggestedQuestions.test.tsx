@@ -5,6 +5,8 @@ import { Provider } from 'react-redux';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import conversationReducer, {
+  applySuggestedQuestionsPending,
+  requestSuggestedQuestionsObservation,
   updateMessage,
   upsertConversation,
 } from '@/redux/slices/conversationSlice';
@@ -29,7 +31,10 @@ vi.mock('@/lib/chat/conversationDetailResource', () => ({
   loadConversationDetail: loadConversationDetailMock,
 }));
 
-import { shouldApplySuggestedQuestionsSnapshot } from '@/lib/chat/suggestedQuestionState';
+import {
+  hasFormalTextContent,
+  shouldApplySuggestedQuestionsSnapshot,
+} from '@/lib/chat/suggestedQuestionState';
 import { useSuggestedQuestions } from './useSuggestedQuestions';
 
 function assistantMessage(
@@ -76,6 +81,16 @@ describe('useSuggestedQuestions', () => {
     fetchSuggestedQuestionsMock.mockReset();
     invalidateConversationDetailMock.mockReset();
     loadConversationDetailMock.mockReset();
+  });
+
+  it('正式正文判定只接受非空 text，不把 thinking 或空白正文当成推荐任务', () => {
+    expect(hasFormalTextContent([
+      { type: 'thinking', id: 'thinking-1', thinking: '仅推理' },
+      { type: 'text', id: 'text-empty', text: '   ' },
+    ])).toBe(false);
+    expect(hasFormalTextContent([
+      { type: 'text', id: 'text-1', text: '正式回答' },
+    ])).toBe(true);
   });
 
   it('版本比较拒绝旧 revision 及同 revision 的终态回退到 pending', () => {
@@ -128,6 +143,254 @@ describe('useSuggestedQuestions', () => {
     expect(result.current.suggestedQuestions).toEqual(['推荐问题 A']);
     expect(fetchSuggestedQuestionsMock).not.toHaveBeenCalled();
     vi.useRealTimers();
+  });
+
+  it('本轮终态状态未知时立即权威 GET 并进入观察，不 POST 生成接口', async () => {
+    const unknown = assistantMessage('assistant-unknown');
+    const ready = assistantMessage('assistant-unknown', {
+      suggestedQuestions: ['即时推荐'],
+      suggestedQuestionsStatus: 'ready',
+      suggestedQuestionsRevision: 1,
+    });
+    const { store, wrapper } = createWrapper([conversation('chat-a', [unknown])]);
+    store.dispatch(requestSuggestedQuestionsObservation({
+      conversationId: 'chat-a',
+      messageIds: ['assistant-unknown'],
+    }));
+    loadConversationDetailMock.mockResolvedValue(conversation('chat-a', [ready]));
+
+    const { result } = renderHook(() => useSuggestedQuestions('chat-a'), { wrapper });
+
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(loadConversationDetailMock).toHaveBeenCalledWith('chat-a');
+    expect(invalidateConversationDetailMock).toHaveBeenCalledWith('chat-a');
+    expect(result.current.suggestedQuestions).toEqual(['即时推荐']);
+    expect(fetchSuggestedQuestionsMock).not.toHaveBeenCalled();
+    expect(store.getState().conversation.suggestedQuestionsObservations['chat-a']).toBeUndefined();
+  });
+
+  it('旧后端持续 unknown/idle 时只立即 GET 加一次短延迟复核', async () => {
+    vi.useFakeTimers();
+    const unknown = assistantMessage('assistant-delayed');
+    const idle = assistantMessage('assistant-delayed', {
+      suggestedQuestionsStatus: 'idle',
+      suggestedQuestionsRevision: 0,
+    });
+    const { store, wrapper } = createWrapper([conversation('chat-a', [unknown])]);
+    store.dispatch(requestSuggestedQuestionsObservation({
+      conversationId: 'chat-a',
+      messageIds: ['assistant-delayed'],
+    }));
+    loadConversationDetailMock
+      .mockResolvedValueOnce(conversation('chat-a', [unknown]))
+      .mockResolvedValue(conversation('chat-a', [idle]));
+
+    const { result } = renderHook(() => useSuggestedQuestions('chat-a'), { wrapper });
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(loadConversationDetailMock).toHaveBeenCalledTimes(1);
+    expect(store.getState().conversation.suggestedQuestionsObservations['chat-a']).toBeDefined();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(400);
+    });
+    expect(loadConversationDetailMock).toHaveBeenCalledTimes(2);
+    expect(store.getState().conversation.suggestedQuestionsObservations['chat-a']).toBeUndefined();
+    expect(result.current.isLoadingQuestions).toBe(false);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(40_000);
+    });
+    expect(loadConversationDetailMock).toHaveBeenCalledTimes(2);
+    expect(result.current.suggestedQuestions).toEqual([]);
+    expect(fetchSuggestedQuestionsMock).not.toHaveBeenCalled();
+    vi.useRealTimers();
+  });
+
+  it('短窗口内看到 pending 后切回完整轮询直到 ready', async () => {
+    vi.useFakeTimers();
+    const unknown = assistantMessage('assistant-transition');
+    const pending = assistantMessage('assistant-transition', {
+      suggestedQuestionsStatus: 'pending',
+      suggestedQuestionsRevision: 1,
+    });
+    const ready = assistantMessage('assistant-transition', {
+      suggestedQuestions: ['新后端推荐'],
+      suggestedQuestionsStatus: 'ready',
+      suggestedQuestionsRevision: 1,
+    });
+    const { store, wrapper } = createWrapper([conversation('chat-a', [unknown])]);
+    store.dispatch(requestSuggestedQuestionsObservation({
+      conversationId: 'chat-a',
+      messageIds: ['assistant-transition'],
+    }));
+    loadConversationDetailMock
+      .mockResolvedValueOnce(conversation('chat-a', [unknown]))
+      .mockResolvedValueOnce(conversation('chat-a', [pending]))
+      .mockResolvedValueOnce(conversation('chat-a', [ready]));
+
+    const { result } = renderHook(() => useSuggestedQuestions('chat-a'), { wrapper });
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+      await vi.advanceTimersByTimeAsync(400);
+    });
+    expect(loadConversationDetailMock).toHaveBeenCalledTimes(2);
+    expect(result.current.isLoadingQuestions).toBe(true);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(800);
+    });
+    expect(loadConversationDetailMock).toHaveBeenCalledTimes(3);
+    expect(result.current.suggestedQuestions).toEqual(['新后端推荐']);
+    expect(result.current.isLoadingQuestions).toBe(false);
+    expect(fetchSuggestedQuestionsMock).not.toHaveBeenCalled();
+    vi.useRealTimers();
+  });
+
+  it('页面重新聚焦时立即补查 pending，不等待下一轮定时器', async () => {
+    vi.useFakeTimers();
+    const pending = assistantMessage('assistant-focus', {
+      suggestedQuestionsStatus: 'pending',
+      suggestedQuestionsRevision: 1,
+    });
+    const ready = assistantMessage('assistant-focus', {
+      suggestedQuestions: ['聚焦后推荐'],
+      suggestedQuestionsStatus: 'ready',
+      suggestedQuestionsRevision: 1,
+    });
+    const { wrapper } = createWrapper([conversation('chat-a', [pending])]);
+    loadConversationDetailMock.mockResolvedValue(conversation('chat-a', [ready]));
+
+    const { result } = renderHook(() => useSuggestedQuestions('chat-a'), { wrapper });
+    expect(loadConversationDetailMock).not.toHaveBeenCalled();
+
+    await act(async () => {
+      window.dispatchEvent(new Event('focus'));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(loadConversationDetailMock).toHaveBeenCalledTimes(1);
+    expect(result.current.suggestedQuestions).toEqual(['聚焦后推荐']);
+    vi.useRealTimers();
+  });
+
+  it('页面重新可见时立即补查 pending，不等待下一轮定时器', async () => {
+    vi.useFakeTimers();
+    vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible');
+    const pending = assistantMessage('assistant-visible', {
+      suggestedQuestionsStatus: 'pending',
+      suggestedQuestionsRevision: 1,
+    });
+    const ready = assistantMessage('assistant-visible', {
+      suggestedQuestions: ['恢复可见后的推荐'],
+      suggestedQuestionsStatus: 'ready',
+      suggestedQuestionsRevision: 1,
+    });
+    const { wrapper } = createWrapper([conversation('chat-a', [pending])]);
+    loadConversationDetailMock.mockResolvedValue(conversation('chat-a', [ready]));
+
+    const { result } = renderHook(() => useSuggestedQuestions('chat-a'), { wrapper });
+    await act(async () => {
+      document.dispatchEvent(new Event('visibilitychange'));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(loadConversationDetailMock).toHaveBeenCalledTimes(1);
+    expect(result.current.suggestedQuestions).toEqual(['恢复可见后的推荐']);
+    vi.useRealTimers();
+  });
+
+  it('pending 后的 onDone 观察保留服务端 ID，并用 ready GET patch 本地 placeholder', async () => {
+    vi.useFakeTimers();
+    const localPending = assistantMessage('local-assistant');
+    const serverReady = assistantMessage('server-assistant', {
+      suggestedQuestions: ['映射后的推荐'],
+      suggestedQuestionsStatus: 'ready',
+      suggestedQuestionsRevision: 2,
+    });
+    const { store, wrapper } = createWrapper([conversation('chat-a', [localPending])]);
+    store.dispatch(applySuggestedQuestionsPending({
+      conversationId: 'chat-a',
+      messageId: 'server-assistant',
+      localMessageId: 'local-assistant',
+      revision: 2,
+    }));
+    // continuation onDone 只知道本地 assistant ID，不能覆盖 pending 事件保存的服务端 ID。
+    store.dispatch(requestSuggestedQuestionsObservation({
+      conversationId: 'chat-a',
+      messageIds: ['local-assistant'],
+    }));
+    expect(store.getState().conversation.suggestedQuestionsObservations['chat-a']).toEqual({
+      messageIds: ['local-assistant', 'server-assistant'],
+    });
+    loadConversationDetailMock.mockResolvedValue(conversation('chat-a', [serverReady]));
+
+    const { result } = renderHook(() => useSuggestedQuestions('chat-a'), { wrapper });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(400);
+    });
+
+    expect(result.current.suggestedQuestions).toEqual(['映射后的推荐']);
+    expect(store.getState().conversation.byId['chat-a'].messages[0]).toMatchObject({
+      id: 'local-assistant',
+      suggestedQuestionsStatus: 'ready',
+      suggestedQuestionsRevision: 2,
+    });
+    vi.useRealTimers();
+  });
+
+  it('新一轮观察不误用排在前面的旧 assistant ready 结果', async () => {
+    const oldPending = assistantMessage('assistant-old', {
+      suggestedQuestionsStatus: 'pending',
+      suggestedQuestionsRevision: 1,
+    });
+    const newUnknown = assistantMessage('assistant-new');
+    const oldReady = assistantMessage('assistant-old', {
+      suggestedQuestions: ['旧轮推荐'],
+      suggestedQuestionsStatus: 'ready',
+      suggestedQuestionsRevision: 1,
+    });
+    const newReady = assistantMessage('assistant-new', {
+      suggestedQuestions: ['新轮推荐'],
+      suggestedQuestionsStatus: 'ready',
+      suggestedQuestionsRevision: 1,
+    });
+    const { store, wrapper } = createWrapper([
+      conversation('chat-a', [oldPending, newUnknown]),
+    ]);
+    store.dispatch(requestSuggestedQuestionsObservation({
+      conversationId: 'chat-a',
+      messageIds: ['assistant-old', 'server-old'],
+    }));
+    store.dispatch(requestSuggestedQuestionsObservation({
+      conversationId: 'chat-a',
+      messageIds: ['assistant-new'],
+    }));
+    loadConversationDetailMock.mockResolvedValue(
+      conversation('chat-a', [oldReady, newReady]),
+    );
+
+    const { result } = renderHook(() => useSuggestedQuestions('chat-a'), { wrapper });
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(result.current.suggestedQuestions).toEqual(['新轮推荐']);
+    expect(store.getState().conversation.byId['chat-a'].messages[1]).toMatchObject({
+      id: 'assistant-new',
+      suggestedQuestions: ['新轮推荐'],
+      suggestedQuestionsStatus: 'ready',
+    });
   });
 
   it('手动换一批精确指定最后一条 assistant 消息且只在手动路径 force=true', async () => {

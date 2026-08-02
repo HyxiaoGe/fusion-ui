@@ -1,5 +1,11 @@
 import type { Message, SuggestedQuestionsStatus } from '@/types/conversation';
 
+export function hasFormalTextContent(blocks: Message['content']): boolean {
+  return blocks.some(
+    (block) => block.type === 'text' && block.text.trim().length > 0,
+  );
+}
+
 export function resolveSuggestedQuestionsStatus(
   message: Message,
 ): SuggestedQuestionsStatus | undefined {
@@ -35,4 +41,27 @@ export function shouldApplySuggestedQuestionsSnapshot(
     && (currentStatus === 'ready' || currentStatus === 'failed')
     && freshStatus === 'pending'
   );
+}
+
+export function mergeSuggestedQuestionsState(
+  currentMessage: Message,
+  freshMessage: Message,
+): Pick<
+  Message,
+  'suggestedQuestions' | 'suggestedQuestionsStatus' | 'suggestedQuestionsRevision'
+> {
+  if (!shouldApplySuggestedQuestionsSnapshot(currentMessage, freshMessage)) {
+    return {
+      suggestedQuestions: currentMessage.suggestedQuestions,
+      suggestedQuestionsStatus: currentMessage.suggestedQuestionsStatus,
+      suggestedQuestionsRevision: currentMessage.suggestedQuestionsRevision,
+    };
+  }
+
+  return {
+    // 刷新期间 pending / failed 允许保留上一批问题，直到同 revision 新结果 ready。
+    suggestedQuestions: freshMessage.suggestedQuestions ?? currentMessage.suggestedQuestions,
+    suggestedQuestionsStatus: freshMessage.suggestedQuestionsStatus,
+    suggestedQuestionsRevision: freshMessage.suggestedQuestionsRevision,
+  };
 }

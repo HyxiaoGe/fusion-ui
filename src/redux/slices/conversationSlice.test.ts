@@ -1,11 +1,13 @@
 import { describe, expect, it } from 'vitest';
 
 import reducer, {
+  applySuggestedQuestionsPending,
   clearConversationMessages,
   materializeConversation,
   mergeHydratedConversation,
   removeConversation,
   requestConversationListRefresh,
+  requestSuggestedQuestionsObservation,
   resetConversationState,
   acknowledgeConversationListRefresh,
   setComposerAgentMode,
@@ -181,6 +183,136 @@ describe('conversationSlice', () => {
     expect(state.byId['conv-1'].messages[0].content).toEqual(localStreamingMessage.content);
   });
 
+  it('推荐问题水合按 revision 合并且禁止同 revision 终态回退', () => {
+    const localReady: Message = {
+      ...textMessage('assistant-1'),
+      role: 'assistant',
+      suggestedQuestions: ['本地新问题'],
+      suggestedQuestionsStatus: 'ready',
+      suggestedQuestionsRevision: 3,
+    };
+    let state = reducer(undefined, upsertConversation(createConversation({
+      messages: [localReady],
+    })));
+
+    state = reducer(state, mergeHydratedConversation({
+      conversation: createConversation({
+        messages: [{
+          ...localReady,
+          suggestedQuestions: ['迟到问题'],
+          suggestedQuestionsStatus: 'pending',
+          suggestedQuestionsRevision: 3,
+        }],
+      }),
+    }));
+    expect(state.byId['conv-1'].messages[0]).toMatchObject({
+      suggestedQuestions: ['本地新问题'],
+      suggestedQuestionsStatus: 'ready',
+      suggestedQuestionsRevision: 3,
+    });
+
+    state = reducer(state, mergeHydratedConversation({
+      conversation: createConversation({
+        messages: [{
+          ...localReady,
+          suggestedQuestionsStatus: 'pending',
+          suggestedQuestionsRevision: 4,
+        }],
+      }),
+    }));
+    expect(state.byId['conv-1'].messages[0]).toMatchObject({
+      suggestedQuestions: ['本地新问题'],
+      suggestedQuestionsStatus: 'pending',
+      suggestedQuestionsRevision: 4,
+    });
+  });
+
+  it('pending 事件可用服务端 ID 映射本地 placeholder，并拒绝旧 revision', () => {
+    const placeholder: Message = {
+      ...textMessage('local-assistant'),
+      role: 'assistant',
+      suggestedQuestions: ['手动新问题'],
+      suggestedQuestionsStatus: 'ready',
+      suggestedQuestionsRevision: 5,
+    };
+    let state = reducer(undefined, upsertConversation(createConversation({ messages: [placeholder] })));
+
+    state = reducer(state, applySuggestedQuestionsPending({
+      conversationId: 'conv-1',
+      messageId: 'server-assistant',
+      localMessageId: 'local-assistant',
+      revision: 4,
+    }));
+    expect(state.byId['conv-1'].messages[0].suggestedQuestionsStatus).toBe('ready');
+
+    state = reducer(state, applySuggestedQuestionsPending({
+      conversationId: 'conv-1',
+      messageId: 'server-assistant',
+      localMessageId: 'local-assistant',
+      revision: 6,
+    }));
+    expect(state.byId['conv-1'].messages[0]).toMatchObject({
+      suggestedQuestions: ['手动新问题'],
+      suggestedQuestionsStatus: 'pending',
+      suggestedQuestionsRevision: 6,
+    });
+  });
+
+  it('为状态未知或 pending 的本轮 assistant 保留消息映射观察', () => {
+    const assistant: Message = { ...textMessage('assistant-1'), role: 'assistant' };
+    let state = reducer(undefined, upsertConversation(createConversation({ messages: [assistant] })));
+
+    state = reducer(state, requestSuggestedQuestionsObservation({
+      conversationId: 'conv-1',
+      messageIds: ['local-assistant', 'assistant-1'],
+    }));
+    expect(state.suggestedQuestionsObservations['conv-1']).toEqual({
+      messageIds: ['local-assistant', 'assistant-1'],
+    });
+
+    state = reducer(state, applySuggestedQuestionsPending({
+      conversationId: 'conv-1',
+      messageId: 'assistant-1',
+      revision: 1,
+    }));
+    state = reducer(state, requestSuggestedQuestionsObservation({
+      conversationId: 'conv-1',
+      messageIds: ['assistant-1'],
+    }));
+    expect(state.suggestedQuestionsObservations['conv-1']).toEqual({
+      messageIds: ['assistant-1'],
+    });
+  });
+
+  it('新一轮 assistant 与旧 observation 无交集时替换而非跨轮合并', () => {
+    const oldAssistant: Message = {
+      ...textMessage('assistant-old'),
+      role: 'assistant',
+      suggestedQuestionsStatus: 'pending',
+      suggestedQuestionsRevision: 1,
+    };
+    const newAssistant: Message = {
+      ...textMessage('assistant-new'),
+      role: 'assistant',
+    };
+    let state = reducer(undefined, upsertConversation(createConversation({
+      messages: [oldAssistant, newAssistant],
+    })));
+
+    state = reducer(state, requestSuggestedQuestionsObservation({
+      conversationId: 'conv-1',
+      messageIds: ['assistant-old', 'server-old'],
+    }));
+    state = reducer(state, requestSuggestedQuestionsObservation({
+      conversationId: 'conv-1',
+      messageIds: ['assistant-new'],
+    }));
+
+    expect(state.suggestedQuestionsObservations['conv-1']).toEqual({
+      messageIds: ['assistant-new'],
+    });
+  });
+
   it('请求期间本地重命名或切换模型时迟到响应不覆盖新元数据', () => {
     const requestMetadata = {
       title: '请求开始标题',
@@ -261,6 +393,7 @@ describe('conversationSlice', () => {
       conversationListDirtyRevisions: {},
       hydrationStatus: {},
       hydrationError: {},
+      suggestedQuestionsObservations: {},
       pendingConversationId: null,
       animatingTitleId: null,
       reasoningEnabled: true,
@@ -321,6 +454,7 @@ describe('conversationSlice', () => {
       conversationListDirtyRevisions: {},
       hydrationStatus: {},
       hydrationError: {},
+      suggestedQuestionsObservations: {},
       pendingConversationId: null,
       animatingTitleId: null,
       reasoningEnabled: true,
@@ -371,6 +505,7 @@ describe('conversationSlice', () => {
       conversationListDirtyRevisions: {},
       hydrationStatus: {},
       hydrationError: {},
+      suggestedQuestionsObservations: {},
       pendingConversationId: 'temp',
       animatingTitleId: null,
       reasoningEnabled: true,

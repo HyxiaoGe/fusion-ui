@@ -19,9 +19,11 @@ import { useAppDispatch, useAppSelector } from '@/redux/hooks';
 import { selectAuthSessionKey, selectIsAuthenticated } from '@/redux/selectors';
 import { useStore } from 'react-redux';
 import {
+  applySuggestedQuestionsPending,
   appendMessage,
   clearConversationMessages,
   removeMessage,
+  requestSuggestedQuestionsObservation,
   setLastReadyConversationSnapshot,
   updateMessage,
 } from '@/redux/slices/conversationSlice';
@@ -52,6 +54,7 @@ import {
   recoverReasoningOnlyFinalBlocks,
   shouldRecoverReasoningOnlyFinalBlocks,
 } from '@/lib/chat/contentBlocks';
+import { hasFormalTextContent } from '@/lib/chat/suggestedQuestionState';
 import { CHAT_NEW_PATH } from '@/lib/routes/chatRoutes';
 import { deleteFile, type FileInfo } from '@/lib/api/files';
 
@@ -342,6 +345,17 @@ export default function ChatPage() {
             resolveMessageId: () => messageId,
             resolveConversationId: () => chatId,
           }),
+          onSuggestedQuestionsPending: ev => {
+            if (cancelled) return;
+            dispatchOrBufferRecoveryAction(() => {
+              dispatch(applySuggestedQuestionsPending({
+                conversationId: chatId,
+                messageId: ev.message_id,
+                localMessageId: messageId,
+                revision: ev.revision,
+              }));
+            });
+          },
           onDone: () => {
             if (cancelled) return;
             flushBufferedRecoveryActions();
@@ -360,6 +374,12 @@ export default function ChatPage() {
                 messageId,
                 patch: { content: blocks },
               }));
+              if (hasFormalTextContent(rawBlocks)) {
+                dispatch(requestSuggestedQuestionsObservation({
+                  conversationId: chatId,
+                  messageIds: [messageId],
+                }));
+              }
             }
             dispatch(endStream());
             dispatch(setStreamStatus('completed'));

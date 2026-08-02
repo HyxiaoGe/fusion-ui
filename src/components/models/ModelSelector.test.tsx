@@ -31,6 +31,7 @@ vi.mock('@/redux/hooks', () => ({
     selector({
       models: {
         selectedModelId: 'model-a',
+        loadStatus: 'ready',
         providers: [{ id: 'provider-a', name: 'Provider A', order: 1 }],
         models: [
           {
@@ -50,6 +51,7 @@ vi.mock('@/redux/hooks', () => ({
         ],
       },
       conversation: {
+        hydrationStatus: { new: 'done' },
         byId: {
           new: {
             id: 'new',

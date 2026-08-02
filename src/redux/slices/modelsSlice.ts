@@ -16,13 +16,16 @@ const getSavedModelId = (): string | null => {
 };
 
 // 原有接口保持兼容
-export interface Model extends ModelInfo {}
+export type Model = ModelInfo;
+
+export type ModelsLoadStatus = 'idle' | 'loading' | 'ready' | 'failed';
 
 interface ModelsState {
   models: Model[];
   providers: ProviderInfo[];
   selectedModelId: string | null;
   isLoading: boolean;
+  loadStatus: ModelsLoadStatus;
 }
 
 const initialState: ModelsState = {
@@ -30,6 +33,7 @@ const initialState: ModelsState = {
   providers: [],
   selectedModelId: getSavedModelId(),
   isLoading: false,
+  loadStatus: 'idle',
 };
 
 const modelsSlice = createSlice({
@@ -56,12 +60,21 @@ const modelsSlice = createSlice({
     },
     setIsLoading: (state, action: PayloadAction<boolean>) => {
       state.isLoading = action.payload;
+      if (action.payload) {
+        state.loadStatus = 'loading';
+      }
+    },
+    setModelsLoadStatus: (state, action: PayloadAction<ModelsLoadStatus>) => {
+      state.loadStatus = action.payload;
+      state.isLoading = action.payload === 'loading';
     },
     updateProviders: (state, action: PayloadAction<ProviderInfo[]>) => {
       state.providers = action.payload;
     },
     updateModels: (state, action: PayloadAction<Model[]>) => {
       state.models = action.payload;
+      state.loadStatus = 'ready';
+      state.isLoading = false;
       
       // 获取保存的模型ID
       const savedModelId = getSavedModelId();
@@ -90,6 +103,7 @@ export const {
   setSelectedModel,
   setModelEnabled,
   setIsLoading,
+  setModelsLoadStatus,
   updateProviders,
   updateModels
 } = modelsSlice.actions;

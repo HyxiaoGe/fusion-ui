@@ -9,6 +9,7 @@ const {
   useAppDispatchMock,
   useAppSelectorMock,
   initializeModelsMock,
+  setModelsLoadStatusMock,
   updateModelsMock,
   updateProvidersMock,
   checkUserStateMock,
@@ -50,6 +51,7 @@ const {
   useAppDispatchMock: vi.fn(),
   useAppSelectorMock: vi.fn(),
   initializeModelsMock: vi.fn(),
+  setModelsLoadStatusMock: vi.fn((status: unknown) => ({ type: 'models/setModelsLoadStatus', payload: status })),
   updateModelsMock: vi.fn((models: unknown) => ({ type: 'models/updateModels', payload: models })),
   updateProvidersMock: vi.fn((providers: unknown) => ({ type: 'models/updateProviders', payload: providers })),
   checkUserStateMock: vi.fn(() => ({ type: 'auth/checkUserState' })),
@@ -116,6 +118,7 @@ vi.mock('@/lib/config/modelConfig', () => ({
 }));
 
 vi.mock('@/redux/slices/modelsSlice', () => ({
+  setModelsLoadStatus: setModelsLoadStatusMock,
   updateModels: updateModelsMock,
   updateProviders: updateProvidersMock,
 }));
@@ -195,6 +198,7 @@ describe('ClientLayout', () => {
       models: [{ id: 'model-1' }],
       providers: [{ id: 'qwen', name: '通义千问', order: 1 }],
     });
+    setModelsLoadStatusMock.mockClear();
     updateModelsMock.mockClear();
     updateProvidersMock.mockClear();
     checkUserStateMock.mockClear();
@@ -285,6 +289,7 @@ describe('ClientLayout', () => {
 
     await waitFor(() => {
       expect(initializeModelsMock).toHaveBeenCalledTimes(1);
+      expect(setModelsLoadStatusMock).toHaveBeenCalledWith('loading');
       expect(updateModelsMock).toHaveBeenCalledWith([{ id: 'model-1' }]);
       expect(reduxDispatchMock).toHaveBeenCalledWith({
         type: 'models/updateModels',
@@ -299,6 +304,31 @@ describe('ClientLayout', () => {
     await waitFor(() => {
       expect(screen.getByTestId('login-dialog').getAttribute('data-open')).toBe('true');
     });
+  });
+
+  it('模型目录初始化失败时记录失败状态', async () => {
+    initializeModelsMock.mockRejectedValueOnce(new Error('模型目录不可达'));
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    render(
+      React.createElement(
+        ClientLayout,
+        null,
+        React.createElement('div', null, 'child')
+      )
+    );
+
+    await waitFor(() => {
+      expect(setModelsLoadStatusMock).toHaveBeenNthCalledWith(1, 'loading');
+      expect(setModelsLoadStatusMock).toHaveBeenNthCalledWith(2, 'failed');
+    });
+    expect(updateModelsMock).not.toHaveBeenCalled();
+    expect(consoleError).toHaveBeenCalledWith(
+      'Failed to initialize models:',
+      expect.objectContaining({ message: '模型目录不可达' }),
+    );
+
+    consoleError.mockRestore();
   });
 
   it('waits for a stable auth session and retries model initialization without logging a transition error', async () => {

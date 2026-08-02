@@ -7,6 +7,11 @@ import type {
   Pagination,
 } from '@/types/conversation';
 import type { ComposerAgentMode } from '@/types/agentRun';
+import {
+  mergeSuggestedQuestionsState,
+  resolveSuggestedQuestionsStatus,
+  shouldApplySuggestedQuestionsSnapshot,
+} from '@/lib/chat/suggestedQuestionState';
 
 export interface ConversationMetadataSnapshot {
   title: string;
@@ -67,6 +72,7 @@ export interface ConversationState {
   conversationListDirtyRevisions: Record<string, number>;
   hydrationStatus: Record<string, HydrationStatus>;
   hydrationError: Record<string, string>;
+  suggestedQuestionsObservations: Record<string, { messageIds: string[] }>;
   pendingConversationId: string | null;
   animatingTitleId: string | null;
   reasoningEnabled: boolean;
@@ -91,6 +97,7 @@ const initialState: ConversationState = {
   conversationListDirtyRevisions: {},
   hydrationStatus: {},
   hydrationError: {},
+  suggestedQuestionsObservations: {},
   pendingConversationId: null,
   animatingTitleId: null,
   reasoningEnabled: true,
@@ -326,7 +333,7 @@ const conversationSlice = createSlice({
           status: localMessage.status ?? serverMessage.status,
           isReasoningVisible: localMessage.isReasoningVisible ?? serverMessage.isReasoningVisible,
           shouldSyncToDb: localMessage.shouldSyncToDb ?? serverMessage.shouldSyncToDb,
-          suggestedQuestions: serverMessage.suggestedQuestions ?? localMessage.suggestedQuestions,
+          ...mergeSuggestedQuestionsState(localMessage, serverMessage),
         };
       });
       // 水合快照的数组顺序由服务端 sequence 保证。只有显式受保护的
@@ -361,6 +368,7 @@ const conversationSlice = createSlice({
     },
     setAllConversations(state, action: PayloadAction<Conversation[]>) {
       state.byId = {};
+      state.suggestedQuestionsObservations = {};
       state.listIds = action.payload.map((conversation) => conversation.id);
       action.payload.forEach((conversation) => {
         state.byId[conversation.id] = conversation;
@@ -371,6 +379,7 @@ const conversationSlice = createSlice({
       delete state.byId[id];
       delete state.hydrationStatus[id];
       delete state.hydrationError[id];
+      delete state.suggestedQuestionsObservations[id];
       if (state.lastReadyConversationSnapshot?.chatId === id) {
         state.lastReadyConversationSnapshot = null;
       }
@@ -405,6 +414,7 @@ const conversationSlice = createSlice({
         conversation.messages = [];
         conversation.updatedAt = Date.now();
       }
+      delete state.suggestedQuestionsObservations[action.payload];
       if (state.lastReadyConversationSnapshot?.chatId === action.payload) {
         state.lastReadyConversationSnapshot = null;
       }
@@ -441,6 +451,79 @@ const conversationSlice = createSlice({
       const message = conversation.messages.find((item) => item.id === messageId);
       if (message) {
         Object.assign(message, patch);
+      }
+    },
+    applySuggestedQuestionsPending(
+      state,
+      action: PayloadAction<{
+        conversationId: string;
+        messageId: string;
+        localMessageId?: string | null;
+        revision: number;
+      }>
+    ) {
+      const { conversationId, messageId, localMessageId, revision } = action.payload;
+      const conversation = state.byId[conversationId];
+      if (!conversation) return;
+      const message = conversation.messages.find((item) => item.id === messageId)
+        ?? (localMessageId
+          ? conversation.messages.find((item) => item.id === localMessageId)
+          : undefined);
+      if (!message || message.role !== 'assistant') return;
+
+      const pendingSnapshot: Message = {
+        ...message,
+        suggestedQuestionsStatus: 'pending',
+        suggestedQuestionsRevision: revision,
+      };
+      if (!shouldApplySuggestedQuestionsSnapshot(message, pendingSnapshot)) return;
+
+      message.suggestedQuestionsStatus = 'pending';
+      message.suggestedQuestionsRevision = revision;
+      state.suggestedQuestionsObservations[conversationId] = {
+        messageIds: Array.from(new Set([
+          message.id,
+          messageId,
+          localMessageId,
+        ].filter((id): id is string => Boolean(id)))),
+      };
+    },
+    requestSuggestedQuestionsObservation(
+      state,
+      action: PayloadAction<{ conversationId: string; messageIds: string[] }>
+    ) {
+      const { conversationId, messageIds } = action.payload;
+      const conversation = state.byId[conversationId];
+      if (!conversation) return;
+      const incomingMessageIds = Array.from(new Set(messageIds.filter(Boolean)));
+      const existingMessageIds = state.suggestedQuestionsObservations[conversationId]?.messageIds
+        ?? [];
+      const isSameLogicalMessage = incomingMessageIds.some(
+        (messageId) => existingMessageIds.includes(messageId),
+      );
+      const uniqueMessageIds = isSameLogicalMessage
+        ? Array.from(new Set([...existingMessageIds, ...incomingMessageIds]))
+        : incomingMessageIds;
+      const message = uniqueMessageIds
+        .map((id) => conversation.messages.find((item) => item.id === id))
+        .find((item) => item?.role === 'assistant');
+      const status = message ? resolveSuggestedQuestionsStatus(message) : undefined;
+      if (!message || status === 'ready' || status === 'failed') {
+        delete state.suggestedQuestionsObservations[conversationId];
+        return;
+      }
+      state.suggestedQuestionsObservations[conversationId] = {
+        messageIds: uniqueMessageIds,
+      };
+    },
+    clearSuggestedQuestionsObservation(
+      state,
+      action: PayloadAction<{ conversationId: string; messageId: string }>
+    ) {
+      const { conversationId, messageId } = action.payload;
+      const observation = state.suggestedQuestionsObservations[conversationId];
+      if (observation?.messageIds.includes(messageId)) {
+        delete state.suggestedQuestionsObservations[conversationId];
       }
     },
     setLastReadyConversationSnapshot(
@@ -490,8 +573,13 @@ const conversationSlice = createSlice({
     ) {
       const { pendingId, serverConversation } = action.payload;
       delete state.byId[pendingId];
+      const pendingObservation = state.suggestedQuestionsObservations[pendingId];
+      delete state.suggestedQuestionsObservations[pendingId];
       state.listIds = state.listIds.filter((id) => id !== pendingId);
       state.byId[serverConversation.id] = serverConversation;
+      if (pendingObservation) {
+        state.suggestedQuestionsObservations[serverConversation.id] = pendingObservation;
+      }
       state.listIds.unshift(serverConversation.id);
       state.hydrationStatus[serverConversation.id] = 'done';
       state.pendingConversationId = null;
@@ -545,15 +633,18 @@ const conversationSlice = createSlice({
 
 export const {
   acknowledgeConversationListRefresh,
+  applySuggestedQuestionsPending,
   appendConversationList,
   appendMessage,
   clearConversationMessages,
   clearSearch,
+  clearSuggestedQuestionsObservation,
   materializeConversation,
   mergeHydratedConversation,
   removeConversation,
   removeMessage,
   requestConversationListRefresh,
+  requestSuggestedQuestionsObservation,
   resetConversationListForAuthChange,
   resetConversationState,
   setAllConversations,

@@ -367,6 +367,14 @@ export interface StreamCallbacks {
   ) => void;
   onContextRequired?: (ev: AgentContextRequiredEvent) => void;
   onContextResult?: (ev: AgentContextResultEvent) => void;
+  /** 后端已领取推荐问题版本；前端据此观察持久化结果，不触发首次生成。 */
+  onSuggestedQuestionsPending?: (
+    ev: AgentEventEnvelope & {
+      message_id: string;
+      revision: number;
+      status: 'pending';
+    },
+  ) => void;
 
   /** done chunk：协议层流完成（与 [DONE] SSE 通道终止并存） */
   onDone: (meta: { messageId: string; conversationId: string }) => void;
@@ -593,6 +601,27 @@ async function parseSseEnvelopeStream(
           protocol_version: 2,
           phase,
           message_id: messageId,
+        } as never);
+      }
+      case 'suggested_questions_pending': {
+        const messageId = ev.message_id;
+        const revision = ev.revision;
+        if (
+          typeof messageId !== 'string'
+          || !messageId
+          || typeof revision !== 'number'
+          || !Number.isInteger(revision)
+          || revision < 1
+          || ev.status !== 'pending'
+        ) {
+          console.warn('[chat] suggested_questions_pending 数据无效，已忽略', ev);
+          return;
+        }
+        return callbacks.onSuggestedQuestionsPending?.({
+          ...ev,
+          message_id: messageId,
+          revision,
+          status: 'pending',
         } as never);
       }
       default:

@@ -4,12 +4,14 @@ import { useAppDispatch, useAppSelector } from '@/redux/hooks';
 import { useStore } from 'react-redux';
 // localStorage 标记已移除，完全依赖后端 stream-status 判断是否重连
 import {
+  applySuggestedQuestionsPending,
   appendMessage,
   materializeConversation,
   mergeHydratedConversation,
   removeConversation,
   removeMessage,
   requestConversationListRefresh,
+  requestSuggestedQuestionsObservation,
   setAnimatingTitleId,
   setGlobalError,
   setHydrationStatus,
@@ -55,6 +57,7 @@ import {
   getSendModelErrorMessage,
   resolveSendModel,
 } from '@/lib/chat/sendModelResolution';
+import { hasFormalTextContent } from '@/lib/chat/suggestedQuestionState';
 import type { Message, ContentBlock } from '@/types/conversation';
 import type { FileAttachment } from '@/lib/utils/fileHelpers';
 import { selectAuthSessionKey } from '@/redux/selectors';
@@ -591,6 +594,15 @@ export function useSendMessage() {
             },
           })
         );
+        if (hasFormalTextContent(rawFinalBlocks)) {
+          dispatch(requestSuggestedQuestionsObservation({
+            conversationId: finalConvId,
+            messageIds: [
+              assistantMessageId,
+              serverMessageIdRef.current,
+            ].filter((messageId): messageId is string => Boolean(messageId)),
+          }));
+        }
         dispatch(
           updateMessage({
             conversationId: finalConvId,
@@ -669,6 +681,32 @@ export function useSendMessage() {
               },
               resolveConversationId: () => activeConvIdRef.current,
             }),
+
+            onSuggestedQuestionsPending: ev => {
+              if (!isActiveSendCurrent() || !activeConvIdRef.current) return;
+              const localMessageId = assistantMessageIdRef.current;
+              const knownServerMessageId = serverMessageIdRef.current;
+              const activeConversation = (
+                store.getState() as RootState
+              ).conversation.byId[activeConvIdRef.current];
+              const hasDirectMessage = activeConversation?.messages.some(
+                message => message.id === ev.message_id && message.role === 'assistant',
+              );
+              if (
+                !hasDirectMessage
+                && (!localMessageId || knownServerMessageId !== ev.message_id)
+              ) {
+                return;
+              }
+              dispatch(applySuggestedQuestionsPending({
+                conversationId: activeConvIdRef.current,
+                messageId: ev.message_id,
+                localMessageId: knownServerMessageId === ev.message_id
+                  ? localMessageId
+                  : undefined,
+                revision: ev.revision,
+              }));
+            },
 
             onDone: ({ conversationId: incomingConvId }) => {
               if (!isActiveSendCurrent()) return;

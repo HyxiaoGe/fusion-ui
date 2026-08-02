@@ -1,5 +1,5 @@
-import { describe, expect, it, beforeEach, vi } from 'vitest';
-import reducer, { updateModels } from './modelsSlice';
+import { beforeEach, describe, expect, it } from 'vitest';
+import reducer, { setModelsLoadStatus, updateModels } from './modelsSlice';
 
 describe('modelsSlice', () => {
   beforeEach(() => {
@@ -33,6 +33,8 @@ describe('modelsSlice', () => {
 
     expect(nextState.selectedModelId).toBe('enabled-model');
     expect(localStorage.getItem('selectedModelId')).toBe('enabled-model');
+    expect(nextState.loadStatus).toBe('ready');
+    expect(nextState.isLoading).toBe(false);
   });
 
   it('keeps an enabled saved model', () => {
@@ -53,5 +55,15 @@ describe('modelsSlice', () => {
     );
 
     expect(nextState.selectedModelId).toBe('enabled-model');
+  });
+
+  it('记录模型目录初始化生命周期', () => {
+    const loadingState = reducer(undefined, setModelsLoadStatus('loading'));
+    const failedState = reducer(loadingState, setModelsLoadStatus('failed'));
+
+    expect(loadingState.loadStatus).toBe('loading');
+    expect(loadingState.isLoading).toBe(true);
+    expect(failedState.loadStatus).toBe('failed');
+    expect(failedState.isLoading).toBe(false);
   });
 });

@@ -10,11 +10,15 @@ import {
   resolveSuggestedQuestionsStatus,
   shouldApplySuggestedQuestionsSnapshot,
 } from '@/lib/chat/suggestedQuestionState';
-import { updateMessage } from '@/redux/slices/conversationSlice';
+import {
+  clearSuggestedQuestionsObservation,
+  updateMessage,
+} from '@/redux/slices/conversationSlice';
 import type { Conversation, Message } from '@/types/conversation';
 
 // 后端终态生成通常很快完成；轮询最多约 30 秒，避免异常 pending 留下永久定时器。
 const PENDING_POLL_DELAYS_MS = [350, 750, 1_000, 1_500, 2_500, 4_000, 5_000, 5_000, 5_000, 5_000];
+const MAX_UNKNOWN_OBSERVATION_CHECKS = 2;
 
 function getLastAssistantMessage(conversation: Conversation | undefined): Message | undefined {
   return conversation?.messages
@@ -40,11 +44,19 @@ export const useSuggestedQuestions = (chatId: string | null) => {
   const conversation = useAppSelector((state) =>
     chatId ? (state.conversation.byId[chatId] as Conversation | undefined) : undefined
   );
+  const observation = useAppSelector((state) =>
+    chatId ? state.conversation.suggestedQuestionsObservations[chatId] : undefined
+  );
   const lastAssistantMsg = getLastAssistantMessage(conversation);
+  const lastAssistantMessageId = lastAssistantMsg?.id;
+  const observationMessageIds = observation?.messageIds;
   const suggestedQuestions = lastAssistantMsg?.suggestedQuestions ?? [];
   const persistedStatus = lastAssistantMsg
     ? resolveSuggestedQuestionsStatus(lastAssistantMsg)
     : undefined;
+  const isExplicitObservation = Boolean(
+    lastAssistantMessageId && observationMessageIds?.includes(lastAssistantMessageId)
+  );
 
   useEffect(() => {
     activeChatIdRef.current = chatId;
@@ -60,16 +72,27 @@ export const useSuggestedQuestions = (chatId: string | null) => {
   }, [chatId]);
 
   useEffect(() => {
-    if (!chatId || !lastAssistantMsg || persistedStatus !== 'pending') {
+    if (
+      !chatId
+      || !lastAssistantMessageId
+      || (persistedStatus !== 'pending' && !isExplicitObservation)
+    ) {
       setIsPendingPollLoading(false);
       return;
     }
 
     const requestChatId = chatId;
-    const requestMessageId = lastAssistantMsg.id;
+    const requestMessageId = lastAssistantMessageId;
+    const requestMessageIds = Array.from(new Set([
+      requestMessageId,
+      ...(observationMessageIds ?? []),
+    ]));
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout> | null = null;
     let attempt = 0;
+    let pollInFlight = false;
+    let unknownObservationChecks = 0;
+    let hasSeenPending = persistedStatus === 'pending';
 
     const finishPolling = () => {
       if (!cancelled && activeChatIdRef.current === requestChatId) {
@@ -93,9 +116,10 @@ export const useSuggestedQuestions = (chatId: string | null) => {
     };
 
     const pollPersistedQuestions = async () => {
-      if (cancelled || activeChatIdRef.current !== requestChatId) {
+      if (cancelled || pollInFlight || activeChatIdRef.current !== requestChatId) {
         return;
       }
+      pollInFlight = true;
 
       try {
         // 必须绕过详情资源的同会话缓存，否则 pending 快照可能被反复复用。
@@ -106,7 +130,7 @@ export const useSuggestedQuestions = (chatId: string | null) => {
         }
 
         const freshMessage = freshConversation.messages.find(
-          (message) => message.id === requestMessageId,
+          (message) => requestMessageIds.includes(message.id),
         );
         if (!freshMessage) {
           scheduleNextPoll();
@@ -114,6 +138,9 @@ export const useSuggestedQuestions = (chatId: string | null) => {
         }
 
         const freshStatus = resolveSuggestedQuestionsStatus(freshMessage);
+        if (freshStatus === 'pending') {
+          hasSeenPending = true;
+        }
         const currentMessage = (
           reduxStore.getState() as {
             conversation: { byId: Record<string, Conversation | undefined> };
@@ -124,10 +151,39 @@ export const useSuggestedQuestions = (chatId: string | null) => {
         const currentStatus = currentMessage
           ? resolveSuggestedQuestionsStatus(currentMessage)
           : undefined;
-        if (!shouldApplySuggestedQuestionsSnapshot(currentMessage, freshMessage)) {
-          if (currentStatus === 'pending') {
+        if (
+          isExplicitObservation
+          && !hasSeenPending
+          && (freshStatus === undefined || freshStatus === 'idle')
+        ) {
+          // 滚动发布兼容：旧后端永远不会 claim。仅立即查一次并短延迟复核一次，
+          // 若仍未知/idle 就结束；任何一次见到 pending 后切回完整轮询。
+          unknownObservationChecks += 1;
+          if (unknownObservationChecks < MAX_UNKNOWN_OBSERVATION_CHECKS) {
             scheduleNextPoll();
           } else {
+            dispatch(clearSuggestedQuestionsObservation({
+              conversationId: requestChatId,
+              messageId: requestMessageId,
+            }));
+            finishPolling();
+          }
+          return;
+        }
+        if (!shouldApplySuggestedQuestionsSnapshot(currentMessage, freshMessage)) {
+          if (
+            currentStatus === 'pending'
+            || (
+              isExplicitObservation
+              && (currentStatus === undefined || currentStatus === 'idle')
+            )
+          ) {
+            scheduleNextPoll();
+          } else {
+            dispatch(clearSuggestedQuestionsObservation({
+              conversationId: requestChatId,
+              messageId: requestMessageId,
+            }));
             finishPolling();
           }
           return;
@@ -142,6 +198,12 @@ export const useSuggestedQuestions = (chatId: string | null) => {
             suggestedQuestionsRevision: freshMessage.suggestedQuestionsRevision,
           },
         }));
+        if (freshStatus === 'ready' || freshStatus === 'failed') {
+          dispatch(clearSuggestedQuestionsObservation({
+            conversationId: requestChatId,
+            messageId: requestMessageId,
+          }));
+        }
 
         if (freshStatus === 'pending') {
           scheduleNextPoll();
@@ -151,19 +213,52 @@ export const useSuggestedQuestions = (chatId: string | null) => {
         finishPolling();
       } catch {
         scheduleNextPoll();
+      } finally {
+        pollInFlight = false;
+      }
+    };
+
+    const pollImmediately = () => {
+      if (cancelled || activeChatIdRef.current !== requestChatId) return;
+      if (timer) {
+        clearTimeout(timer);
+        timer = null;
+      }
+      void pollPersistedQuestions();
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        pollImmediately();
       }
     };
 
     setIsPendingPollLoading(true);
-    scheduleNextPoll();
+    window.addEventListener('focus', pollImmediately);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    if (isExplicitObservation && persistedStatus !== 'pending') {
+      pollImmediately();
+    } else {
+      scheduleNextPoll();
+    }
 
     return () => {
       cancelled = true;
+      window.removeEventListener('focus', pollImmediately);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
       if (timer) {
         clearTimeout(timer);
       }
     };
-  }, [chatId, dispatch, lastAssistantMsg?.id, persistedStatus, reduxStore]);
+  }, [
+    chatId,
+    dispatch,
+    isExplicitObservation,
+    lastAssistantMessageId,
+    observationMessageIds,
+    persistedStatus,
+    reduxStore,
+  ]);
 
   const fetchQuestions = useCallback(
     async (forceRefresh = false) => {

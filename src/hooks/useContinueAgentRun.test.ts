@@ -595,6 +595,50 @@ describe('useContinueAgentRun', () => {
     }));
   });
 
+  it('continuation 收到 pending 事件时立即 patch 当前 assistant 版本', async () => {
+    const { store, dispatch } = createReducerBackedHarness();
+    let releaseStream: (() => void) | undefined;
+    vi.mocked(continueAgentRunStream).mockImplementation(async (_payload, callbacks) => {
+      callbacks.onSuggestedQuestionsPending?.({
+        type: 'suggested_questions_pending',
+        run_id: 'run-2',
+        parent_run_id: 'run-1',
+        step_id: null,
+        parent_step_id: null,
+        tool_call_id: null,
+        sequence: 4,
+        trace_id: 'run-2',
+        ts: Date.now(),
+        message_id: 'server-msg-1',
+        revision: 2,
+        status: 'pending',
+      });
+      await new Promise<void>((resolve) => { releaseStream = resolve; });
+    });
+
+    const { result } = renderHook(() => useContinueAgentRun({
+      dispatch: dispatch as never,
+      store: store as never,
+    }));
+
+    await act(async () => {
+      void result.current.continueAgentRun({
+        conversationId: 'conv-1',
+        assistantMessageId: 'msg-1',
+        previousRunId: 'run-1',
+      });
+    });
+
+    await waitFor(() => expect(
+      store.getState().conversation.byId['conv-1'].messages[0],
+    ).toMatchObject({
+      suggestedQuestionsStatus: 'pending',
+      suggestedQuestionsRevision: 2,
+    }));
+
+    await act(async () => { releaseStream?.(); });
+  });
+
   it('continuation 迟到权威快照不回退已由手动刷新推进的推荐问题 revision', async () => {
     const { store, dispatch } = createReducerBackedHarness();
     store.dispatch(updateMessage({

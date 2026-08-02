@@ -215,6 +215,10 @@ vi.mock('@/lib/agent/finishReason', () => ({
 }));
 
 vi.mock('@/redux/slices/conversationSlice', () => ({
+  applySuggestedQuestionsPending: vi.fn((payload?: unknown) => ({
+    type: 'conversation/applySuggestedQuestionsPending',
+    payload,
+  })),
   appendMessage: vi.fn((payload?: unknown) => ({ type: 'conversation/appendMessage', payload })),
   clearConversationMessages: vi.fn((payload?: unknown) => ({ type: 'conversation/clearConversationMessages', payload })),
   setLastReadyConversationSnapshot: vi.fn((payload?: unknown) => ({
@@ -222,6 +226,10 @@ vi.mock('@/redux/slices/conversationSlice', () => ({
     payload,
   })),
   removeMessage: vi.fn((payload?: unknown) => ({ type: 'conversation/removeMessage', payload })),
+  requestSuggestedQuestionsObservation: vi.fn((payload?: unknown) => ({
+    type: 'conversation/requestSuggestedQuestionsObservation',
+    payload,
+  })),
   updateMessage: vi.fn((payload?: unknown) => ({ type: 'conversation/updateMessage', payload })),
 }));
 
@@ -491,6 +499,43 @@ describe('ChatPage 会话切换体验', () => {
     expect(reconnectStreamMock.mock.calls[0][0]).toBe('chat-a');
     expect(reconnectStreamMock.mock.calls[0][1]).toBe('0');
     expect(retryHydrationMock).toHaveBeenCalledTimes(1);
+    expect(fetchQuestionsMock).not.toHaveBeenCalled();
+  });
+
+  it('恢复流把推荐 pending 事件绑定到当前 assistant', async () => {
+    conversationsById.set('chat-a', createConversation('chat-a', [textMessage('user-1')]));
+    hydrationById.set('chat-a', { view: 'ready' });
+    fetchStreamStatusMock.mockResolvedValue({ status: 'streaming', message_id: 'assistant-1' });
+    reconnectStreamMock.mockImplementation(async (_chatId, _cursor, callbacks) => {
+      callbacks.onSuggestedQuestionsPending?.({
+        type: 'suggested_questions_pending',
+        run_id: 'run-1',
+        parent_run_id: null,
+        step_id: null,
+        parent_step_id: null,
+        tool_call_id: null,
+        sequence: 3,
+        trace_id: 'run-1',
+        ts: Date.now(),
+        message_id: 'assistant-1',
+        revision: 2,
+        status: 'pending',
+      });
+      callbacks.onDone();
+      return { entryId: '9-0' };
+    });
+
+    render(<ChatPage />);
+
+    await waitFor(() => expect(dispatchMock).toHaveBeenCalledWith(expect.objectContaining({
+      type: 'conversation/applySuggestedQuestionsPending',
+      payload: {
+        conversationId: 'chat-a',
+        messageId: 'assistant-1',
+        localMessageId: 'assistant-1',
+        revision: 2,
+      },
+    })));
     expect(fetchQuestionsMock).not.toHaveBeenCalled();
   });
 

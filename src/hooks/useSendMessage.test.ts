@@ -241,6 +241,93 @@ describe('useSendMessage', () => {
     });
   });
 
+  it('pending 事件用服务端 message_id 精确 patch 当前本地 placeholder', async () => {
+    const store = createStore();
+    store.dispatch(upsertConversation({
+      id: 'existing-conv',
+      title: 'Existing',
+      model_id: 'model-1',
+      messages: [],
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    }));
+    let releaseStream: (() => void) | undefined;
+
+    sendMessageStreamMock.mockImplementationOnce(async (_payload: any, callbacks: StreamCallbacks) => {
+      callbacks.onReady({
+        messageId: 'server-assistant',
+        conversationId: 'existing-conv',
+      });
+      callbacks.onSuggestedQuestionsPending?.({
+        type: 'suggested_questions_pending',
+        run_id: 'run-1',
+        parent_run_id: null,
+        step_id: null,
+        parent_step_id: null,
+        tool_call_id: null,
+        sequence: 2,
+        trace_id: 'run-1',
+        ts: Date.now(),
+        message_id: 'server-assistant',
+        revision: 3,
+        status: 'pending',
+      });
+      await new Promise<void>((resolve) => { releaseStream = resolve; });
+      callbacks.onAnswering({ block_id: 'answer', delta: '回答' });
+      callbacks.onDone({ messageId: 'server-assistant', conversationId: 'existing-conv' });
+    });
+
+    const { result } = renderHook(() => useSendMessage(), {
+      wrapper: createWrapper(store),
+    });
+
+    await act(async () => {
+      void result.current.sendMessage('问题', { conversationId: 'existing-conv' });
+    });
+
+    await waitFor(() => expect(
+      store.getState().conversation.byId['existing-conv'].messages.at(-1),
+    ).toMatchObject({
+      id: 'user-1',
+      suggestedQuestionsStatus: 'pending',
+      suggestedQuestionsRevision: 3,
+    }));
+
+    await act(async () => { releaseStream?.(); });
+    await act(async () => { tickIntervals(2); });
+  });
+
+  it('本轮完成但未收到 pending 事件时登记服务端与本地消息 ID 进行权威观察', async () => {
+    const store = createStore();
+    store.dispatch(upsertConversation({
+      id: 'existing-conv',
+      title: 'Existing',
+      model_id: 'model-1',
+      messages: [],
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    }));
+    sendMessageStreamMock.mockImplementationOnce(async (_payload: any, callbacks: StreamCallbacks) => {
+      callbacks.onReady({ messageId: 'server-assistant', conversationId: 'existing-conv' });
+      callbacks.onAnswering({ block_id: 'answer', delta: '回答' });
+      callbacks.onDone({ messageId: 'server-assistant', conversationId: 'existing-conv' });
+    });
+
+    const { result } = renderHook(() => useSendMessage(), {
+      wrapper: createWrapper(store),
+    });
+    await act(async () => {
+      await result.current.sendMessage('问题', { conversationId: 'existing-conv' });
+      tickIntervals(2);
+    });
+
+    await waitFor(() => expect(
+      store.getState().conversation.suggestedQuestionsObservations['existing-conv'],
+    ).toEqual({
+      messageIds: ['user-1', 'server-assistant'],
+    }));
+  });
+
   it('把用户开启的计划模式作为受控请求选项发送给后端', async () => {
     const store = createStore();
     store.dispatch(setComposerAgentMode('plan'));
@@ -2448,6 +2535,9 @@ describe('useSendMessage', () => {
     expect(assistantMsg?.content).toEqual([
       { type: 'text', id: 'recovered-blk_t', text: '你好！我是 DeepSeek。' },
     ]);
+    expect(
+      store.getState().conversation.suggestedQuestionsObservations['existing-conv'],
+    ).toBeUndefined();
     expect(getConversationMock).toHaveBeenCalledTimes(1);
   });
 

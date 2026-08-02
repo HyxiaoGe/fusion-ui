@@ -28,8 +28,16 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({
 }) => {
   const dispatch = useAppDispatch();
   const pathname = usePathname();
-  const { models, providers, selectedModelId } = useAppSelector((state) => state.models);
+  const {
+    models,
+    providers,
+    selectedModelId,
+    loadStatus: modelsLoadStatus,
+  } = useAppSelector((state) => state.models);
   const chats = useAppSelector((state) => state.conversation.byId);
+  const conversationHydrationStatus = useAppSelector(
+    (state) => state.conversation.hydrationStatus,
+  );
   const [isOpen, setIsOpen] = useState(false);
   const [hasHydrated, setHasHydrated] = useState(false);
   const [recentModelIds, setRecentModelIds] = useState<string[]>(getRecentModels);
@@ -45,7 +53,12 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({
   const isDisabled = disabled || (!!activeChatId && hasMessages);
 
   const activeChatModelId = activeChat?.model_id;
-  const currentModelId = modelId || activeChatModelId || getPreferredModelId(models, selectedModelId);
+  const activeChatHydrationStatus = activeChatId
+    ? (conversationHydrationStatus[activeChatId] ?? 'idle')
+    : 'done';
+  const currentModelId = modelId
+    || activeChatModelId
+    || (activeChatId ? null : getPreferredModelId(models, selectedModelId));
 
   const currentModel = useMemo(
     () => models.find((m) => m.id === currentModelId) ?? null,
@@ -102,8 +115,25 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({
     setActiveProvider(providerId);
   }, []);
 
-  // 服务端没有浏览器内已加载的模型 Store；首帧先渲染同尺寸的真实控件，避免目录返回后工具栏增高。
-  if (!hasHydrated || models.length === 0) {
+  const isModelCatalogPending = modelsLoadStatus === 'idle' || modelsLoadStatus === 'loading';
+  const isExistingConversationPending = Boolean(
+    activeChatId
+    && !currentModelId
+    && activeChatHydrationStatus !== 'done',
+  );
+  const placeholderLabel = (
+    !hasHydrated || isModelCatalogPending || isExistingConversationPending
+      ? '模型加载中'
+      : modelsLoadStatus === 'failed'
+        ? '模型加载失败'
+        : models.length === 0 || (activeChatId && !currentModel)
+          ? '模型不可用'
+          : null
+  );
+
+  // 服务端没有浏览器内已加载的模型 Store；首帧和已有会话水合窗口都保留同尺寸中性控件，
+  // 避免先展示全局默认模型，再跳变为会话绑定模型。
+  if (placeholderLabel) {
     return (
       <span className="inline-flex min-w-0">
         <ModelSelectorTrigger
@@ -112,7 +142,7 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({
           isOpen={false}
           disabled
           toolbarMode={toolbarMode}
-          placeholderLabel="模型加载中"
+          placeholderLabel={placeholderLabel}
         />
       </span>
     );

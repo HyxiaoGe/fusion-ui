@@ -15,8 +15,15 @@ import {
   shouldRecoverReasoningOnlyFinalBlocks,
 } from '@/lib/chat/contentBlocks';
 import { buildChatFromServerConversation } from '@/lib/chat/conversationHydration';
-import { shouldApplySuggestedQuestionsSnapshot } from '@/lib/chat/suggestedQuestionState';
-import { updateMessage } from '@/redux/slices/conversationSlice';
+import {
+  hasFormalTextContent,
+  shouldApplySuggestedQuestionsSnapshot,
+} from '@/lib/chat/suggestedQuestionState';
+import {
+  applySuggestedQuestionsPending,
+  requestSuggestedQuestionsObservation,
+  updateMessage,
+} from '@/redux/slices/conversationSlice';
 import {
   advanceTypewriter,
   appendTextDelta,
@@ -153,6 +160,15 @@ function buildContinuationStreamCallbacks({
       setServerMessageId,
       resolveConversationId: () => conversationId,
     }),
+    onSuggestedQuestionsPending: ev => {
+      if (!isActive()) return;
+      dispatch(applySuggestedQuestionsPending({
+        conversationId,
+        messageId: ev.message_id,
+        localMessageId: assistantMessageId,
+        revision: ev.revision,
+      }));
+    },
     onDone: () => {
       if (!isActive()) return;
       const state = store.getState() as RootStateForContinuation;
@@ -179,6 +195,12 @@ function buildContinuationStreamCallbacks({
             : {}),
         },
       }));
+      if (hasFormalTextContent(rawFinalBlocks)) {
+        dispatch(requestSuggestedQuestionsObservation({
+          conversationId,
+          messageIds: [assistantMessageId],
+        }));
+      }
       dispatch(endStream());
       refreshContinuationMessage({ conversationId, assistantMessageId, dispatch, store });
     },

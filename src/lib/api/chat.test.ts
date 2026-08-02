@@ -456,6 +456,72 @@ describe('sendMessageStream — 新 envelope 协议', () => {
     });
   });
 
+  it('解析 suggested_questions_pending 并保留精确消息版本', async () => {
+    fetchWithAuthMock.mockResolvedValue(
+      createStreamResponse([
+        agentEvent('suggested_questions_pending', {
+          message_id: 'server-assistant-1',
+          revision: 4,
+          status: 'pending',
+        }, 1),
+        envelope('done', {}),
+        'data: [DONE]\n\n',
+      ]),
+    );
+    const onSuggestedQuestionsPending = vi.fn();
+
+    await sendMessageStream(
+      { model_id: 'gpt', message: 'hi', conversation_id: 'conv-1' },
+      {
+        onReady: vi.fn(),
+        onReasoning: vi.fn(),
+        onAnswering: vi.fn(),
+        onSuggestedQuestionsPending,
+        onDone: vi.fn(),
+        onError: vi.fn(),
+      },
+    );
+
+    expect(onSuggestedQuestionsPending).toHaveBeenCalledWith(expect.objectContaining({
+      type: 'suggested_questions_pending',
+      message_id: 'server-assistant-1',
+      revision: 4,
+      status: 'pending',
+    }));
+  });
+
+  it('忽略字段无效的 suggested_questions_pending', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    fetchWithAuthMock.mockResolvedValue(
+      createStreamResponse([
+        agentEvent('suggested_questions_pending', {
+          message_id: '',
+          revision: 0,
+          status: 'ready',
+        }, 1),
+        envelope('done', {}),
+        'data: [DONE]\n\n',
+      ]),
+    );
+    const onSuggestedQuestionsPending = vi.fn();
+
+    await sendMessageStream(
+      { model_id: 'gpt', message: 'hi', conversation_id: 'conv-1' },
+      {
+        onReady: vi.fn(),
+        onReasoning: vi.fn(),
+        onAnswering: vi.fn(),
+        onSuggestedQuestionsPending,
+        onDone: vi.fn(),
+        onError: vi.fn(),
+      },
+    );
+
+    expect(onSuggestedQuestionsPending).not.toHaveBeenCalled();
+    expect(warn).toHaveBeenCalled();
+    warn.mockRestore();
+  });
+
   it('初次 send 也在完整 data frame 处理后递增上报 SSE entry cursor', async () => {
     fetchWithAuthMock.mockResolvedValue(
       createStreamResponse([
