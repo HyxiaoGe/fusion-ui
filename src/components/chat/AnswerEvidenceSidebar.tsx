@@ -82,6 +82,7 @@ export default function AnswerEvidenceSidebar({
       <button
         type="button"
         aria-label="关闭回答依据背景"
+        data-chat-detail-overlay-surface="true"
         className="fixed inset-0 z-40 cursor-default bg-black/20 p-0 transition-opacity"
         onClick={onClose}
       />
@@ -90,6 +91,7 @@ export default function AnswerEvidenceSidebar({
         role="dialog"
         aria-modal="true"
         aria-label="回答依据"
+        data-chat-detail-overlay-surface="true"
         className="fixed inset-y-0 right-0 z-50 flex w-[440px] max-w-[100vw] transform flex-col border-l border-border bg-background shadow-lg transition-transform duration-300 ease-in-out"
       >
         <header className="flex items-start justify-between gap-3 border-b border-border px-4 py-3">

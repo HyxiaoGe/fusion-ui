@@ -33,6 +33,7 @@ export default function AnswerEvidence({
             <button
               type="button"
               aria-label="查看全部依据"
+              data-chat-detail-overlay-trigger="true"
               onClick={onOpenSources}
               className="shrink-0 rounded-full border border-border/40 bg-background/70 px-2 py-0.5 text-[11px] font-medium text-foreground transition-colors hover:border-border/60 hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
             >
@@ -124,6 +125,7 @@ function AnswerEvidenceContent({
             <button
               type="button"
               aria-label="查看全部依据"
+              data-chat-detail-overlay-trigger="true"
               onClick={onOpenSources}
               className="shrink-0 rounded-full border border-border/40 bg-background/70 px-2 py-0.5 text-[11px] font-medium text-foreground transition-colors hover:border-border/60 hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
             >
@@ -171,6 +173,7 @@ function EvidenceItem({
       <button
         type="button"
         aria-label={`查看来源：${item.title}`}
+        data-chat-detail-overlay-trigger="true"
         onClick={() => {
           onSourceClick(item.sourceIndex);
         }}

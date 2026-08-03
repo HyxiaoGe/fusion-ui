@@ -1123,6 +1123,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
             errorKind={contextStatus?.errorKind ?? null}
             isStreaming={isCurrentConversationStreaming}
             isFirstConversationTurn={isFirstConversationTurn}
+            activeRunId={isCurrentConversationStreaming ? (currentRun?.runId ?? null) : null}
           />
         </div>
       ) : null}

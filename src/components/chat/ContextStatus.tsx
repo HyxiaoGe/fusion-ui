@@ -26,15 +26,16 @@ interface ContextStatusProps {
   errorKind?: ContextUsageErrorKind | null;
   isStreaming?: boolean;
   isFirstConversationTurn?: boolean;
+  activeRunId?: string | null;
 }
 
-export const CONTEXT_STATUS_OPEN_STORAGE_KEY = 'fusion.context-status.open.v1';
-export const LEGACY_CONTEXT_STATUS_OPEN_STORAGE_KEY = 'fusion.context-status.default-open.v1';
-export const CONTEXT_STATUS_PENDING_FIRST_TURN_STORAGE_KEY = 'fusion.context-status.pending-first-turn.v1';
+export const CONTEXT_STATUS_DEFAULT_OPEN_STORAGE_KEY = 'fusion.context-status.default-open.v2';
+export const CONTEXT_STATUS_PENDING_FIRST_TURN_STORAGE_KEY = 'fusion.context-status.pending-first-turn.v2';
+export const CONTEXT_STATUS_SUPPRESSED_FIRST_TURN_STORAGE_KEY = 'fusion.context-status.suppressed-first-turn.v2';
 
-function readPendingFirstTurnIds(): Set<string> {
+function readConversationIds(storageKey: string): Set<string> {
   try {
-    const raw = window.sessionStorage.getItem(CONTEXT_STATUS_PENDING_FIRST_TURN_STORAGE_KEY);
+    const raw = window.sessionStorage.getItem(storageKey);
     if (!raw) return new Set();
     const parsed: unknown = JSON.parse(raw);
     return new Set(Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === 'string') : []);
@@ -43,91 +44,79 @@ function readPendingFirstTurnIds(): Set<string> {
   }
 }
 
-function writePendingFirstTurnIds(ids: Set<string>): void {
+function writeConversationIds(storageKey: string, ids: Set<string>): void {
   try {
     if (ids.size === 0) {
-      window.sessionStorage.removeItem(CONTEXT_STATUS_PENDING_FIRST_TURN_STORAGE_KEY);
+      window.sessionStorage.removeItem(storageKey);
       return;
     }
-    window.sessionStorage.setItem(CONTEXT_STATUS_PENDING_FIRST_TURN_STORAGE_KEY, JSON.stringify([...ids]));
+    window.sessionStorage.setItem(storageKey, JSON.stringify([...ids]));
   } catch {
-    // sessionStorage 不可用时仅失去跨路由/刷新恢复，不影响当前窗口开关。
+    // sessionStorage 不可用时仅失去首轮跨路由/刷新恢复，不影响当前页面交互。
   }
+}
+
+function addConversationId(storageKey: string, conversationId: string): void {
+  const ids = readConversationIds(storageKey);
+  ids.add(conversationId);
+  writeConversationIds(storageKey, ids);
+}
+
+function hasConversationId(storageKey: string, conversationId: string): boolean {
+  return readConversationIds(storageKey).has(conversationId);
+}
+
+function removeConversationId(storageKey: string, conversationId: string): void {
+  const ids = readConversationIds(storageKey);
+  if (!ids.delete(conversationId)) return;
+  writeConversationIds(storageKey, ids);
+}
+
+function moveConversationId(storageKey: string, fromId: string, toId: string): void {
+  if (fromId === toId) return;
+  const ids = readConversationIds(storageKey);
+  if (!ids.delete(fromId)) return;
+  ids.add(toId);
+  writeConversationIds(storageKey, ids);
 }
 
 function markPendingFirstTurn(conversationId: string): void {
-  const ids = readPendingFirstTurnIds();
-  ids.add(conversationId);
-  writePendingFirstTurnIds(ids);
+  addConversationId(CONTEXT_STATUS_PENDING_FIRST_TURN_STORAGE_KEY, conversationId);
 }
 
 function hasPendingFirstTurn(conversationId: string): boolean {
-  return readPendingFirstTurnIds().has(conversationId);
+  return hasConversationId(CONTEXT_STATUS_PENDING_FIRST_TURN_STORAGE_KEY, conversationId);
 }
 
 function clearPendingFirstTurn(conversationId: string): void {
-  const ids = readPendingFirstTurnIds();
-  if (!ids.delete(conversationId)) return;
-  writePendingFirstTurnIds(ids);
+  removeConversationId(CONTEXT_STATUS_PENDING_FIRST_TURN_STORAGE_KEY, conversationId);
 }
 
-function readOpenState(): boolean | null {
-  let currentValue: string | null = null;
-  try {
-    currentValue = window.localStorage.getItem(CONTEXT_STATUS_OPEN_STORAGE_KEY);
-  } catch {
-    // localStorage 不可用时继续尝试当前标签页存储。
-  }
-  if (currentValue !== null) return currentValue === 'true';
-
-  let sessionValue: string | null = null;
-  try {
-    sessionValue = window.sessionStorage.getItem(CONTEXT_STATUS_OPEN_STORAGE_KEY);
-  } catch {
-    // sessionStorage 不可用时继续尝试旧版偏好。
-  }
-  if (sessionValue !== null) {
-    const open = sessionValue === 'true';
-    try {
-      window.localStorage.setItem(CONTEXT_STATUS_OPEN_STORAGE_KEY, String(open));
-      window.sessionStorage.removeItem(CONTEXT_STATUS_OPEN_STORAGE_KEY);
-    } catch {
-      // 迁移失败时仍使用已读出的标签页状态。
-    }
-    return open;
-  }
-
-  let legacyValue: string | null = null;
-  try {
-    legacyValue = window.localStorage.getItem(LEGACY_CONTEXT_STATUS_OPEN_STORAGE_KEY);
-  } catch {
-    // 存储不可用时维持默认关闭。
-  }
-  if (legacyValue !== null) {
-    const open = legacyValue === 'true';
-    try {
-      window.localStorage.setItem(CONTEXT_STATUS_OPEN_STORAGE_KEY, String(open));
-    } catch {
-      // 迁移失败时仍使用已读出的旧版状态。
-    }
-    return open;
-  }
-
-  return null;
+function markSuppressedFirstTurn(conversationId: string): void {
+  addConversationId(CONTEXT_STATUS_SUPPRESSED_FIRST_TURN_STORAGE_KEY, conversationId);
 }
 
-function persistOpenState(open: boolean): void {
+function hasSuppressedFirstTurn(conversationId: string): boolean {
+  return hasConversationId(CONTEXT_STATUS_SUPPRESSED_FIRST_TURN_STORAGE_KEY, conversationId);
+}
+
+function clearSuppressedFirstTurn(conversationId: string): void {
+  removeConversationId(CONTEXT_STATUS_SUPPRESSED_FIRST_TURN_STORAGE_KEY, conversationId);
+}
+
+function readDefaultOpen(): boolean {
   try {
-    // 展开/关闭是全局用户状态：刷新、切换对话和后续浏览器会话都保持最后一次选择。
-    window.localStorage.setItem(CONTEXT_STATUS_OPEN_STORAGE_KEY, String(open));
-    window.sessionStorage.removeItem(CONTEXT_STATUS_OPEN_STORAGE_KEY);
+    return window.localStorage.getItem(CONTEXT_STATUS_DEFAULT_OPEN_STORAGE_KEY) === 'true';
   } catch {
-    try {
-      // localStorage 不可用时至少在当前标签页内保持。
-      window.sessionStorage.setItem(CONTEXT_STATUS_OPEN_STORAGE_KEY, String(open));
-    } catch {
-      // 两种存储均不可用时仍保留当前页面内的 React 状态。
-    }
+    return false;
+  }
+}
+
+function persistDefaultOpen(open: boolean): void {
+  try {
+    window.localStorage.setItem(CONTEXT_STATUS_DEFAULT_OPEN_STORAGE_KEY, String(open));
+  } catch {
+    // localStorage 不可用时只保留当前页面内的 React 状态。
   }
 }
 
@@ -156,6 +145,7 @@ export default function ContextStatus({
   errorKind = null,
   isStreaming = false,
   isFirstConversationTurn = false,
+  activeRunId = null,
 }: ContextStatusProps) {
   // Fusion 聊天界面当前固定使用中文，避免浏览器语言探测让单个组件混入英文。
   const t = i18n.getFixedT('zh-CN');
@@ -168,47 +158,104 @@ export default function ContextStatus({
     ?? statusErrorKind
     ?? (phase === 'error' ? 'check_failed' : null);
   const isError = effectiveErrorKind !== null;
-  const [open, setOpen] = useState(false);
+  const [panelOpen, setPanelOpen] = useState(false);
+  const [defaultOpen, setDefaultOpen] = useState(false);
   const hasOpenDetailOverlay = useHasOpenChatDetailOverlay();
-  const visibleOpen = open && !hasOpenDetailOverlay;
+  const visibleOpen = panelOpen && !hasOpenDetailOverlay;
+  const hasOpenDetailOverlayRef = useRef(hasOpenDetailOverlay);
+  hasOpenDetailOverlayRef.current = hasOpenDetailOverlay;
   const trackedConversationIdRef = useRef(conversationId);
-  const preferredOpenRef = useRef<boolean | null>(null);
-  const autoOpenHandledRef = useRef(false);
+  const trackedRunIdRef = useRef(activeRunId);
+  const defaultOpenRef = useRef(false);
   const userInteractedRef = useRef(false);
   const firstTurnStreamingRef = useRef(isStreaming && isFirstConversationTurn);
   firstTurnStreamingRef.current = isStreaming && isFirstConversationTurn;
 
   useLayoutEffect(() => {
-    const conversationChanged = trackedConversationIdRef.current !== conversationId;
+    const previousConversationId = trackedConversationIdRef.current;
+    const previousRunId = trackedRunIdRef.current;
+    const conversationChanged = previousConversationId !== conversationId;
     trackedConversationIdRef.current = conversationId;
+    trackedRunIdRef.current = activeRunId;
+    const sameFirstTurnRun = Boolean(
+      conversationChanged
+      && firstTurnStreamingRef.current
+      && activeRunId
+      && previousRunId === activeRunId,
+    );
+
     if (conversationChanged) {
-      autoOpenHandledRef.current = false;
-      // 首轮流中的临时 ID 物化仍属于同一次对话，保留用户刚刚执行的开关操作。
-      if (!firstTurnStreamingRef.current) userInteractedRef.current = false;
+      if (sameFirstTurnRun) {
+        moveConversationId(
+          CONTEXT_STATUS_PENDING_FIRST_TURN_STORAGE_KEY,
+          previousConversationId,
+          conversationId,
+        );
+        moveConversationId(
+          CONTEXT_STATUS_SUPPRESSED_FIRST_TURN_STORAGE_KEY,
+          previousConversationId,
+          conversationId,
+        );
+      } else {
+        userInteractedRef.current = false;
+      }
     }
-    const storedOpen = readOpenState();
-    preferredOpenRef.current = storedOpen;
-    // 显式开启属于全局状态，切换到任何对话都要在浏览器绘制前恢复。
-    setOpen(storedOpen === true);
-  }, [conversationId]);
+
+    const preferred = readDefaultOpen();
+    defaultOpenRef.current = preferred;
+    setDefaultOpen(preferred);
+
+    if (sameFirstTurnRun && userInteractedRef.current) return;
+    if (firstTurnStreamingRef.current) {
+      if (preferred && !hasSuppressedFirstTurn(conversationId)) {
+        markPendingFirstTurn(conversationId);
+      } else {
+        clearPendingFirstTurn(conversationId);
+      }
+      setPanelOpen(false);
+      return;
+    }
+
+    setPanelOpen(preferred);
+  }, [activeRunId, conversationId]);
 
   useLayoutEffect(() => {
-    if (
-      isStreaming
-      && isFirstConversationTurn
-      && preferredOpenRef.current !== false
-      && !userInteractedRef.current
-    ) {
+    if (!isStreaming || !isFirstConversationTurn) return;
+    if (defaultOpenRef.current && !hasSuppressedFirstTurn(conversationId)) {
       markPendingFirstTurn(conversationId);
-      // 全局开启只决定首轮结束后的目标状态；首轮生成期间先收起，避免发送消息时提前展开。
-      setOpen(false);
+    } else {
+      clearPendingFirstTurn(conversationId);
     }
-  }, [conversationId, isFirstConversationTurn, isStreaming]);
+    if (!userInteractedRef.current) setPanelOpen(false);
+  }, [conversationId, defaultOpen, isFirstConversationTurn, isStreaming]);
 
   useEffect(() => {
-    if (isStreaming || autoOpenHandledRef.current || !hasPendingFirstTurn(conversationId)) return;
+    if (isStreaming) return;
+
+    const pendingFirstTurn = hasPendingFirstTurn(conversationId);
+    const suppressedFirstTurn = hasSuppressedFirstTurn(conversationId);
+    if (!pendingFirstTurn && !suppressedFirstTurn) return;
 
     if (!isFirstConversationTurn) {
+      clearPendingFirstTurn(conversationId);
+      clearSuppressedFirstTurn(conversationId);
+      return;
+    }
+
+    if (suppressedFirstTurn) {
+      if (
+        isError
+        || latestActualUnavailable
+        || phase === 'final'
+        || phase === 'error'
+        || usage?.actual_prompt_tokens != null
+      ) {
+        clearSuppressedFirstTurn(conversationId);
+      }
+      return;
+    }
+
+    if (!defaultOpenRef.current) {
       clearPendingFirstTurn(conversationId);
       return;
     }
@@ -220,22 +267,34 @@ export default function ContextStatus({
       return;
     }
 
-    autoOpenHandledRef.current = true;
     clearPendingFirstTurn(conversationId);
-    // 未明确关闭时，首轮回答完成才恢复或执行自动展开。
-    if (preferredOpenRef.current !== false && !userInteractedRef.current) {
-      preferredOpenRef.current = true;
-      setOpen(true);
-      persistOpenState(true);
-    }
+    if (!userInteractedRef.current) setPanelOpen(true);
   }, [conversationId, isError, isFirstConversationTurn, isStreaming, latestActualUnavailable, phase, usage]);
 
-  const handleOpenChange = (value: boolean) => {
+  const handlePanelOpenChange = (value: boolean) => {
+    if (!value && hasOpenDetailOverlayRef.current) return;
     userInteractedRef.current = true;
-    preferredOpenRef.current = value;
-    clearPendingFirstTurn(conversationId);
-    setOpen(value);
-    persistOpenState(value);
+    if (isStreaming && isFirstConversationTurn) {
+      clearPendingFirstTurn(conversationId);
+      if (value) {
+        clearSuppressedFirstTurn(conversationId);
+      } else {
+        markSuppressedFirstTurn(conversationId);
+      }
+    }
+    setPanelOpen(value);
+  };
+
+  const handleDefaultOpenChange = (value: boolean) => {
+    defaultOpenRef.current = value;
+    setDefaultOpen(value);
+    persistDefaultOpen(value);
+    if (!isStreaming || !isFirstConversationTurn) return;
+    if (value && !hasSuppressedFirstTurn(conversationId)) {
+      markPendingFirstTurn(conversationId);
+    } else {
+      clearPendingFirstTurn(conversationId);
+    }
   };
 
   const rawView = usage ? buildContextUsageView(usage) : EMPTY_VIEW;
@@ -291,7 +350,7 @@ export default function ContextStatus({
         : t('contextStatus.unavailable'));
 
   return (
-    <Popover open={visibleOpen} onOpenChange={handleOpenChange}>
+    <Popover open={visibleOpen} onOpenChange={handlePanelOpenChange}>
       <PopoverTrigger asChild>
         <button
           type="button"
@@ -329,8 +388,22 @@ export default function ContextStatus({
           sideOffset={8}
           collisionPadding={12}
           onOpenAutoFocus={(event) => event.preventDefault()}
-          onEscapeKeyDown={(event) => event.preventDefault()}
-          onInteractOutside={(event) => event.preventDefault()}
+          onInteractOutside={(event) => {
+            const target = event.target;
+            if (
+              defaultOpenRef.current
+              || hasOpenDetailOverlayRef.current
+              || (
+                target instanceof Element
+                && target.closest([
+                  '[data-chat-detail-overlay-trigger="true"]',
+                  '[data-chat-detail-overlay-surface="true"]',
+                ].join(','))
+              )
+            ) {
+              event.preventDefault();
+            }
+          }}
           className="max-h-[min(70vh,30rem)] w-[calc(100vw-1.5rem)] max-w-[24rem] overflow-y-auto p-0"
         >
         <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border/60 px-4 py-3">
@@ -357,8 +430,8 @@ export default function ContextStatus({
               </span>
               <Switch
                 aria-label={t('contextStatus.windowOpen')}
-                checked={open}
-                onCheckedChange={handleOpenChange}
+                checked={defaultOpen}
+                onCheckedChange={handleDefaultOpenChange}
                 className="h-5 w-9 [&_[data-slot=switch-thumb]]:h-4 [&_[data-slot=switch-thumb]]:w-4 [&_[data-slot=switch-thumb]][data-state=checked]:translate-x-4"
               />
             </div>
@@ -386,7 +459,7 @@ export default function ContextStatus({
                   used: usedPercent,
                   remaining: view.remainingPercent,
                 })}
-                className="mt-3 h-1.5"
+                className="mt-3 h-2 border border-border/70 bg-muted shadow-inner"
               />
             ) : null}
           </section>

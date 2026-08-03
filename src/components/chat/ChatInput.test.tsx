@@ -5,6 +5,8 @@ import { hydrateRoot } from 'react-dom/client';
 import { renderToString } from 'react-dom/server';
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { CONTEXT_STATUS_DEFAULT_OPEN_STORAGE_KEY } from './ContextStatus';
+
 const {
   currentState,
   dispatchMock,
@@ -399,6 +401,8 @@ describe('ChatInput', () => {
     const { rerender } = render(<ChatInput onSendMessage={vi.fn()} activeChatId="chat-a" />);
     fireEvent.click(screen.getByRole('button', { name: '查看上下文状态，剩余 60%' }));
     expect(screen.getByRole('dialog', { name: '上下文状态' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('switch', { name: '回答完成后自动展开' }));
+    expect(screen.getByRole('switch', { name: '回答完成后自动展开' })).toBeChecked();
 
     currentState.conversation = {
       ...currentState.conversation,
@@ -418,6 +422,9 @@ describe('ChatInput', () => {
     expect(screen.getAllByText('暂不可用').length).toBeGreaterThan(0);
 
     fireEvent.click(screen.getByRole('switch', { name: '回答完成后自动展开' }));
+    expect(screen.getByRole('switch', { name: '回答完成后自动展开' })).not.toBeChecked();
+    expect(screen.getByRole('dialog', { name: '上下文状态' })).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('context-status-trigger'));
     await waitFor(() => expect(screen.queryByRole('dialog', { name: '上下文状态' })).toBeNull());
 
     currentState.conversation = {
@@ -469,6 +476,7 @@ describe('ChatInput', () => {
 
   it('首轮生成期间保持收起，首轮完成后自动展开', async () => {
     configureAuthenticatedVisionModel();
+    localStorage.setItem(CONTEXT_STATUS_DEFAULT_OPEN_STORAGE_KEY, 'true');
     currentState.conversation.byId = {
       'chat-first': {
         id: 'chat-first',
