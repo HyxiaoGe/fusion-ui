@@ -19,7 +19,6 @@ import {
   collectStructuredToolResultBlocks,
   isStructuredToolResultBlock,
 } from '@/lib/chat/structuredToolResults';
-import { isKimiK3ReasoningModel } from '@/lib/chat/reasoningVisibility';
 
 import { deriveAssistantActivity } from './assistantActivity';
 import type { AssistantActivity } from './assistantActivity';
@@ -125,8 +124,6 @@ export function deriveStaticAssistantMessageViewModel({
 
 export function useAssistantMessageViewModel({
   message,
-  modelId,
-  providerId,
   isStreaming,
   isLastMessage,
   isLoadingQuestions,
@@ -233,8 +230,7 @@ export function useAssistantMessageViewModel({
     () => blocksToRender.filter(isStructuredToolResultBlock),
     [blocksToRender],
   );
-  const suppressThinking = !isKimiK3ReasoningModel({ modelId, providerId })
-    && (activity.kind === 'tool_running' || activity.kind === 'waiting');
+  const suppressThinking = false;
   const hasThinking = !suppressThinking && displayThinking.length > 0;
 
   return {

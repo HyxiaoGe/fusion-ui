@@ -3,7 +3,6 @@
 import { memo } from 'react';
 import type { SearchSourceSummary, StructuredToolResultBlock } from '@/types/conversation';
 import type { AgentRunState } from '@/types/agentRun';
-import { isKimiK3ReasoningModel } from '@/lib/chat/reasoningVisibility';
 import ReasoningContent from './ReasoningContent';
 import AssistantActivityStatus from './AssistantActivityStatus';
 import type { AssistantActivity } from './assistantActivity';
@@ -50,8 +49,6 @@ interface AssistantResponseStackProps {
 
 function AssistantResponseStack({
   assistantMessageId,
-  modelId,
-  providerId,
   reasoning,
   activity,
   agentRun,
@@ -87,12 +84,7 @@ function AssistantResponseStack({
       searchQueries,
       onOpenSources,
     };
-  const suppressAgentReasoning = !isKimiK3ReasoningModel({ modelId, providerId }) && Boolean(
-    agentRun?.config.planMode === 'on'
-    || agentRun?.plan?.source === 'model'
-    || agentRun?.config.taskMode === 'deep_research',
-  );
-  const showReasoning = reasoning.shouldRender && !suppressAgentReasoning;
+  const showReasoning = reasoning.shouldRender;
   const showActivityStatus = activity.kind !== 'waiting' || !showReasoning;
 
   return (

@@ -523,8 +523,155 @@ describe('deriveAssistantActivity', () => {
     });
 
     expect(activity.issue?.toolKind).toBe('url_read');
-    expect(activity.issue?.title).toBe('网页暂时无法读取');
+    expect(activity.issue?.title).toBe('有一个网页未能读取');
     expect(activity.issue?.detail).toBe('未使用该页面内容');
+  });
+
+  it('读取成功和失败并存时显示部分网页未能读取', () => {
+    const activity = deriveAssistantActivity({
+      isStreaming: false,
+      isCurrentlyStreaming: false,
+      contentBlocks: [{ type: 'text', id: 'text-1', text: '已基于可用来源回答。' }],
+      currentRun: makeRun({
+        status: 'completed',
+        steps: [{
+          stepId: 'step-1',
+          stepNumber: 1,
+          status: 'completed',
+          startedAt: 1,
+          completedAt: 4,
+          contentBlockIds: [],
+          toolCalls: [
+            {
+              toolCallId: 'read-ok',
+              toolName: 'url_read',
+              arguments: { url: 'https://example.com/ok' },
+              status: 'success',
+              startedAt: 1,
+              completedAt: 2,
+            },
+            {
+              toolCallId: 'read-skip',
+              toolName: 'url_read',
+              arguments: { url: 'https://example.com/timeout' },
+              status: 'degraded',
+              error: 'timeout',
+              startedAt: 3,
+              completedAt: 4,
+            },
+          ],
+        }],
+      }),
+      messageStatus: null,
+      isLoadingSuggestedQuestions: false,
+      suggestedQuestionsCount: 0,
+    });
+
+    expect(activity.issue).toMatchObject({
+      kind: 'degraded',
+      toolKind: 'url_read',
+      title: '部分网页未能读取',
+      detail: '已跳过 1 个页面',
+    });
+  });
+
+  it('多个网页均失败时显示所有候选网页均未能读取', () => {
+    const activity = deriveAssistantActivity({
+      isStreaming: false,
+      isCurrentlyStreaming: false,
+      contentBlocks: [],
+      currentRun: makeRun({
+        status: 'completed',
+        steps: [{
+          stepId: 'step-1',
+          stepNumber: 1,
+          status: 'completed',
+          startedAt: 1,
+          completedAt: 4,
+          contentBlockIds: [],
+          toolCalls: [
+            {
+              toolCallId: 'read-a',
+              toolName: 'url_read',
+              arguments: { url: 'https://a.example.com/report' },
+              status: 'degraded',
+              error: 'timeout',
+              startedAt: 1,
+              completedAt: 2,
+            },
+            {
+              toolCallId: 'read-b',
+              toolName: 'url_read',
+              arguments: { url: 'https://b.example.com/report' },
+              status: 'failed',
+              error: 'HTTP 404',
+              startedAt: 3,
+              completedAt: 4,
+            },
+          ],
+        }],
+      }),
+      messageStatus: null,
+      isLoadingSuggestedQuestions: false,
+      suggestedQuestionsCount: 0,
+    });
+
+    expect(activity.issue).toMatchObject({
+      toolKind: 'url_read',
+      title: '所有候选网页均未能读取',
+      detail: '已跳过 2 个页面',
+    });
+  });
+
+  it('同一页面后续读取成功时不再保留旧失败提示', () => {
+    const activity = deriveAssistantActivity({
+      isStreaming: false,
+      isCurrentlyStreaming: false,
+      contentBlocks: [{ type: 'text', id: 'text-1', text: '读取成功。' }],
+      currentRun: makeRun({
+        status: 'completed',
+        steps: [
+          {
+            stepId: 'step-1',
+            stepNumber: 1,
+            status: 'completed',
+            startedAt: 1,
+            completedAt: 2,
+            contentBlockIds: [],
+            toolCalls: [{
+              toolCallId: 'read-old',
+              toolName: 'url_read',
+              arguments: { url: 'https://example.com/report' },
+              status: 'degraded',
+              error: 'timeout',
+              startedAt: 1,
+              completedAt: 2,
+            }],
+          },
+          {
+            stepId: 'step-2',
+            stepNumber: 2,
+            status: 'completed',
+            startedAt: 3,
+            completedAt: 4,
+            contentBlockIds: [],
+            toolCalls: [{
+              toolCallId: 'read-retry',
+              toolName: 'url_read',
+              arguments: { url: 'https://example.com/report' },
+              status: 'success',
+              startedAt: 3,
+              completedAt: 4,
+            }],
+          },
+        ],
+      }),
+      messageStatus: null,
+      isLoadingSuggestedQuestions: false,
+      suggestedQuestionsCount: 0,
+    });
+
+    expect(activity.issue).toBeNull();
   });
 
   it('failed and interrupted override tool and text states', () => {

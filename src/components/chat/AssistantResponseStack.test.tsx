@@ -191,7 +191,7 @@ const agentRun: AgentRunState = {
 };
 
 describe('AssistantResponseStack', () => {
-  it('仅 K3 在模型计划期间展示经后端净化的思考，其他模型仍抑制计划协议', () => {
+  it('所有模型在计划期间统一展示经后端净化的思考', () => {
     const plannedRun: AgentRunState = {
       ...agentRun,
       plan: {
@@ -244,7 +244,7 @@ describe('AssistantResponseStack', () => {
         agentRun={plannedRun}
       />,
     );
-    expect(screen.queryByTestId('stack-reasoning')).not.toBeInTheDocument();
+    expect(screen.getByTestId('stack-reasoning')).toHaveTextContent('正在核对问题边界');
 
     rerender(
       <AssistantResponseStack
@@ -260,7 +260,7 @@ describe('AssistantResponseStack', () => {
   it.each([
     ['kimi-k2.5', 'moonshot'],
     ['kimi-k3', 'openrouter'],
-  ])('不会仅凭相近模型或提供商放开思考：%s / %s', (modelId, providerId) => {
+  ])('模型标识不再控制计划思考展示：%s / %s', (modelId, providerId) => {
     render(
       <AssistantResponseStack
         assistantMessageId="assistant-1"
@@ -268,7 +268,7 @@ describe('AssistantResponseStack', () => {
         providerId={providerId}
         reasoning={{
           shouldRender: true,
-          content: '不应展示的计划思考',
+          content: '后端已净化的计划思考',
           isVisible: true,
           isStreaming: true,
           onToggle: vi.fn(),
@@ -286,7 +286,7 @@ describe('AssistantResponseStack', () => {
       />,
     );
 
-    expect(screen.queryByTestId('stack-reasoning')).not.toBeInTheDocument();
+    expect(screen.getByTestId('stack-reasoning')).toHaveTextContent('后端已净化的计划思考');
   });
 
   it.each([
@@ -337,7 +337,7 @@ describe('AssistantResponseStack', () => {
     expect(screen.getByTestId('stack-reasoning')).toHaveTextContent('已核对所需资料');
   });
 
-  it('其他模型已结束的深度研究仍抑制内部思考', () => {
+  it('其他模型已结束的深度研究展示后端持久化思考', () => {
     render(
       <AssistantResponseStack
         assistantMessageId="assistant-1"
@@ -364,7 +364,7 @@ describe('AssistantResponseStack', () => {
       />,
     );
 
-    expect(screen.queryByTestId('stack-reasoning')).not.toBeInTheDocument();
+    expect(screen.getByTestId('stack-reasoning')).toHaveTextContent('深度研究内部搜索参数');
   });
 
   it('K3 深度研究在计划尚未生成时展示流式净化思考', () => {

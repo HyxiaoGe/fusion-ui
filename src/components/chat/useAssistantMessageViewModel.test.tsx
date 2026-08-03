@@ -711,10 +711,10 @@ describe('useAssistantMessageViewModel', () => {
       label: '其他模型',
       modelId: 'qwen-max',
       providerId: 'qwen',
-      expectedSuppression: true,
-      expectedThinking: false,
+      expectedSuppression: false,
+      expectedThinking: true,
     },
-  ])('$label 在工具运行期间按模型范围处理流式思考', ({
+  ])('$label 在工具运行期间统一展示已收到的流式思考', ({
     modelId,
     providerId,
     expectedSuppression,

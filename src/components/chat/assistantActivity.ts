@@ -138,7 +138,7 @@ function deriveIssue(
     if (searchIssueCall) {
       return hasUsableStructuredResult
         ? toOverallPartialIssue(searchIssueCall)
-        : toToolIssue(searchIssueCall.status, searchIssueCall);
+        : toResolvedToolIssue(currentRun, searchIssueCall);
     }
 
     const nonSearchToolIssueCall = findLatestOpenToolIssueCall(
@@ -146,10 +146,10 @@ function deriveIssue(
       call => getToolKind(call.toolName) !== 'web_search',
     );
 
-    if (nonSearchToolIssueCall?.status === 'failed' || nonSearchToolIssueCall?.status === 'degraded') {
+    if (isToolIssueCall(nonSearchToolIssueCall)) {
       return hasUsableStructuredResult
         ? toOverallPartialIssue(nonSearchToolIssueCall)
-        : toToolIssue(nonSearchToolIssueCall.status, nonSearchToolIssueCall);
+        : toResolvedToolIssue(currentRun, nonSearchToolIssueCall);
     }
 
     if (searchBlock.sources.length === 0) {
@@ -177,13 +177,66 @@ function deriveIssue(
 
   const toolIssueCall = findLatestOpenToolIssueCall(currentRun);
 
-  if (toolIssueCall?.status === 'failed' || toolIssueCall?.status === 'degraded') {
+  if (isToolIssueCall(toolIssueCall)) {
     return hasUsableStructuredResult
       ? toOverallPartialIssue(toolIssueCall)
-      : toToolIssue(toolIssueCall.status, toolIssueCall);
+      : toResolvedToolIssue(currentRun, toolIssueCall);
   }
 
   return null;
+}
+
+function toResolvedToolIssue(currentRun: AgentRunState | null, call: ToolIssueCall): AssistantToolIssue {
+  if (getToolKind(call.toolName) === 'url_read') {
+    return toAggregatedUrlReadIssue(currentRun, call);
+  }
+
+  return toToolIssue(call.status, call);
+}
+
+function toAggregatedUrlReadIssue(
+  currentRun: AgentRunState | null,
+  fallbackCall: ToolIssueCall,
+): AssistantToolIssue {
+  const latestCallsByPage = new Map<string, ToolCallState>();
+
+  for (const call of getToolCallsNewestFirst(currentRun)) {
+    if (getToolKind(call.toolName) !== 'url_read' || !isTerminalToolStatus(call.status)) {
+      continue;
+    }
+
+    const pageKey = getStringArgument(call, 'url') || call.toolCallId;
+    if (!latestCallsByPage.has(pageKey)) {
+      latestCallsByPage.set(pageKey, call);
+    }
+  }
+
+  const latestCalls = [...latestCallsByPage.values()];
+  const successCount = latestCalls.filter(call => call.status === 'success').length;
+  const issueCount = latestCalls.filter(call => call.status === 'failed' || call.status === 'degraded').length;
+  const baseIssue = toToolIssue(fallbackCall.status, fallbackCall);
+
+  if (issueCount <= 1 && successCount === 0) {
+    return {
+      ...baseIssue,
+      title: '有一个网页未能读取',
+    };
+  }
+
+  if (successCount > 0) {
+    return {
+      ...baseIssue,
+      kind: 'degraded',
+      title: '部分网页未能读取',
+      detail: `已跳过 ${issueCount} 个页面`,
+    };
+  }
+
+  return {
+    ...baseIssue,
+    title: '所有候选网页均未能读取',
+    detail: `已跳过 ${issueCount} 个页面`,
+  };
 }
 
 function findSearchBlockIssueCall(currentRun: AgentRunState | null, searchBlock: SearchBlock): ToolIssueCall | null {
