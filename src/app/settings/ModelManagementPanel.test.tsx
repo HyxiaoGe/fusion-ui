@@ -87,6 +87,7 @@ const baseSnapshot: ModelManagementSnapshot = {
     },
     {
       provider_key: 'google',
+      provider_display: 'Google Gemini',
       model_id: 'gemini-next',
       state: 'preflight_required',
       reasons: ['尚未完成真实调用预检'],
@@ -132,17 +133,171 @@ describe('ModelManagementPanel', () => {
     expect(screen.queryByRole('button', { name: /删除/ })).toBeNull();
   });
 
-  it('治理不可用时清晰降级且不提供候选上线动作', async () => {
+  it('按提供商汇总数量，并同时筛选已注册模型和治理候选', async () => {
+    await renderLoaded();
+
+    const providerFilter = screen.getByRole('combobox', { name: '按提供商筛选模型' });
+    expect(providerFilter).toHaveTextContent('全部提供商');
+    fireEvent.click(providerFilter);
+
+    const googleOption = screen.getByRole('option', { name: /Google Gemini/ });
+    expect(googleOption).toHaveTextContent('0 已注册');
+    expect(googleOption).toHaveTextContent('1 候选');
+    fireEvent.click(googleOption);
+
+    expect(providerFilter).toHaveTextContent('Google Gemini');
+    expect(screen.getByText('gemini-next')).toBeInTheDocument();
+    expect(screen.queryByText('kimi-k3.1')).toBeNull();
+    expect(screen.queryByText('Kimi K3')).toBeNull();
+    expect(screen.queryByText('Legacy Model')).toBeNull();
+    expect(screen.getByText('当前提供商没有已注册模型')).toBeInTheDocument();
+    expect(screen.getByTestId('visible-registered-model-count')).toHaveTextContent('0 / 2');
+    expect(screen.getByTestId('visible-candidate-count')).toHaveTextContent('1 / 2');
+  });
+
+  it('统一搜索模型名称和 ID，并忽略大小写及首尾空格', async () => {
+    await renderLoaded();
+
+    const searchInput = screen.getByRole('searchbox', { name: '搜索模型' });
+    fireEvent.change(searchInput, { target: { value: '  kImI  ' } });
+
+    expect(screen.getByText('Kimi K3')).toBeInTheDocument();
+    expect(screen.getByText('kimi-k3.1')).toBeInTheDocument();
+    expect(screen.queryByText('Legacy Model')).toBeNull();
+    expect(screen.queryByText('gemini-next')).toBeNull();
+    expect(screen.getByTestId('visible-registered-model-count')).toHaveTextContent('1 / 2');
+    expect(screen.getByTestId('visible-candidate-count')).toHaveTextContent('1 / 2');
+  });
+
+  it('搜索与提供商分类叠加，支持提供商名称并可一键清空', async () => {
+    await renderLoaded();
+
+    const providerFilter = screen.getByRole('combobox', { name: '按提供商筛选模型' });
+    fireEvent.click(providerFilter);
+    fireEvent.click(screen.getByRole('option', { name: /Google Gemini/ }));
+
+    const searchInput = screen.getByRole('searchbox', { name: '搜索模型' });
+    fireEvent.change(searchInput, { target: { value: 'kimi' } });
+    expect(screen.getByText('当前提供商没有匹配的已注册模型')).toBeInTheDocument();
+    expect(screen.getByText('当前提供商没有匹配的治理候选')).toBeInTheDocument();
+
+    fireEvent.change(searchInput, { target: { value: ' gemini ' } });
+    expect(screen.getByText('gemini-next')).toBeInTheDocument();
+    expect(screen.queryByText('kimi-k3.1')).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: '清除模型搜索' }));
+    expect(searchInput).toHaveValue('');
+    expect(screen.getByText('gemini-next')).toBeInTheDocument();
+    expect(providerFilter).toHaveTextContent('Google Gemini');
+  });
+
+  it('刷新后所选提供商已不存在时自动恢复全部分类', async () => {
+    const moonshotOnly: ModelManagementSnapshot = {
+      ...baseSnapshot,
+      models: baseSnapshot.models.filter((model) => model.provider === 'moonshot'),
+      candidates: baseSnapshot.candidates.filter((candidate) => candidate.provider_key === 'moonshot'),
+    };
+    fetchModelManagementSnapshotMock
+      .mockResolvedValueOnce(baseSnapshot)
+      .mockResolvedValueOnce(moonshotOnly);
+
+    render(<ModelManagementPanel />);
+    await screen.findByTestId('registered-model-count');
+    const providerFilter = screen.getByRole('combobox', { name: '按提供商筛选模型' });
+    fireEvent.click(providerFilter);
+    fireEvent.click(screen.getByRole('option', { name: /Google Gemini/ }));
+    expect(providerFilter).toHaveTextContent('Google Gemini');
+
+    fireEvent.click(screen.getByRole('button', { name: '刷新' }));
+
+    await waitFor(() => expect(providerFilter).toHaveTextContent('全部提供商'));
+    expect(screen.getByText('Kimi K3')).toBeInTheDocument();
+    expect(screen.getByText('kimi-k3.1')).toBeInTheDocument();
+    expect(screen.queryByText('gemini-next')).toBeNull();
+  });
+
+  it('兼容无 status 的旧 API 响应并保留候选上线动作', async () => {
+    await renderLoaded();
+
+    expect(screen.getByRole('button', { name: '上线 kimi-k3.1' })).toBeEnabled();
+    expect(screen.queryByText('最新治理扫描部分失败')).toBeNull();
+  });
+
+  it('最新治理扫描失败时展示最近成功候选，用单一告警暂停准入', async () => {
+    await renderLoaded({
+      ...baseSnapshot,
+      governance: {
+        available: true,
+        status: 'degraded',
+        run_id: 'run-20260804-001',
+        reason: 'latest_run_failed',
+        message: '最新治理运行失败，当前展示上一次有效快照；模型准入已暂停。',
+      },
+      capabilities: {
+        ...baseSnapshot.capabilities,
+        admission_enabled: false,
+      },
+    });
+
+    expect(screen.getByText('kimi-k3.1')).toBeInTheDocument();
+    expect(screen.getByText('gemini-next')).toBeInTheDocument();
+    const alerts = screen.getAllByRole('alert');
+    expect(alerts).toHaveLength(1);
+    expect(alerts[0]).toHaveTextContent('最新治理扫描部分失败');
+    expect(alerts[0]).toHaveTextContent('当前展示上一次有效快照');
+    expect(alerts[0]).toHaveTextContent('模型准入已暂停');
+    expect(screen.queryByText(/模型上线能力当前未启用/)).toBeNull();
+    expect(screen.getByRole('button', { name: '上线已暂停 kimi-k3.1' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: '验证并上线已暂停 gemini-next' })).toBeDisabled();
+    expect(screen.queryByRole('button', { name: '上线 kimi-k3.1' })).toBeNull();
+  });
+
+  it('治理降级时已成功上线的候选不再显示暂停按钮', async () => {
+    await renderLoaded({
+      ...baseSnapshot,
+      governance: {
+        available: true,
+        status: 'degraded',
+        run_id: 'run-20260804-001',
+        reason: 'latest_run_failed',
+      },
+      capabilities: {
+        ...baseSnapshot.capabilities,
+        admission_enabled: false,
+      },
+      operations: [
+        {
+          operation_id: 'operation-succeeded',
+          candidate_fingerprint: 'fingerprint-ready',
+          model_id: 'kimi-k3.1',
+          status: 'succeeded',
+          created_at: '2026-08-04T00:00:00Z',
+          updated_at: '2026-08-04T00:01:00Z',
+        },
+      ],
+    });
+
+    expect(screen.getByText('上线成功')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '上线已暂停 kimi-k3.1' })).toBeNull();
+  });
+
+  it('治理真正不可用时不重复告警语义且不提供候选上线动作', async () => {
     await renderLoaded({
       ...baseSnapshot,
       governance: {
         available: false,
-        message: '治理产物暂不可读取',
+        status: 'unavailable',
+        reason: 'verified_snapshot_unavailable',
+        message: '治理候选暂时不可用',
       },
     });
 
-    expect(screen.getByRole('alert')).toHaveTextContent('治理产物暂不可读取');
+    const alert = screen.getByRole('alert');
+    expect(alert).toHaveTextContent('治理候选当前不可用');
+    expect(alert).toHaveTextContent('已注册模型仍可管理');
+    expect(alert).not.toHaveTextContent('治理候选暂时不可用');
     expect(screen.queryByRole('button', { name: /上线 kimi-k3\.1/ })).toBeNull();
+    expect(screen.queryByRole('button', { name: /验证并上线 gemini-next/ })).toBeNull();
   });
 
   it('隐藏动作要求填写原因并明确只影响新选择，成功后刷新管理快照与全局模型 Redux', async () => {
@@ -202,11 +357,62 @@ describe('ModelManagementPanel', () => {
     expect(dispatchMock).toHaveBeenCalledWith(expect.objectContaining({ type: 'models/updateModels' }));
   });
 
-  it('只有治理能力开启的 admission_ready 候选提供可用上线动作', async () => {
+  it('可见性已写入但后续刷新失败时不误报写操作失败', async () => {
+    prepareLoadedSnapshot();
+    updateModelVisibilityMock.mockResolvedValue({});
+    fetchModelManagementSnapshotMock
+      .mockResolvedValueOnce(baseSnapshot)
+      .mockRejectedValueOnce(new Error('管理快照刷新失败'));
+    refreshModelsMock.mockResolvedValue({ models: [], providers: [] });
+
+    render(<ModelManagementPanel />);
+    await screen.findByTestId('registered-model-count');
+    fireEvent.click(screen.getByRole('button', { name: '隐藏 Kimi K3' }));
+    fireEvent.change(screen.getByLabelText('操作原因'), { target: { value: '临时维护' } });
+    fireEvent.click(screen.getByRole('button', { name: '确认隐藏' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('可见性已更新，但后续页面或模型目录刷新未完成');
+    expect(screen.getByRole('status')).toHaveTextContent('Kimi K3 的可见性已更新');
+    expect(screen.queryByText('模型可见性更新失败')).toBeNull();
+  });
+
+  it('治理能力开启时同时提供直接上线和验证并上线动作', async () => {
     await renderLoaded();
 
     expect(screen.getByRole('button', { name: '上线 kimi-k3.1' })).toBeEnabled();
-    expect(screen.queryByRole('button', { name: '上线 gemini-next' })).toBeNull();
+    expect(screen.getByRole('button', { name: '验证并上线 gemini-next' })).toBeEnabled();
+  });
+
+  it('等待预检的候选复用准入 API，弹窗明确真实调用费用与全部通过门槛', async () => {
+    const pendingOperation = {
+      operation_id: 'operation-preflight',
+      candidate_fingerprint: 'fingerprint-waiting',
+      model_id: 'gemini-next',
+      status: 'pending',
+    };
+    fetchModelManagementSnapshotMock
+      .mockResolvedValueOnce(baseSnapshot)
+      .mockResolvedValueOnce({ ...baseSnapshot, operations: [pendingOperation] });
+    admitModelCandidateMock.mockResolvedValue(pendingOperation);
+
+    render(<ModelManagementPanel />);
+    await screen.findByTestId('registered-model-count');
+    fireEvent.click(screen.getByRole('button', { name: '验证并上线 gemini-next' }));
+
+    const dialog = screen.getByRole('dialog');
+    expect(dialog).toHaveTextContent('先执行真实兼容性预检');
+    expect(dialog).toHaveTextContent('可能产生少量模型调用费用');
+    expect(dialog).toHaveTextContent('全部通过后才会上线');
+    fireEvent.change(within(dialog).getByLabelText('操作原因'), { target: { value: '验证新版本' } });
+    fireEvent.click(within(dialog).getByRole('button', { name: '确认验证并上线' }));
+
+    await waitFor(() => {
+      expect(admitModelCandidateMock).toHaveBeenCalledWith('fingerprint-waiting', {
+        model_id: 'gemini-next',
+        expected_run_id: 'run-20260804-001',
+        reason: '验证新版本',
+      });
+    });
   });
 
   it('候选上线只创建排队操作，不提前刷新全局模型目录', async () => {
@@ -295,6 +501,49 @@ describe('ModelManagementPanel', () => {
     expect(dispatchMock).toHaveBeenCalledWith(expect.objectContaining({ type: 'models/updateModels' }));
   });
 
+  it('活动任务轮询瞬时失败后会继续轮询直到终态', async () => {
+    const pendingOperation = {
+      operation_id: 'operation-retry-poll',
+      candidate_fingerprint: 'fingerprint-ready',
+      model_id: 'kimi-k3.1',
+      status: 'pending',
+    };
+    const succeededOperation = { ...pendingOperation, status: 'succeeded' };
+    fetchModelManagementSnapshotMock
+      .mockResolvedValueOnce(baseSnapshot)
+      .mockResolvedValueOnce({ ...baseSnapshot, operations: [pendingOperation] })
+      .mockRejectedValueOnce(new Error('网络瞬时中断'))
+      .mockResolvedValueOnce({ ...baseSnapshot, operations: [succeededOperation] })
+      .mockResolvedValue({ ...baseSnapshot, operations: [succeededOperation] });
+    admitModelCandidateMock.mockResolvedValue(pendingOperation);
+    refreshModelsMock.mockResolvedValue({ models: [], providers: [] });
+
+    render(<ModelManagementPanel />);
+    await screen.findByTestId('registered-model-count');
+    vi.useFakeTimers();
+    fireEvent.click(screen.getByRole('button', { name: '上线 kimi-k3.1' }));
+    fireEvent.change(screen.getByLabelText('操作原因'), { target: { value: '允许上线' } });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: '确认上线' }));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1500);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(refreshModelsMock).not.toHaveBeenCalled();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1500);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(refreshModelsMock).toHaveBeenCalledTimes(1);
+  });
+
   it('同一候选有 running 操作时禁用重复上线', async () => {
     await renderLoaded({
       ...baseSnapshot,
@@ -310,7 +559,7 @@ describe('ModelManagementPanel', () => {
     expect(screen.queryByRole('button', { name: '上线 kimi-k3.1' })).toBeNull();
   });
 
-  it('刷新页面后首次看到已成功的上线任务时同步一次全局模型目录', async () => {
+  it('刷新页面看到历史成功任务时只展示状态，不触发新的目录同步或成功提示', async () => {
     const succeededOperation: ModelAdmissionOperation = {
       operation_id: 'operation-succeeded-before-mount',
       candidate_fingerprint: 'fingerprint-ready',
@@ -318,32 +567,56 @@ describe('ModelManagementPanel', () => {
       status: 'succeeded',
     };
     prepareLoadedSnapshot({ ...baseSnapshot, operations: [succeededOperation] });
-    refreshModelsMock.mockResolvedValue({
-      providers: [{ id: 'moonshot', name: 'Moonshot', order: 1 }],
-      models: [{
-        id: 'kimi-k3.1',
-        name: 'Kimi K3.1',
-        provider: 'moonshot',
-        capabilities: {},
-        temperature: 0.7,
-        enabled: true,
-        selectable: true,
-        routable: true,
-      }],
-    });
-
     render(<ModelManagementPanel />);
     await screen.findByTestId('registered-model-count');
 
-    await waitFor(() => expect(refreshModelsMock).toHaveBeenCalledTimes(1));
-    expect(updateModelsMock).toHaveBeenCalledWith([
-      expect.objectContaining({ id: 'kimi-k3.1', selectable: true, routable: true }),
-    ]);
+    expect(screen.getByText('上线成功')).toBeInTheDocument();
+    expect(refreshModelsMock).not.toHaveBeenCalled();
+    expect(updateModelsMock).not.toHaveBeenCalled();
+    expect(screen.queryByText(/Kimi K3\.1 已上线/)).toBeNull();
     expect(screen.queryByRole('button', { name: '上线 kimi-k3.1' })).toBeNull();
 
     fireEvent.click(screen.getByRole('button', { name: '刷新' }));
-    await waitFor(() => expect(fetchModelManagementSnapshotMock).toHaveBeenCalledTimes(3));
-    expect(refreshModelsMock).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(fetchModelManagementSnapshotMock).toHaveBeenCalledTimes(2));
+    expect(refreshModelsMock).not.toHaveBeenCalled();
+  });
+
+  it('并发刷新复用同一请求，写操作后的新快照不会被旧响应覆盖', async () => {
+    let resolveOldRefresh!: (snapshot: ModelManagementSnapshot) => void;
+    const oldRefresh = new Promise<ModelManagementSnapshot>((resolve) => {
+      resolveOldRefresh = resolve;
+    });
+    const refreshedSnapshot: ModelManagementSnapshot = {
+      ...baseSnapshot,
+      models: baseSnapshot.models.map((model) => (
+        model.model_id === 'kimi-k3' ? { ...model, selectable: false, state: 'hidden', revision: 8 } : model
+      )),
+    };
+    fetchModelManagementSnapshotMock
+      .mockResolvedValueOnce(baseSnapshot)
+      .mockReturnValueOnce(oldRefresh)
+      .mockResolvedValueOnce(refreshedSnapshot);
+    updateModelVisibilityMock.mockResolvedValue({});
+    refreshModelsMock.mockResolvedValue({ models: [], providers: [] });
+
+    render(<ModelManagementPanel />);
+    await screen.findByTestId('registered-model-count');
+    fireEvent.click(screen.getByRole('button', { name: '刷新' }));
+    fireEvent.click(screen.getByRole('button', { name: '刷新' }));
+    expect(fetchModelManagementSnapshotMock).toHaveBeenCalledTimes(2);
+
+    fireEvent.click(screen.getByRole('button', { name: '隐藏 Kimi K3' }));
+    fireEvent.change(screen.getByLabelText('操作原因'), { target: { value: '临时维护' } });
+    fireEvent.click(screen.getByRole('button', { name: '确认隐藏' }));
+
+    expect(await screen.findByRole('button', { name: '恢复 Kimi K3' })).toBeInTheDocument();
+    resolveOldRefresh(baseSnapshot);
+    await act(async () => {
+      await oldRefresh;
+      await Promise.resolve();
+    });
+    expect(screen.getByRole('button', { name: '恢复 Kimi K3' })).toBeInTheDocument();
+    expect(fetchModelManagementSnapshotMock).toHaveBeenCalledTimes(3);
   });
 
   it('刷新页面看到历史失败任务时仅在候选列表展示，不弹出主动错误', async () => {

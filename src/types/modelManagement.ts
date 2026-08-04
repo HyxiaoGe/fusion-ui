@@ -1,6 +1,8 @@
 export interface ModelManagementGovernanceStatus {
   available: boolean;
+  status?: 'available' | 'degraded' | 'unavailable';
   run_id?: string | null;
+  reason?: string | null;
   message?: string | null;
 }
 
@@ -31,6 +33,7 @@ export interface ModelManagementRegisteredModel {
 
 export interface ModelManagementCandidate {
   provider_key: string;
+  provider_display?: string;
   model_id: string;
   state: string;
   reasons: string[];
