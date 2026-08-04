@@ -49,7 +49,11 @@ const RecentModels = memo(
   }) => {
     const recentModels = modelIds
       .map((id) => allModels.find((m) => m.id === id))
-      .filter((m): m is ModelInfo => m != null && m.enabled !== false);
+      .filter((m): m is ModelInfo => (
+        m != null
+        && m.enabled !== false
+        && m.selectable !== false
+      ));
 
     if (recentModels.length === 0) return null;
 

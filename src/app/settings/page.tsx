@@ -4,9 +4,10 @@ import MainLayout from "@/components/layouts/MainLayout";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useAppSelector } from "@/redux/hooks";
 import { motion } from "framer-motion";
-import { Activity, Database, Network, SlidersHorizontal, Sparkles } from "lucide-react";
+import { Activity, Bot, Database, Network, SlidersHorizontal, Sparkles } from "lucide-react";
 import DataManagement from "./DataManagement";
 import McpServerManager from "./McpServerManager";
+import ModelManagementPanel from "./ModelManagementPanel";
 import RuntimeConfigManager from "./RuntimeConfigManager";
 import ServiceUsagePanel from "./ServiceUsagePanel";
 import SystemPrompt from "./SystemPrompt";
@@ -27,7 +28,7 @@ export default function SettingsPage() {
       <div className="w-full h-full px-6 pt-0 flex flex-col">
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4 w-full flex-grow flex flex-col">
           <div data-testid="settings-tabs-scroller" className="bg-card/50 backdrop-blur-sm border rounded-lg shadow-sm p-1 sticky top-0 z-10 flex-shrink-0 overflow-x-auto dark:bg-slate-800/70 dark:border-slate-700 mt-0">
-            <TabsList className={`grid w-full gap-1 bg-transparent dark:bg-transparent ${showAdminTabs ? "min-w-[36rem] grid-cols-5 md:min-w-0" : "grid-cols-2"}`}>
+            <TabsList className={`grid w-full gap-1 bg-transparent dark:bg-transparent ${showAdminTabs ? "min-w-[44rem] grid-cols-6 md:min-w-0" : "grid-cols-2"}`}>
               <TabsTrigger value="general" className="flex gap-2 items-center justify-center">
                 <Sparkles className="h-4 w-4" />
                 <span className="hidden md:inline">AI 个性化</span>
@@ -54,6 +55,11 @@ export default function SettingsPage() {
                     <Network className="h-4 w-4" />
                     <span className="hidden md:inline">MCP 服务</span>
                     <span className="md:hidden">MCP</span>
+                  </TabsTrigger>
+                  <TabsTrigger value="model-management" className="flex gap-2 items-center justify-center">
+                    <Bot className="h-4 w-4" />
+                    <span className="hidden md:inline">模型管理</span>
+                    <span className="md:hidden">模型</span>
                   </TabsTrigger>
                 </>
               )}
@@ -86,6 +92,10 @@ export default function SettingsPage() {
 
               <TabsContent value="mcp-servers" className="space-y-6 w-full flex-grow overflow-auto">
                 <McpServerManager />
+              </TabsContent>
+
+              <TabsContent value="model-management" className="space-y-6 w-full flex-grow overflow-auto">
+                <ModelManagementPanel />
               </TabsContent>
             </>
           )}

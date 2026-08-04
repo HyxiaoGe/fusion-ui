@@ -71,7 +71,11 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({
         .sort((a, b) => a.order - b.order)
         .map((provider) => ({
           ...provider,
-          models: models.filter((m) => m.provider === provider.id && m.enabled !== false),
+          models: models.filter((m) => (
+            m.provider === provider.id
+            && m.enabled !== false
+            && m.selectable !== false
+          )),
         }))
         .filter((group) => group.models.length > 0),
     [providers, models],

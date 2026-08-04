@@ -8,7 +8,12 @@ export type SendModelResolution =
   | { status: 'no_enabled_model' };
 
 export function isModelAvailableForSending(model: Model): boolean {
-  return model.enabled !== false && model.health?.status !== 'unhealthy';
+  const routable = model.routable ?? model.health?.status !== 'unhealthy';
+  return model.enabled !== false && routable;
+}
+
+export function isModelAvailableForNewConversation(model: Model): boolean {
+  return model.selectable !== false && isModelAvailableForSending(model);
 }
 
 export function resolveSendModel(
@@ -32,11 +37,11 @@ export function resolveSendModel(
   const selectedModel = state.models.models.find(
     (model) => (
       model.id === state.models.selectedModelId
-      && isModelAvailableForSending(model)
+      && isModelAvailableForNewConversation(model)
     ),
   );
   const fallbackModel = selectedModel
-    ?? state.models.models.find(isModelAvailableForSending);
+    ?? state.models.models.find(isModelAvailableForNewConversation);
   return fallbackModel
     ? { status: 'ready', model: fallbackModel }
     : { status: 'no_enabled_model' };

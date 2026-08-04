@@ -64,6 +64,8 @@ export interface ApiModelData {
     unit: string;
   };
   enabled: boolean;
+  selectable?: boolean;
+  routable?: boolean;
   health?: ModelHealth;
   description?: string;
   capabilityPresentation?: ModelCapabilityPresentation;
@@ -86,6 +88,8 @@ export interface ModelInfo {
   temperature: number; // 默认温度
   capabilities: ModelCapability; // 能力标识
   enabled: boolean; // 是否在 LiteLLM 注册（true）；false 通常意味着已下架
+  selectable?: boolean; // 是否允许在新对话中选择；false 不影响已有对话
+  routable?: boolean; // 是否仍可路由发送；已有对话不受 selectable 影响
   health?: ModelHealth; // 健康探测结果，unhealthy 时选择器灰显
   description?: string; // 模型简要描述，用于悬停提示
   capabilityPresentation?: ModelCapabilityPresentation; // 后端派生的能力展示配置
@@ -109,6 +113,8 @@ export const convertApiModelToModelInfo = (apiModel: ApiModelData): ModelInfo =>
     temperature: 0.7, // 默认值，可以根据需求调整
     capabilities: apiModel.capabilities,
     enabled: apiModel.enabled,
+    selectable: apiModel.selectable,
+    routable: apiModel.routable,
     health: apiModel.health,
     description: apiModel.description,
     capabilityPresentation: apiModel.capabilityPresentation,

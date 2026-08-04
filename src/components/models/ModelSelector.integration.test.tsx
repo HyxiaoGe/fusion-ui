@@ -37,6 +37,15 @@ const { dispatchMock, pathnameMock, modelsStateMock, conversationStateMock } = v
             deepThinking: false,
           },
         },
+        {
+          id: 'hidden-model',
+          name: 'Hidden Model',
+          provider: 'provider-a',
+          enabled: true,
+          selectable: false,
+          routable: true,
+          capabilities: {},
+        },
       ],
     } as any,
   },
@@ -103,6 +112,15 @@ describe('ModelSelector 集成渲染', () => {
             deepThinking: false,
           },
         },
+        {
+          id: 'hidden-model',
+          name: 'Hidden Model',
+          provider: 'provider-a',
+          enabled: true,
+          selectable: false,
+          routable: true,
+          capabilities: {},
+        },
       ],
     };
     conversationStateMock.current = {
@@ -129,6 +147,7 @@ describe('ModelSelector 集成渲染', () => {
     expect(screen.getAllByText('读图')).toHaveLength(2);
     expect(screen.getAllByText('长上下文')).toHaveLength(2);
     expect(screen.getByText('深度任务')).toBeInTheDocument();
+    expect(screen.queryByText('Hidden Model')).toBeNull();
   });
 
   it('toolbarMode 在窄屏隐藏 provider 和能力标签，sm 恢复桌面信息', () => {

@@ -47,4 +47,19 @@ describe('modelConfig', () => {
     expect(model.capabilityPresentation?.headline).toBe('后端推荐标题');
     expect(model.capabilityPresentation?.tooltip).toBe('后端 tooltip');
   });
+
+  it('保留模型的新选择可见性与已有对话可路由状态', () => {
+    const model = convertApiModelToModelInfo({
+      modelId: 'hidden-model',
+      name: 'Hidden Model',
+      provider: 'test',
+      capabilities: {},
+      enabled: true,
+      selectable: false,
+      routable: true,
+    });
+
+    expect(model.selectable).toBe(false);
+    expect(model.routable).toBe(true);
+  });
 });

@@ -1,12 +1,12 @@
 import { ModelInfo } from '@/lib/config/modelConfig';
 
 export const getPreferredModelId = (
-  models: Pick<ModelInfo, 'id' | 'enabled'>[],
+  models: Pick<ModelInfo, 'id' | 'enabled' | 'selectable'>[],
   requestedModelId?: string | null,
 ): string | null => {
   const requestedModel = requestedModelId ? models.find((model) => model.id === requestedModelId) : null;
 
-  if (requestedModel && requestedModel.enabled !== false) {
+  if (requestedModel && isModelSelectable(requestedModel)) {
     return requestedModel.id;
   }
 
@@ -14,19 +14,20 @@ export const getPreferredModelId = (
 };
 
 export const getFirstEnabledModelId = (
-  models: Pick<ModelInfo, 'id' | 'enabled'>[],
+  models: Pick<ModelInfo, 'id' | 'enabled' | 'selectable'>[],
 ): string | null => {
-  const firstEnabledModel = models.find((model) => model.enabled !== false);
+  const firstEnabledModel = models.find(isModelSelectable);
   return firstEnabledModel?.id ?? null;
 };
 
 export const getDefaultModelId = (
-  models: Pick<ModelInfo, 'id' | 'enabled'>[],
+  models: Pick<ModelInfo, 'id' | 'enabled' | 'selectable'>[],
 ): string | null => {
-  const firstEnabledModel = getFirstEnabledModelId(models);
-  if (firstEnabledModel) {
-    return firstEnabledModel;
-  }
+  return getFirstEnabledModelId(models);
+};
 
-  return models[0]?.id ?? null;
+export const isModelSelectable = (
+  model: Pick<ModelInfo, 'enabled' | 'selectable'>,
+): boolean => {
+  return model.enabled !== false && model.selectable !== false;
 };
