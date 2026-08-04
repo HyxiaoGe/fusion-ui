@@ -259,22 +259,17 @@ jobs:
             }
           }
 
-          docker buildx inspect $builder *> $null
-          if ($LASTEXITCODE -eq 0) {
-            $pruneArgs = @(
-              "buildx", "prune",
-              "--builder", $builder,
-              "--force",
-              "--max-used-space", "25gb",
-              "--reserved-space", "8gb",
-              "--min-free-space", "30gb"
-            )
-            docker @pruneArgs
-            if ($LASTEXITCODE -ne 0) {
-              Write-Warning "Failed to prune BuildKit cache for builder: $builder"
-            }
-          } else {
-            Write-Warning "Buildx builder not found, skipping cache prune: $builder"
+          $pruneArgs = @(
+            "buildx", "prune",
+            "--builder", $builder,
+            "--force",
+            "--max-used-space", "25gb",
+            "--reserved-space", "8gb",
+            "--min-free-space", "30gb"
+          )
+          docker @pruneArgs
+          if ($LASTEXITCODE -ne 0) {
+            Write-Warning "Failed to prune BuildKit cache for builder: $builder"
           }
 
           exit 0
