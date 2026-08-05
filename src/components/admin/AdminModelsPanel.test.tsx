@@ -319,7 +319,7 @@ describe('AdminModelsPanel', () => {
     fireEvent.click(screen.getByRole('button', { name: '查看模型详情 kimi-k2.5' }));
     const view = await screen.findByLabelText('模型详情 kimi-k2.5');
     expect(apiMocks.getAdminModel).toHaveBeenCalledWith('kimi-k2.5', expect.any(AbortSignal));
-    expect(view).toHaveTextContent('131,072');
+    await waitFor(() => expect(view).toHaveTextContent('131,072'));
     expect(view).toHaveTextContent('8,192');
     expect(view).toHaveTextContent('检测时间');
     expect(view).toHaveTextContent('北京时间');

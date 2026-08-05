@@ -68,7 +68,7 @@ jobs:
           $body = (($metrics -replace "`r`n", "`n").Trim() + "`n")
           $bytes = [System.Text.Encoding]::UTF8.GetBytes($body)
           try {
-            # pushgateway 本体只绑 loopback,经 nginx 9094 鉴权反代推送(凭证在仓库 Secret PUSHGW_BASIC_AUTH)
+            # pushgateway 本体只绑 loopback,经 nginx 9094 鉴权反代推送(凭证在 dev Environment Secret)
             Invoke-WebRequest -UseBasicParsing -Method Post -Uri "http://192.168.1.11:9094/metrics/job/cicd_active/project_key/fusion-ui/branch_key/$branchKey/environment_key/$environment" -ContentType "text/plain; version=0.0.4" -Headers @{ Authorization = "Basic $env:PUSHGW_AUTH" } -Body $bytes -TimeoutSec 5 | Out-Null
             Write-Host "CI/CD active metric pushed"
           } catch {
@@ -127,7 +127,9 @@ jobs:
           $builder = "fusion-ui-ci-$runnerKey"
           $image = "${env:IMAGE_NAME}:${env:GITHUB_SHA}"
 
-          docker image inspect $image *> $null
+          # GitHub 的 PowerShell 包装器使用 ErrorActionPreference=Stop；镜像不存在是清理的正常分支，
+          # 通过 cmd 静默探测，避免 native stderr 把 always cleanup 误判为失败。
+          cmd /c "docker image inspect $image >NUL 2>NUL"
           if ($LASTEXITCODE -eq 0) {
             docker image rm $image
             if ($LASTEXITCODE -ne 0) {

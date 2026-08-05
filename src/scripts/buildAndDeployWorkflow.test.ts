@@ -71,6 +71,8 @@ describe('build-and-deploy workflow 发布门禁', () => {
 
   it('Windows 发布清理本次 job 专属 Docker 凭据目录', () => {
     expect(releasePublishBlock).toContain('Join-Path $env:RUNNER_TEMP ".docker-$env:GITHUB_RUN_ID-$env:GITHUB_JOB"');
+    expect(releasePublishBlock).toContain('cmd /c "docker image inspect $image >NUL 2>NUL"');
+    expect(releasePublishBlock).not.toContain('docker image inspect $image *> $null');
     expect(releasePublishBlock).toContain('$hasExpectedName = (Split-Path $dockerConfig -Leaf) -like ".docker-*"');
     expect(releasePublishBlock).toContain('Remove-Item -Recurse -Force -Path $dockerConfig');
   });
