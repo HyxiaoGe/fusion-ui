@@ -1,0 +1,171 @@
+name: Windows Docker build
+description: 在 Windows Runner 上复用 Fusion UI 的测试与生产镜像构建逻辑
+
+inputs:
+  image-name:
+    description: 本地镜像名称
+    required: true
+  image-tag:
+    description: 本地镜像标签
+    required: true
+  auth-service-base-url:
+    description: 认证服务公开地址
+    required: false
+    default: ''
+  auth-service-client-id:
+    description: 认证服务客户端 ID
+    required: false
+    default: ''
+  auth-callback-url:
+    description: 认证回调公开地址
+    required: false
+    default: ''
+
+runs:
+  using: composite
+  steps:
+    - name: Configure Docker credential directory
+      shell: powershell -NoProfile -ExecutionPolicy Bypass -Command ". '{0}'"
+      run: |
+        $dockerConfig = Join-Path $env:RUNNER_TEMP ".docker-$env:GITHUB_RUN_ID-$env:GITHUB_JOB"
+        $buildxConfig = Join-Path (Split-Path $env:RUNNER_TEMP -Parent) ".buildx-fusion-ui"
+        New-Item -ItemType Directory -Force -Path $dockerConfig | Out-Null
+        New-Item -ItemType Directory -Force -Path $buildxConfig | Out-Null
+        "DOCKER_CONFIG=$dockerConfig" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+        "BUILDX_CONFIG=$buildxConfig" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+    - name: Verify Docker access
+      shell: powershell -NoProfile -ExecutionPolicy Bypass -Command ". '{0}'"
+      run: |
+        $ErrorActionPreference = "Continue"
+        $serviceNames = @('docker', 'com.docker.service')
+        $dockerDesktopStarted = $false
+        $desktopPaths = @(
+          "$env:ProgramFiles\Docker\Docker\Docker Desktop.exe",
+          "${env:ProgramFiles(x86)}\Docker\Docker\Docker Desktop.exe"
+        )
+
+        for ($attempt = 1; $attempt -le 6; $attempt++) {
+          Write-Host "Checking Docker access, attempt $attempt/6..."
+
+          docker version
+          if ($LASTEXITCODE -eq 0) {
+            docker ps
+            if ($LASTEXITCODE -eq 0) {
+              Write-Host "Docker daemon ready"
+              exit 0
+            }
+          }
+
+          foreach ($serviceName in $serviceNames) {
+            $service = Get-Service -Name $serviceName -ErrorAction SilentlyContinue
+            if ($null -ne $service -and $service.Status -ne "Running") {
+              Write-Host "Starting Docker service: $serviceName"
+              try {
+                Start-Service -Name $serviceName -ErrorAction Stop
+              } catch {
+                Write-Host "Docker service start failed for ${serviceName}: $($_.Exception.Message)"
+              }
+            } elseif ($null -ne $service) {
+              Write-Host "Docker service ${serviceName} status: $($service.Status)"
+            }
+          }
+
+          if (-not $dockerDesktopStarted) {
+            foreach ($desktopPath in $desktopPaths) {
+              if ($desktopPath -and (Test-Path $desktopPath)) {
+                Write-Host "Starting Docker Desktop: $desktopPath"
+                try {
+                  Start-Process -FilePath $desktopPath -WindowStyle Minimized
+                  $dockerDesktopStarted = $true
+                  break
+                } catch {
+                  Write-Host "Docker Desktop start failed: $($_.Exception.Message)"
+                }
+              }
+            }
+          }
+
+          if ($attempt -lt 6) {
+            Start-Sleep -Seconds (10 * $attempt)
+          }
+        }
+
+        Write-Host "Docker daemon did not become ready"
+        docker version
+        docker ps
+        exit 1
+
+    - name: Test and build Docker image
+      shell: powershell -NoProfile -ExecutionPolicy Bypass -Command ". '{0}'"
+      env:
+        BUILD_IMAGE_NAME: ${{ inputs.image-name }}
+        BUILD_IMAGE_TAG: ${{ inputs.image-tag }}
+        NEXT_PUBLIC_AUTH_SERVICE_BASE_URL: ${{ inputs.auth-service-base-url }}
+        NEXT_PUBLIC_AUTH_SERVICE_CLIENT_ID: ${{ inputs.auth-service-client-id }}
+        NEXT_PUBLIC_AUTH_CALLBACK_URL: ${{ inputs.auth-callback-url }}
+      run: |
+        $ErrorActionPreference = "Stop"
+        $runnerKey = '${{ runner.name }}' -replace '[^A-Za-z0-9_.-]', '-'
+        if (-not $runnerKey) { $runnerKey = "runner" }
+        $builder = "fusion-ui-ci-$runnerKey"
+        $image = "${env:BUILD_IMAGE_NAME}:${env:BUILD_IMAGE_TAG}"
+
+        cmd /c "docker buildx inspect $builder >NUL 2>NUL"
+        if ($LASTEXITCODE -ne 0) {
+          docker buildx create --name $builder --driver docker-container --use
+          if ($LASTEXITCODE -ne 0) {
+            cmd /c "docker buildx inspect $builder >NUL 2>NUL"
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
+        }
+        docker buildx use $builder
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+        docker buildx inspect --builder $builder --bootstrap
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+        $testArgs = @(
+          "buildx", "build",
+          "--builder", $builder,
+          "--target", "test",
+          "--no-cache-filter", "test",
+          "--progress", "plain",
+          "--provenance=false",
+          "."
+        )
+
+        docker @testArgs
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+        $buildArgs = @(
+          "buildx", "build",
+          "--builder", $builder,
+          "--target", "production",
+          "--load",
+          "--progress", "plain",
+          "--provenance=false",
+          "--build-arg", "NEXT_PUBLIC_AUTH_SERVICE_BASE_URL=$env:NEXT_PUBLIC_AUTH_SERVICE_BASE_URL",
+          "--build-arg", "NEXT_PUBLIC_AUTH_SERVICE_CLIENT_ID=$env:NEXT_PUBLIC_AUTH_SERVICE_CLIENT_ID",
+          "--build-arg", "NEXT_PUBLIC_AUTH_CALLBACK_URL=$env:NEXT_PUBLIC_AUTH_CALLBACK_URL",
+          "--build-arg", "API_BACKEND_URL=http://fusion-api:8000",
+          "-t", $image,
+          "."
+        )
+
+        for ($attempt = 1; $attempt -le 3; $attempt++) {
+          docker @buildArgs
+          $buildExitCode = $LASTEXITCODE
+
+          if ($buildExitCode -eq 0) {
+            break
+          }
+
+          if ($attempt -eq 3) {
+            exit $buildExitCode
+          }
+
+          $delay = 20 * $attempt
+          Write-Host "docker build 失败，第 $attempt 次，${delay}s 后重试..."
+          Start-Sleep -Seconds $delay
+        }

@@ -2,19 +2,96 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
-const workflow = readFileSync(join(process.cwd(), '.github/workflows/build-and-deploy.yml'), 'utf8');
-const buildBlock = workflow.slice(workflow.indexOf('  build:'), workflow.indexOf('  deploy-dev:'));
-const deployDevBlock = workflow.slice(workflow.indexOf('  deploy-dev:'));
+const releaseWorkflow = readFileSync(join(process.cwd(), '.github/workflows/build-and-deploy.yml'), 'utf8');
+const pullRequestWorkflow = readFileSync(join(process.cwd(), '.github/workflows/pull-request.yml'), 'utf8');
+const windowsDockerBuildAction = readFileSync(
+  join(process.cwd(), '.github/actions/windows-docker-build/action.yml'),
+  'utf8',
+);
+const releasePublishBlock = releaseWorkflow.slice(
+  releaseWorkflow.indexOf('  publish:'),
+  releaseWorkflow.indexOf('  deploy-dev:'),
+);
+const deployDevBlock = releaseWorkflow.slice(releaseWorkflow.indexOf('  deploy-dev:'));
 
 describe('build-and-deploy workflow 发布门禁', () => {
-  it('特性分支只运行 CI，不向 dev 服务器部署 Preview', () => {
-    expect(workflow).not.toContain('deploy-preview:');
-    expect(workflow).not.toContain('fusion-ui-preview');
-    expect(workflow).not.toContain('docker-compose.fusion-ui-preview.yml');
-    expect(workflow).not.toContain('3005:3000');
-    expect(workflow).not.toContain('Configure preview public env');
-    expect(workflow).toContain('$environment = if ($env:GITHUB_REF_NAME -eq "master") { "dev" } else { "ci" }');
+  it('PR CI 与 master 发布使用互斥触发器', () => {
+    expect(pullRequestWorkflow).toContain('pull_request:');
+    expect(pullRequestWorkflow).toContain('branches: [master]');
+    expect(pullRequestWorkflow).not.toContain('  push:');
+    expect(pullRequestWorkflow).not.toContain('workflow_dispatch:');
+
+    expect(releaseWorkflow).toContain('push:');
+    expect(releaseWorkflow).toContain('branches: [master]');
+    expect(releaseWorkflow).toContain('workflow_dispatch:');
+    expect(releaseWorkflow).not.toContain('pull_request:');
+    expect(releasePublishBlock).toContain("if: github.ref == 'refs/heads/master'");
+  });
+
+  it('master 发布不会被后续 push 中途取消', () => {
+    expect(releaseWorkflow).toContain('group: fusion-ui-build-deploy-${{ github.ref }}');
+    expect(releaseWorkflow).toContain('cancel-in-progress: false');
+    expect(pullRequestWorkflow).toContain('cancel-in-progress: true');
+  });
+
+  it('PR 路径只使用无发布权限的临时 Linux Runner', () => {
+    expect(pullRequestWorkflow.match(/name: Build on Windows runner/g)).toHaveLength(1);
+    expect(pullRequestWorkflow).toContain('过渡检查名');
+    expect(pullRequestWorkflow).toContain('runs-on: ubuntu-latest');
+    expect(pullRequestWorkflow).not.toContain('self-hosted');
+    expect(pullRequestWorkflow).not.toContain('Windows, X64');
+    expect(pullRequestWorkflow).not.toContain('environment:');
+    expect(pullRequestWorkflow).not.toContain('${{ secrets.');
+    expect(pullRequestWorkflow).not.toContain('docker/login-action');
+    expect(pullRequestWorkflow).not.toContain('docker push');
+    expect(pullRequestWorkflow).not.toContain('deploy-dev:');
+    expect(pullRequestWorkflow).not.toContain('deploy-preview:');
+    expect(pullRequestWorkflow).toContain('persist-credentials: false');
+  });
+
+  it('master 发布构建独占 Windows Runner 与 dev Environment', () => {
+    expect(releasePublishBlock.match(/name: Publish master image on Windows runner/g)).toHaveLength(1);
+    expect(releasePublishBlock).toContain('runs-on: [self-hosted, Windows, X64]');
+    expect(releasePublishBlock).toContain('environment:');
+    expect(releasePublishBlock).toContain('name: dev');
+    expect(releasePublishBlock).toContain('deployment: false');
+    expect(releasePublishBlock).toContain('docker/login-action@v4.2.0');
+    expect(releasePublishBlock).toContain('docker push $image');
+    expect(releasePublishBlock).toContain('persist-credentials: false');
+  });
+
+  it('dev 部署依赖发布构建并绑定 dev Environment', () => {
+    expect(deployDevBlock).toContain('needs: publish');
+    expect(deployDevBlock).toContain('environment: dev');
     expect(deployDevBlock).toContain("if: github.ref == 'refs/heads/master'");
+    expect(deployDevBlock).toContain('${{ needs.publish.outputs.started_at }}');
+    expect(deployDevBlock).toContain('${{ needs.publish.outputs.runner_name }}');
+    expect(deployDevBlock).toContain('persist-credentials: false');
+  });
+
+  it('Windows 发布清理本次 job 专属 Docker 凭据目录', () => {
+    expect(releasePublishBlock).toContain('Join-Path $env:RUNNER_TEMP ".docker-$env:GITHUB_RUN_ID-$env:GITHUB_JOB"');
+    expect(releasePublishBlock).toContain('$hasExpectedName = (Split-Path $dockerConfig -Leaf) -like ".docker-*"');
+    expect(releasePublishBlock).toContain('Remove-Item -Recurse -Force -Path $dockerConfig');
+  });
+
+  it('Linux 部署隔离并清理本次 job 的 Docker 凭据目录', () => {
+    expect(deployDevBlock).toContain('dockerConfig="${RUNNER_TEMP}/.docker-${GITHUB_RUN_ID}-${GITHUB_JOB}"');
+    expect(deployDevBlock).toContain('echo "DOCKER_CONFIG=$dockerConfig" >> "$GITHUB_ENV"');
+    expect(deployDevBlock).toContain('if [[ "$dockerConfig" != "$expectedDockerConfig" || "$dockerConfig" != "${RUNNER_TEMP}/.docker-"* ]]');
+    expect(deployDevBlock).toContain('rm -rf -- "$dockerConfig"');
+    expect(deployDevBlock.lastIndexOf('Cleanup Docker credential directory')).toBeGreaterThan(
+      deployDevBlock.indexOf('通知飞书(部署结果)'),
+    );
+  });
+
+  it('不恢复特性分支 Preview', () => {
+    expect(releaseWorkflow).not.toContain('deploy-preview:');
+    expect(releaseWorkflow).not.toContain('fusion-ui-preview');
+    expect(releaseWorkflow).not.toContain('docker-compose.fusion-ui-preview.yml');
+    expect(releaseWorkflow).not.toContain('3005:3000');
+    expect(releaseWorkflow).not.toContain('Configure preview public env');
+    expect(pullRequestWorkflow).not.toContain('deploy-preview:');
   });
 
   it('dev 部署后使用宿主 Chrome 运行 browser smoke', () => {
@@ -51,42 +128,60 @@ describe('build-and-deploy workflow 发布门禁', () => {
   });
 
   it('Windows 构建 job 不再构建 browser smoke runner 镜像', () => {
-    expect(workflow).not.toContain('Dockerfile.smoke');
-    expect(workflow).not.toContain('Ensure smoke runner image');
-    expect(workflow).not.toContain('docker build -f Dockerfile.smoke');
-    expect(workflow).not.toContain('docker push $smokeImage');
+    expect(releaseWorkflow).not.toContain('Dockerfile.smoke');
+    expect(releaseWorkflow).not.toContain('Ensure smoke runner image');
+    expect(releaseWorkflow).not.toContain('docker build -f Dockerfile.smoke');
+    expect(releaseWorkflow).not.toContain('docker push $smokeImage');
   });
 
   it('Windows 构建 job 的 Docker access 校验包含重试和服务启动兜底', () => {
-    expect(workflow).toContain('for ($attempt = 1; $attempt -le 6; $attempt++)');
-    expect(workflow).toContain("'docker', 'com.docker.service'");
-    expect(workflow).toContain('Start-Service -Name $serviceName');
-    expect(workflow).toContain('Docker Desktop.exe');
-    expect(workflow).toContain('Start-Process -FilePath $desktopPath');
-    expect(workflow).toContain('Docker daemon ready');
+    expect(windowsDockerBuildAction).toContain('for ($attempt = 1; $attempt -le 6; $attempt++)');
+    expect(windowsDockerBuildAction).toContain("'docker', 'com.docker.service'");
+    expect(windowsDockerBuildAction).toContain('Start-Service -Name $serviceName');
+    expect(windowsDockerBuildAction).toContain('Docker Desktop.exe');
+    expect(windowsDockerBuildAction).toContain('Start-Process -FilePath $desktopPath');
+    expect(windowsDockerBuildAction).toContain('Docker daemon ready');
   });
 
   it('Docker 镜像构建对 registry 或 buildx 瞬断做有限重试', () => {
-    expect(workflow).toContain('for ($attempt = 1; $attempt -le 3; $attempt++)');
-    expect(workflow).toContain('docker @buildArgs');
-    expect(workflow).toContain('docker build 失败，第 $attempt 次');
+    expect(windowsDockerBuildAction).toContain('for ($attempt = 1; $attempt -le 3; $attempt++)');
+    expect(windowsDockerBuildAction).toContain('docker @buildArgs');
+    expect(windowsDockerBuildAction).toContain('docker build 失败，第 $attempt 次');
   });
 
-  it('Windows 构建只在 Docker targets 中安装依赖、测试和构建', () => {
-    expect(buildBlock).not.toContain('Setup Node.js');
-    expect(buildBlock).not.toContain('npm ci --no-audit --no-fund --cache');
-    expect(buildBlock).not.toContain('run: npm run build');
-    expect(buildBlock).not.toContain('run: npm test');
-    expect(buildBlock).toContain('"--target", "test"');
-    expect(buildBlock).toContain('"--no-cache-filter", "test"');
-    expect(buildBlock).toContain('"--target", "production"');
+  it('Windows 发布只在 Docker targets 中安装依赖、测试和构建', () => {
+    expect(windowsDockerBuildAction).not.toContain('Setup Node.js');
+    expect(windowsDockerBuildAction).not.toContain('npm ci --no-audit --no-fund --cache');
+    expect(windowsDockerBuildAction).not.toContain('run: npm run build');
+    expect(windowsDockerBuildAction).not.toContain('run: npm test');
+    expect(windowsDockerBuildAction).toContain('"--target", "test"');
+    expect(windowsDockerBuildAction).toContain('"--no-cache-filter", "test"');
+    expect(windowsDockerBuildAction).toContain('"--target", "production"');
   });
 
   it('Windows Docker builds 复用 Runner 专属 builder 内部缓存', () => {
-    expect(buildBlock).toContain("$runnerKey = '${{ runner.name }}' -replace");
-    expect(buildBlock).toContain('$builder = "fusion-ui-ci-$runnerKey"');
-    expect(buildBlock).not.toContain('type=local,src=');
-    expect(buildBlock).not.toContain('type=local,dest=');
-    expect(buildBlock).not.toContain('fusion-ui-buildx-cache-next');
+    expect(windowsDockerBuildAction).toContain("$runnerKey = '${{ runner.name }}' -replace");
+    expect(windowsDockerBuildAction).toContain('$builder = "fusion-ui-ci-$runnerKey"');
+    expect(windowsDockerBuildAction).not.toContain('type=local,src=');
+    expect(windowsDockerBuildAction).not.toContain('type=local,dest=');
+    expect(windowsDockerBuildAction).not.toContain('fusion-ui-buildx-cache-next');
+  });
+
+  it('PR 在临时 Linux Runner 完成同等 Docker targets 构建', () => {
+    expect(pullRequestWorkflow).not.toContain('uses: ./.github/actions/windows-docker-build');
+    expect(pullRequestWorkflow).toContain('docker buildx create');
+    expect(pullRequestWorkflow).toContain('--target test');
+    expect(pullRequestWorkflow).toContain('--no-cache-filter test');
+    expect(pullRequestWorkflow).toContain('--target production');
+    expect(pullRequestWorkflow).toContain('--load');
+    expect(pullRequestWorkflow).not.toContain('buildx prune');
+  });
+
+  it('master 发布复用 Windows 构建实现并保留缓存治理', () => {
+    expect(releasePublishBlock).toContain('uses: ./.github/actions/windows-docker-build');
+    expect(releasePublishBlock).toContain('"buildx", "prune"');
+    expect(releasePublishBlock).toContain('"--max-used-space", "25gb"');
+    expect(releasePublishBlock).toContain('"--reserved-space", "8gb"');
+    expect(releasePublishBlock).toContain('"--min-free-space", "30gb"');
   });
 });

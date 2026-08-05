@@ -1,0 +1,63 @@
+name: Fusion UI PR CI
+
+on:
+  pull_request:
+    branches: [master]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fusion-ui-pr-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    # 过渡检查名：现有 master 分支保护仍要求此名称，迁移规则后再改为 Linux CI 名称。
+    name: Build on Windows runner
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
+      PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1"
+      NPM_CONFIG_AUDIT: "false"
+      NPM_CONFIG_FUND: "false"
+      NEXT_PUBLIC_AUTH_SERVICE_BASE_URL: ${{ vars.NEXT_PUBLIC_AUTH_SERVICE_BASE_URL }}
+      NEXT_PUBLIC_AUTH_SERVICE_CLIENT_ID: ${{ vars.NEXT_PUBLIC_AUTH_SERVICE_CLIENT_ID }}
+      NEXT_PUBLIC_AUTH_CALLBACK_URL: ${{ vars.NEXT_PUBLIC_AUTH_CALLBACK_URL }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Test and build Docker targets
+        shell: bash
+        run: |
+          set -euo pipefail
+          builder="fusion-ui-pr-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          image="fusion-ui-pr:${GITHUB_SHA}"
+
+          docker buildx create --name "$builder" --driver docker-container --use
+          docker buildx inspect --builder "$builder" --bootstrap
+
+          docker buildx build \
+            --builder "$builder" \
+            --target test \
+            --no-cache-filter test \
+            --progress plain \
+            --provenance=false \
+            .
+
+          docker buildx build \
+            --builder "$builder" \
+            --target production \
+            --load \
+            --progress plain \
+            --provenance=false \
+            --build-arg "NEXT_PUBLIC_AUTH_SERVICE_BASE_URL=${NEXT_PUBLIC_AUTH_SERVICE_BASE_URL}" \
+            --build-arg "NEXT_PUBLIC_AUTH_SERVICE_CLIENT_ID=${NEXT_PUBLIC_AUTH_SERVICE_CLIENT_ID}" \
+            --build-arg "NEXT_PUBLIC_AUTH_CALLBACK_URL=${NEXT_PUBLIC_AUTH_CALLBACK_URL}" \
+            --build-arg "API_BACKEND_URL=http://fusion-api:8000" \
+            -t "$image" \
+            .

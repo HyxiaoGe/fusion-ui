@@ -2,6 +2,7 @@ name: Fusion UI Build & Deploy
 
 on:
   push:
+    branches: [master]
   workflow_dispatch:
 
 permissions:
@@ -9,7 +10,7 @@ permissions:
 
 concurrency:
   group: fusion-ui-build-deploy-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 # 镜像源:阿里云 ACR 个人版(深圳,境内端点);改仓名只动 IMAGE_NAME 一行
 env:
@@ -17,10 +18,14 @@ env:
   IMAGE_NAME: crpi-77w10wlykpqilmmb.cn-shenzhen.personal.cr.aliyuncs.com/seanfield/fusion-ui
 
 jobs:
-  build:
-    name: Build on Windows runner
+  publish:
+    name: Publish master image on Windows runner
+    if: github.ref == 'refs/heads/master'
     runs-on: [self-hosted, Windows, X64]
     timeout-minutes: 30
+    environment:
+      name: dev
+      deployment: false
     outputs:
       started_at: ${{ steps.pipeline_start.outputs.started_at }}
       runner_name: ${{ steps.pipeline_start.outputs.runner_name }}
@@ -42,16 +47,6 @@ jobs:
         run: |
           for /f %%i in ('powershell -NoProfile -ExecutionPolicy Bypass -Command "[DateTimeOffset]::UtcNow.ToUnixTimeSeconds()"') do echo started_at=%%i>>%GITHUB_OUTPUT%
           echo runner_name=${{ runner.name }}>>%GITHUB_OUTPUT%
-
-      - name: Configure Docker credential directory
-        shell: powershell -NoProfile -ExecutionPolicy Bypass -Command ". '{0}'"
-        run: |
-          $dockerConfig = Join-Path $env:RUNNER_TEMP ".docker-$env:GITHUB_RUN_ID-$env:GITHUB_JOB"
-          $buildxConfig = Join-Path (Split-Path $env:RUNNER_TEMP -Parent) ".buildx-fusion-ui"
-          New-Item -ItemType Directory -Force -Path $dockerConfig | Out-Null
-          New-Item -ItemType Directory -Force -Path $buildxConfig | Out-Null
-          "DOCKER_CONFIG=$dockerConfig" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
-          "BUILDX_CONFIG=$buildxConfig" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
 
       - name: Push CI/CD active metric
         shell: powershell -NoProfile -ExecutionPolicy Bypass -Command ". '{0}'"
@@ -82,136 +77,17 @@ jobs:
 
       - name: Checkout
         uses: actions/checkout@v6
-
-      - name: Verify Docker access
-        shell: powershell -NoProfile -ExecutionPolicy Bypass -Command ". '{0}'"
-        run: |
-          $ErrorActionPreference = "Continue"
-          $serviceNames = @('docker', 'com.docker.service')
-          $dockerDesktopStarted = $false
-          $desktopPaths = @(
-            "$env:ProgramFiles\Docker\Docker\Docker Desktop.exe",
-            "${env:ProgramFiles(x86)}\Docker\Docker\Docker Desktop.exe"
-          )
-
-          for ($attempt = 1; $attempt -le 6; $attempt++) {
-            Write-Host "Checking Docker access, attempt $attempt/6..."
-
-            docker version
-            if ($LASTEXITCODE -eq 0) {
-              docker ps
-              if ($LASTEXITCODE -eq 0) {
-                Write-Host "Docker daemon ready"
-                exit 0
-              }
-            }
-
-            foreach ($serviceName in $serviceNames) {
-              $service = Get-Service -Name $serviceName -ErrorAction SilentlyContinue
-              if ($null -ne $service -and $service.Status -ne "Running") {
-                Write-Host "Starting Docker service: $serviceName"
-                try {
-                  Start-Service -Name $serviceName -ErrorAction Stop
-                } catch {
-                  Write-Host "Docker service start failed for ${serviceName}: $($_.Exception.Message)"
-                }
-              } elseif ($null -ne $service) {
-                Write-Host "Docker service ${serviceName} status: $($service.Status)"
-              }
-            }
-
-            if (-not $dockerDesktopStarted) {
-              foreach ($desktopPath in $desktopPaths) {
-                if ($desktopPath -and (Test-Path $desktopPath)) {
-                  Write-Host "Starting Docker Desktop: $desktopPath"
-                  try {
-                    Start-Process -FilePath $desktopPath -WindowStyle Minimized
-                    $dockerDesktopStarted = $true
-                    break
-                  } catch {
-                    Write-Host "Docker Desktop start failed: $($_.Exception.Message)"
-                  }
-                }
-              }
-            }
-
-            if ($attempt -lt 6) {
-              Start-Sleep -Seconds (10 * $attempt)
-            }
-          }
-
-          Write-Host "Docker daemon did not become ready"
-          docker version
-          docker ps
-          exit 1
+        with:
+          persist-credentials: false
 
       - name: Test and build Docker image
-        shell: powershell -NoProfile -ExecutionPolicy Bypass -Command ". '{0}'"
-        run: |
-          $ErrorActionPreference = "Stop"
-          $runnerKey = '${{ runner.name }}' -replace '[^A-Za-z0-9_.-]', '-'
-          if (-not $runnerKey) { $runnerKey = "runner" }
-          $builder = "fusion-ui-ci-$runnerKey"
-          $image = "${env:IMAGE_NAME}:${env:GITHUB_SHA}"
-
-          cmd /c "docker buildx inspect $builder >NUL 2>NUL"
-          if ($LASTEXITCODE -ne 0) {
-            docker buildx create --name $builder --driver docker-container --use
-            if ($LASTEXITCODE -ne 0) {
-              cmd /c "docker buildx inspect $builder >NUL 2>NUL"
-              if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-            }
-          }
-          docker buildx use $builder
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-
-          docker buildx inspect --builder $builder --bootstrap
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-
-          $testArgs = @(
-            "buildx", "build",
-            "--builder", $builder,
-            "--target", "test",
-            "--no-cache-filter", "test",
-            "--progress", "plain",
-            "--provenance=false",
-            "."
-          )
-
-          docker @testArgs
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-
-          $buildArgs = @(
-            "buildx", "build",
-            "--builder", $builder,
-            "--target", "production",
-            "--load",
-            "--progress", "plain",
-            "--provenance=false",
-            "--build-arg", "NEXT_PUBLIC_AUTH_SERVICE_BASE_URL=$env:NEXT_PUBLIC_AUTH_SERVICE_BASE_URL",
-            "--build-arg", "NEXT_PUBLIC_AUTH_SERVICE_CLIENT_ID=$env:NEXT_PUBLIC_AUTH_SERVICE_CLIENT_ID",
-            "--build-arg", "NEXT_PUBLIC_AUTH_CALLBACK_URL=$env:NEXT_PUBLIC_AUTH_CALLBACK_URL",
-            "--build-arg", "API_BACKEND_URL=http://fusion-api:8000",
-            "-t", $image,
-            "."
-          )
-
-          for ($attempt = 1; $attempt -le 3; $attempt++) {
-            docker @buildArgs
-            $buildExitCode = $LASTEXITCODE
-
-            if ($buildExitCode -eq 0) {
-              break
-            }
-
-            if ($attempt -eq 3) {
-              exit $buildExitCode
-            }
-
-            $delay = 20 * $attempt
-            Write-Host "docker build 失败，第 $attempt 次，${delay}s 后重试..."
-            Start-Sleep -Seconds $delay
-          }
+        uses: ./.github/actions/windows-docker-build
+        with:
+          image-name: ${{ env.IMAGE_NAME }}
+          image-tag: ${{ github.sha }}
+          auth-service-base-url: ${{ vars.NEXT_PUBLIC_AUTH_SERVICE_BASE_URL }}
+          auth-service-client-id: ${{ vars.NEXT_PUBLIC_AUTH_SERVICE_CLIENT_ID }}
+          auth-callback-url: ${{ vars.NEXT_PUBLIC_AUTH_CALLBACK_URL }}
 
       - name: Login to ACR
         uses: docker/login-action@v4.2.0
@@ -272,21 +148,49 @@ jobs:
             Write-Warning "Failed to prune BuildKit cache for builder: $builder"
           }
 
+          if ($env:DOCKER_CONFIG) {
+            $expectedDockerConfig = [System.IO.Path]::GetFullPath(
+              (Join-Path $env:RUNNER_TEMP ".docker-$env:GITHUB_RUN_ID-$env:GITHUB_JOB")
+            )
+            $dockerConfig = [System.IO.Path]::GetFullPath($env:DOCKER_CONFIG)
+            $isExpectedPath = [string]::Equals(
+              $dockerConfig,
+              $expectedDockerConfig,
+              [System.StringComparison]::OrdinalIgnoreCase
+            )
+            $hasExpectedName = (Split-Path $dockerConfig -Leaf) -like ".docker-*"
+            if (-not $isExpectedPath -or -not $hasExpectedName) {
+              throw "Refusing to remove unexpected Docker config path: $dockerConfig"
+            }
+            if (Test-Path $dockerConfig) {
+              Remove-Item -Recurse -Force -Path $dockerConfig -ErrorAction Stop
+            }
+          }
+
           exit 0
 
   deploy-dev:
     name: Deploy master on dev server
     if: github.ref == 'refs/heads/master'
-    needs: build
+    needs: publish
     runs-on: [self-hosted, Linux, X64]
     timeout-minutes: 25
+    environment: dev
 
     steps:
       - name: Record deploy start time
         run: echo "DEPLOY_START=$(date +%s)" >> "$GITHUB_ENV"
 
+      - name: Configure Docker credential directory
+        run: |
+          dockerConfig="${RUNNER_TEMP}/.docker-${GITHUB_RUN_ID}-${GITHUB_JOB}"
+          mkdir -p -- "$dockerConfig"
+          echo "DOCKER_CONFIG=$dockerConfig" >> "$GITHUB_ENV"
+
       - name: Checkout smoke scripts
         uses: actions/checkout@v6
+        with:
+          persist-credentials: false
 
       - name: Login to ACR
         run: echo "${ACR_PASSWORD}" | docker login "${REGISTRY}" -u "${ACR_USERNAME}" --password-stdin
@@ -386,10 +290,10 @@ jobs:
             "${{ github.ref_name }}" \
             dev \
             "${{ job.status }}" \
-            "${{ needs.build.outputs.started_at }}" \
+            "${{ needs.publish.outputs.started_at }}" \
             "${{ env.IMAGE_NAME }}:${{ github.sha }}" \
             "${{ github.sha }}" \
-            "${{ needs.build.outputs.runner_name }}" \
+            "${{ needs.publish.outputs.runner_name }}" \
             fusion-ui \
             "${{ env.DEPLOY_START }}"; then
             echo "CI/CD metrics push failed, ignored"
@@ -464,3 +368,20 @@ jobs:
           except Exception as e:
               print(f"飞书通知失败(忽略): {e!r}")
           PY
+
+      - name: Cleanup Docker credential directory
+        if: always()
+        run: |
+          dockerConfig="${DOCKER_CONFIG:-}"
+          if [ -z "$dockerConfig" ]; then
+            echo "DOCKER_CONFIG 未设置，无需清理"
+            exit 0
+          fi
+
+          expectedDockerConfig="${RUNNER_TEMP}/.docker-${GITHUB_RUN_ID}-${GITHUB_JOB}"
+          if [[ "$dockerConfig" != "$expectedDockerConfig" || "$dockerConfig" != "${RUNNER_TEMP}/.docker-"* ]]; then
+            echo "拒绝清理非本次 job 的 Docker 配置目录: $dockerConfig"
+            exit 1
+          fi
+
+          rm -rf -- "$dockerConfig"
