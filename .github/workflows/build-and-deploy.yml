@@ -47,8 +47,11 @@ jobs:
         shell: powershell -NoProfile -ExecutionPolicy Bypass -Command ". '{0}'"
         run: |
           $dockerConfig = Join-Path $env:RUNNER_TEMP ".docker-$env:GITHUB_RUN_ID-$env:GITHUB_JOB"
+          $buildxConfig = Join-Path (Split-Path $env:RUNNER_TEMP -Parent) ".buildx-fusion-ui"
           New-Item -ItemType Directory -Force -Path $dockerConfig | Out-Null
+          New-Item -ItemType Directory -Force -Path $buildxConfig | Out-Null
           "DOCKER_CONFIG=$dockerConfig" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "BUILDX_CONFIG=$buildxConfig" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
 
       - name: Push CI/CD active metric
         shell: powershell -NoProfile -ExecutionPolicy Bypass -Command ". '{0}'"
@@ -241,10 +244,35 @@ jobs:
 
       - name: Cleanup local Docker artifacts
         if: always()
+        shell: powershell -NoProfile -ExecutionPolicy Bypass -Command ". '{0}'"
         run: |
-          docker image inspect "%IMAGE_NAME%:%GITHUB_SHA%" >NUL 2>NUL
-          if %ERRORLEVEL% EQU 0 docker image rm "%IMAGE_NAME%:%GITHUB_SHA%"
-          exit /b 0
+          $runnerKey = '${{ runner.name }}' -replace '[^A-Za-z0-9_.-]', '-'
+          if (-not $runnerKey) { $runnerKey = "runner" }
+          $builder = "fusion-ui-ci-$runnerKey"
+          $image = "${env:IMAGE_NAME}:${env:GITHUB_SHA}"
+
+          docker image inspect $image *> $null
+          if ($LASTEXITCODE -eq 0) {
+            docker image rm $image
+            if ($LASTEXITCODE -ne 0) {
+              Write-Warning "Failed to remove local image: $image"
+            }
+          }
+
+          $pruneArgs = @(
+            "buildx", "prune",
+            "--builder", $builder,
+            "--force",
+            "--max-used-space", "25gb",
+            "--reserved-space", "8gb",
+            "--min-free-space", "30gb"
+          )
+          docker @pruneArgs
+          if ($LASTEXITCODE -ne 0) {
+            Write-Warning "Failed to prune BuildKit cache for builder: $builder"
+          }
+
+          exit 0
 
   deploy-dev:
     name: Deploy master on dev server
