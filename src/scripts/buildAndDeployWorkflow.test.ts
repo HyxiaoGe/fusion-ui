@@ -1,6 +1,7 @@
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { parse } from 'yaml';
 
 const releaseWorkflow = readFileSync(join(process.cwd(), '.github/workflows/build-and-deploy.yml'), 'utf8');
 const pullRequestWorkflow = readFileSync(join(process.cwd(), '.github/workflows/pull-request.yml'), 'utf8');
@@ -15,6 +16,10 @@ const releasePublishBlock = releaseWorkflow.slice(
 const deployDevBlock = releaseWorkflow.slice(releaseWorkflow.indexOf('  deploy-dev:'));
 const checkoutAction = 'actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6';
 const loginAction = 'docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0';
+
+type WorkflowStep = { name?: string; run?: string };
+type WorkflowDocument = { jobs?: Record<string, { steps?: WorkflowStep[] }> };
+const releaseWorkflowDocument = parse(releaseWorkflow) as WorkflowDocument;
 
 const filesUnder = (directory: string): string[] => {
   if (!existsSync(directory)) return [];
@@ -156,6 +161,55 @@ describe('build-and-deploy workflow 发布门禁', () => {
 
   it('dev smoke 失败时仍输出 fusion-ui 容器日志', () => {
     expect(deployDevBlock).toContain('docker logs --tail 80 fusion-ui || true');
+  });
+
+  it('dev smoke 先精确验收运行镜像身份再从容器内部访问应用', () => {
+    const smokeSteps = (releaseWorkflowDocument.jobs?.['deploy-dev']?.steps ?? []).filter(
+      (step) => step.name === 'Smoke check dev deployment',
+    );
+    expect(smokeSteps).toHaveLength(1);
+    const smokeRun = smokeSteps[0].run;
+    expect(smokeRun).toBeTypeOf('string');
+
+    const executableLines = smokeRun!
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter((line) => line && !line.startsWith('#'));
+    const expectedImageLine = 'expectedImage="${IMAGE_NAME}:${GITHUB_SHA}"';
+    const runningImageLine =
+      'runningImage="$(docker inspect --format \'{{.Config.Image}}\' fusion-ui 2>/dev/null || true)"';
+    const compareLine = 'if [ "$runningImage" != "$expectedImage" ]; then';
+    const containerSmokeLine = executableLines.find(
+      (line) =>
+        line.startsWith('if docker exec fusion-ui node -e ') &&
+        line.includes('fetch("http://127.0.0.1:3000/"'),
+    );
+    const retryLine = 'for attempt in 1 2 3 4 5 6 7 8 9 10 11 12; do';
+
+    expect(executableLines).toContain(expectedImageLine);
+    expect(executableLines).toContain(runningImageLine);
+    expect(executableLines).toContain(compareLine);
+    expect(executableLines).toContain(retryLine);
+    expect(containerSmokeLine).toBeDefined();
+    expect(containerSmokeLine).toContain('AbortSignal.timeout(5000)');
+    expect(containerSmokeLine).toContain('.catch((error) =>');
+    expect(containerSmokeLine).toContain('process.exit(1)');
+    expect(executableLines.some((line) => /\bcurl\b/.test(line))).toBe(false);
+    expect(smokeRun!.indexOf(runningImageLine)).toBeLessThan(smokeRun!.indexOf(compareLine));
+    expect(smokeRun!.indexOf(compareLine)).toBeLessThan(smokeRun!.indexOf(containerSmokeLine!));
+
+    const imageMismatchBlock = smokeRun!.slice(
+      smokeRun!.indexOf(compareLine),
+      smokeRun!.indexOf(containerSmokeLine!),
+    );
+    expect(imageMismatchBlock).toContain('docker ps --filter "name=fusion-ui"');
+    expect(imageMismatchBlock).toContain('docker logs --tail 80 fusion-ui || true');
+    expect(imageMismatchBlock).toMatch(/\n\s*exit 1\n\s*fi\n/);
+
+    const finalFailureBlock = smokeRun!.slice(smokeRun!.indexOf('\ndone\n'));
+    expect(finalFailureBlock).toContain('docker ps --filter "name=fusion-ui"');
+    expect(finalFailureBlock).toContain('docker logs --tail 80 fusion-ui || true');
+    expect(finalFailureBlock.trimEnd().endsWith('exit 1')).toBe(true);
   });
 
   it('dev browser smoke 只缓存 Playwright 包且不下载浏览器', () => {
