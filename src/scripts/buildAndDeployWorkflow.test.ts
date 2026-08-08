@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
@@ -13,6 +13,21 @@ const releasePublishBlock = releaseWorkflow.slice(
   releaseWorkflow.indexOf('  deploy-dev:'),
 );
 const deployDevBlock = releaseWorkflow.slice(releaseWorkflow.indexOf('  deploy-dev:'));
+const checkoutAction = 'actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6';
+const loginAction = 'docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0';
+
+const filesUnder = (directory: string): string[] => {
+  if (!existsSync(directory)) return [];
+  return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
+    const path = join(directory, entry.name);
+    return entry.isDirectory() ? filesUnder(path) : [path];
+  });
+};
+
+const actionDocuments = [
+  ...filesUnder(join(process.cwd(), '.github/workflows')),
+  ...filesUnder(join(process.cwd(), '.github/actions')).filter((path) => /action\.ya?ml$/.test(path)),
+].map((path) => ({ path, content: readFileSync(path, 'utf8') }));
 
 describe('build-and-deploy workflow 发布门禁', () => {
   it('PR CI 与 master 发布使用互斥触发器', () => {
@@ -35,8 +50,9 @@ describe('build-and-deploy workflow 发布门禁', () => {
   });
 
   it('PR 路径只使用无发布权限的临时 Linux Runner', () => {
-    expect(pullRequestWorkflow.match(/name: Build on Windows runner/g)).toHaveLength(1);
-    expect(pullRequestWorkflow).toContain('过渡检查名');
+    expect(pullRequestWorkflow.match(/name: PR container validation/g)).toHaveLength(1);
+    expect(pullRequestWorkflow).not.toContain('name: Build on Windows runner');
+    expect(pullRequestWorkflow).not.toContain('过渡检查名');
     expect(pullRequestWorkflow).toContain('runs-on: ubuntu-latest');
     expect(pullRequestWorkflow).not.toContain('self-hosted');
     expect(pullRequestWorkflow).not.toContain('Windows, X64');
@@ -55,9 +71,31 @@ describe('build-and-deploy workflow 发布门禁', () => {
     expect(releasePublishBlock).toContain('environment:');
     expect(releasePublishBlock).toContain('name: dev');
     expect(releasePublishBlock).toContain('deployment: false');
-    expect(releasePublishBlock).toContain('docker/login-action@v4.2.0');
+    expect(releasePublishBlock).toContain(loginAction);
     expect(releasePublishBlock).toContain('docker push $image');
     expect(releasePublishBlock).toContain('persist-credentials: false');
+  });
+
+  it('仓库内所有外部 Action 都锁定完整 commit SHA 并保留版本注释', () => {
+    const usesKeyPattern = /^\s*(?:-\s*)?uses\s*:/;
+    const usesValuePattern = /^\s*(?:-\s*)?uses\s*:\s*(['"]?)([^'"#\s]+)\1(?:\s+#\s*(.*\S))?\s*$/;
+    let externalActionCount = 0;
+
+    for (const document of actionDocuments) {
+      for (const [index, line] of document.content.split(/\r?\n/).entries()) {
+        if (!usesKeyPattern.test(line)) continue;
+        const action = line.match(usesValuePattern);
+        expect(action, `${document.path}:${index + 1} 的 uses 语法未纳入安全校验`).not.toBeNull();
+        const [, , reference, versionComment] = action!;
+        if (reference.startsWith('./')) continue;
+        externalActionCount += 1;
+        expect(reference, `${document.path}:${index + 1}`).toMatch(/^[^@\s]+@[0-9a-f]{40}$/);
+        expect(versionComment, `${document.path}:${index + 1}`).toMatch(/^v\d/);
+      }
+    }
+    expect(externalActionCount).toBeGreaterThan(0);
+    expect(pullRequestWorkflow.split(`uses: ${checkoutAction}`)).toHaveLength(2);
+    expect(releaseWorkflow.split(`uses: ${checkoutAction}`)).toHaveLength(3);
   });
 
   it('dev 部署依赖发布构建并绑定 dev Environment', () => {
