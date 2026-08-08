@@ -35,6 +35,21 @@ const actionDocuments = [
 ].map((path) => ({ path, content: readFileSync(path, 'utf8') }));
 
 describe('build-and-deploy workflow 发布门禁', () => {
+  it('定期漂移审计只使用调用仓库的只读令牌', () => {
+    const workflow = readFileSync(join(process.cwd(), '.github/workflows/baseline-drift-audit.yml'), 'utf8');
+    expect(workflow).toMatch(/^on:\n\s+schedule:\n[\s\S]*\n\s+workflow_dispatch:/m);
+    expect(workflow).toMatch(/^permissions:\n\s+actions: read\n\s+contents: read$/m);
+    expect(workflow).toContain('runs-on: ubuntu-latest');
+    expect(workflow).toContain('cancel-in-progress: false');
+    expect(workflow).toContain(
+      'uses: HyxiaoGe/engineering-baseline/.github/actions/audit@a87c78c4ff6594b4351678bea354ff1f171645e9 # v1.1.0',
+    );
+    expect(workflow).toContain('repository: ${{ github.repository }}');
+    for (const forbidden of ['pull_request:', '  push:', 'secrets.', 'environment:', 'self-hosted']) {
+      expect(workflow).not.toContain(forbidden);
+    }
+  });
+
   it('PR CI 与 master 发布使用互斥触发器', () => {
     expect(pullRequestWorkflow).toContain('pull_request:');
     expect(pullRequestWorkflow).toContain('branches: [master]');
