@@ -9,6 +9,8 @@ ENV ELECTRON_SKIP_BINARY_DOWNLOAD=1 \
     NPM_CONFIG_AUDIT=false \
     NPM_CONFIG_FUND=false
 
+RUN apk add --no-cache bash
+
 COPY package.json package-lock.json ./
 
 RUN --mount=type=cache,target=/root/.npm \
