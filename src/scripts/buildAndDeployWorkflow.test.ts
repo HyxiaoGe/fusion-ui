@@ -9,6 +9,7 @@ const pullRequestWorkflow = readFileSync(join(process.cwd(), '.github/workflows/
 const releaseSafetyManifest = readFileSync(join(process.cwd(), '.github/release-safety.yml'), 'utf8');
 const releaseSafetyContractPath = join(process.cwd(), '.github/scripts/release-safety-contract.sh');
 const releaseSafetyContract = readFileSync(releaseSafetyContractPath, 'utf8');
+const dockerfile = readFileSync(join(process.cwd(), 'Dockerfile'), 'utf8');
 const windowsDockerBuildAction = readFileSync(
   join(process.cwd(), '.github/actions/windows-docker-build/action.yml'),
   'utf8',
@@ -169,6 +170,14 @@ const actionDocuments = [
 ].map((path) => ({ path, content: readFileSync(path, 'utf8') }));
 
 describe('build-and-deploy workflow 发布门禁', () => {
+  it('测试镜像提供与发布脚本一致的 Bash 运行时', () => {
+    const dependencyStage = dockerfile.slice(
+      dockerfile.indexOf('FROM node:20-alpine AS deps'),
+      dockerfile.indexOf('FROM deps AS source'),
+    );
+    expect(dependencyStage).toContain('RUN apk add --no-cache bash');
+  });
+
   it('发布安全 manifest 精确映射真实 workflow 角色', () => {
     expect(releaseSafetyDocument).toEqual({
       version: '1',
