@@ -58,7 +58,10 @@ import {
   isModelAvailableForSending,
   resolveSendModel,
 } from '@/lib/chat/sendModelResolution';
-import { clearFirstTurnContextState } from '@/lib/chat/contextStatusPersistence';
+import {
+  clearFirstTurnContextState,
+  moveFirstTurnContextState,
+} from '@/lib/chat/contextStatusPersistence';
 import { hasFormalTextContent } from '@/lib/chat/suggestedQuestionState';
 import type { Message, ContentBlock } from '@/types/conversation';
 import type { FileAttachment } from '@/lib/utils/fileHelpers';
@@ -554,6 +557,8 @@ export function useSendMessage() {
         materializedOnce = true;
         serverConvId = incomingConvId;
         activeConvIdRef.current = incomingConvId;
+        // 首页会在物化后重挂输入区，必须先把首轮上下文偏好迁移到服务端会话 ID。
+        moveFirstTurnContextState(tempConvId, incomingConvId);
         // 迁移流标记：tempConvId → serverConvId
         dispatch(
           materializeConversation({

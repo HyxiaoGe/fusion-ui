@@ -98,6 +98,12 @@ export function moveInteractedFirstTurn(fromId: string, toId: string): void {
   moveConversationId(CONTEXT_STATUS_INTERACTED_FIRST_TURN_STORAGE_KEY, fromId, toId);
 }
 
+export function moveFirstTurnContextState(fromId: string, toId: string): void {
+  movePendingFirstTurn(fromId, toId);
+  moveSuppressedFirstTurn(fromId, toId);
+  moveInteractedFirstTurn(fromId, toId);
+}
+
 export function clearFirstTurnContextState(conversationId: string): void {
   clearPendingFirstTurn(conversationId);
   clearSuppressedFirstTurn(conversationId);

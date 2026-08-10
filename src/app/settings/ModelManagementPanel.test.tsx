@@ -710,6 +710,85 @@ describe('ModelManagementPanel', () => {
     expect(sessionStorage.getItem(MODEL_MANAGEMENT_OWNED_OPERATIONS_STORAGE_KEY)).toBeNull();
   });
 
+  it('分批完成的并发上线任务会串行刷新目录并保持操作锁', async () => {
+    const operationA: ModelAdmissionOperation = {
+      operation_id: 'operation-staggered-a',
+      candidate_fingerprint: 'fingerprint-ready',
+      model_id: 'kimi-k3.1',
+      status: 'pending',
+    };
+    const operationB: ModelAdmissionOperation = {
+      operation_id: 'operation-staggered-b',
+      candidate_fingerprint: 'fingerprint-waiting',
+      model_id: 'gemini-next',
+      status: 'pending',
+    };
+    const operationASucceeded = { ...operationA, status: 'succeeded' as const };
+    const operationBSucceeded = { ...operationB, status: 'succeeded' as const };
+    const pendingSnapshot = { ...baseSnapshot, operations: [operationA, operationB] };
+    const firstCompletedSnapshot = {
+      ...baseSnapshot,
+      operations: [operationASucceeded, operationB],
+    };
+    const allCompletedSnapshot = {
+      ...baseSnapshot,
+      operations: [operationASucceeded, operationBSucceeded],
+    };
+    sessionStorage.setItem(
+      MODEL_MANAGEMENT_OWNED_OPERATIONS_STORAGE_KEY,
+      JSON.stringify([operationA.operation_id, operationB.operation_id]),
+    );
+    let resolveInitialSnapshot!: (snapshot: ModelManagementSnapshot) => void;
+    const initialSnapshot = new Promise<ModelManagementSnapshot>((resolve) => {
+      resolveInitialSnapshot = resolve;
+    });
+    fetchModelManagementSnapshotMock
+      .mockReturnValueOnce(initialSnapshot)
+      .mockResolvedValueOnce(firstCompletedSnapshot)
+      .mockResolvedValue(allCompletedSnapshot);
+
+    let resolveFirstCatalog!: (catalog: { models: never[]; providers: never[] }) => void;
+    const firstCatalog = new Promise<{ models: never[]; providers: never[] }>((resolve) => {
+      resolveFirstCatalog = resolve;
+    });
+    refreshModelsMock
+      .mockReturnValueOnce(firstCatalog)
+      .mockResolvedValue({ models: [], providers: [] });
+
+    render(<ModelManagementPanel />);
+    vi.useFakeTimers();
+    await act(async () => {
+      resolveInitialSnapshot(pendingSnapshot);
+      await initialSnapshot;
+    });
+    expect(screen.getByTestId('registered-model-count')).toBeInTheDocument();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1500);
+    });
+    expect(refreshModelsMock).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1500);
+    });
+    expect(refreshModelsMock).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole('button', { name: '刷新' })).toBeDisabled();
+
+    await act(async () => {
+      resolveFirstCatalog({ models: [], providers: [] });
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(refreshModelsMock).toHaveBeenCalledTimes(2);
+    expect(screen.queryByText(/目录刷新失败/)).toBeNull();
+    expect(screen.getByRole('status')).toHaveTextContent('gemini-next 已上线');
+    expect(screen.getByRole('button', { name: '刷新' })).toBeEnabled();
+    expect(sessionStorage.getItem(MODEL_MANAGEMENT_OWNED_OPERATIONS_STORAGE_KEY)).toBeNull();
+  });
+
   it('并发刷新复用同一请求，写操作后的新快照不会被旧响应覆盖', async () => {
     let resolveOldRefresh!: (snapshot: ModelManagementSnapshot) => void;
     const oldRefresh = new Promise<ModelManagementSnapshot>((resolve) => {

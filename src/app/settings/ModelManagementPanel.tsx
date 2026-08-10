@@ -225,6 +225,8 @@ export default function ModelManagementPanel() {
     ownedOperationIdsRef.current = readOwnedOperationIds();
   }
   const handledOperationIdsRef = useRef(new Set<string>());
+  const terminalSyncQueueRef = useRef<Promise<void>>(Promise.resolve());
+  const pendingTerminalSyncCountRef = useRef(0);
   const snapshotRequestIdRef = useRef(0);
   const activeSnapshotRequestRef = useRef<{
     id: number;
@@ -415,8 +417,10 @@ export default function ModelManagementPanel() {
     if (succeededOperations.length === 0) return;
     const terminalOperation = succeededOperations[succeededOperations.length - 1];
 
+    pendingTerminalSyncCountRef.current += 1;
     setPendingAction(`operation:${terminalOperation.operation_id}`);
-    void syncGlobalModelCatalog()
+    terminalSyncQueueRef.current = terminalSyncQueueRef.current
+      .then(() => syncGlobalModelCatalog())
       .then(() => {
         succeededOperations.forEach((operation) => {
           ownedOperationIdsRef.current?.delete(operation.operation_id);
@@ -439,7 +443,10 @@ export default function ModelManagementPanel() {
         setError(`模型已上线，但目录刷新失败：${errorMessage(caught, "请稍后手动刷新")}`);
       })
       .finally(() => {
-        setPendingAction(null);
+        pendingTerminalSyncCountRef.current -= 1;
+        if (pendingTerminalSyncCountRef.current === 0) {
+          setPendingAction(null);
+        }
       });
   }, [denyAccess, loadSnapshot, operations, syncGlobalModelCatalog]);
 

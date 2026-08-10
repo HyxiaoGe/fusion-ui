@@ -24,6 +24,7 @@ import {
   resetConversationDetailResource,
 } from '@/lib/chat/conversationDetailResource';
 import {
+  CONTEXT_STATUS_INTERACTED_FIRST_TURN_STORAGE_KEY,
   CONTEXT_STATUS_PENDING_FIRST_TURN_STORAGE_KEY,
   CONTEXT_STATUS_SUPPRESSED_FIRST_TURN_STORAGE_KEY,
 } from '@/lib/chat/contextStatusPersistence';
@@ -198,6 +199,18 @@ describe('useSendMessage', () => {
   it('materializes a draft conversation and migrates the active stream', async () => {
     const store = createStore();
     const onMaterialized = vi.fn();
+    sessionStorage.setItem(
+      CONTEXT_STATUS_PENDING_FIRST_TURN_STORAGE_KEY,
+      JSON.stringify(['temp-conv']),
+    );
+    sessionStorage.setItem(
+      CONTEXT_STATUS_SUPPRESSED_FIRST_TURN_STORAGE_KEY,
+      JSON.stringify(['temp-conv']),
+    );
+    sessionStorage.setItem(
+      CONTEXT_STATUS_INTERACTED_FIRST_TURN_STORAGE_KEY,
+      JSON.stringify(['temp-conv']),
+    );
 
     sendMessageStreamMock.mockImplementation(
       async (_payload: any, callbacks: StreamCallbacks) => {
@@ -245,6 +258,15 @@ describe('useSendMessage', () => {
       expect(state.conversation.conversationListDirtyIds).toEqual(['server-conv']);
       expect(state.stream.isStreaming).toBe(false);
     });
+    expect(sessionStorage.getItem(CONTEXT_STATUS_PENDING_FIRST_TURN_STORAGE_KEY)).toBe(
+      JSON.stringify(['server-conv']),
+    );
+    expect(sessionStorage.getItem(CONTEXT_STATUS_SUPPRESSED_FIRST_TURN_STORAGE_KEY)).toBe(
+      JSON.stringify(['server-conv']),
+    );
+    expect(sessionStorage.getItem(CONTEXT_STATUS_INTERACTED_FIRST_TURN_STORAGE_KEY)).toBe(
+      JSON.stringify(['server-conv']),
+    );
   });
 
   it('pending 事件用服务端 message_id 精确 patch 当前本地 placeholder', async () => {
