@@ -134,6 +134,29 @@ describe('ModelManagementPanel', () => {
     expect(screen.queryByRole('button', { name: /删除/ })).toBeNull();
   });
 
+  it('新对话可选择统计排除不可路由的已注册模型', async () => {
+    await renderLoaded({
+      ...baseSnapshot,
+      models: [
+        ...baseSnapshot.models,
+        {
+          model_id: 'route-disabled-model',
+          name: 'Route Disabled Model',
+          provider: 'legacy',
+          provider_display: 'Legacy',
+          health: { status: 'healthy' },
+          selectable: true,
+          routable: false,
+          state: 'registered',
+          revision: 1,
+        },
+      ],
+    });
+
+    expect(screen.getByTestId('registered-model-count')).toHaveTextContent('3');
+    expect(screen.getByTestId('selectable-model-count')).toHaveTextContent('1');
+  });
+
   it('按提供商汇总数量，并同时筛选已注册模型和治理候选', async () => {
     await renderLoaded();
 

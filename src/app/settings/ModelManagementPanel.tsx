@@ -436,7 +436,7 @@ export default function ModelManagementPanel() {
 
   const stats = useMemo(() => ({
     registered: snapshot?.models.length ?? 0,
-    selectable: snapshot?.models.filter((model) => model.selectable).length ?? 0,
+    selectable: snapshot?.models.filter((model) => model.selectable && model.routable).length ?? 0,
     candidates: snapshot?.candidates.length ?? 0,
   }), [snapshot]);
 

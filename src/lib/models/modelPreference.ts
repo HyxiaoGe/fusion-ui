@@ -29,6 +29,10 @@ export const getDefaultModelId = (
 export const isModelSelectable = (
   model: Pick<ModelInfo, 'enabled' | 'selectable' | 'routable' | 'health'>,
 ): boolean => {
-  const routable = model.routable ?? model.health?.status !== 'unhealthy';
-  return model.enabled !== false && model.selectable !== false && routable;
+  return (
+    model.enabled !== false
+    && model.selectable !== false
+    && model.routable !== false
+    && model.health?.status !== 'unhealthy'
+  );
 };
