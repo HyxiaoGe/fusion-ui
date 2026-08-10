@@ -159,7 +159,9 @@ export default function ContextStatus({
         moveInteractedFirstTurn(previousConversationId, conversationId);
       } else {
         userInteractedRef.current = false;
-        clearInteractedFirstTurn(previousConversationId);
+        if (!previousFirstTurnStreaming) {
+          clearInteractedFirstTurn(previousConversationId);
+        }
       }
     }
 

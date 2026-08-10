@@ -4,7 +4,10 @@ import { renderToString } from 'react-dom/server';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import i18n from '@/lib/i18n';
-import { moveFirstTurnContextState } from '@/lib/chat/contextStatusPersistence';
+import {
+  CONTEXT_STATUS_INTERACTED_FIRST_TURN_STORAGE_KEY,
+  moveFirstTurnContextState,
+} from '@/lib/chat/contextStatusPersistence';
 import type { ContextUsage } from '@/types/conversation';
 import ContextStatus, {
   CONTEXT_STATUS_DEFAULT_OPEN_STORAGE_KEY,
@@ -715,6 +718,42 @@ describe('ContextStatus', () => {
       isStreaming
       isFirstConversationTurn
       activeRunId="run-first-turn-open"
+    />);
+
+    expect(screen.getByRole('dialog', { name: '上下文状态' })).toBeInTheDocument();
+  });
+
+  it('首轮生成中手动展开后切换会话，返回仍在生成的原会话继续展开', async () => {
+    const view = render(<ContextStatus
+      conversationId="chat-open-background"
+      usage={null}
+      phase="estimated"
+      pending
+      isStreaming
+      isFirstConversationTurn
+      activeRunId="run-open-background"
+    />);
+
+    fireEvent.click(screen.getByRole('button', { name: '查看上下文状态，计算中' }));
+    expect(screen.getByRole('dialog', { name: '上下文状态' })).toBeInTheDocument();
+    expect(sessionStorage.getItem(CONTEXT_STATUS_INTERACTED_FIRST_TURN_STORAGE_KEY)).toContain(
+      'chat-open-background',
+    );
+
+    view.rerender(<ContextStatus conversationId="chat-other" usage={actualUsage} />);
+    expect(screen.queryByRole('dialog', { name: '上下文状态' })).toBeNull();
+    expect(sessionStorage.getItem(CONTEXT_STATUS_INTERACTED_FIRST_TURN_STORAGE_KEY)).toContain(
+      'chat-open-background',
+    );
+
+    view.rerender(<ContextStatus
+      conversationId="chat-open-background"
+      usage={null}
+      phase="estimated"
+      pending
+      isStreaming
+      isFirstConversationTurn
+      activeRunId="run-open-background"
     />);
 
     expect(screen.getByRole('dialog', { name: '上下文状态' })).toBeInTheDocument();

@@ -289,6 +289,7 @@ export default function ChatPage() {
         };
         const finalizeRecoveryFailure = () => {
           if (cancelled || failureFinalized) return;
+          clearFirstTurnContextState(chatId);
           const pendingStop = recoveryStopPendingRef.current;
           if (pendingStop?.controller === controller) {
             pendingStop.streamTerminated = true;
@@ -386,11 +387,8 @@ export default function ChatPage() {
             dispatch(setStreamStatus('completed'));
             retryHydration();
           },
-          onError: (_message, payload) => {
+          onError: (_message, _payload) => {
             if (cancelled) return;
-            if (payload?.code === 'stream_interrupted') {
-              clearFirstTurnContextState(chatId);
-            }
             const pendingStop = recoveryStopPendingRef.current;
             if (pendingStop?.controller === controller) {
               pendingStop.streamTerminated = true;
