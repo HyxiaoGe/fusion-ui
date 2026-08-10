@@ -130,29 +130,41 @@ export interface FetchModelsResult {
 // 请求去重：防止多个组件同时触发重复请求
 let activeFetchPromise: Promise<FetchModelsResult> | null = null;
 
+async function requestModels(): Promise<FetchModelsResult> {
+  const data = await apiRequest<ApiModelResponse>(`${API_BASE_URL}/api/models/`);
+  const models = (data.models || []).map(convertApiModelToModelInfo);
+  const providers = data.providers || [];
+  return { models, providers };
+}
+
+function startTrackedFetch(): Promise<FetchModelsResult> {
+  const request = requestModels();
+  activeFetchPromise = request;
+  const clearTrackedRequest = () => {
+    if (activeFetchPromise === request) activeFetchPromise = null;
+  };
+  void request.then(clearTrackedRequest, clearTrackedRequest);
+  return request;
+}
+
 // 获取模型配置，自动去重并发请求
-export const fetchModels = async (): Promise<FetchModelsResult> => {
-  // 如果已有请求在进行中，复用同一个 Promise
-  if (activeFetchPromise) {
-    return activeFetchPromise;
-  }
+export const fetchModels = (): Promise<FetchModelsResult> => {
+  if (activeFetchPromise) return activeFetchPromise;
+  return startTrackedFetch();
+};
 
-  activeFetchPromise = (async () => {
+// 写操作后的强制刷新必须等待旧请求结束，再发起一次新的目录读取。
+export const refreshModels = async (): Promise<FetchModelsResult> => {
+  const staleRequest = activeFetchPromise;
+  if (staleRequest) {
     try {
-      const data = await apiRequest<ApiModelResponse>(`${API_BASE_URL}/api/models/`);
-      const models = (data.models || []).map(convertApiModelToModelInfo);
-      const providers = data.providers || [];
-      return { models, providers };
-    } finally {
-      activeFetchPromise = null;
+      await staleRequest;
+    } catch {
+      // 旧请求失败不影响强制刷新继续获取最新目录。
     }
-  })();
-
-  return activeFetchPromise;
+  }
+  return startTrackedFetch();
 };
 
 // 初始化模型配置（语义别名，与 fetchModels 行为一致）
 export const initializeModels = fetchModels;
-
-// 强制刷新（与 fetchModels 一致，去重由 activeFetchPromise 保证）
-export const refreshModels = fetchModels;

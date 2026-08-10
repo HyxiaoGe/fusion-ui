@@ -358,6 +358,20 @@ describe('ModelManagementPanel', () => {
     expect(dispatchMock).toHaveBeenCalledWith(expect.objectContaining({ type: 'models/updateModels' }));
   });
 
+  it('不可路由的隐藏模型不能恢复到新对话选择器', async () => {
+    await renderLoaded({
+      ...baseSnapshot,
+      models: [{
+        ...baseSnapshot.models[1],
+        routable: false,
+      }],
+    });
+
+    expect(screen.getByText('当前模型不可路由，无法恢复到新对话选择器。')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '不可恢复 Legacy Model' })).toBeDisabled();
+    expect(screen.queryByRole('button', { name: '恢复 Legacy Model' })).toBeNull();
+  });
+
   it('可见性已写入但后续刷新失败时不误报写操作失败', async () => {
     prepareLoadedSnapshot();
     updateModelVisibilityMock.mockResolvedValue({});

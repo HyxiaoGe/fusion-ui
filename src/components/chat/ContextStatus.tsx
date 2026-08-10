@@ -177,17 +177,29 @@ export default function ContextStatus({
     const conversationChanged = previousConversationId !== conversationId;
     trackedConversationIdRef.current = conversationId;
     trackedRunIdRef.current = activeRunId;
+    const previousConversationHasFirstTurnState = (
+      hasPendingFirstTurn(previousConversationId)
+      || hasSuppressedFirstTurn(previousConversationId)
+    );
     const sameFirstTurnRun = Boolean(
       conversationChanged
       && firstTurnStreamingRef.current
       && activeRunId
-      && previousRunId === activeRunId,
+      && (
+        previousRunId === activeRunId
+        || (!previousRunId && (userInteractedRef.current || previousConversationHasFirstTurnState))
+      ),
     );
     const sameConversationRunEstablished = Boolean(
       !conversationChanged
       && firstTurnStreamingRef.current
       && activeRunId
       && !previousRunId,
+    );
+    const sameConversationRunCompleted = Boolean(
+      !conversationChanged
+      && previousRunId
+      && !activeRunId,
     );
 
     if (conversationChanged) {
@@ -211,7 +223,10 @@ export default function ContextStatus({
     defaultOpenRef.current = preferred;
     setDefaultOpen(preferred);
 
-    if ((sameFirstTurnRun || sameConversationRunEstablished) && userInteractedRef.current) return;
+    if (
+      (sameFirstTurnRun || sameConversationRunEstablished || sameConversationRunCompleted)
+      && userInteractedRef.current
+    ) return;
     if (firstTurnStreamingRef.current) {
       if (preferred && !hasSuppressedFirstTurn(conversationId)) {
         markPendingFirstTurn(conversationId);

@@ -756,7 +756,9 @@ export default function ModelManagementPanel() {
                   <p className="mt-1 break-all text-xs text-muted-foreground">{model.provider_display} · {model.model_id}</p>
                   {!model.selectable && (
                     <p className="mt-2 text-sm text-muted-foreground">
-                      仅从新选择中隐藏，已有对话仍可用。
+                      {model.routable
+                        ? "仅从新选择中隐藏，已有对话仍可用。"
+                        : "当前模型不可路由，无法恢复到新对话选择器。"}
                     </p>
                   )}
                   {model.reason && <p className="mt-1 text-xs text-muted-foreground">最近原因：{model.reason}</p>}
@@ -764,15 +766,16 @@ export default function ModelManagementPanel() {
                 <Button
                   size="sm"
                   variant={model.selectable ? "outline" : "default"}
-                  disabled={Boolean(pendingAction)}
-                  aria-label={`${model.selectable ? "隐藏" : "恢复"} ${model.name}`}
+                  disabled={Boolean(pendingAction) || (!model.selectable && !model.routable)}
+                  aria-label={`${model.selectable ? "隐藏" : model.routable ? "恢复" : "不可恢复"} ${model.name}`}
                   onClick={() => {
+                    if (!model.selectable && !model.routable) return;
                     setAction({ kind: "visibility", model, nextSelectable: !model.selectable });
                     setReason("");
                   }}
                 >
                   {model.selectable ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                  {model.selectable ? "隐藏" : "恢复"}
+                  {model.selectable ? "隐藏" : model.routable ? "恢复" : "不可恢复"}
                 </Button>
               </div>
             </div>
