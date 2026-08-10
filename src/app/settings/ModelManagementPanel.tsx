@@ -424,7 +424,10 @@ export default function ModelManagementPanel() {
         persistOwnedOperationIds(ownedOperationIdsRef.current ?? new Set());
         return loadSnapshot(false, true);
       })
-      .then(() => {
+      .then((nextSnapshot) => {
+        if (!nextSnapshot) {
+          throw new Error("管理快照刷新失败");
+        }
         setNotice(`${terminalOperation.model_id} 已上线，模型选择器已同步刷新`);
         if (failedOperations.length === 0) setError(null);
       })

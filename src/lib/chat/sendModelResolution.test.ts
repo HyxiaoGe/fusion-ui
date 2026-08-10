@@ -34,6 +34,7 @@ function createState() {
         'chat-1': {
           id: 'chat-1',
           model_id: 'hidden-model',
+          messages: [{ id: 'user-1', role: 'user', content: '你好' }],
         },
       },
     },
@@ -72,6 +73,15 @@ describe('resolveSendModel 的 selectable/routable 边界', () => {
   it('已有对话绑定模型 routable=false 时阻止发送', () => {
     const state = createState() as any;
     state.models.models[0].routable = false;
+
+    expect(resolveSendModel(state, 'chat-1')).toEqual({
+      status: 'conversation_model_unavailable',
+    });
+  });
+
+  it('尚无用户消息的空会话仍执行新对话 selectable 门禁', () => {
+    const state = createState() as any;
+    state.conversation.byId['chat-1'].messages = [];
 
     expect(resolveSendModel(state, 'chat-1')).toEqual({
       status: 'conversation_model_unavailable',

@@ -25,13 +25,22 @@ export function resolveSendModel(
   conversationId: string | null,
 ): SendModelResolution {
   if (conversationId !== null) {
-    const conversationModelId = state.conversation.byId[conversationId]?.model_id;
+    const conversation = state.conversation.byId[conversationId];
+    const conversationModelId = conversation?.model_id;
     if (!conversationModelId) {
       return { status: 'conversation_not_ready' };
     }
 
+    const hasUserTurn = conversation.messages?.some((message) => message.role === 'user') ?? false;
     const conversationModel = state.models.models.find(
-      (model) => model.id === conversationModelId && isModelAvailableForSending(model),
+      (model) => (
+        model.id === conversationModelId
+        && (
+          hasUserTurn
+            ? isModelAvailableForSending(model)
+            : isModelAvailableForNewConversation(model)
+        )
+      ),
     );
     return conversationModel
       ? { status: 'ready', model: conversationModel }

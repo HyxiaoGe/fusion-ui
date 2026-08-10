@@ -541,6 +541,45 @@ describe('ModelManagementPanel', () => {
     expect(dispatchMock).toHaveBeenCalledWith(expect.objectContaining({ type: 'models/updateModels' }));
   });
 
+  it('上线后管理快照刷新失败时不误报完整成功', async () => {
+    const pendingOperation = {
+      operation_id: 'operation-snapshot-refresh-failed',
+      candidate_fingerprint: 'fingerprint-ready',
+      model_id: 'kimi-k3.1',
+      status: 'pending',
+    };
+    const succeededOperation = { ...pendingOperation, status: 'succeeded' };
+    fetchModelManagementSnapshotMock
+      .mockResolvedValueOnce(baseSnapshot)
+      .mockResolvedValueOnce({ ...baseSnapshot, operations: [pendingOperation] })
+      .mockResolvedValueOnce({ ...baseSnapshot, operations: [succeededOperation] })
+      .mockRejectedValueOnce(new Error('管理快照网络中断'));
+    admitModelCandidateMock.mockResolvedValue(pendingOperation);
+    refreshModelsMock.mockResolvedValue({ models: [], providers: [] });
+
+    render(<ModelManagementPanel />);
+    await screen.findByTestId('registered-model-count');
+    vi.useFakeTimers();
+    fireEvent.click(screen.getByRole('button', { name: '上线 kimi-k3.1' }));
+    fireEvent.change(screen.getByLabelText('操作原因'), { target: { value: '允许上线' } });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: '确认上线' }));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1500);
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(refreshModelsMock).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole('alert')).toHaveTextContent('模型已上线，但目录刷新失败');
+    expect(screen.queryByText('kimi-k3.1 已上线，模型选择器已同步刷新')).toBeNull();
+  });
+
   it('活动任务轮询瞬时失败后会继续轮询直到终态', async () => {
     const pendingOperation = {
       operation_id: 'operation-retry-poll',
