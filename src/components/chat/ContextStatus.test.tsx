@@ -358,6 +358,35 @@ describe('ContextStatus', () => {
     expect(sessionStorage.getItem(CONTEXT_STATUS_PENDING_FIRST_TURN_STORAGE_KEY)).toBeNull();
   });
 
+  it('历史消息水合完成前不会清除首轮恢复标记', async () => {
+    localStorage.setItem(CONTEXT_STATUS_DEFAULT_OPEN_STORAGE_KEY, 'true');
+    sessionStorage.setItem(
+      CONTEXT_STATUS_PENDING_FIRST_TURN_STORAGE_KEY,
+      JSON.stringify(['chat-refresh-before-hydration']),
+    );
+    const view = render(<ContextStatus
+      conversationId="chat-refresh-before-hydration"
+      usage={null}
+      phase={null}
+      isConversationHydrated={false}
+    />);
+
+    expect(sessionStorage.getItem(CONTEXT_STATUS_PENDING_FIRST_TURN_STORAGE_KEY)).toContain(
+      'chat-refresh-before-hydration',
+    );
+
+    view.rerender(<ContextStatus
+      conversationId="chat-refresh-before-hydration"
+      usage={actualUsage}
+      phase="final"
+      isFirstConversationTurn
+      isConversationHydrated
+    />);
+
+    expect(await screen.findByRole('dialog', { name: '上下文状态' })).toBeInTheDocument();
+    expect(sessionStorage.getItem(CONTEXT_STATUS_PENDING_FIRST_TURN_STORAGE_KEY)).toBeNull();
+  });
+
   it.each([
     ['错误终态', { phase: 'error' as const, errorKind: 'check_failed' as const, latestActualUnavailable: false }],
     ['无实际用量的终态', { phase: 'final' as const, errorKind: undefined, latestActualUnavailable: false }],

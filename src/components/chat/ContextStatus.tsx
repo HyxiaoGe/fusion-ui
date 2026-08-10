@@ -41,6 +41,7 @@ interface ContextStatusProps {
   errorKind?: ContextUsageErrorKind | null;
   isStreaming?: boolean;
   isFirstConversationTurn?: boolean;
+  isConversationHydrated?: boolean;
   activeRunId?: string | null;
 }
 
@@ -91,6 +92,7 @@ export default function ContextStatus({
   errorKind = null,
   isStreaming = false,
   isFirstConversationTurn = false,
+  isConversationHydrated = true,
   activeRunId = null,
 }: ContextStatusProps) {
   // Fusion 聊天界面当前固定使用中文，避免浏览器语言探测让单个组件混入英文。
@@ -210,6 +212,10 @@ export default function ContextStatus({
   useEffect(() => {
     if (isStreaming) return;
 
+    // 历史消息到达前 Redux 会暂时表现为“不是首轮”。此时保留跨刷新状态，
+    // 等会话详情水合后再按真实消息数判断，避免提前丢失自动展开任务。
+    if (!isConversationHydrated && !isFirstConversationTurn) return;
+
     clearInteractedFirstTurn(conversationId);
 
     const pendingFirstTurn = hasPendingFirstTurn(conversationId);
@@ -249,7 +255,16 @@ export default function ContextStatus({
 
     clearPendingFirstTurn(conversationId);
     if (!userInteractedRef.current) setPanelOpen(true);
-  }, [conversationId, isError, isFirstConversationTurn, isStreaming, latestActualUnavailable, phase, usage]);
+  }, [
+    conversationId,
+    isConversationHydrated,
+    isError,
+    isFirstConversationTurn,
+    isStreaming,
+    latestActualUnavailable,
+    phase,
+    usage,
+  ]);
 
   const handlePanelOpenChange = (value: boolean) => {
     if (!value && hasOpenDetailOverlayRef.current) return;
