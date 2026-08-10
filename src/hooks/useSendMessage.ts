@@ -57,6 +57,7 @@ import {
   getSendModelErrorMessage,
   resolveSendModel,
 } from '@/lib/chat/sendModelResolution';
+import { clearFirstTurnContextState } from '@/lib/chat/contextStatusPersistence';
 import { hasFormalTextContent } from '@/lib/chat/suggestedQuestionState';
 import type { Message, ContentBlock } from '@/types/conversation';
 import type { FileAttachment } from '@/lib/utils/fileHelpers';
@@ -341,6 +342,7 @@ export function useSendMessage() {
         dispatch(setPendingConversationId(null));
       }
 
+      if (convId) clearFirstTurnContextState(convId);
       dispatch(endStream());
       sendGenerationRef.current += 1;
       activeSendContextRef.current = null;
@@ -782,6 +784,7 @@ export function useSendMessage() {
 
         const effectiveConvIdOnError = activeConvIdRef.current ?? tempConvId;
         if (isInterruptedStreamSignal(error)) {
+          clearFirstTurnContextState(effectiveConvIdOnError);
           // 用户可能从导航后的 ChatPage 实例发起停止，原始发送实例无法共享
           // AbortController，只会收到后端持久化后的 stream_interrupted 终态。
           // 这代表“生成已停止”，不是“用户消息发送失败”。

@@ -13,7 +13,11 @@ export function isModelAvailableForSending(model: Model): boolean {
 }
 
 export function isModelAvailableForNewConversation(model: Model): boolean {
-  return model.selectable !== false && isModelAvailableForSending(model);
+  return (
+    model.selectable !== false
+    && model.health?.status !== 'unhealthy'
+    && isModelAvailableForSending(model)
+  );
 }
 
 export function resolveSendModel(

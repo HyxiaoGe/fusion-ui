@@ -435,6 +435,42 @@ describe('ContextStatus', () => {
     await waitFor(() => expect(screen.queryByRole('dialog', { name: '上下文状态' })).toBeNull());
   });
 
+  it('从其他会话返回后台首轮时不迁移其他会话的临时关闭状态', async () => {
+    localStorage.setItem(CONTEXT_STATUS_DEFAULT_OPEN_STORAGE_KEY, 'true');
+    const view = render(<ContextStatus
+      conversationId="chat-background-run"
+      usage={null}
+      phase="estimated"
+      pending
+      isStreaming
+      isFirstConversationTurn
+      activeRunId="run-background"
+    />);
+
+    view.rerender(<ContextStatus conversationId="chat-other-closed" usage={actualUsage} />);
+    expect(await screen.findByRole('dialog', { name: '上下文状态' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '查看上下文状态，剩余 43%' }));
+
+    view.rerender(<ContextStatus
+      conversationId="chat-background-run"
+      usage={null}
+      phase="estimated"
+      pending
+      isStreaming
+      isFirstConversationTurn
+      activeRunId="run-background"
+    />);
+    view.rerender(<ContextStatus
+      conversationId="chat-background-run"
+      usage={actualUsage}
+      phase="final"
+      isFirstConversationTurn
+      activeRunId={null}
+    />);
+
+    expect(await screen.findByRole('dialog', { name: '上下文状态' })).toBeInTheDocument();
+  });
+
   it('流结束将 runId 清空时保留用户临时展开', async () => {
     const view = render(<ContextStatus
       conversationId="chat-run-complete"

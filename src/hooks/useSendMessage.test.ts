@@ -23,6 +23,10 @@ import {
   loadConversationDetail,
   resetConversationDetailResource,
 } from '@/lib/chat/conversationDetailResource';
+import {
+  CONTEXT_STATUS_PENDING_FIRST_TURN_STORAGE_KEY,
+  CONTEXT_STATUS_SUPPRESSED_FIRST_TURN_STORAGE_KEY,
+} from '@/lib/chat/contextStatusPersistence';
 
 const {
   sendMessageStreamMock,
@@ -149,6 +153,7 @@ function streamError(message: string, recoverable: boolean) {
 
 describe('useSendMessage', () => {
   beforeEach(() => {
+    sessionStorage.clear();
     sendMessageStreamMock.mockReset();
     reconnectStreamMock.mockReset();
     stopStreamMock.mockReset();
@@ -185,6 +190,7 @@ describe('useSendMessage', () => {
   });
 
   afterEach(() => {
+    sessionStorage.clear();
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
   });
@@ -1644,6 +1650,10 @@ describe('useSendMessage', () => {
       ],
     };
     getConversationMock.mockResolvedValue(interruptedConversation);
+    sessionStorage.setItem(
+      CONTEXT_STATUS_SUPPRESSED_FIRST_TURN_STORAGE_KEY,
+      JSON.stringify(['existing-conv']),
+    );
     sendMessageStreamMock.mockImplementationOnce(
       async (_payload: unknown, callbacks: StreamCallbacks) => {
         callbacks.onReady({
@@ -1719,6 +1729,7 @@ describe('useSendMessage', () => {
         )
       ).toEqual(['server-user', 'server-assistant']);
     });
+    expect(sessionStorage.getItem(CONTEXT_STATUS_SUPPRESSED_FIRST_TURN_STORAGE_KEY)).toBeNull();
   });
 
   it('兼容旧停止协议的 stream_error + 用户中止，不闪现错误态', async () => {
@@ -1958,11 +1969,21 @@ describe('useSendMessage', () => {
       void result.current.sendMessage('second', { conversationId: 'existing-conv' });
     });
     await waitFor(() => expect(sendMessageStreamMock).toHaveBeenCalledTimes(2));
+    sessionStorage.setItem(
+      CONTEXT_STATUS_PENDING_FIRST_TURN_STORAGE_KEY,
+      JSON.stringify(['existing-conv']),
+    );
+    sessionStorage.setItem(
+      CONTEXT_STATUS_SUPPRESSED_FIRST_TURN_STORAGE_KEY,
+      JSON.stringify(['existing-conv']),
+    );
     await act(async () => {
       await result.current.stopStreaming();
     });
 
     expect(reconnectStreamMock).not.toHaveBeenCalled();
+    expect(sessionStorage.getItem(CONTEXT_STATUS_PENDING_FIRST_TURN_STORAGE_KEY)).toBeNull();
+    expect(sessionStorage.getItem(CONTEXT_STATUS_SUPPRESSED_FIRST_TURN_STORAGE_KEY)).toBeNull();
   });
 
   it('发送端返回 STREAM_UNAVAILABLE 时不发起 GET 重连并保留服务端提示', async () => {

@@ -2,6 +2,7 @@ import React, { useEffect } from 'react';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Conversation, Message } from '@/types/conversation';
+import { CONTEXT_STATUS_SUPPRESSED_FIRST_TURN_STORAGE_KEY } from '@/lib/chat/contextStatusPersistence';
 
 const {
   currentRoute,
@@ -704,6 +705,10 @@ describe('ChatPage 会话切换体验', () => {
     stopRecoveredStreamMock.mockImplementationOnce(() => new Promise<boolean>((resolve) => {
       releaseStop = resolve;
     }));
+    sessionStorage.setItem(
+      CONTEXT_STATUS_SUPPRESSED_FIRST_TURN_STORAGE_KEY,
+      JSON.stringify(['chat-a']),
+    );
 
     render(<ChatPage />);
     await waitFor(() => expect(reconnectStreamMock).toHaveBeenCalledTimes(1));
@@ -745,6 +750,7 @@ describe('ChatPage 会话切换体验', () => {
     expect(dispatchMock.mock.calls.some(([action]) => action?.type === 'stream/appendThinkingDelta')).toBe(false);
     expect(stopStreamingMock).not.toHaveBeenCalled();
     expect(retryHydrationMock).toHaveBeenCalledTimes(hydrationCallsBeforeStop + 1);
+    expect(sessionStorage.getItem(CONTEXT_STATUS_SUPPRESSED_FIRST_TURN_STORAGE_KEY)).toBeNull();
   });
 
   it('preparing/tool 阶段无正文时仍以空 partial 数组执行 atomic stop', async () => {

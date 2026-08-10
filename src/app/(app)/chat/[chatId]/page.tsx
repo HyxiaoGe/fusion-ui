@@ -50,6 +50,7 @@ import { useTransientCompletionState } from '@/hooks/useTransientCompletionState
 import { useConversationFiles } from '@/hooks/useConversationFiles';
 import { createAgentStreamEventHandlers } from '@/lib/agent/streamEventHandlers';
 import { consumeConversationFilesPanelOpen } from '@/lib/chat/filesPanelHandoff';
+import { clearFirstTurnContextState } from '@/lib/chat/contextStatusPersistence';
 import {
   recoverReasoningOnlyFinalBlocks,
   shouldRecoverReasoningOnlyFinalBlocks,
@@ -385,8 +386,11 @@ export default function ChatPage() {
             dispatch(setStreamStatus('completed'));
             retryHydration();
           },
-          onError: () => {
+          onError: (_message, payload) => {
             if (cancelled) return;
+            if (payload?.code === 'stream_interrupted') {
+              clearFirstTurnContextState(chatId);
+            }
             const pendingStop = recoveryStopPendingRef.current;
             if (pendingStop?.controller === controller) {
               pendingStop.streamTerminated = true;
@@ -562,6 +566,7 @@ export default function ChatPage() {
         if (reconnectControllerRef.current === recoveryController) {
           reconnectControllerRef.current = null;
         }
+        clearFirstTurnContextState(chatId);
         dispatch(endStream());
         retryHydration();
       } catch (error) {

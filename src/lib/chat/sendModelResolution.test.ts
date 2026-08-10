@@ -50,6 +50,16 @@ describe('resolveSendModel 的 selectable/routable 边界', () => {
     });
   });
 
+  it('新对话跳过健康异常但仍可路由的已保存偏好模型', () => {
+    const state = createState() as any;
+    state.models.models[0].selectable = true;
+
+    expect(resolveSendModel(state, null)).toMatchObject({
+      status: 'ready',
+      model: { id: 'visible-model' },
+    });
+  });
+
   it('已有对话仍可使用 selectable=false 但 enabled/routable 的绑定模型，不受展示健康状态影响', () => {
     const resolution = resolveSendModel(createState(), 'chat-1');
 

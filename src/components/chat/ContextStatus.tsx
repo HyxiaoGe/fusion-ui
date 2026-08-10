@@ -14,6 +14,21 @@ import {
 import { cn } from '@/lib/utils';
 import type { ContextUsage } from '@/types/conversation';
 import i18n from '@/lib/i18n';
+import {
+  CONTEXT_STATUS_DEFAULT_OPEN_STORAGE_KEY,
+  clearInteractedFirstTurn,
+  clearPendingFirstTurn,
+  clearSuppressedFirstTurn,
+  hasInteractedFirstTurn,
+  hasPendingFirstTurn,
+  hasSuppressedFirstTurn,
+  markInteractedFirstTurn,
+  markPendingFirstTurn,
+  markSuppressedFirstTurn,
+  moveInteractedFirstTurn,
+  movePendingFirstTurn,
+  moveSuppressedFirstTurn,
+} from '@/lib/chat/contextStatusPersistence';
 import { useHasOpenChatDetailOverlay } from './ChatDetailOverlayContext';
 
 interface ContextStatusProps {
@@ -29,80 +44,11 @@ interface ContextStatusProps {
   activeRunId?: string | null;
 }
 
-export const CONTEXT_STATUS_DEFAULT_OPEN_STORAGE_KEY = 'fusion.context-status.default-open.v2';
-export const CONTEXT_STATUS_PENDING_FIRST_TURN_STORAGE_KEY = 'fusion.context-status.pending-first-turn.v2';
-export const CONTEXT_STATUS_SUPPRESSED_FIRST_TURN_STORAGE_KEY = 'fusion.context-status.suppressed-first-turn.v2';
-
-function readConversationIds(storageKey: string): Set<string> {
-  try {
-    const raw = window.sessionStorage.getItem(storageKey);
-    if (!raw) return new Set();
-    const parsed: unknown = JSON.parse(raw);
-    return new Set(Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === 'string') : []);
-  } catch {
-    return new Set();
-  }
-}
-
-function writeConversationIds(storageKey: string, ids: Set<string>): void {
-  try {
-    if (ids.size === 0) {
-      window.sessionStorage.removeItem(storageKey);
-      return;
-    }
-    window.sessionStorage.setItem(storageKey, JSON.stringify([...ids]));
-  } catch {
-    // sessionStorage 不可用时仅失去首轮跨路由/刷新恢复，不影响当前页面交互。
-  }
-}
-
-function addConversationId(storageKey: string, conversationId: string): void {
-  const ids = readConversationIds(storageKey);
-  ids.add(conversationId);
-  writeConversationIds(storageKey, ids);
-}
-
-function hasConversationId(storageKey: string, conversationId: string): boolean {
-  return readConversationIds(storageKey).has(conversationId);
-}
-
-function removeConversationId(storageKey: string, conversationId: string): void {
-  const ids = readConversationIds(storageKey);
-  if (!ids.delete(conversationId)) return;
-  writeConversationIds(storageKey, ids);
-}
-
-function moveConversationId(storageKey: string, fromId: string, toId: string): void {
-  if (fromId === toId) return;
-  const ids = readConversationIds(storageKey);
-  if (!ids.delete(fromId)) return;
-  ids.add(toId);
-  writeConversationIds(storageKey, ids);
-}
-
-function markPendingFirstTurn(conversationId: string): void {
-  addConversationId(CONTEXT_STATUS_PENDING_FIRST_TURN_STORAGE_KEY, conversationId);
-}
-
-function hasPendingFirstTurn(conversationId: string): boolean {
-  return hasConversationId(CONTEXT_STATUS_PENDING_FIRST_TURN_STORAGE_KEY, conversationId);
-}
-
-function clearPendingFirstTurn(conversationId: string): void {
-  removeConversationId(CONTEXT_STATUS_PENDING_FIRST_TURN_STORAGE_KEY, conversationId);
-}
-
-function markSuppressedFirstTurn(conversationId: string): void {
-  addConversationId(CONTEXT_STATUS_SUPPRESSED_FIRST_TURN_STORAGE_KEY, conversationId);
-}
-
-function hasSuppressedFirstTurn(conversationId: string): boolean {
-  return hasConversationId(CONTEXT_STATUS_SUPPRESSED_FIRST_TURN_STORAGE_KEY, conversationId);
-}
-
-function clearSuppressedFirstTurn(conversationId: string): void {
-  removeConversationId(CONTEXT_STATUS_SUPPRESSED_FIRST_TURN_STORAGE_KEY, conversationId);
-}
+export {
+  CONTEXT_STATUS_DEFAULT_OPEN_STORAGE_KEY,
+  CONTEXT_STATUS_PENDING_FIRST_TURN_STORAGE_KEY,
+  CONTEXT_STATUS_SUPPRESSED_FIRST_TURN_STORAGE_KEY,
+} from '@/lib/chat/contextStatusPersistence';
 
 function readDefaultOpen(): boolean {
   try {
@@ -168,31 +114,34 @@ export default function ContextStatus({
   const trackedRunIdRef = useRef(activeRunId);
   const defaultOpenRef = useRef(false);
   const userInteractedRef = useRef(false);
-  const firstTurnStreamingRef = useRef(isStreaming && isFirstConversationTurn);
-  firstTurnStreamingRef.current = isStreaming && isFirstConversationTurn;
+  const currentFirstTurnStreaming = isStreaming && isFirstConversationTurn;
+  const trackedFirstTurnStreamingRef = useRef(currentFirstTurnStreaming);
 
   useLayoutEffect(() => {
     const previousConversationId = trackedConversationIdRef.current;
     const previousRunId = trackedRunIdRef.current;
+    const previousFirstTurnStreaming = trackedFirstTurnStreamingRef.current;
     const conversationChanged = previousConversationId !== conversationId;
     trackedConversationIdRef.current = conversationId;
     trackedRunIdRef.current = activeRunId;
     const previousConversationHasFirstTurnState = (
       hasPendingFirstTurn(previousConversationId)
       || hasSuppressedFirstTurn(previousConversationId)
+      || hasInteractedFirstTurn(previousConversationId)
     );
     const sameFirstTurnRun = Boolean(
       conversationChanged
-      && firstTurnStreamingRef.current
+      && previousFirstTurnStreaming
+      && currentFirstTurnStreaming
       && activeRunId
       && (
         previousRunId === activeRunId
-        || (!previousRunId && (userInteractedRef.current || previousConversationHasFirstTurnState))
+        || (!previousRunId && previousConversationHasFirstTurnState)
       ),
     );
     const sameConversationRunEstablished = Boolean(
       !conversationChanged
-      && firstTurnStreamingRef.current
+      && currentFirstTurnStreaming
       && activeRunId
       && !previousRunId,
     );
@@ -204,18 +153,12 @@ export default function ContextStatus({
 
     if (conversationChanged) {
       if (sameFirstTurnRun) {
-        moveConversationId(
-          CONTEXT_STATUS_PENDING_FIRST_TURN_STORAGE_KEY,
-          previousConversationId,
-          conversationId,
-        );
-        moveConversationId(
-          CONTEXT_STATUS_SUPPRESSED_FIRST_TURN_STORAGE_KEY,
-          previousConversationId,
-          conversationId,
-        );
+        movePendingFirstTurn(previousConversationId, conversationId);
+        moveSuppressedFirstTurn(previousConversationId, conversationId);
+        moveInteractedFirstTurn(previousConversationId, conversationId);
       } else {
         userInteractedRef.current = false;
+        clearInteractedFirstTurn(previousConversationId);
       }
     }
 
@@ -227,7 +170,7 @@ export default function ContextStatus({
       (sameFirstTurnRun || sameConversationRunEstablished || sameConversationRunCompleted)
       && userInteractedRef.current
     ) return;
-    if (firstTurnStreamingRef.current) {
+    if (currentFirstTurnStreaming) {
       if (preferred && !hasSuppressedFirstTurn(conversationId)) {
         markPendingFirstTurn(conversationId);
       } else {
@@ -241,6 +184,10 @@ export default function ContextStatus({
   }, [activeRunId, conversationId]);
 
   useLayoutEffect(() => {
+    trackedFirstTurnStreamingRef.current = currentFirstTurnStreaming;
+  }, [currentFirstTurnStreaming]);
+
+  useLayoutEffect(() => {
     if (!isStreaming || !isFirstConversationTurn) return;
     if (defaultOpenRef.current && !hasSuppressedFirstTurn(conversationId)) {
       markPendingFirstTurn(conversationId);
@@ -252,6 +199,8 @@ export default function ContextStatus({
 
   useEffect(() => {
     if (isStreaming) return;
+
+    clearInteractedFirstTurn(conversationId);
 
     const pendingFirstTurn = hasPendingFirstTurn(conversationId);
     const suppressedFirstTurn = hasSuppressedFirstTurn(conversationId);
@@ -296,6 +245,7 @@ export default function ContextStatus({
     if (!value && hasOpenDetailOverlayRef.current) return;
     userInteractedRef.current = true;
     if (isStreaming && isFirstConversationTurn) {
+      markInteractedFirstTurn(conversationId);
       clearPendingFirstTurn(conversationId);
       if (value) {
         clearSuppressedFirstTurn(conversationId);
