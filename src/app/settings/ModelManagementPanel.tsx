@@ -394,13 +394,15 @@ export default function ModelManagementPanel() {
 
     terminalOperations.forEach((operation) => {
       handledOperationIdsRef.current.add(operation.operation_id);
-      ownedOperationIdsRef.current?.delete(operation.operation_id);
     });
-    persistOwnedOperationIds(ownedOperationIdsRef.current ?? new Set());
 
     const failedOperations = terminalOperations.filter((operation) => operation.status === "failed");
     const succeededOperations = terminalOperations.filter((operation) => operation.status === "succeeded");
     if (failedOperations.length > 0) {
+      failedOperations.forEach((operation) => {
+        ownedOperationIdsRef.current?.delete(operation.operation_id);
+      });
+      persistOwnedOperationIds(ownedOperationIdsRef.current ?? new Set());
       setError(failedOperations.map(safeOperationError).join("；"));
       setNotice(null);
     }
@@ -409,7 +411,13 @@ export default function ModelManagementPanel() {
 
     setPendingAction(`operation:${terminalOperation.operation_id}`);
     void syncGlobalModelCatalog()
-      .then(() => loadSnapshot(false, true))
+      .then(() => {
+        succeededOperations.forEach((operation) => {
+          ownedOperationIdsRef.current?.delete(operation.operation_id);
+        });
+        persistOwnedOperationIds(ownedOperationIdsRef.current ?? new Set());
+        return loadSnapshot(false, true);
+      })
       .then(() => {
         setNotice(`${terminalOperation.model_id} 已上线，模型选择器已同步刷新`);
         if (failedOperations.length === 0) setError(null);
