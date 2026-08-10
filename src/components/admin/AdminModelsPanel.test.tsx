@@ -357,8 +357,10 @@ describe('AdminModelsPanel', () => {
     expect(within(row).queryByText('服务商认证失败，请检查服务配置')).toBeNull();
     fireEvent.click(within(row).getByRole('button', { name: '查看模型详情 kimi-k2.5' }));
     const view = await screen.findByLabelText('模型详情 kimi-k2.5');
-    expect(view).toHaveTextContent('异常说明');
-    expect(view).toHaveTextContent('服务商认证失败，请检查服务配置');
+    await waitFor(() => {
+      expect(view).toHaveTextContent('异常说明');
+      expect(view).toHaveTextContent('服务商认证失败，请检查服务配置');
+    });
   });
 
   it('历史模型详情对 provider、成本、推荐场景和压测状态做中文安全展示', async () => {
