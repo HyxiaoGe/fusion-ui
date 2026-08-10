@@ -170,6 +170,12 @@ function healthLabel(health: ModelManagementRegisteredModel["health"]): string {
 }
 
 function safeOperationError(operation: ModelAdmissionOperation): string {
+  if (operation.compensation?.manual_cleanup_required) {
+    const codes = operation.compensation.errors.filter(Boolean).join("、");
+    return codes
+      ? `模型上线失败且需要人工清理，请联系运维处理（错误码：${codes}）`
+      : "模型上线失败且需要人工清理，请联系运维处理";
+  }
   if (typeof operation.safe_error === "string" && operation.safe_error.trim()) {
     return operation.safe_error.trim();
   }
@@ -810,6 +816,7 @@ export default function ModelManagementPanel() {
             const admissionActionLabel = candidateAdmissionActionLabel(candidate);
             const operation = fingerprint ? operationByFingerprint.get(fingerprint) : undefined;
             const operationActive = operation?.status === "pending" || operation?.status === "running";
+            const manualCleanupRequired = operation?.compensation?.manual_cleanup_required === true;
             const canAdmit = Boolean(
               snapshot.capabilities.admission_enabled
               && governance === "available"
@@ -817,6 +824,7 @@ export default function ModelManagementPanel() {
               && candidateCanRequestAdmission(candidate)
               && fingerprint
               && !operationActive
+              && !manualCleanupRequired
               && (!operation || operation.status === "failed"),
             );
             return (
@@ -868,6 +876,7 @@ export default function ModelManagementPanel() {
                   {governance === "degraded"
                     && candidateCanRequestAdmission(candidate)
                     && fingerprint
+                    && !manualCleanupRequired
                     && (!operation || operation.status === "failed") && (
                     <Button
                       size="sm"

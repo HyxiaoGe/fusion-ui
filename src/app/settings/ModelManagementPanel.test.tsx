@@ -726,6 +726,32 @@ describe('ModelManagementPanel', () => {
     expect(refreshModelsMock).not.toHaveBeenCalled();
   });
 
+  it('需要人工清理的失败任务展示处置提示且禁止普通重试', async () => {
+    await renderLoaded({
+      ...baseSnapshot,
+      operations: [{
+        operation_id: 'operation-manual-cleanup',
+        candidate_fingerprint: 'fingerprint-ready',
+        model_id: 'kimi-k3.1',
+        status: 'failed',
+        error_code: 'rollback_key_failed',
+        writes_performed: true,
+        compensation: {
+          attempted: true,
+          key_restored: false,
+          model_deleted: true,
+          catalog_invalidated: true,
+          model_ownership_unverified: false,
+          manual_cleanup_required: true,
+          errors: ['rollback_key_failed'],
+        },
+      }],
+    });
+
+    expect(screen.getByText(/需要人工清理/)).toHaveTextContent('rollback_key_failed');
+    expect(screen.queryByRole('button', { name: '上线 kimi-k3.1' })).toBeNull();
+  });
+
   it('轮询到上线失败后展示安全错误且允许重试', async () => {
     const pendingOperation = {
       operation_id: 'operation-3',

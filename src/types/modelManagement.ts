@@ -43,6 +43,16 @@ export interface ModelManagementCandidate {
 
 export type ModelAdmissionOperationStatus = 'pending' | 'running' | 'succeeded' | 'failed';
 
+export interface ModelAdmissionCompensation {
+  attempted: boolean;
+  key_restored: boolean;
+  model_deleted: boolean;
+  catalog_invalidated: boolean;
+  model_ownership_unverified: boolean;
+  manual_cleanup_required: boolean;
+  errors: string[];
+}
+
 export interface ModelAdmissionOperation {
   operation_id: string;
   candidate_fingerprint: string;
@@ -50,6 +60,8 @@ export interface ModelAdmissionOperation {
   status: ModelAdmissionOperationStatus;
   phase?: string | null;
   error_code?: string | null;
+  writes_performed?: boolean;
+  compensation?: ModelAdmissionCompensation | null;
   safe_error?: string | { message?: string | null } | null;
   created_at?: string | null;
   updated_at?: string | null;
