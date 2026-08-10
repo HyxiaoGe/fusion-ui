@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { getDefaultModelId, getPreferredModelId } from './modelPreference';
+import {
+  getDefaultModelId,
+  getPreferredModelId,
+  isModelSelectable,
+  isModelVisibleInSelector,
+} from './modelPreference';
 
 describe('getPreferredModelId', () => {
   const models = [
@@ -40,5 +45,12 @@ describe('getPreferredModelId', () => {
       { id: 'hidden-only', enabled: true, selectable: false },
       { id: 'disabled-only', enabled: false, selectable: true },
     ], null)).toBeNull();
+  });
+
+  it('健康异常模型保留诊断展示，但禁止新对话选择', () => {
+    const unhealthy = models.find((model) => model.id === 'unhealthy-a')!;
+
+    expect(isModelVisibleInSelector(unhealthy)).toBe(true);
+    expect(isModelSelectable(unhealthy)).toBe(false);
   });
 });

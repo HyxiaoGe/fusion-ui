@@ -46,6 +46,16 @@ const { dispatchMock, pathnameMock, modelsStateMock, conversationStateMock } = v
           routable: true,
           capabilities: {},
         },
+        {
+          id: 'unhealthy-model',
+          name: 'Unhealthy Model',
+          provider: 'provider-a',
+          enabled: true,
+          selectable: true,
+          routable: true,
+          health: { status: 'unhealthy', error: '模型已下线' },
+          capabilities: {},
+        },
       ],
     } as any,
   },
@@ -121,6 +131,16 @@ describe('ModelSelector 集成渲染', () => {
           routable: true,
           capabilities: {},
         },
+        {
+          id: 'unhealthy-model',
+          name: 'Unhealthy Model',
+          provider: 'provider-a',
+          enabled: true,
+          selectable: true,
+          routable: true,
+          health: { status: 'unhealthy', error: '模型已下线' },
+          capabilities: {},
+        },
       ],
     };
     conversationStateMock.current = {
@@ -143,11 +163,36 @@ describe('ModelSelector 集成渲染', () => {
 
     expect(screen.getByTestId('model-selector-panel')).toBeInTheDocument();
     expect(screen.getAllByText('可联网')).toHaveLength(2);
-    expect(screen.getByText('不可联网')).toBeInTheDocument();
+    expect(screen.getAllByText('不可联网')).toHaveLength(2);
     expect(screen.getAllByText('读图')).toHaveLength(2);
     expect(screen.getAllByText('长上下文')).toHaveLength(2);
     expect(screen.getByText('深度任务')).toBeInTheDocument();
     expect(screen.queryByText('Hidden Model')).toBeNull();
+    expect(screen.getByRole('button', { name: /Unhealthy Model/ })).toBeDisabled();
+  });
+
+  it('目录只有隐藏模型时直接显示不可用，不打开空选择面板', () => {
+    modelsStateMock.current = {
+      selectedModelId: null,
+      loadStatus: 'ready',
+      providers: [{ id: 'provider-a', name: 'Provider A', order: 1 }],
+      models: [
+        {
+          id: 'hidden-model',
+          name: 'Hidden Model',
+          provider: 'provider-a',
+          enabled: true,
+          selectable: false,
+          routable: true,
+          capabilities: {},
+        },
+      ],
+    };
+
+    render(<ModelSelector />);
+
+    expect(screen.getByRole('button', { name: '模型不可用' })).toBeDisabled();
+    expect(screen.queryByTestId('model-selector-panel')).toBeNull();
   });
 
   it('toolbarMode 在窄屏隐藏 provider 和能力标签，sm 恢复桌面信息', () => {

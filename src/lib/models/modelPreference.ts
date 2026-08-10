@@ -30,9 +30,15 @@ export const isModelSelectable = (
   model: Pick<ModelInfo, 'enabled' | 'selectable' | 'routable' | 'health'>,
 ): boolean => {
   return (
-    model.enabled !== false
-    && model.selectable !== false
-    && model.routable !== false
+    isModelVisibleInSelector(model)
     && model.health?.status !== 'unhealthy'
   );
 };
+
+export const isModelVisibleInSelector = (
+  model: Pick<ModelInfo, 'enabled' | 'selectable' | 'routable'>,
+): boolean => (
+  model.enabled !== false
+  && model.selectable !== false
+  && model.routable !== false
+);
