@@ -5,7 +5,7 @@ import { usePathname } from "next/navigation";
 import { useAppDispatch, useAppSelector } from "@/redux/hooks";
 import { setSelectedModel } from "@/redux/slices/modelsSlice";
 import { updateConversationModel } from "@/redux/slices/conversationSlice";
-import { getPreferredModelId } from "@/lib/models/modelPreference";
+import { getPreferredModelId, isModelSelectable } from "@/lib/models/modelPreference";
 import { getRecentModels, addRecentModel } from "@/lib/models/recentModels";
 import { getRouteConversationId } from "@/lib/routes/chatRoutes";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -73,8 +73,7 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({
           ...provider,
           models: models.filter((m) => (
             m.provider === provider.id
-            && m.enabled !== false
-            && m.selectable !== false
+            && isModelSelectable(m)
           )),
         }))
         .filter((group) => group.models.length > 0),

@@ -5,6 +5,7 @@ describe('getPreferredModelId', () => {
   const models = [
     { id: 'disabled-a', enabled: false, selectable: true },
     { id: 'hidden-a', enabled: true, selectable: false },
+    { id: 'unroutable-a', enabled: true, selectable: true, routable: false },
     { id: 'enabled-b', enabled: true, selectable: true },
     { id: 'enabled-c', enabled: true, selectable: true },
   ];
@@ -19,6 +20,10 @@ describe('getPreferredModelId', () => {
 
   it('新对话不会沿用已隐藏但仍可路由的模型偏好', () => {
     expect(getPreferredModelId(models, 'hidden-a')).toBe('enabled-b');
+  });
+
+  it('新对话不会沿用不可路由的模型偏好', () => {
+    expect(getPreferredModelId(models, 'unroutable-a')).toBe('enabled-b');
   });
 
   it('returns the stable default enabled model for recommendation purposes', () => {

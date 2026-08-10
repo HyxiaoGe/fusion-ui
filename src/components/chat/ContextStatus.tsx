@@ -183,6 +183,12 @@ export default function ContextStatus({
       && activeRunId
       && previousRunId === activeRunId,
     );
+    const sameConversationRunEstablished = Boolean(
+      !conversationChanged
+      && firstTurnStreamingRef.current
+      && activeRunId
+      && !previousRunId,
+    );
 
     if (conversationChanged) {
       if (sameFirstTurnRun) {
@@ -205,7 +211,7 @@ export default function ContextStatus({
     defaultOpenRef.current = preferred;
     setDefaultOpen(preferred);
 
-    if (sameFirstTurnRun && userInteractedRef.current) return;
+    if ((sameFirstTurnRun || sameConversationRunEstablished) && userInteractedRef.current) return;
     if (firstTurnStreamingRef.current) {
       if (preferred && !hasSuppressedFirstTurn(conversationId)) {
         markPendingFirstTurn(conversationId);
@@ -216,7 +222,7 @@ export default function ContextStatus({
       return;
     }
 
-    setPanelOpen(preferred);
+    setPanelOpen(preferred && !hasSuppressedFirstTurn(conversationId));
   }, [activeRunId, conversationId]);
 
   useLayoutEffect(() => {

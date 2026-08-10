@@ -79,7 +79,7 @@ describe('fetchWithAuth (shared-SDK token lifecycle)', () => {
     forceRefreshAccessTokenMock.mockResolvedValue(null);
     fetchMock.mockResolvedValueOnce(res(401));
 
-    await expect(fetchWithAuth('/api/test')).rejects.toThrow('Unauthorized');
+    await expect(fetchWithAuth('/api/test')).rejects.toMatchObject({ code: 'UNAUTHORIZED' });
     expect(clearRemoteSsoSessionMock).toHaveBeenCalledWith('stale-token');
     expect(clearFusionProfileStorageMock).toHaveBeenCalledTimes(1);
   });
@@ -89,7 +89,7 @@ describe('fetchWithAuth (shared-SDK token lifecycle)', () => {
     forceRefreshAccessTokenMock.mockRejectedValue(new TypeError('network down'));
     fetchMock.mockResolvedValueOnce(res(401));
 
-    await expect(fetchWithAuth('/api/test')).rejects.toThrow('Unauthorized');
+    await expect(fetchWithAuth('/api/test')).rejects.toMatchObject({ code: 'AUTH_REFRESH_UNAVAILABLE' });
     expect(clearRemoteSsoSessionMock).not.toHaveBeenCalled();
   });
 
@@ -155,7 +155,7 @@ describe('fetchWithAuth (shared-SDK token lifecycle)', () => {
     });
     fetchMock.mockResolvedValueOnce(res(401));
 
-    await expect(fetchWithAuth('/api/private')).rejects.toThrow('Unauthorized');
+    await expect(fetchWithAuth('/api/private')).rejects.toMatchObject({ code: 'UNAUTHORIZED' });
 
     expect(clearRemoteSsoSessionMock).toHaveBeenCalledWith('stale-token-a');
     expect(clearFusionProfileStorageMock).toHaveBeenCalledTimes(1);

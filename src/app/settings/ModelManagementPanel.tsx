@@ -51,6 +51,29 @@ import type {
 const OPERATION_POLL_INTERVAL_MS = 1500;
 const ALL_PROVIDERS_VALUE = "__all_providers__";
 const UNKNOWN_PROVIDER_VALUE = "__unknown_provider__";
+export const MODEL_MANAGEMENT_OWNED_OPERATIONS_STORAGE_KEY = "fusion.model-management.owned-operations.v1";
+
+function readOwnedOperationIds(): Set<string> {
+  try {
+    const raw = window.sessionStorage.getItem(MODEL_MANAGEMENT_OWNED_OPERATIONS_STORAGE_KEY);
+    const parsed: unknown = raw ? JSON.parse(raw) : [];
+    return new Set(Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === "string") : []);
+  } catch {
+    return new Set();
+  }
+}
+
+function persistOwnedOperationIds(ids: Set<string>): void {
+  try {
+    if (ids.size === 0) {
+      window.sessionStorage.removeItem(MODEL_MANAGEMENT_OWNED_OPERATIONS_STORAGE_KEY);
+      return;
+    }
+    window.sessionStorage.setItem(MODEL_MANAGEMENT_OWNED_OPERATIONS_STORAGE_KEY, JSON.stringify([...ids]));
+  } catch {
+    // sessionStorage 不可用时仍保留当前组件生命周期内的任务跟踪。
+  }
+}
 
 interface ProviderCategory {
   id: string;
@@ -191,7 +214,10 @@ export default function ModelManagementPanel() {
   const [selectedProvider, setSelectedProvider] = useState(ALL_PROVIDERS_VALUE);
   const [searchQuery, setSearchQuery] = useState("");
   const [localOperations, setLocalOperations] = useState<ModelAdmissionOperation[]>([]);
-  const ownedOperationIdsRef = useRef(new Set<string>());
+  const ownedOperationIdsRef = useRef<Set<string> | null>(null);
+  if (ownedOperationIdsRef.current === null) {
+    ownedOperationIdsRef.current = readOwnedOperationIds();
+  }
   const handledOperationIdsRef = useRef(new Set<string>());
   const snapshotRequestIdRef = useRef(0);
   const activeSnapshotRequestRef = useRef<{
@@ -359,30 +385,26 @@ export default function ModelManagementPanel() {
   }, [dispatch]);
 
   useEffect(() => {
-    const ownedFailedOperation = operations.find((operation) => (
-      operation.status === "failed"
-      && ownedOperationIdsRef.current.has(operation.operation_id)
+    const terminalOperations = operations.filter((operation) => (
+      (operation.status === "failed" || operation.status === "succeeded")
+      && ownedOperationIdsRef.current?.has(operation.operation_id)
       && !handledOperationIdsRef.current.has(operation.operation_id)
     ));
-    if (ownedFailedOperation) {
-      handledOperationIdsRef.current.add(ownedFailedOperation.operation_id);
-      ownedOperationIdsRef.current.delete(ownedFailedOperation.operation_id);
-      setError(safeOperationError(ownedFailedOperation));
-      setNotice(null);
-      return;
-    }
+    if (terminalOperations.length === 0) return;
 
-    const succeededOperations = operations.filter((operation) => (
-      operation.status === "succeeded"
-      && ownedOperationIdsRef.current.has(operation.operation_id)
-      && !handledOperationIdsRef.current.has(operation.operation_id)
-    ));
-    if (succeededOperations.length === 0) return;
-
-    succeededOperations.forEach((operation) => {
+    terminalOperations.forEach((operation) => {
       handledOperationIdsRef.current.add(operation.operation_id);
-      ownedOperationIdsRef.current.delete(operation.operation_id);
+      ownedOperationIdsRef.current?.delete(operation.operation_id);
     });
+    persistOwnedOperationIds(ownedOperationIdsRef.current ?? new Set());
+
+    const failedOperations = terminalOperations.filter((operation) => operation.status === "failed");
+    const succeededOperations = terminalOperations.filter((operation) => operation.status === "succeeded");
+    if (failedOperations.length > 0) {
+      setError(failedOperations.map(safeOperationError).join("；"));
+      setNotice(null);
+    }
+    if (succeededOperations.length === 0) return;
     const terminalOperation = succeededOperations[succeededOperations.length - 1];
 
     setPendingAction(`operation:${terminalOperation.operation_id}`);
@@ -390,7 +412,7 @@ export default function ModelManagementPanel() {
       .then(() => loadSnapshot(false, true))
       .then(() => {
         setNotice(`${terminalOperation.model_id} 已上线，模型选择器已同步刷新`);
-        setError(null);
+        if (failedOperations.length === 0) setError(null);
       })
       .catch((caught: unknown) => {
         if (isAdminAccessError(caught)) {
@@ -417,15 +439,14 @@ export default function ModelManagementPanel() {
   }, [pendingAction]);
 
   const refreshAfterVisibility = useCallback(async () => {
-    const [nextSnapshot, catalog] = await Promise.all([
-      loadSnapshot(false, true),
-      refreshModels(),
-    ]);
+    const snapshotPromise = loadSnapshot(false, true);
+    const catalog = await refreshModels();
+    dispatch(updateProviders(catalog.providers));
+    dispatch(updateModels(catalog.models));
+    const nextSnapshot = await snapshotPromise;
     if (!nextSnapshot) {
       throw new Error("管理快照刷新失败");
     }
-    dispatch(updateProviders(catalog.providers));
-    dispatch(updateModels(catalog.models));
   }, [dispatch, loadSnapshot]);
 
   const submitAction = useCallback(async () => {
@@ -457,7 +478,8 @@ export default function ModelManagementPanel() {
           expected_run_id: action.runId,
           reason: normalizedReason,
         });
-        ownedOperationIdsRef.current.add(operation.operation_id);
+        ownedOperationIdsRef.current?.add(operation.operation_id);
+        persistOwnedOperationIds(ownedOperationIdsRef.current ?? new Set());
         setLocalOperations((current) => [
           ...current.filter((item) => item.operation_id !== operation.operation_id),
           operation,

@@ -40,7 +40,7 @@ vi.mock('@/lib/api/modelManagement', () => ({
   updateModelVisibilityAPI: updateModelVisibilityMock,
 }));
 
-import ModelManagementPanel from './ModelManagementPanel';
+import ModelManagementPanel, { MODEL_MANAGEMENT_OWNED_OPERATIONS_STORAGE_KEY } from './ModelManagementPanel';
 
 const baseSnapshot: ModelManagementSnapshot = {
   generated_at: '2026-08-04T08:00:00+08:00',
@@ -110,6 +110,7 @@ async function renderLoaded(snapshot = baseSnapshot) {
 describe('ModelManagementPanel', () => {
   beforeEach(() => {
     vi.useRealTimers();
+    sessionStorage.clear();
     admitModelCandidateMock.mockReset();
     dispatchMock.mockReset();
     fetchModelManagementSnapshotMock.mockReset();
@@ -374,6 +375,8 @@ describe('ModelManagementPanel', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('可见性已更新，但后续页面或模型目录刷新未完成');
     expect(screen.getByRole('status')).toHaveTextContent('Kimi K3 的可见性已更新');
     expect(screen.queryByText('模型可见性更新失败')).toBeNull();
+    expect(updateModelsMock).toHaveBeenCalledWith([]);
+    expect(dispatchMock).toHaveBeenCalledWith(expect.objectContaining({ type: 'models/updateModels' }));
   });
 
   it('治理能力开启时同时提供直接上线和验证并上线动作', async () => {
@@ -581,6 +584,56 @@ describe('ModelManagementPanel', () => {
     expect(refreshModelsMock).not.toHaveBeenCalled();
   });
 
+  it('组件重挂后仍会同步本页发起且已完成的上线任务', async () => {
+    const succeededOperation: ModelAdmissionOperation = {
+      operation_id: 'operation-succeeded-after-remount',
+      candidate_fingerprint: 'fingerprint-ready',
+      model_id: 'kimi-k3.1',
+      status: 'succeeded',
+    };
+    sessionStorage.setItem(
+      MODEL_MANAGEMENT_OWNED_OPERATIONS_STORAGE_KEY,
+      JSON.stringify([succeededOperation.operation_id]),
+    );
+    prepareLoadedSnapshot({ ...baseSnapshot, operations: [succeededOperation] });
+    refreshModelsMock.mockResolvedValue({ models: [], providers: [] });
+
+    render(<ModelManagementPanel />);
+
+    await waitFor(() => expect(refreshModelsMock).toHaveBeenCalledTimes(1));
+    expect(updateModelsMock).toHaveBeenCalledWith([]);
+    expect(sessionStorage.getItem(MODEL_MANAGEMENT_OWNED_OPERATIONS_STORAGE_KEY)).toBeNull();
+  });
+
+  it('同轮询批次同时出现失败与成功任务时会全部消费并同步成功目录', async () => {
+    const failedOperation: ModelAdmissionOperation = {
+      operation_id: 'operation-failed-concurrent',
+      candidate_fingerprint: 'fingerprint-ready',
+      model_id: 'kimi-k3.1',
+      status: 'failed',
+      error_code: 'authorization_failed',
+    };
+    const succeededOperation: ModelAdmissionOperation = {
+      operation_id: 'operation-succeeded-concurrent',
+      candidate_fingerprint: 'fingerprint-waiting',
+      model_id: 'gemini-next',
+      status: 'succeeded',
+    };
+    sessionStorage.setItem(
+      MODEL_MANAGEMENT_OWNED_OPERATIONS_STORAGE_KEY,
+      JSON.stringify([failedOperation.operation_id, succeededOperation.operation_id]),
+    );
+    prepareLoadedSnapshot({ ...baseSnapshot, operations: [failedOperation, succeededOperation] });
+    refreshModelsMock.mockResolvedValue({ models: [], providers: [] });
+
+    render(<ModelManagementPanel />);
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('供应商授权校验失败');
+    await waitFor(() => expect(refreshModelsMock).toHaveBeenCalledTimes(1));
+    expect(await screen.findByRole('status')).toHaveTextContent('gemini-next 已上线');
+    expect(sessionStorage.getItem(MODEL_MANAGEMENT_OWNED_OPERATIONS_STORAGE_KEY)).toBeNull();
+  });
+
   it('并发刷新复用同一请求，写操作后的新快照不会被旧响应覆盖', async () => {
     let resolveOldRefresh!: (snapshot: ModelManagementSnapshot) => void;
     const oldRefresh = new Promise<ModelManagementSnapshot>((resolve) => {
@@ -698,6 +751,18 @@ describe('ModelManagementPanel', () => {
     expect(await screen.findByRole('status')).toHaveTextContent('当前账号无权访问模型管理');
     expect(screen.queryByText('已注册模型')).toBeNull();
     expect(screen.queryByRole('button', { name: /上线|隐藏|恢复/ })).toBeNull();
+  });
+
+  it('鉴权刷新瞬时失败时保留重试入口，不误判为永久无权限', async () => {
+    fetchModelManagementSnapshotMock.mockRejectedValue(
+      new ApiError('AUTH_REFRESH_UNAVAILABLE', '登录状态刷新暂时失败，请稍后重试', ''),
+    );
+
+    render(<ModelManagementPanel />);
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('登录状态刷新暂时失败');
+    expect(screen.getByRole('button', { name: '重试' })).toBeInTheDocument();
+    expect(screen.queryByText('当前账号无权访问模型管理')).toBeNull();
   });
 
   it('操作请求进行中时禁用确认与其他管理动作', async () => {

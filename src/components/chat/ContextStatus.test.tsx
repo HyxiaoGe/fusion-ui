@@ -401,6 +401,31 @@ describe('ContextStatus', () => {
     expect(localStorage.getItem(CONTEXT_STATUS_DEFAULT_OPEN_STORAGE_KEY)).toBeNull();
   });
 
+  it('首轮流中手动开启后 runId 从空值建立，仍保持开启', async () => {
+    const view = render(<ContextStatus
+      conversationId="chat-run-establish"
+      usage={null}
+      phase="estimated"
+      pending
+      isStreaming
+      isFirstConversationTurn
+      activeRunId={null}
+    />);
+
+    fireEvent.click(screen.getByRole('button', { name: '查看上下文状态，计算中' }));
+    view.rerender(<ContextStatus
+      conversationId="chat-run-establish"
+      usage={null}
+      phase="estimated"
+      pending
+      isStreaming
+      isFirstConversationTurn
+      activeRunId="run-established"
+    />);
+
+    expect(await screen.findByRole('dialog', { name: '上下文状态' })).toBeInTheDocument();
+  });
+
   it('用户全局关闭后，新会话生成与首轮完成都保持关闭', async () => {
     localStorage.setItem(CONTEXT_STATUS_DEFAULT_OPEN_STORAGE_KEY, 'true');
     const view = render(<ContextStatus conversationId="chat-close-before-new" usage={actualUsage} />);
@@ -470,6 +495,33 @@ describe('ContextStatus', () => {
       expect(screen.queryByRole('dialog', { name: '上下文状态' })).toBeNull();
     });
     expect(localStorage.getItem(CONTEXT_STATUS_DEFAULT_OPEN_STORAGE_KEY)).toBe('true');
+    expect(sessionStorage.getItem(CONTEXT_STATUS_SUPPRESSED_FIRST_TURN_STORAGE_KEY)).toBeNull();
+  });
+
+  it('首轮生成中明确关闭后切换会话，返回完成态仍保持关闭', async () => {
+    localStorage.setItem(CONTEXT_STATUS_DEFAULT_OPEN_STORAGE_KEY, 'true');
+    const view = render(<ContextStatus
+      conversationId="chat-suppressed-background"
+      usage={null}
+      phase="estimated"
+      pending
+      isStreaming
+      isFirstConversationTurn
+      activeRunId="run-background"
+    />);
+
+    fireEvent.click(screen.getByRole('button', { name: '查看上下文状态，计算中' }));
+    fireEvent.click(screen.getByRole('button', { name: '查看上下文状态，计算中' }));
+    view.rerender(<ContextStatus conversationId="chat-other" usage={actualUsage} />);
+    view.rerender(<ContextStatus
+      conversationId="chat-suppressed-background"
+      usage={actualUsage}
+      phase="final"
+      isFirstConversationTurn
+      activeRunId={null}
+    />);
+
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: '上下文状态' })).toBeNull());
     expect(sessionStorage.getItem(CONTEXT_STATUS_SUPPRESSED_FIRST_TURN_STORAGE_KEY)).toBeNull();
   });
 
