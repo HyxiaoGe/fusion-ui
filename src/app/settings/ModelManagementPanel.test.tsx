@@ -134,7 +134,7 @@ describe('ModelManagementPanel', () => {
     expect(screen.queryByRole('button', { name: /删除/ })).toBeNull();
   });
 
-  it('新对话可选择统计排除不可路由的已注册模型', async () => {
+  it('新对话可选择统计排除不可路由和健康异常的已注册模型', async () => {
     await renderLoaded({
       ...baseSnapshot,
       models: [
@@ -150,10 +150,21 @@ describe('ModelManagementPanel', () => {
           state: 'registered',
           revision: 1,
         },
+        {
+          model_id: 'unhealthy-model',
+          name: 'Unhealthy Model',
+          provider: 'legacy',
+          provider_display: 'Legacy',
+          health: { status: 'unhealthy' },
+          selectable: true,
+          routable: true,
+          state: 'registered',
+          revision: 1,
+        },
       ],
     });
 
-    expect(screen.getByTestId('registered-model-count')).toHaveTextContent('3');
+    expect(screen.getByTestId('registered-model-count')).toHaveTextContent('4');
     expect(screen.getByTestId('selectable-model-count')).toHaveTextContent('1');
   });
 

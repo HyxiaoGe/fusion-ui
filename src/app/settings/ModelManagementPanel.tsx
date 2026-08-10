@@ -169,6 +169,11 @@ function healthLabel(health: ModelManagementRegisteredModel["health"]): string {
   return status ? (labels[status] ?? status) : "未知";
 }
 
+function registeredModelIsSelectable(model: ModelManagementRegisteredModel): boolean {
+  const healthStatus = typeof model.health === "string" ? model.health : model.health?.status;
+  return model.selectable && model.routable && healthStatus !== "unhealthy";
+}
+
 function safeOperationError(operation: ModelAdmissionOperation): string {
   if (operation.compensation?.manual_cleanup_required) {
     const codes = operation.compensation.errors.filter(Boolean).join("、");
@@ -452,7 +457,7 @@ export default function ModelManagementPanel() {
 
   const stats = useMemo(() => ({
     registered: snapshot?.models.length ?? 0,
-    selectable: snapshot?.models.filter((model) => model.selectable && model.routable).length ?? 0,
+    selectable: snapshot?.models.filter(registeredModelIsSelectable).length ?? 0,
     candidates: snapshot?.candidates.length ?? 0,
   }), [snapshot]);
 
