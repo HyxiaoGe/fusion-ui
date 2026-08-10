@@ -358,6 +358,37 @@ describe('ContextStatus', () => {
     expect(sessionStorage.getItem(CONTEXT_STATUS_PENDING_FIRST_TURN_STORAGE_KEY)).toBeNull();
   });
 
+  it.each([
+    ['错误终态', { phase: 'error' as const, errorKind: 'check_failed' as const, latestActualUnavailable: false }],
+    ['无实际用量的终态', { phase: 'final' as const, errorKind: undefined, latestActualUnavailable: false }],
+    ['实际用量不可用的终态', { phase: 'final' as const, errorKind: undefined, latestActualUnavailable: true }],
+  ])('刷新恢复首轮%s时保持关闭', async (_label, terminal) => {
+    localStorage.setItem(CONTEXT_STATUS_DEFAULT_OPEN_STORAGE_KEY, 'true');
+    const conversationId = `chat-refresh-${terminal.phase}-${String(terminal.latestActualUnavailable)}`;
+    const first = render(<ContextStatus
+      conversationId={conversationId}
+      usage={null}
+      phase="estimated"
+      pending
+      isStreaming
+      isFirstConversationTurn
+    />);
+    expect(sessionStorage.getItem(CONTEXT_STATUS_PENDING_FIRST_TURN_STORAGE_KEY)).toContain(conversationId);
+    first.unmount();
+
+    render(<ContextStatus
+      conversationId={conversationId}
+      usage={null}
+      phase={terminal.phase}
+      errorKind={terminal.errorKind}
+      latestActualUnavailable={terminal.latestActualUnavailable}
+      isFirstConversationTurn
+    />);
+
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: '上下文状态' })).toBeNull());
+    expect(sessionStorage.getItem(CONTEXT_STATUS_PENDING_FIRST_TURN_STORAGE_KEY)).toBeNull();
+  });
+
   it('直接打开历史单轮对话不会被误判为刚完成的首轮', async () => {
     render(<ContextStatus
       conversationId="chat-historical-single-turn"

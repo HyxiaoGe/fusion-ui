@@ -180,7 +180,17 @@ export default function ContextStatus({
       return;
     }
 
-    setPanelOpen(preferred && !hasSuppressedFirstTurn(conversationId));
+    const recoveredPendingFirstTurn = hasPendingFirstTurn(conversationId);
+    const recoveredFirstTurnSucceeded = (
+      !isError
+      && !latestActualUnavailable
+      && usage?.actual_prompt_tokens != null
+    );
+    setPanelOpen(
+      preferred
+      && !hasSuppressedFirstTurn(conversationId)
+      && (!recoveredPendingFirstTurn || recoveredFirstTurnSucceeded),
+    );
   }, [activeRunId, conversationId]);
 
   useLayoutEffect(() => {
