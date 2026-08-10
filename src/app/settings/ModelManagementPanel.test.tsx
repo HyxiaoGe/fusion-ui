@@ -785,7 +785,8 @@ describe('ModelManagementPanel', () => {
 
     render(<ModelManagementPanel />);
 
-    expect(await screen.findByRole('status')).toHaveTextContent('当前账号无权访问模型管理');
+    expect(await screen.findByText('当前账号无权访问模型管理')).toBeInTheDocument();
+    expect(screen.getByRole('status')).toHaveTextContent('当前账号无权访问模型管理');
     expect(screen.queryByText('已注册模型')).toBeNull();
     expect(screen.queryByRole('button', { name: /上线|隐藏|恢复/ })).toBeNull();
   });
