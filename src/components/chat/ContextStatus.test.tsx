@@ -4,6 +4,7 @@ import { renderToString } from 'react-dom/server';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import i18n from '@/lib/i18n';
+import { moveFirstTurnContextState } from '@/lib/chat/contextStatusPersistence';
 import type { ContextUsage } from '@/types/conversation';
 import ContextStatus, {
   CONTEXT_STATUS_DEFAULT_OPEN_STORAGE_KEY,
@@ -688,6 +689,35 @@ describe('ContextStatus', () => {
     });
     expect(localStorage.getItem(CONTEXT_STATUS_DEFAULT_OPEN_STORAGE_KEY)).toBe('true');
     expect(sessionStorage.getItem(CONTEXT_STATUS_SUPPRESSED_FIRST_TURN_STORAGE_KEY)).toBeNull();
+  });
+
+  it('首页首轮物化重挂后保持用户手动展开', async () => {
+    const first = render(<ContextStatus
+      conversationId="temp-first-turn-open"
+      usage={null}
+      phase="estimated"
+      pending
+      isStreaming
+      isFirstConversationTurn
+      activeRunId="run-first-turn-open"
+    />);
+
+    fireEvent.click(screen.getByRole('button', { name: '查看上下文状态，计算中' }));
+    expect(screen.getByRole('dialog', { name: '上下文状态' })).toBeInTheDocument();
+    moveFirstTurnContextState('temp-first-turn-open', 'server-first-turn-open');
+    first.unmount();
+
+    render(<ContextStatus
+      conversationId="server-first-turn-open"
+      usage={null}
+      phase="estimated"
+      pending
+      isStreaming
+      isFirstConversationTurn
+      activeRunId="run-first-turn-open"
+    />);
+
+    expect(screen.getByRole('dialog', { name: '上下文状态' })).toBeInTheDocument();
   });
 
   it('首轮生成中明确关闭后切换会话，返回完成态仍保持关闭', async () => {

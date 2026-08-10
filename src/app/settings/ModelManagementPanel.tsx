@@ -441,6 +441,9 @@ export default function ModelManagementPanel() {
         if (failedOperations.length === 0) setError(null);
       })
       .catch((caught: unknown) => {
+        succeededOperations.forEach((operation) => {
+          handledOperationIdsRef.current.delete(operation.operation_id);
+        });
         if (isAdminAccessError(caught)) {
           denyAccess();
           return;

@@ -591,6 +591,39 @@ describe('ModelManagementPanel', () => {
     expect(screen.queryByText('kimi-k3.1 已上线，模型选择器已同步刷新')).toBeNull();
   });
 
+  it('目录同步瞬时失败后手动刷新会重试未消费的成功任务', async () => {
+    const succeededOperation: ModelAdmissionOperation = {
+      operation_id: 'operation-catalog-retry',
+      candidate_fingerprint: 'fingerprint-ready',
+      model_id: 'kimi-k3.1',
+      status: 'succeeded',
+    };
+    const succeededSnapshot = { ...baseSnapshot, operations: [succeededOperation] };
+    sessionStorage.setItem(
+      MODEL_MANAGEMENT_OWNED_OPERATIONS_STORAGE_KEY,
+      JSON.stringify([succeededOperation.operation_id]),
+    );
+    fetchModelManagementSnapshotMock
+      .mockResolvedValueOnce(succeededSnapshot)
+      .mockResolvedValue({
+        ...succeededSnapshot,
+        operations: [{ ...succeededOperation }],
+      });
+    refreshModelsMock
+      .mockRejectedValueOnce(new Error('目录服务瞬时中断'))
+      .mockResolvedValue({ models: [], providers: [] });
+
+    render(<ModelManagementPanel />);
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('模型已上线，但目录刷新失败');
+    expect(refreshModelsMock).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByRole('button', { name: '刷新' }));
+
+    await waitFor(() => expect(refreshModelsMock).toHaveBeenCalledTimes(2));
+    expect(await screen.findByRole('status')).toHaveTextContent('kimi-k3.1 已上线');
+    expect(sessionStorage.getItem(MODEL_MANAGEMENT_OWNED_OPERATIONS_STORAGE_KEY)).toBeNull();
+  });
+
   it('活动任务轮询瞬时失败后会继续轮询直到终态', async () => {
     const pendingOperation = {
       operation_id: 'operation-retry-poll',

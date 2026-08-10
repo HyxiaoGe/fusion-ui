@@ -167,6 +167,17 @@ export default function ContextStatus({
     defaultOpenRef.current = preferred;
     setDefaultOpen(preferred);
 
+    const recoveredFirstTurnInteraction = (
+      currentFirstTurnStreaming
+      && hasInteractedFirstTurn(conversationId)
+    );
+    if (recoveredFirstTurnInteraction) {
+      userInteractedRef.current = true;
+      clearPendingFirstTurn(conversationId);
+      setPanelOpen(!hasSuppressedFirstTurn(conversationId));
+      return;
+    }
+
     if (
       (sameFirstTurnRun || sameConversationRunEstablished || sameConversationRunCompleted)
       && userInteractedRef.current
@@ -200,6 +211,10 @@ export default function ContextStatus({
 
   useLayoutEffect(() => {
     if (!isStreaming || !isFirstConversationTurn) return;
+    if (userInteractedRef.current || hasInteractedFirstTurn(conversationId)) {
+      clearPendingFirstTurn(conversationId);
+      return;
+    }
     if (defaultOpenRef.current && !hasSuppressedFirstTurn(conversationId)) {
       markPendingFirstTurn(conversationId);
     } else {
