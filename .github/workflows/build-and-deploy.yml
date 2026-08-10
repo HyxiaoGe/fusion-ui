@@ -2,25 +2,44 @@ name: Fusion UI Build & Deploy
 
 on:
   push:
+    branches: [master]
   workflow_dispatch:
+    inputs:
+      rollback_sha:
+        description: 要部署的已知不可变镜像 SHA；操作方负责确认目标，留空则发布当前提交
+        required: false
+        type: string
+      rollback_reason:
+        description: 手动回滚原因；设置 rollback_sha 时必填
+        required: false
+        type: string
 
 permissions:
   contents: read
 
 concurrency:
   group: fusion-ui-build-deploy-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 # 镜像源:阿里云 ACR 个人版(深圳,境内端点);改仓名只动 IMAGE_NAME 一行
 env:
   REGISTRY: crpi-77w10wlykpqilmmb.cn-shenzhen.personal.cr.aliyuncs.com
   IMAGE_NAME: crpi-77w10wlykpqilmmb.cn-shenzhen.personal.cr.aliyuncs.com/seanfield/fusion-ui
+  ROLLBACK_SHA: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.rollback_sha || '' }}
+  ROLLBACK_REASON: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.rollback_reason || '' }}
+  DEPLOY_TARGET_SHA: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.rollback_sha || github.sha }}
 
 jobs:
-  build:
-    name: Build on Windows runner
+  publish:
+    name: Publish master image on Windows runner
+    if: >-
+      github.ref == 'refs/heads/master' &&
+      (github.event_name != 'workflow_dispatch' || github.event.inputs.rollback_sha == '')
     runs-on: [self-hosted, Windows, X64]
     timeout-minutes: 30
+    environment:
+      name: dev
+      deployment: false
     outputs:
       started_at: ${{ steps.pipeline_start.outputs.started_at }}
       runner_name: ${{ steps.pipeline_start.outputs.runner_name }}
@@ -43,13 +62,6 @@ jobs:
           for /f %%i in ('powershell -NoProfile -ExecutionPolicy Bypass -Command "[DateTimeOffset]::UtcNow.ToUnixTimeSeconds()"') do echo started_at=%%i>>%GITHUB_OUTPUT%
           echo runner_name=${{ runner.name }}>>%GITHUB_OUTPUT%
 
-      - name: Configure Docker credential directory
-        shell: powershell -NoProfile -ExecutionPolicy Bypass -Command ". '{0}'"
-        run: |
-          $dockerConfig = Join-Path $env:RUNNER_TEMP ".docker-$env:GITHUB_RUN_ID-$env:GITHUB_JOB"
-          New-Item -ItemType Directory -Force -Path $dockerConfig | Out-Null
-          "DOCKER_CONFIG=$dockerConfig" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
-
       - name: Push CI/CD active metric
         shell: powershell -NoProfile -ExecutionPolicy Bypass -Command ". '{0}'"
         env:
@@ -70,7 +82,7 @@ jobs:
           $body = (($metrics -replace "`r`n", "`n").Trim() + "`n")
           $bytes = [System.Text.Encoding]::UTF8.GetBytes($body)
           try {
-            # pushgateway 本体只绑 loopback,经 nginx 9094 鉴权反代推送(凭证在仓库 Secret PUSHGW_BASIC_AUTH)
+            # pushgateway 本体只绑 loopback,经 nginx 9094 鉴权反代推送(凭证在 dev Environment Secret)
             Invoke-WebRequest -UseBasicParsing -Method Post -Uri "http://192.168.1.11:9094/metrics/job/cicd_active/project_key/fusion-ui/branch_key/$branchKey/environment_key/$environment" -ContentType "text/plain; version=0.0.4" -Headers @{ Authorization = "Basic $env:PUSHGW_AUTH" } -Body $bytes -TimeoutSec 5 | Out-Null
             Write-Host "CI/CD active metric pushed"
           } catch {
@@ -78,140 +90,21 @@ jobs:
           }
 
       - name: Checkout
-        uses: actions/checkout@v6
-
-      - name: Verify Docker access
-        shell: powershell -NoProfile -ExecutionPolicy Bypass -Command ". '{0}'"
-        run: |
-          $ErrorActionPreference = "Continue"
-          $serviceNames = @('docker', 'com.docker.service')
-          $dockerDesktopStarted = $false
-          $desktopPaths = @(
-            "$env:ProgramFiles\Docker\Docker\Docker Desktop.exe",
-            "${env:ProgramFiles(x86)}\Docker\Docker\Docker Desktop.exe"
-          )
-
-          for ($attempt = 1; $attempt -le 6; $attempt++) {
-            Write-Host "Checking Docker access, attempt $attempt/6..."
-
-            docker version
-            if ($LASTEXITCODE -eq 0) {
-              docker ps
-              if ($LASTEXITCODE -eq 0) {
-                Write-Host "Docker daemon ready"
-                exit 0
-              }
-            }
-
-            foreach ($serviceName in $serviceNames) {
-              $service = Get-Service -Name $serviceName -ErrorAction SilentlyContinue
-              if ($null -ne $service -and $service.Status -ne "Running") {
-                Write-Host "Starting Docker service: $serviceName"
-                try {
-                  Start-Service -Name $serviceName -ErrorAction Stop
-                } catch {
-                  Write-Host "Docker service start failed for ${serviceName}: $($_.Exception.Message)"
-                }
-              } elseif ($null -ne $service) {
-                Write-Host "Docker service ${serviceName} status: $($service.Status)"
-              }
-            }
-
-            if (-not $dockerDesktopStarted) {
-              foreach ($desktopPath in $desktopPaths) {
-                if ($desktopPath -and (Test-Path $desktopPath)) {
-                  Write-Host "Starting Docker Desktop: $desktopPath"
-                  try {
-                    Start-Process -FilePath $desktopPath -WindowStyle Minimized
-                    $dockerDesktopStarted = $true
-                    break
-                  } catch {
-                    Write-Host "Docker Desktop start failed: $($_.Exception.Message)"
-                  }
-                }
-              }
-            }
-
-            if ($attempt -lt 6) {
-              Start-Sleep -Seconds (10 * $attempt)
-            }
-          }
-
-          Write-Host "Docker daemon did not become ready"
-          docker version
-          docker ps
-          exit 1
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
 
       - name: Test and build Docker image
-        shell: powershell -NoProfile -ExecutionPolicy Bypass -Command ". '{0}'"
-        run: |
-          $ErrorActionPreference = "Stop"
-          $runnerKey = '${{ runner.name }}' -replace '[^A-Za-z0-9_.-]', '-'
-          if (-not $runnerKey) { $runnerKey = "runner" }
-          $builder = "fusion-ui-ci-$runnerKey"
-          $image = "${env:IMAGE_NAME}:${env:GITHUB_SHA}"
-
-          cmd /c "docker buildx inspect $builder >NUL 2>NUL"
-          if ($LASTEXITCODE -ne 0) {
-            docker buildx create --name $builder --driver docker-container --use
-            if ($LASTEXITCODE -ne 0) {
-              cmd /c "docker buildx inspect $builder >NUL 2>NUL"
-              if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-            }
-          }
-          docker buildx use $builder
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-
-          docker buildx inspect --builder $builder --bootstrap
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-
-          $testArgs = @(
-            "buildx", "build",
-            "--builder", $builder,
-            "--target", "test",
-            "--no-cache-filter", "test",
-            "--progress", "plain",
-            "--provenance=false",
-            "."
-          )
-
-          docker @testArgs
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-
-          $buildArgs = @(
-            "buildx", "build",
-            "--builder", $builder,
-            "--target", "production",
-            "--load",
-            "--progress", "plain",
-            "--provenance=false",
-            "--build-arg", "NEXT_PUBLIC_AUTH_SERVICE_BASE_URL=$env:NEXT_PUBLIC_AUTH_SERVICE_BASE_URL",
-            "--build-arg", "NEXT_PUBLIC_AUTH_SERVICE_CLIENT_ID=$env:NEXT_PUBLIC_AUTH_SERVICE_CLIENT_ID",
-            "--build-arg", "NEXT_PUBLIC_AUTH_CALLBACK_URL=$env:NEXT_PUBLIC_AUTH_CALLBACK_URL",
-            "--build-arg", "API_BACKEND_URL=http://fusion-api:8000",
-            "-t", $image,
-            "."
-          )
-
-          for ($attempt = 1; $attempt -le 3; $attempt++) {
-            docker @buildArgs
-            $buildExitCode = $LASTEXITCODE
-
-            if ($buildExitCode -eq 0) {
-              break
-            }
-
-            if ($attempt -eq 3) {
-              exit $buildExitCode
-            }
-
-            $delay = 20 * $attempt
-            Write-Host "docker build 失败，第 $attempt 次，${delay}s 后重试..."
-            Start-Sleep -Seconds $delay
-          }
+        uses: ./.github/actions/windows-docker-build
+        with:
+          image-name: ${{ env.IMAGE_NAME }}
+          image-tag: ${{ github.sha }}
+          auth-service-base-url: ${{ vars.NEXT_PUBLIC_AUTH_SERVICE_BASE_URL }}
+          auth-service-client-id: ${{ vars.NEXT_PUBLIC_AUTH_SERVICE_CLIENT_ID }}
+          auth-callback-url: ${{ vars.NEXT_PUBLIC_AUTH_CALLBACK_URL }}
 
       - name: Login to ACR
-        uses: docker/login-action@v4.2.0
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ secrets.ACR_USERNAME }}
@@ -241,24 +134,111 @@ jobs:
 
       - name: Cleanup local Docker artifacts
         if: always()
+        shell: powershell -NoProfile -ExecutionPolicy Bypass -Command ". '{0}'"
         run: |
-          docker image inspect "%IMAGE_NAME%:%GITHUB_SHA%" >NUL 2>NUL
-          if %ERRORLEVEL% EQU 0 docker image rm "%IMAGE_NAME%:%GITHUB_SHA%"
-          exit /b 0
+          $runnerKey = '${{ runner.name }}' -replace '[^A-Za-z0-9_.-]', '-'
+          if (-not $runnerKey) { $runnerKey = "runner" }
+          $builder = "fusion-ui-ci-$runnerKey"
+          $image = "${env:IMAGE_NAME}:${env:GITHUB_SHA}"
+
+          # GitHub 的 PowerShell 包装器使用 ErrorActionPreference=Stop；镜像不存在是清理的正常分支，
+          # 通过 cmd 静默探测，避免 native stderr 把 always cleanup 误判为失败。
+          cmd /c "docker image inspect $image >NUL 2>NUL"
+          if ($LASTEXITCODE -eq 0) {
+            docker image rm $image
+            if ($LASTEXITCODE -ne 0) {
+              Write-Warning "Failed to remove local image: $image"
+            }
+          }
+
+          $pruneArgs = @(
+            "buildx", "prune",
+            "--builder", $builder,
+            "--force",
+            "--max-used-space", "25gb",
+            "--reserved-space", "8gb",
+            "--min-free-space", "30gb"
+          )
+          docker @pruneArgs
+          if ($LASTEXITCODE -ne 0) {
+            Write-Warning "Failed to prune BuildKit cache for builder: $builder"
+          }
+
+          if ($env:DOCKER_CONFIG) {
+            $expectedDockerConfig = [System.IO.Path]::GetFullPath(
+              (Join-Path $env:RUNNER_TEMP ".docker-$env:GITHUB_RUN_ID-$env:GITHUB_JOB")
+            )
+            $dockerConfig = [System.IO.Path]::GetFullPath($env:DOCKER_CONFIG)
+            $isExpectedPath = [string]::Equals(
+              $dockerConfig,
+              $expectedDockerConfig,
+              [System.StringComparison]::OrdinalIgnoreCase
+            )
+            $hasExpectedName = (Split-Path $dockerConfig -Leaf) -like ".docker-*"
+            if (-not $isExpectedPath -or -not $hasExpectedName) {
+              throw "Refusing to remove unexpected Docker config path: $dockerConfig"
+            }
+            if (Test-Path $dockerConfig) {
+              Remove-Item -Recurse -Force -Path $dockerConfig -ErrorAction Stop
+            }
+          }
+
+          exit 0
 
   deploy-dev:
     name: Deploy master on dev server
-    if: github.ref == 'refs/heads/master'
-    needs: build
+    if: >-
+      always() &&
+      github.ref == 'refs/heads/master' &&
+      (needs.publish.result == 'success' ||
+      (needs.publish.result == 'skipped' &&
+      github.event_name == 'workflow_dispatch' && github.event.inputs.rollback_sha != ''))
+    needs: publish
     runs-on: [self-hosted, Linux, X64]
     timeout-minutes: 25
+    environment: dev
 
     steps:
       - name: Record deploy start time
         run: echo "DEPLOY_START=$(date +%s)" >> "$GITHUB_ENV"
 
+      - name: Validate deployment target
+        id: validate_deploy_target
+        run: |
+          rollbackSha="$ROLLBACK_SHA"
+          rollbackReason="$ROLLBACK_REASON"
+
+          if [ -n "$rollbackSha" ]; then
+            if ! [[ "$rollbackSha" =~ ^[0-9a-f]{40}$ ]]; then
+              echo "rollback_sha 必须是 40 位小写十六进制提交 SHA"
+              exit 1
+            fi
+            if [ -z "$rollbackReason" ] || ! [[ "$rollbackReason" =~ [^[:space:]] ]]; then
+              echo "设置 rollback_sha 时必须填写 rollback_reason"
+              exit 1
+            fi
+          elif [ -n "$rollbackReason" ]; then
+            echo "仅填写 rollback_reason 无效，必须同时设置 rollback_sha"
+            exit 1
+          fi
+
+          if ! [[ "$DEPLOY_TARGET_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "实际部署目标不是合法的 40 位小写十六进制提交 SHA"
+            exit 1
+          fi
+
+          echo "部署目标校验通过：${DEPLOY_TARGET_SHA}"
+
+      - name: Configure Docker credential directory
+        run: |
+          dockerConfig="${RUNNER_TEMP}/.docker-${GITHUB_RUN_ID}-${GITHUB_JOB}"
+          mkdir -p -- "$dockerConfig"
+          echo "DOCKER_CONFIG=$dockerConfig" >> "$GITHUB_ENV"
+
       - name: Checkout smoke scripts
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
 
       - name: Login to ACR
         run: echo "${ACR_PASSWORD}" | docker login "${REGISTRY}" -u "${ACR_USERNAME}" --password-stdin
@@ -266,14 +246,45 @@ jobs:
           ACR_USERNAME: ${{ secrets.ACR_USERNAME }}
           ACR_PASSWORD: ${{ secrets.ACR_PASSWORD }}
 
-      - name: Pull and restart fusion-ui
+      - name: Capture current deployment
+        id: capture_previous
+        run: |
+          previousImageRef="$(docker inspect --format '{{.Config.Image}}' fusion-ui 2>/dev/null || true)"
+          previousImageId="$(docker inspect --format '{{.Image}}' fusion-ui 2>/dev/null || true)"
+          if [ -z "$previousImageRef" ] || [ -z "$previousImageId" ]; then
+            echo "无法同时捕获 fusion-ui 当前镜像引用与镜像 ID，拒绝变更现有部署"
+            docker ps --filter "name=fusion-ui"
+            exit 1
+          fi
+
+          previousImagePrefix="${IMAGE_NAME}:"
+          if [[ "$previousImageRef" != "$previousImagePrefix"* ]]; then
+            echo "fusion-ui 当前镜像引用不属于受管镜像仓库，拒绝作为回滚目标：$previousImageRef"
+            exit 1
+          fi
+          previousImageSha="${previousImageRef#"$previousImagePrefix"}"
+          if ! [[ "$previousImageSha" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "fusion-ui 当前镜像引用不是 40 位小写不可变 SHA 标签，拒绝作为回滚目标：$previousImageRef"
+            exit 1
+          fi
+          if ! [[ "$previousImageId" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+            echo "fusion-ui 当前镜像 ID 不是规范 sha256 内容 ID，拒绝作为回滚目标：$previousImageId"
+            exit 1
+          fi
+
+          echo "previous_image_ref=$previousImageRef" >> "$GITHUB_OUTPUT"
+          echo "previous_image_id=$previousImageId" >> "$GITHUB_OUTPUT"
+          echo "已捕获当前 fusion-ui 部署：ref=$previousImageRef id=$previousImageId"
+
+      - name: Deploy candidate image
+        id: deploy_candidate
         run: |
           cd ~/project/fusion
-          docker pull ${{ env.IMAGE_NAME }}:${{ github.sha }}
+          docker pull "${IMAGE_NAME}:${DEPLOY_TARGET_SHA}"
           cat > docker-compose.fusion-ui-ghcr.yml <<'EOF'
           services:
             fusion-ui:
-              image: ${{ env.IMAGE_NAME }}:${{ github.sha }}
+              image: ${FUSION_UI_IMAGE}
               container_name: fusion-ui
               restart: always
               ports:
@@ -293,12 +304,36 @@ jobs:
           EOF
           # 兜底：清掉旧 compose project 持有的同名容器，避免首次切换镜像源时容器名冲突
           docker rm -f fusion-ui 2>/dev/null || true
-          docker compose -f docker-compose.fusion-ui-ghcr.yml up -d
+          FUSION_UI_IMAGE="${IMAGE_NAME}:${DEPLOY_TARGET_SHA}" \
+            docker compose -f docker-compose.fusion-ui-ghcr.yml up -d
 
-      - name: Smoke check dev deployment
+      - name: Smoke check candidate deployment
+        id: verify_candidate
         run: |
+          expectedImage="${IMAGE_NAME}:${DEPLOY_TARGET_SHA}"
+          runningImage="$(docker inspect --format '{{.Config.Image}}' fusion-ui 2>/dev/null || true)"
+          if [ "$runningImage" != "$expectedImage" ]; then
+            echo "fusion-ui image identity mismatch: expected=$expectedImage actual=${runningImage:-missing}"
+            docker ps --filter "name=fusion-ui"
+            docker logs --tail 80 fusion-ui || true
+            exit 1
+          fi
+
+          expectedImageId="$(docker image inspect --format '{{.Id}}' "$expectedImage" 2>/dev/null || true)"
+          runningImageId="$(docker inspect --format '{{.Image}}' fusion-ui 2>/dev/null || true)"
+          if [ -z "$expectedImageId" ]; then
+            echo "fusion-ui candidate image ID is missing: image=$expectedImage"
+            exit 1
+          fi
+          if [ "$runningImageId" != "$expectedImageId" ]; then
+            echo "fusion-ui image ID mismatch: expected=${expectedImageId:-missing} actual=${runningImageId:-missing}"
+            docker ps --filter "name=fusion-ui"
+            docker logs --tail 80 fusion-ui || true
+            exit 1
+          fi
+
           for attempt in 1 2 3 4 5 6 7 8 9 10 11 12; do
-            if curl --fail --silent --show-error --max-time 5 http://127.0.0.1:3004/ >/dev/null; then
+            if docker exec fusion-ui node -e 'fetch("http://127.0.0.1:3000/", { signal: AbortSignal.timeout(5000) }).then((response) => { if (!response.ok) throw new Error(`HTTP ${response.status}`); }).catch((error) => { console.error(error); process.exit(1); });'; then
               exit 0
             fi
             sleep 2
@@ -321,6 +356,7 @@ jobs:
           echo "Resolved browser smoke Chrome: $chromePath"
 
       - name: Run dev browser smoke
+        id: verify_browser_smoke
         env:
           SMOKE_BASE_URL: http://127.0.0.1:3004
         run: |
@@ -341,10 +377,76 @@ jobs:
             exit 1
           fi
 
-      - name: Cleanup old images
-        if: always()
+      - name: Rollback previous deployment
+        id: rollback_previous
+        if: ${{ failure() && steps.capture_previous.outcome == 'success' && steps.deploy_candidate.outcome != 'skipped' }}
         run: |
-          current="${{ env.IMAGE_NAME }}:${{ github.sha }}"
+          previousImageRef="${{ steps.capture_previous.outputs.previous_image_ref }}"
+          previousImageId="${{ steps.capture_previous.outputs.previous_image_id }}"
+          if [ -z "$previousImageRef" ] || [ -z "$previousImageId" ]; then
+            echo "自动回滚缺少旧镜像引用或镜像 ID"
+            exit 1
+          fi
+
+          cd ~/project/fusion
+          cat > docker-compose.fusion-ui-ghcr.yml <<'EOF'
+          services:
+            fusion-ui:
+              image: ${FUSION_UI_IMAGE}
+              container_name: fusion-ui
+              restart: always
+              ports:
+                - "3004:3000"
+              environment:
+                - NODE_ENV=production
+              deploy:
+                resources:
+                  limits:
+                    memory: 256m
+              networks:
+                - postgres_default
+
+          networks:
+            postgres_default:
+              external: true
+          EOF
+          docker rm -f fusion-ui 2>/dev/null || true
+          FUSION_UI_IMAGE="$previousImageRef" \
+            docker compose -f docker-compose.fusion-ui-ghcr.yml up -d
+
+          runningImageRef="$(docker inspect --format '{{.Config.Image}}' fusion-ui 2>/dev/null || true)"
+          runningImageId="$(docker inspect --format '{{.Image}}' fusion-ui 2>/dev/null || true)"
+          if [ "$runningImageRef" != "$previousImageRef" ]; then
+            echo "fusion-ui rollback image reference mismatch: expected=$previousImageRef actual=${runningImageRef:-missing}"
+            docker ps --filter "name=fusion-ui"
+            docker logs --tail 80 fusion-ui || true
+            exit 1
+          fi
+          if [ "$runningImageId" != "$previousImageId" ]; then
+            echo "fusion-ui rollback image ID mismatch: expected=$previousImageId actual=${runningImageId:-missing}"
+            docker ps --filter "name=fusion-ui"
+            docker logs --tail 80 fusion-ui || true
+            exit 1
+          fi
+
+          # 浏览器运行时本身可能是候选失败原因，回滚阻塞验收使用独立的容器内 HTTP 路径。
+          for attempt in 1 2 3 4 5 6 7 8 9 10 11 12; do
+            if docker exec fusion-ui node -e 'fetch("http://127.0.0.1:3000/", { signal: AbortSignal.timeout(5000) }).then((response) => { if (!response.ok) throw new Error(`HTTP ${response.status}`); }).catch((error) => { console.error(error); process.exit(1); });'; then
+              echo "fusion-ui rollback smoke check passed"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "fusion-ui rollback smoke check failed"
+          docker ps --filter "name=fusion-ui"
+          docker logs --tail 80 fusion-ui || true
+          exit 1
+
+      - name: Cleanup old images
+        id: cleanup_old_images
+        if: success()
+        run: |
+          current="${IMAGE_NAME}:${DEPLOY_TARGET_SHA}"
           docker images --format '{{.Repository}}:{{.Tag}} {{.ID}}' ${{ env.IMAGE_NAME }} \
             | awk -v current="$current" '$1 != current {print $2}' \
             | sort -u \
@@ -358,10 +460,10 @@ jobs:
             "${{ github.ref_name }}" \
             dev \
             "${{ job.status }}" \
-            "${{ needs.build.outputs.started_at }}" \
-            "${{ env.IMAGE_NAME }}:${{ github.sha }}" \
-            "${{ github.sha }}" \
-            "${{ needs.build.outputs.runner_name }}" \
+            "${{ needs.publish.outputs.started_at }}" \
+            "${{ env.IMAGE_NAME }}:${{ env.DEPLOY_TARGET_SHA }}" \
+            "${{ env.DEPLOY_TARGET_SHA }}" \
+            "${{ needs.publish.outputs.runner_name }}" \
             fusion-ui \
             "${{ env.DEPLOY_START }}"; then
             echo "CI/CD metrics push failed, ignored"
@@ -383,7 +485,7 @@ jobs:
             echo "FEISHU_INFRA_WEBHOOK 未配置,跳过飞书通知"
             exit 0
           fi
-          export SHORT_SHA="${GITHUB_SHA:0:7}"
+          export SHORT_SHA="${DEPLOY_TARGET_SHA:0:7}"
           export DEPLOY_TS="$(date -u '+%Y-%m-%d %H:%M UTC')"
           python3 - <<'PY'
           import json, os, urllib.request
@@ -394,9 +496,12 @@ jobs:
           status = os.environ.get("JOB_STATUS", "")
           ts = os.environ.get("DEPLOY_TS", "")
           run_url = os.environ.get("RUN_URL", "")
+          rollback_reason = os.environ.get("ROLLBACK_REASON", "")
           raw = os.environ.get("COMMIT_MSG", "") or ""
           lines = [ln for ln in raw.splitlines() if ln.strip()]
           msg = "\n".join(lines[:3]) if lines else "(无提交信息)"
+          if rollback_reason:
+              msg = f"手动回滚原因：{rollback_reason}\n{msg}"
           if len(msg) > 240:
               msg = msg[:240] + "…"
           card = {
@@ -436,3 +541,20 @@ jobs:
           except Exception as e:
               print(f"飞书通知失败(忽略): {e!r}")
           PY
+
+      - name: Cleanup Docker credential directory
+        if: always()
+        run: |
+          dockerConfig="${DOCKER_CONFIG:-}"
+          if [ -z "$dockerConfig" ]; then
+            echo "DOCKER_CONFIG 未设置，无需清理"
+            exit 0
+          fi
+
+          expectedDockerConfig="${RUNNER_TEMP}/.docker-${GITHUB_RUN_ID}-${GITHUB_JOB}"
+          if [[ "$dockerConfig" != "$expectedDockerConfig" || "$dockerConfig" != "${RUNNER_TEMP}/.docker-"* ]]; then
+            echo "拒绝清理非本次 job 的 Docker 配置目录: $dockerConfig"
+            exit 1
+          fi
+
+          rm -rf -- "$dockerConfig"
