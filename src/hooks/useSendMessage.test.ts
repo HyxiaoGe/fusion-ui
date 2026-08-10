@@ -1457,6 +1457,18 @@ describe('useSendMessage', () => {
 
   it('handles stream errors gracefully', async () => {
     const store = createStore();
+    sessionStorage.setItem(
+      CONTEXT_STATUS_PENDING_FIRST_TURN_STORAGE_KEY,
+      JSON.stringify(['existing-conv']),
+    );
+    sessionStorage.setItem(
+      CONTEXT_STATUS_SUPPRESSED_FIRST_TURN_STORAGE_KEY,
+      JSON.stringify(['existing-conv']),
+    );
+    sessionStorage.setItem(
+      CONTEXT_STATUS_INTERACTED_FIRST_TURN_STORAGE_KEY,
+      JSON.stringify(['existing-conv']),
+    );
     store.dispatch(
       upsertConversation({
         id: 'existing-conv',
@@ -1495,6 +1507,9 @@ describe('useSendMessage', () => {
       expect(state.conversation.byId['existing-conv'].messages[1]).toEqual(
         expect.objectContaining({ role: 'assistant' })
       );
+      expect(sessionStorage.getItem(CONTEXT_STATUS_PENDING_FIRST_TURN_STORAGE_KEY)).toBeNull();
+      expect(sessionStorage.getItem(CONTEXT_STATUS_SUPPRESSED_FIRST_TURN_STORAGE_KEY)).toBeNull();
+      expect(sessionStorage.getItem(CONTEXT_STATUS_INTERACTED_FIRST_TURN_STORAGE_KEY)).toBeNull();
     });
   });
 

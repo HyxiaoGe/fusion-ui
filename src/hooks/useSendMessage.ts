@@ -871,6 +871,7 @@ export function useSendMessage() {
           return;
         }
 
+        clearFirstTurnContextState(effectiveConvIdOnError);
         const reconnectRetriesExhausted = isRecoverableStreamError(error);
         const requestAccepted = materializedOnce || Boolean(serverMessageIdRef.current);
 

@@ -160,7 +160,7 @@ function registeredStateLabel(model: ModelManagementRegisteredModel): string {
 }
 
 function healthLabel(health: ModelManagementRegisteredModel["health"]): string {
-  const status = typeof health === "string" ? health : health?.status;
+  const status = modelHealthStatus(health);
   const labels: Record<string, string> = {
     healthy: "健康",
     unhealthy: "异常",
@@ -169,9 +169,16 @@ function healthLabel(health: ModelManagementRegisteredModel["health"]): string {
   return status ? (labels[status] ?? status) : "未知";
 }
 
+function modelHealthStatus(health: ModelManagementRegisteredModel["health"]): string | undefined {
+  return typeof health === "string" ? health : health?.status;
+}
+
+function registeredModelIsUnhealthy(model: ModelManagementRegisteredModel): boolean {
+  return modelHealthStatus(model.health) === "unhealthy";
+}
+
 function registeredModelIsSelectable(model: ModelManagementRegisteredModel): boolean {
-  const healthStatus = typeof model.health === "string" ? model.health : model.health?.status;
-  return model.selectable && model.routable && healthStatus !== "unhealthy";
+  return model.selectable && model.routable && !registeredModelIsUnhealthy(model);
 }
 
 function safeOperationError(operation: ModelAdmissionOperation): string {
@@ -220,6 +227,7 @@ export default function ModelManagementPanel() {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [pendingAction, setPendingAction] = useState<string | null>(null);
+  const [pendingTerminalSyncCount, setPendingTerminalSyncCount] = useState(0);
   const [action, setAction] = useState<ManagementAction | null>(null);
   const [reason, setReason] = useState("");
   const [selectedProvider, setSelectedProvider] = useState(ALL_PROVIDERS_VALUE);
@@ -231,7 +239,6 @@ export default function ModelManagementPanel() {
   }
   const handledOperationIdsRef = useRef(new Set<string>());
   const terminalSyncQueueRef = useRef<Promise<void>>(Promise.resolve());
-  const pendingTerminalSyncCountRef = useRef(0);
   const snapshotRequestIdRef = useRef(0);
   const activeSnapshotRequestRef = useRef<{
     id: number;
@@ -248,6 +255,7 @@ export default function ModelManagementPanel() {
   const loadSnapshot = useCallback((
     showLoading = false,
     supersedeActiveRequest = false,
+    clearVisibleError = true,
   ): Promise<ModelManagementSnapshot | null> => {
     if (!supersedeActiveRequest && activeSnapshotRequestRef.current) {
       return activeSnapshotRequestRef.current.promise;
@@ -256,7 +264,7 @@ export default function ModelManagementPanel() {
     const requestId = snapshotRequestIdRef.current + 1;
     snapshotRequestIdRef.current = requestId;
     if (showLoading) setLoading(true);
-    setError(null);
+    if (clearVisibleError) setError(null);
     const request = (async (): Promise<ModelManagementSnapshot | null> => {
       try {
         const nextSnapshot = await fetchModelManagementSnapshotAPI();
@@ -270,7 +278,9 @@ export default function ModelManagementPanel() {
           denyAccess();
           return null;
         }
-        setError(errorMessage(caught, "模型管理数据加载失败"));
+        if (clearVisibleError) {
+          setError(errorMessage(caught, "模型管理数据加载失败"));
+        }
         return null;
       } finally {
         if (activeSnapshotRequestRef.current?.id === requestId) {
@@ -379,7 +389,7 @@ export default function ModelManagementPanel() {
     let timer: number | null = null;
     const scheduleNextPoll = () => {
       timer = window.setTimeout(() => {
-        void loadSnapshot(false).finally(() => {
+        void loadSnapshot(false, false, false).finally(() => {
           if (!cancelled) scheduleNextPoll();
         });
       }, OPERATION_POLL_INTERVAL_MS);
@@ -422,8 +432,7 @@ export default function ModelManagementPanel() {
     if (succeededOperations.length === 0) return;
     const terminalOperation = succeededOperations[succeededOperations.length - 1];
 
-    pendingTerminalSyncCountRef.current += 1;
-    setPendingAction(`operation:${terminalOperation.operation_id}`);
+    setPendingTerminalSyncCount((current) => current + 1);
     terminalSyncQueueRef.current = terminalSyncQueueRef.current
       .then(() => syncGlobalModelCatalog())
       .then(() => {
@@ -451,12 +460,11 @@ export default function ModelManagementPanel() {
         setError(`模型已上线，但目录刷新失败：${errorMessage(caught, "请稍后手动刷新")}`);
       })
       .finally(() => {
-        pendingTerminalSyncCountRef.current -= 1;
-        if (pendingTerminalSyncCountRef.current === 0) {
-          setPendingAction(null);
-        }
+        setPendingTerminalSyncCount((current) => Math.max(0, current - 1));
       });
   }, [denyAccess, loadSnapshot, operations, syncGlobalModelCatalog]);
+
+  const managementBusy = Boolean(pendingAction) || pendingTerminalSyncCount > 0;
 
   const stats = useMemo(() => ({
     registered: snapshot?.models.length ?? 0,
@@ -465,10 +473,10 @@ export default function ModelManagementPanel() {
   }), [snapshot]);
 
   const closeActionDialog = useCallback(() => {
-    if (pendingAction) return;
+    if (managementBusy) return;
     setAction(null);
     setReason("");
-  }, [pendingAction]);
+  }, [managementBusy]);
 
   const refreshAfterVisibility = useCallback(async () => {
     const snapshotPromise = loadSnapshot(false, true);
@@ -481,8 +489,27 @@ export default function ModelManagementPanel() {
     }
   }, [dispatch, loadSnapshot]);
 
+  const refreshManagementData = useCallback(async () => {
+    if (managementBusy) return;
+    setPendingAction("refresh");
+    setError(null);
+    setNotice(null);
+    try {
+      await refreshAfterVisibility();
+      setNotice("模型管理数据和模型选择器已刷新");
+    } catch (caught: unknown) {
+      if (isAdminAccessError(caught)) {
+        denyAccess();
+        return;
+      }
+      setError(`刷新失败：${errorMessage(caught, "请稍后重试")}`);
+    } finally {
+      setPendingAction(null);
+    }
+  }, [denyAccess, managementBusy, refreshAfterVisibility]);
+
   const submitAction = useCallback(async () => {
-    if (!action || !reason.trim() || pendingAction) return;
+    if (!action || !reason.trim() || managementBusy) return;
     const normalizedReason = reason.trim();
     const actionKey = action.kind === "visibility"
       ? `visibility:${action.model.model_id}`
@@ -491,6 +518,7 @@ export default function ModelManagementPanel() {
     setError(null);
     setNotice(null);
     let visibilityUpdated = false;
+    let admissionSubmitted = false;
 
     try {
       if (action.kind === "visibility") {
@@ -502,7 +530,9 @@ export default function ModelManagementPanel() {
         visibilityUpdated = true;
         await refreshAfterVisibility();
         setNotice(action.nextSelectable
-          ? `${action.model.name} 已恢复到新对话模型选择器`
+          ? registeredModelIsUnhealthy(action.model)
+            ? `${action.model.name} 已恢复显示，健康恢复后才可用于新对话`
+            : `${action.model.name} 已恢复到新对话模型选择器`
           : `${action.model.name} 已从新选择中隐藏，已有对话仍可用`);
       } else {
         const operation = await admitModelCandidateAPI(action.fingerprint, {
@@ -516,10 +546,16 @@ export default function ModelManagementPanel() {
           ...current.filter((item) => item.operation_id !== operation.operation_id),
           operation,
         ]);
+        admissionSubmitted = true;
         setNotice(action.candidate.state === "preflight_required"
           ? `${action.candidate.model_id} 验证与上线任务已排队，全部通过前不会加入模型选择器`
           : `${action.candidate.model_id} 上线任务已排队，完成前不会加入模型选择器`);
-        await loadSnapshot(false, true);
+        setAction(null);
+        setReason("");
+        const nextSnapshot = await loadSnapshot(false, true);
+        if (!nextSnapshot) {
+          setError("上线任务已创建并在后台运行，但管理快照刷新失败，请手动刷新");
+        }
       }
       setAction(null);
       setReason("");
@@ -533,13 +569,17 @@ export default function ModelManagementPanel() {
         setReason("");
         setNotice(`${action.model.name} 的可见性已更新，请手动刷新确认最新状态`);
         setError(`可见性已更新，但后续页面或模型目录刷新未完成：${errorMessage(caught, "请手动刷新")}`);
+      } else if (action.kind === "admission" && admissionSubmitted) {
+        setAction(null);
+        setReason("");
+        setError("上线任务已创建并在后台运行，但管理快照刷新失败，请手动刷新");
       } else {
         setError(errorMessage(caught, action.kind === "visibility" ? "模型可见性更新失败" : "模型上线任务提交失败"));
       }
     } finally {
       setPendingAction(null);
     }
-  }, [action, denyAccess, loadSnapshot, pendingAction, reason, refreshAfterVisibility]);
+  }, [action, denyAccess, loadSnapshot, managementBusy, reason, refreshAfterVisibility]);
 
   if (loading) {
     return (
@@ -581,7 +621,11 @@ export default function ModelManagementPanel() {
   }
 
   const actionTitle = action?.kind === "visibility"
-    ? (action.nextSelectable ? `确认恢复 ${action.model.name}` : `确认隐藏 ${action.model.name}`)
+    ? (action.nextSelectable
+        ? registeredModelIsUnhealthy(action.model)
+          ? `确认恢复显示 ${action.model.name}`
+          : `确认恢复 ${action.model.name}`
+        : `确认隐藏 ${action.model.name}`)
     : action?.kind === "admission"
       ? `确认${candidateAdmissionActionLabel(action.candidate)} ${action.candidate.model_id}`
       : "确认模型管理操作";
@@ -609,8 +653,8 @@ export default function ModelManagementPanel() {
             <Button
               size="sm"
               variant="outline"
-              disabled={Boolean(pendingAction)}
-              onClick={() => void loadSnapshot(false)}
+              disabled={managementBusy}
+              onClick={() => void refreshManagementData()}
             >
               <RefreshCw className="h-4 w-4" />
               刷新
@@ -781,7 +825,9 @@ export default function ModelManagementPanel() {
                   {!model.selectable && (
                     <p className="mt-2 text-sm text-muted-foreground">
                       {model.routable
-                        ? "仅从新选择中隐藏，已有对话仍可用。"
+                        ? registeredModelIsUnhealthy(model)
+                          ? "当前健康异常；可恢复显示，健康恢复后才可用于新对话。"
+                          : "仅从新选择中隐藏，已有对话仍可用。"
                         : "当前模型不可路由，无法恢复到新对话选择器。"}
                     </p>
                   )}
@@ -790,8 +836,8 @@ export default function ModelManagementPanel() {
                 <Button
                   size="sm"
                   variant={model.selectable ? "outline" : "default"}
-                  disabled={Boolean(pendingAction) || (!model.selectable && !model.routable)}
-                  aria-label={`${model.selectable ? "隐藏" : model.routable ? "恢复" : "不可恢复"} ${model.name}`}
+                  disabled={managementBusy || (!model.selectable && !model.routable)}
+                  aria-label={`${model.selectable ? "隐藏" : model.routable ? registeredModelIsUnhealthy(model) ? "恢复显示" : "恢复" : "不可恢复"} ${model.name}`}
                   onClick={() => {
                     if (!model.selectable && !model.routable) return;
                     setAction({ kind: "visibility", model, nextSelectable: !model.selectable });
@@ -799,7 +845,7 @@ export default function ModelManagementPanel() {
                   }}
                 >
                   {model.selectable ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                  {model.selectable ? "隐藏" : model.routable ? "恢复" : "不可恢复"}
+                  {model.selectable ? "隐藏" : model.routable ? registeredModelIsUnhealthy(model) ? "恢复显示" : "恢复" : "不可恢复"}
                 </Button>
               </div>
             </div>
@@ -875,7 +921,7 @@ export default function ModelManagementPanel() {
                   {canAdmit && fingerprint && snapshot.governance.run_id && (
                     <Button
                       size="sm"
-                      disabled={Boolean(pendingAction)}
+                      disabled={managementBusy}
                       aria-label={`${admissionActionLabel} ${candidate.model_id}`}
                       onClick={() => {
                         setAction({
@@ -927,7 +973,9 @@ export default function ModelManagementPanel() {
             <DialogDescription>
               {action?.kind === "visibility" && !action.nextSelectable
                 ? "仅从新选择中隐藏，已有对话仍可用。请填写原因后确认。"
-                : action?.kind === "visibility"
+                : action?.kind === "visibility" && registeredModelIsUnhealthy(action.model)
+                  ? "仅恢复模型选择器中的可见性；当前健康异常，健康恢复后才可用于新对话。请填写原因后确认。"
+                  : action?.kind === "visibility"
                   ? "恢复后，新对话可以再次选择这个模型。请填写原因后确认。"
                   : action?.kind === "admission" && action.candidate.state === "preflight_required"
                     ? "将先执行真实兼容性预检，可能产生少量模型调用费用；只有全部通过后才会上线并进入模型选择器。请填写原因后确认。"
@@ -940,7 +988,7 @@ export default function ModelManagementPanel() {
               id="model-management-reason"
               value={reason}
               maxLength={300}
-              disabled={Boolean(pendingAction)}
+              disabled={managementBusy}
               placeholder="说明本次变更依据"
               onChange={(event) => setReason(event.target.value)}
             />
@@ -951,13 +999,13 @@ export default function ModelManagementPanel() {
             </div>
           )}
           <DialogFooter>
-            <Button variant="outline" disabled={Boolean(pendingAction)} onClick={closeActionDialog}>取消</Button>
+            <Button variant="outline" disabled={managementBusy} onClick={closeActionDialog}>取消</Button>
             <Button
               variant={action?.kind === "visibility" && !action.nextSelectable ? "destructive" : "default"}
-              disabled={!reason.trim() || Boolean(pendingAction)}
+              disabled={!reason.trim() || managementBusy}
               onClick={() => void submitAction()}
             >
-              {pendingAction ? "处理中" : confirmLabel}
+              {managementBusy ? "处理中" : confirmLabel}
             </Button>
           </DialogFooter>
         </DialogContent>

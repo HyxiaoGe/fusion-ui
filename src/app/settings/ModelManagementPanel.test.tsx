@@ -406,6 +406,37 @@ describe('ModelManagementPanel', () => {
     expect(screen.queryByRole('button', { name: '恢复 Legacy Model' })).toBeNull();
   });
 
+  it('健康异常的隐藏模型只恢复显示，不误报为立即可选择', async () => {
+    const unhealthyModel = {
+      ...baseSnapshot.models[1],
+      health: { status: 'unhealthy' as const },
+    };
+    const refreshedSnapshot = {
+      ...baseSnapshot,
+      models: [{ ...unhealthyModel, selectable: true, revision: 4 }],
+    };
+    fetchModelManagementSnapshotMock
+      .mockResolvedValueOnce({ ...baseSnapshot, models: [unhealthyModel] })
+      .mockResolvedValueOnce(refreshedSnapshot);
+    updateModelVisibilityMock.mockResolvedValue({});
+    refreshModelsMock.mockResolvedValue({ models: [], providers: [] });
+
+    render(<ModelManagementPanel />);
+    await screen.findByTestId('registered-model-count');
+
+    expect(screen.getByText(/可恢复显示，健康恢复后才可用于新对话/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '恢复显示 Legacy Model' }));
+    const dialog = screen.getByRole('dialog');
+    expect(dialog).toHaveTextContent('仅恢复模型选择器中的可见性');
+    expect(dialog).toHaveTextContent('健康恢复后才可用于新对话');
+    expect(dialog).not.toHaveTextContent('新对话可以再次选择');
+
+    fireEvent.change(within(dialog).getByLabelText('操作原因'), { target: { value: '恢复展示' } });
+    fireEvent.click(within(dialog).getByRole('button', { name: '确认恢复' }));
+
+    expect(await screen.findByRole('status')).toHaveTextContent('已恢复显示，健康恢复后才可用于新对话');
+  });
+
   it('可见性已写入但后续刷新失败时不误报写操作失败', async () => {
     prepareLoadedSnapshot();
     updateModelVisibilityMock.mockResolvedValue({});
@@ -425,6 +456,29 @@ describe('ModelManagementPanel', () => {
     expect(screen.queryByText('模型可见性更新失败')).toBeNull();
     expect(updateModelsMock).toHaveBeenCalledWith([]);
     expect(dispatchMock).toHaveBeenCalledWith(expect.objectContaining({ type: 'models/updateModels' }));
+  });
+
+  it('可见性目录刷新失败后，手动刷新会重新同步管理快照与模型目录', async () => {
+    fetchModelManagementSnapshotMock
+      .mockResolvedValueOnce(baseSnapshot)
+      .mockResolvedValue(baseSnapshot);
+    updateModelVisibilityMock.mockResolvedValue({});
+    refreshModelsMock
+      .mockRejectedValueOnce(new Error('目录服务暂时不可用'))
+      .mockResolvedValueOnce({ models: [], providers: [] });
+
+    render(<ModelManagementPanel />);
+    await screen.findByTestId('registered-model-count');
+    fireEvent.click(screen.getByRole('button', { name: '隐藏 Kimi K3' }));
+    fireEvent.change(screen.getByLabelText('操作原因'), { target: { value: '临时维护' } });
+    fireEvent.click(screen.getByRole('button', { name: '确认隐藏' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('可见性已更新，但后续页面或模型目录刷新未完成');
+    fireEvent.click(screen.getByRole('button', { name: '刷新' }));
+
+    await waitFor(() => expect(refreshModelsMock).toHaveBeenCalledTimes(2));
+    expect(await screen.findByRole('status')).toHaveTextContent('模型管理数据和模型选择器已刷新');
+    expect(updateModelsMock).toHaveBeenCalledWith([]);
   });
 
   it('治理能力开启时同时提供直接上线和验证并上线动作', async () => {
@@ -497,6 +551,68 @@ describe('ModelManagementPanel', () => {
     expect(await screen.findByRole('button', { name: '上线任务已排队 kimi-k3.1' })).toBeDisabled();
     expect(refreshModelsMock).not.toHaveBeenCalled();
     expect(updateModelsMock).not.toHaveBeenCalled();
+  });
+
+  it('上线任务创建后管理快照刷新失败时关闭弹窗并保留任务归属', async () => {
+    const pendingOperation: ModelAdmissionOperation = {
+      operation_id: 'operation-created-snapshot-failed',
+      candidate_fingerprint: 'fingerprint-ready',
+      model_id: 'kimi-k3.1',
+      status: 'pending',
+    };
+    fetchModelManagementSnapshotMock
+      .mockResolvedValueOnce(baseSnapshot)
+      .mockRejectedValueOnce(new Error('快照接口暂时不可用'));
+    admitModelCandidateMock.mockResolvedValue(pendingOperation);
+
+    render(<ModelManagementPanel />);
+    await screen.findByTestId('registered-model-count');
+    fireEvent.click(screen.getByRole('button', { name: '上线 kimi-k3.1' }));
+    fireEvent.change(screen.getByLabelText('操作原因'), { target: { value: '允许上线' } });
+    fireEvent.click(screen.getByRole('button', { name: '确认上线' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('上线任务已创建并在后台运行，但管理快照刷新失败');
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(screen.queryByText('模型上线任务提交失败')).toBeNull();
+    expect(sessionStorage.getItem(MODEL_MANAGEMENT_OWNED_OPERATIONS_STORAGE_KEY)).toContain(
+      pendingOperation.operation_id,
+    );
+  });
+
+  it('上线任务进入终态同步时持续锁定管理写操作', async () => {
+    const pendingOperation: ModelAdmissionOperation = {
+      operation_id: 'operation-terminal-sync-lock',
+      candidate_fingerprint: 'fingerprint-ready',
+      model_id: 'kimi-k3.1',
+      status: 'pending',
+    };
+    const succeededOperation: ModelAdmissionOperation = {
+      ...pendingOperation,
+      status: 'succeeded',
+    };
+    fetchModelManagementSnapshotMock
+      .mockResolvedValueOnce(baseSnapshot)
+      .mockResolvedValueOnce({ ...baseSnapshot, operations: [succeededOperation] })
+      .mockResolvedValue({ ...baseSnapshot, operations: [succeededOperation] });
+    admitModelCandidateMock.mockResolvedValue(pendingOperation);
+    let resolveCatalog!: (catalog: { models: never[]; providers: never[] }) => void;
+    const catalog = new Promise<{ models: never[]; providers: never[] }>((resolve) => {
+      resolveCatalog = resolve;
+    });
+    refreshModelsMock.mockReturnValue(catalog);
+
+    render(<ModelManagementPanel />);
+    await screen.findByTestId('registered-model-count');
+    fireEvent.click(screen.getByRole('button', { name: '上线 kimi-k3.1' }));
+    fireEvent.change(screen.getByLabelText('操作原因'), { target: { value: '允许上线' } });
+    fireEvent.click(screen.getByRole('button', { name: '确认上线' }));
+
+    await waitFor(() => expect(refreshModelsMock).toHaveBeenCalledTimes(1));
+    expect(screen.getByRole('button', { name: '刷新' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: '隐藏 Kimi K3' })).toBeDisabled();
+
+    resolveCatalog({ models: [], providers: [] });
+    await waitFor(() => expect(screen.getByRole('button', { name: '刷新' })).toBeEnabled());
   });
 
   it('轮询到上线成功后才刷新全局模型 Redux', async () => {
@@ -701,7 +817,7 @@ describe('ModelManagementPanel', () => {
 
     fireEvent.click(screen.getByRole('button', { name: '刷新' }));
     await waitFor(() => expect(fetchModelManagementSnapshotMock).toHaveBeenCalledTimes(2));
-    expect(refreshModelsMock).not.toHaveBeenCalled();
+    expect(refreshModelsMock).toHaveBeenCalledTimes(1);
   });
 
   it('组件重挂后仍会同步本页发起且已完成的上线任务', async () => {
@@ -833,7 +949,7 @@ describe('ModelManagementPanel', () => {
     expect(sessionStorage.getItem(MODEL_MANAGEMENT_OWNED_OPERATIONS_STORAGE_KEY)).toBeNull();
   });
 
-  it('并发刷新复用同一请求，写操作后的新快照不会被旧响应覆盖', async () => {
+  it('手动刷新期间锁定写操作，完成后可继续更新可见性', async () => {
     let resolveOldRefresh!: (snapshot: ModelManagementSnapshot) => void;
     const oldRefresh = new Promise<ModelManagementSnapshot>((resolve) => {
       resolveOldRefresh = resolve;
@@ -854,20 +970,22 @@ describe('ModelManagementPanel', () => {
     render(<ModelManagementPanel />);
     await screen.findByTestId('registered-model-count');
     fireEvent.click(screen.getByRole('button', { name: '刷新' }));
-    fireEvent.click(screen.getByRole('button', { name: '刷新' }));
     expect(fetchModelManagementSnapshotMock).toHaveBeenCalledTimes(2);
+    expect(screen.getByRole('button', { name: '刷新' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: '隐藏 Kimi K3' })).toBeDisabled();
+
+    resolveOldRefresh(baseSnapshot);
+    await act(async () => {
+      await oldRefresh;
+      await Promise.resolve();
+    });
+    expect(screen.getByRole('button', { name: '隐藏 Kimi K3' })).toBeEnabled();
 
     fireEvent.click(screen.getByRole('button', { name: '隐藏 Kimi K3' }));
     fireEvent.change(screen.getByLabelText('操作原因'), { target: { value: '临时维护' } });
     fireEvent.click(screen.getByRole('button', { name: '确认隐藏' }));
 
     expect(await screen.findByRole('button', { name: '恢复 Kimi K3' })).toBeInTheDocument();
-    resolveOldRefresh(baseSnapshot);
-    await act(async () => {
-      await oldRefresh;
-      await Promise.resolve();
-    });
-    expect(screen.getByRole('button', { name: '恢复 Kimi K3' })).toBeInTheDocument();
     expect(fetchModelManagementSnapshotMock).toHaveBeenCalledTimes(3);
   });
 
@@ -964,6 +1082,37 @@ describe('ModelManagementPanel', () => {
     fireEvent.click(screen.getByRole('button', { name: '确认隐藏' }));
 
     expect(await screen.findByRole('alert')).toHaveTextContent('revision 已变化');
+  });
+
+  it('后台任务轮询不会清除用户可见的操作错误', async () => {
+    const pendingOperation: ModelAdmissionOperation = {
+      operation_id: 'operation-poll-preserve-error',
+      candidate_fingerprint: 'fingerprint-ready',
+      model_id: 'kimi-k3.1',
+      status: 'pending',
+    };
+    fetchModelManagementSnapshotMock.mockResolvedValue({
+      ...baseSnapshot,
+      operations: [pendingOperation],
+    });
+    updateModelVisibilityMock.mockRejectedValue(new Error('revision 已变化'));
+
+    render(<ModelManagementPanel />);
+    await screen.findByTestId('registered-model-count');
+    vi.useFakeTimers();
+    fireEvent.click(screen.getByRole('button', { name: '隐藏 Kimi K3' }));
+    fireEvent.change(screen.getByLabelText('操作原因'), { target: { value: '临时隐藏' } });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: '确认隐藏' }));
+      await Promise.resolve();
+    });
+    expect(screen.getByRole('alert')).toHaveTextContent('revision 已变化');
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1500);
+      await Promise.resolve();
+    });
+    expect(screen.getByRole('alert')).toHaveTextContent('revision 已变化');
   });
 
   it('403 时安全降级，不泄露管理数据', async () => {
