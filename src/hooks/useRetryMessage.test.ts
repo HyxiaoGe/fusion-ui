@@ -10,7 +10,7 @@ import conversationReducer, {
 import modelsReducer, { updateModels } from '@/redux/slices/modelsSlice';
 import { useRetryMessage } from './useRetryMessage';
 
-function createStore(modelState: 'disabled' | 'unhealthy' = 'disabled') {
+function createStore(modelState: 'disabled' | 'unhealthy' | 'hidden' = 'disabled') {
   const store = configureStore({
     reducer: {
       conversation: conversationReducer,
@@ -28,6 +28,8 @@ function createStore(modelState: 'disabled' | 'unhealthy' = 'disabled') {
       name: 'Disabled Model',
       provider: 'test',
       enabled: modelState !== 'disabled',
+      selectable: modelState !== 'hidden',
+      routable: modelState === 'hidden' ? true : undefined,
       temperature: 0.7,
       capabilities: {},
       health: modelState === 'unhealthy'
@@ -139,5 +141,23 @@ describe('useRetryMessage', () => {
     expect(
       store.getState().conversation.byId['existing-conv'].messages.map((message) => message.id),
     ).toEqual(['user-1', 'assistant-1']);
+  });
+
+  it('首轮重试在删除消息前固定已验证的会话模型', async () => {
+    const store = createStore('hidden');
+    const sendMessage = vi.fn().mockResolvedValue(undefined);
+    const { result } = renderHook(() => useRetryMessage(sendMessage), {
+      wrapper: createWrapper(store),
+    });
+
+    await act(async () => {
+      await result.current('user-1', 'existing-conv');
+    });
+
+    expect(sendMessage).toHaveBeenCalledWith(
+      '原始问题',
+      { conversationId: 'existing-conv', resolvedModelId: 'disabled-model' },
+      undefined,
+    );
   });
 });

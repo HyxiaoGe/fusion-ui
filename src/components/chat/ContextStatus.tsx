@@ -143,7 +143,6 @@ export default function ContextStatus({
     );
     const sameConversationRunEstablished = Boolean(
       !conversationChanged
-      && currentFirstTurnStreaming
       && activeRunId
       && !previousRunId,
     );

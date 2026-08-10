@@ -554,6 +554,45 @@ describe('ContextStatus', () => {
     expect(await screen.findByRole('dialog', { name: '上下文状态' })).toBeInTheDocument();
   });
 
+  it('后续轮次从首个 SSE 建立 runId 时保留用户临时开关', async () => {
+    const opened = render(<ContextStatus
+      conversationId="chat-later-run-open"
+      usage={actualUsage}
+      phase="estimated"
+      isStreaming
+      activeRunId={null}
+    />);
+    fireEvent.click(screen.getByRole('button', { name: '查看上下文状态，剩余 43%' }));
+    opened.rerender(<ContextStatus
+      conversationId="chat-later-run-open"
+      usage={actualUsage}
+      phase="estimated"
+      isStreaming
+      activeRunId="run-later-open"
+    />);
+    expect(screen.getByRole('dialog', { name: '上下文状态' })).toBeInTheDocument();
+    opened.unmount();
+
+    localStorage.setItem(CONTEXT_STATUS_DEFAULT_OPEN_STORAGE_KEY, 'true');
+    const closed = render(<ContextStatus
+      conversationId="chat-later-run-closed"
+      usage={actualUsage}
+      phase="estimated"
+      isStreaming
+      activeRunId={null}
+    />);
+    expect(await screen.findByRole('dialog', { name: '上下文状态' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '查看上下文状态，剩余 43%' }));
+    closed.rerender(<ContextStatus
+      conversationId="chat-later-run-closed"
+      usage={actualUsage}
+      phase="estimated"
+      isStreaming
+      activeRunId="run-later-closed"
+    />);
+    expect(screen.queryByRole('dialog', { name: '上下文状态' })).toBeNull();
+  });
+
   it('首轮流中手动开启后 runId 从空值建立，仍保持开启', async () => {
     const view = render(<ContextStatus
       conversationId="chat-run-establish"

@@ -55,6 +55,7 @@ import {
 } from '@/lib/chat/conversationHydrationMerge';
 import {
   getSendModelErrorMessage,
+  isModelAvailableForSending,
   resolveSendModel,
 } from '@/lib/chat/sendModelResolution';
 import { clearFirstTurnContextState } from '@/lib/chat/contextStatusPersistence';
@@ -68,6 +69,8 @@ import type { RootState } from '@/redux/store';
 
 type SendMessageOptions = {
   conversationId: string | null;
+  /** 重试在删除原消息前已经验证过的会话模型，避免删除后被误判成新对话。 */
+  resolvedModelId?: string;
   /** 标记为新对话（即使提供了 conversationId，也当作草稿处理）。用于首页上传文件后发送的场景 */
   isDraft?: boolean;
   /** 本地草稿会话已创建，可用于先进入会话页，不必等待服务端 materialize */
@@ -413,10 +416,26 @@ export function useSendMessage() {
       }
 
       const isDraft = options.isDraft ?? (options.conversationId === null);
-      const modelResolution = resolveSendModel(
-        store.getState(),
-        isDraft ? null : options.conversationId,
+      const currentState = store.getState();
+      const useResolvedModel = Boolean(
+        options.resolvedModelId
+        && !isDraft
+        && options.conversationId,
       );
+      const prevalidatedModel = useResolvedModel
+        ? currentState.models.models.find((model) => (
+            model.id === options.resolvedModelId
+            && isModelAvailableForSending(model)
+          ))
+        : null;
+      const modelResolution = prevalidatedModel
+        ? { status: 'ready' as const, model: prevalidatedModel }
+        : useResolvedModel
+          ? { status: 'conversation_model_unavailable' as const }
+          : resolveSendModel(
+              currentState,
+              isDraft ? null : options.conversationId,
+            );
       if (modelResolution.status !== 'ready') {
         dispatch(setGlobalError(getSendModelErrorMessage(modelResolution)));
         return;

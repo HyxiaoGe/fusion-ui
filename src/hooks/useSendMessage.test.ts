@@ -1575,6 +1575,45 @@ describe('useSendMessage', () => {
     );
   });
 
+  it('首轮重试可使用删除消息前已验证的会话模型', async () => {
+    const store = createStore();
+    const baseModel = store.getState().models.models[0];
+    store.dispatch(updateModels([{
+      ...baseModel,
+      selectable: false,
+      routable: true,
+    }]));
+    store.dispatch(upsertConversation({
+      id: 'existing-conv',
+      title: 'Existing',
+      model_id: 'model-1',
+      messages: [],
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    }));
+    sendMessageStreamMock.mockImplementationOnce(async (_payload: any, callbacks: StreamCallbacks) => {
+      callbacks.onReady({ messageId: 'assistant-1', conversationId: 'existing-conv' });
+      callbacks.onDone({ messageId: 'assistant-1', conversationId: 'existing-conv' });
+    });
+    const { result } = renderHook(() => useSendMessage(), {
+      wrapper: createWrapper(store),
+    });
+
+    await act(async () => {
+      await result.current.sendMessage('重试原问题', {
+        conversationId: 'existing-conv',
+        resolvedModelId: 'model-1',
+      });
+      tickIntervals(4);
+    });
+
+    expect(sendMessageStreamMock).toHaveBeenCalledWith(
+      expect.objectContaining({ model_id: 'model-1' }),
+      expect.any(Object),
+      expect.any(AbortSignal),
+    );
+  });
+
   it('新对话不会使用健康状态异常的全局模型并回退到可用模型', async () => {
     const store = createStore();
     const baseModel = store.getState().models.models[0];
