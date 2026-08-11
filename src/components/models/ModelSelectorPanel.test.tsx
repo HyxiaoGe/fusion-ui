@@ -48,6 +48,29 @@ const models: ModelInfo[] = [
 ];
 
 describe('ModelSelectorPanel', () => {
+  it('最近使用入口排除不可路由模型', () => {
+    const unroutable = {
+      ...models[0],
+      id: 'unroutable-model',
+      name: '不可路由模型',
+      routable: false,
+    };
+    render(
+      <ModelSelectorPanel
+        modelsByProvider={[{ ...provider, models: [models[0]] }]}
+        selectedModelId={null}
+        recentModelIds={[unroutable.id]}
+        allModels={[models[0], unroutable]}
+        activeProvider={provider.id}
+        onSelect={vi.fn()}
+        onProviderChange={vi.fn()}
+      />,
+    );
+
+    expect(screen.queryByText('最近使用')).toBeNull();
+    expect(screen.queryByText('不可路由模型')).toBeNull();
+  });
+
   it('在模型卡片中展示面向用户的能力标签', () => {
     render(
       <ModelSelectorPanel

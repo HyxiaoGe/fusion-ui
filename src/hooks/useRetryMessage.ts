@@ -13,7 +13,7 @@ import type { RootState } from '@/redux/store';
 
 type SendMessageFn = (
   content: string,
-  options: { conversationId: string | null },
+  options: { conversationId: string | null; resolvedModelId?: string },
   attachments?: FileAttachment[],
 ) => Promise<void>;
 
@@ -74,7 +74,11 @@ export function useRetryMessage(sendMessage: SendMessageFn) {
         dispatch(removeMessage({ conversationId, messageId: userMessage.id }));
 
         if (text || attachments.length > 0) {
-          await sendMessage(text, { conversationId }, attachments.length > 0 ? attachments : undefined);
+          await sendMessage(
+            text,
+            { conversationId, resolvedModelId: modelResolution.model.id },
+            attachments.length > 0 ? attachments : undefined,
+          );
         }
       } else if (targetMsg.role === 'user') {
         // 重新发送：删除 user + 其后的 assistant，重新发送
@@ -87,7 +91,11 @@ export function useRetryMessage(sendMessage: SendMessageFn) {
         const { text, attachments } = extractMessageContent(targetMsg);
 
         if (text || attachments.length > 0) {
-          await sendMessage(text, { conversationId }, attachments.length > 0 ? attachments : undefined);
+          await sendMessage(
+            text,
+            { conversationId, resolvedModelId: modelResolution.model.id },
+            attachments.length > 0 ? attachments : undefined,
+          );
         }
       }
     },

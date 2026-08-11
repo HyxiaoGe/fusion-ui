@@ -89,6 +89,7 @@ function renderWithCitations(
       const trigger = onCitationClick ? (
         <button
           type="button"
+          data-chat-detail-overlay-trigger="true"
           onClick={(e) => {
             e.preventDefault();
             onCitationClick(sourceIndex);

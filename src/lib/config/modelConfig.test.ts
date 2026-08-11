@@ -1,8 +1,16 @@
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { convertApiModelToModelInfo } from './modelConfig';
+const { apiRequestMock } = vi.hoisted(() => ({ apiRequestMock: vi.fn() }));
+
+vi.mock('@/lib/api/fetchWithAuth', () => ({ apiRequest: apiRequestMock }));
+
+import { convertApiModelToModelInfo, fetchModels, refreshModels } from './modelConfig';
 
 describe('modelConfig', () => {
+  beforeEach(() => {
+    apiRequestMock.mockReset();
+  });
+
   it('保留模型上下文窗口和输出 token 上限字段', () => {
     const model = convertApiModelToModelInfo({
       modelId: 'xiaomi/mimo-v2.5-pro',
@@ -46,5 +54,49 @@ describe('modelConfig', () => {
     expect(model.capabilityPresentation?.score).toBe(88);
     expect(model.capabilityPresentation?.headline).toBe('后端推荐标题');
     expect(model.capabilityPresentation?.tooltip).toBe('后端 tooltip');
+  });
+
+  it('保留模型的新选择可见性与已有对话可路由状态', () => {
+    const model = convertApiModelToModelInfo({
+      modelId: 'hidden-model',
+      name: 'Hidden Model',
+      provider: 'test',
+      capabilities: {},
+      enabled: true,
+      selectable: false,
+      routable: true,
+    });
+
+    expect(model.selectable).toBe(false);
+    expect(model.routable).toBe(true);
+  });
+
+  it('强制刷新等待旧请求后重新读取目录，不复用写操作前响应', async () => {
+    let resolveOldRequest!: (value: { models: []; providers: [] }) => void;
+    const oldRequest = new Promise<{ models: []; providers: [] }>((resolve) => {
+      resolveOldRequest = resolve;
+    });
+    apiRequestMock
+      .mockReturnValueOnce(oldRequest)
+      .mockResolvedValueOnce({
+        models: [{
+          modelId: 'new-model',
+          name: 'New Model',
+          provider: 'test',
+          capabilities: {},
+          enabled: true,
+        }],
+        providers: [],
+      });
+
+    const initial = fetchModels();
+    const refreshed = refreshModels();
+    expect(apiRequestMock).toHaveBeenCalledTimes(1);
+    resolveOldRequest({ models: [], providers: [] });
+    await initial;
+
+    const result = await refreshed;
+    expect(apiRequestMock).toHaveBeenCalledTimes(2);
+    expect(result.models.map((model) => model.id)).toEqual(['new-model']);
   });
 });

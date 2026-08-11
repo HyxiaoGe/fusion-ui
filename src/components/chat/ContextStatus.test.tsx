@@ -4,11 +4,15 @@ import { renderToString } from 'react-dom/server';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import i18n from '@/lib/i18n';
+import {
+  CONTEXT_STATUS_INTERACTED_FIRST_TURN_STORAGE_KEY,
+  moveFirstTurnContextState,
+} from '@/lib/chat/contextStatusPersistence';
 import type { ContextUsage } from '@/types/conversation';
 import ContextStatus, {
-  CONTEXT_STATUS_OPEN_STORAGE_KEY,
+  CONTEXT_STATUS_DEFAULT_OPEN_STORAGE_KEY,
   CONTEXT_STATUS_PENDING_FIRST_TURN_STORAGE_KEY,
-  LEGACY_CONTEXT_STATUS_OPEN_STORAGE_KEY,
+  CONTEXT_STATUS_SUPPRESSED_FIRST_TURN_STORAGE_KEY,
 } from './ContextStatus';
 
 const actualUsage: ContextUsage = {
@@ -63,10 +67,45 @@ describe('ContextStatus', () => {
     expect(conversationValue).toHaveAttribute('title', conversationId);
     expect(conversationValue).toHaveClass('truncate', 'whitespace-nowrap');
     expect(screen.getByText('147,811 / 262,144 Token')).toBeInTheDocument();
-    expect(screen.getByRole('progressbar')).toHaveAttribute('aria-valuetext', '已使用 57%，剩余 43%');
+    const progress = screen.getByRole('progressbar');
+    expect(progress).toHaveAttribute('aria-valuetext', '已使用 57%，剩余 43%');
+    expect(progress).toHaveClass(
+      'h-2',
+      'border',
+      'border-border/70',
+      'bg-muted',
+      'shadow-inner',
+    );
     expect(screen.getByText('已自动优化')).toBeInTheDocument();
     expect(screen.getByText('已移除 1 个历史轮次、2 条消息')).toBeInTheDocument();
     expect(screen.getByText('为控制上下文长度，系统可能减少模型本轮读取的早期内容；当前对话中的历史消息会完整保留。')).toBeInTheDocument();
+  });
+
+  it('点击上下文入口只临时展开，不会开启全局默认展开', () => {
+    render(<ContextStatus conversationId="chat-temporary-open" usage={actualUsage} />);
+
+    const trigger = screen.getByRole('button', { name: '查看上下文状态，剩余 43%' });
+    fireEvent.click(trigger);
+
+    expect(screen.getByRole('dialog', { name: '上下文状态' })).toBeInTheDocument();
+    expect(screen.getByRole('switch', { name: '回答完成后自动展开' })).not.toBeChecked();
+    expect(localStorage.getItem(CONTEXT_STATUS_DEFAULT_OPEN_STORAGE_KEY)).toBeNull();
+  });
+
+  it('只有全局开关会持久化默认展开，关闭开关不强制收起当前面板', () => {
+    render(<ContextStatus conversationId="chat-default-open" usage={actualUsage} />);
+
+    fireEvent.click(screen.getByRole('button', { name: '查看上下文状态，剩余 43%' }));
+    const toggle = screen.getByRole('switch', { name: '回答完成后自动展开' });
+    fireEvent.click(toggle);
+
+    expect(toggle).toBeChecked();
+    expect(localStorage.getItem(CONTEXT_STATUS_DEFAULT_OPEN_STORAGE_KEY)).toBe('true');
+
+    fireEvent.click(toggle);
+    expect(toggle).not.toBeChecked();
+    expect(screen.getByRole('dialog', { name: '上下文状态' })).toBeInTheDocument();
+    expect(localStorage.getItem(CONTEXT_STATUS_DEFAULT_OPEN_STORAGE_KEY)).toBe('false');
   });
 
   it('estimated 不展示估算数值；有 confirmed actual 时保留数值并低干扰标记更新中', () => {
@@ -119,49 +158,46 @@ describe('ContextStatus', () => {
     expect(screen.getByText('2,000 Token')).toBeInTheDocument();
   });
 
-  it('窗口开关反映真实展开状态，关闭后立即收起', async () => {
+  it('临时关闭当前面板不会关闭全局默认展开', async () => {
+    localStorage.setItem(CONTEXT_STATUS_DEFAULT_OPEN_STORAGE_KEY, 'true');
     render(<ContextStatus conversationId="chat-toggle" usage={actualUsage} />);
-    fireEvent.click(screen.getByRole('button', { name: '查看上下文状态，剩余 43%' }));
-    const toggle = screen.getByRole('switch', { name: '回答完成后自动展开' });
-    expect(toggle).toBeChecked();
-    expect(toggle).toHaveAttribute('data-state', 'checked');
 
-    fireEvent.click(toggle);
+    expect(await screen.findByRole('dialog', { name: '上下文状态' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '查看上下文状态，剩余 43%' }));
 
     expect(screen.queryByRole('dialog', { name: '上下文状态' })).toBeNull();
-    expect(localStorage.getItem(CONTEXT_STATUS_OPEN_STORAGE_KEY)).toBe('false');
+    expect(localStorage.getItem(CONTEXT_STATUS_DEFAULT_OPEN_STORAGE_KEY)).toBe('true');
   });
 
-  it('手动展开的会话在页面刷新重新挂载后仍保持展开', async () => {
+  it('临时展开不会在页面刷新后继续展开', async () => {
     const conversationId = 'chat-refresh-open';
     const first = render(<ContextStatus conversationId={conversationId} usage={actualUsage} />);
 
     fireEvent.click(screen.getByRole('button', { name: '查看上下文状态，剩余 43%' }));
     expect(screen.getByRole('dialog', { name: '上下文状态' })).toBeInTheDocument();
-    expect(localStorage.getItem(CONTEXT_STATUS_OPEN_STORAGE_KEY)).toBe('true');
+    expect(localStorage.getItem(CONTEXT_STATUS_DEFAULT_OPEN_STORAGE_KEY)).toBeNull();
+    first.unmount();
+
+    render(<ContextStatus conversationId={conversationId} usage={actualUsage} />);
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: '上下文状态' })).toBeNull());
+  });
+
+  it('全局默认开启时临时关闭，刷新后仍按全局偏好展开', async () => {
+    const conversationId = 'chat-refresh-closed';
+    localStorage.setItem(CONTEXT_STATUS_DEFAULT_OPEN_STORAGE_KEY, 'true');
+    const first = render(<ContextStatus conversationId={conversationId} usage={actualUsage} />);
+
+    expect(await screen.findByRole('dialog', { name: '上下文状态' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '查看上下文状态，剩余 43%' }));
+    expect(localStorage.getItem(CONTEXT_STATUS_DEFAULT_OPEN_STORAGE_KEY)).toBe('true');
     first.unmount();
 
     render(<ContextStatus conversationId={conversationId} usage={actualUsage} />);
     expect(await screen.findByRole('dialog', { name: '上下文状态' })).toBeInTheDocument();
   });
 
-  it('手动关闭的会话在页面刷新重新挂载后仍保持关闭', async () => {
-    const conversationId = 'chat-refresh-closed';
-    const first = render(<ContextStatus conversationId={conversationId} usage={actualUsage} />);
-
-    fireEvent.click(screen.getByRole('button', { name: '查看上下文状态，剩余 43%' }));
-    fireEvent.click(screen.getByRole('switch', { name: '回答完成后自动展开' }));
-    expect(localStorage.getItem(CONTEXT_STATUS_OPEN_STORAGE_KEY)).toBe('false');
-    first.unmount();
-
-    render(<ContextStatus conversationId={conversationId} usage={actualUsage} />);
-    await waitFor(() => {
-      expect(screen.queryByRole('dialog', { name: '上下文状态' })).toBeNull();
-    });
-  });
-
   it('存储为展开时服务端水合不报错，并在浏览器绘制前恢复展开', async () => {
-    localStorage.setItem(CONTEXT_STATUS_OPEN_STORAGE_KEY, 'true');
+    localStorage.setItem(CONTEXT_STATUS_DEFAULT_OPEN_STORAGE_KEY, 'true');
     const container = document.createElement('div');
     container.innerHTML = renderToString(
       <ContextStatus conversationId="chat-hydration-open" usage={actualUsage} />,
@@ -193,19 +229,21 @@ describe('ContextStatus', () => {
 
     expect(screen.queryByRole('dialog', { name: '上下文状态' })).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: '查看上下文状态，剩余 43%' }));
-    expect(localStorage.getItem(CONTEXT_STATUS_OPEN_STORAGE_KEY)).toBe('true');
+    fireEvent.click(screen.getByRole('switch', { name: '回答完成后自动展开' }));
+    expect(localStorage.getItem(CONTEXT_STATUS_DEFAULT_OPEN_STORAGE_KEY)).toBe('true');
 
     view.rerender(<ContextStatus conversationId="chat-b" usage={null} phase="estimated" pending />);
     expect(await screen.findByRole('dialog', { name: '上下文状态' })).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: '查看上下文状态，计算中' }));
     await waitFor(() => expect(screen.queryByRole('dialog', { name: '上下文状态' })).toBeNull());
-    expect(localStorage.getItem(CONTEXT_STATUS_OPEN_STORAGE_KEY)).toBe('false');
+    expect(localStorage.getItem(CONTEXT_STATUS_DEFAULT_OPEN_STORAGE_KEY)).toBe('true');
 
     view.rerender(<ContextStatus conversationId="chat-a" usage={actualUsage} />);
-    await waitFor(() => expect(screen.queryByRole('dialog', { name: '上下文状态' })).toBeNull());
+    expect(await screen.findByRole('dialog', { name: '上下文状态' })).toBeInTheDocument();
   });
 
   it('首轮生成期间保持收起，正常结束并拿到实际值后才自动展开一次', async () => {
+    localStorage.setItem(CONTEXT_STATUS_DEFAULT_OPEN_STORAGE_KEY, 'true');
     const { rerender } = render(<ContextStatus
       conversationId="chat-first-round"
       usage={null}
@@ -235,6 +273,8 @@ describe('ContextStatus', () => {
     expect(await screen.findByRole('dialog', { name: '上下文状态' })).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('switch', { name: '回答完成后自动展开' }));
+    expect(screen.getByRole('dialog', { name: '上下文状态' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '查看上下文状态，剩余 43%' }));
     await waitFor(() => expect(screen.queryByRole('dialog', { name: '上下文状态' })).toBeNull());
     rerender(<ContextStatus
       conversationId="chat-first-round"
@@ -246,7 +286,7 @@ describe('ContextStatus', () => {
   });
 
   it('全局已展开时，新会话首轮发送后先收起，回答完成才重新展开', async () => {
-    localStorage.setItem(CONTEXT_STATUS_OPEN_STORAGE_KEY, 'true');
+    localStorage.setItem(CONTEXT_STATUS_DEFAULT_OPEN_STORAGE_KEY, 'true');
     const { rerender } = render(<ContextStatus
       conversationId="chat-new-while-open"
       usage={null}
@@ -270,6 +310,7 @@ describe('ContextStatus', () => {
   });
 
   it('首轮生成期间切走、后台完成后再返回，仍按首轮完成规则自动展开', async () => {
+    localStorage.setItem(CONTEXT_STATUS_DEFAULT_OPEN_STORAGE_KEY, 'true');
     const view = render(<ContextStatus
       conversationId="chat-background-a"
       usage={null}
@@ -280,7 +321,8 @@ describe('ContextStatus', () => {
     />);
 
     view.rerender(<ContextStatus conversationId="chat-background-b" usage={actualUsage} />);
-    expect(screen.queryByRole('dialog', { name: '上下文状态' })).toBeNull();
+    expect(await screen.findByRole('dialog', { name: '上下文状态' })).toBeInTheDocument();
+    expect(screen.getByTestId('context-conversation-id')).toHaveTextContent('chat-background-b');
 
     view.rerender(<ContextStatus
       conversationId="chat-background-a"
@@ -290,10 +332,11 @@ describe('ContextStatus', () => {
     />);
 
     expect(await screen.findByRole('dialog', { name: '上下文状态' })).toBeInTheDocument();
-    expect(localStorage.getItem(CONTEXT_STATUS_OPEN_STORAGE_KEY)).toBe('true');
+    expect(localStorage.getItem(CONTEXT_STATUS_DEFAULT_OPEN_STORAGE_KEY)).toBe('true');
   });
 
   it('首轮生成期间刷新，完成态恢复后仍只自动展开这次真实任务', async () => {
+    localStorage.setItem(CONTEXT_STATUS_DEFAULT_OPEN_STORAGE_KEY, 'true');
     const first = render(<ContextStatus
       conversationId="chat-refresh-pending-first"
       usage={null}
@@ -315,7 +358,67 @@ describe('ContextStatus', () => {
     />);
 
     expect(await screen.findByRole('dialog', { name: '上下文状态' })).toBeInTheDocument();
-    expect(localStorage.getItem(CONTEXT_STATUS_OPEN_STORAGE_KEY)).toBe('true');
+    expect(localStorage.getItem(CONTEXT_STATUS_DEFAULT_OPEN_STORAGE_KEY)).toBe('true');
+    expect(sessionStorage.getItem(CONTEXT_STATUS_PENDING_FIRST_TURN_STORAGE_KEY)).toBeNull();
+  });
+
+  it('历史消息水合完成前不会清除首轮恢复标记', async () => {
+    localStorage.setItem(CONTEXT_STATUS_DEFAULT_OPEN_STORAGE_KEY, 'true');
+    sessionStorage.setItem(
+      CONTEXT_STATUS_PENDING_FIRST_TURN_STORAGE_KEY,
+      JSON.stringify(['chat-refresh-before-hydration']),
+    );
+    const view = render(<ContextStatus
+      conversationId="chat-refresh-before-hydration"
+      usage={null}
+      phase={null}
+      isConversationHydrated={false}
+    />);
+
+    expect(sessionStorage.getItem(CONTEXT_STATUS_PENDING_FIRST_TURN_STORAGE_KEY)).toContain(
+      'chat-refresh-before-hydration',
+    );
+
+    view.rerender(<ContextStatus
+      conversationId="chat-refresh-before-hydration"
+      usage={actualUsage}
+      phase="final"
+      isFirstConversationTurn
+      isConversationHydrated
+    />);
+
+    expect(await screen.findByRole('dialog', { name: '上下文状态' })).toBeInTheDocument();
+    expect(sessionStorage.getItem(CONTEXT_STATUS_PENDING_FIRST_TURN_STORAGE_KEY)).toBeNull();
+  });
+
+  it.each([
+    ['错误终态', { phase: 'error' as const, errorKind: 'check_failed' as const, latestActualUnavailable: false }],
+    ['无实际用量的终态', { phase: 'final' as const, errorKind: undefined, latestActualUnavailable: false }],
+    ['实际用量不可用的终态', { phase: 'final' as const, errorKind: undefined, latestActualUnavailable: true }],
+  ])('刷新恢复首轮%s时保持关闭', async (_label, terminal) => {
+    localStorage.setItem(CONTEXT_STATUS_DEFAULT_OPEN_STORAGE_KEY, 'true');
+    const conversationId = `chat-refresh-${terminal.phase}-${String(terminal.latestActualUnavailable)}`;
+    const first = render(<ContextStatus
+      conversationId={conversationId}
+      usage={null}
+      phase="estimated"
+      pending
+      isStreaming
+      isFirstConversationTurn
+    />);
+    expect(sessionStorage.getItem(CONTEXT_STATUS_PENDING_FIRST_TURN_STORAGE_KEY)).toContain(conversationId);
+    first.unmount();
+
+    render(<ContextStatus
+      conversationId={conversationId}
+      usage={null}
+      phase={terminal.phase}
+      errorKind={terminal.errorKind}
+      latestActualUnavailable={terminal.latestActualUnavailable}
+      isFirstConversationTurn
+    />);
+
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: '上下文状态' })).toBeNull());
     expect(sessionStorage.getItem(CONTEXT_STATUS_PENDING_FIRST_TURN_STORAGE_KEY)).toBeNull();
   });
 
@@ -330,7 +433,7 @@ describe('ContextStatus', () => {
     await waitFor(() => {
       expect(screen.queryByRole('dialog', { name: '上下文状态' })).toBeNull();
     });
-    expect(localStorage.getItem(CONTEXT_STATUS_OPEN_STORAGE_KEY)).toBeNull();
+    expect(localStorage.getItem(CONTEXT_STATUS_DEFAULT_OPEN_STORAGE_KEY)).toBeNull();
     expect(sessionStorage.getItem(CONTEXT_STATUS_PENDING_FIRST_TURN_STORAGE_KEY)).toBeNull();
   });
 
@@ -342,10 +445,11 @@ describe('ContextStatus', () => {
       pending
       isStreaming
       isFirstConversationTurn
+      activeRunId="run-first"
     />);
 
     fireEvent.click(screen.getByRole('button', { name: '查看上下文状态，计算中' }));
-    expect(localStorage.getItem(CONTEXT_STATUS_OPEN_STORAGE_KEY)).toBe('true');
+    expect(localStorage.getItem(CONTEXT_STATUS_DEFAULT_OPEN_STORAGE_KEY)).toBeNull();
 
     view.rerender(<ContextStatus
       conversationId="server-chat-id"
@@ -354,16 +458,176 @@ describe('ContextStatus', () => {
       pending
       isStreaming
       isFirstConversationTurn
+      activeRunId="run-first"
     />);
 
     expect(await screen.findByRole('dialog', { name: '上下文状态' })).toBeInTheDocument();
-    expect(localStorage.getItem(CONTEXT_STATUS_OPEN_STORAGE_KEY)).toBe('true');
+    expect(localStorage.getItem(CONTEXT_STATUS_DEFAULT_OPEN_STORAGE_KEY)).toBeNull();
+  });
+
+  it('首个 run_started 同时迁移会话 ID 与建立 runId 时保留手动关闭', async () => {
+    localStorage.setItem(CONTEXT_STATUS_DEFAULT_OPEN_STORAGE_KEY, 'true');
+    const view = render(<ContextStatus
+      conversationId="temp-before-run"
+      usage={null}
+      phase="estimated"
+      pending
+      isStreaming
+      isFirstConversationTurn
+      activeRunId={null}
+    />);
+
+    fireEvent.click(screen.getByRole('button', { name: '查看上下文状态，计算中' }));
+    fireEvent.click(screen.getByRole('button', { name: '查看上下文状态，计算中' }));
+    view.rerender(<ContextStatus
+      conversationId="server-after-run"
+      usage={null}
+      phase="estimated"
+      pending
+      isStreaming
+      isFirstConversationTurn
+      activeRunId="run-started"
+    />);
+    view.rerender(<ContextStatus
+      conversationId="server-after-run"
+      usage={actualUsage}
+      phase="final"
+      isFirstConversationTurn
+      activeRunId={null}
+    />);
+
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: '上下文状态' })).toBeNull());
+  });
+
+  it('从其他会话返回后台首轮时不迁移其他会话的临时关闭状态', async () => {
+    localStorage.setItem(CONTEXT_STATUS_DEFAULT_OPEN_STORAGE_KEY, 'true');
+    const view = render(<ContextStatus
+      conversationId="chat-background-run"
+      usage={null}
+      phase="estimated"
+      pending
+      isStreaming
+      isFirstConversationTurn
+      activeRunId="run-background"
+    />);
+
+    view.rerender(<ContextStatus conversationId="chat-other-closed" usage={actualUsage} />);
+    expect(await screen.findByRole('dialog', { name: '上下文状态' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '查看上下文状态，剩余 43%' }));
+
+    view.rerender(<ContextStatus
+      conversationId="chat-background-run"
+      usage={null}
+      phase="estimated"
+      pending
+      isStreaming
+      isFirstConversationTurn
+      activeRunId="run-background"
+    />);
+    view.rerender(<ContextStatus
+      conversationId="chat-background-run"
+      usage={actualUsage}
+      phase="final"
+      isFirstConversationTurn
+      activeRunId={null}
+    />);
+
+    expect(await screen.findByRole('dialog', { name: '上下文状态' })).toBeInTheDocument();
+  });
+
+  it('流结束将 runId 清空时保留用户临时展开', async () => {
+    const view = render(<ContextStatus
+      conversationId="chat-run-complete"
+      usage={null}
+      phase="estimated"
+      pending
+      isStreaming
+      isFirstConversationTurn
+      activeRunId="run-completing"
+    />);
+
+    fireEvent.click(screen.getByRole('button', { name: '查看上下文状态，计算中' }));
+    view.rerender(<ContextStatus
+      conversationId="chat-run-complete"
+      usage={actualUsage}
+      phase="final"
+      isFirstConversationTurn
+      activeRunId={null}
+    />);
+
+    expect(await screen.findByRole('dialog', { name: '上下文状态' })).toBeInTheDocument();
+  });
+
+  it('后续轮次从首个 SSE 建立 runId 时保留用户临时开关', async () => {
+    const opened = render(<ContextStatus
+      conversationId="chat-later-run-open"
+      usage={actualUsage}
+      phase="estimated"
+      isStreaming
+      activeRunId={null}
+    />);
+    fireEvent.click(screen.getByRole('button', { name: '查看上下文状态，剩余 43%' }));
+    opened.rerender(<ContextStatus
+      conversationId="chat-later-run-open"
+      usage={actualUsage}
+      phase="estimated"
+      isStreaming
+      activeRunId="run-later-open"
+    />);
+    expect(screen.getByRole('dialog', { name: '上下文状态' })).toBeInTheDocument();
+    opened.unmount();
+
+    localStorage.setItem(CONTEXT_STATUS_DEFAULT_OPEN_STORAGE_KEY, 'true');
+    const closed = render(<ContextStatus
+      conversationId="chat-later-run-closed"
+      usage={actualUsage}
+      phase="estimated"
+      isStreaming
+      activeRunId={null}
+    />);
+    expect(await screen.findByRole('dialog', { name: '上下文状态' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '查看上下文状态，剩余 43%' }));
+    closed.rerender(<ContextStatus
+      conversationId="chat-later-run-closed"
+      usage={actualUsage}
+      phase="estimated"
+      isStreaming
+      activeRunId="run-later-closed"
+    />);
+    expect(screen.queryByRole('dialog', { name: '上下文状态' })).toBeNull();
+  });
+
+  it('首轮流中手动开启后 runId 从空值建立，仍保持开启', async () => {
+    const view = render(<ContextStatus
+      conversationId="chat-run-establish"
+      usage={null}
+      phase="estimated"
+      pending
+      isStreaming
+      isFirstConversationTurn
+      activeRunId={null}
+    />);
+
+    fireEvent.click(screen.getByRole('button', { name: '查看上下文状态，计算中' }));
+    view.rerender(<ContextStatus
+      conversationId="chat-run-establish"
+      usage={null}
+      phase="estimated"
+      pending
+      isStreaming
+      isFirstConversationTurn
+      activeRunId="run-established"
+    />);
+
+    expect(await screen.findByRole('dialog', { name: '上下文状态' })).toBeInTheDocument();
   });
 
   it('用户全局关闭后，新会话生成与首轮完成都保持关闭', async () => {
+    localStorage.setItem(CONTEXT_STATUS_DEFAULT_OPEN_STORAGE_KEY, 'true');
     const view = render(<ContextStatus conversationId="chat-close-before-new" usage={actualUsage} />);
+    const toggle = await screen.findByRole('switch', { name: '回答完成后自动展开' });
+    fireEvent.click(toggle);
     fireEvent.click(screen.getByRole('button', { name: '查看上下文状态，剩余 43%' }));
-    fireEvent.click(screen.getByRole('switch', { name: '回答完成后自动展开' }));
     await waitFor(() => expect(screen.queryByRole('dialog', { name: '上下文状态' })).toBeNull());
 
     view.rerender(<ContextStatus
@@ -386,11 +650,11 @@ describe('ContextStatus', () => {
     await waitFor(() => {
       expect(screen.queryByRole('dialog', { name: '上下文状态' })).toBeNull();
     });
-    expect(localStorage.getItem(CONTEXT_STATUS_OPEN_STORAGE_KEY)).toBe('false');
+    expect(localStorage.getItem(CONTEXT_STATUS_DEFAULT_OPEN_STORAGE_KEY)).toBe('false');
   });
 
   it('首轮生成中明确关闭后，即使刷新重挂也不会在完成时重新打开', async () => {
-    localStorage.setItem(CONTEXT_STATUS_OPEN_STORAGE_KEY, 'true');
+    localStorage.setItem(CONTEXT_STATUS_DEFAULT_OPEN_STORAGE_KEY, 'true');
     const first = render(<ContextStatus
       conversationId="chat-close-during-first-round"
       usage={null}
@@ -401,8 +665,11 @@ describe('ContextStatus', () => {
     />);
 
     fireEvent.click(screen.getByRole('button', { name: '查看上下文状态，计算中' }));
-    fireEvent.click(await screen.findByRole('switch', { name: '回答完成后自动展开' }));
-    expect(localStorage.getItem(CONTEXT_STATUS_OPEN_STORAGE_KEY)).toBe('false');
+    fireEvent.click(screen.getByRole('button', { name: '查看上下文状态，计算中' }));
+    expect(localStorage.getItem(CONTEXT_STATUS_DEFAULT_OPEN_STORAGE_KEY)).toBe('true');
+    expect(sessionStorage.getItem(CONTEXT_STATUS_SUPPRESSED_FIRST_TURN_STORAGE_KEY)).toContain(
+      'chat-close-during-first-round',
+    );
     first.unmount();
 
     const refreshed = render(<ContextStatus
@@ -423,7 +690,100 @@ describe('ContextStatus', () => {
     await waitFor(() => {
       expect(screen.queryByRole('dialog', { name: '上下文状态' })).toBeNull();
     });
-    expect(localStorage.getItem(CONTEXT_STATUS_OPEN_STORAGE_KEY)).toBe('false');
+    expect(localStorage.getItem(CONTEXT_STATUS_DEFAULT_OPEN_STORAGE_KEY)).toBe('true');
+    expect(sessionStorage.getItem(CONTEXT_STATUS_SUPPRESSED_FIRST_TURN_STORAGE_KEY)).toBeNull();
+  });
+
+  it('首页首轮物化重挂后保持用户手动展开', async () => {
+    const first = render(<ContextStatus
+      conversationId="temp-first-turn-open"
+      usage={null}
+      phase="estimated"
+      pending
+      isStreaming
+      isFirstConversationTurn
+      activeRunId="run-first-turn-open"
+    />);
+
+    fireEvent.click(screen.getByRole('button', { name: '查看上下文状态，计算中' }));
+    expect(screen.getByRole('dialog', { name: '上下文状态' })).toBeInTheDocument();
+    moveFirstTurnContextState('temp-first-turn-open', 'server-first-turn-open');
+    first.unmount();
+
+    render(<ContextStatus
+      conversationId="server-first-turn-open"
+      usage={null}
+      phase="estimated"
+      pending
+      isStreaming
+      isFirstConversationTurn
+      activeRunId="run-first-turn-open"
+    />);
+
+    expect(screen.getByRole('dialog', { name: '上下文状态' })).toBeInTheDocument();
+  });
+
+  it('首轮生成中手动展开后切换会话，返回仍在生成的原会话继续展开', async () => {
+    const view = render(<ContextStatus
+      conversationId="chat-open-background"
+      usage={null}
+      phase="estimated"
+      pending
+      isStreaming
+      isFirstConversationTurn
+      activeRunId="run-open-background"
+    />);
+
+    fireEvent.click(screen.getByRole('button', { name: '查看上下文状态，计算中' }));
+    expect(screen.getByRole('dialog', { name: '上下文状态' })).toBeInTheDocument();
+    expect(sessionStorage.getItem(CONTEXT_STATUS_INTERACTED_FIRST_TURN_STORAGE_KEY)).toContain(
+      'chat-open-background',
+    );
+
+    view.rerender(<ContextStatus conversationId="chat-other" usage={actualUsage} />);
+    expect(screen.queryByRole('dialog', { name: '上下文状态' })).toBeNull();
+    expect(sessionStorage.getItem(CONTEXT_STATUS_INTERACTED_FIRST_TURN_STORAGE_KEY)).toContain(
+      'chat-open-background',
+    );
+
+    view.rerender(<ContextStatus
+      conversationId="chat-open-background"
+      usage={null}
+      phase="estimated"
+      pending
+      isStreaming
+      isFirstConversationTurn
+      activeRunId="run-open-background"
+    />);
+
+    expect(screen.getByRole('dialog', { name: '上下文状态' })).toBeInTheDocument();
+  });
+
+  it('首轮生成中明确关闭后切换会话，返回完成态仍保持关闭', async () => {
+    localStorage.setItem(CONTEXT_STATUS_DEFAULT_OPEN_STORAGE_KEY, 'true');
+    const view = render(<ContextStatus
+      conversationId="chat-suppressed-background"
+      usage={null}
+      phase="estimated"
+      pending
+      isStreaming
+      isFirstConversationTurn
+      activeRunId="run-background"
+    />);
+
+    fireEvent.click(screen.getByRole('button', { name: '查看上下文状态，计算中' }));
+    fireEvent.click(screen.getByRole('button', { name: '查看上下文状态，计算中' }));
+    view.rerender(<ContextStatus conversationId="chat-other" usage={actualUsage} />);
+    view.rerender(<ContextStatus
+      conversationId="chat-suppressed-background"
+      usage={actualUsage}
+      phase="final"
+      isFirstConversationTurn
+      activeRunId={null}
+    />);
+
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: '上下文状态' })).toBeNull());
+    expect(sessionStorage.getItem(CONTEXT_STATUS_SUPPRESSED_FIRST_TURN_STORAGE_KEY)).toBeNull();
   });
 
   it('后续轮次、失败结果和用户手动关闭都不会触发自动展开', async () => {
@@ -442,6 +802,7 @@ describe('ContextStatus', () => {
     expect(screen.queryByRole('dialog', { name: '上下文状态' })).toBeNull();
     subsequent.unmount();
 
+    localStorage.setItem(CONTEXT_STATUS_DEFAULT_OPEN_STORAGE_KEY, 'true');
     const failed = render(<ContextStatus
       conversationId="chat-failed"
       usage={null}
@@ -475,6 +836,7 @@ describe('ContextStatus', () => {
     expect(await screen.findByRole('dialog', { name: '上下文状态' })).toBeInTheDocument();
     failed.unmount();
     localStorage.clear();
+    localStorage.setItem(CONTEXT_STATUS_DEFAULT_OPEN_STORAGE_KEY, 'true');
 
     const manual = render(<ContextStatus
       conversationId="chat-manual"
@@ -485,7 +847,7 @@ describe('ContextStatus', () => {
       isFirstConversationTurn
     />);
     fireEvent.click(screen.getByRole('button', { name: '查看上下文状态，计算中' }));
-    fireEvent.click(screen.getByRole('switch', { name: '回答完成后自动展开' }));
+    fireEvent.click(screen.getByRole('button', { name: '查看上下文状态，计算中' }));
     manual.rerender(<ContextStatus
       conversationId="chat-manual"
       usage={actualUsage}
@@ -496,6 +858,7 @@ describe('ContextStatus', () => {
   });
 
   it('首轮失败后进入第二轮，不会把第二轮成功误判成首轮完成而自动展开', async () => {
+    localStorage.setItem(CONTEXT_STATUS_DEFAULT_OPEN_STORAGE_KEY, 'true');
     const view = render(<ContextStatus
       conversationId="chat-first-failed-then-second"
       usage={null}
@@ -526,14 +889,14 @@ describe('ContextStatus', () => {
     />);
 
     expect(screen.queryByRole('dialog', { name: '上下文状态' })).toBeNull();
-    expect(localStorage.getItem(CONTEXT_STATUS_OPEN_STORAGE_KEY)).toBeNull();
+    expect(localStorage.getItem(CONTEXT_STATUS_DEFAULT_OPEN_STORAGE_KEY)).toBe('true');
   });
 
-  it('点击弹层外部不会绕过窗口开关改变全局状态', async () => {
+  it('全局默认开启时点击弹层外部保持展开', async () => {
+    localStorage.setItem(CONTEXT_STATUS_DEFAULT_OPEN_STORAGE_KEY, 'true');
     render(<ContextStatus conversationId="chat-outside" usage={actualUsage} />);
 
-    fireEvent.click(screen.getByRole('button', { name: '查看上下文状态，剩余 43%' }));
-    expect(screen.getByRole('dialog', { name: '上下文状态' })).toBeInTheDocument();
+    expect(await screen.findByRole('dialog', { name: '上下文状态' })).toBeInTheDocument();
     await act(async () => {
       await new Promise((resolve) => setTimeout(resolve, 0));
       fireEvent.pointerDown(document.body);
@@ -541,59 +904,32 @@ describe('ContextStatus', () => {
     });
 
     expect(screen.getByRole('dialog', { name: '上下文状态' })).toBeInTheDocument();
-    expect(screen.getByRole('switch', { name: '回答完成后自动展开' })).toBeChecked();
-    expect(localStorage.getItem(CONTEXT_STATUS_OPEN_STORAGE_KEY)).toBe('true');
+    expect(localStorage.getItem(CONTEXT_STATUS_DEFAULT_OPEN_STORAGE_KEY)).toBe('true');
   });
 
-  it('从旧版 localStorage 的开启状态迁移并立即恢复窗口', async () => {
-    localStorage.setItem(LEGACY_CONTEXT_STATUS_OPEN_STORAGE_KEY, 'true');
-    render(<ContextStatus conversationId="chat-legacy-open" usage={actualUsage} />);
+  it('全局默认关闭时临时展开，点击弹层外部正常关闭', async () => {
+    render(<ContextStatus conversationId="chat-temporary-outside" usage={actualUsage} />);
+    fireEvent.click(screen.getByRole('button', { name: '查看上下文状态，剩余 43%' }));
+    expect(screen.getByRole('dialog', { name: '上下文状态' })).toBeInTheDocument();
 
-    expect(await screen.findByRole('dialog', { name: '上下文状态' })).toBeInTheDocument();
-    expect(localStorage.getItem(CONTEXT_STATUS_OPEN_STORAGE_KEY)).toBe('true');
-  });
-
-  it('从旧版 localStorage 的关闭状态迁移并保持关闭', async () => {
-    localStorage.setItem(LEGACY_CONTEXT_STATUS_OPEN_STORAGE_KEY, 'false');
-    render(<ContextStatus conversationId="chat-legacy-closed" usage={actualUsage} />);
-
-    await waitFor(() => {
-      expect(screen.queryByRole('dialog', { name: '上下文状态' })).toBeNull();
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      fireEvent.pointerDown(document.body);
+      fireEvent.click(document.body);
     });
-    expect(localStorage.getItem(CONTEXT_STATUS_OPEN_STORAGE_KEY)).toBe('false');
+
+    expect(screen.queryByRole('dialog', { name: '上下文状态' })).toBeNull();
+    expect(localStorage.getItem(CONTEXT_STATUS_DEFAULT_OPEN_STORAGE_KEY)).toBeNull();
   });
 
-  it('从上一版 sessionStorage 状态迁移到持久存储', async () => {
-    sessionStorage.setItem(CONTEXT_STATUS_OPEN_STORAGE_KEY, 'true');
-    render(<ContextStatus conversationId="chat-session-migration" usage={actualUsage} />);
+  it('忽略已被临时点击污染的旧版键，升级后重新等待用户明确选择', async () => {
+    localStorage.setItem('fusion.context-status.open.v1', 'true');
+    localStorage.setItem('fusion.context-status.default-open.v1', 'true');
+    sessionStorage.setItem('fusion.context-status.open.v1', 'true');
+    render(<ContextStatus conversationId="chat-legacy-ignored" usage={actualUsage} />);
 
-    expect(await screen.findByRole('dialog', { name: '上下文状态' })).toBeInTheDocument();
-    expect(localStorage.getItem(CONTEXT_STATUS_OPEN_STORAGE_KEY)).toBe('true');
-    expect(sessionStorage.getItem(CONTEXT_STATUS_OPEN_STORAGE_KEY)).toBeNull();
-  });
-
-  it('上一版 sessionStorage 的最近状态优先于更早的 localStorage 偏好', async () => {
-    localStorage.setItem(LEGACY_CONTEXT_STATUS_OPEN_STORAGE_KEY, 'true');
-    sessionStorage.setItem(CONTEXT_STATUS_OPEN_STORAGE_KEY, 'false');
-    render(<ContextStatus conversationId="chat-session-wins-over-legacy" usage={actualUsage} />);
-
-    await waitFor(() => {
-      expect(screen.queryByRole('dialog', { name: '上下文状态' })).toBeNull();
-    });
-    expect(localStorage.getItem(CONTEXT_STATUS_OPEN_STORAGE_KEY)).toBe('false');
-    expect(sessionStorage.getItem(CONTEXT_STATUS_OPEN_STORAGE_KEY)).toBeNull();
-  });
-
-  it('当前持久状态优先于旧版偏好和上一版标签页状态', async () => {
-    localStorage.setItem(CONTEXT_STATUS_OPEN_STORAGE_KEY, 'false');
-    localStorage.setItem(LEGACY_CONTEXT_STATUS_OPEN_STORAGE_KEY, 'true');
-    sessionStorage.setItem(CONTEXT_STATUS_OPEN_STORAGE_KEY, 'true');
-    render(<ContextStatus conversationId="chat-current-state-wins" usage={actualUsage} />);
-
-    await waitFor(() => {
-      expect(screen.queryByRole('dialog', { name: '上下文状态' })).toBeNull();
-    });
-    expect(localStorage.getItem(CONTEXT_STATUS_OPEN_STORAGE_KEY)).toBe('false');
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: '上下文状态' })).toBeNull());
+    expect(localStorage.getItem(CONTEXT_STATUS_DEFAULT_OPEN_STORAGE_KEY)).toBeNull();
   });
 
   it('没有任何历史状态时默认保持关闭', async () => {
@@ -602,10 +938,11 @@ describe('ContextStatus', () => {
     await waitFor(() => {
       expect(screen.queryByRole('dialog', { name: '上下文状态' })).toBeNull();
     });
-    expect(localStorage.getItem(CONTEXT_STATUS_OPEN_STORAGE_KEY)).toBeNull();
+    expect(localStorage.getItem(CONTEXT_STATUS_DEFAULT_OPEN_STORAGE_KEY)).toBeNull();
   });
 
   it('自动展开不会抢走消息输入焦点', async () => {
+    localStorage.setItem(CONTEXT_STATUS_DEFAULT_OPEN_STORAGE_KEY, 'true');
     const textarea = document.createElement('textarea');
     document.body.appendChild(textarea);
     textarea.focus();
@@ -630,7 +967,7 @@ describe('ContextStatus', () => {
     textarea.remove();
   });
 
-  it('Escape 不关闭详情，也不修改回答完成后的自动展开偏好', () => {
+  it('Escape 只关闭当前面板，不修改回答完成后的自动展开偏好', () => {
     render(<ContextStatus conversationId="chat-keyboard" usage={actualUsage} />);
 
     const trigger = screen.getByRole('button', { name: '查看上下文状态，剩余 43%' });
@@ -638,8 +975,8 @@ describe('ContextStatus', () => {
     expect(screen.getByRole('dialog', { name: '上下文状态' })).toBeInTheDocument();
 
     fireEvent.keyDown(screen.getByRole('dialog', { name: '上下文状态' }), { key: 'Escape' });
-    expect(screen.getByRole('dialog', { name: '上下文状态' })).toBeInTheDocument();
-    expect(localStorage.getItem(CONTEXT_STATUS_OPEN_STORAGE_KEY)).toBe('true');
+    expect(screen.queryByRole('dialog', { name: '上下文状态' })).toBeNull();
+    expect(localStorage.getItem(CONTEXT_STATUS_DEFAULT_OPEN_STORAGE_KEY)).toBeNull();
   });
 
   it('未知窗口只显示可访问入口，不展示虚假百分比', () => {

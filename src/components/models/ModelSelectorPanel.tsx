@@ -10,6 +10,7 @@ import {
 import { CapabilityChipList } from "./CapabilityChip";
 import ProviderIcon from "./ProviderIcon";
 import type { ModelInfo, ProviderInfo } from "@/lib/config/modelConfig";
+import { isModelSelectable } from "@/lib/models/modelPreference";
 
 // 模型 health.status === 'unhealthy' 时 FE 灰显并禁用点击。
 // 'unknown'（后台第一次还没探完）按健康处理，避免冷启动期间全列表灰掉。
@@ -49,7 +50,7 @@ const RecentModels = memo(
   }) => {
     const recentModels = modelIds
       .map((id) => allModels.find((m) => m.id === id))
-      .filter((m): m is ModelInfo => m != null && m.enabled !== false);
+      .filter((m): m is ModelInfo => m != null && isModelSelectable(m));
 
     if (recentModels.length === 0) return null;
 

@@ -8,7 +8,16 @@ export type SendModelResolution =
   | { status: 'no_enabled_model' };
 
 export function isModelAvailableForSending(model: Model): boolean {
-  return model.enabled !== false && model.health?.status !== 'unhealthy';
+  const routable = model.routable ?? model.health?.status !== 'unhealthy';
+  return model.enabled !== false && routable;
+}
+
+export function isModelAvailableForNewConversation(model: Model): boolean {
+  return (
+    model.selectable !== false
+    && model.health?.status !== 'unhealthy'
+    && isModelAvailableForSending(model)
+  );
 }
 
 export function resolveSendModel(
@@ -16,13 +25,22 @@ export function resolveSendModel(
   conversationId: string | null,
 ): SendModelResolution {
   if (conversationId !== null) {
-    const conversationModelId = state.conversation.byId[conversationId]?.model_id;
+    const conversation = state.conversation.byId[conversationId];
+    const conversationModelId = conversation?.model_id;
     if (!conversationModelId) {
       return { status: 'conversation_not_ready' };
     }
 
+    const hasUserTurn = conversation.messages?.some((message) => message.role === 'user') ?? false;
     const conversationModel = state.models.models.find(
-      (model) => model.id === conversationModelId && isModelAvailableForSending(model),
+      (model) => (
+        model.id === conversationModelId
+        && (
+          hasUserTurn
+            ? isModelAvailableForSending(model)
+            : isModelAvailableForNewConversation(model)
+        )
+      ),
     );
     return conversationModel
       ? { status: 'ready', model: conversationModel }
@@ -32,11 +50,11 @@ export function resolveSendModel(
   const selectedModel = state.models.models.find(
     (model) => (
       model.id === state.models.selectedModelId
-      && isModelAvailableForSending(model)
+      && isModelAvailableForNewConversation(model)
     ),
   );
   const fallbackModel = selectedModel
-    ?? state.models.models.find(isModelAvailableForSending);
+    ?? state.models.models.find(isModelAvailableForNewConversation);
   return fallbackModel
     ? { status: 'ready', model: fallbackModel }
     : { status: 'no_enabled_model' };

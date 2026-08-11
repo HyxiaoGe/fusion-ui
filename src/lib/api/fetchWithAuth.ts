@@ -85,7 +85,7 @@ async function fetchWithAuth(url: string, options: RequestInit = {}): Promise<Re
       newToken = await forceRefreshAccessToken();
     } catch {
       // 刷新途中的瞬时网络错误：保留会话，仅把本次请求当作鉴权失败抛出
-      throw new Error('Unauthorized');
+      throw new ApiError('AUTH_REFRESH_UNAVAILABLE', '登录状态刷新暂时失败，请稍后重试', '');
     }
 
     if (newToken) {
@@ -99,7 +99,7 @@ async function fetchWithAuth(url: string, options: RequestInit = {}): Promise<Re
     // 刷新被服务端确定性拒绝：SDK 已清掉自身 token，这里再清掉 fusion 侧 profile 等键
     await clearRemoteSsoSession(token);
     clearFusionProfileStorage();
-    throw new Error('Unauthorized');
+    throw new ApiError('UNAUTHORIZED', 'Unauthorized', '');
   }
 
   return bindResponseToAuthSession(response, request);

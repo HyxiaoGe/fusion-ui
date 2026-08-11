@@ -2,6 +2,11 @@ import React, { useEffect } from 'react';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Conversation, Message } from '@/types/conversation';
+import {
+  CONTEXT_STATUS_INTERACTED_FIRST_TURN_STORAGE_KEY,
+  CONTEXT_STATUS_PENDING_FIRST_TURN_STORAGE_KEY,
+  CONTEXT_STATUS_SUPPRESSED_FIRST_TURN_STORAGE_KEY,
+} from '@/lib/chat/contextStatusPersistence';
 
 const {
   currentRoute,
@@ -704,6 +709,10 @@ describe('ChatPage 会话切换体验', () => {
     stopRecoveredStreamMock.mockImplementationOnce(() => new Promise<boolean>((resolve) => {
       releaseStop = resolve;
     }));
+    sessionStorage.setItem(
+      CONTEXT_STATUS_SUPPRESSED_FIRST_TURN_STORAGE_KEY,
+      JSON.stringify(['chat-a']),
+    );
 
     render(<ChatPage />);
     await waitFor(() => expect(reconnectStreamMock).toHaveBeenCalledTimes(1));
@@ -745,6 +754,7 @@ describe('ChatPage 会话切换体验', () => {
     expect(dispatchMock.mock.calls.some(([action]) => action?.type === 'stream/appendThinkingDelta')).toBe(false);
     expect(stopStreamingMock).not.toHaveBeenCalled();
     expect(retryHydrationMock).toHaveBeenCalledTimes(hydrationCallsBeforeStop + 1);
+    expect(sessionStorage.getItem(CONTEXT_STATUS_SUPPRESSED_FIRST_TURN_STORAGE_KEY)).toBeNull();
   });
 
   it('preparing/tool 阶段无正文时仍以空 partial 数组执行 atomic stop', async () => {
@@ -987,11 +997,41 @@ describe('ChatPage 会话切换体验', () => {
     expect(endIndex).toBeGreaterThan(updateIndex);
   });
 
+  it('页面恢复收到普通业务终态错误时清理首轮上下文状态', async () => {
+    conversationsById.set('chat-a', createConversation('chat-a', [textMessage('user-1')]));
+    hydrationById.set('chat-a', { view: 'ready' });
+    fetchStreamStatusMock.mockResolvedValue({ status: 'streaming', message_id: 'assistant-1' });
+    for (const storageKey of [
+      CONTEXT_STATUS_PENDING_FIRST_TURN_STORAGE_KEY,
+      CONTEXT_STATUS_SUPPRESSED_FIRST_TURN_STORAGE_KEY,
+      CONTEXT_STATUS_INTERACTED_FIRST_TURN_STORAGE_KEY,
+    ]) {
+      sessionStorage.setItem(storageKey, JSON.stringify(['chat-a']));
+    }
+    reconnectStreamMock.mockImplementation(async (_chatId, _cursor, callbacks) => {
+      callbacks.onError('供应商调用失败', { code: 'provider_error' });
+      throw Object.assign(new Error('供应商调用失败'), { recoverable: false, code: 'provider_error' });
+    });
+
+    render(<ChatPage />);
+
+    await waitFor(() => expect(reconnectStreamMock).toHaveBeenCalledTimes(1));
+    await waitFor(() => {
+      expect(sessionStorage.getItem(CONTEXT_STATUS_PENDING_FIRST_TURN_STORAGE_KEY)).toBeNull();
+      expect(sessionStorage.getItem(CONTEXT_STATUS_SUPPRESSED_FIRST_TURN_STORAGE_KEY)).toBeNull();
+      expect(sessionStorage.getItem(CONTEXT_STATUS_INTERACTED_FIRST_TURN_STORAGE_KEY)).toBeNull();
+    });
+  });
+
   it('页面恢复重试耗尽且无 partial 时只移除本次插入的空 placeholder', async () => {
     conversationsById.set('chat-a', createConversation('chat-a', [textMessage('user-1')]));
     hydrationById.set('chat-a', { view: 'ready' });
     fetchStreamStatusMock.mockResolvedValue({ status: 'streaming', message_id: 'assistant-1' });
     reconnectStreamMock.mockRejectedValue(Object.assign(new Error('temporary eof'), { recoverable: true }));
+    sessionStorage.setItem(
+      CONTEXT_STATUS_SUPPRESSED_FIRST_TURN_STORAGE_KEY,
+      JSON.stringify(['chat-a']),
+    );
 
     render(<ChatPage />);
 
@@ -1002,6 +1042,7 @@ describe('ChatPage 会话切换体验', () => {
         payload: { conversationId: 'chat-a', messageId: 'assistant-1' },
       });
     });
+    expect(sessionStorage.getItem(CONTEXT_STATUS_SUPPRESSED_FIRST_TURN_STORAGE_KEY)).toBeNull();
   });
 
   it('页面恢复失败且无 partial 时不删除历史已有 assistant', async () => {

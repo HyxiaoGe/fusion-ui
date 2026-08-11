@@ -64,6 +64,8 @@ export interface ApiModelData {
     unit: string;
   };
   enabled: boolean;
+  selectable?: boolean;
+  routable?: boolean;
   health?: ModelHealth;
   description?: string;
   capabilityPresentation?: ModelCapabilityPresentation;
@@ -86,6 +88,8 @@ export interface ModelInfo {
   temperature: number; // 默认温度
   capabilities: ModelCapability; // 能力标识
   enabled: boolean; // 是否在 LiteLLM 注册（true）；false 通常意味着已下架
+  selectable?: boolean; // 是否允许在新对话中选择；false 不影响已有对话
+  routable?: boolean; // 是否仍可路由发送；已有对话不受 selectable 影响
   health?: ModelHealth; // 健康探测结果，unhealthy 时选择器灰显
   description?: string; // 模型简要描述，用于悬停提示
   capabilityPresentation?: ModelCapabilityPresentation; // 后端派生的能力展示配置
@@ -109,6 +113,8 @@ export const convertApiModelToModelInfo = (apiModel: ApiModelData): ModelInfo =>
     temperature: 0.7, // 默认值，可以根据需求调整
     capabilities: apiModel.capabilities,
     enabled: apiModel.enabled,
+    selectable: apiModel.selectable,
+    routable: apiModel.routable,
     health: apiModel.health,
     description: apiModel.description,
     capabilityPresentation: apiModel.capabilityPresentation,
@@ -124,29 +130,41 @@ export interface FetchModelsResult {
 // 请求去重：防止多个组件同时触发重复请求
 let activeFetchPromise: Promise<FetchModelsResult> | null = null;
 
+async function requestModels(): Promise<FetchModelsResult> {
+  const data = await apiRequest<ApiModelResponse>(`${API_BASE_URL}/api/models/`);
+  const models = (data.models || []).map(convertApiModelToModelInfo);
+  const providers = data.providers || [];
+  return { models, providers };
+}
+
+function startTrackedFetch(): Promise<FetchModelsResult> {
+  const request = requestModels();
+  activeFetchPromise = request;
+  const clearTrackedRequest = () => {
+    if (activeFetchPromise === request) activeFetchPromise = null;
+  };
+  void request.then(clearTrackedRequest, clearTrackedRequest);
+  return request;
+}
+
 // 获取模型配置，自动去重并发请求
-export const fetchModels = async (): Promise<FetchModelsResult> => {
-  // 如果已有请求在进行中，复用同一个 Promise
-  if (activeFetchPromise) {
-    return activeFetchPromise;
-  }
+export const fetchModels = (): Promise<FetchModelsResult> => {
+  if (activeFetchPromise) return activeFetchPromise;
+  return startTrackedFetch();
+};
 
-  activeFetchPromise = (async () => {
+// 写操作后的强制刷新必须等待旧请求结束，再发起一次新的目录读取。
+export const refreshModels = async (): Promise<FetchModelsResult> => {
+  const staleRequest = activeFetchPromise;
+  if (staleRequest) {
     try {
-      const data = await apiRequest<ApiModelResponse>(`${API_BASE_URL}/api/models/`);
-      const models = (data.models || []).map(convertApiModelToModelInfo);
-      const providers = data.providers || [];
-      return { models, providers };
-    } finally {
-      activeFetchPromise = null;
+      await staleRequest;
+    } catch {
+      // 旧请求失败不影响强制刷新继续获取最新目录。
     }
-  })();
-
-  return activeFetchPromise;
+  }
+  return startTrackedFetch();
 };
 
 // 初始化模型配置（语义别名，与 fetchModels 行为一致）
 export const initializeModels = fetchModels;
-
-// 强制刷新（与 fetchModels 一致，去重由 activeFetchPromise 保证）
-export const refreshModels = fetchModels;

@@ -57,6 +57,40 @@ describe('modelsSlice', () => {
     expect(nextState.selectedModelId).toBe('enabled-model');
   });
 
+  it('保留隐藏模型供已有对话使用，但新对话偏好切换到可选择模型', () => {
+    localStorage.setItem('selectedModelId', 'hidden-model');
+
+    const nextState = reducer(
+      undefined,
+      updateModels([
+        {
+          id: 'hidden-model',
+          name: 'Hidden',
+          provider: 'qwen',
+          temperature: 0.7,
+          capabilities: {},
+          enabled: true,
+          selectable: false,
+          routable: true,
+        },
+        {
+          id: 'visible-model',
+          name: 'Visible',
+          provider: 'qwen',
+          temperature: 0.7,
+          capabilities: {},
+          enabled: true,
+          selectable: true,
+          routable: true,
+        },
+      ]),
+    );
+
+    expect(nextState.models).toHaveLength(2);
+    expect(nextState.models[0]).toMatchObject({ id: 'hidden-model', selectable: false, routable: true });
+    expect(nextState.selectedModelId).toBe('visible-model');
+  });
+
   it('记录模型目录初始化生命周期', () => {
     const loadingState = reducer(undefined, setModelsLoadStatus('loading'));
     const failedState = reducer(loadingState, setModelsLoadStatus('failed'));

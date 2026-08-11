@@ -43,6 +43,7 @@ export function ExecutionProcess({ run, searchSources, searchQueries, onOpenSour
           <button
             type="button"
             aria-label="查看执行过程"
+            data-chat-detail-overlay-trigger="true"
             onClick={() => setOpen(true)}
             className="shrink-0 rounded-full border border-border/40 bg-background/70 px-2 py-0.5 text-[11px] font-medium text-foreground transition-colors hover:border-border/60 hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
           >
@@ -118,6 +119,7 @@ function ExecutionProcessSidebar({
       <button
         type="button"
         aria-label="关闭执行过程背景"
+        data-chat-detail-overlay-surface="true"
         className="fixed inset-0 z-40 cursor-default bg-black/20 p-0 transition-opacity"
         onClick={onClose}
       />
@@ -125,6 +127,7 @@ function ExecutionProcessSidebar({
         role="dialog"
         aria-modal="true"
         aria-label="执行过程"
+        data-chat-detail-overlay-surface="true"
         className="fixed inset-y-0 right-0 z-50 flex w-[440px] max-w-[100vw] transform flex-col border-l border-border bg-background shadow-lg transition-transform duration-300 ease-in-out"
       >
         <header className="flex items-start justify-between gap-3 border-b border-border px-4 py-3">
@@ -381,6 +384,7 @@ function EvidenceShortcutButton({ onOpenSources }: { onOpenSources?: () => void 
   return (
     <button
       type="button"
+      data-chat-detail-overlay-trigger="true"
       onClick={onOpenSources}
       className="inline-flex items-center rounded-full border border-border/40 bg-background/70 px-2.5 py-1 text-xs font-medium text-foreground transition-colors hover:border-border/60 hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
     >
