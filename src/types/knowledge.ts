@@ -99,6 +99,31 @@ export interface KnowledgeDocumentPage {
   has_prev: boolean;
 }
 
+export interface KnowledgeDocumentChunk {
+  chunk_id: string;
+  ordinal: number;
+  text: string;
+  char_start: number;
+  char_end: number;
+  page: number | null;
+  section: string | null;
+}
+
+export interface KnowledgeDocumentChunkPage {
+  document_id: string;
+  active_index_version: string;
+  chunker_version: string;
+  chunk_size: number;
+  chunk_overlap: number;
+  items: KnowledgeDocumentChunk[];
+  page: number;
+  page_size: number;
+  total: number;
+  total_pages: number;
+  has_next: boolean;
+  has_prev: boolean;
+}
+
 export interface KnowledgeTask {
   id: string;
   task_type: string;

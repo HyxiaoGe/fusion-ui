@@ -5,6 +5,7 @@ import type {
   KnowledgeBasePage,
   KnowledgeBaseUpdatePayload,
   KnowledgeDocument,
+  KnowledgeDocumentChunkPage,
   KnowledgeDocumentPage,
   KnowledgeDocumentUploadResult,
   KnowledgePageParams,
@@ -131,6 +132,18 @@ export async function getKnowledgeDocument(
     signal,
   );
   return data.document;
+}
+
+export async function listKnowledgeDocumentChunks(
+  knowledgeBaseId: string,
+  documentId: string,
+  params: KnowledgePageParams = {},
+  signal?: AbortSignal,
+): Promise<KnowledgeDocumentChunkPage> {
+  return getRequest<KnowledgeDocumentChunkPage>(
+    `${knowledgeBasesPath}/${encodeId(knowledgeBaseId)}/documents/${encodeId(documentId)}/chunks?${paginationQuery(params)}`,
+    signal,
+  );
 }
 
 export async function uploadKnowledgeDocument(

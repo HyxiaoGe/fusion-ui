@@ -152,6 +152,37 @@ describe('useKnowledgeBaseSettings', () => {
     );
   });
 
+  it('即使接口短暂返回已删除知识库也不会在列表中展示或选中', async () => {
+    const activeBase = makeBase('base-a');
+    const deletedBase = {
+      ...makeBase('base-deleted'),
+      status: 'deleted' as const,
+      deleted_at: '2026-08-15T00:00:00Z',
+    };
+    api.listKnowledgeBases.mockResolvedValue({
+      ...pageFor(activeBase),
+      items: [deletedBase, activeBase],
+      total: 21,
+      total_pages: 2,
+      has_next: true,
+    });
+
+    const { result } = renderHook(() => useKnowledgeBaseSettings());
+
+    await waitFor(() => expect(result.current.selectedBaseId).toBe('base-a'));
+    expect(result.current.bases.items).toEqual([activeBase]);
+    expect(result.current.bases).toMatchObject({
+      total: 21,
+      total_pages: 2,
+      has_next: true,
+    });
+    expect(api.listKnowledgeDocuments).not.toHaveBeenCalledWith(
+      'base-deleted',
+      expect.anything(),
+      expect.anything(),
+    );
+  });
+
   it('账号切换时立即清空旧数据且拒绝旧请求迟到回写', async () => {
     let resolveOld: ((value: ReturnType<typeof pageFor>) => void) | undefined;
     const oldRequest = new Promise<ReturnType<typeof pageFor>>((resolve) => {

@@ -61,6 +61,11 @@ const emptyBasePage = (page = 1): KnowledgeBasePage => ({
   has_prev: false,
 });
 
+function withoutDeletedKnowledgeBases(page: KnowledgeBasePage): KnowledgeBasePage {
+  const items = page.items.filter((item) => item.status !== 'deleted');
+  return items.length === page.items.length ? page : { ...page, items };
+}
+
 const emptyDocumentPage = (page = 1): KnowledgeDocumentPage => ({
   items: [],
   page,
@@ -204,9 +209,8 @@ export function useKnowledgeBaseSettings(): KnowledgeBaseSettingsState {
       const controller = beginRequest(baseRequestRef);
       if (!quiet) setLoadingBases(true);
       try {
-        const result = await listKnowledgeBases(
-          { page, pageSize: PAGE_SIZE },
-          controller.signal,
+        const result = withoutDeletedKnowledgeBases(
+          await listKnowledgeBases({ page, pageSize: PAGE_SIZE }, controller.signal),
         );
         if (!isCurrent(boundary)) return true;
         setBases(result);

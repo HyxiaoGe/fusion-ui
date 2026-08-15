@@ -1,5 +1,5 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { KnowledgeBase, KnowledgeDocument } from '@/types/knowledge';
 import { ApiError } from '@/types/api';
@@ -13,6 +13,16 @@ vi.mock('@/hooks/useKnowledgeBaseSettings', () => ({
 
 vi.mock('@/components/ui/toast', () => ({
   useToast: () => ({ toast: toastMock }),
+}));
+
+vi.mock('./KnowledgeChunkPreviewDialog', () => ({
+  default: ({
+    open,
+    document,
+  }: {
+    open: boolean;
+    document: KnowledgeDocument | null;
+  }) => (open && document ? <div>正在预览 {document.filename}</div> : null),
 }));
 
 vi.mock('react-i18next', () => ({
@@ -35,12 +45,16 @@ vi.mock('react-i18next', () => ({
         'knowledgeBase.cancel': '取消',
         'knowledgeBase.edit': '编辑',
         'knowledgeBase.delete': '删除',
+        'knowledgeBase.baseActions': `管理知识库 ${options?.name ?? ''}`,
+        'knowledgeBase.documentActions': `管理文档 ${options?.name ?? ''}`,
         'knowledgeBase.listTitle': '知识库列表',
+        'knowledgeBase.documentCount': `${options?.count ?? 0} 个文档`,
         'knowledgeBase.documents': '文档',
         'knowledgeBase.supportedTypes': '支持文件类型',
         'knowledgeBase.upload': '上传文档',
         'knowledgeBase.retry': '重试',
         'knowledgeBase.rebuild': '重建索引',
+        'knowledgeBase.previewChunks': '预览分块',
         'knowledgeBase.confirmRebuildTitle': '重建文档索引？',
         'knowledgeBase.confirmRebuildDescription': '重建可能产生费用',
         'knowledgeBase.confirmRetryTitle': '重试文档处理？',
@@ -76,6 +90,14 @@ vi.mock('react-i18next', () => ({
 }));
 
 import KnowledgeBaseManager, { prepareKnowledgeFile } from './KnowledgeBaseManager';
+
+beforeAll(() => {
+  window.PointerEvent = MouseEvent as typeof PointerEvent;
+  HTMLElement.prototype.hasPointerCapture = () => false;
+  HTMLElement.prototype.setPointerCapture = () => {};
+  HTMLElement.prototype.releasePointerCapture = () => {};
+  HTMLElement.prototype.scrollIntoView = () => {};
+});
 
 function makeBase(): KnowledgeBase {
   return {
@@ -176,15 +198,94 @@ describe('KnowledgeBaseManager', () => {
     hookState.current = makeState();
   });
 
-  it('展示知识库统计、文档状态和失败重试入口', () => {
+  it('展示紧凑统计、文档状态，并默认隐藏低频操作', () => {
     render(<KnowledgeBaseManager />);
 
     expect(screen.getByRole('heading', { name: '知识库' })).toBeInTheDocument();
     expect(screen.getAllByText('产品手册')).toHaveLength(2);
     expect(screen.getByText('ready-document.txt')).toBeInTheDocument();
     expect(screen.getByText('文档处理失败')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '重试' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '重建索引' })).toBeInTheDocument();
+    expect(screen.getByTestId('knowledge-base-stats')).toHaveClass('flex');
+    expect(screen.queryByRole('button', { name: '重试' })).toBeNull();
+    expect(screen.queryByRole('button', { name: '重建索引' })).toBeNull();
+    expect(screen.getByRole('button', { name: '管理知识库 产品手册' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '管理文档 ready-document.txt' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '管理文档 failed-document.txt' })).toBeInTheDocument();
+
+    const list = screen.getByTestId('knowledge-base-list');
+    expect(within(list).queryByText('产品知识')).toBeNull();
+    expect(within(list).queryByText(/业务类型/)).toBeNull();
+  });
+
+  it('顶部刷新使用紧凑图标按钮但保留可访问名称', () => {
+    render(<KnowledgeBaseManager />);
+
+    const refresh = screen.getByRole('button', { name: '刷新' });
+    expect(refresh).toHaveAttribute('title', '刷新');
+    expect(within(refresh).queryByText('刷新')).toBeNull();
+  });
+
+  it('左侧知识库列表使用导航式选中态和紧凑摘要', () => {
+    const selectedBase = makeBase();
+    const otherBase = {
+      ...makeBase(),
+      id: 'base-b',
+      name: '售后问题知识库',
+      document_stats: { total: 8, ready: 6, processing: 2, failed: 0 },
+    };
+    hookState.current = {
+      ...makeState(),
+      bases: {
+        ...makeState().bases,
+        items: [selectedBase, otherBase],
+        total: 2,
+      },
+    };
+    render(<KnowledgeBaseManager />);
+
+    const list = screen.getByTestId('knowledge-base-list');
+    expect(within(list).getByTestId('knowledge-base-count')).toHaveClass('rounded-full');
+
+    const selectedItem = within(list).getByRole('button', { name: /产品手册/ });
+    expect(selectedItem).toHaveAttribute('aria-current', 'true');
+    expect(selectedItem).toHaveClass('bg-primary/10');
+    expect(within(selectedItem).getByText('2 个文档')).toBeInTheDocument();
+    expect(within(selectedItem).getByText('1 失败')).toHaveClass('text-destructive');
+    expect(within(selectedItem).getByTestId('knowledge-base-list-status-base-a')).toHaveClass(
+      'whitespace-nowrap',
+    );
+    expect(within(selectedItem).getByTestId('knowledge-base-availability-pulse-base-a')).toHaveClass(
+      'animate-ping',
+      'motion-reduce:animate-none',
+    );
+
+    const otherItem = within(list).getByRole('button', { name: /售后问题知识库/ });
+    expect(otherItem).not.toHaveAttribute('aria-current');
+    expect(within(otherItem).getByText('2 处理中')).toBeInTheDocument();
+  });
+
+  it('仅为已有分块的可用文档提供预览入口', () => {
+    const readyWithoutChunks = {
+      ...makeDocument('empty-ready-document', 'ready'),
+      chunk_count: 0,
+    };
+    hookState.current = {
+      ...makeState(),
+      documents: {
+        ...makeState().documents,
+        items: [
+          makeDocument('ready-document', 'ready'),
+          readyWithoutChunks,
+          makeDocument('failed-document', 'failed'),
+        ],
+      },
+    };
+    render(<KnowledgeBaseManager />);
+
+    const previewButtons = screen.getAllByRole('button', { name: '预览分块' });
+    expect(previewButtons).toHaveLength(1);
+    fireEvent.click(previewButtons[0]);
+    expect(screen.getByText('正在预览 ready-document.txt')).toBeInTheDocument();
   });
 
   it('创建知识库时提交经过修剪的字段', async () => {
@@ -284,10 +385,14 @@ describe('KnowledgeBaseManager', () => {
     expect(toastMock).toHaveBeenCalledWith({ message: '不支持的文件', type: 'error' });
   });
 
-  it('重试和重建索引都需要二次确认', async () => {
+  it('从文档更多菜单发起重试和重建，并继续要求二次确认', async () => {
     render(<KnowledgeBaseManager />);
 
-    fireEvent.click(screen.getByRole('button', { name: '重建索引' }));
+    fireEvent.pointerDown(screen.getByRole('button', { name: '管理文档 ready-document.txt' }), {
+      button: 0,
+      ctrlKey: false,
+    });
+    fireEvent.click(await screen.findByRole('menuitem', { name: '重建索引' }));
     expect(hookState.current.rebuildDocument).not.toHaveBeenCalled();
     let dialog = screen.getByRole('dialog');
     expect(within(dialog).getByText('重建文档索引？')).toBeInTheDocument();
@@ -299,7 +404,11 @@ describe('KnowledgeBaseManager', () => {
       ),
     );
 
-    fireEvent.click(screen.getByRole('button', { name: '重试' }));
+    fireEvent.pointerDown(screen.getByRole('button', { name: '管理文档 failed-document.txt' }), {
+      button: 0,
+      ctrlKey: false,
+    });
+    fireEvent.click(await screen.findByRole('menuitem', { name: '重试' }));
     expect(hookState.current.retryDocument).not.toHaveBeenCalled();
     dialog = screen.getByRole('dialog');
     expect(within(dialog).getByText('重试文档处理？')).toBeInTheDocument();

@@ -7,8 +7,10 @@ import {
   ChevronLeft,
   ChevronRight,
   CircleDashed,
+  Eye,
   FileText,
   Loader2,
+  MoreHorizontal,
   Pencil,
   Plus,
   RefreshCw,
@@ -31,6 +33,13 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
@@ -38,7 +47,9 @@ import { useToast } from '@/components/ui/toast';
 import { useKnowledgeBaseSettings } from '@/hooks/useKnowledgeBaseSettings';
 import { cn } from '@/lib/utils';
 import { ApiError } from '@/types/api';
-import type { KnowledgeBase } from '@/types/knowledge';
+import type { KnowledgeBase, KnowledgeDocument } from '@/types/knowledge';
+
+import KnowledgeChunkPreviewDialog from './KnowledgeChunkPreviewDialog';
 
 const acceptedFileTypes = {
   '.txt': 'text/plain',
@@ -55,6 +66,11 @@ interface BaseFormState {
   name: string;
   description: string;
   business_type: string;
+}
+
+interface ChunkPreviewTarget {
+  knowledgeBaseId: string;
+  document: KnowledgeDocument;
 }
 
 type ConfirmTarget =
@@ -152,7 +168,7 @@ function StatusBadge({ status, label }: { status: string; label: string }) {
         ? CheckCircle2
         : CircleDashed;
   return (
-    <Badge variant={variant} className="gap-1">
+    <Badge variant={variant} className="shrink-0 gap-1 whitespace-nowrap">
       <Icon
         className={cn(
           'h-3 w-3',
@@ -162,6 +178,41 @@ function StatusBadge({ status, label }: { status: string; label: string }) {
       />
       {label}
     </Badge>
+  );
+}
+
+function ListStatus({ id, status, label }: { id: string; status: string; label: string }) {
+  const available = status === 'ready' || status === 'active';
+  const tone =
+    status === 'failed'
+      ? 'bg-destructive'
+      : available
+        ? 'bg-emerald-500'
+        : status === 'deleting' || status === 'deleted'
+          ? 'bg-amber-500'
+          : 'bg-sky-500';
+
+  return (
+    <span
+      data-testid={`knowledge-base-list-status-${id}`}
+      className="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap text-[11px] font-medium text-muted-foreground"
+    >
+      {available ? (
+        <span
+          className="relative inline-flex h-2 w-2 items-center justify-center"
+          aria-hidden="true"
+        >
+          <span
+            data-testid={`knowledge-base-availability-pulse-${id}`}
+            className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-70 motion-reduce:animate-none"
+          />
+          <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-emerald-500" />
+        </span>
+      ) : (
+        <span className={cn('h-1.5 w-1.5 rounded-full', tone)} aria-hidden="true" />
+      )}
+      {label}
+    </span>
   );
 }
 
@@ -230,6 +281,7 @@ export default function KnowledgeBaseManager() {
   const [formMode, setFormMode] = useState<'create' | 'edit' | null>(null);
   const [form, setForm] = useState<BaseFormState>(emptyForm);
   const [confirmTarget, setConfirmTarget] = useState<ConfirmTarget>(null);
+  const [chunkPreviewTarget, setChunkPreviewTarget] = useState<ChunkPreviewTarget | null>(null);
   const [mobileView, setMobileView] = useState<'list' | 'detail'>('list');
   const busy = state.mutation !== null;
   const featureDisabled =
@@ -359,10 +411,17 @@ export default function KnowledgeBaseManager() {
             </CardTitle>
             <p className="text-sm text-muted-foreground">{t('knowledgeBase.description')}</p>
           </div>
-          <div className="flex gap-2">
-            <Button type="button" variant="outline" size="sm" onClick={() => void state.refresh()}>
+          <div className="flex items-center gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="icon"
+              className="h-8 w-8"
+              aria-label={t('knowledgeBase.refresh')}
+              title={t('knowledgeBase.refresh')}
+              onClick={() => void state.refresh()}
+            >
               <RefreshCw className={cn(state.loadingBases && 'animate-spin')} />
-              {t('knowledgeBase.refresh')}
             </Button>
             <Button type="button" size="sm" disabled={featureDisabled} onClick={openCreate}>
               <Plus />
@@ -387,17 +446,22 @@ export default function KnowledgeBaseManager() {
           </div>
         )}
 
-        <div className="grid min-h-[30rem] lg:grid-cols-[18rem_minmax(0,1fr)]">
+        <div className="grid min-h-[30rem] lg:grid-cols-[20rem_minmax(0,1fr)]">
           <aside
             data-testid="knowledge-base-list"
             className={cn(
-              'border-b p-4 lg:block lg:border-r lg:border-b-0',
+              'border-b bg-muted/[0.025] p-4 lg:block lg:border-r lg:border-b-0',
               mobileView === 'detail' && 'hidden',
             )}
           >
             <div className="mb-3 flex items-center justify-between">
               <h3 className="font-medium">{t('knowledgeBase.listTitle')}</h3>
-              <span className="text-xs text-muted-foreground">{state.bases.total}</span>
+              <span
+                data-testid="knowledge-base-count"
+                className="rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium tabular-nums text-muted-foreground"
+              >
+                {state.bases.total}
+              </span>
             </div>
             {state.loadingBases && state.bases.items.length === 0 ? (
               <LoadingRows label={t('knowledgeBase.loading')} />
@@ -412,41 +476,61 @@ export default function KnowledgeBaseManager() {
                 {t('knowledgeBase.emptyBases')}
               </button>
             ) : (
-              <div className="space-y-2">
+              <div className="space-y-2 lg:max-h-[34rem] lg:overflow-y-auto lg:pr-1">
                 {state.bases.items.map((knowledgeBase) => (
                   <button
                     type="button"
                     key={knowledgeBase.id}
+                    aria-current={state.selectedBaseId === knowledgeBase.id ? 'true' : undefined}
+                    title={knowledgeBase.name}
                     className={cn(
-                      'w-full rounded-lg border p-3 text-left transition-colors hover:bg-muted/50',
-                      state.selectedBaseId === knowledgeBase.id && 'border-primary bg-primary/5',
+                      'relative w-full overflow-hidden rounded-xl border border-transparent bg-muted/25 px-3 py-3 text-left transition-[background-color,border-color,box-shadow] hover:border-border hover:bg-muted/50',
+                      state.selectedBaseId === knowledgeBase.id &&
+                        'border-primary/30 bg-primary/10 shadow-sm hover:border-primary/40 hover:bg-primary/10',
                     )}
                     onClick={() => {
                       state.setSelectedBaseId(knowledgeBase.id);
                       setMobileView('detail');
                     }}
                   >
-                    <div className="flex items-start justify-between gap-2">
-                      <span className="min-w-0 truncate font-medium">{knowledgeBase.name}</span>
-                      <StatusBadge
+                    {state.selectedBaseId === knowledgeBase.id && (
+                      <span
+                        className="absolute inset-y-2 left-0 w-0.5 rounded-r-full bg-primary"
+                        aria-hidden="true"
+                      />
+                    )}
+                    <div className="flex items-start justify-between gap-3">
+                      <span className="line-clamp-2 min-w-0 pr-1 text-sm leading-5 font-medium">
+                        {knowledgeBase.name}
+                      </span>
+                      <ListStatus
+                        id={knowledgeBase.id}
                         status={knowledgeBase.status}
                         label={statusLabel(knowledgeBase.status)}
                       />
                     </div>
-                    <p className="mt-2 truncate text-xs text-muted-foreground">
-                      {knowledgeBase.description || t('knowledgeBase.noDescription')}
-                    </p>
-                    <p className="mt-2 truncate text-xs text-muted-foreground">
-                      {t('knowledgeBase.businessType')}: {knowledgeBase.business_type}
-                    </p>
-                    <p className="mt-1 text-xs text-muted-foreground">
-                      {t('knowledgeBase.stats.total')} {knowledgeBase.document_stats.total} ·{' '}
-                      {t('knowledgeBase.stats.ready')} {knowledgeBase.document_stats.ready} ·{' '}
-                      {t('knowledgeBase.stats.processing')}{' '}
-                      {knowledgeBase.document_stats.processing} ·{' '}
-                      {t('knowledgeBase.stats.failed')} {knowledgeBase.document_stats.failed}
-                    </p>
-                    <p className="mt-1 text-xs text-muted-foreground">
+                    <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
+                      <span className="font-medium text-foreground/70">
+                        {t('knowledgeBase.documentCount', {
+                          count: knowledgeBase.document_stats.total,
+                        })}
+                      </span>
+                      <span>
+                        {knowledgeBase.document_stats.ready} {t('knowledgeBase.stats.ready')}
+                      </span>
+                      {knowledgeBase.document_stats.processing > 0 && (
+                        <span className="text-amber-700 dark:text-amber-400">
+                          {knowledgeBase.document_stats.processing}{' '}
+                          {t('knowledgeBase.stats.processing')}
+                        </span>
+                      )}
+                      {knowledgeBase.document_stats.failed > 0 && (
+                        <span className="text-destructive">
+                          {knowledgeBase.document_stats.failed} {t('knowledgeBase.stats.failed')}
+                        </span>
+                      )}
+                    </div>
+                    <p className="mt-1.5 truncate text-[11px] text-muted-foreground/80">
                       {t('knowledgeBase.updatedAt')}{' '}
                       {new Intl.DateTimeFormat(i18n.language, {
                         dateStyle: 'medium',
@@ -508,45 +592,65 @@ export default function KnowledgeBaseManager() {
                       </p>
                     )}
                   </div>
-                  <div className="flex gap-2">
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      disabled={actionsDisabled || state.selectedBase.status !== 'active'}
-                      onClick={() => openEdit(state.selectedBase!)}
-                    >
-                      <Pencil />
-                      {t('knowledgeBase.edit')}
-                    </Button>
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="destructive"
-                      disabled={actionsDisabled || state.selectedBase.status !== 'active'}
-                      onClick={() =>
-                        setConfirmTarget({
-                          type: 'base',
-                          id: state.selectedBase!.id,
-                          name: state.selectedBase!.name,
-                        })
-                      }
-                    >
-                      <Trash2 />
-                      {t('knowledgeBase.delete')}
-                    </Button>
-                  </div>
+                  <DropdownMenu modal={false}>
+                    <DropdownMenuTrigger asChild>
+                      <Button
+                        type="button"
+                        size="icon"
+                        variant="outline"
+                        className="h-8 w-8 shrink-0"
+                        disabled={actionsDisabled || state.selectedBase.status !== 'active'}
+                        aria-label={t('knowledgeBase.baseActions', {
+                          name: state.selectedBase.name,
+                        })}
+                        title={t('knowledgeBase.baseActions', { name: state.selectedBase.name })}
+                      >
+                        <MoreHorizontal />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" className="w-40">
+                      <DropdownMenuItem onSelect={() => openEdit(state.selectedBase!)}>
+                        <Pencil />
+                        {t('knowledgeBase.edit')}
+                      </DropdownMenuItem>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem
+                        variant="destructive"
+                        onSelect={() =>
+                          setConfirmTarget({
+                            type: 'base',
+                            id: state.selectedBase!.id,
+                            name: state.selectedBase!.name,
+                          })
+                        }
+                      >
+                        <Trash2 />
+                        {t('knowledgeBase.delete')}
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
                 </div>
 
-                <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                <div
+                  data-testid="knowledge-base-stats"
+                  className="flex flex-wrap items-center gap-2"
+                >
                   {(['total', 'ready', 'processing', 'failed'] as const).map((key) => (
-                    <div key={key} className="rounded-lg border bg-muted/10 p-3">
-                      <div className="text-xl font-semibold">
+                    <div
+                      key={key}
+                      className={cn(
+                        'inline-flex items-center gap-2 rounded-full border bg-muted/10 px-3 py-1.5',
+                        key === 'failed' &&
+                          state.selectedBase!.document_stats[key] > 0 &&
+                          'border-destructive/30 bg-destructive/5',
+                      )}
+                    >
+                      <span className="font-semibold tabular-nums">
                         {state.selectedBase!.document_stats[key]}
-                      </div>
-                      <div className="text-xs text-muted-foreground">
+                      </span>
+                      <span className="text-xs text-muted-foreground">
                         {t(`knowledgeBase.stats.${key}`)}
-                      </div>
+                      </span>
                     </div>
                   ))}
                 </div>
@@ -623,62 +727,89 @@ export default function KnowledgeBaseManager() {
                                 </p>
                               )}
                             </div>
-                            <div className="flex flex-wrap gap-2">
-                              {document.status === 'failed' && (
+                            <div className="flex shrink-0 flex-wrap items-center gap-2">
+                              {document.status === 'ready' && document.chunk_count > 0 && (
                                 <Button
                                   type="button"
                                   size="sm"
                                   variant="outline"
-                                  disabled={actionsDisabled}
                                   onClick={() =>
-                                    setConfirmTarget({
-                                      type: 'retry',
-                                      id: document.id,
-                                      name: document.filename,
+                                    setChunkPreviewTarget({
+                                      knowledgeBaseId: state.selectedBaseId!,
+                                      document,
                                     })
                                   }
                                 >
-                                  <RotateCcw />
-                                  {t('knowledgeBase.retry')}
-                                </Button>
-                              )}
-                              {document.status === 'ready' && (
-                                <Button
-                                  type="button"
-                                  size="sm"
-                                  variant="outline"
-                                  disabled={actionsDisabled}
-                                  onClick={() =>
-                                    setConfirmTarget({
-                                      type: 'rebuild',
-                                      id: document.id,
-                                      name: document.filename,
-                                    })
-                                  }
-                                >
-                                  <RefreshCw />
-                                  {t('knowledgeBase.rebuild')}
+                                  <Eye />
+                                  {t('knowledgeBase.previewChunks')}
                                 </Button>
                               )}
                               {!['deleting', 'deleted'].includes(document.status) && (
-                                <Button
-                                  type="button"
-                                  size="sm"
-                                  variant="ghost"
-                                  disabled={actionsDisabled}
-                                  aria-label={t('knowledgeBase.deleteDocument', {
-                                    name: document.filename,
-                                  })}
-                                  onClick={() =>
-                                    setConfirmTarget({
-                                      type: 'document',
-                                      id: document.id,
-                                      name: document.filename,
-                                    })
-                                  }
-                                >
-                                  <Trash2 />
-                                </Button>
+                                <DropdownMenu modal={false}>
+                                  <DropdownMenuTrigger asChild>
+                                    <Button
+                                      type="button"
+                                      size="icon"
+                                      variant="outline"
+                                      className="h-8 w-8"
+                                      disabled={actionsDisabled}
+                                      aria-label={t('knowledgeBase.documentActions', {
+                                        name: document.filename,
+                                      })}
+                                      title={t('knowledgeBase.documentActions', {
+                                        name: document.filename,
+                                      })}
+                                    >
+                                      <MoreHorizontal />
+                                    </Button>
+                                  </DropdownMenuTrigger>
+                                  <DropdownMenuContent align="end" className="w-40">
+                                    {document.status === 'failed' && (
+                                      <DropdownMenuItem
+                                        onSelect={() =>
+                                          setConfirmTarget({
+                                            type: 'retry',
+                                            id: document.id,
+                                            name: document.filename,
+                                          })
+                                        }
+                                      >
+                                        <RotateCcw />
+                                        {t('knowledgeBase.retry')}
+                                      </DropdownMenuItem>
+                                    )}
+                                    {document.status === 'ready' && (
+                                      <DropdownMenuItem
+                                        onSelect={() =>
+                                          setConfirmTarget({
+                                            type: 'rebuild',
+                                            id: document.id,
+                                            name: document.filename,
+                                          })
+                                        }
+                                      >
+                                        <RefreshCw />
+                                        {t('knowledgeBase.rebuild')}
+                                      </DropdownMenuItem>
+                                    )}
+                                    {['failed', 'ready'].includes(document.status) && (
+                                      <DropdownMenuSeparator />
+                                    )}
+                                    <DropdownMenuItem
+                                      variant="destructive"
+                                      onSelect={() =>
+                                        setConfirmTarget({
+                                          type: 'document',
+                                          id: document.id,
+                                          name: document.filename,
+                                        })
+                                      }
+                                    >
+                                      <Trash2 />
+                                      {t('knowledgeBase.delete')}
+                                    </DropdownMenuItem>
+                                  </DropdownMenuContent>
+                                </DropdownMenu>
                               )}
                             </div>
                           </div>
@@ -757,6 +888,15 @@ export default function KnowledgeBaseManager() {
           </form>
         </DialogContent>
       </Dialog>
+
+      <KnowledgeChunkPreviewDialog
+        open={chunkPreviewTarget !== null}
+        knowledgeBaseId={chunkPreviewTarget?.knowledgeBaseId ?? null}
+        document={chunkPreviewTarget?.document ?? null}
+        onOpenChange={(open) => {
+          if (!open) setChunkPreviewTarget(null);
+        }}
+      />
 
       <ConfirmDialog
         isOpen={confirmTarget !== null}
