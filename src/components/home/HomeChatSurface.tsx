@@ -391,21 +391,29 @@ export default function HomeChatSurface() {
   const handleSendMessage = useCallback((
     content: string,
     attachments?: FileAttachment[],
-    pendingConversationId?: string
+    pendingConversationId?: string,
+    knowledgeBaseIds?: string[],
+    onRejectedBeforeSend?: () => void,
+    onAccepted?: () => void,
   ) => {
     setPrefillRequest(null);
     const navigationGeneration = navigationGenerationRef.current + 1;
-    navigationGenerationRef.current = navigationGeneration;
     const shouldOpenFilesPanel = Boolean(attachments && attachments.length > 0);
-    if (shouldOpenFilesPanel) {
-      setFilesPanelOpen(true);
-    }
 
     return sendMessage(
       content,
       {
         conversationId: pendingConversationId ?? null,
         isDraft: true,
+        knowledgeBaseIds,
+        onRejectedBeforeSend,
+        onAccepted: () => {
+          navigationGenerationRef.current = navigationGeneration;
+          if (shouldOpenFilesPanel) {
+            setFilesPanelOpen(true);
+          }
+          onAccepted?.();
+        },
         onDraftCreated: () => {
           if (navigationGenerationRef.current === navigationGeneration) {
             setHandoffConversationId(null);

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { AgentEvidenceItem } from '@/types/agentRun';
-import type { SearchSourceSummary, SourceReference, UrlBlock } from '@/types/conversation';
+import type { KnowledgeEvidenceBlock, SearchSourceSummary, SourceReference, UrlBlock } from '@/types/conversation';
 import { deriveAnswerEvidence } from './answerEvidenceModel';
 
 const searchSources: SearchSourceSummary[] = [
@@ -49,6 +49,215 @@ const sourceRefs: SourceReference[] = [
 describe('deriveAnswerEvidence', () => {
   it('无搜索来源和 URL 读取时返回 null', () => {
     expect(deriveAnswerEvidence({ searchSources: [], urlBlocks: [] })).toBeNull();
+  });
+
+  it('把知识库依据与历史网页依据按 citation_index 统一排序', () => {
+    const knowledgeBlocks: KnowledgeEvidenceBlock[] = [{
+      type: 'knowledge_evidence',
+      id: 'knowledge-1',
+      schema_version: 1,
+      query: '安装步骤',
+      status: 'success',
+      source_count: 1,
+      knowledge_base_ids: ['kb-1'],
+      source_refs: [{
+        kind: 'knowledge',
+        evidence_id: 'knowledge-ref-1',
+        citation_index: 1,
+        knowledge_base_id: 'kb-1',
+        knowledge_base_name: '产品手册',
+        document_id: 'doc-1',
+        index_version: 'v2',
+        chunk_id: 'chunk-2',
+        ordinal: 1,
+        filename: '安装指南.md',
+        page: 2,
+        section: '开始安装',
+        char_start: 30,
+        char_end: 120,
+        status: 'success',
+      }],
+    }];
+
+    const evidence = deriveAnswerEvidence({
+      knowledgeBlocks,
+      answerText: '根据产品手册[1]以及历史网页[2]回答。',
+      sourceRefs: [{
+        kind: 'search',
+        title: '历史网页',
+        url: 'https://example.com/legacy',
+        evidence_id: 'web-1',
+        citation_index: 2,
+      }],
+      searchSources: [],
+      urlBlocks: [],
+    });
+
+    expect(evidence?.items).toEqual([
+      expect.objectContaining({
+        kind: 'knowledge',
+        citationIndex: 1,
+        sourceIndex: 0,
+        title: '安装指南.md',
+        knowledgeBaseName: '产品手册',
+        ordinal: 1,
+      }),
+      expect.objectContaining({
+        kind: 'search_source',
+        citationIndex: 2,
+        sourceIndex: 1,
+      }),
+    ]);
+    expect(evidence?.knowledgeCount).toBe(1);
+  });
+
+  it('按 agent knowledge evidence 区分最终引用与候选分块', () => {
+    const knowledgeBlocks: KnowledgeEvidenceBlock[] = [{
+      type: 'knowledge_evidence',
+      id: 'knowledge-1',
+      schema_version: 1,
+      query: '安装步骤',
+      status: 'success',
+      source_count: 2,
+      knowledge_base_ids: ['kb-1'],
+      source_refs: [1, 2].map((citationIndex) => ({
+        kind: 'knowledge' as const,
+        evidence_id: `knowledge-ref-${citationIndex}`,
+        citation_index: citationIndex,
+        knowledge_base_id: 'kb-1',
+        knowledge_base_name: '产品手册',
+        document_id: 'doc-1',
+        index_version: 'v2',
+        chunk_id: `chunk-${citationIndex}`,
+        ordinal: citationIndex - 1,
+        filename: '安装指南.md',
+        page: null,
+        section: null,
+        char_start: (citationIndex - 1) * 100,
+        char_end: citationIndex * 100,
+        status: 'success' as const,
+      })),
+    }];
+    const agentEvidence: AgentEvidenceItem[] = [
+      {
+        id: 'knowledge-ref-1',
+        kind: 'knowledge',
+        status: 'used',
+        title: '安装指南.md',
+        claim: '回答采用第一块。',
+        citationIndex: 1,
+        usedByFinalAnswer: true,
+      },
+      {
+        id: 'knowledge-ref-2',
+        kind: 'knowledge',
+        status: 'candidate',
+        title: '安装指南.md',
+        claim: '第二块仅为候选。',
+        citationIndex: 2,
+        usedByFinalAnswer: false,
+      },
+    ];
+
+    const evidence = deriveAnswerEvidence({
+      knowledgeBlocks,
+      agentEvidence,
+      answerText: '只引用第一块[1]。',
+      searchSources: [],
+      urlBlocks: [],
+    });
+
+    expect(evidence?.usedItems?.map(item => item.citationIndex)).toEqual([1]);
+    expect(evidence?.candidateItems?.map(item => item.citationIndex)).toEqual([2]);
+    expect(evidence?.items.map(item => item.citationIndex)).toEqual([1]);
+  });
+
+  it('仅有最终 used agent evidence 时仍把其余可用知识来源保留为候选', () => {
+    const knowledgeBlocks: KnowledgeEvidenceBlock[] = [{
+      type: 'knowledge_evidence',
+      id: 'knowledge-used-only',
+      schema_version: 1,
+      query: '安装步骤',
+      status: 'success',
+      source_count: 2,
+      knowledge_base_ids: ['kb-1'],
+      source_refs: [1, 2].map((citationIndex) => ({
+        kind: 'knowledge' as const,
+        evidence_id: `used-only-ref-${citationIndex}`,
+        citation_index: citationIndex,
+        knowledge_base_id: 'kb-1',
+        knowledge_base_name: '产品手册',
+        document_id: 'doc-1',
+        index_version: 'v2',
+        chunk_id: `used-only-chunk-${citationIndex}`,
+        ordinal: citationIndex - 1,
+        filename: '安装指南.md',
+        page: null,
+        section: null,
+        char_start: (citationIndex - 1) * 100,
+        char_end: citationIndex * 100,
+        status: 'success' as const,
+      })),
+    }];
+    const agentEvidence: AgentEvidenceItem[] = [{
+      id: 'used-only-ref-1',
+      kind: 'knowledge',
+      status: 'used',
+      title: '安装指南.md',
+      claim: '回答采用第一块。',
+      citationIndex: 1,
+      usedByFinalAnswer: true,
+    }];
+
+    const evidence = deriveAnswerEvidence({
+      knowledgeBlocks,
+      agentEvidence,
+      answerText: '只引用第一块[1]。',
+      searchSources: [],
+      urlBlocks: [],
+    });
+
+    expect(evidence?.usedItems?.map(item => item.citationIndex)).toEqual([1]);
+    expect(evidence?.candidateItems?.map(item => item.citationIndex)).toEqual([2]);
+    expect(evidence?.items.map(item => item.citationIndex)).toEqual([1]);
+  });
+
+  it('历史消息缺少 agent evidence 时只把正文显式引用编号视为已使用', () => {
+    const knowledgeBlocks: KnowledgeEvidenceBlock[] = [{
+      type: 'knowledge_evidence',
+      id: 'knowledge-history',
+      schema_version: 1,
+      query: '退款步骤',
+      status: 'success',
+      source_count: 2,
+      knowledge_base_ids: ['kb-1'],
+      source_refs: [1, 2].map((citationIndex) => ({
+        kind: 'knowledge' as const,
+        evidence_id: `history-ref-${citationIndex}`,
+        citation_index: citationIndex,
+        knowledge_base_id: 'kb-1',
+        knowledge_base_name: '客服手册',
+        document_id: 'doc-1',
+        index_version: 'v1',
+        chunk_id: `history-chunk-${citationIndex}`,
+        ordinal: citationIndex - 1,
+        filename: '退款.md',
+        page: null,
+        section: null,
+        char_start: (citationIndex - 1) * 100,
+        char_end: citationIndex * 100,
+      })),
+    }];
+
+    const evidence = deriveAnswerEvidence({
+      knowledgeBlocks,
+      answerText: '退款应在七天内申请[1]。',
+      searchSources: [],
+      urlBlocks: [],
+    });
+
+    expect(evidence?.usedItems?.map(item => item.citationIndex)).toEqual([1]);
+    expect(evidence?.candidateItems?.map(item => item.citationIndex)).toEqual([2]);
   });
 
   it('按稳定 citation_index 排序多轮搜索与读取来源，并按 evidence_id 去重', () => {

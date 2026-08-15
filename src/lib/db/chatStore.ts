@@ -58,6 +58,7 @@ export const chatStore = {
         await db.chats.update(chat.id, {
           title: chat.title,
           model_id: chat.model_id,
+          knowledge_base_ids: chat.knowledge_base_ids,
           updatedAt: chat.updatedAt,
         });
       } else {

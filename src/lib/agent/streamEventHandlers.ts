@@ -26,6 +26,7 @@ import type {
   LimitReachedReason,
   ToolCallResultSummary,
 } from '@/types/agentRun';
+import type { ContentBlock, KnowledgeEvidenceBlock } from '@/types/conversation';
 import { normalizeContentBlock } from '@/lib/chat/contentBlockRegistry';
 import { isStructuredToolResultBlock } from '@/lib/chat/structuredToolResults';
 import {
@@ -216,7 +217,8 @@ export function createAgentStreamEventHandlers({
     onContentBlockUpserted: ev => {
       if (!isActive()) return;
       const block = normalizeContentBlock(ev.content_block ?? ev.block);
-      if (!block || !isStructuredToolResultBlock(block)) return;
+      if (!block) return;
+      if (!isStructuredToolResultBlock(block) && !isKnowledgeEvidenceBlock(block)) return;
       dispatch(upsertStaticContentBlock({
         runId: ev.run_id,
         sequence: ev.sequence,
@@ -280,6 +282,10 @@ export function createAgentStreamEventHandlers({
       }));
     },
   };
+}
+
+function isKnowledgeEvidenceBlock(block: ContentBlock): block is KnowledgeEvidenceBlock {
+  return block.type === 'knowledge_evidence';
 }
 
 function mapEvidenceItem(item: {

@@ -704,17 +704,17 @@ describe('useAssistantMessageViewModel', () => {
       label: 'K3',
       modelId: 'kimi-k3',
       providerId: 'moonshot',
-      expectedSuppression: false,
-      expectedThinking: true,
+      expectedSuppression: true,
+      expectedThinking: false,
     },
     {
       label: '其他模型',
       modelId: 'qwen-max',
       providerId: 'qwen',
-      expectedSuppression: false,
-      expectedThinking: true,
+      expectedSuppression: true,
+      expectedThinking: false,
     },
-  ])('$label 在工具运行期间统一展示已收到的流式思考', ({
+  ])('$label 在工具运行后隐藏已收到的流式思考', ({
     modelId,
     providerId,
     expectedSuppression,
@@ -768,6 +768,73 @@ describe('useAssistantMessageViewModel', () => {
     expect(result.current.suppressThinking).toBe(expectedSuppression);
     expect(result.current.hasThinking).toBe(expectedThinking);
     expect(result.current.displayThinking).toBe('先核对公开资料。');
+  });
+
+  it('知识库运行从 run config 生效起隐藏流式思考', () => {
+    selectorState.stream.messageId = 'assistant-1';
+    selectorState.stream.thinkingBlocks = { 'thinking-1': '正在基于知识库整理回答。' };
+    selectorState.stream.blockOrder = ['thinking-1'];
+    selectorState.stream.blockTypes = { 'thinking-1': 'thinking' };
+    selectorState.stream.isStreamingReasoning = true;
+    selectorState.stream.currentRun = {
+      runId: 'run-knowledge',
+      messageId: 'assistant-1',
+      status: 'running',
+      config: {
+        maxSteps: 1,
+        maxToolCalls: 1,
+        timeoutS: 30,
+        evidencePolicy: 'knowledge_grounded_v1',
+      },
+      totalSteps: 0,
+      totalToolCalls: 0,
+      lastSequence: 1,
+      steps: [],
+    };
+
+    const { result } = renderViewModel(
+      {
+        id: 'assistant-1',
+        role: 'assistant',
+        content: [],
+        timestamp: 1,
+      },
+      { isStreaming: true, isLastMessage: true },
+    );
+
+    expect(result.current.suppressThinking).toBe(true);
+    expect(result.current.hasThinking).toBe(false);
+    expect(result.current.displayThinking).toBe('正在基于知识库整理回答。');
+  });
+
+  it('刷新后的工具回答根据持久化 totalToolCalls 继续隐藏思考', () => {
+    const model = deriveStaticAssistantMessageViewModel({
+      message: {
+        id: 'assistant-history',
+        role: 'assistant',
+        content: [
+          { type: 'thinking', id: 'thinking-1', thinking: '正在综合搜索结果。' },
+          { type: 'text', id: 'text-1', text: '历史回答。' },
+        ],
+        timestamp: 1,
+      },
+      isLoadingQuestions: false,
+      suggestedQuestionsCount: 0,
+      currentRun: {
+        runId: 'run-history',
+        messageId: 'assistant-history',
+        status: 'completed',
+        config: { maxSteps: 8, maxToolCalls: 20, timeoutS: 300 },
+        totalSteps: 1,
+        totalToolCalls: 1,
+        lastSequence: Number.MAX_SAFE_INTEGER,
+        steps: [],
+      },
+    });
+
+    expect(model.suppressThinking).toBe(true);
+    expect(model.hasThinking).toBe(false);
+    expect(model.displayThinking).toBe('正在综合搜索结果。');
   });
 
   it('深度研究完成但没有真实来源时不伪造回答依据', () => {

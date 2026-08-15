@@ -90,7 +90,7 @@ vi.mock('./useMessageCopy', () => ({
 import AssistantMessage from './AssistantMessage';
 
 describe('AssistantMessage K3 思考真实链路', () => {
-  it('流式 placeholder 没有 message.model_id 时仍使用会话模型展示 K3 净化思考', () => {
+  it('流式 placeholder 没有 message.model_id 时仍按真实工具状态隐藏 K3 思考', () => {
     render(
       <AssistantMessage
         message={{
@@ -110,6 +110,6 @@ describe('AssistantMessage K3 思考真实链路', () => {
       />,
     );
 
-    expect(screen.getByTestId('integrated-reasoning')).toHaveTextContent('正在核对公开资料');
+    expect(screen.queryByTestId('integrated-reasoning')).toBeNull();
   });
 });

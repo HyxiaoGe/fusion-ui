@@ -42,6 +42,20 @@ export interface ChatRequest {
     [key: string]: unknown;
   } | null;
   file_ids?: string[];
+  /** undefined=保持现有选择，[]=清空，非空数组按服务端能力上限替换。 */
+  knowledge_base_ids?: string[];
+}
+
+export interface ChatCapabilities {
+  knowledge_grounding_v1: boolean;
+  knowledge_grounding_max_bases: number;
+}
+
+export async function getChatCapabilities(signal?: AbortSignal): Promise<ChatCapabilities> {
+  return apiRequest<ChatCapabilities>(
+    `${API_BASE_URL}/api/chat/capabilities`,
+    signal ? { signal } : undefined,
+  );
 }
 
 export interface ContinueAgentRunRequest {

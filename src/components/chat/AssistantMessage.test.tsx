@@ -50,6 +50,7 @@ vi.mock('./AssistantResponseStack', () => ({
     onSourceClick: (index: number) => void;
     onOpenSources: () => void;
     onRetry?: () => void;
+    onContinueAgentRun?: (previousRunId?: string) => void;
     onStructuredResultFollowUp?: (question: string) => void;
     structuredResultsLoading?: boolean;
   }) => {
@@ -153,6 +154,7 @@ function defaultViewModel(overrides: Record<string, unknown> = {}) {
     searchSources: sources,
     searchQueries: [],
     answerEvidence: null,
+    knowledgeBlocks: [],
     displayText: '助手正文',
     displayThinking: '',
     suppressThinking: false,
@@ -256,6 +258,33 @@ describe('AssistantMessage', () => {
 
     expect(screen.getByTestId('assistant-response-stack')).toBeInTheDocument();
     expect(screen.getByText('助手正文')).toBeInTheDocument();
+  });
+
+  it('知识库回答不向响应栈暴露继续生成入口，普通回答保持可继续', () => {
+    const onContinueAgentRun = vi.fn();
+    renderAssistant({ onContinueAgentRun });
+    expect(assistantResponseStackMock.mock.calls.at(-1)?.[0].onContinueAgentRun).toEqual(
+      expect.any(Function),
+    );
+
+    deriveStaticAssistantMessageViewModelMock.mockReturnValue(defaultViewModel({
+      knowledgeBlocks: [{
+        type: 'knowledge_evidence',
+        id: 'knowledge-1',
+        schema_version: 1,
+        query: '安装步骤',
+        status: 'empty',
+        source_count: 0,
+        knowledge_base_ids: ['kb-1'],
+        source_refs: [],
+      }],
+    }));
+    renderAssistant({
+      message: assistantMessage({ id: 'assistant-knowledge' }),
+      onContinueAgentRun,
+    });
+
+    expect(assistantResponseStackMock.mock.calls.at(-1)?.[0].onContinueAgentRun).toBeUndefined();
   });
 
   it('流式占位消息缺少模型 ID 时把会话模型与提供商显式传给思考展示链路', () => {

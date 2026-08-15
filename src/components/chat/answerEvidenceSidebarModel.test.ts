@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { SearchBlock, UrlBlock } from '@/types/conversation';
+import type { KnowledgeEvidenceBlock, SearchBlock, UrlBlock } from '@/types/conversation';
 import type { AnswerEvidenceModel } from './answerEvidenceModel';
 import { deriveAnswerEvidenceSidebar } from './answerEvidenceSidebarModel';
 
@@ -162,6 +162,49 @@ describe('deriveAnswerEvidenceSidebar', () => {
     const model = deriveAnswerEvidenceSidebar({ answerEvidence: null, searchBlock, urlBlocks: [] });
 
     expect(model?.issueItems[0].reason).toBe('网页暂时无法读取');
+  });
+
+  it('已删除知识来源只展示安全不可用提示', () => {
+    const knowledgeBlocks: KnowledgeEvidenceBlock[] = [{
+      type: 'knowledge_evidence',
+      id: 'knowledge-1',
+      schema_version: 1,
+      query: '退款规则是什么？',
+      status: 'success',
+      source_count: 1,
+      knowledge_base_ids: ['kb-1'],
+      source_refs: [{
+        kind: 'knowledge',
+        knowledge_base_id: 'kb-1',
+        knowledge_base_name: '客服手册',
+        document_id: 'doc-1',
+        index_version: 'v1',
+        chunk_id: 'chunk-1',
+        ordinal: 0,
+        filename: '退款规则.md',
+        page: null,
+        section: null,
+        char_start: 0,
+        char_end: 100,
+        status: 'unavailable',
+      }],
+    }];
+
+    const model = deriveAnswerEvidenceSidebar({
+      answerEvidence: null,
+      searchBlock: null,
+      urlBlocks: [],
+      knowledgeBlocks,
+    });
+
+    expect(model?.issueItems).toEqual([
+      expect.objectContaining({
+        kind: 'knowledge',
+        title: '退款规则.md',
+        reason: '该来源已删除或不可用',
+      }),
+    ]);
+    expect(JSON.stringify(model)).not.toContain('Milvus');
   });
 
   it('returns null when there are no used or issue items', () => {

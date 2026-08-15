@@ -3,6 +3,7 @@ import {
   clearConversationMessages,
   removeConversation,
   updateConversationModel,
+  updateConversationKnowledgeBaseIds,
   updateConversationTitle,
 } from '@/redux/slices/conversationSlice';
 import {
@@ -33,6 +34,13 @@ export const persistMiddleware: Middleware = store => next => action => {
         }
       }
       else if (updateConversationTitle.match(action)) {
+        const state = store.getState();
+        const conversation = state.conversation.byId[payload.id];
+        if (conversation) {
+          await chatStore.saveChat(conversation);
+        }
+      }
+      else if (updateConversationKnowledgeBaseIds.match(action)) {
         const state = store.getState();
         const conversation = state.conversation.byId[payload.id];
         if (conversation) {

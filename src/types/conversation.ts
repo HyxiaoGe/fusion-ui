@@ -46,6 +46,7 @@ export interface SearchSourceSummary {
   favicon?: string;
   evidence_id?: string;
   citation_index?: number;
+  kind?: 'web' | 'knowledge';
 }
 
 export type NetworkSourceStatus = 'success' | 'failed' | 'degraded' | 'interrupted';
@@ -100,6 +101,38 @@ export interface UrlBlock {
   source_count?: number;
   source_refs?: SourceReference[];
   reason?: string | null;
+}
+
+export type KnowledgeEvidenceStatus = 'success' | 'empty';
+export type KnowledgeSourceStatus = 'success' | 'unavailable';
+
+export interface KnowledgeSourceReference {
+  kind: 'knowledge';
+  evidence_id?: string;
+  citation_index?: number;
+  knowledge_base_id: string;
+  knowledge_base_name: string;
+  document_id: string;
+  index_version: string;
+  chunk_id: string;
+  ordinal: number;
+  filename: string;
+  page: number | null;
+  section: string | null;
+  char_start: number;
+  char_end: number;
+  status?: KnowledgeSourceStatus;
+}
+
+export interface KnowledgeEvidenceBlock {
+  type: 'knowledge_evidence';
+  id: string;
+  schema_version: 1;
+  query: string;
+  status: KnowledgeEvidenceStatus;
+  source_count: number;
+  knowledge_base_ids: string[];
+  source_refs: KnowledgeSourceReference[];
 }
 
 export interface ProviderPlacePhoto {
@@ -392,6 +425,7 @@ export type ContentBlock =
   | FileBlock
   | SearchBlock
   | UrlBlock
+  | KnowledgeEvidenceBlock
   | StructuredToolResultBlock;
 
 // ============================================================
@@ -452,6 +486,8 @@ export interface Conversation {
   title: string;
   messages: Message[];
   model_id: string;
+  /** 当前会话默认知识库范围；旧服务端快照可能暂未提供。 */
+  knowledge_base_ids?: string[];
   createdAt: number;
   updatedAt: number;
 }

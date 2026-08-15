@@ -31,6 +31,7 @@ import {
 
 const {
   sendMessageStreamMock,
+  getChatCapabilitiesMock,
   reconnectStreamMock,
   stopStreamMock,
   getConversationMock,
@@ -38,6 +39,7 @@ const {
   uuidMock,
 } = vi.hoisted(() => ({
   sendMessageStreamMock: vi.fn(),
+  getChatCapabilitiesMock: vi.fn(),
   reconnectStreamMock: vi.fn(),
   stopStreamMock: vi.fn(),
   getConversationMock: vi.fn(),
@@ -46,6 +48,7 @@ const {
 }));
 
 vi.mock('@/lib/api/chat', () => ({
+  getChatCapabilities: getChatCapabilitiesMock,
   sendMessageStream: sendMessageStreamMock,
   reconnectStream: reconnectStreamMock,
   isRecoverableStreamError: (error: unknown) => Boolean((error as { recoverable?: boolean })?.recoverable),
@@ -152,10 +155,72 @@ function streamError(message: string, recoverable: boolean) {
   return Object.assign(new Error(message), { recoverable });
 }
 
+function emitRunStarted(callbacks: StreamCallbacks) {
+  callbacks.onRunStarted?.({
+    type: 'run_started',
+    protocol_version: 2,
+    run_id: 'run-knowledge',
+    parent_run_id: null,
+    step_id: null,
+    parent_step_id: null,
+    tool_call_id: null,
+    sequence: 0,
+    trace_id: 'run-knowledge',
+    ts: 0,
+    conversation_id: 'server-conv',
+    message_id: 'assistant-1',
+    model: 'model-1',
+    tools: [],
+    config: {
+      max_steps: 8,
+      max_tool_calls: 20,
+      timeout_s: 300,
+      plan_mode: 'auto',
+      task_mode: 'standard',
+    },
+  });
+}
+
+function knowledgeEvidenceBlock(status: 'success' | 'empty') {
+  return {
+    type: 'knowledge_evidence',
+    id: `knowledge-${status}`,
+    schema_version: 1,
+    query: '退款时限',
+    status,
+    source_count: status === 'success' ? 1 : 0,
+    knowledge_base_ids: ['kb-1'],
+    source_refs: status === 'success'
+      ? [{
+          kind: 'knowledge',
+          evidence_id: 'knowledge-ref-1',
+          citation_index: 1,
+          knowledge_base_id: 'kb-1',
+          knowledge_base_name: '客服手册',
+          document_id: 'doc-1',
+          index_version: 'v2',
+          chunk_id: 'chunk-1',
+          ordinal: 0,
+          filename: '退款.md',
+          page: 2,
+          section: '退款时限',
+          char_start: 0,
+          char_end: 100,
+          status: 'success',
+        }]
+      : [],
+  };
+}
+
 describe('useSendMessage', () => {
   beforeEach(() => {
     sessionStorage.clear();
     sendMessageStreamMock.mockReset();
+    getChatCapabilitiesMock.mockReset();
+    getChatCapabilitiesMock.mockResolvedValue({
+      knowledge_grounding_v1: true,
+      knowledge_grounding_max_bases: 5,
+    });
     reconnectStreamMock.mockReset();
     stopStreamMock.mockReset();
     stopStreamMock.mockResolvedValue(undefined);
@@ -194,6 +259,299 @@ describe('useSendMessage', () => {
     sessionStorage.clear();
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
+  });
+
+  it('发送知识库范围并强制关闭 deep_research，同时把选择保留在本地会话', async () => {
+    const store = createStore();
+    store.dispatch(upsertConversation({
+      id: 'existing-conv',
+      title: 'Existing',
+      model_id: 'model-1',
+      messages: [],
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    }));
+    store.dispatch(setComposerAgentMode('deep_research'));
+    sendMessageStreamMock.mockResolvedValue(undefined);
+
+    const { result } = renderHook(() => useSendMessage(), {
+      wrapper: createWrapper(store),
+    });
+
+    await act(async () => {
+      await result.current.sendMessage('只按手册回答', {
+        conversationId: 'existing-conv',
+        knowledgeBaseIds: ['kb-1', 'kb-2'],
+      });
+    });
+
+    expect(sendMessageStreamMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        knowledge_base_ids: ['kb-1', 'kb-2'],
+        options: expect.objectContaining({
+          task_mode: 'standard',
+        }),
+      }),
+      expect.any(Object),
+      expect.any(AbortSignal),
+    );
+    expect(store.getState().conversation.byId['existing-conv'].knowledge_base_ids).toEqual([
+      'kb-1',
+      'kb-2',
+    ]);
+  });
+
+  it('服务端缺少严格知识库能力时在任何乐观写入前终止发送', async () => {
+    const store = createStore();
+    store.dispatch(upsertConversation({
+      id: 'existing-conv',
+      title: 'Existing',
+      model_id: 'model-1',
+      knowledge_base_ids: ['kb-old'],
+      messages: [],
+      createdAt: 100,
+      updatedAt: 200,
+    }));
+    getChatCapabilitiesMock.mockRejectedValueOnce(new Error('404'));
+
+    const { result } = renderHook(() => useSendMessage(), {
+      wrapper: createWrapper(store),
+    });
+
+    await act(async () => {
+      await result.current.sendMessage('只按手册回答', {
+        conversationId: 'existing-conv',
+        knowledgeBaseIds: ['kb-new'],
+      });
+    });
+
+    expect(sendMessageStreamMock).not.toHaveBeenCalled();
+    expect(store.getState().conversation.byId['existing-conv'].knowledge_base_ids).toEqual(['kb-old']);
+    expect(store.getState().conversation.byId['existing-conv'].messages).toEqual([]);
+    expect(store.getState().conversation.globalError).toBe('知识库问答当前不可用，请刷新页面后重试');
+  });
+
+  it('严格知识库能力预检期间拒绝另一 composer 的普通发送且只启动一个后台流', async () => {
+    const store = createStore();
+    store.dispatch(upsertConversation({
+      id: 'existing-conv',
+      title: 'Existing',
+      model_id: 'model-1',
+      knowledge_base_ids: ['kb-1'],
+      messages: [],
+      createdAt: 100,
+      updatedAt: 200,
+    }));
+    let resolveCapabilities: (value: {
+      knowledge_grounding_v1: boolean;
+      knowledge_grounding_max_bases: number;
+    }) => void = () => {
+      throw new Error('能力预检尚未开始');
+    };
+    getChatCapabilitiesMock.mockImplementationOnce(() => new Promise((resolve) => {
+      resolveCapabilities = resolve;
+    }));
+    sendMessageStreamMock.mockResolvedValue(undefined);
+    const firstRejected = vi.fn();
+    const secondRejected = vi.fn();
+
+    const { result: firstSender } = renderHook(() => useSendMessage(), {
+      wrapper: createWrapper(store),
+    });
+    const { result: secondSender } = renderHook(() => useSendMessage(), {
+      wrapper: createWrapper(store),
+    });
+
+    let firstSend: Promise<void>;
+    let secondSend: Promise<void>;
+    act(() => {
+      firstSend = firstSender.current.sendMessage('第一条', {
+        conversationId: 'existing-conv',
+        knowledgeBaseIds: ['kb-1'],
+        onRejectedBeforeSend: firstRejected,
+      });
+      secondSend = secondSender.current.sendMessage('第二条普通消息', {
+        conversationId: 'existing-conv',
+        knowledgeBaseIds: [],
+        onRejectedBeforeSend: secondRejected,
+      });
+    });
+
+    await waitFor(() => {
+      expect(getChatCapabilitiesMock).toHaveBeenCalledTimes(1);
+      expect(secondRejected).toHaveBeenCalledTimes(1);
+    });
+    expect(sendMessageStreamMock).not.toHaveBeenCalled();
+
+    resolveCapabilities({
+      knowledge_grounding_v1: true,
+      knowledge_grounding_max_bases: 5,
+    });
+    await act(async () => {
+      await Promise.all([firstSend!, secondSend!]);
+    });
+
+    expect(firstRejected).not.toHaveBeenCalled();
+    expect(sendMessageStreamMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('严格知识库能力预检期间切换账号时拒绝旧会话草稿且不启动后台流', async () => {
+    const store = createStore();
+    store.dispatch(upsertConversation({
+      id: 'existing-conv',
+      title: 'Existing',
+      model_id: 'model-1',
+      knowledge_base_ids: ['kb-1'],
+      messages: [],
+      createdAt: 100,
+      updatedAt: 200,
+    }));
+    let resolveCapabilities: (value: {
+      knowledge_grounding_v1: boolean;
+      knowledge_grounding_max_bases: number;
+    }) => void = () => {
+      throw new Error('能力预检尚未开始');
+    };
+    getChatCapabilitiesMock.mockImplementationOnce(() => new Promise((resolve) => {
+      resolveCapabilities = resolve;
+    }));
+    const onRejectedBeforeSend = vi.fn();
+
+    const { result } = renderHook(() => useSendMessage(), {
+      wrapper: createWrapper(store),
+    });
+
+    let pendingSend: Promise<void>;
+    act(() => {
+      pendingSend = result.current.sendMessage('旧账号草稿', {
+        conversationId: 'existing-conv',
+        knowledgeBaseIds: ['kb-1'],
+        onRejectedBeforeSend,
+      });
+    });
+    await waitFor(() => expect(getChatCapabilitiesMock).toHaveBeenCalledTimes(1));
+
+    act(() => {
+      store.dispatch({
+        type: 'auth/fetchUserProfile/fulfilled',
+        payload: createUser('user-b'),
+      });
+    });
+    resolveCapabilities({
+      knowledge_grounding_v1: true,
+      knowledge_grounding_max_bases: 5,
+    });
+    await act(async () => {
+      await pendingSend!;
+    });
+
+    expect(onRejectedBeforeSend).toHaveBeenCalledTimes(1);
+    expect(sendMessageStreamMock).not.toHaveBeenCalled();
+    expect(store.getState().conversation.byId['existing-conv'].messages).toEqual([]);
+  });
+
+  it('严格知识库发送遵循服务端协商的知识库数量上限', async () => {
+    const store = createStore();
+    store.dispatch(upsertConversation({
+      id: 'existing-conv',
+      title: 'Existing',
+      model_id: 'model-1',
+      knowledge_base_ids: ['kb-old'],
+      messages: [],
+      createdAt: 100,
+      updatedAt: 200,
+    }));
+    getChatCapabilitiesMock.mockResolvedValueOnce({
+      knowledge_grounding_v1: true,
+      knowledge_grounding_max_bases: 1,
+    });
+    const onRejectedBeforeSend = vi.fn();
+
+    const { result } = renderHook(() => useSendMessage(), {
+      wrapper: createWrapper(store),
+    });
+
+    await act(async () => {
+      await result.current.sendMessage('超出协商上限', {
+        conversationId: 'existing-conv',
+        knowledgeBaseIds: ['kb-1', 'kb-2'],
+        onRejectedBeforeSend,
+      });
+    });
+
+    expect(onRejectedBeforeSend).toHaveBeenCalledTimes(1);
+    expect(sendMessageStreamMock).not.toHaveBeenCalled();
+    expect(store.getState().conversation.byId['existing-conv'].knowledge_base_ids).toEqual(['kb-old']);
+    expect(store.getState().conversation.globalError).toBe('最多只能选择 1 个知识库');
+  });
+
+  it('服务端拒绝知识库选择变更时回滚到发送前会话快照', async () => {
+    const store = createStore();
+    store.dispatch(upsertConversation({
+      id: 'existing-conv',
+      title: 'Existing',
+      model_id: 'model-1',
+      knowledge_base_ids: ['kb-old'],
+      messages: [],
+      createdAt: 100,
+      updatedAt: 200,
+    }));
+    sendMessageStreamMock.mockRejectedValueOnce(Object.assign(
+      new Error('知识库已不可用'),
+      { status: 409 },
+    ));
+
+    const { result } = renderHook(() => useSendMessage(), {
+      wrapper: createWrapper(store),
+    });
+
+    await act(async () => {
+      await result.current.sendMessage('只按新手册回答', {
+        conversationId: 'existing-conv',
+        knowledgeBaseIds: ['kb-new'],
+      });
+    });
+
+    const conversation = store.getState().conversation.byId['existing-conv'];
+    expect(conversation.knowledge_base_ids).toEqual(['kb-old']);
+    expect(conversation.updatedAt).toBe(200);
+  });
+
+  it('未显式改选但会话已有知识库时仍强制标准模式并保持服务端选择', async () => {
+    const store = createStore();
+    store.dispatch(upsertConversation({
+      id: 'existing-conv',
+      title: 'Existing',
+      model_id: 'model-1',
+      knowledge_base_ids: ['kb-existing'],
+      messages: [],
+      createdAt: 100,
+      updatedAt: 200,
+    }));
+    store.dispatch(setComposerAgentMode('deep_research'));
+    sendMessageStreamMock.mockResolvedValue(undefined);
+
+    const { result } = renderHook(() => useSendMessage(), {
+      wrapper: createWrapper(store),
+    });
+
+    await act(async () => {
+      await result.current.sendMessage('继续按手册回答', {
+        conversationId: 'existing-conv',
+      });
+    });
+
+    expect(sendMessageStreamMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        knowledge_base_ids: undefined,
+        options: expect.objectContaining({ task_mode: 'standard' }),
+      }),
+      expect.any(Object),
+      expect.any(AbortSignal),
+    );
+    expect(store.getState().conversation.byId['existing-conv'].knowledge_base_ids).toEqual([
+      'kb-existing',
+    ]);
   });
 
   it('materializes a draft conversation and migrates the active stream', async () => {
@@ -981,6 +1339,86 @@ describe('useSendMessage', () => {
 
     await waitFor(() => expect(store.getState().stream.isStreaming).toBe(false));
     expect(generateChatTitleMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('严格知识库空命中的新会话跳过标题 LLM，但保留本地标题和列表刷新', async () => {
+    const store = createStore();
+    sendMessageStreamMock.mockImplementationOnce(
+      async (_payload: unknown, callbacks: StreamCallbacks) => {
+        callbacks.onReady({ messageId: 'assistant-1', conversationId: 'server-conv' });
+        emitRunStarted(callbacks);
+        callbacks.onContentBlockUpserted?.({
+          type: 'content_block_upserted',
+          protocol_version: 2,
+          run_id: 'run-knowledge',
+          parent_run_id: null,
+          step_id: 'step-knowledge',
+          parent_step_id: null,
+          tool_call_id: 'tool-knowledge',
+          sequence: 1,
+          trace_id: 'run-knowledge',
+          ts: 0,
+          content_block: knowledgeEvidenceBlock('empty'),
+        });
+        callbacks.onDone({ messageId: 'assistant-1', conversationId: 'server-conv' });
+      },
+    );
+    const { result } = renderHook(() => useSendMessage(), {
+      wrapper: createWrapper(store),
+    });
+
+    await act(async () => {
+      await result.current.sendMessage('只按知识库回答', {
+        conversationId: null,
+        knowledgeBaseIds: ['kb-1'],
+      });
+    });
+
+    expect(generateChatTitleMock).not.toHaveBeenCalled();
+    expect(store.getState().conversation.byId['server-conv']?.title).toBe('只按知识库回答');
+    expect(store.getState().conversation.conversationListDirtyIds).toContain('server-conv');
+  });
+
+  it('严格知识库成功命中的新会话仍正常生成标题', async () => {
+    const store = createStore();
+    sendMessageStreamMock.mockImplementationOnce(
+      async (_payload: unknown, callbacks: StreamCallbacks) => {
+        callbacks.onReady({ messageId: 'assistant-1', conversationId: 'server-conv' });
+        emitRunStarted(callbacks);
+        callbacks.onContentBlockUpserted?.({
+          type: 'content_block_upserted',
+          protocol_version: 2,
+          run_id: 'run-knowledge',
+          parent_run_id: null,
+          step_id: 'step-knowledge',
+          parent_step_id: null,
+          tool_call_id: 'tool-knowledge',
+          sequence: 1,
+          trace_id: 'run-knowledge',
+          ts: 0,
+          content_block: knowledgeEvidenceBlock('success'),
+        });
+        callbacks.onAnswering({ block_id: 'answer', delta: '退款期限为七天[1]。' });
+        callbacks.onDone({ messageId: 'assistant-1', conversationId: 'server-conv' });
+      },
+    );
+    const { result } = renderHook(() => useSendMessage(), {
+      wrapper: createWrapper(store),
+    });
+
+    await act(async () => {
+      await result.current.sendMessage('只按知识库回答', {
+        conversationId: null,
+        knowledgeBaseIds: ['kb-1'],
+      });
+    });
+
+    expect(generateChatTitleMock).toHaveBeenCalledTimes(1);
+    expect(generateChatTitleMock).toHaveBeenCalledWith(
+      'server-conv',
+      undefined,
+      { max_length: 20 },
+    );
   });
 
   it('标题生成已启动后，同 session 路由 handoff 不取消标题写回', async () => {

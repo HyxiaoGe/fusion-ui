@@ -17,6 +17,7 @@ import {
   setHydrationStatus,
   setPendingConversationId,
   updateConversationTitle,
+  updateConversationKnowledgeBaseIds,
   updateMessage,
   upsertConversation,
 } from '@/redux/slices/conversationSlice';
@@ -34,7 +35,12 @@ import {
   setStreamStatus,
   startStream,
 } from '@/redux/slices/streamSlice';
-import { isRecoverableStreamError, reconnectStream, sendMessageStream } from '@/lib/api/chat';
+import {
+  getChatCapabilities,
+  isRecoverableStreamError,
+  reconnectStream,
+  sendMessageStream,
+} from '@/lib/api/chat';
 import type { StreamCallbacks } from '@/lib/api/chat';
 import { runResumableStream } from '@/lib/api/resumableStream';
 import { generateChatTitle } from '@/lib/api/title';
@@ -80,11 +86,18 @@ type SendMessageOptions = {
   onDraftCreated?: (draftConversationId: string) => void;
   onMaterialized?: (serverConversationId: string) => void;
   onStreamEnd?: (conversationId: string) => void;
+  /** undefined=保持，[]=清空，非空数组按服务端能力上限替换会话知识库选择。 */
+  knowledgeBaseIds?: string[];
+  /** 发送尚未被本地消息队列接收时通知输入区保留草稿。 */
+  onRejectedBeforeSend?: () => void;
+  /** 本地消息与流控制器均已建立，可以提交输入区清理或重试替换。 */
+  onAccepted?: () => void;
 };
 
 const STOP_BEFORE_READY_RETRY_DELAYS_MS = [50, 150] as const;
 const STOP_OPERATION_TIMEOUT_MS = 500;
 const INTERRUPTED_HYDRATION_RETRY_MS = 300;
+const activeSendPreparations = new Set<string>();
 
 interface SendSessionContext {
   authSessionKey: string;
@@ -164,22 +177,31 @@ function isInterruptedStreamSignal(value: unknown): boolean {
   );
 }
 
+function hasEmptyKnowledgeEvidence(blocks: ContentBlock[]): boolean {
+  return blocks.some(
+    (block) => block.type === 'knowledge_evidence' && block.status === 'empty',
+  );
+}
+
 async function postStreamActions(
   conversationId: string,
   dispatch: ReturnType<typeof useAppDispatch>,
-  isSessionCurrent: () => boolean
+  isSessionCurrent: () => boolean,
+  skipTitleGeneration = false,
 ) {
   if (!isSessionCurrent()) return;
   try {
-    const title = await generateChatTitle(conversationId, undefined, { max_length: 20 });
-    if (!isSessionCurrent()) return;
-    dispatch(updateConversationTitle({ id: conversationId, title }));
-    dispatch(setAnimatingTitleId(conversationId));
-    setTimeout(() => {
-      if (isSessionCurrent()) {
-        dispatch(setAnimatingTitleId(null));
-      }
-    }, title.length * 200 + 1000);
+    if (!skipTitleGeneration) {
+      const title = await generateChatTitle(conversationId, undefined, { max_length: 20 });
+      if (!isSessionCurrent()) return;
+      dispatch(updateConversationTitle({ id: conversationId, title }));
+      dispatch(setAnimatingTitleId(conversationId));
+      setTimeout(() => {
+        if (isSessionCurrent()) {
+          dispatch(setAnimatingTitleId(null));
+        }
+      }, title.length * 200 + 1000);
+    }
   } catch (error) {
     if (isSessionCurrent()) {
       console.warn('自动生成会话标题失败', error);
@@ -409,13 +431,52 @@ export function useSendMessage() {
   const sendMessage = useCallback(
     async (content: string, options: SendMessageOptions, attachments?: FileAttachment[]) => {
       if (!content.trim() && (!attachments || attachments.length === 0)) return;
-
-      if (stopInFlightPromiseRef.current) {
-        await stopInFlightPromiseRef.current;
+      const preparationContext = captureSendSessionContext(
+        store.getState(),
+        sendGenerationRef.current,
+      );
+      if (!preparationContext) {
+        options.onRejectedBeforeSend?.();
+        return;
       }
+      const sendSessionKey = preparationContext.authSessionKey;
+      const streamIsOwnedByAnotherComposer = Boolean(
+        store.getState().stream.isStreaming && !abortControllerRef.current,
+      );
+      if (
+        activeSendPreparations.has(sendSessionKey)
+        || streamIsOwnedByAnotherComposer
+      ) {
+        options.onRejectedBeforeSend?.();
+        return;
+      }
+      activeSendPreparations.add(sendSessionKey);
+      let preparationReleased = false;
+      const releaseSendPreparation = () => {
+        if (preparationReleased) return;
+        preparationReleased = true;
+        activeSendPreparations.delete(sendSessionKey);
+      };
+      const rejectStalePreparation = () => {
+        if (isSendSessionCurrent(store.getState(), preparationContext)) return false;
+        releaseSendPreparation();
+        options.onRejectedBeforeSend?.();
+        return true;
+      };
 
-      if (abortControllerRef.current) {
-        await stopStreaming();
+      try {
+        if (stopInFlightPromiseRef.current) {
+          await stopInFlightPromiseRef.current;
+          if (rejectStalePreparation()) return;
+        }
+
+        if (abortControllerRef.current) {
+          await stopStreaming();
+          if (rejectStalePreparation()) return;
+        }
+      } catch (error) {
+        releaseSendPreparation();
+        throw error;
       }
 
       const isDraft = options.isDraft ?? (options.conversationId === null);
@@ -441,17 +502,58 @@ export function useSendMessage() {
             );
       if (modelResolution.status !== 'ready') {
         dispatch(setGlobalError(getSendModelErrorMessage(modelResolution)));
+        releaseSendPreparation();
+        options.onRejectedBeforeSend?.();
         return;
       }
       const enabledModel = modelResolution.model;
+      const effectiveKnowledgeBaseIds = options.knowledgeBaseIds ?? (
+        !isDraft && options.conversationId
+          ? currentState.conversation.byId[options.conversationId]?.knowledge_base_ids
+          : undefined
+      );
+      const strictKnowledgeMode = Boolean(effectiveKnowledgeBaseIds?.length);
+      if (strictKnowledgeMode) {
+        let capabilities: Awaited<ReturnType<typeof getChatCapabilities>>;
+        try {
+          capabilities = await getChatCapabilities();
+        } catch {
+          dispatch(setGlobalError('知识库问答当前不可用，请刷新页面后重试'));
+          releaseSendPreparation();
+          options.onRejectedBeforeSend?.();
+          return;
+        }
+        if (rejectStalePreparation()) return;
+        const maxKnowledgeBases = capabilities.knowledge_grounding_max_bases;
+        if (
+          !capabilities.knowledge_grounding_v1
+          || !Number.isSafeInteger(maxKnowledgeBases)
+          || maxKnowledgeBases < 1
+        ) {
+          dispatch(setGlobalError('知识库问答当前不可用，请刷新页面后重试'));
+          releaseSendPreparation();
+          options.onRejectedBeforeSend?.();
+          return;
+        }
+        if ((effectiveKnowledgeBaseIds?.length ?? 0) > maxKnowledgeBases) {
+          dispatch(setGlobalError(`最多只能选择 ${maxKnowledgeBases} 个知识库`));
+          releaseSendPreparation();
+          options.onRejectedBeforeSend?.();
+          return;
+        }
+      }
       const agentModeResolution = resolveComposerAgentMode(
-        composerAgentMode,
+        strictKnowledgeMode ? 'auto' : composerAgentMode,
         enabledModel.capabilities,
       );
 
       const nextGeneration = sendGenerationRef.current + 1;
       const sendContext = captureSendSessionContext(store.getState(), nextGeneration);
-      if (!sendContext) return;
+      if (!sendContext) {
+        releaseSendPreparation();
+        options.onRejectedBeforeSend?.();
+        return;
+      }
       sendGenerationRef.current = nextGeneration;
       activeSendContextRef.current = sendContext;
       const isSessionCurrent = () => isSendSessionCurrent(store.getState(), sendContext);
@@ -461,6 +563,16 @@ export function useSendMessage() {
       );
 
       const tempConvId = isDraft && !options.conversationId ? uuidv4() : options.conversationId!;
+      const previousKnowledgeSelection = (
+        !isDraft
+        && options.knowledgeBaseIds !== undefined
+        && currentState.conversation.byId[tempConvId]
+      )
+        ? {
+            knowledgeBaseIds: currentState.conversation.byId[tempConvId].knowledge_base_ids,
+            updatedAt: currentState.conversation.byId[tempConvId].updatedAt,
+          }
+        : null;
 
       // 发送开始后，发送前发出的详情 GET 已不再能代表当前会话。立即让它失效，
       // 并结束其 loading 状态，避免迟到快照覆盖本轮乐观消息或永久停在加载态。
@@ -476,11 +588,19 @@ export function useSendMessage() {
             id: tempConvId,
             title: content.substring(0, 30),
             model_id: enabledModel.id,
+            knowledge_base_ids: options.knowledgeBaseIds ?? [],
             messages: [],
             createdAt: Date.now(),
             updatedAt: Date.now(),
           })
         );
+      }
+
+      if (!isDraft && options.knowledgeBaseIds !== undefined) {
+        dispatch(updateConversationKnowledgeBaseIds({
+          id: tempConvId,
+          knowledgeBaseIds: options.knowledgeBaseIds,
+        }));
       }
 
       activeConvIdRef.current = tempConvId;
@@ -531,12 +651,14 @@ export function useSendMessage() {
       dispatch(appendMessage({ conversationId: tempConvId, message: userMessage }));
       dispatch(appendMessage({ conversationId: tempConvId, message: assistantPlaceholder }));
       dispatch(startStream({ conversationId: tempConvId, messageId: assistantMessageId }));
-      if (isDraft && isActiveSendCurrent()) {
-        options.onDraftCreated?.(tempConvId);
-      }
 
       const controller = new AbortController();
       abortControllerRef.current = controller;
+      releaseSendPreparation();
+      options.onAccepted?.();
+      if (isDraft && isActiveSendCurrent()) {
+        options.onDraftCreated?.(tempConvId);
+      }
       const supportsReasoning = enabledModel.capabilities?.deepThinking ?? false;
       const useReasoning = reasoningEnabled && supportsReasoning;
       let serverConvId: string | null = null;
@@ -567,6 +689,7 @@ export function useSendMessage() {
               id: incomingConvId,
               title: content.substring(0, 30),
               model_id: enabledModel.id,
+              knowledge_base_ids: options.knowledgeBaseIds ?? [],
               messages: [
                 { ...userMessage, chatId: incomingConvId },
                 { ...assistantPlaceholder, chatId: incomingConvId },
@@ -580,10 +703,18 @@ export function useSendMessage() {
         options.onMaterialized?.(incomingConvId);
       };
 
-      const startPostStreamActions = (conversationId: string) => {
+      const startPostStreamActions = (
+        conversationId: string,
+        skipTitleGeneration = false,
+      ) => {
         if (!isDraft || postStreamActionsStarted || !isSessionCurrent()) return;
         postStreamActionsStarted = true;
-        void postStreamActions(conversationId, dispatch, isSessionCurrent);
+        void postStreamActions(
+          conversationId,
+          dispatch,
+          isSessionCurrent,
+          skipTitleGeneration,
+        );
       };
 
       const doCompleteStream = (payload: NonNullable<typeof donePayload>) => {
@@ -649,7 +780,7 @@ export function useSendMessage() {
         void hydrateAuthoritativeConversation(finalConvId, isSessionCurrent);
         // 仅新对话的第一轮生成标题，后续轮次不再更新
         if (isDraft) {
-          startPostStreamActions(finalConvId);
+          startPostStreamActions(finalConvId, hasEmptyKnowledgeEvidence(rawFinalBlocks));
         } else {
           if (isSessionCurrent()) {
             dispatch(requestConversationListRefresh(finalConvId));
@@ -742,7 +873,15 @@ export function useSendMessage() {
               materializeIfNeeded(incomingConvId);
               const titleConversationId = serverConvId ?? incomingConvId ?? activeConvIdRef.current;
               if (titleConversationId) {
-                startPostStreamActions(titleConversationId);
+                const streamState = (
+                  store.getState() as {
+                    stream: import('@/redux/slices/streamSlice').StreamState;
+                  }
+                ).stream;
+                startPostStreamActions(
+                  titleConversationId,
+                  hasEmptyKnowledgeEvidence(selectFullStreamContentBlocks(streamState)),
+                );
               }
               if (!assistantHasContentRef.current) {
                 // 没有文本内容，直接完成（打字机从未启动）
@@ -784,6 +923,7 @@ export function useSendMessage() {
                 task_mode: agentModeResolution.taskMode,
               },
               file_ids: fileIds,
+              knowledge_base_ids: options.knowledgeBaseIds,
             },
             wrappedCallbacks,
             signal,
@@ -874,6 +1014,14 @@ export function useSendMessage() {
         clearFirstTurnContextState(effectiveConvIdOnError);
         const reconnectRetriesExhausted = isRecoverableStreamError(error);
         const requestAccepted = materializedOnce || Boolean(serverMessageIdRef.current);
+
+        if (!requestAccepted && previousKnowledgeSelection) {
+          dispatch(updateConversationKnowledgeBaseIds({
+            id: tempConvId,
+            knowledgeBaseIds: previousKnowledgeSelection.knowledgeBaseIds,
+            updatedAt: previousKnowledgeSelection.updatedAt,
+          }));
+        }
 
         if (assistantHasContentRef.current) {
           // 保留已有的 stream content blocks

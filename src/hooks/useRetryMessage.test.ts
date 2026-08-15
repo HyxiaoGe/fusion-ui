@@ -64,7 +64,10 @@ function createStore(modelState: 'disabled' | 'unhealthy' | 'hidden' = 'disabled
 
 function createWrapper(store: ReturnType<typeof createStore>) {
   return function TestWrapper({ children }: { children: React.ReactNode }) {
-    return React.createElement(Provider, { store, children });
+    const TypedProvider = Provider as React.ComponentType<{
+      store: ReturnType<typeof createStore>;
+    }>;
+    return React.createElement(TypedProvider, { store }, children);
   };
 }
 
@@ -145,7 +148,9 @@ describe('useRetryMessage', () => {
 
   it('首轮重试在删除消息前固定已验证的会话模型', async () => {
     const store = createStore('hidden');
-    const sendMessage = vi.fn().mockResolvedValue(undefined);
+    const sendMessage = vi.fn().mockImplementation(async (_content, options) => {
+      options.onAccepted?.();
+    });
     const { result } = renderHook(() => useRetryMessage(sendMessage), {
       wrapper: createWrapper(store),
     });
@@ -156,8 +161,176 @@ describe('useRetryMessage', () => {
 
     expect(sendMessage).toHaveBeenCalledWith(
       '原始问题',
-      { conversationId: 'existing-conv', resolvedModelId: 'disabled-model' },
+      {
+        conversationId: 'existing-conv',
+        resolvedModelId: 'disabled-model',
+        onAccepted: expect.any(Function),
+      },
       undefined,
+    );
+    expect(
+      store.getState().conversation.byId['existing-conv'].messages.map((message) => message.id),
+    ).toEqual([]);
+  });
+
+  it('发送前预检拒绝重试时保留原问题及原回答', async () => {
+    const store = createStore('hidden');
+    const sendMessage = vi.fn().mockImplementation(async (_content, options) => {
+      options.onRejectedBeforeSend?.();
+    });
+    const { result } = renderHook(() => useRetryMessage(sendMessage), {
+      wrapper: createWrapper(store),
+    });
+
+    await act(async () => {
+      await result.current('assistant-1', 'existing-conv');
+    });
+
+    expect(
+      store.getState().conversation.byId['existing-conv'].messages.map((message) => message.id),
+    ).toEqual(['user-1', 'assistant-1']);
+  });
+
+  it.each(['user-1', 'assistant-1'])(
+    '严格知识库会话重试带附件历史轮次 %s 时保留原消息',
+    async (messageId) => {
+      const store = createStore('hidden');
+      store.dispatch(upsertConversation({
+        id: 'existing-conv',
+        title: 'Existing',
+        model_id: 'disabled-model',
+        knowledge_base_ids: ['kb-1'],
+        messages: [
+          {
+            id: 'user-1',
+            role: 'user',
+            content: [
+              { type: 'text', id: 'text-user', text: '读取旧附件' },
+              {
+                type: 'file',
+                id: 'file-block',
+                file_id: 'file-1',
+                filename: '旧附件.pdf',
+                mime_type: 'application/pdf',
+              },
+            ],
+          },
+          {
+            id: 'assistant-1',
+            role: 'assistant',
+            content: [{ type: 'text', id: 'text-assistant', text: '原始回答' }],
+          },
+        ],
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      }));
+      const sendMessage = vi.fn().mockResolvedValue(undefined);
+      const { result } = renderHook(() => useRetryMessage(sendMessage), {
+        wrapper: createWrapper(store),
+      });
+
+      await act(async () => {
+        await result.current(messageId, 'existing-conv');
+      });
+
+      expect(sendMessage).not.toHaveBeenCalled();
+      expect(
+        store.getState().conversation.byId['existing-conv'].messages.map((message) => message.id),
+      ).toEqual(['user-1', 'assistant-1']);
+      expect(store.getState().conversation.globalError).toBe(
+        '严格知识库模式不能重试带附件的历史消息，请先清空知识库选择',
+      );
+    },
+  );
+
+  it('重试显式提交输入框当前改选的知识库范围', async () => {
+    const store = createStore('hidden');
+    store.dispatch(upsertConversation({
+      id: 'existing-conv',
+      title: 'Existing',
+      model_id: 'disabled-model',
+      knowledge_base_ids: ['kb-old'],
+      messages: [
+        {
+          id: 'user-1',
+          role: 'user',
+          content: [{ type: 'text', id: 'text-user', text: '按当前范围重试' }],
+        },
+        {
+          id: 'assistant-1',
+          role: 'assistant',
+          content: [{ type: 'text', id: 'text-assistant', text: '原始回答' }],
+        },
+      ],
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    }));
+    const sendMessage = vi.fn().mockResolvedValue(undefined);
+    const { result } = renderHook(() => useRetryMessage(sendMessage), {
+      wrapper: createWrapper(store),
+    });
+
+    await act(async () => {
+      await result.current('user-1', 'existing-conv', ['kb-new']);
+    });
+
+    expect(sendMessage).toHaveBeenCalledWith(
+      '按当前范围重试',
+      expect.objectContaining({
+        conversationId: 'existing-conv',
+        knowledgeBaseIds: ['kb-new'],
+      }),
+      undefined,
+    );
+  });
+
+  it('输入框已清空知识库时允许重试带附件历史轮次并显式清空范围', async () => {
+    const store = createStore('hidden');
+    store.dispatch(upsertConversation({
+      id: 'existing-conv',
+      title: 'Existing',
+      model_id: 'disabled-model',
+      knowledge_base_ids: ['kb-old'],
+      messages: [
+        {
+          id: 'user-1',
+          role: 'user',
+          content: [
+            { type: 'text', id: 'text-user', text: '读取旧附件' },
+            {
+              type: 'file',
+              id: 'file-block',
+              file_id: 'file-1',
+              filename: '旧附件.pdf',
+              mime_type: 'application/pdf',
+            },
+          ],
+        },
+        {
+          id: 'assistant-1',
+          role: 'assistant',
+          content: [{ type: 'text', id: 'text-assistant', text: '原始回答' }],
+        },
+      ],
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    }));
+    const sendMessage = vi.fn().mockResolvedValue(undefined);
+    const { result } = renderHook(() => useRetryMessage(sendMessage), {
+      wrapper: createWrapper(store),
+    });
+
+    await act(async () => {
+      await result.current('assistant-1', 'existing-conv', []);
+    });
+
+    expect(sendMessage).toHaveBeenCalledWith(
+      '读取旧附件',
+      expect.objectContaining({
+        conversationId: 'existing-conv',
+        knowledgeBaseIds: [],
+      }),
+      [expect.objectContaining({ fileId: 'file-1' })],
     );
   });
 });

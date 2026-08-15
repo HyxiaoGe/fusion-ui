@@ -113,6 +113,7 @@ describe('contentBlockRegistry', () => {
       { type: 'file', schemaVersion: null },
       { type: 'search', schemaVersion: null },
       { type: 'url_read', schemaVersion: null },
+      { type: 'knowledge_evidence', schemaVersion: 1 },
       { type: 'place_results', schemaVersion: 1 },
       { type: 'route_results', schemaVersion: 1 },
       { type: 'flight_results', schemaVersion: 1 },
@@ -121,6 +122,125 @@ describe('contentBlockRegistry', () => {
       { type: 'itinerary_results', schemaVersion: 1 },
       { type: 'unsupported_result', schemaVersion: null },
     ]);
+  });
+
+  it('保留知识库依据的稳定引用与版本定位字段，并丢弃内部错误细节', () => {
+    expect(normalizeContentBlock({
+      type: 'knowledge_evidence',
+      id: 'knowledge-1',
+      schema_version: 1,
+      query: '退款规则是什么？',
+      status: 'success',
+      source_count: 1,
+      knowledge_base_ids: ['kb-1'],
+      error_message: 'milvus timeout: internal detail',
+      source_refs: [{
+        kind: 'knowledge',
+        evidence_id: 'evidence-1',
+        citation_index: 2,
+        knowledge_base_id: 'kb-1',
+        knowledge_base_name: '客服手册',
+        document_id: 'doc-1',
+        index_version: 'v3',
+        chunk_id: 'chunk-8',
+        ordinal: 7,
+        filename: '退款规则.md',
+        page: 3,
+        section: '退款时限',
+        char_start: 120,
+        char_end: 260,
+        status: 'success',
+        error_message: 'database detail',
+      }],
+    })).toEqual({
+      type: 'knowledge_evidence',
+      id: 'knowledge-1',
+      schema_version: 1,
+      query: '退款规则是什么？',
+      status: 'success',
+      source_count: 1,
+      knowledge_base_ids: ['kb-1'],
+      source_refs: [{
+        kind: 'knowledge',
+        evidence_id: 'evidence-1',
+        citation_index: 2,
+        knowledge_base_id: 'kb-1',
+        knowledge_base_name: '客服手册',
+        document_id: 'doc-1',
+        index_version: 'v3',
+        chunk_id: 'chunk-8',
+        ordinal: 7,
+        filename: '退款规则.md',
+        page: 3,
+        section: '退款时限',
+        char_start: 120,
+        char_end: 260,
+        status: 'success',
+      }],
+    });
+  });
+
+  it('知识库依据缺少或使用未知 schema 版本时安全降级', () => {
+    expect(normalizeContentBlock({
+      type: 'knowledge_evidence',
+      id: 'knowledge-missing-version',
+      query: '退款规则是什么？',
+      status: 'empty',
+      source_refs: [],
+    })).toEqual({
+      type: 'unsupported_result',
+      id: 'knowledge-missing-version',
+      source_type: 'knowledge_evidence',
+      reason: 'invalid_payload',
+    });
+
+    expect(normalizeContentBlock({
+      type: 'knowledge_evidence',
+      id: 'knowledge-future-version',
+      schema_version: 2,
+      query: '退款规则是什么？',
+      status: 'empty',
+      source_refs: [],
+    })).toEqual({
+      type: 'unsupported_result',
+      id: 'knowledge-future-version',
+      source_type: 'knowledge_evidence',
+      source_schema_version: 2,
+      reason: 'unsupported_version',
+    });
+  });
+
+  it('知识来源状态未知时不把该分块当作可用依据', () => {
+    const block = normalizeContentBlock({
+      type: 'knowledge_evidence',
+      id: 'knowledge-unknown-source-status',
+      schema_version: 1,
+      query: '退款规则是什么？',
+      status: 'success',
+      source_count: 1,
+      knowledge_base_ids: ['kb-1'],
+      source_refs: [{
+        kind: 'knowledge',
+        knowledge_base_id: 'kb-1',
+        knowledge_base_name: '客服手册',
+        document_id: 'doc-1',
+        index_version: 'v1',
+        chunk_id: 'chunk-1',
+        ordinal: 0,
+        filename: '退款.md',
+        page: null,
+        section: null,
+        char_start: 0,
+        char_end: 100,
+        status: 'future_status',
+      }],
+    });
+
+    expect(block).toEqual(expect.objectContaining({
+      type: 'knowledge_evidence',
+      source_count: 1,
+      source_refs: [],
+    }));
   });
 
   it('逐块隔离未知类型、未来版本和损坏块并生成安全占位', () => {

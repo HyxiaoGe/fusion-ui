@@ -30,8 +30,10 @@ export function normalizeAgentRunConfig(config: WireRunConfig | null | undefined
     networkProfile: source.network_profile === 'deep_research' || taskMode === 'deep_research'
       ? 'deep_research'
       : 'standard',
-    evidencePolicy: source.evidence_policy === 'deep_research_v1' || taskMode === 'deep_research'
-      ? 'deep_research_v1'
-      : 'standard',
+    evidencePolicy: source.evidence_policy === 'knowledge_grounded_v1'
+      ? 'knowledge_grounded_v1'
+      : source.evidence_policy === 'deep_research_v1' || taskMode === 'deep_research'
+        ? 'deep_research_v1'
+        : 'standard',
   };
 }
