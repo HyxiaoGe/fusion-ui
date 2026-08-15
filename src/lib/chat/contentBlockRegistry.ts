@@ -1,6 +1,10 @@
 import type {
   ContentBlock,
   FileBlock,
+  KnowledgeEvidenceBlock,
+  KnowledgeEvidenceStatus,
+  KnowledgeSourceReference,
+  KnowledgeSourceStatus,
   NetworkSourceStatus,
   SearchBlock,
   SearchSourceSummary,
@@ -27,6 +31,7 @@ const CONTENT_BLOCK_CONTRACTS: readonly ContentBlockContract[] = [
   { type: 'file', schemaVersion: null, decode: decodeFileBlock },
   { type: 'search', schemaVersion: null, decode: decodeSearchBlock },
   { type: 'url_read', schemaVersion: null, decode: decodeUrlBlock },
+  { type: 'knowledge_evidence', schemaVersion: 1, decode: decodeKnowledgeEvidenceBlock },
   ...STRUCTURED_TOOL_RESULT_CONTRACTS.map(contract => ({
     type: contract.type,
     schemaVersion: contract.schemaVersion,
@@ -309,6 +314,64 @@ function decodeUrlBlock(source: Record<string, unknown>): UrlBlock | null {
   };
 }
 
+function decodeKnowledgeEvidenceBlock(source: Record<string, unknown>): KnowledgeEvidenceBlock | null {
+  const id = requiredString(source.id);
+  const query = optionalString(source.query);
+  const status = knowledgeEvidenceStatus(source.status);
+  if (!id || query === undefined || !status) return null;
+
+  const sourceRefs = normalizeArray(source.source_refs, normalizeKnowledgeSourceReference, 50);
+  return {
+    type: 'knowledge_evidence',
+    id,
+    schema_version: 1,
+    query,
+    status,
+    source_count: nonNegativeNumber(source.source_count) ?? sourceRefs.length,
+    knowledge_base_ids: normalizeStringArray(source.knowledge_base_ids, 5),
+    source_refs: sourceRefs,
+  };
+}
+
+function normalizeKnowledgeSourceReference(value: unknown): KnowledgeSourceReference | null {
+  const source = asRecord(value);
+  if (!source || source.kind !== 'knowledge') return null;
+  const status = knowledgeSourceStatus(source.status);
+  if (source.status !== undefined && status === undefined) return null;
+  const knowledgeBaseId = requiredString(source.knowledge_base_id);
+  const documentId = requiredString(source.document_id);
+  const indexVersion = requiredString(source.index_version);
+  const chunkId = requiredString(source.chunk_id);
+  const ordinal = nonNegativeInteger(source.ordinal);
+  const filename = requiredString(source.filename);
+  const charStart = nonNegativeInteger(source.char_start);
+  const charEnd = nonNegativeInteger(source.char_end);
+  if (
+    !knowledgeBaseId || !documentId || !indexVersion || !chunkId || ordinal === undefined ||
+    !filename || charStart === undefined || charEnd === undefined || charEnd < charStart
+  ) {
+    return null;
+  }
+
+  return {
+    kind: 'knowledge',
+    ...optionalField('evidence_id', optionalString(source.evidence_id)),
+    ...optionalField('citation_index', positiveInteger(source.citation_index)),
+    knowledge_base_id: knowledgeBaseId,
+    knowledge_base_name: optionalString(source.knowledge_base_name) ?? '',
+    document_id: documentId,
+    index_version: indexVersion,
+    chunk_id: chunkId,
+    ordinal,
+    filename,
+    page: nullableNonNegativeInteger(source.page),
+    section: optionalNullableString(source.section) ?? null,
+    char_start: charStart,
+    char_end: charEnd,
+    ...optionalField('status', status),
+  };
+}
+
 function normalizeSearchSource(value: unknown): SearchSourceSummary | null {
   const source = asRecord(value);
   if (!source) return null;
@@ -387,6 +450,25 @@ function positiveInteger(value: unknown): number | undefined {
   return typeof value === 'number' && Number.isInteger(value) && value > 0
     ? value
     : undefined;
+}
+
+function nonNegativeInteger(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isInteger(value) && value >= 0
+    ? value
+    : undefined;
+}
+
+function nullableNonNegativeInteger(value: unknown): number | null {
+  if (value === null || value === undefined) return null;
+  return nonNegativeInteger(value) ?? null;
+}
+
+function knowledgeEvidenceStatus(value: unknown): KnowledgeEvidenceStatus | undefined {
+  return value === 'success' || value === 'empty' ? value : undefined;
+}
+
+function knowledgeSourceStatus(value: unknown): KnowledgeSourceStatus | undefined {
+  return value === 'success' || value === 'unavailable' ? value : undefined;
 }
 
 function networkSourceStatus(value: unknown): NetworkSourceStatus | undefined {

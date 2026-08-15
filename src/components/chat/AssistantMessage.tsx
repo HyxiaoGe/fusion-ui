@@ -166,6 +166,7 @@ function AssistantMessageFrame({
     searchSources,
     searchQueries,
     answerEvidence,
+    knowledgeBlocks,
     structuredResults,
     rawStructuredResults,
     displayText,
@@ -187,9 +188,10 @@ function AssistantMessageFrame({
       answerEvidence,
       searchBlock: activity.searchBlock,
       urlBlocks: activity.urlBlocks,
+      knowledgeBlocks,
       searchQueries,
     }),
-    [activity.searchBlock, activity.urlBlocks, answerEvidence, searchQueries],
+    [activity.searchBlock, activity.urlBlocks, answerEvidence, knowledgeBlocks, searchQueries],
   );
 
   const handleCitationClick = useCallback((index: number) => {
@@ -225,10 +227,10 @@ function AssistantMessageFrame({
   );
 
   const handleContinue = useMemo(
-    () => onContinueAgentRun
+    () => onContinueAgentRun && knowledgeBlocks.length === 0
       ? (previousRunId?: string) => onContinueAgentRun(message.id, previousRunId)
       : undefined,
-    [message.id, onContinueAgentRun],
+    [knowledgeBlocks.length, message.id, onContinueAgentRun],
   );
 
   useEffect(() => {

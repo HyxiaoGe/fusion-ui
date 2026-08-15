@@ -362,6 +362,66 @@ describe('useConversation', () => {
     expect(result.current.conversation?.messages[0].id).toBe('message-cached');
   });
 
+  it('会话详情后台水合失败时仍保留实时流已写入的知识依据', async () => {
+    const store = createStore();
+    store.dispatch(upsertConversation(conversation([{
+      id: 'message-with-knowledge',
+      role: 'assistant',
+      content: [
+        { type: 'text', id: 'answer', text: '退款期限为七天[1]。' },
+        {
+          type: 'knowledge_evidence',
+          id: 'knowledge-1',
+          schema_version: 1,
+          query: '退款时限',
+          status: 'success',
+          source_count: 1,
+          knowledge_base_ids: ['kb-1'],
+          source_refs: [{
+            kind: 'knowledge',
+            evidence_id: 'knowledge-ref-1',
+            citation_index: 1,
+            knowledge_base_id: 'kb-1',
+            knowledge_base_name: '客服手册',
+            document_id: 'doc-1',
+            index_version: 'v2',
+            chunk_id: 'chunk-1',
+            ordinal: 0,
+            filename: '退款.md',
+            page: 2,
+            section: '退款时限',
+            char_start: 0,
+            char_end: 100,
+            status: 'success',
+          }],
+        },
+      ],
+      timestamp: 1,
+    }])));
+    store.dispatch(setHydrationStatus({ id: 'chat-1', status: 'done' }));
+    loadConversationDetailMock.mockRejectedValue(new Error('后台刷新失败'));
+
+    const { result } = renderHook(() => useConversation('chat-1'), {
+      wrapper: createWrapper(store),
+    });
+
+    act(() => {
+      result.current.retryHydration();
+    });
+
+    await waitFor(() => {
+      expect(store.getState().conversation.hydrationStatus['chat-1']).toBe('error');
+    });
+    expect(result.current.hydrationView).toBe('ready');
+    expect(result.current.conversation?.messages[0].content).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        type: 'knowledge_evidence',
+        id: 'knowledge-1',
+        source_refs: [expect.objectContaining({ chunk_id: 'chunk-1' })],
+      }),
+    ]));
+  });
+
   it('请求在 logout/reset 后失效时不会重新写入会话或错误状态', async () => {
     let rejectRequest!: (error: unknown) => void;
     const request = new Promise<Conversation>((_resolve, reject) => {

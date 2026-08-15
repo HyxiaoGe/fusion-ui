@@ -7,6 +7,7 @@ import { selectStreamContentBlocks } from '@/redux/slices/streamSlice';
 import type { AgentRunState } from '@/types/agentRun';
 import type {
   ContentBlock,
+  KnowledgeEvidenceBlock,
   Message,
   SearchBlock,
   SearchSourceSummary,
@@ -43,6 +44,7 @@ export interface AssistantMessageViewModel {
   searchSources: SearchSourceSummary[];
   searchQueries: string[];
   answerEvidence: AnswerEvidenceModel | null;
+  knowledgeBlocks: KnowledgeEvidenceBlock[];
   structuredResults: StructuredToolResultBlock[];
   rawStructuredResults?: StructuredToolResultBlock[];
   displayText: string;
@@ -82,13 +84,17 @@ export function deriveStaticAssistantMessageViewModel({
     suggestedQuestionsCount,
   });
   const searchBlocks = collectSearchBlocks(blocksToRender);
+  const knowledgeBlocks = collectKnowledgeEvidenceBlocks(blocksToRender);
   const evidenceSearchSources = collectSearchSources(searchBlocks);
   const searchQueries = collectSearchQueries(searchBlocks);
+  const displayText = extractTextFromBlocks(blocksToRender);
   const answerEvidence = deriveAnswerEvidence({
     sourceRefs: collectSourceRefs(searchBlocks, activity.urlBlocks),
     searchSources: evidenceSearchSources,
     urlBlocks: activity.urlBlocks,
+    knowledgeBlocks,
     agentEvidence: ownedRun?.evidence,
+    answerText: displayText,
     searchProvider: collectSearchProvider(searchBlocks),
   });
   const searchSources = collectCitationSources(
@@ -97,10 +103,10 @@ export function deriveStaticAssistantMessageViewModel({
     evidenceSearchSources,
     answerEvidence,
   );
-  const displayText = extractTextFromBlocks(blocksToRender);
   const displayThinking = extractThinkingFromBlocks(blocksToRender);
   const structuredResults = collectStructuredToolResultBlocks(blocksToRender);
   const rawStructuredResults = blocksToRender.filter(isStructuredToolResultBlock);
+  const suppressThinking = activity.shouldSuppressReasoning;
 
   return {
     blocksToRender,
@@ -109,12 +115,13 @@ export function deriveStaticAssistantMessageViewModel({
     searchSources,
     searchQueries,
     answerEvidence,
+    knowledgeBlocks,
     structuredResults,
     rawStructuredResults,
     displayText,
     displayThinking,
-    suppressThinking: false,
-    hasThinking: displayThinking.length > 0,
+    suppressThinking,
+    hasThinking: !suppressThinking && displayThinking.length > 0,
     streamingStartTime: null,
     streamingEndTime: undefined,
     isStreamingReasoning: false,
@@ -178,6 +185,11 @@ export function useAssistantMessageViewModel({
     [blocksToRender],
   );
 
+  const knowledgeBlocks = useMemo(
+    () => collectKnowledgeEvidenceBlocks(blocksToRender),
+    [blocksToRender],
+  );
+
   const evidenceSearchSources = useMemo(
     () => collectSearchSources(searchBlocks),
     [searchBlocks],
@@ -188,17 +200,21 @@ export function useAssistantMessageViewModel({
     [searchBlocks],
   );
 
+  const displayText = useMemo(() => extractTextFromBlocks(blocksToRender), [blocksToRender]);
+
   const answerEvidence = useMemo(
     () => {
       return deriveAnswerEvidence({
         sourceRefs: collectSourceRefs(searchBlocks, activity.urlBlocks),
         searchSources: evidenceSearchSources,
         urlBlocks: activity.urlBlocks,
+        knowledgeBlocks,
         agentEvidence: ownedRun?.evidence,
+        answerText: displayText,
         searchProvider: collectSearchProvider(searchBlocks),
       });
     },
-    [activity.urlBlocks, evidenceSearchSources, ownedRun?.evidence, searchBlocks],
+    [activity.urlBlocks, displayText, evidenceSearchSources, knowledgeBlocks, ownedRun?.evidence, searchBlocks],
   );
 
   const searchSources: SearchSourceSummary[] = useMemo(
@@ -220,7 +236,6 @@ export function useAssistantMessageViewModel({
     ],
   );
 
-  const displayText = useMemo(() => extractTextFromBlocks(blocksToRender), [blocksToRender]);
   const displayThinking = useMemo(() => extractThinkingFromBlocks(blocksToRender), [blocksToRender]);
   const structuredResults = useMemo(
     () => collectStructuredToolResultBlocks(blocksToRender),
@@ -230,7 +245,7 @@ export function useAssistantMessageViewModel({
     () => blocksToRender.filter(isStructuredToolResultBlock),
     [blocksToRender],
   );
-  const suppressThinking = false;
+  const suppressThinking = activity.shouldSuppressReasoning;
   const hasThinking = !suppressThinking && displayThinking.length > 0;
 
   return {
@@ -240,6 +255,7 @@ export function useAssistantMessageViewModel({
     searchSources,
     searchQueries,
     answerEvidence,
+    knowledgeBlocks,
     structuredResults,
     rawStructuredResults,
     displayText,
@@ -255,6 +271,12 @@ export function useAssistantMessageViewModel({
 
 function collectSearchBlocks(contentBlocks: ContentBlock[]): SearchBlock[] {
   return contentBlocks.filter((block): block is SearchBlock => block.type === 'search');
+}
+
+function collectKnowledgeEvidenceBlocks(contentBlocks: ContentBlock[]): KnowledgeEvidenceBlock[] {
+  return contentBlocks.filter(
+    (block): block is KnowledgeEvidenceBlock => block.type === 'knowledge_evidence',
+  );
 }
 
 function collectSearchSources(searchBlocks: SearchBlock[]): SearchSourceSummary[] {
@@ -295,6 +317,7 @@ function collectCitationSources(
       favicon: item.favicon,
       evidence_id: item.evidenceId,
       citation_index: item.citationIndex,
+      kind: item.kind === 'knowledge' ? 'knowledge' : 'web',
     }));
   }
 

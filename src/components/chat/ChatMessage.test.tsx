@@ -339,12 +339,43 @@ describe('ChatMessage', () => {
     );
 
     expect(screen.getByText('正在搜索：AI 异常检测')).toBeTruthy();
+    expect(screen.queryByTestId('reasoning-content')).toBeNull();
 
     selectorState.stream.messageId = null;
     selectorState.stream.thinkingBlocks = {};
     selectorState.stream.blockOrder = [];
     selectorState.stream.blockTypes = {};
     selectorState.stream.currentRun = null;
+  });
+
+  it('刷新后的历史工具回答不重新展示思考过程', () => {
+    render(
+      <ChatMessage
+        message={{
+          id: 'assistant-history',
+          role: 'assistant',
+          content: [
+            { type: 'thinking', id: 'think-history', thinking: '正在综合工具结果。' },
+            { type: 'text', id: 'text-history', text: '历史回答。' },
+          ],
+          timestamp: 1,
+          chatId: 'chat-1',
+        }}
+        agentRun={{
+          runId: 'run-history',
+          messageId: 'assistant-history',
+          status: 'completed',
+          config: { maxSteps: 8, maxToolCalls: 20, timeoutS: 300 },
+          totalSteps: 1,
+          totalToolCalls: 1,
+          steps: [],
+          lastSequence: Number.MAX_SAFE_INTEGER,
+        }}
+      />,
+    );
+
+    expect(screen.getByText('历史回答。')).toBeTruthy();
+    expect(screen.queryByTestId('reasoning-content')).toBeNull();
   });
 
   it('renders degraded web_search notice without rendering an empty sources panel', () => {

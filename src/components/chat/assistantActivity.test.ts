@@ -18,6 +18,127 @@ function makeRun(overrides: Partial<AgentRunState>): AgentRunState {
 }
 
 describe('deriveAssistantActivity', () => {
+  it('普通回答即使已经开始输出正文也保留思考展示', () => {
+    const activity = deriveAssistantActivity({
+      isStreaming: true,
+      isCurrentlyStreaming: true,
+      contentBlocks: [
+        { type: 'thinking', id: 'think-1', thinking: '先分析问题。' },
+        { type: 'text', id: 'text-1', text: '这是回答。' },
+      ],
+      currentRun: makeRun({ totalToolCalls: 0 }),
+      messageStatus: null,
+      isLoadingSuggestedQuestions: false,
+      suggestedQuestionsCount: 0,
+    });
+
+    expect(activity.kind).toBe('answering');
+    expect(activity.shouldSuppressReasoning).toBe(false);
+  });
+
+  it('知识库运行从开始就隐藏思考并展示执行过程', () => {
+    const activity = deriveAssistantActivity({
+      isStreaming: true,
+      isCurrentlyStreaming: true,
+      contentBlocks: [
+        { type: 'thinking', id: 'think-1', thinking: '正在整理知识库内容。' },
+      ],
+      currentRun: makeRun({
+        config: {
+          maxSteps: 1,
+          maxToolCalls: 1,
+          timeoutS: 30,
+          evidencePolicy: 'knowledge_grounded_v1',
+        },
+      }),
+      messageStatus: null,
+      isLoadingSuggestedQuestions: false,
+      suggestedQuestionsCount: 0,
+    });
+
+    expect(activity.shouldSuppressReasoning).toBe(true);
+  });
+
+  it('工具完成后仍保持隐藏思考', () => {
+    const activity = deriveAssistantActivity({
+      isStreaming: true,
+      isCurrentlyStreaming: true,
+      contentBlocks: [
+        { type: 'thinking', id: 'think-1', thinking: '正在综合工具结果。' },
+        { type: 'text', id: 'text-1', text: '最终回答。' },
+      ],
+      currentRun: makeRun({
+        totalToolCalls: 1,
+        steps: [],
+      }),
+      messageStatus: null,
+      isLoadingSuggestedQuestions: false,
+      suggestedQuestionsCount: 0,
+    });
+
+    expect(activity.kind).toBe('answering');
+    expect(activity.shouldSuppressReasoning).toBe(true);
+  });
+
+  it('工具完成后的晚到 reasoning 不再把执行状态切回思考中', () => {
+    const activity = deriveAssistantActivity({
+      isStreaming: true,
+      isCurrentlyStreaming: true,
+      contentBlocks: [
+        { type: 'thinking', id: 'think-1', thinking: '正在综合工具结果。' },
+      ],
+      currentRun: makeRun({
+        totalToolCalls: 1,
+        steps: [],
+      }),
+      messageStatus: null,
+      isLoadingSuggestedQuestions: false,
+      suggestedQuestionsCount: 0,
+    });
+
+    expect(activity.kind).toBe('waiting');
+    expect(activity.shouldSuppressReasoning).toBe(true);
+  });
+
+  it('Deep Research 从开始就使用执行过程模式', () => {
+    const activity = deriveAssistantActivity({
+      isStreaming: true,
+      isCurrentlyStreaming: true,
+      contentBlocks: [],
+      currentRun: makeRun({
+        config: {
+          maxSteps: 8,
+          maxToolCalls: 20,
+          timeoutS: 300,
+          taskMode: 'deep_research',
+        },
+      }),
+      messageStatus: null,
+      isLoadingSuggestedQuestions: false,
+      suggestedQuestionsCount: 0,
+    });
+
+    expect(activity.shouldSuppressReasoning).toBe(true);
+  });
+
+  it('旧历史缺少 agent run 时根据工具结果块隐藏思考', () => {
+    const activity = deriveAssistantActivity({
+      isStreaming: false,
+      isCurrentlyStreaming: false,
+      contentBlocks: [
+        { type: 'thinking', id: 'think-1', thinking: '正在搜索资料。' },
+        { type: 'search', id: 'search-1', query: '资料', sources: [] },
+        { type: 'text', id: 'text-1', text: '历史回答。' },
+      ],
+      currentRun: null,
+      messageStatus: null,
+      isLoadingSuggestedQuestions: false,
+      suggestedQuestionsCount: 0,
+    });
+
+    expect(activity.shouldSuppressReasoning).toBe(true);
+  });
+
   it('does not infer search from thinking text', () => {
     const blocks: ContentBlock[] = [
       {

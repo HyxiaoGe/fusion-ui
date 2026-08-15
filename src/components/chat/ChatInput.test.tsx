@@ -26,6 +26,8 @@ const {
   addFileIdMock,
   updateFileStatusMock,
   uuidMock,
+  getChatCapabilitiesMock,
+  listKnowledgeBasesMock,
 } = vi.hoisted(() => {
   const action = (type: string) => vi.fn((payload?: unknown) => ({ type, payload }));
   let uuidCounter = 0;
@@ -87,6 +89,8 @@ const {
     addFileIdMock: action('fileUpload/addFileId'),
     updateFileStatusMock: action('fileUpload/updateFileStatus'),
     uuidMock: vi.fn(() => `uuid-${++uuidCounter}`),
+    getChatCapabilitiesMock: vi.fn(),
+    listKnowledgeBasesMock: vi.fn(),
   };
 });
 
@@ -129,6 +133,14 @@ vi.mock('@/redux/slices/fileUploadSlice', () => ({
 vi.mock('@/lib/api/files', () => ({
   uploadFiles: uploadFilesMock,
   deleteFile: deleteFileMock,
+}));
+
+vi.mock('@/lib/api/knowledgeBases', () => ({
+  listKnowledgeBases: listKnowledgeBasesMock,
+}));
+
+vi.mock('@/lib/api/chat', () => ({
+  getChatCapabilities: getChatCapabilitiesMock,
 }));
 
 vi.mock('@/lib/api/FileStatusPoller', () => ({
@@ -253,6 +265,21 @@ describe('ChatInput', () => {
     addFileIdMock.mockClear();
     updateFileStatusMock.mockClear();
     uuidMock.mockClear();
+    getChatCapabilitiesMock.mockReset();
+    getChatCapabilitiesMock.mockResolvedValue({
+      knowledge_grounding_v1: true,
+      knowledge_grounding_max_bases: 5,
+    });
+    listKnowledgeBasesMock.mockReset();
+    listKnowledgeBasesMock.mockResolvedValue({
+      items: [],
+      page: 1,
+      page_size: 100,
+      total: 0,
+      total_pages: 1,
+      has_next: false,
+      has_prev: false,
+    });
     currentState.models.models = [];
     currentState.models.providers = [];
     currentState.models.selectedModelId = null;
@@ -639,6 +666,230 @@ describe('ChatInput', () => {
     expect(setComposerAgentModeMock).toHaveBeenCalledWith('deep_research');
   });
 
+  it('恢复会话知识库选择后进入严格模式、退出深度研究并随消息发送', async () => {
+    configureAuthenticatedVisionModel();
+    currentState.conversation.composerAgentMode = 'deep_research';
+    listKnowledgeBasesMock.mockResolvedValue({
+      items: [{
+        id: 'kb-1',
+        name: '产品手册',
+        description: '',
+        business_type: '',
+        status: 'active',
+        document_stats: { total: 1, ready: 1, processing: 0, failed: 0 },
+        embedding_provider: 'dashscope',
+        embedding_model: 'text-embedding-v4',
+        embedding_revision: 'v1',
+        embedding_dimension: 1024,
+        distance_metric: 'COSINE',
+        created_at: '2026-08-15T00:00:00Z',
+        updated_at: '2026-08-15T00:00:00Z',
+        deleted_at: null,
+      }],
+      page: 1,
+      page_size: 100,
+      total: 1,
+      total_pages: 1,
+      has_next: false,
+      has_prev: false,
+    });
+    const onSendMessage = vi.fn();
+
+    render(
+      <ChatInput
+        onSendMessage={onSendMessage}
+        activeChatId="chat-a"
+        initialKnowledgeBaseIds={['kb-1']}
+      />,
+    );
+
+    await screen.findByText('产品手册');
+    expect(screen.getByText(/严格知识库模式|Strict knowledge mode/)).toBeInTheDocument();
+    await waitFor(() => {
+      expect(setComposerAgentModeMock).toHaveBeenCalledWith('auto');
+    });
+    expect(toastMock).toHaveBeenCalledWith(expect.objectContaining({
+      message: '已切换到自动模式：严格知识库模式不能与深度研究同时使用',
+      type: 'warning',
+    }));
+
+    fireEvent.change(screen.getByPlaceholderText('发消息给 Fusion AI（Enter 发送）'), {
+      target: { value: '安装步骤是什么？' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: '发送消息' }));
+
+    expect(onSendMessage).toHaveBeenCalledWith('安装步骤是什么？', undefined, undefined, ['kb-1']);
+  });
+
+  it('严格知识库模式禁用附件并阻止已有附件与知识库一起发送', async () => {
+    configureAuthenticatedVisionModel();
+    listKnowledgeBasesMock.mockResolvedValue({
+      items: [{
+        id: 'kb-1',
+        name: '产品手册',
+        description: '',
+        business_type: '',
+        status: 'active',
+        document_stats: { total: 1, ready: 1, processing: 0, failed: 0 },
+        embedding_provider: 'dashscope',
+        embedding_model: 'text-embedding-v4',
+        embedding_revision: 'v1',
+        embedding_dimension: 1024,
+        distance_metric: 'COSINE',
+        created_at: '2026-08-15T00:00:00Z',
+        updated_at: '2026-08-15T00:00:00Z',
+        deleted_at: null,
+      }],
+      page: 1,
+      page_size: 100,
+      total: 1,
+      total_pages: 1,
+      has_next: false,
+      has_prev: false,
+    });
+    const onSendMessage = vi.fn();
+
+    render(
+      <ChatInput
+        onSendMessage={onSendMessage}
+        activeChatId="chat-a"
+        initialKnowledgeBaseIds={['kb-1']}
+        conversationAttachments={[{
+          source: 'conversation',
+          fileId: 'file-1',
+          filename: 'diagram.png',
+          mimetype: 'image/png',
+          status: 'processed',
+          thumbnailUrl: '/thumb.png',
+        }]}
+      />,
+    );
+
+    expect(await screen.findByText((content) => (
+      content === '严格知识库模式' || content === 'Strict knowledge mode'
+    ))).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '上传图片' })).toBeDisabled();
+    expect(screen.getByText('严格知识库模式不能同时使用附件，请先移除附件')).toBeInTheDocument();
+
+    fireEvent.change(screen.getByPlaceholderText('发消息给 Fusion AI（Enter 发送）'), {
+      target: { value: '分析资料' },
+    });
+    fireEvent.keyDown(screen.getByPlaceholderText('发消息给 Fusion AI（Enter 发送）'), {
+      key: 'Enter',
+      code: 'Enter',
+    });
+
+    expect(onSendMessage).not.toHaveBeenCalled();
+    expect(toastMock).toHaveBeenCalledWith(expect.objectContaining({
+      message: '严格知识库模式不能同时使用附件，请先移除附件',
+      type: 'warning',
+    }));
+  });
+
+  it('已有附件时拒绝新增知识库选择', async () => {
+    configureAuthenticatedVisionModel();
+    listKnowledgeBasesMock.mockResolvedValue({
+      items: [{
+        id: 'kb-1',
+        name: '产品手册',
+        description: '',
+        business_type: '',
+        status: 'active',
+        document_stats: { total: 1, ready: 1, processing: 0, failed: 0 },
+        embedding_provider: 'dashscope',
+        embedding_model: 'text-embedding-v4',
+        embedding_revision: 'v1',
+        embedding_dimension: 1024,
+        distance_metric: 'COSINE',
+        created_at: '2026-08-15T00:00:00Z',
+        updated_at: '2026-08-15T00:00:00Z',
+        deleted_at: null,
+      }],
+      page: 1,
+      page_size: 100,
+      total: 1,
+      total_pages: 1,
+      has_next: false,
+      has_prev: false,
+    });
+
+    render(
+      <ChatInput
+        onSendMessage={vi.fn()}
+        activeChatId="chat-a"
+        conversationAttachments={[{
+          source: 'conversation',
+          fileId: 'file-1',
+          filename: 'diagram.png',
+          mimetype: 'image/png',
+          status: 'processed',
+        }]}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /知识库|Knowledge/ }));
+    fireEvent.click(await screen.findByRole('checkbox', { name: '产品手册' }));
+
+    expect(screen.queryByText(/严格知识库模式|Strict knowledge mode/)).toBeNull();
+    expect(toastMock).toHaveBeenCalledWith(expect.objectContaining({
+      message: '严格知识库模式不能同时使用附件，请先移除附件',
+      type: 'warning',
+    }));
+  });
+
+  it('已选知识库时粘贴和拖放图片都不会开始上传', async () => {
+    configureAuthenticatedVisionModel();
+    listKnowledgeBasesMock.mockResolvedValue({
+      items: [{
+        id: 'kb-1',
+        name: '产品手册',
+        description: '',
+        business_type: '',
+        status: 'active',
+        document_stats: { total: 1, ready: 1, processing: 0, failed: 0 },
+        embedding_provider: 'dashscope',
+        embedding_model: 'text-embedding-v4',
+        embedding_revision: 'v1',
+        embedding_dimension: 1024,
+        distance_metric: 'COSINE',
+        created_at: '2026-08-15T00:00:00Z',
+        updated_at: '2026-08-15T00:00:00Z',
+        deleted_at: null,
+      }],
+      page: 1,
+      page_size: 100,
+      total: 1,
+      total_pages: 1,
+      has_next: false,
+      has_prev: false,
+    });
+    render(
+      <ChatInput
+        onSendMessage={vi.fn()}
+        activeChatId="chat-a"
+        initialKnowledgeBaseIds={['kb-1']}
+      />,
+    );
+    await screen.findByText(/严格知识库模式|Strict knowledge mode/);
+    const file = new File(['image'], 'diagram.png', { type: 'image/png' });
+    const input = screen.getByPlaceholderText('发消息给 Fusion AI（Enter 发送）');
+
+    fireEvent.paste(input, {
+      clipboardData: {
+        items: [{ kind: 'file', getAsFile: () => file }],
+      },
+    });
+    fireEvent.drop(screen.getByRole('group', { name: '消息输入区' }), {
+      dataTransfer: { files: [file] },
+    });
+
+    expect(uploadFilesMock).not.toHaveBeenCalled();
+    expect(toastMock).toHaveBeenCalledWith(expect.objectContaining({
+      message: '严格知识库模式不能同时使用附件，请先清空知识库',
+      type: 'warning',
+    }));
+  });
+
   it('按模型能力禁用不兼容模式并说明原因', async () => {
     currentState.auth.isAuthenticated = true;
     currentState.models.selectedModelId = 'model-1';
@@ -845,6 +1096,45 @@ describe('ChatInput', () => {
 
     expect(recoverableErrors).toEqual([]);
     expect(container.textContent).toContain('思考已开');
+
+    await act(async () => {
+      root?.unmount();
+    });
+  });
+
+  it('服务端未登录而客户端已恢复知识库选择时不会产生 hydration mismatch', async () => {
+    const container = document.createElement('div');
+    container.innerHTML = renderToString(
+      <ChatInput
+        onSendMessage={vi.fn()}
+        activeChatId="chat-a"
+        initialKnowledgeBaseIds={['kb-1']}
+      />,
+    );
+
+    currentState.auth.isAuthenticated = true;
+    currentState.auth.user = { id: 'user-1' };
+    currentState.auth.token = 'token-user-1';
+
+    const recoverableErrors: unknown[] = [];
+    let root: ReturnType<typeof hydrateRoot> | undefined;
+    await act(async () => {
+      root = hydrateRoot(
+        container,
+        <ChatInput
+          onSendMessage={vi.fn()}
+          activeChatId="chat-a"
+          initialKnowledgeBaseIds={['kb-1']}
+        />,
+        { onRecoverableError: (error) => recoverableErrors.push(error) },
+      );
+      await Promise.resolve();
+    });
+
+    expect(recoverableErrors).toEqual([]);
+    expect(Array.from(container.querySelectorAll('button[aria-label]')).some((button) => (
+      /知识库|Knowledge/.test(button.getAttribute('aria-label') ?? '')
+    ))).toBe(true);
 
     await act(async () => {
       root?.unmount();

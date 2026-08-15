@@ -1,7 +1,10 @@
 import type { AgentRunState, ToolCallState } from '@/types/agentRun';
 import type { ContentBlock, SearchBlock, UrlBlock } from '@/types/conversation';
 import { getToolMeta, hasToolMeta } from '@/lib/agent/toolRegistry';
-import { hasUsableStructuredToolResult } from '@/lib/chat/structuredToolResults';
+import {
+  hasUsableStructuredToolResult,
+  isStructuredToolResultBlock,
+} from '@/lib/chat/structuredToolResults';
 
 export type AssistantActivityKind =
   | 'waiting'
@@ -70,7 +73,12 @@ export function deriveAssistantActivity(input: DeriveAssistantActivityInput): As
   const runningToolActivity = runningTool ? toToolActivity(runningTool) : null;
   const issue = deriveIssue(input.currentRun, searchBlock, hasUsableStructuredResult);
   const suggestionState = deriveSuggestionState(input);
-  const kind = deriveKind(input, { hasText, hasThinking, hasRunningTool: runningToolActivity !== null });
+  const shouldSuppressReasoning = isExecutionMode(input.currentRun, input.contentBlocks);
+  const kind = deriveKind(input, {
+    hasText,
+    hasThinking: hasThinking && !shouldSuppressReasoning,
+    hasRunningTool: runningToolActivity !== null,
+  });
   const tool = kind === 'tool_running' ? runningToolActivity : null;
 
   return {
@@ -81,10 +89,37 @@ export function deriveAssistantActivity(input: DeriveAssistantActivityInput): As
     urlBlocks,
     hasText,
     hasThinking,
-    shouldSuppressReasoning: kind === 'tool_running' || kind === 'answering',
+    shouldSuppressReasoning,
     shouldShowSources: Boolean(searchBlock && searchBlock.sources.length > 0),
     suggestionState,
   };
+}
+
+function isExecutionMode(
+  currentRun: AgentRunState | null,
+  contentBlocks: ContentBlock[],
+): boolean {
+  const config = currentRun?.config;
+  if (
+    config?.evidencePolicy === 'knowledge_grounded_v1'
+    || config?.taskMode === 'deep_research'
+  ) {
+    return true;
+  }
+
+  if (
+    (currentRun?.totalToolCalls ?? 0) > 0
+    || currentRun?.steps.some(step => step.toolCalls.length > 0)
+  ) {
+    return true;
+  }
+
+  return contentBlocks.some(block => (
+    block.type === 'knowledge_evidence'
+    || block.type === 'search'
+    || block.type === 'url_read'
+    || isStructuredToolResultBlock(block)
+  ));
 }
 
 function deriveKind(

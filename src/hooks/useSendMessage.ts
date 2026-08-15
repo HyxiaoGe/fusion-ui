@@ -17,6 +17,7 @@ import {
   setHydrationStatus,
   setPendingConversationId,
   updateConversationTitle,
+  updateConversationKnowledgeBaseIds,
   updateMessage,
   upsertConversation,
 } from '@/redux/slices/conversationSlice';
@@ -34,7 +35,12 @@ import {
   setStreamStatus,
   startStream,
 } from '@/redux/slices/streamSlice';
-import { isRecoverableStreamError, reconnectStream, sendMessageStream } from '@/lib/api/chat';
+import {
+  getChatCapabilities,
+  isRecoverableStreamError,
+  reconnectStream,
+  sendMessageStream,
+} from '@/lib/api/chat';
 import type { StreamCallbacks } from '@/lib/api/chat';
 import { runResumableStream } from '@/lib/api/resumableStream';
 import { generateChatTitle } from '@/lib/api/title';
@@ -80,6 +86,8 @@ type SendMessageOptions = {
   onDraftCreated?: (draftConversationId: string) => void;
   onMaterialized?: (serverConversationId: string) => void;
   onStreamEnd?: (conversationId: string) => void;
+  /** undefined=保持，[]=清空，1..5=替换会话知识库选择。 */
+  knowledgeBaseIds?: string[];
 };
 
 const STOP_BEFORE_READY_RETRY_DELAYS_MS = [50, 150] as const;
@@ -164,22 +172,31 @@ function isInterruptedStreamSignal(value: unknown): boolean {
   );
 }
 
+function hasEmptyKnowledgeEvidence(blocks: ContentBlock[]): boolean {
+  return blocks.some(
+    (block) => block.type === 'knowledge_evidence' && block.status === 'empty',
+  );
+}
+
 async function postStreamActions(
   conversationId: string,
   dispatch: ReturnType<typeof useAppDispatch>,
-  isSessionCurrent: () => boolean
+  isSessionCurrent: () => boolean,
+  skipTitleGeneration = false,
 ) {
   if (!isSessionCurrent()) return;
   try {
-    const title = await generateChatTitle(conversationId, undefined, { max_length: 20 });
-    if (!isSessionCurrent()) return;
-    dispatch(updateConversationTitle({ id: conversationId, title }));
-    dispatch(setAnimatingTitleId(conversationId));
-    setTimeout(() => {
-      if (isSessionCurrent()) {
-        dispatch(setAnimatingTitleId(null));
-      }
-    }, title.length * 200 + 1000);
+    if (!skipTitleGeneration) {
+      const title = await generateChatTitle(conversationId, undefined, { max_length: 20 });
+      if (!isSessionCurrent()) return;
+      dispatch(updateConversationTitle({ id: conversationId, title }));
+      dispatch(setAnimatingTitleId(conversationId));
+      setTimeout(() => {
+        if (isSessionCurrent()) {
+          dispatch(setAnimatingTitleId(null));
+        }
+      }, title.length * 200 + 1000);
+    }
   } catch (error) {
     if (isSessionCurrent()) {
       console.warn('自动生成会话标题失败', error);
@@ -444,8 +461,25 @@ export function useSendMessage() {
         return;
       }
       const enabledModel = modelResolution.model;
+      const effectiveKnowledgeBaseIds = options.knowledgeBaseIds ?? (
+        !isDraft && options.conversationId
+          ? currentState.conversation.byId[options.conversationId]?.knowledge_base_ids
+          : undefined
+      );
+      const strictKnowledgeMode = Boolean(effectiveKnowledgeBaseIds?.length);
+      if (strictKnowledgeMode) {
+        try {
+          const capabilities = await getChatCapabilities();
+          if (!capabilities.knowledge_grounding_v1) {
+            throw new Error('服务端未启用严格知识库问答协议');
+          }
+        } catch {
+          dispatch(setGlobalError('知识库问答当前不可用，请刷新页面后重试'));
+          return;
+        }
+      }
       const agentModeResolution = resolveComposerAgentMode(
-        composerAgentMode,
+        strictKnowledgeMode ? 'auto' : composerAgentMode,
         enabledModel.capabilities,
       );
 
@@ -461,6 +495,16 @@ export function useSendMessage() {
       );
 
       const tempConvId = isDraft && !options.conversationId ? uuidv4() : options.conversationId!;
+      const previousKnowledgeSelection = (
+        !isDraft
+        && options.knowledgeBaseIds !== undefined
+        && currentState.conversation.byId[tempConvId]
+      )
+        ? {
+            knowledgeBaseIds: currentState.conversation.byId[tempConvId].knowledge_base_ids,
+            updatedAt: currentState.conversation.byId[tempConvId].updatedAt,
+          }
+        : null;
 
       // 发送开始后，发送前发出的详情 GET 已不再能代表当前会话。立即让它失效，
       // 并结束其 loading 状态，避免迟到快照覆盖本轮乐观消息或永久停在加载态。
@@ -476,11 +520,19 @@ export function useSendMessage() {
             id: tempConvId,
             title: content.substring(0, 30),
             model_id: enabledModel.id,
+            knowledge_base_ids: options.knowledgeBaseIds ?? [],
             messages: [],
             createdAt: Date.now(),
             updatedAt: Date.now(),
           })
         );
+      }
+
+      if (!isDraft && options.knowledgeBaseIds !== undefined) {
+        dispatch(updateConversationKnowledgeBaseIds({
+          id: tempConvId,
+          knowledgeBaseIds: options.knowledgeBaseIds,
+        }));
       }
 
       activeConvIdRef.current = tempConvId;
@@ -567,6 +619,7 @@ export function useSendMessage() {
               id: incomingConvId,
               title: content.substring(0, 30),
               model_id: enabledModel.id,
+              knowledge_base_ids: options.knowledgeBaseIds ?? [],
               messages: [
                 { ...userMessage, chatId: incomingConvId },
                 { ...assistantPlaceholder, chatId: incomingConvId },
@@ -580,10 +633,18 @@ export function useSendMessage() {
         options.onMaterialized?.(incomingConvId);
       };
 
-      const startPostStreamActions = (conversationId: string) => {
+      const startPostStreamActions = (
+        conversationId: string,
+        skipTitleGeneration = false,
+      ) => {
         if (!isDraft || postStreamActionsStarted || !isSessionCurrent()) return;
         postStreamActionsStarted = true;
-        void postStreamActions(conversationId, dispatch, isSessionCurrent);
+        void postStreamActions(
+          conversationId,
+          dispatch,
+          isSessionCurrent,
+          skipTitleGeneration,
+        );
       };
 
       const doCompleteStream = (payload: NonNullable<typeof donePayload>) => {
@@ -649,7 +710,7 @@ export function useSendMessage() {
         void hydrateAuthoritativeConversation(finalConvId, isSessionCurrent);
         // 仅新对话的第一轮生成标题，后续轮次不再更新
         if (isDraft) {
-          startPostStreamActions(finalConvId);
+          startPostStreamActions(finalConvId, hasEmptyKnowledgeEvidence(rawFinalBlocks));
         } else {
           if (isSessionCurrent()) {
             dispatch(requestConversationListRefresh(finalConvId));
@@ -742,7 +803,15 @@ export function useSendMessage() {
               materializeIfNeeded(incomingConvId);
               const titleConversationId = serverConvId ?? incomingConvId ?? activeConvIdRef.current;
               if (titleConversationId) {
-                startPostStreamActions(titleConversationId);
+                const streamState = (
+                  store.getState() as {
+                    stream: import('@/redux/slices/streamSlice').StreamState;
+                  }
+                ).stream;
+                startPostStreamActions(
+                  titleConversationId,
+                  hasEmptyKnowledgeEvidence(selectFullStreamContentBlocks(streamState)),
+                );
               }
               if (!assistantHasContentRef.current) {
                 // 没有文本内容，直接完成（打字机从未启动）
@@ -784,6 +853,7 @@ export function useSendMessage() {
                 task_mode: agentModeResolution.taskMode,
               },
               file_ids: fileIds,
+              knowledge_base_ids: options.knowledgeBaseIds,
             },
             wrappedCallbacks,
             signal,
@@ -874,6 +944,14 @@ export function useSendMessage() {
         clearFirstTurnContextState(effectiveConvIdOnError);
         const reconnectRetriesExhausted = isRecoverableStreamError(error);
         const requestAccepted = materializedOnce || Boolean(serverMessageIdRef.current);
+
+        if (!requestAccepted && previousKnowledgeSelection) {
+          dispatch(updateConversationKnowledgeBaseIds({
+            id: tempConvId,
+            knowledgeBaseIds: previousKnowledgeSelection.knowledgeBaseIds,
+            updatedAt: previousKnowledgeSelection.updatedAt,
+          }));
+        }
 
         if (assistantHasContentRef.current) {
           // 保留已有的 stream content blocks

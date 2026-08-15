@@ -172,6 +172,29 @@ describe('MarkdownRenderer — citation 行为（contract §9）', () => {
     expect(screen.getByText(/missing \[2\]/)).toBeTruthy();
   });
 
+  it('知识库引用按统一编号打开侧栏且不生成空外链', () => {
+    const onCite = vi.fn();
+    const { container } = render(
+      <MarkdownRenderer
+        content="参见安装手册[1]。"
+        sources={[{
+          title: '安装手册.md',
+          url: '',
+          evidence_id: 'knowledge-1',
+          citation_index: 1,
+          kind: 'knowledge',
+        }]}
+        onCitationClick={onCite}
+      />,
+    );
+
+    const citation = screen.getByRole('button', { name: '查看参考资料 1：安装手册.md' });
+    fireEvent.click(citation);
+    expect(onCite).toHaveBeenCalledWith(0);
+    expect(container.querySelector('a[href=""]')).toBeNull();
+    expect(citation).toHaveAttribute('title', '安装手册.md · 知识库');
+  });
+
   it('h2 标题内的 [1] 也渲染为 chip（processChildren 覆盖标题）', () => {
     render(
       <MarkdownRenderer

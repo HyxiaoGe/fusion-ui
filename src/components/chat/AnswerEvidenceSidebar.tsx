@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useRef } from 'react';
-import { AlertTriangle, ExternalLink, Globe2, Search, X } from 'lucide-react';
+import { AlertTriangle, BookOpen, ExternalLink, Globe2, Search, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type {
   AnswerEvidenceSidebarIssueItem,
@@ -10,6 +10,7 @@ import type {
 } from './answerEvidenceSidebarModel';
 import { useChatDetailOverlayRegistration } from './ChatDetailOverlayContext';
 import { ChatDetailOverlayPortal } from './ChatDetailOverlayPortal';
+import KnowledgeEvidenceSourcePreview from './KnowledgeEvidenceSourcePreview';
 
 interface AnswerEvidenceSidebarProps {
   model: AnswerEvidenceSidebarModel | null;
@@ -62,7 +63,7 @@ export default function AnswerEvidenceSidebar({
     if (!isOpen) return;
     if (typeof highlightIndex !== 'number' || highlightIndex < 0) return;
     const itemIndex = usedItems.findIndex(
-      item => item.kind === 'search' && item.sourceIndex === highlightIndex,
+      item => item.sourceIndex === highlightIndex,
     );
     if (itemIndex < 0) return;
     const element = itemRefs.current[itemIndex];
@@ -143,7 +144,8 @@ export default function AnswerEvidenceSidebar({
                     key={item.id}
                     ref={(element) => { itemRefs.current[index] = element; }}
                     item={item}
-                    highlighted={item.kind === 'search' && item.sourceIndex === highlightIndex}
+                    highlighted={item.sourceIndex === highlightIndex}
+                    highlightTick={highlightTick}
                   />
                 ))}
               </div>
@@ -215,47 +217,69 @@ function SearchQuerySection({ queries }: { queries: string[] }) {
 const UsedSourceItem = React.forwardRef<HTMLDivElement, {
   item: AnswerEvidenceSidebarUsedItem;
   highlighted: boolean;
-}>(({ item, highlighted }, ref) => {
+  highlightTick?: number;
+}>(({ item, highlighted, highlightTick = 0 }, ref) => {
   return (
     <div
       ref={ref}
-      data-testid={item.kind === 'search' ? `answer-evidence-used-search-${item.sourceIndex}` : undefined}
+      data-testid={item.kind === 'search'
+        ? `answer-evidence-used-search-${item.sourceIndex}`
+        : item.kind === 'knowledge'
+          ? `answer-evidence-used-knowledge-${item.sourceIndex}`
+          : undefined}
       className={cn(
-        'flex min-w-0 gap-3 rounded-md border border-border/40 border-l-2 bg-background/70 px-3 py-2 transition-colors',
+        'overflow-hidden rounded-md border border-border/40 border-l-2 bg-background/70 transition-colors',
         highlighted ? 'border-l-info bg-info-bg/60' : 'border-l-transparent hover:bg-muted/20',
       )}
     >
-      <span className={cn(
-        'mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-md',
-        item.kind === 'search' ? 'text-info' : 'text-teal',
-      )}>
-        <UsedSourceIcon item={item} />
-      </span>
-      <div className="min-w-0 flex-1">
-        <div className="mb-1 flex min-w-0 items-center gap-2">
-          <span className="shrink-0 rounded-full border border-border/30 px-1.5 py-0.5 text-[10px] text-muted-foreground">
-            {item.kind === 'search' ? '搜索' : '读取'}
-          </span>
-          {item.deepRead ? (
-            <span className="shrink-0 rounded-full border border-success/30 bg-success/5 px-1.5 py-0.5 text-[10px] text-success">
-              已深读
+      <div className="flex min-w-0 gap-3 px-3 py-2">
+        <span className={cn(
+          'mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-md',
+          item.kind === 'search' ? 'text-info' : item.kind === 'knowledge' ? 'text-primary' : 'text-teal',
+        )}>
+          <UsedSourceIcon item={item} />
+        </span>
+        <div className="min-w-0 flex-1">
+          <div className="mb-1 flex min-w-0 items-center gap-2">
+            <span className="shrink-0 rounded-full border border-border/30 px-1.5 py-0.5 text-[10px] text-muted-foreground">
+              {item.kind === 'search' ? '搜索' : item.kind === 'knowledge' ? '知识库' : '读取'}
             </span>
+            {item.deepRead ? (
+              <span className="shrink-0 rounded-full border border-success/30 bg-success/5 px-1.5 py-0.5 text-[10px] text-success">
+                已深读
+              </span>
+            ) : null}
+            <span className="min-w-0 truncate text-[10px] text-muted-foreground">{item.domain}</span>
+          </div>
+          <p className="line-clamp-2 text-sm font-medium text-foreground" title={item.title}>
+            {item.title}
+          </p>
+          {item.knowledge ? (
+            <p className="mt-1 truncate text-[11px] text-muted-foreground">
+              {item.knowledge.section || `第 ${item.knowledge.ordinal + 1} 块`}
+              {item.knowledge.page !== null ? ` · 第 ${item.knowledge.page} 页` : ''}
+            </p>
           ) : null}
-          <span className="min-w-0 truncate text-[10px] text-muted-foreground">{item.domain}</span>
         </div>
-        <p className="line-clamp-2 text-sm font-medium text-foreground" title={item.title}>
-          {item.title}
-        </p>
+        {item.kind !== 'knowledge' ? (
+          <a
+            href={item.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            aria-label={`打开来源：${item.title}`}
+            className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+          >
+            <ExternalLink className="h-4 w-4" aria-hidden="true" />
+          </a>
+        ) : null}
       </div>
-      <a
-        href={item.url}
-        target="_blank"
-        rel="noopener noreferrer"
-        aria-label={`打开来源：${item.title}`}
-        className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
-      >
-        <ExternalLink className="h-4 w-4" aria-hidden="true" />
-      </a>
+      {item.knowledge ? (
+        <KnowledgeEvidenceSourcePreview
+          source={item.knowledge}
+          autoOpen={highlighted}
+          autoOpenTick={highlightTick}
+        />
+      ) : null}
     </div>
   );
 });
@@ -275,7 +299,7 @@ function UsedSourceIcon({ item }: { item: AnswerEvidenceSidebarUsedItem }) {
     );
   }
 
-  const Icon = item.kind === 'search' ? Search : Globe2;
+  const Icon = item.kind === 'search' ? Search : item.kind === 'knowledge' ? BookOpen : Globe2;
   return <Icon className="h-4 w-4" aria-hidden="true" />;
 }
 
@@ -291,7 +315,7 @@ function IssueSourceItem({ item }: { item: AnswerEvidenceSidebarIssueItem }) {
       <div className="min-w-0 flex-1">
         <div className="mb-1 flex min-w-0 flex-wrap items-center gap-2">
           <span className="shrink-0 rounded-full border border-border/30 px-1.5 py-0.5 text-[10px] text-muted-foreground">
-            {item.kind === 'search' ? '搜索' : '读取'}
+            {item.kind === 'search' ? '搜索' : item.kind === 'knowledge' ? '知识库' : '读取'}
           </span>
           <StatusBadge status={item.status} />
           {item.domain ? (
@@ -319,11 +343,15 @@ function IssueSourceItem({ item }: { item: AnswerEvidenceSidebarIssueItem }) {
 }
 
 function StatusBadge({ status }: { status: AnswerEvidenceSidebarIssueItem['status'] }) {
-  const text = status === 'failed' ? '未使用' : status === 'degraded' ? '部分可用' : '中断';
+  const text = status === 'failed' || status === 'unavailable' || status === 'empty'
+    ? '未使用'
+    : status === 'degraded'
+      ? '部分可用'
+      : '中断';
   return (
     <span className={cn(
       'shrink-0 rounded-full border px-1.5 py-0.5 text-[10px]',
-      status === 'failed' ? 'border-danger/30 text-danger'
+      status === 'failed' || status === 'unavailable' || status === 'empty' ? 'border-danger/30 text-danger'
         : status === 'degraded' ? 'border-warn/30 text-warn'
           : 'border-border/40 text-muted-foreground',
     )}>

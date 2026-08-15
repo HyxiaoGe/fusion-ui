@@ -1,7 +1,13 @@
 import type { AgentEvidenceItem } from '@/types/agentRun';
-import type { SearchSourceSummary, SourceReference, UrlBlock } from '@/types/conversation';
+import type {
+  KnowledgeEvidenceBlock,
+  KnowledgeSourceReference,
+  SearchSourceSummary,
+  SourceReference,
+  UrlBlock,
+} from '@/types/conversation';
 
-export type AnswerEvidenceKind = 'search_source' | 'url_read';
+export type AnswerEvidenceKind = 'search_source' | 'url_read' | 'knowledge';
 
 interface BaseAnswerEvidenceItem {
   id: string;
@@ -23,7 +29,23 @@ type UrlReadAnswerEvidenceItem = BaseAnswerEvidenceItem & {
   kind: 'url_read';
 };
 
-export type AnswerEvidenceItem = SearchAnswerEvidenceItem | UrlReadAnswerEvidenceItem;
+export type KnowledgeAnswerEvidenceItem = BaseAnswerEvidenceItem & {
+  kind: 'knowledge';
+  sourceIndex: number;
+  knowledgeBaseId: string;
+  knowledgeBaseName: string;
+  documentId: string;
+  indexVersion: string;
+  chunkId: string;
+  ordinal: number;
+  filename: string;
+  page: number | null;
+  section: string | null;
+  charStart: number;
+  charEnd: number;
+};
+
+export type AnswerEvidenceItem = SearchAnswerEvidenceItem | UrlReadAnswerEvidenceItem | KnowledgeAnswerEvidenceItem;
 
 export interface AnswerEvidenceModel {
   items: AnswerEvidenceItem[];
@@ -34,6 +56,7 @@ export interface AnswerEvidenceModel {
   candidateCount?: number;
   searchCount: number;
   urlCount: number;
+  knowledgeCount?: number;
   totalCount: number;
   hiddenSearchCount: number;
   hiddenUrlCount: number;
@@ -45,15 +68,23 @@ interface DeriveAnswerEvidenceInput {
   sourceRefs?: SourceReference[];
   searchSources: SearchSourceSummary[];
   urlBlocks: UrlBlock[];
+  knowledgeBlocks?: KnowledgeEvidenceBlock[];
   agentEvidence?: AgentEvidenceItem[] | null;
+  answerText?: string;
   searchProvider?: string | null;
   previewLimit?: number;
 }
 
 export function deriveAnswerEvidence(input: DeriveAnswerEvidenceInput): AnswerEvidenceModel | null {
+  const knowledgeItems = deriveKnowledgeEvidenceItems(input.knowledgeBlocks ?? []);
+  const knowledgeEvidence = partitionKnowledgeEvidence(
+    knowledgeItems,
+    input.agentEvidence ?? [],
+    input.answerText ?? '',
+  );
   const agentEvidenceModel = deriveAgentEvidenceModel(input);
   if (agentEvidenceModel) {
-    return agentEvidenceModel;
+    return mergeKnowledgeEvidence(agentEvidenceModel, knowledgeEvidence);
   }
 
   const useSourceRefs = Boolean(input.sourceRefs && input.sourceRefs.length > 0);
@@ -68,10 +99,10 @@ export function deriveAnswerEvidence(input: DeriveAnswerEvidenceInput): AnswerEv
   const items = unifiedItems?.items ?? [...searchItems, ...urlItems];
 
   if (items.length === 0) {
-    return null;
+    return buildKnowledgeOnlyEvidence(knowledgeEvidence);
   }
 
-  return {
+  return mergeKnowledgeEvidence({
     items,
     previewItems: items,
     usedItems: items,
@@ -80,12 +111,13 @@ export function deriveAnswerEvidence(input: DeriveAnswerEvidenceInput): AnswerEv
     candidateCount: 0,
     searchCount: searchItems.length,
     urlCount,
+    knowledgeCount: 0,
     totalCount: items.length,
     hiddenSearchCount: 0,
     hiddenUrlCount: 0,
     summary: buildSummary(searchItems.length, urlCount, deriveSearchProviderLabel(input.searchProvider)),
     hasSearchSources: searchItems.length > 0,
-  };
+  }, knowledgeEvidence);
 }
 
 function deriveAgentEvidenceModel(input: DeriveAnswerEvidenceInput): AnswerEvidenceModel | null {
@@ -125,6 +157,7 @@ function deriveAgentEvidenceModel(input: DeriveAnswerEvidenceInput): AnswerEvide
     candidateCount: candidateItems.length,
     searchCount,
     urlCount,
+    knowledgeCount: 0,
     totalCount: allItems.length,
     hiddenSearchCount: 0,
     hiddenUrlCount: 0,
@@ -271,9 +304,189 @@ function sortEvidenceItemsByCitation(items: AnswerEvidenceItem[]): AnswerEvidenc
       if (rightCitation != null) return 1;
       return left.stableIndex - right.stableIndex;
     })
-    .map(({ item }, index) => item.kind === 'search_source'
+    .map(({ item }, index) => item.kind === 'search_source' || item.kind === 'knowledge'
       ? { ...item, sourceIndex: index }
       : item);
+}
+
+function deriveKnowledgeEvidenceItems(
+  blocks: KnowledgeEvidenceBlock[],
+): KnowledgeAnswerEvidenceItem[] {
+  const items = blocks.flatMap((block) => block.source_refs)
+    .filter((source) => source.status == null || source.status === 'success')
+    .map(toKnowledgeEvidenceItem);
+  return sortEvidenceItemsByCitation(dedupeEvidenceItems(items))
+    .filter((item): item is KnowledgeAnswerEvidenceItem => item.kind === 'knowledge');
+}
+
+interface KnowledgeEvidencePartition {
+  allItems: KnowledgeAnswerEvidenceItem[];
+  usedItems: KnowledgeAnswerEvidenceItem[];
+  candidateItems: KnowledgeAnswerEvidenceItem[];
+}
+
+function partitionKnowledgeEvidence(
+  items: KnowledgeAnswerEvidenceItem[],
+  agentEvidence: AgentEvidenceItem[],
+  answerText: string,
+): KnowledgeEvidencePartition {
+  const knowledgeAgentEvidence = agentEvidence.filter((item) => item.kind === 'knowledge');
+  if (knowledgeAgentEvidence.length > 0) {
+    const usedItems = items.filter((item) => knowledgeAgentEvidence.some((evidence) => (
+      matchesKnowledgeEvidence(item, evidence)
+      && (evidence.usedByFinalAnswer || evidence.status === 'used')
+    )));
+    const usedKeys = new Set(usedItems.map(knowledgeEvidenceKey));
+    const candidateItems = items.filter((item) => (
+      !usedKeys.has(knowledgeEvidenceKey(item))
+      && !knowledgeAgentEvidence.some((evidence) => (
+        matchesKnowledgeEvidence(item, evidence)
+        && evidence.status === 'discarded'
+      ))
+    ));
+    return {
+      allItems: items,
+      usedItems: sortKnowledgeEvidenceItems(usedItems),
+      candidateItems: sortKnowledgeEvidenceItems(candidateItems),
+    };
+  }
+
+  const citedIndexes = collectExplicitCitationIndexes(answerText);
+  const usedItems = items.filter((item) => (
+    item.citationIndex != null && citedIndexes.has(item.citationIndex)
+  ));
+  const usedKeys = new Set(usedItems.map(knowledgeEvidenceKey));
+  return {
+    allItems: items,
+    usedItems: sortKnowledgeEvidenceItems(usedItems),
+    candidateItems: sortKnowledgeEvidenceItems(
+      items.filter((item) => !usedKeys.has(knowledgeEvidenceKey(item))),
+    ),
+  };
+}
+
+function matchesKnowledgeEvidence(
+  item: KnowledgeAnswerEvidenceItem,
+  evidence: AgentEvidenceItem,
+): boolean {
+  return Boolean(
+    (item.evidenceId && evidence.id === item.evidenceId)
+    || (
+      item.citationIndex != null
+      && evidence.citationIndex != null
+      && item.citationIndex === evidence.citationIndex
+    ),
+  );
+}
+
+function knowledgeEvidenceKey(item: KnowledgeAnswerEvidenceItem): string {
+  return item.evidenceId ?? item.id;
+}
+
+function sortKnowledgeEvidenceItems(
+  items: KnowledgeAnswerEvidenceItem[],
+): KnowledgeAnswerEvidenceItem[] {
+  return sortEvidenceItemsByCitation(items)
+    .filter((item): item is KnowledgeAnswerEvidenceItem => item.kind === 'knowledge');
+}
+
+function collectExplicitCitationIndexes(answerText: string): Set<number> {
+  const indexes = new Set<number>();
+  const citationPattern = /\[(\d+)\]/g;
+  let match: RegExpExecArray | null;
+  while ((match = citationPattern.exec(answerText)) !== null) {
+    const citationIndex = Number.parseInt(match[1], 10);
+    if (citationIndex > 0) indexes.add(citationIndex);
+  }
+  return indexes;
+}
+
+function toKnowledgeEvidenceItem(source: KnowledgeSourceReference): KnowledgeAnswerEvidenceItem {
+  return {
+    id: source.evidence_id
+      ? `knowledge-${source.evidence_id}`
+      : `knowledge-${source.knowledge_base_id}-${source.document_id}-${source.index_version}-${source.chunk_id}`,
+    evidenceId: source.evidence_id,
+    citationIndex: source.citation_index,
+    kind: 'knowledge',
+    sourceIndex: 0,
+    title: source.filename,
+    url: '',
+    domain: source.knowledge_base_name || '知识库',
+    knowledgeBaseId: source.knowledge_base_id,
+    knowledgeBaseName: source.knowledge_base_name,
+    documentId: source.document_id,
+    indexVersion: source.index_version,
+    chunkId: source.chunk_id,
+    ordinal: source.ordinal,
+    filename: source.filename,
+    page: source.page,
+    section: source.section,
+    charStart: source.char_start,
+    charEnd: source.char_end,
+  };
+}
+
+function buildKnowledgeOnlyEvidence(
+  knowledgeEvidence: KnowledgeEvidencePartition,
+): AnswerEvidenceModel | null {
+  if (knowledgeEvidence.allItems.length === 0) return null;
+  const usedItems = knowledgeEvidence.usedItems;
+  const candidateItems = knowledgeEvidence.candidateItems;
+  const items = usedItems.length > 0 ? usedItems : candidateItems;
+  return {
+    items,
+    previewItems: items,
+    usedItems,
+    candidateItems,
+    usedCount: usedItems.length,
+    candidateCount: candidateItems.length,
+    searchCount: 0,
+    urlCount: 0,
+    knowledgeCount: knowledgeEvidence.allItems.length,
+    totalCount: usedItems.length + candidateItems.length,
+    hiddenSearchCount: 0,
+    hiddenUrlCount: 0,
+    summary: buildKnowledgeSummary(usedItems.length, candidateItems.length),
+    hasSearchSources: false,
+  };
+}
+
+function mergeKnowledgeEvidence(
+  base: AnswerEvidenceModel,
+  knowledgeEvidence: KnowledgeEvidencePartition,
+): AnswerEvidenceModel {
+  if (knowledgeEvidence.allItems.length === 0) return base;
+  const usedItems = sortEvidenceItemsByCitation([
+    ...(base.usedItems ?? base.items),
+    ...knowledgeEvidence.usedItems,
+  ]);
+  const candidateItems = sortEvidenceItemsByCitation([
+    ...(base.candidateItems ?? []),
+    ...knowledgeEvidence.candidateItems,
+  ]);
+  const items = usedItems.length > 0 ? usedItems : candidateItems;
+  const summaryParts = ['回答依据', `知识库 ${knowledgeEvidence.allItems.length} 条`];
+  if (base.searchCount > 0) summaryParts.push(`搜索候选 ${base.searchCount} 条`);
+  if (base.urlCount > 0) summaryParts.push(`深读 ${base.urlCount} 个网页`);
+  return {
+    ...base,
+    items,
+    previewItems: items,
+    usedItems,
+    candidateItems,
+    usedCount: usedItems.length,
+    knowledgeCount: knowledgeEvidence.allItems.length,
+    totalCount: usedItems.length + candidateItems.length,
+    summary: summaryParts.join(' · '),
+  };
+}
+
+function buildKnowledgeSummary(usedCount: number, candidateCount: number): string {
+  const parts = ['回答依据'];
+  if (usedCount > 0) parts.push(`已使用 ${usedCount} 条`);
+  if (candidateCount > 0) parts.push(`候选 ${candidateCount} 条`);
+  return parts.join(' · ');
 }
 
 function isRenderableAgentWebEvidence(item: AgentEvidenceItem): boolean {

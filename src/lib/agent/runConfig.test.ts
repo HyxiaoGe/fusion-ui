@@ -34,4 +34,24 @@ describe('normalizeAgentRunConfig', () => {
       evidencePolicy: 'standard',
     });
   });
+
+  it('保留严格知识库 evidence policy，不归一成 standard', () => {
+    expect(normalizeAgentRunConfig({
+      max_steps: 1,
+      max_tool_calls: 1,
+      timeout_s: 30,
+      plan_mode: 'auto',
+      task_mode: 'standard',
+      network_profile: 'standard',
+      evidence_policy: 'knowledge_grounded_v1',
+    })).toEqual({
+      maxSteps: 1,
+      maxToolCalls: 1,
+      timeoutS: 30,
+      planMode: 'auto',
+      taskMode: 'standard',
+      networkProfile: 'standard',
+      evidencePolicy: 'knowledge_grounded_v1',
+    });
+  });
 });

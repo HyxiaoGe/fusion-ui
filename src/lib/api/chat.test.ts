@@ -17,6 +17,7 @@ import {
   StreamRequestError,
   continueAgentRunStream,
   fetchSuggestedQuestions,
+  getChatCapabilities,
   getConversation,
   isRecoverableStreamError,
   reconnectStream,
@@ -24,6 +25,29 @@ import {
   stopStream,
   submitAgentContextResult,
 } from './chat';
+
+describe('getChatCapabilities', () => {
+  beforeEach(() => {
+    apiRequestMock.mockReset();
+  });
+
+  it('从受认证端点读取严格知识库协议能力', async () => {
+    const controller = new AbortController();
+    apiRequestMock.mockResolvedValue({
+      knowledge_grounding_v1: true,
+      knowledge_grounding_max_bases: 5,
+    });
+
+    await expect(getChatCapabilities(controller.signal)).resolves.toEqual({
+      knowledge_grounding_v1: true,
+      knowledge_grounding_max_bases: 5,
+    });
+    expect(apiRequestMock).toHaveBeenCalledWith(
+      expect.stringContaining('/api/chat/capabilities'),
+      { signal: controller.signal },
+    );
+  });
+});
 
 describe('fetchSuggestedQuestions', () => {
   beforeEach(() => {

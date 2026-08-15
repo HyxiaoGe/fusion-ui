@@ -67,12 +67,17 @@ import {
 } from "@/lib/agent/composerAgentModeStorage";
 import type { ComposerAgentMode } from "@/types/agentRun";
 import { PlanTimeline } from "./agent/PlanTimeline";
+import KnowledgeBaseComposerControl, {
+  MAX_SELECTED_KNOWLEDGE_BASES,
+  type KnowledgeSelectionStatus,
+} from "./KnowledgeBaseComposerControl";
 
 interface ChatInputProps {
   onSendMessage: (
     content: string,
     attachments?: FileAttachment[],
-    pendingConversationId?: string
+    pendingConversationId?: string,
+    knowledgeBaseIds?: string[],
   ) => void;
   onClearMessage?: () => void;
   onStopStreaming?: () => void;
@@ -88,6 +93,7 @@ interface ChatInputProps {
   onRemoveConversationAttachment?: (fileId: string) => void;
   onClearConversationAttachments?: () => void;
   onUploadComplete?: (files: ChatUploadCompleteFile[], uploadChatId: string) => void;
+  initialKnowledgeBaseIds?: string[];
 }
 
 export interface ChatUploadCompleteFile {
@@ -132,6 +138,10 @@ const COMPOSER_AGENT_MODES: Array<{
     icon: Search,
   },
 ];
+
+function normalizeSelectedKnowledgeBaseIds(ids: string[] | undefined): string[] {
+  return Array.from(new Set((ids ?? []).filter(Boolean))).slice(0, MAX_SELECTED_KNOWLEDGE_BASES);
+}
 
 function getFileIdentity(file: File): string {
   return `${file.name}:${file.size}:${file.lastModified}`;
@@ -181,6 +191,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
   onRemoveConversationAttachment,
   onClearConversationAttachments,
   onUploadComplete,
+  initialKnowledgeBaseIds,
 }) => {
   useRenderProbe('ChatInput');
   const dispatch = useAppDispatch();
@@ -191,6 +202,12 @@ const ChatInput: React.FC<ChatInputProps> = ({
   const [isDragOver, setIsDragOver] = useState(false);
   const [viewingImageUrl, setViewingImageUrl] = useState<string | null>(null);
   const [hasHydrated, setHasHydrated] = useState(false);
+  const [selectedKnowledgeBaseIds, setSelectedKnowledgeBaseIds] = useState<string[]>(
+    () => normalizeSelectedKnowledgeBaseIds(initialKnowledgeBaseIds),
+  );
+  const [knowledgeSelectionStatus, setKnowledgeSelectionStatus] = useState<KnowledgeSelectionStatus>(
+    () => initialKnowledgeBaseIds?.length ? 'loading' : 'ready',
+  );
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const previousResetSignalRef = useRef(resetSignal);
@@ -204,6 +221,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
   const ownedUploadFileIdsRef = useRef<Set<string>>(new Set());
   const onClearConversationAttachmentsRef = useRef(onClearConversationAttachments);
   const activeChatIdRef = useRef(activeChatId);
+  const appliedKnowledgeSelectionRef = useRef<string | null>(null);
 
   const isAuthenticated = useAppSelector(selectIsAuthenticated);
   const authIdentity = useAppSelector(selectUploadAuthIdentity);
@@ -275,9 +293,17 @@ const ChatInput: React.FC<ChatInputProps> = ({
     && isAuthenticated
     && (modelsLoadStatus !== 'ready' || sendModelStatus !== 'ready')
   );
+  const knowledgeSelectionScope = `${authIdentity ?? 'anonymous'}:${activeChatId ?? 'new'}`;
+  const initialKnowledgeSelectionKey = JSON.stringify([
+    knowledgeSelectionScope,
+    initialKnowledgeBaseIds ?? null,
+  ]);
 
   const supportsReasoning = hasHydrated && Boolean(selectedModel?.capabilities?.deepThinking);
   const supportsFileUpload = hasHydrated && Boolean(selectedModel?.capabilities?.vision);
+  // 登录态与会话选择会在客户端从持久状态恢复。SSR 与 hydration 首帧先保持
+  // 中性输入框结构，挂载后再显示严格知识库控件，避免整棵 composer 被重建。
+  const hasKnowledgeSelection = hasHydrated && selectedKnowledgeBaseIds.length > 0;
   const isDeepResearchStreaming = Boolean(
     isStreaming && currentRun?.config.taskMode === "deep_research",
   );
@@ -292,6 +318,27 @@ const ChatInput: React.FC<ChatInputProps> = ({
   useEffect(() => {
     setHasHydrated(true);
   }, []);
+
+  useEffect(() => {
+    if (appliedKnowledgeSelectionRef.current === initialKnowledgeSelectionKey) return;
+    appliedKnowledgeSelectionRef.current = initialKnowledgeSelectionKey;
+    const normalizedIds = normalizeSelectedKnowledgeBaseIds(initialKnowledgeBaseIds);
+    setSelectedKnowledgeBaseIds(normalizedIds);
+    setKnowledgeSelectionStatus(normalizedIds.length > 0 ? 'loading' : 'ready');
+  }, [initialKnowledgeBaseIds, initialKnowledgeSelectionKey]);
+
+  useEffect(() => {
+    if (selectedKnowledgeBaseIds.length === 0 || composerAgentMode !== 'deep_research') {
+      return;
+    }
+    writeComposerAgentMode('auto');
+    dispatch(setComposerAgentMode('auto'));
+    toast({
+      message: '已切换到自动模式：严格知识库模式不能与深度研究同时使用',
+      type: 'warning',
+      duration: 3000,
+    });
+  }, [composerAgentMode, dispatch, selectedKnowledgeBaseIds.length, toast]);
 
   useEffect(() => {
     const storedMode = readComposerAgentMode();
@@ -476,6 +523,22 @@ const ChatInput: React.FC<ChatInputProps> = ({
     [composerAttachments],
   );
   const hasImagesButNoVision = hasImageAttachments && !supportsFileUpload;
+  const hasKnowledgeAttachmentConflict = hasKnowledgeSelection && composerAttachments.length > 0;
+
+  const handleKnowledgeBaseIdsChange = useCallback((nextIds: string[]) => {
+    if (
+      composerAttachments.length > 0
+      && nextIds.length > selectedKnowledgeBaseIds.length
+    ) {
+      toast({
+        message: '严格知识库模式不能同时使用附件，请先移除附件',
+        type: 'warning',
+        duration: 3000,
+      });
+      return;
+    }
+    setSelectedKnowledgeBaseIds(nextIds);
+  }, [composerAttachments.length, selectedKnowledgeBaseIds.length, toast]);
 
   const promptLogin = (messageText: string) => {
     toast({
@@ -507,6 +570,15 @@ const ChatInput: React.FC<ChatInputProps> = ({
       toast({
         message: "请先选择可用模型再上传图片",
         type: "error",
+        duration: 3000,
+      });
+      return false;
+    }
+
+    if (hasKnowledgeSelection) {
+      toast({
+        message: '严格知识库模式不能同时使用附件，请先清空知识库',
+        type: 'warning',
         duration: 3000,
       });
       return false;
@@ -963,6 +1035,29 @@ const ChatInput: React.FC<ChatInputProps> = ({
       return;
     }
 
+    if (hasKnowledgeAttachmentConflict) {
+      toast({
+        message: '严格知识库模式不能同时使用附件，请先移除附件',
+        type: 'warning',
+        duration: 3000,
+      });
+      return;
+    }
+
+    if (knowledgeSelectionStatus !== 'ready') {
+      const statusMessage = knowledgeSelectionStatus === 'loading'
+        ? '正在确认所选知识库状态，请稍后'
+        : knowledgeSelectionStatus === 'failed'
+          ? '知识库列表加载失败，请重试后再发送'
+          : '已选知识库已不可用，请移除后再发送';
+      toast({
+        message: statusMessage,
+        type: 'warning',
+        duration: 3000,
+      });
+      return;
+    }
+
     if (composerAttachments.some(isComposerAttachmentError)) {
       toast({
         message: "请先重试或移除失败文件",
@@ -975,6 +1070,9 @@ const ChatInput: React.FC<ChatInputProps> = ({
     const attachments: FileAttachment[] = composerAttachments
       .map(toFileAttachment)
       .filter((attachment): attachment is FileAttachment => attachment !== null);
+    const knowledgeBaseIds = initialKnowledgeBaseIds !== undefined || selectedKnowledgeBaseIds.length > 0
+      ? selectedKnowledgeBaseIds
+      : undefined;
 
     if (attachments.length > 0) {
       // 首页新对话时，传递文件上传使用的 pendingChatId，确保后端对话 ID 一致
@@ -984,7 +1082,11 @@ const ChatInput: React.FC<ChatInputProps> = ({
           ownedUploadFileIdsRef.current.delete(file.fileId);
         }
       });
-      onSendMessage(message, attachments, pendingId);
+      if (knowledgeBaseIds !== undefined) {
+        onSendMessage(message, attachments, pendingId, knowledgeBaseIds);
+      } else {
+        onSendMessage(message, attachments, pendingId);
+      }
 
       localFiles.forEach((file) => {
         if (file.fileId) {
@@ -994,7 +1096,11 @@ const ChatInput: React.FC<ChatInputProps> = ({
 
       dispatch(clearFiles(chatId));
     } else {
-      onSendMessage(message);
+      if (knowledgeBaseIds !== undefined) {
+        onSendMessage(message, undefined, undefined, knowledgeBaseIds);
+      } else {
+        onSendMessage(message);
+      }
     }
 
     setMessage("");
@@ -1104,7 +1210,12 @@ const ChatInput: React.FC<ChatInputProps> = ({
     return null;
   };
 
-  const canSend = (message.trim() || composerAttachments.length > 0) && !isComposerBlocked && !hasProcessingFiles && !hasImagesButNoVision;
+  const canSend = (message.trim() || composerAttachments.length > 0)
+    && !isComposerBlocked
+    && !hasProcessingFiles
+    && !hasImagesButNoVision
+    && !hasKnowledgeAttachmentConflict
+    && knowledgeSelectionStatus === 'ready';
 
   return (
     <div className="flex flex-col space-y-2">
@@ -1162,12 +1273,27 @@ const ChatInput: React.FC<ChatInputProps> = ({
           onViewImage={(url) => setViewingImageUrl(url)}
         />
 
+        <KnowledgeBaseComposerControl
+          selectedIds={hasHydrated ? selectedKnowledgeBaseIds : []}
+          onChange={handleKnowledgeBaseIdsChange}
+          disabled={isComposerBlocked || isStreaming}
+          enabled={hasHydrated && isAuthenticated}
+          scopeKey={knowledgeSelectionScope}
+          onSelectionStatusChange={setKnowledgeSelectionStatus}
+        />
+
         {/* 模型不支持 vision 但有图片时的内嵌提示 */}
         {hasImagesButNoVision && (
           <div className="mx-3 mt-1 text-xs text-amber-600 dark:text-amber-400">
             当前模型不支持图片理解，请切换到支持读图的模型或移除图片资料
           </div>
         )}
+
+        {hasKnowledgeAttachmentConflict ? (
+          <div role="alert" className="mx-3 mt-1 text-xs text-amber-600 dark:text-amber-400">
+            严格知识库模式不能同时使用附件，请先移除附件
+          </div>
+        ) : null}
 
         {/* Textarea 区域 */}
         <Textarea
@@ -1198,6 +1324,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
           onChange={handleFileChange}
           accept="image/*"
           className="hidden"
+          disabled={isComposerBlocked || hasKnowledgeSelection}
           multiple
         />
 
@@ -1212,12 +1339,12 @@ const ChatInput: React.FC<ChatInputProps> = ({
             {/* 图片上传按钮 */}
             <Button
               onClick={handleFileSelect}
-              disabled={isComposerBlocked || !supportsFileUpload}
+              disabled={isComposerBlocked || !supportsFileUpload || hasKnowledgeSelection}
               variant="ghost"
               size="sm"
               className="h-8 w-8 p-0 text-muted-foreground hover:text-foreground"
               aria-label="上传图片"
-              title="上传图片"
+              title={hasKnowledgeSelection ? '严格知识库模式不能同时使用附件' : '上传图片'}
             >
               <PaperclipIcon className="h-4 w-4" />
             </Button>
@@ -1294,10 +1421,14 @@ const ChatInput: React.FC<ChatInputProps> = ({
                       mode.value,
                       selectedModel?.capabilities,
                     );
-                    const disabledMode = !hasHydrated || !availability.enabled;
-                    const itemDescription = availability.enabled
-                      ? mode.description
-                      : availability.unavailableReason;
+                    const conflictsWithKnowledge = mode.value === 'deep_research'
+                      && selectedKnowledgeBaseIds.length > 0;
+                    const disabledMode = !hasHydrated || !availability.enabled || conflictsWithKnowledge;
+                    const itemDescription = conflictsWithKnowledge
+                      ? '严格知识库模式不能与深度研究同时使用'
+                      : availability.enabled
+                        ? mode.description
+                        : availability.unavailableReason;
                     const isSelected = mode.value === composerAgentMode;
                     const ModeIcon = mode.icon;
                     return (

@@ -51,6 +51,28 @@ function itineraryPayload() {
 }
 
 describe('conversationHydration', () => {
+  it('恢复服务端保存的会话知识库选择并忽略重复或非法 ID', () => {
+    const conversation = buildChatFromServerConversation({
+      id: 'chat-knowledge',
+      title: '知识问答',
+      model_id: 'model-1',
+      knowledge_base_ids: ['kb-1', 'kb-2', 'kb-1', '', 42] as string[],
+      messages: [],
+    });
+
+    expect(conversation.knowledge_base_ids).toEqual(['kb-1', 'kb-2']);
+  });
+
+  it('旧会话详情缺少知识库字段时保留 undefined 语义', () => {
+    const conversation = buildChatFromServerConversation({
+      id: 'chat-legacy',
+      title: '普通聊天',
+      model_id: 'model-1',
+      messages: [],
+    });
+
+    expect(conversation.knowledge_base_ids).toBeUndefined();
+  });
   it('恢复推荐问题的持久化状态与版本，旧消息缺失字段时保持兼容', () => {
     const conversation = buildChatFromServerConversation({
       id: 'conv-suggestions',
@@ -1049,6 +1071,39 @@ describe('conversationHydration', () => {
           usedByFinalAnswer: true,
         },
       ],
+    });
+  });
+
+  it('强刷后保留严格知识库 run 的 knowledge_grounded_v1 evidence policy', () => {
+    const chat = buildChatFromServerConversation({
+      id: 'chat-knowledge-run',
+      title: 'Knowledge run',
+      model_id: 'model-1',
+      knowledge_base_ids: ['kb-1'],
+      messages: [{
+        id: 'assistant-knowledge',
+        role: 'assistant',
+        content: [{ type: 'text', id: 'answer', text: '知识库回答' }],
+        agent_run: {
+          run_id: 'run-knowledge',
+          status: 'completed',
+          config: {
+            max_steps: 1,
+            max_tool_calls: 1,
+            timeout_s: 30,
+            plan_mode: 'auto',
+            task_mode: 'standard',
+            network_profile: 'standard',
+            evidence_policy: 'knowledge_grounded_v1',
+          },
+        },
+      }],
+    });
+
+    expect(chat.messages[0].agent_run?.config).toMatchObject({
+      taskMode: 'standard',
+      networkProfile: 'standard',
+      evidencePolicy: 'knowledge_grounded_v1',
     });
   });
 

@@ -457,7 +457,12 @@ export default function ChatPage() {
     messages: conversation?.messages || lastReadyConversationSnapshot?.messages || [],
   });
 
-  const handleSendMessage = useCallback((content: string, attachments?: FileAttachment[]) => {
+  const handleSendMessage = useCallback((
+    content: string,
+    attachments?: FileAttachment[],
+    _pendingConversationId?: string,
+    knowledgeBaseIds?: string[],
+  ) => {
     clearQuestions();
     if (attachments && attachments.length > 0) {
       setFilesPanelConversationId(chatId);
@@ -466,6 +471,7 @@ export default function ChatPage() {
       content,
       {
         conversationId: chatId,
+        knowledgeBaseIds,
         onStreamEnd: (conversationId) => {
           if (attachments && attachments.length > 0) {
             void refreshConversationFiles(conversationId);
@@ -867,11 +873,13 @@ export default function ChatPage() {
               onStopStreaming={handleStopStreaming}
               onModelChange={clearQuestions}
               activeChatId={chatId}
+              disabled={isHydratingWithoutContent}
               resetSignal={chatId}
               conversationAttachments={conversationAttachments}
               onRemoveConversationAttachment={handleRemoveConversationAttachment}
               onClearConversationAttachments={handleClearConversationAttachments}
               onUploadComplete={handleUploadComplete}
+              initialKnowledgeBaseIds={conversation?.knowledge_base_ids}
             />
           </div>
         </div>

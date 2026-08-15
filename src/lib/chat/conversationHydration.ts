@@ -124,6 +124,7 @@ interface ServerConversation {
   model_id: string;
   created_at?: string | number | null;
   updated_at?: string | number | null;
+  knowledge_base_ids?: unknown;
   messages: ServerMessage[];
 }
 
@@ -267,10 +268,25 @@ export function buildChatFromServerConversation(
     id: serverConversation.id,
     title: serverConversation.title,
     model_id: serverConversation.model_id,
+    knowledge_base_ids: normalizeKnowledgeBaseIds(serverConversation.knowledge_base_ids),
     messages,
     createdAt: parseServerTimestamp(serverConversation.created_at),
     updatedAt: parseServerTimestamp(serverConversation.updated_at),
   };
+}
+
+function normalizeKnowledgeBaseIds(value: unknown): string[] | undefined {
+  if (value === undefined) return undefined;
+  if (!Array.isArray(value)) return [];
+  const result: string[] = [];
+  const seen = new Set<string>();
+  for (const item of value) {
+    if (typeof item !== 'string' || !item || seen.has(item)) continue;
+    seen.add(item);
+    result.push(item);
+    if (result.length === 5) break;
+  }
+  return result;
 }
 
 export function shouldHydrateConversation(

@@ -84,6 +84,51 @@ describe('createAgentStreamEventHandlers', () => {
     });
   });
 
+  it('重连 run_started 保留 knowledge_grounded_v1 evidence policy', () => {
+    const dispatch = vi.fn();
+    const handlers = createAgentStreamEventHandlers({
+      dispatch,
+      isActive: () => true,
+      resolveMessageId: ev => ev.message_id,
+      resolveConversationId: () => 'c1',
+    });
+
+    handlers.onRunStarted?.({
+      type: 'run_started',
+      protocol_version: 2,
+      run_id: 'run-knowledge',
+      parent_run_id: null,
+      step_id: null,
+      parent_step_id: null,
+      tool_call_id: null,
+      sequence: 0,
+      trace_id: 'run-knowledge',
+      ts: 0,
+      conversation_id: 'c1',
+      message_id: 'm1',
+      model: 'gpt',
+      tools: [],
+      config: {
+        max_steps: 1,
+        max_tool_calls: 1,
+        timeout_s: 30,
+        plan_mode: 'auto',
+        task_mode: 'standard',
+        network_profile: 'standard',
+        evidence_policy: 'knowledge_grounded_v1',
+      },
+    });
+
+    expect(dispatch).toHaveBeenCalledWith(expect.objectContaining({
+      type: 'stream/initRun',
+      payload: expect.objectContaining({
+        config: expect.objectContaining({
+          evidencePolicy: 'knowledge_grounded_v1',
+        }),
+      }),
+    }));
+  });
+
   it('新旧 plan 事件归一化为同一 Redux 状态结构', () => {
     const dispatch = vi.fn();
     const handlers = createAgentStreamEventHandlers({
@@ -467,6 +512,69 @@ describe('createAgentStreamEventHandlers', () => {
           type: 'place_results',
           id: 'places-1',
           provider: 'amap',
+        }),
+      }),
+    }));
+  });
+
+  it('把 live SSE 的 knowledge_evidence 精确写入 stream staticBlocks', () => {
+    const dispatch = vi.fn();
+    const handlers = createAgentStreamEventHandlers({
+      dispatch,
+      isActive: () => true,
+      resolveMessageId: ev => ev.message_id,
+      resolveConversationId: () => 'c1',
+    });
+
+    handlers.onContentBlockUpserted?.({
+      type: 'content_block_upserted',
+      protocol_version: 2,
+      run_id: 'r1',
+      parent_run_id: null,
+      step_id: 's1',
+      parent_step_id: null,
+      tool_call_id: 'tc-knowledge',
+      sequence: 5,
+      trace_id: 'r1',
+      ts: 0,
+      content_block: {
+        type: 'knowledge_evidence',
+        id: 'knowledge-1',
+        schema_version: 1,
+        query: '退款时限',
+        status: 'success',
+        source_count: 1,
+        knowledge_base_ids: ['kb-1'],
+        source_refs: [{
+          kind: 'knowledge',
+          evidence_id: 'knowledge-ref-1',
+          citation_index: 1,
+          knowledge_base_id: 'kb-1',
+          knowledge_base_name: '客服手册',
+          document_id: 'doc-1',
+          index_version: 'v2',
+          chunk_id: 'chunk-1',
+          ordinal: 0,
+          filename: '退款.md',
+          page: 2,
+          section: '退款时限',
+          char_start: 0,
+          char_end: 100,
+          status: 'success',
+        }],
+      },
+    });
+
+    expect(dispatch).toHaveBeenCalledWith(expect.objectContaining({
+      type: 'stream/upsertStaticContentBlock',
+      payload: expect.objectContaining({
+        runId: 'r1',
+        sequence: 5,
+        block: expect.objectContaining({
+          type: 'knowledge_evidence',
+          schema_version: 1,
+          id: 'knowledge-1',
+          source_refs: [expect.objectContaining({ chunk_id: 'chunk-1' })],
         }),
       }),
     }));

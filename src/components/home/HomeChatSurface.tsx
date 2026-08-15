@@ -391,7 +391,8 @@ export default function HomeChatSurface() {
   const handleSendMessage = useCallback((
     content: string,
     attachments?: FileAttachment[],
-    pendingConversationId?: string
+    pendingConversationId?: string,
+    knowledgeBaseIds?: string[],
   ) => {
     setPrefillRequest(null);
     const navigationGeneration = navigationGenerationRef.current + 1;
@@ -406,6 +407,7 @@ export default function HomeChatSurface() {
       {
         conversationId: pendingConversationId ?? null,
         isDraft: true,
+        knowledgeBaseIds,
         onDraftCreated: () => {
           if (navigationGenerationRef.current === navigationGeneration) {
             setHandoffConversationId(null);

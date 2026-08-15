@@ -65,7 +65,7 @@ export type AgentTaskMode = 'standard' | 'deep_research';
 
 export type AgentNetworkProfile = 'standard' | 'deep_research';
 
-export type AgentEvidencePolicy = 'standard' | 'deep_research_v1';
+export type AgentEvidencePolicy = 'standard' | 'deep_research_v1' | 'knowledge_grounded_v1';
 
 export type AgentPlanSource = 'model' | 'observed';
 
@@ -109,7 +109,7 @@ export interface AgentPlanState {
 
 export interface AgentEvidenceItem {
   id: string;
-  kind: 'web' | 'file' | 'tool' | 'model';
+  kind: 'web' | 'knowledge' | 'file' | 'tool' | 'model';
   status: 'candidate' | 'selected' | 'read_success' | 'read_degraded' | 'read_failed' | 'used' | 'discarded';
   title: string;
   url?: string;

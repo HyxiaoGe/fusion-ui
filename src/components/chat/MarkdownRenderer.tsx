@@ -76,11 +76,13 @@ function renderWithCitations(
     const source = sourceIndex >= 0 ? sources[sourceIndex] : undefined;
 
     if (source) {
-      let domain = '';
-      try {
-        domain = new URL(source.url).hostname.replace('www.', '');
-      } catch {
-        domain = source.url;
+      let domain = source.kind === 'knowledge' ? '知识库' : '';
+      if (source.kind !== 'knowledge') {
+        try {
+          domain = new URL(source.url).hostname.replace('www.', '');
+        } catch {
+          domain = source.url;
+        }
       }
 
       const sharedClass =
@@ -100,7 +102,7 @@ function renderWithCitations(
         >
           {num}
         </button>
-      ) : (
+      ) : source.kind !== 'knowledge' ? (
         <a
           href={source.url}
           target="_blank"
@@ -110,6 +112,8 @@ function renderWithCitations(
         >
           {num}
         </a>
+      ) : (
+        <span className={sharedClass} title={`${source.title} · ${domain}`}>{num}</span>
       );
 
       parts.push(<React.Fragment key={`cite-${match.index}`}>{trigger}</React.Fragment>);

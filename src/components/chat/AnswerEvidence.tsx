@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ExternalLink, FileSearch, Globe2, Search } from 'lucide-react';
+import { BookOpen, ExternalLink, FileSearch, Globe2, Search } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { AnswerEvidenceItem, AnswerEvidenceModel } from './answerEvidenceModel';
 import { layoutAnswerEvidenceItems } from './answerEvidenceLayout';
@@ -78,6 +78,7 @@ function AnswerEvidenceContent({
   );
   const showHiddenSearch = layout.hiddenSearchCount > 0;
   const showHiddenUrls = layout.hiddenUrlCount > 0;
+  const showHiddenKnowledge = layout.hiddenKnowledgeCount > 0;
   const showOpenAll = hasSidebarContent || layout.hasHiddenItems;
 
   useEffect(() => {
@@ -120,6 +121,9 @@ function AnswerEvidenceContent({
           ) : null}
           {showHiddenUrls ? (
             <EvidenceMetaChip>未预览 {layout.hiddenUrlCount} 个网页</EvidenceMetaChip>
+          ) : null}
+          {showHiddenKnowledge ? (
+            <EvidenceMetaChip>未预览 {layout.hiddenKnowledgeCount} 条知识依据</EvidenceMetaChip>
           ) : null}
           {showOpenAll ? (
             <button
@@ -168,7 +172,7 @@ function EvidenceItem({
 }) {
   const content = <EvidenceItemContent item={item} />;
 
-  if (item.kind === 'search_source') {
+  if (item.kind === 'search_source' || item.kind === 'knowledge') {
     return (
       <button
         type="button"
@@ -231,12 +235,12 @@ function EvidenceItemIcon({ item }: { item: AnswerEvidenceItem }) {
     );
   }
 
-  const Icon = item.kind === 'search_source' ? Search : Globe2;
+  const Icon = item.kind === 'search_source' ? Search : item.kind === 'knowledge' ? BookOpen : Globe2;
 
   return (
     <span className={cn(
       'flex h-4 w-4 shrink-0 items-center justify-center rounded-sm',
-      item.kind === 'search_source' ? 'text-info' : 'text-teal',
+      item.kind === 'search_source' ? 'text-info' : item.kind === 'knowledge' ? 'text-primary' : 'text-teal',
     )}>
       <Icon className="h-3.5 w-3.5" aria-hidden="true" />
     </span>

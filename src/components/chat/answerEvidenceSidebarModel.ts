@@ -1,8 +1,18 @@
-import type { NetworkSourceStatus, SearchBlock, SourceReference, UrlBlock } from '@/types/conversation';
-import type { AnswerEvidenceItem, AnswerEvidenceModel } from './answerEvidenceModel';
+import type {
+  KnowledgeEvidenceBlock,
+  NetworkSourceStatus,
+  SearchBlock,
+  SourceReference,
+  UrlBlock,
+} from '@/types/conversation';
+import type {
+  AnswerEvidenceItem,
+  AnswerEvidenceModel,
+  KnowledgeAnswerEvidenceItem,
+} from './answerEvidenceModel';
 
-export type AnswerEvidenceSidebarItemKind = 'search' | 'url_read';
-export type AnswerEvidenceSidebarItemStatus = NetworkSourceStatus;
+export type AnswerEvidenceSidebarItemKind = 'search' | 'url_read' | 'knowledge';
+export type AnswerEvidenceSidebarItemStatus = NetworkSourceStatus | 'unavailable' | 'empty';
 
 export interface AnswerEvidenceSidebarUsedItem {
   id: string;
@@ -13,6 +23,8 @@ export interface AnswerEvidenceSidebarUsedItem {
   favicon?: string;
   sourceIndex?: number;
   deepRead?: boolean;
+  citationIndex?: number;
+  knowledge?: KnowledgeAnswerEvidenceItem;
 }
 
 export interface AnswerEvidenceSidebarIssueItem {
@@ -30,6 +42,7 @@ export interface AnswerEvidenceSidebarSummary {
   candidateCount: number;
   searchCount: number;
   urlCount: number;
+  knowledgeCount?: number;
   issueCount: number;
 }
 
@@ -46,6 +59,7 @@ interface DeriveAnswerEvidenceSidebarInput {
   answerEvidence: AnswerEvidenceModel | null;
   searchBlock?: SearchBlock | null;
   urlBlocks: UrlBlock[];
+  knowledgeBlocks?: KnowledgeEvidenceBlock[];
   searchQueries?: string[];
 }
 
@@ -54,7 +68,11 @@ export function deriveAnswerEvidenceSidebar(
 ): AnswerEvidenceSidebarModel | null {
   const usedItems = (input.answerEvidence?.usedItems ?? input.answerEvidence?.items ?? []).map(toUsedItem);
   const candidateItems = (input.answerEvidence?.candidateItems ?? []).map(toUsedItem);
-  const issueItems = collectIssueItems(input.searchBlock ?? null, input.urlBlocks);
+  const issueItems = collectIssueItems(
+    input.searchBlock ?? null,
+    input.urlBlocks,
+    input.knowledgeBlocks ?? [],
+  );
   const searchQueries = normalizeSearchQueries([
     ...(input.searchQueries ?? []),
     input.searchBlock?.query ?? '',
@@ -67,12 +85,14 @@ export function deriveAnswerEvidenceSidebar(
   const sourceItems = [...usedItems, ...candidateItems];
   const derivedSearchCount = countUsedByKind(sourceItems, 'search');
   const derivedUrlCount = countUsedByKind(sourceItems, 'url_read');
+  const derivedKnowledgeCount = countUsedByKind(sourceItems, 'knowledge');
   return {
     summary: {
       usedCount: usedItems.length,
       candidateCount: candidateItems.length,
       searchCount: Math.max(input.answerEvidence?.searchCount ?? 0, derivedSearchCount),
       urlCount: Math.max(input.answerEvidence?.urlCount ?? 0, derivedUrlCount),
+      knowledgeCount: Math.max(input.answerEvidence?.knowledgeCount ?? 0, derivedKnowledgeCount),
       issueCount: issueItems.length,
     },
     usedItems,
@@ -98,21 +118,35 @@ function normalizeSearchQueries(queries: string[]): string[] {
 }
 
 function toUsedItem(item: AnswerEvidenceItem): AnswerEvidenceSidebarUsedItem {
+  const kind = item.kind === 'search_source'
+    ? 'search'
+    : item.kind === 'knowledge'
+      ? 'knowledge'
+      : 'url_read';
   return {
     id: item.id,
-    kind: item.kind === 'search_source' ? 'search' : 'url_read',
+    kind,
     title: item.title,
     url: item.url,
     domain: item.domain,
     favicon: item.favicon,
-    sourceIndex: item.kind === 'search_source' ? item.sourceIndex : undefined,
-    deepRead: item.kind === 'search_source' ? item.deepRead : true,
+    sourceIndex: item.kind === 'search_source' || item.kind === 'knowledge'
+      ? item.sourceIndex
+      : undefined,
+    deepRead: item.kind === 'search_source'
+      ? item.deepRead
+      : item.kind === 'url_read'
+        ? true
+        : undefined,
+    citationIndex: item.citationIndex,
+    knowledge: item.kind === 'knowledge' ? item : undefined,
   };
 }
 
 function collectIssueItems(
   searchBlock: SearchBlock | null,
   urlBlocks: UrlBlock[],
+  knowledgeBlocks: KnowledgeEvidenceBlock[],
 ): AnswerEvidenceSidebarIssueItem[] {
   const items: AnswerEvidenceSidebarIssueItem[] = [];
   const seen = new Set<string>();
@@ -147,6 +181,40 @@ function collectIssueItems(
         domain: deriveDomain(block.url),
         status: block.status,
         reason: getIssueReason('url_read', block.status, block.error_message),
+      });
+    }
+  });
+
+  knowledgeBlocks.forEach((block) => {
+    block.source_refs
+      .filter((ref) => ref.status === 'unavailable')
+      .forEach((ref) => add({
+        id: ref.evidence_id ? `knowledge-issue-${ref.evidence_id}` : `knowledge-issue-${ref.chunk_id}`,
+        kind: 'knowledge',
+        title: ref.filename,
+        status: 'unavailable',
+        reason: '该来源已删除或不可用',
+      }));
+    if (block.status === 'empty' && block.source_refs.length === 0) {
+      add({
+        id: `knowledge-empty-${block.id}`,
+        kind: 'knowledge',
+        title: block.query,
+        status: 'empty',
+        reason: '未在所选知识库中找到足够依据',
+      });
+    }
+    if (
+      block.status === 'success'
+      && block.source_count > 0
+      && block.source_refs.length === 0
+    ) {
+      add({
+        id: `knowledge-unavailable-${block.id}`,
+        kind: 'knowledge',
+        title: block.query,
+        status: 'unavailable',
+        reason: '该来源已删除或不可用',
       });
     }
   });
@@ -193,6 +261,10 @@ function getIssueReason(
       return '搜索已中断';
     }
     return '部分搜索结果未能使用';
+  }
+
+  if (kind === 'knowledge') {
+    return '该来源已删除或不可用';
   }
 
   if (kind === 'url_read') {

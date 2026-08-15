@@ -408,6 +408,19 @@ const conversationSlice = createSlice({
         state.byId[id].updatedAt = Date.now();
       }
     },
+    updateConversationKnowledgeBaseIds(
+      state,
+      action: PayloadAction<{
+        id: string;
+        knowledgeBaseIds: string[] | undefined;
+        updatedAt?: number;
+      }>
+    ) {
+      const conversation = state.byId[action.payload.id];
+      if (!conversation) return;
+      conversation.knowledge_base_ids = action.payload.knowledgeBaseIds;
+      conversation.updatedAt = action.payload.updatedAt ?? Date.now();
+    },
     clearConversationMessages(state, action: PayloadAction<string>) {
       const conversation = state.byId[action.payload];
       if (conversation) {
@@ -665,6 +678,7 @@ export const {
   toggleReasoningVisibility,
   updateConversationModel,
   updateConversationTitle,
+  updateConversationKnowledgeBaseIds,
   updateConversationsMetadata,
   updateMessage,
   upsertConversation,

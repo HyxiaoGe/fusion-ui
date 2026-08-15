@@ -2,6 +2,7 @@ import { createSelector, createSlice, PayloadAction } from '@reduxjs/toolkit';
 import type {
   ContentBlock,
   ContextUsage,
+  KnowledgeEvidenceBlock,
   SearchSourceSummary,
   StructuredToolResultBlock,
 } from '@/types/conversation';
@@ -522,7 +523,7 @@ const streamSlice = createSlice({
       action: PayloadAction<{
         runId: string;
         sequence: number;
-        block: StructuredToolResultBlock;
+        block: StructuredToolResultBlock | KnowledgeEvidenceBlock;
       }>,
     ) {
       const run = state.currentRun;

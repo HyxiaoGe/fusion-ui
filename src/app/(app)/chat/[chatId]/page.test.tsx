@@ -261,6 +261,7 @@ vi.mock('@/components/chat/ChatInput', () => ({
   default: function MockChatInput({
     activeChatId,
     resetSignal,
+    disabled,
     onStopStreaming,
     onSendMessage,
     conversationAttachments = [],
@@ -270,6 +271,7 @@ vi.mock('@/components/chat/ChatInput', () => ({
   }: {
     activeChatId?: string;
     resetSignal?: string;
+    disabled?: boolean;
     onStopStreaming?: () => void;
     onSendMessage?: (content: string, attachments?: any[]) => void;
     conversationAttachments?: any[];
@@ -280,6 +282,7 @@ vi.mock('@/components/chat/ChatInput', () => ({
     chatInputRenderMock({
       activeChatId,
       resetSignal,
+      disabled,
       conversationAttachments,
     });
 
@@ -293,6 +296,7 @@ vi.mock('@/components/chat/ChatInput', () => ({
         data-testid="chat-input"
         data-active-chat-id={activeChatId}
         data-reset-signal={resetSignal}
+        data-disabled={disabled ? 'true' : 'false'}
         data-attachment-count={conversationAttachments.length}
       >
         <button type="button" onClick={onStopStreaming}>停止生成</button>
@@ -1233,6 +1237,7 @@ describe('ChatPage 会话切换体验', () => {
     expect(lastMessageListProps?.messages).toEqual([]);
     expect(lastMessageListProps?.loadingState).toBe('history-hydration');
     expect(screen.getByTestId('chat-input')).toHaveAttribute('data-active-chat-id', 'chat-b');
+    expect(screen.getByTestId('chat-input')).toHaveAttribute('data-disabled', 'true');
     expect(chatInputUnmountMock).not.toHaveBeenCalled();
     expect(chatInputMountMock).not.toHaveBeenCalled();
   });
