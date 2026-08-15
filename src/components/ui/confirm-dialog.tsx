@@ -1,7 +1,14 @@
 'use client';
 
-import React, { useState } from 'react';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
+import React from 'react';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 
 interface ConfirmDialogProps {
@@ -23,7 +30,7 @@ const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
   description,
   confirmLabel = '确认',
   cancelLabel = '取消',
-  variant = 'default'
+  variant = 'default',
 }) => {
   const handleConfirm = () => {
     onConfirm();
@@ -36,17 +43,12 @@ const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
         </DialogHeader>
-        <div className="py-4">
-          {description}
-        </div>
+        <DialogDescription className="py-4">{description}</DialogDescription>
         <DialogFooter className="flex justify-end gap-2">
           <Button variant="outline" onClick={onClose}>
             {cancelLabel}
           </Button>
-          <Button 
-            variant={variant} 
-            onClick={handleConfirm}
-          >
+          <Button variant={variant} onClick={handleConfirm}>
             {confirmLabel}
           </Button>
         </DialogFooter>
@@ -55,4 +57,4 @@ const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
   );
 };
 
-export default ConfirmDialog; 
+export default ConfirmDialog;

@@ -1,28 +1,33 @@
 "use client";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useAppDispatch, useAppSelector } from "@/redux/hooks";
 import { closeSettingsDialog, setActiveSettingsTab } from "@/redux/slices/settingsSlice";
 import { setThemeMode } from "@/redux/slices/themeSlice";
 import { motion } from "framer-motion";
-import { Activity, Bot, Database, Settings, Sun, Moon, Laptop, Network, SlidersHorizontal } from "lucide-react";
+import { Activity, BookOpen, Bot, Database, Settings, Sun, Moon, Laptop, Network, SlidersHorizontal } from "lucide-react";
 import DataManagement from "@/app/settings/DataManagement";
+import KnowledgeBaseManager from "@/components/settings/KnowledgeBaseManager";
 import McpServerManager from "@/app/settings/McpServerManager";
 import ModelManagementPanel from "@/app/settings/ModelManagementPanel";
 import RuntimeConfigManager from "@/app/settings/RuntimeConfigManager";
 import ServiceUsagePanel from "@/app/settings/ServiceUsagePanel";
 import SystemPrompt from "@/app/settings/SystemPrompt";
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 
 export const SettingsDialog = () => {
+  const { t } = useTranslation();
   const dispatch = useAppDispatch();
   const { isSettingsDialogOpen, activeSettingsTab } = useAppSelector((state) => state.settings);
   const { mode } = useAppSelector((state) => state.theme);
   const [isMounted, setIsMounted] = useState(false);
   const isAdmin = useAppSelector((state) => Boolean(state.auth.user?.is_superuser));
   const showAdminTabs = isMounted && isAdmin;
+  const knowledgeBaseTitle = isMounted ? t("knowledgeBase.title") : "知识库";
+  const knowledgeBaseShortTitle = isMounted ? t("knowledgeBase.shortTitle") : "知识";
   const selectedSettingsTab = showAdminTabs || !["usage", "runtime-config", "mcp-servers", "model-management"].includes(activeSettingsTab) ? activeSettingsTab : "general";
 
   const handleClose = () => {
@@ -49,12 +54,15 @@ export const SettingsDialog = () => {
             <Settings className="h-5 w-5" />
             设置
           </DialogTitle>
+          <DialogDescription className="sr-only">
+            配置个性化、数据、知识库和管理员设置。
+          </DialogDescription>
         </DialogHeader>
-        
+
         <div className="flex-1 overflow-hidden">
           <Tabs value={selectedSettingsTab} onValueChange={handleTabChange} className="h-full flex flex-col">
             <div data-testid="settings-tabs-scroller" className="bg-card/50 backdrop-blur-sm border rounded-lg shadow-sm p-1 flex-shrink-0 overflow-x-auto">
-              <TabsList className={`grid w-full gap-1 bg-transparent ${showAdminTabs ? "min-w-[44rem] grid-cols-6 md:min-w-0" : "grid-cols-2"}`}>
+              <TabsList className={`grid w-full gap-1 bg-transparent ${showAdminTabs ? "min-w-[52rem] grid-cols-7 md:min-w-0" : "grid-cols-3"}`}>
                 <TabsTrigger value="general" className="flex gap-2 items-center justify-center">
                   <Settings className="h-4 w-4" />
                   <span className="hidden md:inline">常规设置</span>
@@ -64,6 +72,11 @@ export const SettingsDialog = () => {
                   <Database className="h-4 w-4" />
                   <span className="hidden md:inline">数据管理</span>
                   <span className="md:hidden">数据</span>
+                </TabsTrigger>
+                <TabsTrigger value="knowledge" className="flex gap-2 items-center justify-center">
+                  <BookOpen className="h-4 w-4" />
+                  <span className="hidden md:inline">{knowledgeBaseTitle}</span>
+                  <span className="md:hidden">{knowledgeBaseShortTitle}</span>
                 </TabsTrigger>
                 {showAdminTabs && (
                   <>
@@ -174,6 +187,10 @@ export const SettingsDialog = () => {
               <DataManagement />
             </TabsContent>
 
+            <TabsContent value="knowledge" className="flex-1 overflow-auto mt-4">
+              <KnowledgeBaseManager />
+            </TabsContent>
+
             {showAdminTabs && (
               <>
                 <TabsContent value="usage" className="flex-1 overflow-auto mt-4">
@@ -198,4 +215,4 @@ export const SettingsDialog = () => {
       </DialogContent>
     </Dialog>
   );
-}; 
+};

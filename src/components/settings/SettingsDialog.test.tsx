@@ -15,12 +15,22 @@ vi.mock('framer-motion', () => ({
   },
 }));
 
+vi.mock('react-i18next', () => ({
+  useTranslation: () => ({
+    t: (key: string) => (key === 'knowledgeBase.title' ? '知识库' : '知识'),
+  }),
+}));
+
 vi.mock('@/app/settings/SystemPrompt', () => ({
   default: () => <div>系统提示词设置</div>,
 }));
 
 vi.mock('@/app/settings/DataManagement', () => ({
   default: () => <div>数据管理内容</div>,
+}));
+
+vi.mock('@/components/settings/KnowledgeBaseManager', () => ({
+  default: () => <div>知识库管理内容</div>,
 }));
 
 vi.mock('@/app/settings/ServiceUsagePanel', () => ({
@@ -72,6 +82,24 @@ describe('SettingsDialog 管理员用量入口', () => {
     render(<SettingsDialog />);
 
     expect(screen.queryByRole('tab', { name: /服务用量/ })).toBeNull();
+    expect(screen.getAllByRole('tab')).toHaveLength(3);
+  });
+
+  it('普通用户可以看到知识库页签', () => {
+    mockSettingsDialogState(false);
+
+    render(<SettingsDialog />);
+
+    expect(screen.getByRole('tab', { name: /知识库/ })).toBeInTheDocument();
+    expect(screen.queryByText('知识库管理内容')).toBeNull();
+  });
+
+  it('知识库页签复用统一管理面板', () => {
+    mockSettingsDialogState(false, 'knowledge');
+
+    render(<SettingsDialog />);
+
+    expect(screen.getByText('知识库管理内容')).toBeInTheDocument();
   });
 
   it('普通用户残留服务用量选中状态时回退到常规设置', () => {
@@ -116,6 +144,7 @@ describe('SettingsDialog 管理员用量入口', () => {
     render(<SettingsDialog />);
 
     expect(screen.getByRole('tab', { name: /服务用量/ })).toBeInTheDocument();
+    expect(screen.getAllByRole('tab')).toHaveLength(7);
   });
 
   it('管理员在设置弹窗中可以看到运行时配置页签', () => {

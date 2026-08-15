@@ -1,10 +1,11 @@
 "use client";
 
 import MainLayout from "@/components/layouts/MainLayout";
+import KnowledgeBaseManager from "@/components/settings/KnowledgeBaseManager";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useAppSelector } from "@/redux/hooks";
 import { motion } from "framer-motion";
-import { Activity, Bot, Database, Network, SlidersHorizontal, Sparkles } from "lucide-react";
+import { Activity, BookOpen, Bot, Database, Network, SlidersHorizontal, Sparkles } from "lucide-react";
 import DataManagement from "./DataManagement";
 import McpServerManager from "./McpServerManager";
 import ModelManagementPanel from "./ModelManagementPanel";
@@ -12,12 +13,16 @@ import RuntimeConfigManager from "./RuntimeConfigManager";
 import ServiceUsagePanel from "./ServiceUsagePanel";
 import SystemPrompt from "./SystemPrompt";
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 
 export default function SettingsPage() {
+  const { t } = useTranslation();
   const [activeTab, setActiveTab] = useState("general");
   const [isMounted, setIsMounted] = useState(false);
   const isAdmin = useAppSelector((state) => Boolean(state.auth.user?.is_superuser));
   const showAdminTabs = isMounted && isAdmin;
+  const knowledgeBaseTitle = isMounted ? t("knowledgeBase.title") : "知识库";
+  const knowledgeBaseShortTitle = isMounted ? t("knowledgeBase.shortTitle") : "知识";
 
   useEffect(() => {
     setIsMounted(true);
@@ -28,7 +33,7 @@ export default function SettingsPage() {
       <div className="w-full h-full px-6 pt-0 flex flex-col">
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4 w-full flex-grow flex flex-col">
           <div data-testid="settings-tabs-scroller" className="bg-card/50 backdrop-blur-sm border rounded-lg shadow-sm p-1 sticky top-0 z-10 flex-shrink-0 overflow-x-auto dark:bg-slate-800/70 dark:border-slate-700 mt-0">
-            <TabsList className={`grid w-full gap-1 bg-transparent dark:bg-transparent ${showAdminTabs ? "min-w-[44rem] grid-cols-6 md:min-w-0" : "grid-cols-2"}`}>
+            <TabsList className={`grid w-full gap-1 bg-transparent dark:bg-transparent ${showAdminTabs ? "min-w-[52rem] grid-cols-7 md:min-w-0" : "grid-cols-3"}`}>
               <TabsTrigger value="general" className="flex gap-2 items-center justify-center">
                 <Sparkles className="h-4 w-4" />
                 <span className="hidden md:inline">AI 个性化</span>
@@ -38,6 +43,11 @@ export default function SettingsPage() {
                 <Database className="h-4 w-4" />
                 <span className="hidden md:inline">数据管理</span>
                 <span className="md:hidden">数据</span>
+              </TabsTrigger>
+              <TabsTrigger value="knowledge" className="flex gap-2 items-center justify-center">
+                <BookOpen className="h-4 w-4" />
+                <span className="hidden md:inline">{knowledgeBaseTitle}</span>
+                <span className="md:hidden">{knowledgeBaseShortTitle}</span>
               </TabsTrigger>
               {showAdminTabs && (
                 <>
@@ -78,6 +88,10 @@ export default function SettingsPage() {
 
           <TabsContent value="data" className="space-y-6 w-full flex-grow overflow-auto">
             <DataManagement />
+          </TabsContent>
+
+          <TabsContent value="knowledge" className="space-y-6 w-full flex-grow overflow-auto">
+            <KnowledgeBaseManager />
           </TabsContent>
 
           {showAdminTabs && (

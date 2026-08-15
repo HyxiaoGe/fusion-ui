@@ -17,12 +17,22 @@ vi.mock('framer-motion', () => ({
   },
 }));
 
+vi.mock('react-i18next', () => ({
+  useTranslation: () => ({
+    t: (key: string) => (key === 'knowledgeBase.title' ? '知识库' : '知识'),
+  }),
+}));
+
 vi.mock('./SystemPrompt', () => ({
   default: () => <div>AI 个性化内容</div>,
 }));
 
 vi.mock('./DataManagement', () => ({
   default: () => <div>数据管理内容</div>,
+}));
+
+vi.mock('@/components/settings/KnowledgeBaseManager', () => ({
+  default: () => <div>知识库管理内容</div>,
 }));
 
 vi.mock('./ServiceUsagePanel', () => ({
@@ -66,6 +76,20 @@ describe('SettingsPage 管理员页签', () => {
     render(<SettingsPage />);
 
     expect(screen.queryByRole('tab', { name: /服务用量/ })).toBeNull();
+    expect(screen.getAllByRole('tab')).toHaveLength(3);
+  });
+
+  it('普通用户可以进入知识库管理页签', () => {
+    setAdmin(false);
+
+    render(<SettingsPage />);
+    expect(screen.queryByText('知识库管理内容')).toBeNull();
+    fireEvent.mouseDown(screen.getByRole('tab', { name: /知识库/ }), {
+      button: 0,
+      ctrlKey: false,
+    });
+
+    expect(screen.getByText('知识库管理内容')).toBeInTheDocument();
   });
 
   it('普通用户不显示运行时配置页签', () => {
@@ -98,6 +122,7 @@ describe('SettingsPage 管理员页签', () => {
     render(<SettingsPage />);
 
     expect(screen.getByText('服务用量')).toBeInTheDocument();
+    expect(screen.getAllByRole('tab')).toHaveLength(7);
   });
 
   it('管理员服务用量页复用统一面板', () => {
