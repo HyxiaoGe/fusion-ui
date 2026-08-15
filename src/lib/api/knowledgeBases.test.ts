@@ -16,6 +16,7 @@ import {
   getKnowledgeDocument,
   getKnowledgeTask,
   listKnowledgeBases,
+  listKnowledgeDocumentChunks,
   listKnowledgeDocuments,
   rebuildKnowledgeDocument,
   retryKnowledgeDocument,
@@ -117,6 +118,39 @@ describe('知识库 API client', () => {
 
     expect(apiRequestMock).toHaveBeenCalledWith(
       '/api/knowledge-bases/kb%2F1/documents/doc%2F%E4%B8%80',
+    );
+  });
+
+  it('分页读取文档分块时编码全部路径 ID 并透传取消信号', async () => {
+    const page = {
+      document_id: 'doc/一',
+      active_index_version: 'index-v1',
+      chunker_version: 'chunker-v2',
+      chunk_size: 1000,
+      chunk_overlap: 100,
+      items: [],
+      page: 2,
+      page_size: 10,
+      total: 12,
+      total_pages: 2,
+      has_next: false,
+      has_prev: true,
+    };
+    const controller = new AbortController();
+    apiRequestMock.mockResolvedValue(page);
+
+    await expect(
+      listKnowledgeDocumentChunks(
+        'kb/一',
+        'doc/二',
+        { page: 2, pageSize: 10 },
+        controller.signal,
+      ),
+    ).resolves.toBe(page);
+
+    expect(apiRequestMock).toHaveBeenCalledWith(
+      '/api/knowledge-bases/kb%2F%E4%B8%80/documents/doc%2F%E4%BA%8C/chunks?page=2&page_size=10',
+      { signal: controller.signal },
     );
   });
 
