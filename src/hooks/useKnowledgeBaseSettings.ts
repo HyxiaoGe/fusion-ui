@@ -63,19 +63,7 @@ const emptyBasePage = (page = 1): KnowledgeBasePage => ({
 
 function withoutDeletedKnowledgeBases(page: KnowledgeBasePage): KnowledgeBasePage {
   const items = page.items.filter((item) => item.status !== 'deleted');
-  const removed = page.items.length - items.length;
-  if (removed === 0) return page;
-
-  const total = Math.max(0, page.total - removed);
-  const totalPages = total === 0 ? 0 : Math.ceil(total / page.page_size);
-  return {
-    ...page,
-    items,
-    total,
-    total_pages: totalPages,
-    has_next: page.page < totalPages,
-    has_prev: page.page > 1 && totalPages > 0,
-  };
+  return items.length === page.items.length ? page : { ...page, items };
 }
 
 const emptyDocumentPage = (page = 1): KnowledgeDocumentPage => ({

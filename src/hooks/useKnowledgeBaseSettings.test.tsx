@@ -162,14 +162,20 @@ describe('useKnowledgeBaseSettings', () => {
     api.listKnowledgeBases.mockResolvedValue({
       ...pageFor(activeBase),
       items: [deletedBase, activeBase],
-      total: 2,
+      total: 21,
+      total_pages: 2,
+      has_next: true,
     });
 
     const { result } = renderHook(() => useKnowledgeBaseSettings());
 
     await waitFor(() => expect(result.current.selectedBaseId).toBe('base-a'));
     expect(result.current.bases.items).toEqual([activeBase]);
-    expect(result.current.bases.total).toBe(1);
+    expect(result.current.bases).toMatchObject({
+      total: 21,
+      total_pages: 2,
+      has_next: true,
+    });
     expect(api.listKnowledgeDocuments).not.toHaveBeenCalledWith(
       'base-deleted',
       expect.anything(),
