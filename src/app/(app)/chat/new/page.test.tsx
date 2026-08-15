@@ -140,6 +140,7 @@ describe('NewChatPage', () => {
 
   it('示例卡先填入输入框，确认发送后首个 SSE 前仍保留 /chat/new', async () => {
     sendMessageMock.mockImplementation((_content, options) => {
+      options.onAccepted?.();
       options.onDraftCreated('draft-conv');
       return new Promise(() => {});
     });
@@ -164,6 +165,7 @@ describe('NewChatPage', () => {
 
   it('服务端 materialized 后只跳转一次真实会话 URL', async () => {
     sendMessageMock.mockImplementation((_content, options) => {
+      options.onAccepted?.();
       options.onDraftCreated('shared-conv');
       options.onMaterialized('shared-conv');
       return Promise.resolve();
@@ -181,6 +183,7 @@ describe('NewChatPage', () => {
 
   it('服务端返回不同 ID 时也只进入真实会话 URL', async () => {
     sendMessageMock.mockImplementation((_content, options) => {
+      options.onAccepted?.();
       options.onDraftCreated('draft-conv');
       options.onMaterialized('server-conv');
       return Promise.resolve();
@@ -198,6 +201,7 @@ describe('NewChatPage', () => {
   it('用户已离开新建页时忽略迟到的 materialized 导航', async () => {
     let materialize: ((conversationId: string) => void) | undefined;
     sendMessageMock.mockImplementation((_content, options) => {
+      options.onAccepted?.();
       options.onDraftCreated('draft-conv');
       materialize = options.onMaterialized;
       return new Promise(() => {});
@@ -219,6 +223,7 @@ describe('NewChatPage', () => {
   it('同页重置新对话后忽略旧请求迟到的 materialized 导航', async () => {
     let materialize: ((conversationId: string) => void) | undefined;
     sendMessageMock.mockImplementation((_content, options) => {
+      options.onAccepted?.();
       options.onDraftCreated('draft-conv');
       materialize = options.onMaterialized;
       return new Promise(() => {});
@@ -239,6 +244,7 @@ describe('NewChatPage', () => {
 
   it('新建页带文件发送时复用上传使用的 pending 会话 ID', async () => {
     sendMessageMock.mockImplementation((_content, options) => {
+      options.onAccepted?.();
       options.onDraftCreated('pending-upload-conv');
       options.onMaterialized('pending-upload-conv');
       return Promise.resolve();

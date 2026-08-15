@@ -724,6 +724,7 @@ describe('ChatInput', () => {
       undefined,
       ['kb-1'],
       expect.any(Function),
+      expect.any(Function),
     );
   });
 
@@ -760,7 +761,7 @@ describe('ChatInput', () => {
       _knowledgeBaseIds: unknown,
       onRejectedBeforeSend?: () => void,
     ) => {
-      void Promise.resolve().then(() => onRejectedBeforeSend?.());
+      return Promise.resolve().then(() => onRejectedBeforeSend?.());
     });
 
     render(
@@ -834,6 +835,7 @@ describe('ChatInput', () => {
       undefined,
       undefined,
       ['kb-1'],
+      expect.any(Function),
       expect.any(Function),
     );
   });
@@ -1491,7 +1493,10 @@ describe('ChatInput', () => {
           previewUrl: '/thumb.png',
         },
       ],
-      undefined
+      undefined,
+      undefined,
+      expect.any(Function),
+      expect.any(Function),
     );
     expect(uploadFilesMock).toHaveBeenCalledTimes(1);
   });
@@ -1571,7 +1576,10 @@ describe('ChatInput', () => {
           previewUrl: '/thumb.png',
         },
       ],
-      expect.stringMatching(/^uuid-/)
+      expect.stringMatching(/^uuid-/),
+      undefined,
+      expect.any(Function),
+      expect.any(Function),
     );
     expect(uploadFilesMock).toHaveBeenCalledTimes(1);
   });
@@ -2235,7 +2243,14 @@ describe('ChatInput', () => {
 
     expect(screen.getByRole('button', { name: '发送消息' })).toBeEnabled();
     fireEvent.click(screen.getByRole('button', { name: '发送消息' }));
-    expect(onSendMessage).toHaveBeenCalledWith('你好');
+    expect(onSendMessage).toHaveBeenCalledWith(
+      '你好',
+      undefined,
+      undefined,
+      undefined,
+      expect.any(Function),
+      expect.any(Function),
+    );
 
     currentState.conversation.reasoningEnabled = true;
     currentState.conversation.composerAgentMode = 'plan';
@@ -2929,7 +2944,14 @@ describe('ChatInput', () => {
     });
     fireEvent.click(screen.getByRole('button', { name: '发送消息' }));
 
-    expect(onSendMessage).toHaveBeenCalledWith('总结资料');
+    expect(onSendMessage).toHaveBeenCalledWith(
+      '总结资料',
+      undefined,
+      undefined,
+      undefined,
+      expect.any(Function),
+      expect.any(Function),
+    );
   });
 
   it('blocks send action for unauthenticated users', () => {

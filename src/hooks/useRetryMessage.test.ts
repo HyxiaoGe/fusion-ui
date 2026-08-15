@@ -64,7 +64,10 @@ function createStore(modelState: 'disabled' | 'unhealthy' | 'hidden' = 'disabled
 
 function createWrapper(store: ReturnType<typeof createStore>) {
   return function TestWrapper({ children }: { children: React.ReactNode }) {
-    return React.createElement(Provider, { store, children });
+    const TypedProvider = Provider as React.ComponentType<{
+      store: ReturnType<typeof createStore>;
+    }>;
+    return React.createElement(TypedProvider, { store }, children);
   };
 }
 
@@ -145,7 +148,9 @@ describe('useRetryMessage', () => {
 
   it('首轮重试在删除消息前固定已验证的会话模型', async () => {
     const store = createStore('hidden');
-    const sendMessage = vi.fn().mockResolvedValue(undefined);
+    const sendMessage = vi.fn().mockImplementation(async (_content, options) => {
+      options.onAccepted?.();
+    });
     const { result } = renderHook(() => useRetryMessage(sendMessage), {
       wrapper: createWrapper(store),
     });
@@ -156,8 +161,33 @@ describe('useRetryMessage', () => {
 
     expect(sendMessage).toHaveBeenCalledWith(
       '原始问题',
-      { conversationId: 'existing-conv', resolvedModelId: 'disabled-model' },
+      {
+        conversationId: 'existing-conv',
+        resolvedModelId: 'disabled-model',
+        onAccepted: expect.any(Function),
+      },
       undefined,
     );
+    expect(
+      store.getState().conversation.byId['existing-conv'].messages.map((message) => message.id),
+    ).toEqual([]);
+  });
+
+  it('发送前预检拒绝重试时保留原问题及原回答', async () => {
+    const store = createStore('hidden');
+    const sendMessage = vi.fn().mockImplementation(async (_content, options) => {
+      options.onRejectedBeforeSend?.();
+    });
+    const { result } = renderHook(() => useRetryMessage(sendMessage), {
+      wrapper: createWrapper(store),
+    });
+
+    await act(async () => {
+      await result.current('assistant-1', 'existing-conv');
+    });
+
+    expect(
+      store.getState().conversation.byId['existing-conv'].messages.map((message) => message.id),
+    ).toEqual(['user-1', 'assistant-1']);
   });
 });

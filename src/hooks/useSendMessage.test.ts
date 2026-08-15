@@ -331,7 +331,7 @@ describe('useSendMessage', () => {
     expect(store.getState().conversation.globalError).toBe('知识库问答当前不可用，请刷新页面后重试');
   });
 
-  it('严格知识库能力预检期间拒绝第二次发送且只启动一个后台流', async () => {
+  it('严格知识库能力预检期间拒绝另一 composer 的普通发送且只启动一个后台流', async () => {
     const store = createStore();
     store.dispatch(upsertConversation({
       id: 'existing-conv',
@@ -370,9 +370,9 @@ describe('useSendMessage', () => {
         knowledgeBaseIds: ['kb-1'],
         onRejectedBeforeSend: firstRejected,
       });
-      secondSend = secondSender.current.sendMessage('第二条', {
+      secondSend = secondSender.current.sendMessage('第二条普通消息', {
         conversationId: 'existing-conv',
-        knowledgeBaseIds: ['kb-1'],
+        knowledgeBaseIds: [],
         onRejectedBeforeSend: secondRejected,
       });
     });

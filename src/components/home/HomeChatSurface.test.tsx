@@ -199,7 +199,7 @@ vi.mock('@/components/chat/ChatInput', () => ({
     prefillRequest,
   }: any) {
     const [hasLocalUploadError, setHasLocalUploadError] = React.useState(false);
-    chatInputRenderMock({ conversationAttachments, prefillRequest });
+    chatInputRenderMock({ conversationAttachments, prefillRequest, onSendMessage });
 
     const sendSelectedAttachment = () => {
       const attachments = conversationAttachments.map((attachment: any) => ({
@@ -310,6 +310,10 @@ describe('HomeChatSurface 会话资料交互', () => {
     routerPushMock.mockClear();
     routerReplaceMock.mockClear();
     sendMessageMock.mockReset();
+    sendMessageMock.mockImplementation((_content, options) => {
+      options.onAccepted?.();
+      return Promise.resolve();
+    });
     stopStreamingMock.mockReset();
     useConversationFilesMock.mockClear();
     useConversationFilesState.files = [];
@@ -458,6 +462,7 @@ describe('HomeChatSurface 会话资料交互', () => {
     routeState.modelHint = null;
     let materialize: ((conversationId: string) => void) | undefined;
     sendMessageMock.mockImplementation((_content, options) => {
+      options.onAccepted?.();
       options.onDraftCreated('draft-chat-1');
       materialize = options.onMaterialized;
       return new Promise(() => {});
@@ -525,6 +530,59 @@ describe('HomeChatSurface 会话资料交互', () => {
     );
   });
 
+  it('发送前被拒绝的第二次提交不会使首条已接收会话丢失导航资格', async () => {
+    let firstOptions: {
+      onAccepted?: () => void;
+      onDraftCreated?: (conversationId: string) => void;
+      onMaterialized?: (conversationId: string) => void;
+    } | null = null;
+    sendMessageMock
+      .mockImplementationOnce((_content, options) => {
+        firstOptions = options;
+        return new Promise(() => {});
+      })
+      .mockImplementationOnce((_content, options) => {
+        options.onRejectedBeforeSend?.();
+        return Promise.resolve();
+      });
+
+    render(<HomeChatSurface />);
+    const sendFromComposer = chatInputRenderMock.mock.lastCall?.[0].onSendMessage;
+    const firstRejected = vi.fn();
+    const firstAccepted = vi.fn();
+    const secondRejected = vi.fn();
+
+    act(() => {
+      void sendFromComposer(
+        '第一条知识库消息',
+        undefined,
+        undefined,
+        ['kb-1'],
+        firstRejected,
+        firstAccepted,
+      );
+      void sendFromComposer(
+        '第二条普通消息',
+        undefined,
+        undefined,
+        [],
+        secondRejected,
+        vi.fn(),
+      );
+    });
+
+    expect(secondRejected).toHaveBeenCalledTimes(1);
+    act(() => {
+      firstOptions?.onAccepted?.();
+      firstOptions?.onDraftCreated?.('draft-chat-1');
+      firstOptions?.onMaterialized?.('server-chat-1');
+    });
+
+    expect(firstRejected).not.toHaveBeenCalled();
+    expect(firstAccepted).toHaveBeenCalledTimes(1);
+    expect(routerReplaceMock).toHaveBeenCalledWith('/chat/server-chat-1');
+  });
+
   it('上传已处理文件后只加入本次提问，不自动打开资料面板', async () => {
     render(<HomeChatSurface />);
 
@@ -561,6 +619,7 @@ describe('HomeChatSurface 会话资料交互', () => {
 
   it('发送带资料的新对话时打开资料面板并把打开意图交给落库后的会话页', async () => {
     sendMessageMock.mockImplementation((_content, options) => {
+      options.onAccepted?.();
       options.onMaterialized('server-chat-1');
       return Promise.resolve();
     });
@@ -579,6 +638,7 @@ describe('HomeChatSurface 会话资料交互', () => {
       {
         conversationId: 'pending-chat-1',
         isDraft: true,
+        onAccepted: expect.any(Function),
         onDraftCreated: expect.any(Function),
         onMaterialized: expect.any(Function),
       },
@@ -616,6 +676,7 @@ describe('HomeChatSurface 会话资料交互', () => {
       {
         conversationId: 'pending-chat-1',
         isDraft: true,
+        onAccepted: expect.any(Function),
         onDraftCreated: expect.any(Function),
         onMaterialized: expect.any(Function),
       },

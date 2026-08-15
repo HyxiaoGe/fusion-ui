@@ -79,7 +79,8 @@ interface ChatInputProps {
     pendingConversationId?: string,
     knowledgeBaseIds?: string[],
     onRejectedBeforeSend?: () => void,
-  ) => void;
+    onAccepted?: () => void,
+  ) => void | Promise<void>;
   onClearMessage?: () => void;
   onStopStreaming?: () => void;
   onModelChange?: (modelId: string) => void;
@@ -1093,59 +1094,85 @@ const ChatInput: React.FC<ChatInputProps> = ({
       ? selectedKnowledgeBaseIds
       : undefined;
     const submittedMessage = message;
+    const submittedLocalFileIds = new Set(localFiles.map((file) => file.id));
+    let sendSettled = false;
     const restoreRejectedDraft = () => {
+      if (sendSettled) return;
+      sendSettled = true;
       queueMicrotask(() => {
         setMessage((currentMessage) => currentMessage || submittedMessage);
       });
     };
+    const completeAcceptedSend = () => {
+      if (sendSettled) return;
+      sendSettled = true;
+      localFiles.forEach((file) => {
+        if (file.fileId) {
+          ownedUploadFileIdsRef.current.delete(file.fileId);
+          stopPollingFileStatus(file.fileId);
+        }
+      });
+      setMessage((currentMessage) => (
+        currentMessage === submittedMessage ? "" : currentMessage
+      ));
+      setLocalFiles((currentFiles) => currentFiles.filter(
+        (file) => !submittedLocalFileIds.has(file.id),
+      ));
+      onClearConversationAttachments?.();
+      if (attachments.length > 0) {
+        dispatch(clearFiles(chatId));
+      }
+      if (textareaRef.current) {
+        textareaRef.current.style.height = "auto";
+      }
+    };
+    let sendResult: void | Promise<void>;
 
     if (attachments.length > 0) {
       // 首页新对话时，传递文件上传使用的 pendingChatId，确保后端对话 ID 一致
       const pendingId = !activeChatId ? pendingChatIdRef.current : undefined;
-      localFiles.forEach((file) => {
-        if (file.fileId) {
-          ownedUploadFileIdsRef.current.delete(file.fileId);
-        }
-      });
       if (knowledgeBaseIds !== undefined) {
-        onSendMessage(
+        sendResult = onSendMessage(
           message,
           attachments,
           pendingId,
           knowledgeBaseIds,
           restoreRejectedDraft,
+          completeAcceptedSend,
         );
       } else {
-        onSendMessage(message, attachments, pendingId);
+        sendResult = onSendMessage(
+          message,
+          attachments,
+          pendingId,
+          undefined,
+          restoreRejectedDraft,
+          completeAcceptedSend,
+        );
       }
-
-      localFiles.forEach((file) => {
-        if (file.fileId) {
-          stopPollingFileStatus(file.fileId);
-        }
-      });
-
-      dispatch(clearFiles(chatId));
     } else {
       if (knowledgeBaseIds !== undefined) {
-        onSendMessage(
+        sendResult = onSendMessage(
           message,
           undefined,
           undefined,
           knowledgeBaseIds,
           restoreRejectedDraft,
+          completeAcceptedSend,
         );
       } else {
-        onSendMessage(message);
+        sendResult = onSendMessage(
+          message,
+          undefined,
+          undefined,
+          undefined,
+          restoreRejectedDraft,
+          completeAcceptedSend,
+        );
       }
     }
-
-    setMessage("");
-    setLocalFiles([]);
-    onClearConversationAttachments?.();
-
-    if (textareaRef.current) {
-      textareaRef.current.style.height = "auto";
+    if (sendResult === undefined) {
+      completeAcceptedSend();
     }
   };
 

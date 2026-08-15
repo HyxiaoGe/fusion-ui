@@ -13,7 +13,12 @@ import type { RootState } from '@/redux/store';
 
 type SendMessageFn = (
   content: string,
-  options: { conversationId: string | null; resolvedModelId?: string },
+  options: {
+    conversationId: string | null;
+    resolvedModelId?: string;
+    onRejectedBeforeSend?: () => void;
+    onAccepted?: () => void;
+  },
   attachments?: FileAttachment[],
 ) => Promise<void>;
 
@@ -70,30 +75,40 @@ export function useRetryMessage(sendMessage: SendMessageFn) {
         if (!userMessage) return;
 
         const { text, attachments } = extractMessageContent(userMessage);
-        dispatch(removeMessage({ conversationId, messageId }));
-        dispatch(removeMessage({ conversationId, messageId: userMessage.id }));
 
         if (text || attachments.length > 0) {
           await sendMessage(
             text,
-            { conversationId, resolvedModelId: modelResolution.model.id },
+            {
+              conversationId,
+              resolvedModelId: modelResolution.model.id,
+              onAccepted: () => {
+                dispatch(removeMessage({ conversationId, messageId }));
+                dispatch(removeMessage({ conversationId, messageId: userMessage.id }));
+              },
+            },
             attachments.length > 0 ? attachments : undefined,
           );
         }
       } else if (targetMsg.role === 'user') {
         // 重新发送：删除 user + 其后的 assistant，重新发送
         const nextMsg = messages[targetIndex + 1];
-        if (nextMsg && nextMsg.role === 'assistant') {
-          dispatch(removeMessage({ conversationId, messageId: nextMsg.id }));
-        }
-        dispatch(removeMessage({ conversationId, messageId }));
 
         const { text, attachments } = extractMessageContent(targetMsg);
 
         if (text || attachments.length > 0) {
           await sendMessage(
             text,
-            { conversationId, resolvedModelId: modelResolution.model.id },
+            {
+              conversationId,
+              resolvedModelId: modelResolution.model.id,
+              onAccepted: () => {
+                if (nextMsg && nextMsg.role === 'assistant') {
+                  dispatch(removeMessage({ conversationId, messageId: nextMsg.id }));
+                }
+                dispatch(removeMessage({ conversationId, messageId }));
+              },
+            },
             attachments.length > 0 ? attachments : undefined,
           );
         }

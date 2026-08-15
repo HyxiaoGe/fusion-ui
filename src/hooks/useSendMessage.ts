@@ -90,12 +90,14 @@ type SendMessageOptions = {
   knowledgeBaseIds?: string[];
   /** 发送尚未被本地消息队列接收时通知输入区保留草稿。 */
   onRejectedBeforeSend?: () => void;
+  /** 本地消息与流控制器均已建立，可以提交输入区清理或重试替换。 */
+  onAccepted?: () => void;
 };
 
 const STOP_BEFORE_READY_RETRY_DELAYS_MS = [50, 150] as const;
 const STOP_OPERATION_TIMEOUT_MS = 500;
 const INTERRUPTED_HYDRATION_RETRY_MS = 300;
-const activeKnowledgePreflightSessions = new Set<string>();
+const activeSendPreparations = new Set<string>();
 
 interface SendSessionContext {
   authSessionKey: string;
@@ -429,13 +431,36 @@ export function useSendMessage() {
   const sendMessage = useCallback(
     async (content: string, options: SendMessageOptions, attachments?: FileAttachment[]) => {
       if (!content.trim() && (!attachments || attachments.length === 0)) return;
-
-      if (stopInFlightPromiseRef.current) {
-        await stopInFlightPromiseRef.current;
+      const sendSessionKey = authSessionKey ?? 'anonymous';
+      const streamIsOwnedByAnotherComposer = Boolean(
+        store.getState().stream.isStreaming && !abortControllerRef.current,
+      );
+      if (
+        activeSendPreparations.has(sendSessionKey)
+        || streamIsOwnedByAnotherComposer
+      ) {
+        options.onRejectedBeforeSend?.();
+        return;
       }
+      activeSendPreparations.add(sendSessionKey);
+      let preparationReleased = false;
+      const releaseSendPreparation = () => {
+        if (preparationReleased) return;
+        preparationReleased = true;
+        activeSendPreparations.delete(sendSessionKey);
+      };
 
-      if (abortControllerRef.current) {
-        await stopStreaming();
+      try {
+        if (stopInFlightPromiseRef.current) {
+          await stopInFlightPromiseRef.current;
+        }
+
+        if (abortControllerRef.current) {
+          await stopStreaming();
+        }
+      } catch (error) {
+        releaseSendPreparation();
+        throw error;
       }
 
       const isDraft = options.isDraft ?? (options.conversationId === null);
@@ -461,6 +486,7 @@ export function useSendMessage() {
             );
       if (modelResolution.status !== 'ready') {
         dispatch(setGlobalError(getSendModelErrorMessage(modelResolution)));
+        releaseSendPreparation();
         options.onRejectedBeforeSend?.();
         return;
       }
@@ -472,12 +498,6 @@ export function useSendMessage() {
       );
       const strictKnowledgeMode = Boolean(effectiveKnowledgeBaseIds?.length);
       if (strictKnowledgeMode) {
-        const knowledgePreflightSessionKey = authSessionKey ?? 'anonymous';
-        if (activeKnowledgePreflightSessions.has(knowledgePreflightSessionKey)) {
-          options.onRejectedBeforeSend?.();
-          return;
-        }
-        activeKnowledgePreflightSessions.add(knowledgePreflightSessionKey);
         try {
           const capabilities = await getChatCapabilities();
           if (!capabilities.knowledge_grounding_v1) {
@@ -485,10 +505,9 @@ export function useSendMessage() {
           }
         } catch {
           dispatch(setGlobalError('知识库问答当前不可用，请刷新页面后重试'));
+          releaseSendPreparation();
           options.onRejectedBeforeSend?.();
           return;
-        } finally {
-          activeKnowledgePreflightSessions.delete(knowledgePreflightSessionKey);
         }
       }
       const agentModeResolution = resolveComposerAgentMode(
@@ -498,7 +517,11 @@ export function useSendMessage() {
 
       const nextGeneration = sendGenerationRef.current + 1;
       const sendContext = captureSendSessionContext(store.getState(), nextGeneration);
-      if (!sendContext) return;
+      if (!sendContext) {
+        releaseSendPreparation();
+        options.onRejectedBeforeSend?.();
+        return;
+      }
       sendGenerationRef.current = nextGeneration;
       activeSendContextRef.current = sendContext;
       const isSessionCurrent = () => isSendSessionCurrent(store.getState(), sendContext);
@@ -596,12 +619,14 @@ export function useSendMessage() {
       dispatch(appendMessage({ conversationId: tempConvId, message: userMessage }));
       dispatch(appendMessage({ conversationId: tempConvId, message: assistantPlaceholder }));
       dispatch(startStream({ conversationId: tempConvId, messageId: assistantMessageId }));
-      if (isDraft && isActiveSendCurrent()) {
-        options.onDraftCreated?.(tempConvId);
-      }
 
       const controller = new AbortController();
       abortControllerRef.current = controller;
+      releaseSendPreparation();
+      options.onAccepted?.();
+      if (isDraft && isActiveSendCurrent()) {
+        options.onDraftCreated?.(tempConvId);
+      }
       const supportsReasoning = enabledModel.capabilities?.deepThinking ?? false;
       const useReasoning = reasoningEnabled && supportsReasoning;
       let serverConvId: string | null = null;
