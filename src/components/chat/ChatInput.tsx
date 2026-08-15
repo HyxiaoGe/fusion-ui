@@ -78,6 +78,7 @@ interface ChatInputProps {
     attachments?: FileAttachment[],
     pendingConversationId?: string,
     knowledgeBaseIds?: string[],
+    onRejectedBeforeSend?: () => void,
   ) => void;
   onClearMessage?: () => void;
   onStopStreaming?: () => void;
@@ -141,6 +142,10 @@ const COMPOSER_AGENT_MODES: Array<{
 
 function normalizeSelectedKnowledgeBaseIds(ids: string[] | undefined): string[] {
   return Array.from(new Set((ids ?? []).filter(Boolean))).slice(0, MAX_SELECTED_KNOWLEDGE_BASES);
+}
+
+function areKnowledgeBaseIdsEqual(left: string[], right: string[]): boolean {
+  return left.length === right.length && left.every((id, index) => id === right[index]);
 }
 
 function getFileIdentity(file: File): string {
@@ -222,6 +227,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
   const onClearConversationAttachmentsRef = useRef(onClearConversationAttachments);
   const activeChatIdRef = useRef(activeChatId);
   const appliedKnowledgeSelectionRef = useRef<string | null>(null);
+  const appliedKnowledgeSelectionScopeRef = useRef<string | null>(null);
 
   const isAuthenticated = useAppSelector(selectIsAuthenticated);
   const authIdentity = useAppSelector(selectUploadAuthIdentity);
@@ -321,11 +327,24 @@ const ChatInput: React.FC<ChatInputProps> = ({
 
   useEffect(() => {
     if (appliedKnowledgeSelectionRef.current === initialKnowledgeSelectionKey) return;
+    const isSameScope = appliedKnowledgeSelectionScopeRef.current === knowledgeSelectionScope;
     appliedKnowledgeSelectionRef.current = initialKnowledgeSelectionKey;
+    appliedKnowledgeSelectionScopeRef.current = knowledgeSelectionScope;
     const normalizedIds = normalizeSelectedKnowledgeBaseIds(initialKnowledgeBaseIds);
+    const keepsVerifiedSelection = isSameScope
+      && knowledgeSelectionStatus === 'ready'
+      && areKnowledgeBaseIdsEqual(selectedKnowledgeBaseIds, normalizedIds);
     setSelectedKnowledgeBaseIds(normalizedIds);
-    setKnowledgeSelectionStatus(normalizedIds.length > 0 ? 'loading' : 'ready');
-  }, [initialKnowledgeBaseIds, initialKnowledgeSelectionKey]);
+    if (!keepsVerifiedSelection) {
+      setKnowledgeSelectionStatus(normalizedIds.length > 0 ? 'loading' : 'ready');
+    }
+  }, [
+    initialKnowledgeBaseIds,
+    initialKnowledgeSelectionKey,
+    knowledgeSelectionScope,
+    knowledgeSelectionStatus,
+    selectedKnowledgeBaseIds,
+  ]);
 
   useEffect(() => {
     if (selectedKnowledgeBaseIds.length === 0 || composerAgentMode !== 'deep_research') {
@@ -1073,6 +1092,12 @@ const ChatInput: React.FC<ChatInputProps> = ({
     const knowledgeBaseIds = initialKnowledgeBaseIds !== undefined || selectedKnowledgeBaseIds.length > 0
       ? selectedKnowledgeBaseIds
       : undefined;
+    const submittedMessage = message;
+    const restoreRejectedDraft = () => {
+      queueMicrotask(() => {
+        setMessage((currentMessage) => currentMessage || submittedMessage);
+      });
+    };
 
     if (attachments.length > 0) {
       // 首页新对话时，传递文件上传使用的 pendingChatId，确保后端对话 ID 一致
@@ -1083,7 +1108,13 @@ const ChatInput: React.FC<ChatInputProps> = ({
         }
       });
       if (knowledgeBaseIds !== undefined) {
-        onSendMessage(message, attachments, pendingId, knowledgeBaseIds);
+        onSendMessage(
+          message,
+          attachments,
+          pendingId,
+          knowledgeBaseIds,
+          restoreRejectedDraft,
+        );
       } else {
         onSendMessage(message, attachments, pendingId);
       }
@@ -1097,7 +1128,13 @@ const ChatInput: React.FC<ChatInputProps> = ({
       dispatch(clearFiles(chatId));
     } else {
       if (knowledgeBaseIds !== undefined) {
-        onSendMessage(message, undefined, undefined, knowledgeBaseIds);
+        onSendMessage(
+          message,
+          undefined,
+          undefined,
+          knowledgeBaseIds,
+          restoreRejectedDraft,
+        );
       } else {
         onSendMessage(message);
       }

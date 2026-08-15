@@ -462,6 +462,7 @@ export default function ChatPage() {
     attachments?: FileAttachment[],
     _pendingConversationId?: string,
     knowledgeBaseIds?: string[],
+    onRejectedBeforeSend?: () => void,
   ) => {
     clearQuestions();
     if (attachments && attachments.length > 0) {
@@ -472,6 +473,7 @@ export default function ChatPage() {
       {
         conversationId: chatId,
         knowledgeBaseIds,
+        onRejectedBeforeSend,
         onStreamEnd: (conversationId) => {
           if (attachments && attachments.length > 0) {
             void refreshConversationFiles(conversationId);

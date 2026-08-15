@@ -88,11 +88,14 @@ type SendMessageOptions = {
   onStreamEnd?: (conversationId: string) => void;
   /** undefined=保持，[]=清空，1..5=替换会话知识库选择。 */
   knowledgeBaseIds?: string[];
+  /** 发送尚未被本地消息队列接收时通知输入区保留草稿。 */
+  onRejectedBeforeSend?: () => void;
 };
 
 const STOP_BEFORE_READY_RETRY_DELAYS_MS = [50, 150] as const;
 const STOP_OPERATION_TIMEOUT_MS = 500;
 const INTERRUPTED_HYDRATION_RETRY_MS = 300;
+const activeKnowledgePreflightSessions = new Set<string>();
 
 interface SendSessionContext {
   authSessionKey: string;
@@ -458,6 +461,7 @@ export function useSendMessage() {
             );
       if (modelResolution.status !== 'ready') {
         dispatch(setGlobalError(getSendModelErrorMessage(modelResolution)));
+        options.onRejectedBeforeSend?.();
         return;
       }
       const enabledModel = modelResolution.model;
@@ -468,6 +472,12 @@ export function useSendMessage() {
       );
       const strictKnowledgeMode = Boolean(effectiveKnowledgeBaseIds?.length);
       if (strictKnowledgeMode) {
+        const knowledgePreflightSessionKey = authSessionKey ?? 'anonymous';
+        if (activeKnowledgePreflightSessions.has(knowledgePreflightSessionKey)) {
+          options.onRejectedBeforeSend?.();
+          return;
+        }
+        activeKnowledgePreflightSessions.add(knowledgePreflightSessionKey);
         try {
           const capabilities = await getChatCapabilities();
           if (!capabilities.knowledge_grounding_v1) {
@@ -475,7 +485,10 @@ export function useSendMessage() {
           }
         } catch {
           dispatch(setGlobalError('知识库问答当前不可用，请刷新页面后重试'));
+          options.onRejectedBeforeSend?.();
           return;
+        } finally {
+          activeKnowledgePreflightSessions.delete(knowledgePreflightSessionKey);
         }
       }
       const agentModeResolution = resolveComposerAgentMode(
@@ -1017,6 +1030,7 @@ export function useSendMessage() {
       }
     },
     [
+      authSessionKey,
       dispatch,
       composerAgentMode,
       hydrateAuthoritativeConversation,

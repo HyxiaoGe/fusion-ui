@@ -331,6 +331,70 @@ describe('useSendMessage', () => {
     expect(store.getState().conversation.globalError).toBe('知识库问答当前不可用，请刷新页面后重试');
   });
 
+  it('严格知识库能力预检期间拒绝第二次发送且只启动一个后台流', async () => {
+    const store = createStore();
+    store.dispatch(upsertConversation({
+      id: 'existing-conv',
+      title: 'Existing',
+      model_id: 'model-1',
+      knowledge_base_ids: ['kb-1'],
+      messages: [],
+      createdAt: 100,
+      updatedAt: 200,
+    }));
+    let resolveCapabilities: (value: {
+      knowledge_grounding_v1: boolean;
+      knowledge_grounding_max_bases: number;
+    }) => void = () => {
+      throw new Error('能力预检尚未开始');
+    };
+    getChatCapabilitiesMock.mockImplementationOnce(() => new Promise((resolve) => {
+      resolveCapabilities = resolve;
+    }));
+    sendMessageStreamMock.mockResolvedValue(undefined);
+    const firstRejected = vi.fn();
+    const secondRejected = vi.fn();
+
+    const { result: firstSender } = renderHook(() => useSendMessage(), {
+      wrapper: createWrapper(store),
+    });
+    const { result: secondSender } = renderHook(() => useSendMessage(), {
+      wrapper: createWrapper(store),
+    });
+
+    let firstSend: Promise<void>;
+    let secondSend: Promise<void>;
+    act(() => {
+      firstSend = firstSender.current.sendMessage('第一条', {
+        conversationId: 'existing-conv',
+        knowledgeBaseIds: ['kb-1'],
+        onRejectedBeforeSend: firstRejected,
+      });
+      secondSend = secondSender.current.sendMessage('第二条', {
+        conversationId: 'existing-conv',
+        knowledgeBaseIds: ['kb-1'],
+        onRejectedBeforeSend: secondRejected,
+      });
+    });
+
+    await waitFor(() => {
+      expect(getChatCapabilitiesMock).toHaveBeenCalledTimes(1);
+      expect(secondRejected).toHaveBeenCalledTimes(1);
+    });
+    expect(sendMessageStreamMock).not.toHaveBeenCalled();
+
+    resolveCapabilities({
+      knowledge_grounding_v1: true,
+      knowledge_grounding_max_bases: 5,
+    });
+    await act(async () => {
+      await Promise.all([firstSend!, secondSend!]);
+    });
+
+    expect(firstRejected).not.toHaveBeenCalled();
+    expect(sendMessageStreamMock).toHaveBeenCalledTimes(1);
+  });
+
   it('服务端拒绝知识库选择变更时回滚到发送前会话快照', async () => {
     const store = createStore();
     store.dispatch(upsertConversation({

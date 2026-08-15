@@ -718,7 +718,124 @@ describe('ChatInput', () => {
     });
     fireEvent.click(screen.getByRole('button', { name: '发送消息' }));
 
-    expect(onSendMessage).toHaveBeenCalledWith('安装步骤是什么？', undefined, undefined, ['kb-1']);
+    expect(onSendMessage).toHaveBeenCalledWith(
+      '安装步骤是什么？',
+      undefined,
+      undefined,
+      ['kb-1'],
+      expect.any(Function),
+    );
+  });
+
+  it('知识库发送在能力预检失败时恢复尚未被接收的输入', async () => {
+    configureAuthenticatedVisionModel();
+    listKnowledgeBasesMock.mockResolvedValue({
+      items: [{
+        id: 'kb-1',
+        name: '产品手册',
+        description: '',
+        business_type: '',
+        status: 'active',
+        document_stats: { total: 1, ready: 1, processing: 0, failed: 0 },
+        embedding_provider: 'dashscope',
+        embedding_model: 'text-embedding-v4',
+        embedding_revision: 'v1',
+        embedding_dimension: 1024,
+        distance_metric: 'COSINE',
+        created_at: '2026-08-15T00:00:00Z',
+        updated_at: '2026-08-15T00:00:00Z',
+        deleted_at: null,
+      }],
+      page: 1,
+      page_size: 100,
+      total: 1,
+      total_pages: 1,
+      has_next: false,
+      has_prev: false,
+    });
+    const onSendMessage = vi.fn((
+      _content: string,
+      _attachments: unknown,
+      _pendingConversationId: unknown,
+      _knowledgeBaseIds: unknown,
+      onRejectedBeforeSend?: () => void,
+    ) => {
+      void Promise.resolve().then(() => onRejectedBeforeSend?.());
+    });
+
+    render(
+      <ChatInput
+        onSendMessage={onSendMessage}
+        activeChatId="chat-a"
+        initialKnowledgeBaseIds={['kb-1']}
+      />,
+    );
+
+    await screen.findByText('产品手册');
+    const input = screen.getByPlaceholderText('发消息给 Fusion AI（Enter 发送）');
+    fireEvent.change(input, { target: { value: '不要丢掉这段草稿' } });
+    fireEvent.click(screen.getByRole('button', { name: '发送消息' }));
+
+    await waitFor(() => {
+      expect(input).toHaveValue('不要丢掉这段草稿');
+    });
+  });
+
+  it('同一会话的乐观知识库同步不会把已验证选择重置为永久加载', async () => {
+    configureAuthenticatedVisionModel();
+    listKnowledgeBasesMock.mockResolvedValue({
+      items: [{
+        id: 'kb-1',
+        name: '产品手册',
+        description: '',
+        business_type: '',
+        status: 'active',
+        document_stats: { total: 1, ready: 1, processing: 0, failed: 0 },
+        embedding_provider: 'dashscope',
+        embedding_model: 'text-embedding-v4',
+        embedding_revision: 'v1',
+        embedding_dimension: 1024,
+        distance_metric: 'COSINE',
+        created_at: '2026-08-15T00:00:00Z',
+        updated_at: '2026-08-15T00:00:00Z',
+        deleted_at: null,
+      }],
+      page: 1,
+      page_size: 100,
+      total: 1,
+      total_pages: 1,
+      has_next: false,
+      has_prev: false,
+    });
+    const onSendMessage = vi.fn();
+    const { rerender } = render(
+      <ChatInput onSendMessage={onSendMessage} activeChatId="chat-a" />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /知识库|Knowledge/ }));
+    fireEvent.click(await screen.findByRole('checkbox', { name: '产品手册' }));
+    await waitFor(() => {
+      expect(screen.getByText(/严格知识库模式|Strict knowledge mode/)).toBeInTheDocument();
+    });
+
+    rerender(
+      <ChatInput
+        onSendMessage={onSendMessage}
+        activeChatId="chat-a"
+        initialKnowledgeBaseIds={['kb-1']}
+      />,
+    );
+    const input = screen.getByPlaceholderText('发消息给 Fusion AI（Enter 发送）');
+    fireEvent.change(input, { target: { value: '继续提问' } });
+    fireEvent.click(screen.getByRole('button', { name: '发送消息' }));
+
+    expect(onSendMessage).toHaveBeenCalledWith(
+      '继续提问',
+      undefined,
+      undefined,
+      ['kb-1'],
+      expect.any(Function),
+    );
   });
 
   it('严格知识库模式禁用附件并阻止已有附件与知识库一起发送', async () => {

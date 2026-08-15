@@ -393,6 +393,7 @@ export default function HomeChatSurface() {
     attachments?: FileAttachment[],
     pendingConversationId?: string,
     knowledgeBaseIds?: string[],
+    onRejectedBeforeSend?: () => void,
   ) => {
     setPrefillRequest(null);
     const navigationGeneration = navigationGenerationRef.current + 1;
@@ -408,6 +409,7 @@ export default function HomeChatSurface() {
         conversationId: pendingConversationId ?? null,
         isDraft: true,
         knowledgeBaseIds,
+        onRejectedBeforeSend,
         onDraftCreated: () => {
           if (navigationGenerationRef.current === navigationGeneration) {
             setHandoffConversationId(null);
