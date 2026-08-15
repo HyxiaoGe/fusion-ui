@@ -166,7 +166,17 @@ vi.mock('@/hooks/useSuggestedQuestions', () => ({
 }));
 
 vi.mock('@/hooks/useSuggestedQuestionContinuation', () => ({
-  useSuggestedQuestionContinuation: () => vi.fn(),
+  useSuggestedQuestionContinuation: ({
+    canContinue,
+    sendMessage,
+  }: {
+    canContinue: boolean;
+    sendMessage: (question: string) => void;
+  }) => (
+    (question: string) => {
+      if (canContinue) sendMessage(question.trim());
+    }
+  ),
 }));
 
 vi.mock('@/hooks/useTransientCompletionState', () => ({
@@ -268,6 +278,9 @@ vi.mock('@/components/chat/ChatInput', () => ({
     onRemoveConversationAttachment,
     onClearConversationAttachments,
     onUploadComplete,
+    initialKnowledgeBaseIds = [],
+    onKnowledgeBaseIdsChange,
+    onKnowledgeSelectionStatusChange,
   }: {
     activeChatId?: string;
     resetSignal?: string;
@@ -278,12 +291,16 @@ vi.mock('@/components/chat/ChatInput', () => ({
     onRemoveConversationAttachment?: (fileId: string) => void;
     onClearConversationAttachments?: () => void;
     onUploadComplete?: (files?: any[], uploadChatId?: string) => void;
+    initialKnowledgeBaseIds?: string[];
+    onKnowledgeBaseIdsChange?: (ids: string[]) => void;
+    onKnowledgeSelectionStatusChange?: (status: 'ready' | 'unavailable') => void;
   }) {
     chatInputRenderMock({
       activeChatId,
       resetSignal,
       disabled,
       conversationAttachments,
+      initialKnowledgeBaseIds,
     });
 
     useEffect(() => {
@@ -326,6 +343,15 @@ vi.mock('@/components/chat/ChatInput', () => ({
         </button>
         <button type="button" onClick={onClearConversationAttachments}>清空已选资料</button>
         <button type="button" onClick={() => onUploadComplete?.()}>上传完成</button>
+        <button type="button" onClick={() => onKnowledgeBaseIdsChange?.(['kb-new'])}>
+          改选知识库
+        </button>
+        <button type="button" onClick={() => onKnowledgeSelectionStatusChange?.('unavailable')}>
+          标记知识库不可用
+        </button>
+        <button type="button" onClick={() => onKnowledgeSelectionStatusChange?.('ready')}>
+          标记知识库可用
+        </button>
         <button
           type="button"
           onClick={() =>
@@ -383,6 +409,11 @@ vi.mock('@/components/lazy/LazyComponents', () => ({
         {props.messages.length === 0 && props.loadingState === 'history-hydration'
           ? '正在加载这段对话'
           : null}
+        {props.suggestedQuestions[0] && props.onSelectQuestion ? (
+          <button type="button" onClick={() => props.onSelectQuestion(props.suggestedQuestions[0])}>
+            选择推荐问题
+          </button>
+        ) : null}
       </div>
     );
   },
@@ -1442,6 +1473,44 @@ describe('ChatPage 会话切换体验', () => {
     expect(lastMessageListProps?.isLoadingQuestions).toBe(false);
     expect(lastMessageListProps?.completionStateVisible).toBe(false);
     expect(lastMessageListProps?.isStreaming).toBe(false);
+  });
+
+  it('推荐问题显式使用输入框当前改选的知识库范围', async () => {
+    const conversation = createConversation('chat-a', [textMessage('message-a')]);
+    conversation.knowledge_base_ids = ['kb-old'];
+    conversationsById.set('chat-a', conversation);
+    hydrationById.set('chat-a', { view: 'ready' });
+    suggestedQuestionsState.questions = ['继续问当前手册'];
+
+    render(<ChatPage />);
+
+    fireEvent.click(screen.getByRole('button', { name: '改选知识库' }));
+    fireEvent.click(screen.getByRole('button', { name: '标记知识库可用' }));
+    fireEvent.click(screen.getByRole('button', { name: '选择推荐问题' }));
+
+    expect(sendMessageMock).toHaveBeenCalledWith(
+      '继续问当前手册',
+      expect.objectContaining({
+        conversationId: 'chat-a',
+        knowledgeBaseIds: ['kb-new'],
+      }),
+      undefined,
+    );
+  });
+
+  it('输入框当前知识库范围不可用时阻止推荐问题发送', async () => {
+    const conversation = createConversation('chat-a', [textMessage('message-a')]);
+    conversation.knowledge_base_ids = ['kb-old'];
+    conversationsById.set('chat-a', conversation);
+    hydrationById.set('chat-a', { view: 'ready' });
+    suggestedQuestionsState.questions = ['不要发送'];
+
+    render(<ChatPage />);
+
+    fireEvent.click(screen.getByRole('button', { name: '标记知识库不可用' }));
+    fireEvent.click(screen.getByRole('button', { name: '选择推荐问题' }));
+
+    expect(sendMessageMock).not.toHaveBeenCalled();
   });
 
   it('同一会话无关状态变化时保持 ChatMessageList 的 emptyState 引用稳定', async () => {

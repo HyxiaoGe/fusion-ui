@@ -190,4 +190,56 @@ describe('useRetryMessage', () => {
       store.getState().conversation.byId['existing-conv'].messages.map((message) => message.id),
     ).toEqual(['user-1', 'assistant-1']);
   });
+
+  it.each(['user-1', 'assistant-1'])(
+    '严格知识库会话重试带附件历史轮次 %s 时保留原消息',
+    async (messageId) => {
+      const store = createStore('hidden');
+      store.dispatch(upsertConversation({
+        id: 'existing-conv',
+        title: 'Existing',
+        model_id: 'disabled-model',
+        knowledge_base_ids: ['kb-1'],
+        messages: [
+          {
+            id: 'user-1',
+            role: 'user',
+            content: [
+              { type: 'text', id: 'text-user', text: '读取旧附件' },
+              {
+                type: 'file',
+                id: 'file-block',
+                file_id: 'file-1',
+                filename: '旧附件.pdf',
+                mime_type: 'application/pdf',
+              },
+            ],
+          },
+          {
+            id: 'assistant-1',
+            role: 'assistant',
+            content: [{ type: 'text', id: 'text-assistant', text: '原始回答' }],
+          },
+        ],
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      }));
+      const sendMessage = vi.fn().mockResolvedValue(undefined);
+      const { result } = renderHook(() => useRetryMessage(sendMessage), {
+        wrapper: createWrapper(store),
+      });
+
+      await act(async () => {
+        await result.current(messageId, 'existing-conv');
+      });
+
+      expect(sendMessage).not.toHaveBeenCalled();
+      expect(
+        store.getState().conversation.byId['existing-conv'].messages.map((message) => message.id),
+      ).toEqual(['user-1', 'assistant-1']);
+      expect(store.getState().conversation.globalError).toBe(
+        '严格知识库模式不能重试带附件的历史消息，请先清空知识库选择',
+      );
+    },
+  );
 });

@@ -76,6 +76,13 @@ export function useRetryMessage(sendMessage: SendMessageFn) {
 
         const { text, attachments } = extractMessageContent(userMessage);
 
+        if (conversation.knowledge_base_ids?.length && attachments.length > 0) {
+          dispatch(setGlobalError(
+            '严格知识库模式不能重试带附件的历史消息，请先清空知识库选择',
+          ));
+          return;
+        }
+
         if (text || attachments.length > 0) {
           await sendMessage(
             text,
@@ -95,6 +102,13 @@ export function useRetryMessage(sendMessage: SendMessageFn) {
         const nextMsg = messages[targetIndex + 1];
 
         const { text, attachments } = extractMessageContent(targetMsg);
+
+        if (conversation.knowledge_base_ids?.length && attachments.length > 0) {
+          dispatch(setGlobalError(
+            '严格知识库模式不能重试带附件的历史消息，请先清空知识库选择',
+          ));
+          return;
+        }
 
         if (text || attachments.length > 0) {
           await sendMessage(

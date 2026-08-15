@@ -95,6 +95,8 @@ interface ChatInputProps {
   onClearConversationAttachments?: () => void;
   onUploadComplete?: (files: ChatUploadCompleteFile[], uploadChatId: string) => void;
   initialKnowledgeBaseIds?: string[];
+  onKnowledgeBaseIdsChange?: (ids: string[]) => void;
+  onKnowledgeSelectionStatusChange?: (status: KnowledgeSelectionStatus) => void;
 }
 
 export interface ChatUploadCompleteFile {
@@ -197,6 +199,8 @@ const ChatInput: React.FC<ChatInputProps> = ({
   onClearConversationAttachments,
   onUploadComplete,
   initialKnowledgeBaseIds,
+  onKnowledgeBaseIdsChange,
+  onKnowledgeSelectionStatusChange,
 }) => {
   useRenderProbe('ChatInput');
   const dispatch = useAppDispatch();
@@ -557,7 +561,18 @@ const ChatInput: React.FC<ChatInputProps> = ({
       return;
     }
     setSelectedKnowledgeBaseIds(nextIds);
-  }, [composerAttachments.length, selectedKnowledgeBaseIds.length, toast]);
+    onKnowledgeBaseIdsChange?.(nextIds);
+  }, [
+    composerAttachments.length,
+    onKnowledgeBaseIdsChange,
+    selectedKnowledgeBaseIds.length,
+    toast,
+  ]);
+
+  const handleKnowledgeSelectionStatusChange = useCallback((status: KnowledgeSelectionStatus) => {
+    setKnowledgeSelectionStatus(status);
+    onKnowledgeSelectionStatusChange?.(status);
+  }, [onKnowledgeSelectionStatusChange]);
 
   const promptLogin = (messageText: string) => {
     toast({
@@ -1344,7 +1359,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
           disabled={isComposerBlocked || isStreaming}
           enabled={hasHydrated && isAuthenticated}
           scopeKey={knowledgeSelectionScope}
-          onSelectionStatusChange={setKnowledgeSelectionStatus}
+          onSelectionStatusChange={handleKnowledgeSelectionStatusChange}
         />
 
         {/* 模型不支持 vision 但有图片时的内嵌提示 */}

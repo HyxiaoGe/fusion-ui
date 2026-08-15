@@ -5,6 +5,7 @@ import { useParams, useRouter } from 'next/navigation';
 import { Files } from 'lucide-react';
 import { ChatMessageListLazy } from '@/components/lazy/LazyComponents';
 import ChatInput, { type ChatUploadCompleteFile } from '@/components/chat/ChatInput';
+import type { KnowledgeSelectionStatus } from '@/components/chat/KnowledgeBaseComposerControl';
 import { ChatDetailOverlayProvider } from '@/components/chat/ChatDetailOverlayContext';
 import ConversationFilesPanel from '@/components/chat/ConversationFilesPanel';
 import LocationContextBanner from '@/components/chat/LocationContextBanner';
@@ -153,6 +154,11 @@ export default function ChatPage() {
   const isAuthenticated = useAppSelector(selectIsAuthenticated);
   const authSessionKey = useAppSelector(selectAuthSessionKey);
   const { conversation, hydrationView, hydrationError, retryHydration } = useConversation(chatId);
+  const [composerKnowledgeSelection, setComposerKnowledgeSelection] = useState<{
+    chatId: string;
+    ids: string[];
+    status: KnowledgeSelectionStatus;
+  }>({ chatId, ids: [], status: 'ready' });
   const { sendMessage, stopStreaming, retryMessage } = useSendMessage();
   const { continueAgentRun, stopContinueAgentRun } = useContinueAgentRun();
   const {
@@ -178,6 +184,29 @@ export default function ChatPage() {
   );
   const streamConversationId = useAppSelector((state) => state.stream.conversationId);
   const conversationMessages = conversation?.messages;
+  const composerKnowledgeBaseIds = useMemo(
+    () => composerKnowledgeSelection.chatId === chatId
+      ? composerKnowledgeSelection.ids
+      : (conversation?.knowledge_base_ids ?? []),
+    [
+      chatId,
+      composerKnowledgeSelection.chatId,
+      composerKnowledgeSelection.ids,
+      conversation?.knowledge_base_ids,
+    ],
+  );
+  const composerKnowledgeSelectionStatus = composerKnowledgeSelection.chatId === chatId
+    ? composerKnowledgeSelection.status
+    : 'loading';
+
+  useEffect(() => {
+    if (hydrationView !== 'ready') return;
+    setComposerKnowledgeSelection({
+      chatId,
+      ids: conversation?.knowledge_base_ids ?? [],
+      status: conversation?.knowledge_base_ids?.length ? 'loading' : 'ready',
+    });
+  }, [chatId, conversation?.knowledge_base_ids, hydrationView]);
 
   useEffect(() => {
     clearQuestions();
@@ -387,7 +416,7 @@ export default function ChatPage() {
             dispatch(setStreamStatus('completed'));
             retryHydration();
           },
-          onError: (_message, _payload) => {
+          onError: () => {
             if (cancelled) return;
             const pendingStop = recoveryStopPendingRef.current;
             if (pendingStop?.controller === controller) {
@@ -491,10 +520,32 @@ export default function ChatPage() {
     );
   }, [chatId, clearQuestions, refreshConversationFiles, sendMessage]);
 
+  const handleComposerKnowledgeBaseIdsChange = useCallback((ids: string[]) => {
+    setComposerKnowledgeSelection((current) => ({
+      chatId,
+      ids,
+      status: current.chatId === chatId ? current.status : 'loading',
+    }));
+  }, [chatId]);
+
+  const handleComposerKnowledgeSelectionStatusChange = useCallback((status: KnowledgeSelectionStatus) => {
+    setComposerKnowledgeSelection((current) => ({
+      chatId,
+      ids: current.chatId === chatId
+        ? current.ids
+        : (conversation?.knowledge_base_ids ?? []),
+      status,
+    }));
+  }, [chatId, conversation?.knowledge_base_ids]);
+
+  const handleSuggestedQuestionSend = useCallback((question: string) => (
+    handleSendMessage(question, undefined, undefined, composerKnowledgeBaseIds)
+  ), [composerKnowledgeBaseIds, handleSendMessage]);
+
   const handleSelectQuestion = useSuggestedQuestionContinuation({
-    canContinue: Boolean(chatId),
+    canContinue: Boolean(chatId) && composerKnowledgeSelectionStatus === 'ready',
     clearQuestions,
-    sendMessage: handleSendMessage,
+    sendMessage: handleSuggestedQuestionSend,
     scrollTargetRef: chatInputRef,
   });
 
@@ -884,6 +935,8 @@ export default function ChatPage() {
               onClearConversationAttachments={handleClearConversationAttachments}
               onUploadComplete={handleUploadComplete}
               initialKnowledgeBaseIds={conversation?.knowledge_base_ids}
+              onKnowledgeBaseIdsChange={handleComposerKnowledgeBaseIdsChange}
+              onKnowledgeSelectionStatusChange={handleComposerKnowledgeSelectionStatusChange}
             />
           </div>
         </div>

@@ -2,6 +2,7 @@ import { configureStore } from '@reduxjs/toolkit';
 import { setupListeners } from '@reduxjs/toolkit/query';
 import toastMiddleware from './middleware/toastMiddleware';
 import conversationDetailInvalidationMiddleware from './middleware/conversationDetailInvalidationMiddleware';
+import persistMiddleware from './middleware/persistMiddleware';
 import appReducer from './slices/appSlice';
 import conversationReducer from './slices/conversationSlice';
 import fileUploadReducer from './slices/fileUploadSlice';
@@ -53,7 +54,12 @@ export const store = configureStore({
     middleware: (getDefaultMiddleware) => 
         getDefaultMiddleware({
             serializableCheck: false, // 在这里我们允许非序列化值，因为文件对象等可能不会被序列化
-        }).concat(toastMiddleware, conversationDetailInvalidationMiddleware, dbSyncMiddleware),
+        }).concat(
+            toastMiddleware,
+            conversationDetailInvalidationMiddleware,
+            persistMiddleware,
+            dbSyncMiddleware,
+        ),
 });
 
 setupListeners(store.dispatch);
