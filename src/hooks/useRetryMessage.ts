@@ -16,6 +16,7 @@ type SendMessageFn = (
   options: {
     conversationId: string | null;
     resolvedModelId?: string;
+    knowledgeBaseIds?: string[];
     onRejectedBeforeSend?: () => void;
     onAccepted?: () => void;
   },
@@ -47,7 +48,11 @@ export function useRetryMessage(sendMessage: SendMessageFn) {
   const store = useStore();
 
   return useCallback(
-    async (messageId: string, conversationId: string) => {
+    async (
+      messageId: string,
+      conversationId: string,
+      knowledgeBaseIds?: string[],
+    ) => {
       const state = store.getState() as RootState;
       const conversation = state.conversation.byId[conversationId];
       if (!conversation) return;
@@ -57,6 +62,11 @@ export function useRetryMessage(sendMessage: SendMessageFn) {
       if (targetIndex === -1) return;
 
       const targetMsg = messages[targetIndex];
+      const effectiveKnowledgeBaseIds = knowledgeBaseIds
+        ?? conversation.knowledge_base_ids;
+      const knowledgeScopeOptions = knowledgeBaseIds === undefined
+        ? {}
+        : { knowledgeBaseIds };
       const modelResolution = resolveSendModel(state, conversationId);
       if (modelResolution.status !== 'ready') {
         dispatch(setGlobalError(getSendModelErrorMessage(modelResolution)));
@@ -76,7 +86,7 @@ export function useRetryMessage(sendMessage: SendMessageFn) {
 
         const { text, attachments } = extractMessageContent(userMessage);
 
-        if (conversation.knowledge_base_ids?.length && attachments.length > 0) {
+        if (effectiveKnowledgeBaseIds?.length && attachments.length > 0) {
           dispatch(setGlobalError(
             '严格知识库模式不能重试带附件的历史消息，请先清空知识库选择',
           ));
@@ -89,6 +99,7 @@ export function useRetryMessage(sendMessage: SendMessageFn) {
             {
               conversationId,
               resolvedModelId: modelResolution.model.id,
+              ...knowledgeScopeOptions,
               onAccepted: () => {
                 dispatch(removeMessage({ conversationId, messageId }));
                 dispatch(removeMessage({ conversationId, messageId: userMessage.id }));
@@ -103,7 +114,7 @@ export function useRetryMessage(sendMessage: SendMessageFn) {
 
         const { text, attachments } = extractMessageContent(targetMsg);
 
-        if (conversation.knowledge_base_ids?.length && attachments.length > 0) {
+        if (effectiveKnowledgeBaseIds?.length && attachments.length > 0) {
           dispatch(setGlobalError(
             '严格知识库模式不能重试带附件的历史消息，请先清空知识库选择',
           ));
@@ -116,6 +127,7 @@ export function useRetryMessage(sendMessage: SendMessageFn) {
             {
               conversationId,
               resolvedModelId: modelResolution.model.id,
+              ...knowledgeScopeOptions,
               onAccepted: () => {
                 if (nextMsg && nextMsg.role === 'assistant') {
                   dispatch(removeMessage({ conversationId, messageId: nextMsg.id }));

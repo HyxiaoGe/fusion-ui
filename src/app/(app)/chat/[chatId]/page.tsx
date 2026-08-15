@@ -556,10 +556,15 @@ export default function ChatPage() {
 
   const handleRetry = useCallback(
     (messageId: string) => {
-      if (!chatId) return;
-      void retryMessage(messageId, chatId);
+      if (!chatId || composerKnowledgeSelectionStatus !== 'ready') return;
+      void retryMessage(messageId, chatId, composerKnowledgeBaseIds);
     },
-    [chatId, retryMessage]
+    [
+      chatId,
+      composerKnowledgeBaseIds,
+      composerKnowledgeSelectionStatus,
+      retryMessage,
+    ]
   );
 
   const handleContinueAgentRun = useCallback((messageId: string, previousRunId?: string) => {

@@ -414,6 +414,11 @@ vi.mock('@/components/lazy/LazyComponents', () => ({
             选择推荐问题
           </button>
         ) : null}
+        {props.onRetry && props.messages[0] ? (
+          <button type="button" onClick={() => props.onRetry(props.messages[0].id)}>
+            重试消息
+          </button>
+        ) : null}
       </div>
     );
   },
@@ -1511,6 +1516,39 @@ describe('ChatPage 会话切换体验', () => {
     fireEvent.click(screen.getByRole('button', { name: '选择推荐问题' }));
 
     expect(sendMessageMock).not.toHaveBeenCalled();
+  });
+
+  it('重试显式使用输入框当前已验证的知识库范围', async () => {
+    const conversation = createConversation('chat-a', [textMessage('message-a')]);
+    conversation.knowledge_base_ids = ['kb-old'];
+    conversationsById.set('chat-a', conversation);
+    hydrationById.set('chat-a', { view: 'ready' });
+
+    render(<ChatPage />);
+
+    fireEvent.click(screen.getByRole('button', { name: '改选知识库' }));
+    fireEvent.click(screen.getByRole('button', { name: '标记知识库可用' }));
+    fireEvent.click(screen.getByRole('button', { name: '重试消息' }));
+
+    expect(retryMessageMock).toHaveBeenCalledWith(
+      'message-a',
+      'chat-a',
+      ['kb-new'],
+    );
+  });
+
+  it('输入框当前知识库范围不可用时阻止重试', async () => {
+    const conversation = createConversation('chat-a', [textMessage('message-a')]);
+    conversation.knowledge_base_ids = ['kb-old'];
+    conversationsById.set('chat-a', conversation);
+    hydrationById.set('chat-a', { view: 'ready' });
+
+    render(<ChatPage />);
+
+    fireEvent.click(screen.getByRole('button', { name: '标记知识库不可用' }));
+    fireEvent.click(screen.getByRole('button', { name: '重试消息' }));
+
+    expect(retryMessageMock).not.toHaveBeenCalled();
   });
 
   it('同一会话无关状态变化时保持 ChatMessageList 的 emptyState 引用稳定', async () => {
