@@ -42,7 +42,7 @@ export interface ChatRequest {
     [key: string]: unknown;
   } | null;
   file_ids?: string[];
-  /** undefined=保持现有选择，[]=清空，1..5=替换。 */
+  /** undefined=保持现有选择，[]=清空，非空数组按服务端能力上限替换。 */
   knowledge_base_ids?: string[];
 }
 

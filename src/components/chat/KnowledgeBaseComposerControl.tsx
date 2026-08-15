@@ -10,13 +10,17 @@ import { getChatCapabilities } from '@/lib/api/chat';
 import { listKnowledgeBases } from '@/lib/api/knowledgeBases';
 import type { KnowledgeBase } from '@/types/knowledge';
 
-const MAX_SELECTED_KNOWLEDGE_BASES = 5;
 const KNOWLEDGE_BASE_PAGE_SIZE = 100;
 const MAX_KNOWLEDGE_BASE_PAGES = 20;
 const MAX_KNOWLEDGE_BASE_ITEMS = 1_000;
 
 type LoadState = 'idle' | 'loading' | 'ready' | 'failed';
-export type KnowledgeSelectionStatus = 'ready' | 'loading' | 'failed' | 'unavailable';
+export type KnowledgeSelectionStatus =
+  | 'ready'
+  | 'loading'
+  | 'failed'
+  | 'unavailable'
+  | 'limit_exceeded';
 
 interface KnowledgeBaseComposerControlProps {
   selectedIds: string[];
@@ -35,9 +39,20 @@ function isAvailableForQuestionAnswering(base: KnowledgeBase): boolean {
   return base.status === 'active' && base.document_stats.ready > 0;
 }
 
-async function loadAllAvailableKnowledgeBases(signal: AbortSignal): Promise<KnowledgeBase[]> {
+interface KnowledgeBaseLoadResult {
+  items: KnowledgeBase[];
+  maxSelectedKnowledgeBases: number;
+}
+
+async function loadAllAvailableKnowledgeBases(
+  signal: AbortSignal,
+): Promise<KnowledgeBaseLoadResult> {
   const capabilities = await getChatCapabilities(signal);
-  if (!capabilities.knowledge_grounding_v1) {
+  if (
+    !capabilities.knowledge_grounding_v1
+    || !Number.isSafeInteger(capabilities.knowledge_grounding_max_bases)
+    || capabilities.knowledge_grounding_max_bases < 1
+  ) {
     throw new Error('当前服务端不支持严格知识库问答');
   }
   const items: KnowledgeBase[] = [];
@@ -62,7 +77,10 @@ async function loadAllAvailableKnowledgeBases(signal: AbortSignal): Promise<Know
     page += 1;
   }
 
-  return items;
+  return {
+    items,
+    maxSelectedKnowledgeBases: capabilities.knowledge_grounding_max_bases,
+  };
 }
 
 export default function KnowledgeBaseComposerControl({
@@ -77,6 +95,7 @@ export default function KnowledgeBaseComposerControl({
   const [open, setOpen] = useState(false);
   const [loadState, setLoadState] = useState<LoadState>('idle');
   const [bases, setBases] = useState<KnowledgeBase[]>([]);
+  const [maxSelectedKnowledgeBases, setMaxSelectedKnowledgeBases] = useState<number | null>(null);
   const [retryGeneration, setRetryGeneration] = useState(0);
   const requestGenerationRef = useRef(0);
 
@@ -87,16 +106,19 @@ export default function KnowledgeBaseComposerControl({
 
     if (!enabled || scopeKey == null) {
       setBases([]);
+      setMaxSelectedKnowledgeBases(null);
       setLoadState('idle');
       return () => controller.abort();
     }
 
     setBases([]);
+    setMaxSelectedKnowledgeBases(null);
     setLoadState('loading');
     void loadAllAvailableKnowledgeBases(controller.signal)
-      .then((items) => {
+      .then((result) => {
         if (controller.signal.aborted || generation !== requestGenerationRef.current) return;
-        setBases(items);
+        setBases(result.items);
+        setMaxSelectedKnowledgeBases(result.maxSelectedKnowledgeBases);
         setLoadState('ready');
       })
       .catch((error) => {
@@ -108,6 +130,7 @@ export default function KnowledgeBaseComposerControl({
           return;
         }
         setBases([]);
+        setMaxSelectedKnowledgeBases(null);
         setLoadState('failed');
       });
 
@@ -125,15 +148,20 @@ export default function KnowledgeBaseComposerControl({
     [baseById, loadState, selectedIds],
   );
   const hasUnavailable = unavailableIds.length > 0;
+  const selectionLimitExceeded = loadState === 'ready'
+    && maxSelectedKnowledgeBases !== null
+    && selectedIds.length > maxSelectedKnowledgeBases;
   const selectionStatus: KnowledgeSelectionStatus = selectedIds.length === 0
     ? 'ready'
     : loadState === 'failed'
       ? 'failed'
       : loadState !== 'ready'
         ? 'loading'
-        : hasUnavailable
-          ? 'unavailable'
-          : 'ready';
+        : selectionLimitExceeded
+          ? 'limit_exceeded'
+          : hasUnavailable
+            ? 'unavailable'
+            : 'ready';
 
   useEffect(() => {
     onSelectionStatusChange?.(selectionStatus);
@@ -144,9 +172,12 @@ export default function KnowledgeBaseComposerControl({
       onChange(selectedIds.filter((id) => id !== knowledgeBaseId));
       return;
     }
-    if (selectedIds.length >= MAX_SELECTED_KNOWLEDGE_BASES) return;
+    if (
+      maxSelectedKnowledgeBases === null
+      || selectedIds.length >= maxSelectedKnowledgeBases
+    ) return;
     onChange([...selectedIds, knowledgeBaseId]);
-  }, [onChange, selectedIds]);
+  }, [maxSelectedKnowledgeBases, onChange, selectedIds]);
 
   if (!enabled) return null;
 
@@ -232,7 +263,10 @@ export default function KnowledgeBaseComposerControl({
                 <div className="space-y-1">
                   {bases.map((base) => {
                     const checked = selectedIds.includes(base.id);
-                    const selectionLimitReached = !checked && selectedIds.length >= MAX_SELECTED_KNOWLEDGE_BASES;
+                    const selectionLimitReached = !checked && (
+                      maxSelectedKnowledgeBases === null
+                      || selectedIds.length >= maxSelectedKnowledgeBases
+                    );
                     return (
                       <label
                         key={base.id}
@@ -272,9 +306,10 @@ export default function KnowledgeBaseComposerControl({
               )}
             </div>
 
-            {selectedIds.length >= MAX_SELECTED_KNOWLEDGE_BASES ? (
+            {maxSelectedKnowledgeBases !== null
+            && selectedIds.length >= maxSelectedKnowledgeBases ? (
               <p className="border-t border-border/60 px-3 py-2 text-xs text-muted-foreground">
-                {t('knowledgeBase.composer.limit')}
+                {t('knowledgeBase.composer.limit', { count: maxSelectedKnowledgeBases })}
               </p>
             ) : null}
           </PopoverContent>
@@ -337,6 +372,12 @@ export default function KnowledgeBaseComposerControl({
         <p role="alert" className="mt-1.5 text-xs text-destructive">
           {t('knowledgeBase.composer.failedSelectionHint')}
         </p>
+      ) : selectionLimitExceeded ? (
+        <p role="alert" className="mt-1.5 text-xs text-destructive">
+          {t('knowledgeBase.composer.limitExceededHint', {
+            count: maxSelectedKnowledgeBases,
+          })}
+        </p>
       ) : hasUnavailable ? (
         <p role="alert" className="mt-1.5 text-xs text-destructive">
           {t('knowledgeBase.composer.unavailableHint')}
@@ -346,4 +387,4 @@ export default function KnowledgeBaseComposerControl({
   );
 }
 
-export { MAX_SELECTED_KNOWLEDGE_BASES, isAvailableForQuestionAnswering };
+export { isAvailableForQuestionAnswering };

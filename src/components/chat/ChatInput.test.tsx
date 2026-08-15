@@ -728,6 +728,52 @@ describe('ChatInput', () => {
     );
   });
 
+  it('恢复会话时不按旧客户端常量截断知识库选择', async () => {
+    configureAuthenticatedVisionModel();
+    getChatCapabilitiesMock.mockResolvedValue({
+      knowledge_grounding_v1: true,
+      knowledge_grounding_max_bases: 8,
+    });
+    const items = Array.from({ length: 6 }, (_, index) => ({
+      id: `kb-${index + 1}`,
+      name: `知识库 ${index + 1}`,
+      description: '',
+      business_type: '',
+      status: 'active',
+      document_stats: { total: 1, ready: 1, processing: 0, failed: 0 },
+      embedding_provider: 'dashscope',
+      embedding_model: 'text-embedding-v4',
+      embedding_revision: 'v1',
+      embedding_dimension: 1024,
+      distance_metric: 'COSINE',
+      created_at: '2026-08-15T00:00:00Z',
+      updated_at: '2026-08-15T00:00:00Z',
+      deleted_at: null,
+    }));
+    listKnowledgeBasesMock.mockResolvedValue({
+      items,
+      page: 1,
+      page_size: 100,
+      total: items.length,
+      total_pages: 1,
+      has_next: false,
+      has_prev: false,
+    });
+
+    render(
+      <ChatInput
+        onSendMessage={vi.fn()}
+        activeChatId="chat-a"
+        initialKnowledgeBaseIds={items.map((item) => item.id)}
+      />,
+    );
+
+    await screen.findByText('知识库 6');
+    expect(screen.getAllByRole('button', {
+      name: /Remove knowledge base|移除知识库/u,
+    })).toHaveLength(6);
+  });
+
   it('知识库发送在能力预检失败时恢复尚未被接收的输入', async () => {
     configureAuthenticatedVisionModel();
     listKnowledgeBasesMock.mockResolvedValue({

@@ -68,7 +68,6 @@ import {
 import type { ComposerAgentMode } from "@/types/agentRun";
 import { PlanTimeline } from "./agent/PlanTimeline";
 import KnowledgeBaseComposerControl, {
-  MAX_SELECTED_KNOWLEDGE_BASES,
   type KnowledgeSelectionStatus,
 } from "./KnowledgeBaseComposerControl";
 
@@ -142,7 +141,7 @@ const COMPOSER_AGENT_MODES: Array<{
 ];
 
 function normalizeSelectedKnowledgeBaseIds(ids: string[] | undefined): string[] {
-  return Array.from(new Set((ids ?? []).filter(Boolean))).slice(0, MAX_SELECTED_KNOWLEDGE_BASES);
+  return Array.from(new Set((ids ?? []).filter(Boolean)));
 }
 
 function areKnowledgeBaseIdsEqual(left: string[], right: string[]): boolean {
@@ -1069,7 +1068,9 @@ const ChatInput: React.FC<ChatInputProps> = ({
         ? '正在确认所选知识库状态，请稍后'
         : knowledgeSelectionStatus === 'failed'
           ? '知识库列表加载失败，请重试后再发送'
-          : '已选知识库已不可用，请移除后再发送';
+          : knowledgeSelectionStatus === 'limit_exceeded'
+            ? '已选知识库超过服务端数量上限，请移除后再发送'
+            : '已选知识库已不可用，请移除后再发送';
       toast({
         message: statusMessage,
         type: 'warning',

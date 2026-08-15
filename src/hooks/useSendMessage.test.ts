@@ -395,6 +395,96 @@ describe('useSendMessage', () => {
     expect(sendMessageStreamMock).toHaveBeenCalledTimes(1);
   });
 
+  it('严格知识库能力预检期间切换账号时拒绝旧会话草稿且不启动后台流', async () => {
+    const store = createStore();
+    store.dispatch(upsertConversation({
+      id: 'existing-conv',
+      title: 'Existing',
+      model_id: 'model-1',
+      knowledge_base_ids: ['kb-1'],
+      messages: [],
+      createdAt: 100,
+      updatedAt: 200,
+    }));
+    let resolveCapabilities: (value: {
+      knowledge_grounding_v1: boolean;
+      knowledge_grounding_max_bases: number;
+    }) => void = () => {
+      throw new Error('能力预检尚未开始');
+    };
+    getChatCapabilitiesMock.mockImplementationOnce(() => new Promise((resolve) => {
+      resolveCapabilities = resolve;
+    }));
+    const onRejectedBeforeSend = vi.fn();
+
+    const { result } = renderHook(() => useSendMessage(), {
+      wrapper: createWrapper(store),
+    });
+
+    let pendingSend: Promise<void>;
+    act(() => {
+      pendingSend = result.current.sendMessage('旧账号草稿', {
+        conversationId: 'existing-conv',
+        knowledgeBaseIds: ['kb-1'],
+        onRejectedBeforeSend,
+      });
+    });
+    await waitFor(() => expect(getChatCapabilitiesMock).toHaveBeenCalledTimes(1));
+
+    act(() => {
+      store.dispatch({
+        type: 'auth/fetchUserProfile/fulfilled',
+        payload: createUser('user-b'),
+      });
+    });
+    resolveCapabilities({
+      knowledge_grounding_v1: true,
+      knowledge_grounding_max_bases: 5,
+    });
+    await act(async () => {
+      await pendingSend!;
+    });
+
+    expect(onRejectedBeforeSend).toHaveBeenCalledTimes(1);
+    expect(sendMessageStreamMock).not.toHaveBeenCalled();
+    expect(store.getState().conversation.byId['existing-conv'].messages).toEqual([]);
+  });
+
+  it('严格知识库发送遵循服务端协商的知识库数量上限', async () => {
+    const store = createStore();
+    store.dispatch(upsertConversation({
+      id: 'existing-conv',
+      title: 'Existing',
+      model_id: 'model-1',
+      knowledge_base_ids: ['kb-old'],
+      messages: [],
+      createdAt: 100,
+      updatedAt: 200,
+    }));
+    getChatCapabilitiesMock.mockResolvedValueOnce({
+      knowledge_grounding_v1: true,
+      knowledge_grounding_max_bases: 1,
+    });
+    const onRejectedBeforeSend = vi.fn();
+
+    const { result } = renderHook(() => useSendMessage(), {
+      wrapper: createWrapper(store),
+    });
+
+    await act(async () => {
+      await result.current.sendMessage('超出协商上限', {
+        conversationId: 'existing-conv',
+        knowledgeBaseIds: ['kb-1', 'kb-2'],
+        onRejectedBeforeSend,
+      });
+    });
+
+    expect(onRejectedBeforeSend).toHaveBeenCalledTimes(1);
+    expect(sendMessageStreamMock).not.toHaveBeenCalled();
+    expect(store.getState().conversation.byId['existing-conv'].knowledge_base_ids).toEqual(['kb-old']);
+    expect(store.getState().conversation.globalError).toBe('最多只能选择 1 个知识库');
+  });
+
   it('服务端拒绝知识库选择变更时回滚到发送前会话快照', async () => {
     const store = createStore();
     store.dispatch(upsertConversation({

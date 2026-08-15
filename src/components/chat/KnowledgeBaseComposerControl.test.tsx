@@ -20,14 +20,15 @@ vi.mock('react-i18next', () => ({
     t: (key: string, options?: Record<string, unknown>) => ({
       'knowledgeBase.composer.trigger': '知识库',
       'knowledgeBase.composer.title': '选择知识库',
-      'knowledgeBase.composer.description': '最多选择 5 个可用知识库',
+      'knowledgeBase.composer.description': '选择可用于问答的知识库',
       'knowledgeBase.composer.loading': '正在加载知识库',
       'knowledgeBase.composer.empty': '暂无可用于问答的知识库',
       'knowledgeBase.composer.failed': '知识库列表加载失败',
       'knowledgeBase.composer.retry': '重试',
       'knowledgeBase.composer.clear': '清空',
       'knowledgeBase.composer.selectedCount': `已选择 ${options?.count ?? 0} 个`,
-      'knowledgeBase.composer.limit': '最多只能选择 5 个知识库',
+      'knowledgeBase.composer.limit': `最多只能选择 ${options?.count ?? 0} 个知识库`,
+      'knowledgeBase.composer.limitExceededHint': `当前选择超过服务端上限 ${options?.count ?? 0}，请移除后再发送。`,
       'knowledgeBase.composer.strict': '严格知识库模式',
       'knowledgeBase.composer.remove': `移除知识库 ${options?.name ?? ''}`,
       'knowledgeBase.composer.validating': '正在确认知识库',
@@ -122,6 +123,66 @@ describe('KnowledgeBaseComposerControl', () => {
     }
 
     expect(screen.getByRole('checkbox', { name: '知识库 kb-6' })).toBeDisabled();
+  });
+
+  it('使用服务端协商的数量上限限制新选择', async () => {
+    getChatCapabilitiesMock.mockResolvedValueOnce({
+      knowledge_grounding_v1: true,
+      knowledge_grounding_max_bases: 2,
+    });
+    listKnowledgeBasesMock.mockResolvedValue(page([
+      base('kb-1'),
+      base('kb-2'),
+      base('kb-3'),
+    ]));
+    const onChange = vi.fn();
+    const { rerender } = render(
+      <KnowledgeBaseComposerControl selectedIds={[]} onChange={onChange} disabled={false} />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: '知识库' }));
+    await screen.findByText('知识库 kb-1');
+    fireEvent.click(screen.getByRole('checkbox', { name: '知识库 kb-1' }));
+    rerender(
+      <KnowledgeBaseComposerControl selectedIds={['kb-1']} onChange={onChange} disabled={false} />,
+    );
+    fireEvent.click(screen.getByRole('checkbox', { name: '知识库 kb-2' }));
+    rerender(
+      <KnowledgeBaseComposerControl selectedIds={['kb-1', 'kb-2']} onChange={onChange} disabled={false} />,
+    );
+
+    expect(screen.getByRole('checkbox', { name: '知识库 kb-3' })).toBeDisabled();
+    expect(screen.getByText('最多只能选择 2 个知识库')).toBeInTheDocument();
+  });
+
+  it('保留超过新协商上限的既有选择并阻止发送状态', async () => {
+    getChatCapabilitiesMock.mockResolvedValueOnce({
+      knowledge_grounding_v1: true,
+      knowledge_grounding_max_bases: 2,
+    });
+    listKnowledgeBasesMock.mockResolvedValue(page([
+      base('kb-1'),
+      base('kb-2'),
+      base('kb-3'),
+    ]));
+    const onSelectionStatusChange = vi.fn();
+
+    render(
+      <KnowledgeBaseComposerControl
+        selectedIds={['kb-1', 'kb-2', 'kb-3']}
+        onChange={vi.fn()}
+        disabled={false}
+        onSelectionStatusChange={onSelectionStatusChange}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(onSelectionStatusChange).toHaveBeenLastCalledWith('limit_exceeded');
+    });
+    expect(screen.getAllByRole('button', { name: /移除知识库/u })).toHaveLength(3);
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      '当前选择超过服务端上限 2，请移除后再发送。',
+    );
   });
 
   it('忽略快速切换作用域后的迟到列表请求', async () => {

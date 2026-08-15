@@ -86,7 +86,7 @@ type SendMessageOptions = {
   onDraftCreated?: (draftConversationId: string) => void;
   onMaterialized?: (serverConversationId: string) => void;
   onStreamEnd?: (conversationId: string) => void;
-  /** undefined=保持，[]=清空，1..5=替换会话知识库选择。 */
+  /** undefined=保持，[]=清空，非空数组按服务端能力上限替换会话知识库选择。 */
   knowledgeBaseIds?: string[];
   /** 发送尚未被本地消息队列接收时通知输入区保留草稿。 */
   onRejectedBeforeSend?: () => void;
@@ -431,7 +431,15 @@ export function useSendMessage() {
   const sendMessage = useCallback(
     async (content: string, options: SendMessageOptions, attachments?: FileAttachment[]) => {
       if (!content.trim() && (!attachments || attachments.length === 0)) return;
-      const sendSessionKey = authSessionKey ?? 'anonymous';
+      const preparationContext = captureSendSessionContext(
+        store.getState(),
+        sendGenerationRef.current,
+      );
+      if (!preparationContext) {
+        options.onRejectedBeforeSend?.();
+        return;
+      }
+      const sendSessionKey = preparationContext.authSessionKey;
       const streamIsOwnedByAnotherComposer = Boolean(
         store.getState().stream.isStreaming && !abortControllerRef.current,
       );
@@ -449,14 +457,22 @@ export function useSendMessage() {
         preparationReleased = true;
         activeSendPreparations.delete(sendSessionKey);
       };
+      const rejectStalePreparation = () => {
+        if (isSendSessionCurrent(store.getState(), preparationContext)) return false;
+        releaseSendPreparation();
+        options.onRejectedBeforeSend?.();
+        return true;
+      };
 
       try {
         if (stopInFlightPromiseRef.current) {
           await stopInFlightPromiseRef.current;
+          if (rejectStalePreparation()) return;
         }
 
         if (abortControllerRef.current) {
           await stopStreaming();
+          if (rejectStalePreparation()) return;
         }
       } catch (error) {
         releaseSendPreparation();
@@ -498,13 +514,29 @@ export function useSendMessage() {
       );
       const strictKnowledgeMode = Boolean(effectiveKnowledgeBaseIds?.length);
       if (strictKnowledgeMode) {
+        let capabilities: Awaited<ReturnType<typeof getChatCapabilities>>;
         try {
-          const capabilities = await getChatCapabilities();
-          if (!capabilities.knowledge_grounding_v1) {
-            throw new Error('服务端未启用严格知识库问答协议');
-          }
+          capabilities = await getChatCapabilities();
         } catch {
           dispatch(setGlobalError('知识库问答当前不可用，请刷新页面后重试'));
+          releaseSendPreparation();
+          options.onRejectedBeforeSend?.();
+          return;
+        }
+        if (rejectStalePreparation()) return;
+        const maxKnowledgeBases = capabilities.knowledge_grounding_max_bases;
+        if (
+          !capabilities.knowledge_grounding_v1
+          || !Number.isSafeInteger(maxKnowledgeBases)
+          || maxKnowledgeBases < 1
+        ) {
+          dispatch(setGlobalError('知识库问答当前不可用，请刷新页面后重试'));
+          releaseSendPreparation();
+          options.onRejectedBeforeSend?.();
+          return;
+        }
+        if ((effectiveKnowledgeBaseIds?.length ?? 0) > maxKnowledgeBases) {
+          dispatch(setGlobalError(`最多只能选择 ${maxKnowledgeBases} 个知识库`));
           releaseSendPreparation();
           options.onRejectedBeforeSend?.();
           return;
@@ -1055,7 +1087,6 @@ export function useSendMessage() {
       }
     },
     [
-      authSessionKey,
       dispatch,
       composerAgentMode,
       hydrateAuthoritativeConversation,
