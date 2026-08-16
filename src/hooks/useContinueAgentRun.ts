@@ -63,6 +63,7 @@ interface ContinuationCallbackDeps {
   store: ReturnType<typeof useStore>;
   isActive: () => boolean;
   setServerMessageId: (messageId: string) => void;
+  setServerTaskId: (taskId?: string) => void;
   markTerminalErrorHandled: () => void;
 }
 
@@ -72,6 +73,7 @@ interface ActiveContinuation {
   conversationId: string;
   assistantMessageId: string;
   serverMessageId?: string;
+  serverTaskId?: string;
 }
 
 function refreshContinuationMessage({
@@ -126,10 +128,14 @@ function buildContinuationStreamCallbacks({
   store,
   isActive,
   setServerMessageId,
+  setServerTaskId,
   markTerminalErrorHandled,
 }: ContinuationCallbackDeps): StreamCallbacks {
   return {
-    onReady: () => {},
+    onReady: ({ taskId }) => {
+      if (!isActive()) return;
+      setServerTaskId(taskId);
+    },
     onReasoning: payload => {
       if (!isActive()) return;
       dispatch(appendThinkingDelta({
@@ -250,21 +256,27 @@ export function useContinueAgentRun(deps: HookDeps = {}) {
     let terminalErrorHandled = false;
     const isActive = () => activeContinuationRef.current?.token === token;
     const callbacks = buildContinuationStreamCallbacks({
-          conversationId,
-          assistantMessageId,
-          dispatch,
-          store,
-          isActive,
-          markTerminalErrorHandled: () => {
-            terminalErrorHandled = true;
-          },
-          setServerMessageId: messageId => {
-            const active = activeContinuationRef.current;
-            if (active?.token === token) {
-              active.serverMessageId = messageId;
-            }
-          },
-        });
+      conversationId,
+      assistantMessageId,
+      dispatch,
+      store,
+      isActive,
+      markTerminalErrorHandled: () => {
+        terminalErrorHandled = true;
+      },
+      setServerMessageId: messageId => {
+        const active = activeContinuationRef.current;
+        if (active?.token === token) {
+          active.serverMessageId = messageId;
+        }
+      },
+      setServerTaskId: taskId => {
+        const active = activeContinuationRef.current;
+        if (active?.token === token) {
+          active.serverTaskId = taskId;
+        }
+      },
+    });
 
     try {
       await runResumableStream({
@@ -334,10 +346,20 @@ export function useContinueAgentRun(deps: HookDeps = {}) {
     }
 
     active.controller.abort();
-    await stopStream(
-      active.conversationId,
-      streamState.currentRun?.serverMessageId ?? active.serverMessageId ?? active.assistantMessageId,
-    );
+    const messageId = streamState.currentRun?.serverMessageId
+      ?? active.serverMessageId
+      ?? active.assistantMessageId;
+    if (active.serverTaskId) {
+      await stopStream(
+        active.conversationId,
+        messageId,
+        undefined,
+        undefined,
+        active.serverTaskId,
+      );
+    } else {
+      await stopStream(active.conversationId, messageId);
+    }
     dispatch(endStream());
     return true;
   }, [dispatch, store]);

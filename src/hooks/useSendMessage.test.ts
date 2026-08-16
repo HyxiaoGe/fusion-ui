@@ -1871,7 +1871,11 @@ describe('useSendMessage', () => {
     }));
     stopStreamMock.mockResolvedValue(true);
     sendMessageStreamMock.mockImplementationOnce(async (_payload: any, callbacks: StreamCallbacks) => {
-      callbacks.onReady({ messageId: 'retry-assistant', conversationId: 'existing-conv' });
+      callbacks.onReady({
+        messageId: 'retry-assistant',
+        conversationId: 'existing-conv',
+        taskId: 'retry-task-1',
+      });
       callbacks.onAnswering({ block_id: 'answer-new', delta: '半截新回答' });
       await new Promise<void>(() => {});
     });
@@ -1894,8 +1898,15 @@ describe('useSendMessage', () => {
     });
 
     const messages = store.getState().conversation.byId['existing-conv']?.messages ?? [];
-    expect(messages.find((message) => message.id === 'retry-user')).toEqual(originalUser);
-    expect(messages.find((message) => message.id === 'retry-assistant')).toEqual(originalAssistant);
+    expect(messages.find((message: Message) => message.id === 'retry-user')).toEqual(originalUser);
+    expect(messages.find((message: Message) => message.id === 'retry-assistant')).toEqual(originalAssistant);
+    expect(stopStreamMock).toHaveBeenCalledWith(
+      'existing-conv',
+      'retry-assistant',
+      expect.any(AbortSignal),
+      undefined,
+      'retry-task-1',
+    );
   });
 
   it('停止重新生成与后台完成竞态时以服务端新回答为准', async () => {
@@ -1959,7 +1970,7 @@ describe('useSendMessage', () => {
 
     await waitFor(() => {
       const messages = store.getState().conversation.byId['existing-conv']?.messages ?? [];
-      expect(messages.find((message) => message.id === 'retry-assistant')).toEqual(
+      expect(messages.find((message: Message) => message.id === 'retry-assistant')).toEqual(
         expect.objectContaining({
           id: 'retry-assistant',
           content: completedAssistant.content,

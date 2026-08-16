@@ -241,6 +241,7 @@ export function useSendMessage(activeConversationId?: string | null) {
   // BE 在 run_started/onReady 给的真实 assistant message_id，stop 时校验用。
   // 不复用 assistantMessageIdRef（那是 placeholder，streaming 期渲染匹配仍要用）
   const serverMessageIdRef = useRef<string | null>(null);
+  const serverTaskIdRef = useRef<string | null>(null);
   const assistantHasContentRef = useRef(false);
   const activeRetryTurnSnapshotRef = useRef<ActiveRetryTurnSnapshot | null>(null);
   const sendGenerationRef = useRef(0);
@@ -298,6 +299,7 @@ export function useSendMessage(activeConversationId?: string | null) {
     userMessageIdRef.current = null;
     assistantMessageIdRef.current = null;
     serverMessageIdRef.current = null;
+    serverTaskIdRef.current = null;
     assistantHasContentRef.current = false;
     activeRetryTurnSnapshotRef.current = null;
     activeSendContextRef.current = null;
@@ -343,6 +345,7 @@ export function useSendMessage(activeConversationId?: string | null) {
       const userMsgId = userMessageIdRef.current;
       const assistantMsgId = assistantMessageIdRef.current;
       const serverMsgId = serverMessageIdRef.current;
+      const serverTaskId = serverTaskIdRef.current;
       const retryTurnSnapshot = activeRetryTurnSnapshotRef.current;
       const stopSessionContext = activeSendContextRef.current;
       const pendingConversationId = (
@@ -421,6 +424,7 @@ export function useSendMessage(activeConversationId?: string | null) {
       userMessageIdRef.current = null;
       assistantMessageIdRef.current = null;
       serverMessageIdRef.current = null;
+      serverTaskIdRef.current = null;
       assistantHasContentRef.current = false;
       activeRetryTurnSnapshotRef.current = null;
 
@@ -434,16 +438,32 @@ export function useSendMessage(activeConversationId?: string | null) {
         );
         try {
           const { stopStream } = await import('@/lib/api/chat');
-          let cancelled = await stopStream(
-            convId,
-            serverMsgId || undefined,
-            stopController.signal
-          );
+          let cancelled = serverTaskId
+            ? await stopStream(
+                convId,
+                serverMsgId || undefined,
+                stopController.signal,
+                undefined,
+                serverTaskId,
+              )
+            : await stopStream(
+                convId,
+                serverMsgId || undefined,
+                stopController.signal,
+              );
           if (!serverMsgId) {
             for (const delayMs of STOP_BEFORE_READY_RETRY_DELAYS_MS) {
               if (cancelled) break;
               await waitForStopRetry(delayMs, stopController.signal);
-              cancelled = await stopStream(convId, undefined, stopController.signal);
+              cancelled = serverTaskId
+                ? await stopStream(
+                    convId,
+                    undefined,
+                    stopController.signal,
+                    undefined,
+                    serverTaskId,
+                  )
+                : await stopStream(convId, undefined, stopController.signal);
             }
           }
         } catch (error) {
@@ -685,6 +705,7 @@ export function useSendMessage(activeConversationId?: string | null) {
       assistantMessageIdRef.current = assistantMessageId;
       // 清理上一轮残留的 server message id，等本轮 onReady 重新写入
       serverMessageIdRef.current = null;
+      serverTaskIdRef.current = null;
 
       // 构建用户消息 content blocks（文本 + 文件）
       const contentBlocks: ContentBlock[] = [
@@ -873,6 +894,7 @@ export function useSendMessage(activeConversationId?: string | null) {
         userMessageIdRef.current = null;
         assistantMessageIdRef.current = null;
         serverMessageIdRef.current = null;
+        serverTaskIdRef.current = null;
         assistantHasContentRef.current = false;
         activeRetryTurnSnapshotRef.current = null;
         options.onStreamEnd?.(finalConvId);
@@ -888,11 +910,16 @@ export function useSendMessage(activeConversationId?: string | null) {
       };
 
       const streamCallbacks: StreamCallbacks = {
-            onReady: ({ messageId: incomingMessageId, conversationId: incomingConvId }) => {
+            onReady: ({
+              messageId: incomingMessageId,
+              conversationId: incomingConvId,
+              taskId: incomingTaskId,
+            }) => {
               if (!isActiveSendCurrent()) return;
               // 记录 BE 真实 message_id 供 stop 用（不污染 assistantMessageIdRef，
               // streaming 期渲染匹配仍然依赖本地 placeholder）
               serverMessageIdRef.current = incomingMessageId;
+              serverTaskIdRef.current = incomingTaskId ?? null;
               materializeIfNeeded(incomingConvId);
             },
 
@@ -1111,6 +1138,7 @@ export function useSendMessage(activeConversationId?: string | null) {
           userMessageIdRef.current = null;
           assistantMessageIdRef.current = null;
           serverMessageIdRef.current = null;
+          serverTaskIdRef.current = null;
           assistantHasContentRef.current = false;
           activeRetryTurnSnapshotRef.current = null;
           dispatch(requestConversationListRefresh(effectiveConvIdOnError));
@@ -1225,6 +1253,7 @@ export function useSendMessage(activeConversationId?: string | null) {
         userMessageIdRef.current = null;
         assistantMessageIdRef.current = null;
         serverMessageIdRef.current = null;
+        serverTaskIdRef.current = null;
         assistantHasContentRef.current = false;
         activeRetryTurnSnapshotRef.current = null;
         const message = normalizeSendErrorMessage(error instanceof Error ? error.message : '发送失败，请重试');

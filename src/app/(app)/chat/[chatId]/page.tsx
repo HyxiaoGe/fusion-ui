@@ -151,6 +151,7 @@ export default function ChatPage() {
   const chatInputRef = useRef<HTMLDivElement>(null);
   const reconnectControllerRef = useRef<AbortController | null>(null);
   const recoveryStreamModeRef = useRef<'initial' | 'retry' | 'continuation' | null>(null);
+  const recoveryTaskIdRef = useRef<string | null>(null);
   const recoveryStopPendingRef = useRef<{
     controller: AbortController;
     bufferedActions: Array<() => void>;
@@ -251,7 +252,10 @@ export default function ChatPage() {
   const hydrationDone = hydrationView === 'ready';
   const reconnectAttemptedRef = useRef(false);
   // chatId 变化时重置
-  useEffect(() => { reconnectAttemptedRef.current = false; }, [chatId]);
+  useEffect(() => {
+    reconnectAttemptedRef.current = false;
+    recoveryTaskIdRef.current = null;
+  }, [chatId]);
   useEffect(() => {
     if (!chatId || !isAuthenticated || !hydrationDone || isStreaming) return;
     // 每个 chatId 只尝试一次重连，防止 stop 后重复触发
@@ -282,6 +286,7 @@ export default function ChatPage() {
         }
         if (cancelled || !status || status.status !== 'streaming') return;
         recoveryStreamModeRef.current = status.stream_mode ?? 'initial';
+        recoveryTaskIdRef.current = status.task_id ?? null;
 
         const messageId = status.message_id || '';
 
@@ -360,7 +365,9 @@ export default function ChatPage() {
           dispatch(setStreamStatus('error'));
         };
         const callbacks: StreamCallbacks = {
-          onReady: () => {},
+          onReady: ({ taskId }) => {
+            recoveryTaskIdRef.current = taskId ?? recoveryTaskIdRef.current;
+          },
           onAnswering: (payload) => {
             if (cancelled) return;
             dispatchOrBufferRecoveryAction(() => {
@@ -636,12 +643,20 @@ export default function ChatPage() {
         }));
       }
       try {
-        const cancelled = await stopStream(
-          chatId,
-          streamState.messageId ?? undefined,
-          undefined,
-          partialBlocks,
-        );
+        const cancelled = recoveryTaskIdRef.current
+          ? await stopStream(
+              chatId,
+              streamState.messageId ?? undefined,
+              undefined,
+              partialBlocks,
+              recoveryTaskIdRef.current,
+            )
+          : await stopStream(
+              chatId,
+              streamState.messageId ?? undefined,
+              undefined,
+              partialBlocks,
+            );
         if (!cancelled) {
           handleRecoveryStopNotApplied();
           return;
