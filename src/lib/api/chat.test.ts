@@ -36,11 +36,13 @@ describe('getChatCapabilities', () => {
     apiRequestMock.mockResolvedValue({
       knowledge_grounding_v1: true,
       knowledge_grounding_max_bases: 5,
+      message_retry_v1: true,
     });
 
     await expect(getChatCapabilities(controller.signal)).resolves.toEqual({
       knowledge_grounding_v1: true,
       knowledge_grounding_max_bases: 5,
+      message_retry_v1: true,
     });
     expect(apiRequestMock).toHaveBeenCalledWith(
       expect.stringContaining('/api/chat/capabilities'),

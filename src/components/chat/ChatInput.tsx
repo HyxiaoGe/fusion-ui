@@ -70,6 +70,10 @@ import { PlanTimeline } from "./agent/PlanTimeline";
 import KnowledgeBaseComposerControl, {
   type KnowledgeSelectionStatus,
 } from "./KnowledgeBaseComposerControl";
+import {
+  getKnowledgeBaseCatalogSnapshot,
+  resolveKnowledgeBaseSelectionStatus,
+} from '@/lib/chat/knowledgeBaseCatalogResource';
 
 interface ChatInputProps {
   onSendMessage: (
@@ -340,9 +344,13 @@ const ChatInput: React.FC<ChatInputProps> = ({
       && areKnowledgeBaseIdsEqual(selectedKnowledgeBaseIds, normalizedIds);
     setSelectedKnowledgeBaseIds(normalizedIds);
     if (!keepsVerifiedSelection) {
-      setKnowledgeSelectionStatus(normalizedIds.length > 0 ? 'loading' : 'ready');
+      setKnowledgeSelectionStatus(resolveKnowledgeBaseSelectionStatus(
+        getKnowledgeBaseCatalogSnapshot(authIdentity),
+        normalizedIds,
+      ));
     }
   }, [
+    authIdentity,
     initialKnowledgeBaseIds,
     initialKnowledgeSelectionKey,
     knowledgeSelectionScope,
@@ -1358,7 +1366,8 @@ const ChatInput: React.FC<ChatInputProps> = ({
           onChange={handleKnowledgeBaseIdsChange}
           disabled={isComposerBlocked || isStreaming}
           enabled={hasHydrated && isAuthenticated}
-          scopeKey={knowledgeSelectionScope}
+          scopeKey={authIdentity}
+          refreshKey={knowledgeSelectionScope}
           onSelectionStatusChange={handleKnowledgeSelectionStatusChange}
         />
 

@@ -71,6 +71,25 @@ function formatTokens(value: number): string {
   return new Intl.NumberFormat().format(value);
 }
 
+function formatContextWindowTokens(value: number): string {
+  const binaryMillion = 1024 * 1024;
+
+  if (value > 0 && value % binaryMillion === 0) {
+    return `${value / binaryMillion}M`;
+  }
+  if (value > 0 && value % 1_000_000 === 0) {
+    return `${value / 1_000_000}M`;
+  }
+  if (value >= 1024 && value % 1024 === 0) {
+    return `${value / 1024}K`;
+  }
+  if (value >= 1000 && value % 1000 === 0) {
+    return `${value / 1000}K`;
+  }
+
+  return formatTokens(value);
+}
+
 const EMPTY_VIEW = {
   phase: 'unavailable' as const,
   usedTokens: null,
@@ -333,7 +352,7 @@ export default function ContextStatus({
     ? null
     : view.windowTokens === null
       ? `${formatTokens(view.usedTokens)} Token`
-      : `${formatTokens(view.usedTokens)} / ${formatTokens(view.windowTokens)} Token`;
+      : `${formatTokens(view.usedTokens)} / ${formatContextWindowTokens(view.windowTokens)} Token`;
   const removedSummary = view.optimized && !isError
     ? t('contextStatus.removedSummary', {
         turns: view.removedTurns,

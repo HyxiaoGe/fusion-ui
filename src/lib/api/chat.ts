@@ -32,6 +32,8 @@ export interface ChatRequest {
   conversation_id?: string | null;
   user_message_id?: string;
   assistant_message_id?: string;
+  retry_user_message_id?: string;
+  retry_assistant_message_id?: string;
   stream?: boolean;
   options?: {
     use_reasoning?: boolean;
@@ -49,6 +51,7 @@ export interface ChatRequest {
 export interface ChatCapabilities {
   knowledge_grounding_v1: boolean;
   knowledge_grounding_max_bases: number;
+  message_retry_v1: boolean;
 }
 
 export async function getChatCapabilities(signal?: AbortSignal): Promise<ChatCapabilities> {

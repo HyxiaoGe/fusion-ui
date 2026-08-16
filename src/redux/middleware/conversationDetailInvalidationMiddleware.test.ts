@@ -3,10 +3,12 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const {
   invalidateAllConversationDetailsMock,
   invalidateAllConversationFilesMock,
+  resetKnowledgeBaseCatalogResourceMock,
   invalidateConversationDetailMock,
 } = vi.hoisted(() => ({
   invalidateAllConversationDetailsMock: vi.fn(),
   invalidateAllConversationFilesMock: vi.fn(),
+  resetKnowledgeBaseCatalogResourceMock: vi.fn(),
   invalidateConversationDetailMock: vi.fn(),
 }));
 
@@ -17,6 +19,10 @@ vi.mock('@/lib/chat/conversationDetailResource', () => ({
 
 vi.mock('@/lib/chat/conversationFilesResource', () => ({
   invalidateAllConversationFiles: invalidateAllConversationFilesMock,
+}));
+
+vi.mock('@/lib/chat/knowledgeBaseCatalogResource', () => ({
+  resetKnowledgeBaseCatalogResource: resetKnowledgeBaseCatalogResourceMock,
 }));
 
 import conversationDetailInvalidationMiddleware from './conversationDetailInvalidationMiddleware';
@@ -33,6 +39,7 @@ describe('conversationDetailInvalidationMiddleware', () => {
   beforeEach(() => {
     invalidateAllConversationDetailsMock.mockClear();
     invalidateAllConversationFilesMock.mockClear();
+    resetKnowledgeBaseCatalogResourceMock.mockClear();
     invalidateConversationDetailMock.mockClear();
   });
 
@@ -49,6 +56,7 @@ describe('conversationDetailInvalidationMiddleware', () => {
 
     expect(invalidateAllConversationDetailsMock).toHaveBeenCalledTimes(1);
     expect(invalidateAllConversationFilesMock).toHaveBeenCalledTimes(1);
+    expect(resetKnowledgeBaseCatalogResourceMock).toHaveBeenCalledTimes(1);
     expect(dispatch).not.toHaveBeenCalled();
   });
 
@@ -72,6 +80,7 @@ describe('conversationDetailInvalidationMiddleware', () => {
 
     expect(invalidateAllConversationDetailsMock).toHaveBeenCalledTimes(1);
     expect(invalidateAllConversationFilesMock).toHaveBeenCalledTimes(1);
+    expect(resetKnowledgeBaseCatalogResourceMock).toHaveBeenCalledTimes(1);
     expect(dispatch).toHaveBeenCalledWith(
       expect.objectContaining({ type: 'conversation/resetConversationListForAuthChange' })
     );
@@ -110,6 +119,7 @@ describe('conversationDetailInvalidationMiddleware', () => {
 
     expect(invalidateAllConversationDetailsMock).not.toHaveBeenCalled();
     expect(invalidateAllConversationFilesMock).not.toHaveBeenCalled();
+    expect(resetKnowledgeBaseCatalogResourceMock).not.toHaveBeenCalled();
     expect(dispatch).not.toHaveBeenCalled();
   });
 
@@ -125,5 +135,6 @@ describe('conversationDetailInvalidationMiddleware', () => {
     expect(invalidateConversationDetailMock).toHaveBeenCalledWith('chat-a');
     expect(invalidateAllConversationDetailsMock).not.toHaveBeenCalled();
     expect(invalidateAllConversationFilesMock).not.toHaveBeenCalled();
+    expect(resetKnowledgeBaseCatalogResourceMock).not.toHaveBeenCalled();
   });
 });

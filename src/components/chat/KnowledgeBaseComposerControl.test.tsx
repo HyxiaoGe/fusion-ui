@@ -42,6 +42,7 @@ vi.mock('react-i18next', () => ({
 }));
 
 import KnowledgeBaseComposerControl from './KnowledgeBaseComposerControl';
+import { resetKnowledgeBaseCatalogResource } from '@/lib/chat/knowledgeBaseCatalogResource';
 
 function page(items: Array<Record<string, unknown>>) {
   return {
@@ -77,6 +78,7 @@ function base(id: string, overrides: Record<string, unknown> = {}) {
 
 describe('KnowledgeBaseComposerControl', () => {
   beforeEach(() => {
+    resetKnowledgeBaseCatalogResource();
     getChatCapabilitiesMock.mockReset();
     getChatCapabilitiesMock.mockResolvedValue({
       knowledge_grounding_v1: true,

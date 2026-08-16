@@ -54,7 +54,7 @@ export interface StreamStatusData {
   status: 'streaming' | 'done' | 'error' | 'not_found';
   last_entry_id?: string;
   message_id?: string;
-  stream_mode?: 'initial' | 'continuation';
+  stream_mode?: 'initial' | 'retry' | 'continuation';
 }
 
 export class StreamStatusRequestError extends Error {

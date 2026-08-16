@@ -180,6 +180,7 @@ vi.mock('./FilePreviewList', () => ({
 }));
 
 import ChatInput from './ChatInput';
+import { resetKnowledgeBaseCatalogResource } from '@/lib/chat/knowledgeBaseCatalogResource';
 
 beforeAll(() => {
   // Radix DropdownMenu 依赖真实浏览器提供的指针与焦点 API。
@@ -233,6 +234,7 @@ function createConversationBoundToSelectedModel(id: string) {
 
 describe('ChatInput', () => {
   beforeEach(() => {
+    resetKnowledgeBaseCatalogResource();
     localStorage.clear();
     sessionStorage.clear();
     dispatchMock.mockReset();
@@ -726,6 +728,58 @@ describe('ChatInput', () => {
       expect.any(Function),
       expect.any(Function),
     );
+  });
+
+  it('同一账号切换知识库对话时复用目录且不重新进入加载态', async () => {
+    configureAuthenticatedVisionModel();
+    currentState.conversation.byId['chat-b'] = createConversationBoundToSelectedModel('chat-b');
+    currentState.conversation.hydrationStatus['chat-b'] = 'done';
+    listKnowledgeBasesMock.mockResolvedValueOnce({
+      items: [{
+        id: 'kb-1',
+        name: '产品手册',
+        description: '',
+        business_type: '',
+        status: 'active',
+        document_stats: { total: 1, ready: 1, processing: 0, failed: 0 },
+        embedding_provider: 'dashscope',
+        embedding_model: 'text-embedding-v4',
+        embedding_revision: 'v1',
+        embedding_dimension: 1024,
+        distance_metric: 'COSINE',
+        created_at: '2026-08-15T00:00:00Z',
+        updated_at: '2026-08-15T00:00:00Z',
+        deleted_at: null,
+      }],
+      page: 1,
+      page_size: 100,
+      total: 1,
+      total_pages: 1,
+      has_next: false,
+      has_prev: false,
+    });
+
+    const { rerender } = render(
+      <ChatInput
+        onSendMessage={vi.fn()}
+        activeChatId="chat-a"
+        initialKnowledgeBaseIds={['kb-1']}
+      />,
+    );
+    await screen.findByText('产品手册');
+    expect(listKnowledgeBasesMock).toHaveBeenCalledTimes(1);
+
+    rerender(
+      <ChatInput
+        onSendMessage={vi.fn()}
+        activeChatId="chat-b"
+        initialKnowledgeBaseIds={['kb-1']}
+      />,
+    );
+
+    expect(screen.getByText('产品手册')).toBeInTheDocument();
+    expect(screen.queryByText('正在确认所选知识库是否可用，请稍后。')).toBeNull();
+    expect(listKnowledgeBasesMock).toHaveBeenCalledTimes(1);
   });
 
   it('恢复会话时不按旧客户端常量截断知识库选择', async () => {

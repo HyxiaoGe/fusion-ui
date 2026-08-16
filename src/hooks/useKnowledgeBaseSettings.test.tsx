@@ -15,6 +15,7 @@ const api = vi.hoisted(() => ({
   updateKnowledgeBase: vi.fn(),
   uploadKnowledgeDocument: vi.fn(),
 }));
+const invalidateKnowledgeBaseCatalogMock = vi.hoisted(() => vi.fn());
 
 let authSessionKey: string | null = 'user-a';
 
@@ -27,6 +28,10 @@ vi.mock('@/redux/selectors', () => ({
 }));
 
 vi.mock('@/lib/api/knowledgeBases', () => api);
+
+vi.mock('@/lib/chat/knowledgeBaseCatalogResource', () => ({
+  invalidateKnowledgeBaseCatalog: invalidateKnowledgeBaseCatalogMock,
+}));
 
 import {
   KNOWLEDGE_POLL_MAX_CONSECUTIVE_FAILURES,
@@ -222,6 +227,7 @@ describe('useKnowledgeBaseSettings', () => {
 
     expect(result.current.documents.items[0]).toEqual(document);
     expect(result.current.trackedTasks).toEqual([task]);
+    expect(invalidateKnowledgeBaseCatalogMock).toHaveBeenCalledWith('user-a');
   });
 
   it('删除文档后仅标记删除中，不误判为已经完成', async () => {

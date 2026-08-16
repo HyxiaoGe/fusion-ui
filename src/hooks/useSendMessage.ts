@@ -8,6 +8,7 @@ import {
   appendMessage,
   materializeConversation,
   mergeHydratedConversation,
+  replaceMessage,
   removeConversation,
   removeMessage,
   requestConversationListRefresh,
@@ -88,6 +89,10 @@ type SendMessageOptions = {
   onStreamEnd?: (conversationId: string) => void;
   /** undefined=保持，[]=清空，非空数组按服务端能力上限替换会话知识库选择。 */
   knowledgeBaseIds?: string[];
+  /** 安全重试复用原轮次 user ID，禁止追加重复问题。 */
+  retryUserMessageId?: string;
+  /** 原轮次已有回答时复用 assistant ID，并由服务端原位替换。 */
+  retryAssistantMessageId?: string;
   /** 发送尚未被本地消息队列接收时通知输入区保留草稿。 */
   onRejectedBeforeSend?: () => void;
   /** 本地消息与流控制器均已建立，可以提交输入区清理或重试替换。 */
@@ -103,6 +108,12 @@ interface SendSessionContext {
   authSessionKey: string;
   conversationEpoch: number;
   generation: number;
+}
+
+interface ActiveRetryTurnSnapshot {
+  conversationId: string;
+  user: Message;
+  assistant?: Message;
 }
 
 function captureSendSessionContext(
@@ -231,6 +242,7 @@ export function useSendMessage() {
   // 不复用 assistantMessageIdRef（那是 placeholder，streaming 期渲染匹配仍要用）
   const serverMessageIdRef = useRef<string | null>(null);
   const assistantHasContentRef = useRef(false);
+  const activeRetryTurnSnapshotRef = useRef<ActiveRetryTurnSnapshot | null>(null);
   const sendGenerationRef = useRef(0);
   const activeSendContextRef = useRef<SendSessionContext | null>(null);
   const typewriter = useTypewriter();
@@ -287,6 +299,7 @@ export function useSendMessage() {
     assistantMessageIdRef.current = null;
     serverMessageIdRef.current = null;
     assistantHasContentRef.current = false;
+    activeRetryTurnSnapshotRef.current = null;
     activeSendContextRef.current = null;
     dispatch(endStream());
   }, [dispatch]);
@@ -330,6 +343,8 @@ export function useSendMessage() {
       const userMsgId = userMessageIdRef.current;
       const assistantMsgId = assistantMessageIdRef.current;
       const serverMsgId = serverMessageIdRef.current;
+      const retryTurnSnapshot = activeRetryTurnSnapshotRef.current;
+      const stopSessionContext = activeSendContextRef.current;
       const pendingConversationId = (
         store.getState() as { conversation: { pendingConversationId: string | null } }
       ).conversation.pendingConversationId;
@@ -343,25 +358,53 @@ export function useSendMessage() {
       abortControllerRef.current = null;
 
       if (convId && userMsgId) {
-        dispatch(
-          updateMessage({
+        if (
+          retryTurnSnapshot?.conversationId === convId
+          && retryTurnSnapshot.user.id === userMsgId
+        ) {
+          dispatch(replaceMessage({
+            conversationId: convId,
+            messageId: userMsgId,
+            message: retryTurnSnapshot.user,
+          }));
+        } else {
+          dispatch(updateMessage({
             conversationId: convId,
             messageId: userMsgId,
             patch: { status: null },
-          })
-        );
+          }));
+        }
       }
 
       // 把 streamSlice 已有内容写回 assistant 消息，防止 endStream 清空后丢失
       if (convId && assistantMsgId) {
-        const streamState = (store.getState() as { stream: import('@/redux/slices/streamSlice').StreamState }).stream;
-        const partialBlocks = selectFullStreamContentBlocks(streamState);
-        if (partialBlocks.length > 0) {
-          dispatch(updateMessage({
+        const retryAssistant = retryTurnSnapshot?.conversationId === convId
+          && retryTurnSnapshot.assistant?.id === assistantMsgId
+          ? retryTurnSnapshot.assistant
+          : undefined;
+        if (retryAssistant) {
+          dispatch(replaceMessage({
             conversationId: convId,
             messageId: assistantMsgId,
-            patch: { content: partialBlocks },
+            message: retryAssistant,
           }));
+        } else if (retryTurnSnapshot?.conversationId === convId) {
+          dispatch(removeMessage({
+            conversationId: convId,
+            messageId: assistantMsgId,
+          }));
+        } else {
+          const streamState = (
+            store.getState() as { stream: import('@/redux/slices/streamSlice').StreamState }
+          ).stream;
+          const partialBlocks = selectFullStreamContentBlocks(streamState);
+          if (partialBlocks.length > 0) {
+            dispatch(updateMessage({
+              conversationId: convId,
+              messageId: assistantMsgId,
+              patch: { content: partialBlocks },
+            }));
+          }
         }
       }
 
@@ -379,6 +422,7 @@ export function useSendMessage() {
       assistantMessageIdRef.current = null;
       serverMessageIdRef.current = null;
       assistantHasContentRef.current = false;
+      activeRetryTurnSnapshotRef.current = null;
 
       // 本地先完成停止；远端按真实服务端 message_id 精确取消。
       // run_started 尚未到达时不传 placeholder，允许 Redis 按 conversation 跨 worker 取消。
@@ -410,6 +454,12 @@ export function useSendMessage() {
           clearTimeout(stopTimeout);
         }
       }
+      if (convId && retryTurnSnapshot?.user && stopSessionContext) {
+        await hydrateAuthoritativeConversation(
+          convId,
+          () => isSendSessionCurrent(store.getState(), stopSessionContext),
+        );
+      }
     })();
 
     stopInFlightPromiseRef.current = stopOperation;
@@ -426,7 +476,7 @@ export function useSendMessage() {
       }
     );
     return stopOperation;
-  }, [dispatch, store, getStreamingConvId]);
+  }, [dispatch, store, getStreamingConvId, hydrateAuthoritativeConversation]);
 
   const sendMessage = useCallback(
     async (content: string, options: SendMessageOptions, attachments?: FileAttachment[]) => {
@@ -563,6 +613,28 @@ export function useSendMessage() {
       );
 
       const tempConvId = isDraft && !options.conversationId ? uuidv4() : options.conversationId!;
+      const retryConversation = options.retryUserMessageId
+        ? currentState.conversation.byId[tempConvId]
+        : undefined;
+      const retryTurnSnapshot = options.retryUserMessageId
+        ? {
+            user: retryConversation?.messages.find(
+              (message) => message.id === options.retryUserMessageId,
+            ),
+            assistant: options.retryAssistantMessageId
+              ? retryConversation?.messages.find(
+                  (message) => message.id === options.retryAssistantMessageId,
+                )
+              : undefined,
+          }
+        : null;
+      activeRetryTurnSnapshotRef.current = retryTurnSnapshot?.user
+        ? {
+            conversationId: tempConvId,
+            user: retryTurnSnapshot.user,
+            ...(retryTurnSnapshot.assistant ? { assistant: retryTurnSnapshot.assistant } : {}),
+          }
+        : null;
       const previousKnowledgeSelection = (
         !isDraft
         && options.knowledgeBaseIds !== undefined
@@ -606,8 +678,9 @@ export function useSendMessage() {
       activeConvIdRef.current = tempConvId;
       assistantHasContentRef.current = false;
 
-      const userMessageId = uuidv4();
-      const assistantMessageId = uuidv4();
+      const isMessageRetry = Boolean(options.retryUserMessageId);
+      const userMessageId = options.retryUserMessageId ?? uuidv4();
+      const assistantMessageId = options.retryAssistantMessageId ?? uuidv4();
       userMessageIdRef.current = userMessageId;
       assistantMessageIdRef.current = assistantMessageId;
       // 清理上一轮残留的 server message id，等本轮 onReady 重新写入
@@ -648,8 +721,33 @@ export function useSendMessage() {
         timestamp: Date.now(),
       };
 
-      dispatch(appendMessage({ conversationId: tempConvId, message: userMessage }));
-      dispatch(appendMessage({ conversationId: tempConvId, message: assistantPlaceholder }));
+      if (isMessageRetry) {
+        dispatch(updateMessage({
+          conversationId: tempConvId,
+          messageId: userMessageId,
+          patch: { status: 'pending' },
+        }));
+        if (options.retryAssistantMessageId) {
+          dispatch(updateMessage({
+            conversationId: tempConvId,
+            messageId: assistantMessageId,
+            patch: {
+              content: [],
+              model_id: enabledModel.id,
+              usage: null,
+              agent_run: null,
+              suggestedQuestions: undefined,
+              suggestedQuestionsStatus: 'idle',
+              timestamp: Date.now(),
+            },
+          }));
+        } else {
+          dispatch(appendMessage({ conversationId: tempConvId, message: assistantPlaceholder }));
+        }
+      } else {
+        dispatch(appendMessage({ conversationId: tempConvId, message: userMessage }));
+        dispatch(appendMessage({ conversationId: tempConvId, message: assistantPlaceholder }));
+      }
       dispatch(startStream({ conversationId: tempConvId, messageId: assistantMessageId }));
 
       const controller = new AbortController();
@@ -776,6 +874,7 @@ export function useSendMessage() {
         assistantMessageIdRef.current = null;
         serverMessageIdRef.current = null;
         assistantHasContentRef.current = false;
+        activeRetryTurnSnapshotRef.current = null;
         options.onStreamEnd?.(finalConvId);
         void hydrateAuthoritativeConversation(finalConvId, isSessionCurrent);
         // 仅新对话的第一轮生成标题，后续轮次不再更新
@@ -916,6 +1015,8 @@ export function useSendMessage() {
               conversation_id: tempConvId,
               user_message_id: userMessageId,
               assistant_message_id: assistantMessageId,
+              retry_user_message_id: options.retryUserMessageId,
+              retry_assistant_message_id: options.retryAssistantMessageId,
               stream: true,
               options: {
                 use_reasoning: useReasoning,
@@ -958,7 +1059,25 @@ export function useSendMessage() {
             }
           ).stream;
           const partialBlocks = selectFullStreamContentBlocks(streamState);
-          if (partialBlocks.length > 0) {
+          if (isMessageRetry && retryTurnSnapshot?.user) {
+            dispatch(replaceMessage({
+              conversationId: effectiveConvIdOnError,
+              messageId: retryTurnSnapshot.user.id,
+              message: retryTurnSnapshot.user,
+            }));
+            if (retryTurnSnapshot.assistant) {
+              dispatch(replaceMessage({
+                conversationId: effectiveConvIdOnError,
+                messageId: retryTurnSnapshot.assistant.id,
+                message: retryTurnSnapshot.assistant,
+              }));
+            } else {
+              dispatch(removeMessage({
+                conversationId: effectiveConvIdOnError,
+                messageId: assistantMessageId,
+              }));
+            }
+          } else if (partialBlocks.length > 0) {
             dispatch(
               updateMessage({
                 conversationId: effectiveConvIdOnError,
@@ -977,13 +1096,13 @@ export function useSendMessage() {
               })
             );
           }
-          dispatch(
-            updateMessage({
+          if (!isMessageRetry || !retryTurnSnapshot?.user) {
+            dispatch(updateMessage({
               conversationId: effectiveConvIdOnError,
               messageId: userMessageId,
               patch: { status: null },
-            })
-          );
+            }));
+          }
           dispatch(endStream());
           sendGenerationRef.current += 1;
           activeSendContextRef.current = null;
@@ -993,6 +1112,7 @@ export function useSendMessage() {
           assistantMessageIdRef.current = null;
           serverMessageIdRef.current = null;
           assistantHasContentRef.current = false;
+          activeRetryTurnSnapshotRef.current = null;
           dispatch(requestConversationListRefresh(effectiveConvIdOnError));
           void hydrateAuthoritativeConversation(
             effectiveConvIdOnError,
@@ -1055,6 +1175,33 @@ export function useSendMessage() {
           if (requestAccepted) {
             void hydrateAuthoritativeConversation(effectiveConvId, isSessionCurrent);
           }
+        } else if (isMessageRetry && retryTurnSnapshot?.user) {
+          dispatch(replaceMessage({
+            conversationId: effectiveConvId,
+            messageId: retryTurnSnapshot.user.id,
+            message: retryTurnSnapshot.user,
+          }));
+          if (retryTurnSnapshot.assistant) {
+            const assistantStillPresent = store.getState().conversation.byId[
+              effectiveConvId
+            ]?.messages.some((message) => message.id === retryTurnSnapshot.assistant?.id);
+            if (assistantStillPresent) {
+              dispatch(replaceMessage({
+                conversationId: effectiveConvId,
+                messageId: retryTurnSnapshot.assistant.id,
+                message: retryTurnSnapshot.assistant,
+              }));
+            } else {
+              dispatch(appendMessage({
+                conversationId: effectiveConvId,
+                message: retryTurnSnapshot.assistant,
+              }));
+            }
+          } else {
+            dispatch(
+              removeMessage({ conversationId: effectiveConvId, messageId: assistantMessageId })
+            );
+          }
         } else if (materializedOnce || !isDraft) {
           dispatch(
             updateMessage({
@@ -1079,6 +1226,7 @@ export function useSendMessage() {
         assistantMessageIdRef.current = null;
         serverMessageIdRef.current = null;
         assistantHasContentRef.current = false;
+        activeRetryTurnSnapshotRef.current = null;
         const message = normalizeSendErrorMessage(error instanceof Error ? error.message : '发送失败，请重试');
         dispatch(setGlobalError(message));
         if (reconnectRetriesExhausted) {

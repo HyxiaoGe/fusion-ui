@@ -220,6 +220,7 @@ describe('useSendMessage', () => {
     getChatCapabilitiesMock.mockResolvedValue({
       knowledge_grounding_v1: true,
       knowledge_grounding_max_bases: 5,
+      message_retry_v1: true,
     });
     reconnectStreamMock.mockReset();
     stopStreamMock.mockReset();
@@ -988,6 +989,107 @@ describe('useSendMessage', () => {
     );
   });
 
+  it('安全重试复用原 user 和 assistant，乐观状态不追加重复问题', async () => {
+    const store = createStore();
+    store.dispatch(
+      upsertConversation({
+        id: 'existing-conv',
+        title: 'Existing',
+        model_id: 'model-1',
+        messages: [
+          {
+            id: 'retry-user',
+            role: 'user',
+            content: [{ type: 'text', id: 'user-text', text: '原始问题' }],
+            sequence: 11,
+            timestamp: 1,
+          },
+          {
+            id: 'retry-assistant',
+            role: 'assistant',
+            content: [{ type: 'text', id: 'old-answer', text: '旧回答' }],
+            sequence: 12,
+            timestamp: 2,
+          },
+        ],
+        createdAt: 1,
+        updatedAt: 2,
+      })
+    );
+    sendMessageStreamMock.mockResolvedValueOnce(undefined);
+
+    const { result } = renderHook(() => useSendMessage(), {
+      wrapper: createWrapper(store),
+    });
+    await act(async () => {
+      await result.current.sendMessage('原始问题', {
+        conversationId: 'existing-conv',
+        retryUserMessageId: 'retry-user',
+        retryAssistantMessageId: 'retry-assistant',
+      });
+    });
+
+    expect(sendMessageStreamMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        user_message_id: 'retry-user',
+        assistant_message_id: 'retry-assistant',
+        retry_user_message_id: 'retry-user',
+        retry_assistant_message_id: 'retry-assistant',
+      }),
+      expect.any(Object),
+      expect.any(AbortSignal),
+    );
+    const messages = store.getState().conversation.byId['existing-conv'].messages as Message[];
+    expect(messages.map((message) => message.id)).toEqual(['retry-user', 'retry-assistant']);
+    expect(messages[0]).toEqual(expect.objectContaining({ status: 'pending' }));
+    expect(messages[1]).toEqual(expect.objectContaining({ content: [] }));
+  });
+
+  it('安全重试在服务端接管前失败时恢复原问题和原回答', async () => {
+    const store = createStore();
+    const originalUser: Message = {
+      id: 'retry-user',
+      role: 'user',
+      content: [{ type: 'text', id: 'user-text', text: '原始问题' }],
+      sequence: 11,
+      status: null,
+      timestamp: 1,
+    };
+    const originalAssistant: Message = {
+      id: 'retry-assistant',
+      role: 'assistant',
+      content: [{ type: 'text', id: 'old-answer', text: '原始回答' }],
+      sequence: 12,
+      usage: { input_tokens: 8, output_tokens: 5 },
+      timestamp: 2,
+    };
+    store.dispatch(upsertConversation({
+      id: 'existing-conv',
+      title: 'Existing',
+      model_id: 'model-1',
+      messages: [originalUser, originalAssistant],
+      createdAt: 1,
+      updatedAt: 2,
+    }));
+    sendMessageStreamMock.mockRejectedValueOnce(new Error('重试目标已失效'));
+
+    const { result } = renderHook(() => useSendMessage(), {
+      wrapper: createWrapper(store),
+    });
+    await act(async () => {
+      await result.current.sendMessage('原始问题', {
+        conversationId: 'existing-conv',
+        retryUserMessageId: 'retry-user',
+        retryAssistantMessageId: 'retry-assistant',
+      });
+    });
+
+    expect(store.getState().conversation.byId['existing-conv'].messages).toEqual([
+      expect.objectContaining(originalUser),
+      expect.objectContaining(originalAssistant),
+    ]);
+  });
+
   it('完成后权威水合保留请求发出后新增的本地消息', async () => {
     const store = createStore();
     store.dispatch(
@@ -1743,6 +1845,171 @@ describe('useSendMessage', () => {
       ['temp-conv', undefined, expect.any(AbortSignal)],
       ['temp-conv', undefined, expect.any(AbortSignal)],
     ]);
+  });
+
+  it('停止重新生成后立即恢复原回答而不是保留半截新回答', async () => {
+    const store = createStore();
+    const originalUser: Message = {
+      id: 'retry-user',
+      role: 'user',
+      content: [{ type: 'text', id: 'question-1', text: '原问题' }],
+      timestamp: 1,
+    };
+    const originalAssistant: Message = {
+      id: 'retry-assistant',
+      role: 'assistant',
+      content: [{ type: 'text', id: 'answer-old', text: '原完整回答' }],
+      timestamp: 2,
+    };
+    store.dispatch(upsertConversation({
+      id: 'existing-conv',
+      title: 'Existing',
+      model_id: 'model-1',
+      messages: [originalUser, originalAssistant],
+      createdAt: 1,
+      updatedAt: 2,
+    }));
+    stopStreamMock.mockResolvedValue(true);
+    sendMessageStreamMock.mockImplementationOnce(async (_payload: any, callbacks: StreamCallbacks) => {
+      callbacks.onReady({ messageId: 'retry-assistant', conversationId: 'existing-conv' });
+      callbacks.onAnswering({ block_id: 'answer-new', delta: '半截新回答' });
+      await new Promise<void>(() => {});
+    });
+
+    const { result } = renderHook(() => useSendMessage(), {
+      wrapper: createWrapper(store),
+    });
+
+    await act(async () => {
+      void result.current.sendMessage('原问题', {
+        conversationId: 'existing-conv',
+        retryUserMessageId: 'retry-user',
+        retryAssistantMessageId: 'retry-assistant',
+      });
+    });
+    await waitFor(() => expect(sendMessageStreamMock).toHaveBeenCalledTimes(1));
+
+    await act(async () => {
+      await result.current.stopStreaming();
+    });
+
+    const messages = store.getState().conversation.byId['existing-conv']?.messages ?? [];
+    expect(messages.find((message) => message.id === 'retry-user')).toEqual(originalUser);
+    expect(messages.find((message) => message.id === 'retry-assistant')).toEqual(originalAssistant);
+  });
+
+  it('停止重新生成与后台完成竞态时以服务端新回答为准', async () => {
+    const store = createStore();
+    const originalUser: Message = {
+      id: 'retry-user',
+      role: 'user',
+      content: [{ type: 'text', id: 'question-1', text: '原问题' }],
+      timestamp: 1,
+    };
+    const originalAssistant: Message = {
+      id: 'retry-assistant',
+      role: 'assistant',
+      content: [{ type: 'text', id: 'answer-old', text: '原完整回答' }],
+      timestamp: 2,
+    };
+    const completedAssistant: Message = {
+      ...originalAssistant,
+      content: [{ type: 'text', id: 'answer-new', text: '后台已完成的新回答' }],
+      timestamp: 3,
+    };
+    store.dispatch(upsertConversation({
+      id: 'existing-conv',
+      title: 'Existing',
+      model_id: 'model-1',
+      messages: [originalUser, originalAssistant],
+      createdAt: 1,
+      updatedAt: 2,
+    }));
+    stopStreamMock.mockResolvedValue(false);
+    getConversationMock.mockResolvedValue({
+      id: 'existing-conv',
+      title: 'Existing',
+      model_id: 'model-1',
+      messages: [originalUser, completedAssistant],
+      createdAt: 1,
+      updatedAt: 3,
+    });
+    sendMessageStreamMock.mockImplementationOnce(async (_payload: any, callbacks: StreamCallbacks) => {
+      callbacks.onReady({ messageId: 'retry-assistant', conversationId: 'existing-conv' });
+      callbacks.onAnswering({ block_id: 'answer-new', delta: '半截新回答' });
+      await new Promise<void>(() => {});
+    });
+
+    const { result } = renderHook(() => useSendMessage(), {
+      wrapper: createWrapper(store),
+    });
+
+    await act(async () => {
+      void result.current.sendMessage('原问题', {
+        conversationId: 'existing-conv',
+        retryUserMessageId: 'retry-user',
+        retryAssistantMessageId: 'retry-assistant',
+      });
+    });
+    await waitFor(() => expect(sendMessageStreamMock).toHaveBeenCalledTimes(1));
+
+    await act(async () => {
+      await result.current.stopStreaming();
+    });
+
+    await waitFor(() => {
+      const messages = store.getState().conversation.byId['existing-conv']?.messages ?? [];
+      expect(messages.find((message) => message.id === 'retry-assistant')).toEqual(
+        expect.objectContaining({
+          id: 'retry-assistant',
+          content: completedAssistant.content,
+        }),
+      );
+    });
+    expect(getConversationMock).toHaveBeenCalledWith('existing-conv');
+  });
+
+  it('停止未回答消息的重新发送后不保留无法刷新的半截回答', async () => {
+    const store = createStore();
+    const originalUser: Message = {
+      id: 'retry-user',
+      role: 'user',
+      content: [{ type: 'text', id: 'question-1', text: '原问题' }],
+      timestamp: 1,
+    };
+    store.dispatch(upsertConversation({
+      id: 'existing-conv',
+      title: 'Existing',
+      model_id: 'model-1',
+      messages: [originalUser],
+      createdAt: 1,
+      updatedAt: 2,
+    }));
+    stopStreamMock.mockResolvedValue(true);
+    sendMessageStreamMock.mockImplementationOnce(async (_payload: any, callbacks: StreamCallbacks) => {
+      callbacks.onReady({ messageId: 'assistant-new', conversationId: 'existing-conv' });
+      callbacks.onAnswering({ block_id: 'answer-new', delta: '半截新回答' });
+      await new Promise<void>(() => {});
+    });
+
+    const { result } = renderHook(() => useSendMessage(), {
+      wrapper: createWrapper(store),
+    });
+
+    await act(async () => {
+      void result.current.sendMessage('原问题', {
+        conversationId: 'existing-conv',
+        retryUserMessageId: 'retry-user',
+      });
+    });
+    await waitFor(() => expect(sendMessageStreamMock).toHaveBeenCalledTimes(1));
+
+    await act(async () => {
+      await result.current.stopStreaming();
+    });
+
+    expect(store.getState().conversation.byId['existing-conv']?.messages).toEqual([originalUser]);
+    expect(getConversationMock).toHaveBeenCalledWith('existing-conv');
   });
 
   it('外部停止尚未完成时新发送会等待取消屏障', async () => {

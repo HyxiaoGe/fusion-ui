@@ -53,12 +53,14 @@ vi.mock('./ChatMessage', () => ({
     message,
     agentRun,
     isStreaming,
+    onRetry,
     onContinueAgentRun,
     suggestedQuestions,
   }: {
     message: { id: string; content: Array<{ type: string; text?: string }> };
     agentRun?: AgentRunState | null;
     isStreaming?: boolean;
+    onRetry?: (messageId: string) => void;
     onContinueAgentRun?: (messageId: string, previousRunId?: string) => void;
     suggestedQuestions?: string[];
   }) => {
@@ -73,6 +75,11 @@ vi.mock('./ChatMessage', () => ({
         data-streaming={isStreaming ? 'true' : 'false'}
       >
         <div>{message.content.filter(b => b.type === 'text').map(b => b.text).join('')}</div>
+        {onRetry ? (
+          <button type="button" data-testid={`retry-${message.id}`} onClick={() => onRetry(message.id)}>
+            重试
+          </button>
+        ) : null}
         {agentRun?.status === 'limit_reached' ? (
           <button
             type="button"
@@ -137,6 +144,26 @@ describe('ChatMessageList', () => {
       'chat-message-user-2',
       'chat-message-assistant-2',
     ]);
+  });
+
+  it('只向最后一轮 user 和 assistant 暴露重试入口', () => {
+    render(
+      <ChatMessageList
+        conversationId="chat-1"
+        onRetry={vi.fn()}
+        messages={[
+          { id: 'user-1', role: 'user', content: [], sequence: 1, timestamp: 1_000 },
+          { id: 'assistant-1', role: 'assistant', content: [], sequence: 2, timestamp: 1_500 },
+          { id: 'user-2', role: 'user', content: [], sequence: 3, timestamp: 2_000 },
+          { id: 'assistant-2', role: 'assistant', content: [], sequence: 4, timestamp: 2_500 },
+        ]}
+      />
+    );
+
+    expect(screen.queryByTestId('retry-user-1')).toBeNull();
+    expect(screen.queryByTestId('retry-assistant-1')).toBeNull();
+    expect(screen.getByTestId('retry-user-2')).toBeInTheDocument();
+    expect(screen.getByTestId('retry-assistant-2')).toBeInTheDocument();
   });
 
   it('时间戳异常反转时仍按服务端传入顺序渲染 user 再 assistant', () => {

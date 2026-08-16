@@ -6,6 +6,10 @@ import { Files } from 'lucide-react';
 import { ChatMessageListLazy } from '@/components/lazy/LazyComponents';
 import ChatInput, { type ChatUploadCompleteFile } from '@/components/chat/ChatInput';
 import type { KnowledgeSelectionStatus } from '@/components/chat/KnowledgeBaseComposerControl';
+import {
+  getKnowledgeBaseCatalogSnapshot,
+  resolveKnowledgeBaseSelectionStatus,
+} from '@/lib/chat/knowledgeBaseCatalogResource';
 import { ChatDetailOverlayProvider } from '@/components/chat/ChatDetailOverlayContext';
 import ConversationFilesPanel from '@/components/chat/ConversationFilesPanel';
 import LocationContextBanner from '@/components/chat/LocationContextBanner';
@@ -146,6 +150,7 @@ export default function ChatPage() {
   });
   const chatInputRef = useRef<HTMLDivElement>(null);
   const reconnectControllerRef = useRef<AbortController | null>(null);
+  const recoveryStreamModeRef = useRef<'initial' | 'retry' | 'continuation' | null>(null);
   const recoveryStopPendingRef = useRef<{
     controller: AbortController;
     bufferedActions: Array<() => void>;
@@ -204,9 +209,12 @@ export default function ChatPage() {
     setComposerKnowledgeSelection({
       chatId,
       ids: conversation?.knowledge_base_ids ?? [],
-      status: conversation?.knowledge_base_ids?.length ? 'loading' : 'ready',
+      status: resolveKnowledgeBaseSelectionStatus(
+        getKnowledgeBaseCatalogSnapshot(authSessionKey),
+        conversation?.knowledge_base_ids ?? [],
+      ),
     });
-  }, [chatId, conversation?.knowledge_base_ids, hydrationView]);
+  }, [authSessionKey, chatId, conversation?.knowledge_base_ids, hydrationView]);
 
   useEffect(() => {
     clearQuestions();
@@ -273,6 +281,7 @@ export default function ChatPage() {
           }
         }
         if (cancelled || !status || status.status !== 'streaming') return;
+        recoveryStreamModeRef.current = status.stream_mode ?? 'initial';
 
         const messageId = status.message_id || '';
 
@@ -327,6 +336,15 @@ export default function ChatPage() {
           }
           flushBufferedRecoveryActions();
           failureFinalized = true;
+          if (status.stream_mode === 'retry') {
+            if (insertedPlaceholder && messageId) {
+              dispatch(removeMessage({ conversationId: chatId, messageId }));
+            }
+            dispatch(endStream());
+            dispatch(setStreamStatus('error'));
+            retryHydration();
+            return;
+          }
           const streamState = (store.getState() as { stream: StreamState }).stream;
           const partialBlocks = selectFullStreamContentBlocks(streamState);
           if (messageId && partialBlocks.length > 0) {
@@ -471,6 +489,7 @@ export default function ChatPage() {
       if (recoveryStopPendingRef.current?.controller === controller) {
         recoveryStopPendingRef.current = null;
       }
+      recoveryStreamModeRef.current = null;
       controller.abort();
       if (reconnectControllerRef.current === controller) {
         reconnectControllerRef.current = null;
@@ -601,10 +620,15 @@ export default function ChatPage() {
         }
         dispatch(endStream());
         dispatch(setStreamStatus('error'));
+        if (isRetryRecovery) {
+          recoveryStreamModeRef.current = null;
+          retryHydration();
+        }
       };
       const streamState = (store.getState() as { stream: StreamState }).stream;
-      const partialBlocks = selectFullStreamContentBlocks(streamState);
-      if (streamState.messageId && partialBlocks.length > 0) {
+      const isRetryRecovery = recoveryStreamModeRef.current === 'retry';
+      const partialBlocks = isRetryRecovery ? [] : selectFullStreamContentBlocks(streamState);
+      if (!isRetryRecovery && streamState.messageId && partialBlocks.length > 0) {
         dispatch(updateMessage({
           conversationId: chatId,
           messageId: streamState.messageId,
@@ -626,6 +650,7 @@ export default function ChatPage() {
           return;
         }
         recoveryStopPendingRef.current = null;
+        recoveryStreamModeRef.current = null;
         recoveryController.abort();
         if (reconnectControllerRef.current === recoveryController) {
           reconnectControllerRef.current = null;

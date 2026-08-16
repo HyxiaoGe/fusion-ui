@@ -2,13 +2,21 @@ import React from 'react';
 import { act, renderHook } from '@testing-library/react';
 import { configureStore } from '@reduxjs/toolkit';
 import { Provider } from 'react-redux';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import conversationReducer, {
   upsertConversation,
 } from '@/redux/slices/conversationSlice';
 import modelsReducer, { updateModels } from '@/redux/slices/modelsSlice';
 import { useRetryMessage } from './useRetryMessage';
+
+const { getChatCapabilitiesMock } = vi.hoisted(() => ({
+  getChatCapabilitiesMock: vi.fn(),
+}));
+
+vi.mock('@/lib/api/chat', () => ({
+  getChatCapabilities: getChatCapabilitiesMock,
+}));
 
 function createStore(modelState: 'disabled' | 'unhealthy' | 'hidden' = 'disabled') {
   const store = configureStore({
@@ -72,6 +80,15 @@ function createWrapper(store: ReturnType<typeof createStore>) {
 }
 
 describe('useRetryMessage', () => {
+  beforeEach(() => {
+    getChatCapabilitiesMock.mockReset();
+    getChatCapabilitiesMock.mockResolvedValue({
+      knowledge_grounding_v1: true,
+      knowledge_grounding_max_bases: 5,
+      message_retry_v1: true,
+    });
+  });
+
   it('会话模型禁用时重新发送不会删除用户消息及其回答', async () => {
     const store = createStore();
     const sendMessage = vi.fn().mockResolvedValue(undefined);
@@ -146,7 +163,7 @@ describe('useRetryMessage', () => {
     ).toEqual(['user-1', 'assistant-1']);
   });
 
-  it('首轮重试在删除消息前固定已验证的会话模型', async () => {
+  it('首轮重试复用原轮次 ID 且不从本地删除用户问题', async () => {
     const store = createStore('hidden');
     const sendMessage = vi.fn().mockImplementation(async (_content, options) => {
       options.onAccepted?.();
@@ -164,13 +181,118 @@ describe('useRetryMessage', () => {
       {
         conversationId: 'existing-conv',
         resolvedModelId: 'disabled-model',
-        onAccepted: expect.any(Function),
+        retryUserMessageId: 'user-1',
+        retryAssistantMessageId: 'assistant-1',
       },
       undefined,
     );
     expect(
       store.getState().conversation.byId['existing-conv'].messages.map((message) => message.id),
-    ).toEqual([]);
+    ).toEqual(['user-1', 'assistant-1']);
+  });
+
+  it('失败用户消息没有持久化回答时只复用 user ID', async () => {
+    const store = createStore('hidden');
+    store.dispatch(upsertConversation({
+      id: 'existing-conv',
+      title: 'Existing',
+      model_id: 'disabled-model',
+      messages: [
+        {
+          id: 'user-1',
+          role: 'user',
+          content: [{ type: 'text', id: 'text-user', text: '原始问题' }],
+          status: 'failed',
+        },
+      ],
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    }));
+    const sendMessage = vi.fn().mockResolvedValue(undefined);
+    const { result } = renderHook(() => useRetryMessage(sendMessage), {
+      wrapper: createWrapper(store),
+    });
+
+    await act(async () => {
+      await result.current('user-1', 'existing-conv');
+    });
+
+    expect(sendMessage).toHaveBeenCalledWith(
+      '原始问题',
+      {
+        conversationId: 'existing-conv',
+        resolvedModelId: 'disabled-model',
+        retryUserMessageId: 'user-1',
+      },
+      undefined,
+    );
+  });
+
+  it('服务端未声明重试能力时保留原消息并拒绝发送', async () => {
+    const store = createStore('hidden');
+    getChatCapabilitiesMock.mockResolvedValueOnce({
+      knowledge_grounding_v1: true,
+      knowledge_grounding_max_bases: 5,
+      message_retry_v1: false,
+    });
+    const sendMessage = vi.fn().mockResolvedValue(undefined);
+    const { result } = renderHook(() => useRetryMessage(sendMessage), {
+      wrapper: createWrapper(store),
+    });
+
+    await act(async () => {
+      await result.current('user-1', 'existing-conv');
+    });
+
+    expect(sendMessage).not.toHaveBeenCalled();
+    expect(store.getState().conversation.globalError).toBe(
+      '当前服务版本暂不支持安全重试，请刷新页面后再试',
+    );
+    expect(
+      store.getState().conversation.byId['existing-conv'].messages.map((message) => message.id),
+    ).toEqual(['user-1', 'assistant-1']);
+  });
+
+  it('历史轮次在客户端直接拒绝且不进入能力预检', async () => {
+    const store = createStore('hidden');
+    store.dispatch(upsertConversation({
+      id: 'existing-conv',
+      title: 'Existing',
+      model_id: 'disabled-model',
+      messages: [
+        {
+          id: 'old-user',
+          role: 'user',
+          content: [{ type: 'text', id: 'old-user-text', text: '旧问题' }],
+        },
+        {
+          id: 'old-assistant',
+          role: 'assistant',
+          content: [{ type: 'text', id: 'old-answer', text: '旧回答' }],
+        },
+        {
+          id: 'latest-user',
+          role: 'user',
+          content: [{ type: 'text', id: 'latest-user-text', text: '新问题' }],
+        },
+      ],
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    }));
+    const sendMessage = vi.fn().mockResolvedValue(undefined);
+    const { result } = renderHook(() => useRetryMessage(sendMessage), {
+      wrapper: createWrapper(store),
+    });
+
+    await act(async () => {
+      await result.current('old-assistant', 'existing-conv');
+    });
+
+    expect(getChatCapabilitiesMock).not.toHaveBeenCalled();
+    expect(sendMessage).not.toHaveBeenCalled();
+    expect(store.getState().conversation.globalError).toBe(
+      '只能重新发送或生成会话中的最后一轮消息',
+    );
   });
 
   it('发送前预检拒绝重试时保留原问题及原回答', async () => {

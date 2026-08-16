@@ -2,7 +2,8 @@
 import { useCallback } from 'react';
 import { useAppDispatch } from '@/redux/hooks';
 import { useStore } from 'react-redux';
-import { removeMessage, setGlobalError } from '@/redux/slices/conversationSlice';
+import { setGlobalError } from '@/redux/slices/conversationSlice';
+import { getChatCapabilities } from '@/lib/api/chat';
 import {
   getSendModelErrorMessage,
   resolveSendModel,
@@ -17,6 +18,8 @@ type SendMessageFn = (
     conversationId: string | null;
     resolvedModelId?: string;
     knowledgeBaseIds?: string[];
+    retryUserMessageId?: string;
+    retryAssistantMessageId?: string;
     onRejectedBeforeSend?: () => void;
     onAccepted?: () => void;
   },
@@ -40,7 +43,7 @@ function extractMessageContent(msg: Message) {
 }
 
 /**
- * 消息重试 hook：删除目标消息（及关联消息）后重新发送。
+ * 消息重试 hook：复用原轮次消息 ID，并让服务端原位生成回答。
  * 需要传入 sendMessage 函数引用以避免循环依赖。
  */
 export function useRetryMessage(sendMessage: SendMessageFn) {
@@ -62,6 +65,18 @@ export function useRetryMessage(sendMessage: SendMessageFn) {
       if (targetIndex === -1) return;
 
       const targetMsg = messages[targetIndex];
+      const nextMessage = messages[targetIndex + 1];
+      const isLatestRetryTurn = targetMsg.role === 'assistant'
+        ? targetIndex === messages.length - 1
+        : targetIndex === messages.length - 1
+          || (
+            targetIndex === messages.length - 2
+            && nextMessage?.role === 'assistant'
+          );
+      if (!isLatestRetryTurn) {
+        dispatch(setGlobalError('只能重新发送或生成会话中的最后一轮消息'));
+        return;
+      }
       const effectiveKnowledgeBaseIds = knowledgeBaseIds
         ?? conversation.knowledge_base_ids;
       const knowledgeScopeOptions = knowledgeBaseIds === undefined
@@ -73,8 +88,19 @@ export function useRetryMessage(sendMessage: SendMessageFn) {
         return;
       }
 
+      try {
+        const capabilities = await getChatCapabilities();
+        if (!capabilities.message_retry_v1) {
+          dispatch(setGlobalError('当前服务版本暂不支持安全重试，请刷新页面后再试'));
+          return;
+        }
+      } catch {
+        dispatch(setGlobalError('当前服务版本暂不支持安全重试，请刷新页面后再试'));
+        return;
+      }
+
       if (targetMsg.role === 'assistant') {
-        // 重新生成：向上找 user 消息，删除 assistant + user，重新发送
+        // 重新生成：复用原 user/assistant ID，由服务端原位替换回答。
         let userMessage: Message | null = null;
         for (let i = targetIndex - 1; i >= 0; i--) {
           if (messages[i].role === 'user') {
@@ -100,17 +126,15 @@ export function useRetryMessage(sendMessage: SendMessageFn) {
               conversationId,
               resolvedModelId: modelResolution.model.id,
               ...knowledgeScopeOptions,
-              onAccepted: () => {
-                dispatch(removeMessage({ conversationId, messageId }));
-                dispatch(removeMessage({ conversationId, messageId: userMessage.id }));
-              },
+              retryUserMessageId: userMessage.id,
+              retryAssistantMessageId: targetMsg.id,
             },
             attachments.length > 0 ? attachments : undefined,
           );
         }
       } else if (targetMsg.role === 'user') {
-        // 重新发送：删除 user + 其后的 assistant，重新发送
-        const nextMsg = messages[targetIndex + 1];
+        // 重新发送：复用原 user；若已有回答则同时复用 assistant。
+        const nextMsg = nextMessage;
 
         const { text, attachments } = extractMessageContent(targetMsg);
 
@@ -128,12 +152,10 @@ export function useRetryMessage(sendMessage: SendMessageFn) {
               conversationId,
               resolvedModelId: modelResolution.model.id,
               ...knowledgeScopeOptions,
-              onAccepted: () => {
-                if (nextMsg && nextMsg.role === 'assistant') {
-                  dispatch(removeMessage({ conversationId, messageId: nextMsg.id }));
-                }
-                dispatch(removeMessage({ conversationId, messageId }));
-              },
+              retryUserMessageId: targetMsg.id,
+              ...(nextMsg?.role === 'assistant'
+                ? { retryAssistantMessageId: nextMsg.id }
+                : {}),
             },
             attachments.length > 0 ? attachments : undefined,
           );
