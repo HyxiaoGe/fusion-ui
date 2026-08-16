@@ -224,7 +224,7 @@ async function postStreamActions(
   }
 }
 
-export function useSendMessage() {
+export function useSendMessage(activeConversationId?: string | null) {
   const dispatch = useAppDispatch();
   const store = useStore<RootState>();
   const reasoningEnabled = useAppSelector((state) => state.conversation.reasoningEnabled);
@@ -1244,7 +1244,7 @@ export function useSendMessage() {
     ]
   );
 
-  const retryMessage = useRetryMessage(sendMessage);
+  const retryMessage = useRetryMessage(sendMessage, activeConversationId);
 
   return { sendMessage, stopStreaming, retryMessage };
 }

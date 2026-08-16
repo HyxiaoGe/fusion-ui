@@ -164,7 +164,7 @@ export default function ChatPage() {
     ids: string[];
     status: KnowledgeSelectionStatus;
   }>({ chatId, ids: [], status: 'ready' });
-  const { sendMessage, stopStreaming, retryMessage } = useSendMessage();
+  const { sendMessage, stopStreaming, retryMessage } = useSendMessage(chatId);
   const { continueAgentRun, stopContinueAgentRun } = useContinueAgentRun();
   const {
     suggestedQuestions,

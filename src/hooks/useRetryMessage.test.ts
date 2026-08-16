@@ -295,6 +295,96 @@ describe('useRetryMessage', () => {
     );
   });
 
+  it('能力预检期间追加新一轮后拒绝过期重试', async () => {
+    const store = createStore('hidden');
+    let resolveCapabilities: ((value: {
+      knowledge_grounding_v1: boolean;
+      knowledge_grounding_max_bases: number;
+      message_retry_v1: boolean;
+    }) => void) | undefined;
+    getChatCapabilitiesMock.mockReturnValueOnce(new Promise((resolve) => {
+      resolveCapabilities = resolve;
+    }));
+    const sendMessage = vi.fn().mockResolvedValue(undefined);
+    const { result } = renderHook(() => useRetryMessage(sendMessage), {
+      wrapper: createWrapper(store),
+    });
+
+    let retryPromise: Promise<void> | undefined;
+    act(() => {
+      retryPromise = result.current('assistant-1', 'existing-conv');
+    });
+    expect(getChatCapabilitiesMock).toHaveBeenCalledTimes(1);
+
+    store.dispatch(upsertConversation({
+      id: 'existing-conv',
+      title: 'Existing',
+      model_id: 'disabled-model',
+      messages: [
+        ...store.getState().conversation.byId['existing-conv'].messages,
+        {
+          id: 'user-2',
+          role: 'user',
+          content: [{ type: 'text', id: 'text-user-2', text: '新一轮问题' }],
+        },
+      ],
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    }));
+
+    await act(async () => {
+      resolveCapabilities?.({
+        knowledge_grounding_v1: true,
+        knowledge_grounding_max_bases: 5,
+        message_retry_v1: true,
+      });
+      await retryPromise;
+    });
+
+    expect(sendMessage).not.toHaveBeenCalled();
+    expect(store.getState().conversation.globalError).toBe(
+      '只能重新发送或生成会话中的最后一轮消息',
+    );
+  });
+
+  it('能力预检期间切换会话后不继续旧会话重试', async () => {
+    const store = createStore('hidden');
+    let resolveCapabilities: ((value: {
+      knowledge_grounding_v1: boolean;
+      knowledge_grounding_max_bases: number;
+      message_retry_v1: boolean;
+    }) => void) | undefined;
+    getChatCapabilitiesMock.mockReturnValueOnce(new Promise((resolve) => {
+      resolveCapabilities = resolve;
+    }));
+    const sendMessage = vi.fn().mockResolvedValue(undefined);
+    const { result, rerender } = renderHook(
+      ({ activeConversationId }) => useRetryMessage(sendMessage, activeConversationId),
+      {
+        initialProps: { activeConversationId: 'existing-conv' },
+        wrapper: createWrapper(store),
+      },
+    );
+
+    let retryPromise: Promise<void> | undefined;
+    act(() => {
+      retryPromise = result.current('assistant-1', 'existing-conv');
+    });
+    expect(getChatCapabilitiesMock).toHaveBeenCalledTimes(1);
+
+    rerender({ activeConversationId: 'other-conv' });
+    await act(async () => {
+      resolveCapabilities?.({
+        knowledge_grounding_v1: true,
+        knowledge_grounding_max_bases: 5,
+        message_retry_v1: true,
+      });
+      await retryPromise;
+    });
+
+    expect(sendMessage).not.toHaveBeenCalled();
+  });
+
   it('发送前预检拒绝重试时保留原问题及原回答', async () => {
     const store = createStore('hidden');
     const sendMessage = vi.fn().mockImplementation(async (_content, options) => {
