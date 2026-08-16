@@ -26,6 +26,7 @@ import { resolveComposerAgentMode } from '@/lib/agent/composerAgentMode';
 import {
   appendTextDelta,
   appendThinkingDelta,
+  clearCurrentRun,
   completeThinkingPhase,
   endStream,
   finalizeRun,
@@ -417,6 +418,9 @@ export function useSendMessage(activeConversationId?: string | null) {
       }
 
       if (convId) clearFirstTurnContextState(convId);
+      if (retryTurnSnapshot?.assistant) {
+        dispatch(clearCurrentRun());
+      }
       dispatch(endStream());
       sendGenerationRef.current += 1;
       activeSendContextRef.current = null;
@@ -1171,7 +1175,35 @@ export function useSendMessage(activeConversationId?: string | null) {
           }));
         }
 
-        if (assistantHasContentRef.current) {
+        const shouldRestoreRetryAnswer = Boolean(
+          isMessageRetry
+          && retryTurnSnapshot?.user
+          && retryTurnSnapshot.assistant,
+        );
+        if (shouldRestoreRetryAnswer && retryTurnSnapshot?.user && retryTurnSnapshot.assistant) {
+          dispatch(replaceMessage({
+            conversationId: effectiveConvIdOnError,
+            messageId: retryTurnSnapshot.user.id,
+            message: retryTurnSnapshot.user,
+          }));
+          const assistantStillPresent = store.getState().conversation.byId[
+            effectiveConvIdOnError
+          ]?.messages.some((message) => message.id === retryTurnSnapshot.assistant?.id);
+          if (assistantStillPresent) {
+            dispatch(replaceMessage({
+              conversationId: effectiveConvIdOnError,
+              messageId: retryTurnSnapshot.assistant.id,
+              message: retryTurnSnapshot.assistant,
+            }));
+          } else {
+            dispatch(appendMessage({
+              conversationId: effectiveConvIdOnError,
+              message: retryTurnSnapshot.assistant,
+            }));
+          }
+        }
+
+        if (assistantHasContentRef.current && !shouldRestoreRetryAnswer) {
           // 保留已有的 stream content blocks
           const streamState = (store.getState() as { stream: import('@/redux/slices/streamSlice').StreamState }).stream;
           const partialBlocks = reconnectRetriesExhausted
@@ -1244,6 +1276,9 @@ export function useSendMessage(activeConversationId?: string | null) {
         } else {
           dispatch(removeConversation(tempConvId));
           dispatch(setPendingConversationId(null));
+        }
+        if (shouldRestoreRetryAnswer) {
+          dispatch(clearCurrentRun());
         }
         dispatch(endStream());
         sendGenerationRef.current += 1;

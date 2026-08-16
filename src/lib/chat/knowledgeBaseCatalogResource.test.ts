@@ -18,6 +18,7 @@ import {
   getKnowledgeBaseCatalogSnapshot,
   invalidateKnowledgeBaseCatalog,
   resetKnowledgeBaseCatalogResource,
+  subscribeKnowledgeBaseCatalog,
 } from './knowledgeBaseCatalogResource';
 
 function page(id: string) {
@@ -98,6 +99,31 @@ describe('knowledgeBaseCatalogResource', () => {
     refresh.resolve(page('kb-new'));
     await request;
     expect(getKnowledgeBaseCatalogSnapshot('user-a').data?.items[0]?.id).toBe('kb-new');
+  });
+
+  it('连续失效会中止旧刷新并立即启动最新替代请求', async () => {
+    const firstRefresh = deferred<ReturnType<typeof page>>();
+    const secondRefresh = deferred<ReturnType<typeof page>>();
+    listKnowledgeBasesMock
+      .mockResolvedValueOnce(page('kb-old'))
+      .mockReturnValueOnce(firstRefresh.promise)
+      .mockReturnValueOnce(secondRefresh.promise);
+    await ensureKnowledgeBaseCatalog('user-a');
+    const unsubscribe = subscribeKnowledgeBaseCatalog('user-a', () => {});
+
+    invalidateKnowledgeBaseCatalog('user-a');
+    await vi.waitFor(() => expect(listKnowledgeBasesMock).toHaveBeenCalledTimes(2));
+    invalidateKnowledgeBaseCatalog('user-a');
+    await vi.waitFor(() => expect(listKnowledgeBasesMock).toHaveBeenCalledTimes(3));
+
+    secondRefresh.resolve(page('kb-latest'));
+    await vi.waitFor(() => {
+      expect(getKnowledgeBaseCatalogSnapshot('user-a').data?.items[0]?.id).toBe('kb-latest');
+    });
+    firstRefresh.resolve(page('kb-stale'));
+    await Promise.resolve();
+    expect(getKnowledgeBaseCatalogSnapshot('user-a').data?.items[0]?.id).toBe('kb-latest');
+    unsubscribe();
   });
 
   it('账号作用域隔离，旧账号迟到结果不会污染新账号目录', async () => {

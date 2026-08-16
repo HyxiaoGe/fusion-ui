@@ -862,6 +862,10 @@ const streamSlice = createSlice({
       state.contextUsageInFlightConversationId = preservedContextUsageInFlightConversationId;
       state.contextUsageInFlightMeta = preservedContextUsageInFlightMeta;
     },
+
+    clearCurrentRun(state) {
+      state.currentRun = null;
+    },
   },
   extraReducers: builder => {
     builder.addCase(logout, () => initialState);
@@ -974,6 +978,7 @@ export const {
   appendThinkingDelta,
   applyPlanSnapshot,
   clearStreamError,
+  clearCurrentRun,
   completeThinkingPhase,
   discardContentBlock,
   endStream,

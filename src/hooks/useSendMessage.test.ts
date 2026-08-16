@@ -1876,6 +1876,30 @@ describe('useSendMessage', () => {
         conversationId: 'existing-conv',
         taskId: 'retry-task-1',
       });
+      callbacks.onRunStarted?.({
+        type: 'run_started',
+        protocol_version: 2,
+        run_id: 'retry-run-1',
+        parent_run_id: null,
+        step_id: null,
+        parent_step_id: null,
+        tool_call_id: null,
+        sequence: 0,
+        trace_id: 'retry-run-1',
+        ts: 0,
+        conversation_id: 'existing-conv',
+        message_id: 'retry-assistant',
+        task_id: 'retry-task-1',
+        model: 'model-1',
+        tools: ['web_search'],
+        config: {
+          max_steps: 8,
+          max_tool_calls: 20,
+          timeout_s: 300,
+          plan_mode: 'auto',
+          task_mode: 'standard',
+        },
+      });
       callbacks.onAnswering({ block_id: 'answer-new', delta: '半截新回答' });
       await new Promise<void>(() => {});
     });
@@ -1907,6 +1931,62 @@ describe('useSendMessage', () => {
       undefined,
       'retry-task-1',
     );
+    expect(store.getState().stream.currentRun).toBeNull();
+  });
+
+  it('重新生成在自动续传耗尽且权威水合失败时仍恢复原完整回答', async () => {
+    const store = createStore();
+    const originalUser: Message = {
+      id: 'retry-user',
+      role: 'user',
+      content: [{ type: 'text', id: 'question-1', text: '原问题' }],
+      timestamp: 1,
+    };
+    const originalAssistant: Message = {
+      id: 'retry-assistant',
+      role: 'assistant',
+      content: [{ type: 'text', id: 'answer-old', text: '原完整回答' }],
+      timestamp: 2,
+    };
+    store.dispatch(upsertConversation({
+      id: 'existing-conv',
+      title: 'Existing',
+      model_id: 'model-1',
+      messages: [originalUser, originalAssistant],
+      createdAt: 1,
+      updatedAt: 2,
+    }));
+    sendMessageStreamMock.mockImplementationOnce(async (_payload: unknown, callbacks: StreamCallbacks) => {
+      callbacks.onReady({
+        messageId: 'retry-assistant',
+        conversationId: 'existing-conv',
+        taskId: 'retry-task-1',
+      });
+      callbacks.onAnswering({ block_id: 'answer-new', delta: '半截新回答' });
+      throw streamError('网络连接中断', true);
+    });
+    reconnectStreamMock.mockRejectedValue(streamError('仍未恢复', true));
+    getConversationMock.mockRejectedValue(new Error('详情接口仍不可用'));
+
+    const { result } = renderHook(() => useSendMessage(), {
+      wrapper: createWrapper(store),
+    });
+
+    await act(async () => {
+      await result.current.sendMessage('原问题', {
+        conversationId: 'existing-conv',
+        retryUserMessageId: 'retry-user',
+        retryAssistantMessageId: 'retry-assistant',
+      });
+    });
+
+    expect(reconnectStreamMock).toHaveBeenCalledTimes(3);
+    const messages = store.getState().conversation.byId['existing-conv']?.messages ?? [];
+    expect(messages.find((message: Message) => message.id === 'retry-user')).toEqual({
+      ...originalUser,
+      status: null,
+    });
+    expect(messages.find((message: Message) => message.id === 'retry-assistant')).toEqual(originalAssistant);
   });
 
   it('停止重新生成与后台完成竞态时以服务端新回答为准', async () => {

@@ -223,6 +223,11 @@ export function invalidateKnowledgeBaseCatalog(scopeKey: string | null): void {
       updatedAt: 0,
     });
   }
+  // mounted consumer 的连续失效必须各自替换在途请求；不能只依赖 updatedAt=0
+  // 触发 effect，因为第二次失效时该依赖值不会变化。
+  if (listeners.has(scopeKey)) {
+    void ensureKnowledgeBaseCatalog(scopeKey, true).catch(() => {});
+  }
 }
 
 export function resetKnowledgeBaseCatalogResource(): void {
