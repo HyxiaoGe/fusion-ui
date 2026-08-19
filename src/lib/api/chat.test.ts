@@ -36,11 +36,13 @@ describe('getChatCapabilities', () => {
     apiRequestMock.mockResolvedValue({
       knowledge_grounding_v1: true,
       knowledge_grounding_max_bases: 5,
+      message_retry_v1: true,
     });
 
     await expect(getChatCapabilities(controller.signal)).resolves.toEqual({
       knowledge_grounding_v1: true,
       knowledge_grounding_max_bases: 5,
+      message_retry_v1: true,
     });
     expect(apiRequestMock).toHaveBeenCalledWith(
       expect.stringContaining('/api/chat/capabilities'),
@@ -200,6 +202,22 @@ describe('stopStream', () => {
         signal: undefined,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ partial_content: partialContent }),
+      },
+    );
+  });
+
+  it('停止请求透传当前流任务代际，避免取消到并发新任务', async () => {
+    apiRequestMock.mockResolvedValue({ cancelled: true });
+
+    await expect(stopStream('conv-1', 'msg-1', undefined, [], 'task-1')).resolves.toBe(true);
+
+    expect(apiRequestMock).toHaveBeenCalledWith(
+      expect.stringContaining('/api/chat/stop/conv-1?message_id=msg-1'),
+      {
+        method: 'POST',
+        signal: undefined,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ partial_content: [], task_id: 'task-1' }),
       },
     );
   });
@@ -442,6 +460,7 @@ describe('sendMessageStream — 新 envelope 协议', () => {
           {
             conversation_id: 'conv-1',
             message_id: 'msg-1',
+            task_id: 'task-1',
             model: 'gpt',
             tools: ['web_search'],
             config: { max_steps: 8 },
@@ -472,6 +491,7 @@ describe('sendMessageStream — 新 envelope 协议', () => {
     expect(onReady).toHaveBeenCalledWith({
       messageId: 'msg-1',
       conversationId: 'conv-1',
+      taskId: 'task-1',
     });
     expect(onRunStarted).toHaveBeenCalledTimes(1);
     expect(onDone).toHaveBeenCalledWith({

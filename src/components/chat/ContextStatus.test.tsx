@@ -66,7 +66,7 @@ describe('ContextStatus', () => {
     expect(conversationValue).toHaveTextContent(conversationId);
     expect(conversationValue).toHaveAttribute('title', conversationId);
     expect(conversationValue).toHaveClass('truncate', 'whitespace-nowrap');
-    expect(screen.getByText('147,811 / 262,144 Token')).toBeInTheDocument();
+    expect(screen.getByText('147,811 / 256K Token')).toBeInTheDocument();
     const progress = screen.getByRole('progressbar');
     expect(progress).toHaveAttribute('aria-valuetext', '已使用 57%，剩余 43%');
     expect(progress).toHaveClass(
@@ -126,7 +126,7 @@ describe('ContextStatus', () => {
       updating
     />);
     expect(screen.getByTestId('context-updating-indicator')).toHaveTextContent('更新中');
-    expect(screen.getByText('147,811 / 262,144 Token')).toBeInTheDocument();
+    expect(screen.getByText('147,811 / 256K Token')).toBeInTheDocument();
   });
 
   it('final 无 actual 显示暂不可用；窗口未知但 actual 已知仍展示实际 Token', () => {
@@ -146,7 +146,7 @@ describe('ContextStatus', () => {
       latestActualUnavailable
     />);
     expect(screen.getByText('最近一次实际输入')).toBeInTheDocument();
-    expect(screen.getByText('147,811 / 262,144 Token')).toBeInTheDocument();
+    expect(screen.getByText('147,811 / 256K Token')).toBeInTheDocument();
     expect(screen.getByText('本轮未返回实际用量，当前显示最近一次实际结果。')).toBeInTheDocument();
 
     rerender(<ContextStatus
@@ -156,6 +156,22 @@ describe('ContextStatus', () => {
     />);
     expect(screen.getAllByText('窗口未知').length).toBeGreaterThan(0);
     expect(screen.getByText('2,000 Token')).toBeInTheDocument();
+  });
+
+  it('仅将上下文窗口总量压缩为模型常用规格，实际用量仍保留精确值', () => {
+    const { rerender } = render(<ContextStatus
+      conversationId="chat-compact-window"
+      usage={{ ...actualUsage, actual_prompt_tokens: 8_457, window_tokens: 1_048_576 }}
+    />);
+
+    fireEvent.click(screen.getByRole('button', { name: '查看上下文状态，剩余 99%' }));
+    expect(screen.getByText('8,457 / 1M Token')).toBeInTheDocument();
+
+    rerender(<ContextStatus
+      conversationId="chat-compact-window"
+      usage={{ ...actualUsage, actual_prompt_tokens: 8_457, window_tokens: 1_000_000 }}
+    />);
+    expect(screen.getByText('8,457 / 1M Token')).toBeInTheDocument();
   });
 
   it('临时关闭当前面板不会关闭全局默认展开', async () => {

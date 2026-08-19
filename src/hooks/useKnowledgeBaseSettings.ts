@@ -15,6 +15,7 @@ import {
   updateKnowledgeBase,
   uploadKnowledgeDocument,
 } from '@/lib/api/knowledgeBases';
+import { invalidateKnowledgeBaseCatalog } from '@/lib/chat/knowledgeBaseCatalogResource';
 import { useAppSelector } from '@/redux/hooks';
 import { selectAuthSessionKey } from '@/redux/selectors';
 import type {
@@ -200,7 +201,8 @@ export function useKnowledgeBaseSettings(): KnowledgeBaseSettingsState {
     setTaskFailureMessage(null);
     setPollingPaused(false);
     pollFailuresRef.current = 0;
-  }, []);
+    invalidateKnowledgeBaseCatalog(authSessionKey);
+  }, [authSessionKey]);
 
   const fetchBases = useCallback(
     async (page: number, quiet: boolean, preferredBaseId?: string | null) => {
@@ -283,6 +285,7 @@ export function useKnowledgeBaseSettings(): KnowledgeBaseSettingsState {
     }
     let firstError: unknown = null;
     let taskFailed = false;
+    let taskReachedTerminalState = false;
     const taskUpdates = new Map<string, KnowledgeTask | null>();
     results.forEach((result, index) => {
       if (result.status === 'rejected') {
@@ -292,13 +295,16 @@ export function useKnowledgeBaseSettings(): KnowledgeBaseSettingsState {
       const status = result.value.status.toLowerCase();
       if (failedTaskStatuses.has(status)) {
         taskFailed = true;
+        taskReachedTerminalState = true;
         taskUpdates.set(taskIds[index], null);
       } else if (successfulTaskStatuses.has(status)) {
+        taskReachedTerminalState = true;
         taskUpdates.set(taskIds[index], null);
       } else {
         taskUpdates.set(taskIds[index], result.value);
       }
     });
+    if (taskReachedTerminalState) invalidateKnowledgeBaseCatalog(authSessionKey);
     setTrackedTasks((current) => {
       const next = { ...current };
       taskUpdates.forEach((task, taskId) => {
@@ -311,7 +317,7 @@ export function useKnowledgeBaseSettings(): KnowledgeBaseSettingsState {
     endRequest(taskRequestRef, controller);
     if (firstError && !isAbortError(firstError)) setPollingWarning(firstError);
     return firstError === null || isAbortError(firstError);
-  }, [beginRequest, captureBoundary, endRequest, isCurrent]);
+  }, [authSessionKey, beginRequest, captureBoundary, endRequest, isCurrent]);
 
   useEffect(() => () => abortAllRequests(), [abortAllRequests]);
 
@@ -449,9 +455,10 @@ export function useKnowledgeBaseSettings(): KnowledgeBaseSettingsState {
       );
       setBasePageState(1);
       await fetchBases(1, true, created.id);
+      invalidateKnowledgeBaseCatalog(authSessionKey);
       return created;
     },
-    [fetchBases, runMutation],
+    [authSessionKey, fetchBases, runMutation],
   );
 
   const updateBase = useCallback(
@@ -463,9 +470,10 @@ export function useKnowledgeBaseSettings(): KnowledgeBaseSettingsState {
         ...current,
         items: current.items.map((item) => (item.id === updated.id ? updated : item)),
       }));
+      invalidateKnowledgeBaseCatalog(authSessionKey);
       return updated;
     },
-    [runMutation],
+    [authSessionKey, runMutation],
   );
 
   const removeBase = useCallback(

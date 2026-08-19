@@ -466,6 +466,22 @@ const conversationSlice = createSlice({
         Object.assign(message, patch);
       }
     },
+    replaceMessage(
+      state,
+      action: PayloadAction<{
+        conversationId: string;
+        messageId: string;
+        message: Message;
+      }>
+    ) {
+      const { conversationId, messageId, message } = action.payload;
+      const conversation = state.byId[conversationId];
+      if (!conversation) return;
+      const index = conversation.messages.findIndex((item) => item.id === messageId);
+      if (index !== -1) {
+        conversation.messages[index] = message;
+      }
+    },
     applySuggestedQuestionsPending(
       state,
       action: PayloadAction<{
@@ -654,6 +670,7 @@ export const {
   clearSuggestedQuestionsObservation,
   materializeConversation,
   mergeHydratedConversation,
+  replaceMessage,
   removeConversation,
   removeMessage,
   requestConversationListRefresh,

@@ -32,6 +32,8 @@ export interface ChatRequest {
   conversation_id?: string | null;
   user_message_id?: string;
   assistant_message_id?: string;
+  retry_user_message_id?: string;
+  retry_assistant_message_id?: string;
   stream?: boolean;
   options?: {
     use_reasoning?: boolean;
@@ -49,6 +51,7 @@ export interface ChatRequest {
 export interface ChatCapabilities {
   knowledge_grounding_v1: boolean;
   knowledge_grounding_max_bases: number;
+  message_retry_v1: boolean;
 }
 
 export async function getChatCapabilities(signal?: AbortSignal): Promise<ChatCapabilities> {
@@ -204,7 +207,11 @@ export interface StreamCallbacks {
    * 想拿完整 RunStarted payload（model/tools/config）走 onRunStarted；
    * 仅需要 messageId/conversationId 走 onReady。
    */
-  onReady: (meta: { messageId: string; conversationId: string }) => void;
+  onReady: (meta: {
+    messageId: string;
+    conversationId: string;
+    taskId?: string;
+  }) => void;
   /** 推理 token 流（reasoning chunk） */
   onReasoning: (payload: ContentDeltaPayload) => void;
   /** 回答 token 流（answering chunk） */
@@ -221,6 +228,7 @@ export interface StreamCallbacks {
     ev: AgentEventEnvelope & {
       conversation_id: string;
       message_id: string;
+      task_id?: string;
       model: string;
       tools: string[];
       config: Record<string, unknown>;
@@ -534,6 +542,7 @@ async function parseSseEnvelopeStream(
         const payload = ev as unknown as AgentEventEnvelope & {
           conversation_id: string;
           message_id: string;
+          task_id?: string;
           model: string;
           tools: string[];
           config: Record<string, unknown>;
@@ -542,7 +551,11 @@ async function parseSseEnvelopeStream(
         conversationId = payload.conversation_id;
         if (!readyFired) {
           readyFired = true;
-          callbacks.onReady({ messageId, conversationId });
+          callbacks.onReady({
+            messageId,
+            conversationId,
+            ...(payload.task_id ? { taskId: payload.task_id } : {}),
+          });
         }
         callbacks.onRunStarted?.(payload);
         return;
@@ -824,12 +837,16 @@ export async function stopStream(
   messageId?: string,
   signal?: AbortSignal,
   partialContent?: ContentBlock[],
+  taskId?: string,
 ): Promise<boolean> {
   try {
     const options: RequestInit = { method: 'POST', signal };
-    if (partialContent !== undefined) {
+    if (partialContent !== undefined || taskId !== undefined) {
       options.headers = { 'Content-Type': 'application/json' };
-      options.body = JSON.stringify({ partial_content: partialContent });
+      options.body = JSON.stringify({
+        partial_content: partialContent ?? [],
+        ...(taskId ? { task_id: taskId } : {}),
+      });
     }
     const data = await apiRequest<{ cancelled: boolean }>(
       `${API_BASE_URL}/api/chat/stop/${conversationId}${messageId ? `?message_id=${encodeURIComponent(messageId)}` : ''}`,

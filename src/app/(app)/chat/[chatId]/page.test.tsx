@@ -1186,6 +1186,39 @@ describe('ChatPage 会话切换体验', () => {
     });
   });
 
+  it('刷新恢复 retry 失败时丢弃半截新回答并重新水合原回答', async () => {
+    const oldBlocks = [{ type: 'text', id: 'old-answer', text: '旧完整回答' }];
+    const partialBlocks = [{ type: 'text', id: 'partial-answer', text: '半截新回答' }];
+    conversationsById.set('chat-a', createConversation('chat-a', [
+      textMessage('user-1'),
+      { id: 'assistant-1', role: 'assistant', content: oldBlocks, timestamp: 2 },
+    ]));
+    hydrationById.set('chat-a', { view: 'ready' });
+    fetchStreamStatusMock.mockResolvedValue({
+      status: 'streaming',
+      message_id: 'assistant-1',
+      stream_mode: 'retry',
+    });
+    reconnectStreamMock.mockImplementation(async (_chatId, _cursor, callbacks) => {
+      storeStreamState.contentBlocks = partialBlocks;
+      callbacks.onError('生成已中断', { code: 'stream_interrupted' });
+      throw Object.assign(new Error('生成已中断'), { recoverable: false });
+    });
+
+    render(<ChatPage />);
+
+    await waitFor(() => expect(reconnectStreamMock).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(retryHydrationMock).toHaveBeenCalledTimes(1));
+    expect(dispatchMock).not.toHaveBeenCalledWith({
+      type: 'conversation/updateMessage',
+      payload: {
+        conversationId: 'chat-a',
+        messageId: 'assistant-1',
+        patch: { content: partialBlocks },
+      },
+    });
+  });
+
   it('普通 initial 恢复即使 DB 有 checkpoint 也从空 blocks 重放，避免重复旧内容', async () => {
     const checkpointBlocks = [{ type: 'text', id: 'checkpoint-answer', text: '已落库 checkpoint' }];
     const replayedBlocks = [{ type: 'text', id: 'replayed-answer', text: '重放后的完整回答' }];

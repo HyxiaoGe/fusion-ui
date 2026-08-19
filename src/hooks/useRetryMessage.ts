@@ -1,8 +1,9 @@
 // src/hooks/useRetryMessage.ts
-import { useCallback } from 'react';
+import { useCallback, useRef } from 'react';
 import { useAppDispatch } from '@/redux/hooks';
 import { useStore } from 'react-redux';
-import { removeMessage, setGlobalError } from '@/redux/slices/conversationSlice';
+import { setGlobalError } from '@/redux/slices/conversationSlice';
+import { getChatCapabilities } from '@/lib/api/chat';
 import {
   getSendModelErrorMessage,
   resolveSendModel,
@@ -17,6 +18,8 @@ type SendMessageFn = (
     conversationId: string | null;
     resolvedModelId?: string;
     knowledgeBaseIds?: string[];
+    retryUserMessageId?: string;
+    retryAssistantMessageId?: string;
     onRejectedBeforeSend?: () => void;
     onAccepted?: () => void;
   },
@@ -40,12 +43,17 @@ function extractMessageContent(msg: Message) {
 }
 
 /**
- * 消息重试 hook：删除目标消息（及关联消息）后重新发送。
+ * 消息重试 hook：复用原轮次消息 ID，并让服务端原位生成回答。
  * 需要传入 sendMessage 函数引用以避免循环依赖。
  */
-export function useRetryMessage(sendMessage: SendMessageFn) {
+export function useRetryMessage(
+  sendMessage: SendMessageFn,
+  activeConversationId?: string | null,
+) {
   const dispatch = useAppDispatch();
   const store = useStore();
+  const activeConversationIdRef = useRef(activeConversationId);
+  activeConversationIdRef.current = activeConversationId;
 
   return useCallback(
     async (
@@ -62,23 +70,88 @@ export function useRetryMessage(sendMessage: SendMessageFn) {
       if (targetIndex === -1) return;
 
       const targetMsg = messages[targetIndex];
-      const effectiveKnowledgeBaseIds = knowledgeBaseIds
-        ?? conversation.knowledge_base_ids;
+      const nextMessage = messages[targetIndex + 1];
+      const isLatestRetryTurn = targetMsg.role === 'assistant'
+        ? targetIndex === messages.length - 1
+        : targetIndex === messages.length - 1
+          || (
+            targetIndex === messages.length - 2
+            && nextMessage?.role === 'assistant'
+          );
+      if (!isLatestRetryTurn) {
+        dispatch(setGlobalError('只能重新发送或生成会话中的最后一轮消息'));
+        return;
+      }
       const knowledgeScopeOptions = knowledgeBaseIds === undefined
         ? {}
         : { knowledgeBaseIds };
-      const modelResolution = resolveSendModel(state, conversationId);
+      let modelResolution = resolveSendModel(state, conversationId);
       if (modelResolution.status !== 'ready') {
         dispatch(setGlobalError(getSendModelErrorMessage(modelResolution)));
         return;
       }
 
-      if (targetMsg.role === 'assistant') {
-        // 重新生成：向上找 user 消息，删除 assistant + user，重新发送
+      let capabilities: Awaited<ReturnType<typeof getChatCapabilities>>;
+      try {
+        capabilities = await getChatCapabilities();
+      } catch {
+        if (
+          activeConversationIdRef.current !== undefined
+          && activeConversationIdRef.current !== conversationId
+        ) {
+          return;
+        }
+        dispatch(setGlobalError('当前服务版本暂不支持安全重试，请刷新页面后再试'));
+        return;
+      }
+
+      if (
+        activeConversationIdRef.current !== undefined
+        && activeConversationIdRef.current !== conversationId
+      ) {
+        return;
+      }
+      if (!capabilities.message_retry_v1) {
+        dispatch(setGlobalError('当前服务版本暂不支持安全重试，请刷新页面后再试'));
+        return;
+      }
+
+      const refreshedState = store.getState() as RootState;
+      const refreshedConversation = refreshedState.conversation.byId[conversationId];
+      const refreshedMessages = refreshedConversation?.messages ?? [];
+      const refreshedTargetIndex = refreshedMessages.findIndex((message) => (
+        message.id === messageId
+      ));
+      const refreshedTargetMsg = refreshedMessages[refreshedTargetIndex];
+      const refreshedNextMessage = refreshedMessages[refreshedTargetIndex + 1];
+      const targetStillLatest = refreshedTargetMsg?.role === 'assistant'
+        ? refreshedTargetIndex === refreshedMessages.length - 1
+        : refreshedTargetMsg?.role === 'user' && (
+          refreshedTargetIndex === refreshedMessages.length - 1
+          || (
+            refreshedTargetIndex === refreshedMessages.length - 2
+            && refreshedNextMessage?.role === 'assistant'
+          )
+        );
+      if (!refreshedConversation || !targetStillLatest) {
+        dispatch(setGlobalError('只能重新发送或生成会话中的最后一轮消息'));
+        return;
+      }
+
+      modelResolution = resolveSendModel(refreshedState, conversationId);
+      if (modelResolution.status !== 'ready') {
+        dispatch(setGlobalError(getSendModelErrorMessage(modelResolution)));
+        return;
+      }
+      const effectiveKnowledgeBaseIds = knowledgeBaseIds
+        ?? refreshedConversation.knowledge_base_ids;
+
+      if (refreshedTargetMsg.role === 'assistant') {
+        // 重新生成：复用原 user/assistant ID，由服务端原位替换回答。
         let userMessage: Message | null = null;
-        for (let i = targetIndex - 1; i >= 0; i--) {
-          if (messages[i].role === 'user') {
-            userMessage = messages[i];
+        for (let i = refreshedTargetIndex - 1; i >= 0; i--) {
+          if (refreshedMessages[i].role === 'user') {
+            userMessage = refreshedMessages[i];
             break;
           }
         }
@@ -100,19 +173,17 @@ export function useRetryMessage(sendMessage: SendMessageFn) {
               conversationId,
               resolvedModelId: modelResolution.model.id,
               ...knowledgeScopeOptions,
-              onAccepted: () => {
-                dispatch(removeMessage({ conversationId, messageId }));
-                dispatch(removeMessage({ conversationId, messageId: userMessage.id }));
-              },
+              retryUserMessageId: userMessage.id,
+              retryAssistantMessageId: refreshedTargetMsg.id,
             },
             attachments.length > 0 ? attachments : undefined,
           );
         }
-      } else if (targetMsg.role === 'user') {
-        // 重新发送：删除 user + 其后的 assistant，重新发送
-        const nextMsg = messages[targetIndex + 1];
+      } else if (refreshedTargetMsg.role === 'user') {
+        // 重新发送：复用原 user；若已有回答则同时复用 assistant。
+        const nextMsg = refreshedNextMessage;
 
-        const { text, attachments } = extractMessageContent(targetMsg);
+        const { text, attachments } = extractMessageContent(refreshedTargetMsg);
 
         if (effectiveKnowledgeBaseIds?.length && attachments.length > 0) {
           dispatch(setGlobalError(
@@ -128,12 +199,10 @@ export function useRetryMessage(sendMessage: SendMessageFn) {
               conversationId,
               resolvedModelId: modelResolution.model.id,
               ...knowledgeScopeOptions,
-              onAccepted: () => {
-                if (nextMsg && nextMsg.role === 'assistant') {
-                  dispatch(removeMessage({ conversationId, messageId: nextMsg.id }));
-                }
-                dispatch(removeMessage({ conversationId, messageId }));
-              },
+              retryUserMessageId: refreshedTargetMsg.id,
+              ...(nextMsg?.role === 'assistant'
+                ? { retryAssistantMessageId: nextMsg.id }
+                : {}),
             },
             attachments.length > 0 ? attachments : undefined,
           );

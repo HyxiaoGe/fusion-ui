@@ -1,86 +1,31 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 import { AlertCircle, BookOpen, Check, Loader2, RotateCw, ShieldCheck, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
 import { Button } from '@/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { getChatCapabilities } from '@/lib/api/chat';
-import { listKnowledgeBases } from '@/lib/api/knowledgeBases';
-import type { KnowledgeBase } from '@/types/knowledge';
-
-const KNOWLEDGE_BASE_PAGE_SIZE = 100;
-const MAX_KNOWLEDGE_BASE_PAGES = 20;
-const MAX_KNOWLEDGE_BASE_ITEMS = 1_000;
+import {
+  ensureKnowledgeBaseCatalog,
+  getEmptyKnowledgeBaseCatalogSnapshot,
+  getKnowledgeBaseCatalogSnapshot,
+  resolveKnowledgeBaseSelectionStatus,
+  subscribeKnowledgeBaseCatalog,
+} from '@/lib/chat/knowledgeBaseCatalogResource';
+import type { KnowledgeSelectionStatus } from '@/lib/chat/knowledgeBaseCatalogResource';
 
 type LoadState = 'idle' | 'loading' | 'ready' | 'failed';
-export type KnowledgeSelectionStatus =
-  | 'ready'
-  | 'loading'
-  | 'failed'
-  | 'unavailable'
-  | 'limit_exceeded';
+export type { KnowledgeSelectionStatus } from '@/lib/chat/knowledgeBaseCatalogResource';
 
 interface KnowledgeBaseComposerControlProps {
   selectedIds: string[];
   onChange: (ids: string[]) => void;
   disabled: boolean;
   scopeKey?: string | null;
+  refreshKey?: string | null;
   enabled?: boolean;
   onSelectionStatusChange?: (status: KnowledgeSelectionStatus) => void;
-}
-
-function isAbortError(error: unknown): boolean {
-  return error instanceof DOMException && error.name === 'AbortError';
-}
-
-function isAvailableForQuestionAnswering(base: KnowledgeBase): boolean {
-  return base.status === 'active' && base.document_stats.ready > 0;
-}
-
-interface KnowledgeBaseLoadResult {
-  items: KnowledgeBase[];
-  maxSelectedKnowledgeBases: number;
-}
-
-async function loadAllAvailableKnowledgeBases(
-  signal: AbortSignal,
-): Promise<KnowledgeBaseLoadResult> {
-  const capabilities = await getChatCapabilities(signal);
-  if (
-    !capabilities.knowledge_grounding_v1
-    || !Number.isSafeInteger(capabilities.knowledge_grounding_max_bases)
-    || capabilities.knowledge_grounding_max_bases < 1
-  ) {
-    throw new Error('当前服务端不支持严格知识库问答');
-  }
-  const items: KnowledgeBase[] = [];
-  let page = 1;
-  let hasNext = true;
-  let scannedItemCount = 0;
-
-  while (
-    hasNext
-    && page <= MAX_KNOWLEDGE_BASE_PAGES
-    && scannedItemCount < MAX_KNOWLEDGE_BASE_ITEMS
-  ) {
-    const result = await listKnowledgeBases(
-      { page, pageSize: KNOWLEDGE_BASE_PAGE_SIZE },
-      signal,
-    );
-    const remainingItemBudget = MAX_KNOWLEDGE_BASE_ITEMS - scannedItemCount;
-    const inspectedItems = result.items.slice(0, remainingItemBudget);
-    scannedItemCount += inspectedItems.length;
-    items.push(...inspectedItems.filter(isAvailableForQuestionAnswering));
-    hasNext = result.has_next;
-    page += 1;
-  }
-
-  return {
-    items,
-    maxSelectedKnowledgeBases: capabilities.knowledge_grounding_max_bases,
-  };
 }
 
 export default function KnowledgeBaseComposerControl({
@@ -88,54 +33,47 @@ export default function KnowledgeBaseComposerControl({
   onChange,
   disabled,
   scopeKey = 'composer',
+  refreshKey = null,
   enabled = true,
   onSelectionStatusChange,
 }: KnowledgeBaseComposerControlProps) {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
-  const [loadState, setLoadState] = useState<LoadState>('idle');
-  const [bases, setBases] = useState<KnowledgeBase[]>([]);
-  const [maxSelectedKnowledgeBases, setMaxSelectedKnowledgeBases] = useState<number | null>(null);
-  const [retryGeneration, setRetryGeneration] = useState(0);
-  const requestGenerationRef = useRef(0);
+  const catalogScopeKey = enabled ? scopeKey : null;
+  const subscribeToCatalog = useCallback(
+    (listener: () => void) => subscribeKnowledgeBaseCatalog(catalogScopeKey, listener),
+    [catalogScopeKey],
+  );
+  const readCatalogSnapshot = useCallback(
+    () => getKnowledgeBaseCatalogSnapshot(catalogScopeKey),
+    [catalogScopeKey],
+  );
+  const catalogSnapshot = useSyncExternalStore(
+    subscribeToCatalog,
+    readCatalogSnapshot,
+    getEmptyKnowledgeBaseCatalogSnapshot,
+  );
 
   useEffect(() => {
-    requestGenerationRef.current += 1;
-    const generation = requestGenerationRef.current;
-    const controller = new AbortController();
+    if (!catalogScopeKey) return;
+    void ensureKnowledgeBaseCatalog(catalogScopeKey).catch(() => {});
+  }, [catalogScopeKey, catalogSnapshot.updatedAt, refreshKey]);
 
-    if (!enabled || scopeKey == null) {
-      setBases([]);
-      setMaxSelectedKnowledgeBases(null);
-      setLoadState('idle');
-      return () => controller.abort();
-    }
-
-    setBases([]);
-    setMaxSelectedKnowledgeBases(null);
-    setLoadState('loading');
-    void loadAllAvailableKnowledgeBases(controller.signal)
-      .then((result) => {
-        if (controller.signal.aborted || generation !== requestGenerationRef.current) return;
-        setBases(result.items);
-        setMaxSelectedKnowledgeBases(result.maxSelectedKnowledgeBases);
-        setLoadState('ready');
-      })
-      .catch((error) => {
-        if (
-          isAbortError(error) ||
-          controller.signal.aborted ||
-          generation !== requestGenerationRef.current
-        ) {
-          return;
-        }
-        setBases([]);
-        setMaxSelectedKnowledgeBases(null);
-        setLoadState('failed');
-      });
-
-    return () => controller.abort();
-  }, [enabled, retryGeneration, scopeKey]);
+  const bases = useMemo(
+    () => catalogSnapshot.data?.items ?? [],
+    [catalogSnapshot.data],
+  );
+  const maxSelectedKnowledgeBases =
+    catalogSnapshot.data?.maxSelectedKnowledgeBases ?? null;
+  const loadState: LoadState = !catalogScopeKey
+    ? 'idle'
+    : catalogSnapshot.data
+      ? 'ready'
+      : catalogSnapshot.error
+        ? 'failed'
+        : catalogSnapshot.isLoading
+          ? 'loading'
+          : 'idle';
 
   const baseById = useMemo(
     () => new Map(bases.map((base) => [base.id, base])),
@@ -151,17 +89,10 @@ export default function KnowledgeBaseComposerControl({
   const selectionLimitExceeded = loadState === 'ready'
     && maxSelectedKnowledgeBases !== null
     && selectedIds.length > maxSelectedKnowledgeBases;
-  const selectionStatus: KnowledgeSelectionStatus = selectedIds.length === 0
-    ? 'ready'
-    : loadState === 'failed'
-      ? 'failed'
-      : loadState !== 'ready'
-        ? 'loading'
-        : selectionLimitExceeded
-          ? 'limit_exceeded'
-          : hasUnavailable
-            ? 'unavailable'
-            : 'ready';
+  const selectionStatus = resolveKnowledgeBaseSelectionStatus(
+    catalogSnapshot,
+    selectedIds,
+  );
 
   useEffect(() => {
     onSelectionStatusChange?.(selectionStatus);
@@ -249,7 +180,10 @@ export default function KnowledgeBaseComposerControl({
                     size="sm"
                     variant="outline"
                     className="h-7 gap-1.5 text-xs"
-                    onClick={() => setRetryGeneration((value) => value + 1)}
+                    onClick={() => {
+                      if (!catalogScopeKey) return;
+                      void ensureKnowledgeBaseCatalog(catalogScopeKey, true).catch(() => {});
+                    }}
                   >
                     <RotateCw className="h-3.5 w-3.5" aria-hidden="true" />
                     {t('knowledgeBase.composer.retry')}
@@ -386,5 +320,3 @@ export default function KnowledgeBaseComposerControl({
     </div>
   );
 }
-
-export { isAvailableForQuestionAnswering };

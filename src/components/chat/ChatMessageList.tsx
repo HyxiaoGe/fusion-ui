@@ -206,6 +206,25 @@ const ChatMessageList: React.FC<ChatMessageListProps> = ({
     return -1;
   }, [messages]);
 
+  const retryableMessageIds = useMemo(() => {
+    const ids = new Set<string>();
+    const lastIndex = messages.length - 1;
+    const lastMessage = messages[lastIndex];
+    if (!lastMessage) {
+      return ids;
+    }
+    if (lastMessage.role === 'user') {
+      ids.add(lastMessage.id);
+      return ids;
+    }
+    ids.add(lastMessage.id);
+    const pairedUser = messages[lastIndex - 1];
+    if (pairedUser?.role === 'user') {
+      ids.add(pairedUser.id);
+    }
+    return ids;
+  }, [messages]);
+
   // 滚动到底部
   const scrollToBottom = useCallback((behavior: ScrollBehavior = 'auto') => {
     messagesEndRef.current?.scrollIntoView({ behavior });
@@ -416,7 +435,7 @@ const ChatMessageList: React.FC<ChatMessageListProps> = ({
             isFirstMessage={index === 0}
             isLastMessage={index === messages.length - 1}
             isStreamingMessage={isStreamingForMessage(message, index)}
-            onRetry={onRetry}
+            onRetry={retryableMessageIds.has(message.id) ? onRetry : undefined}
             onContinueAgentRun={onContinueAgentRun}
             onEdit={onEdit}
             conversationId={conversationId}
