@@ -68,6 +68,32 @@ describe('AdminPerformancePanel', () => {
     expect(await screen.findByText('暂无压测记录')).toBeInTheDocument();
   });
 
+  it('重置筛选会清空压测环境和状态并立即恢复完整列表', async () => {
+    render(<ControlledPerformancePanel />);
+    await screen.findByText('暂无压测记录');
+
+    fireEvent.change(screen.getByLabelText('压测环境'), { target: { value: 'production' } });
+    fireEvent.change(screen.getByLabelText('压测状态'), { target: { value: 'completed' } });
+    fireEvent.click(screen.getByRole('button', { name: '筛选' }));
+    await waitFor(() => expect(apiMocks.getAdminPerformanceRuns).toHaveBeenLastCalledWith({
+      page: 1,
+      page_size: 25,
+      environment: 'production',
+      status: 'completed',
+    }, expect.any(AbortSignal)));
+
+    fireEvent.click(screen.getByRole('button', { name: '重置筛选' }));
+
+    expect(screen.getByLabelText('压测环境')).toHaveValue('');
+    expect(screen.getByLabelText('压测状态')).toHaveValue('');
+    await waitFor(() => expect(apiMocks.getAdminPerformanceRuns).toHaveBeenLastCalledWith({
+      page: 1,
+      page_size: 25,
+      environment: '',
+      status: '',
+    }, expect.any(AbortSignal)));
+  });
+
   it('深链 run_id 不在当前列表页时仍独立展示详情和收起入口', async () => {
     apiMocks.getAdminPerformanceRuns.mockResolvedValue({
       ...emptyPage, items: [listRun], total: 26, total_pages: 2,

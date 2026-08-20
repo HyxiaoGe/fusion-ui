@@ -13,7 +13,7 @@ import ProviderIcon from '@/components/models/ProviderIcon';
 import { cn } from '@/lib/utils';
 import type { AdminModelDetail, AdminModelSummary } from '@/types/adminAudit';
 import {
-  AdminEmpty, AdminError, AdminLoading, AdminPagination, AdminPanelHeader, formatAdminDate, formatNumber,
+  AdminEmpty, AdminError, AdminFilterActions, AdminLoading, AdminPagination, AdminPanelHeader, formatAdminDate, formatNumber,
 } from './AdminPanelPrimitives';
 import ItineraryStabilityPanel from './ItineraryStabilityPanel';
 
@@ -28,13 +28,14 @@ interface AdminModelsPanelProps {
 
 const CATALOG_DEGRADED_MESSAGE = '模型目录暂时不可用，当前信息可能来自缓存或仅包含历史数据。';
 const ALL_PROVIDERS_VALUE = '__all_providers__';
+const EMPTY_MODEL_FILTERS = { q: '', provider: '', catalog_status: '' };
 
 export default function AdminModelsPanel({
   active = true, onForbidden, selectedModelId, onOpen, onBack, onViewConversations,
 }: AdminModelsPanelProps) {
   const [page, setPage] = useState(1);
-  const [draft, setDraft] = useState({ q: '', provider: '', catalog_status: '' });
-  const [filters, setFilters] = useState({ q: '', provider: '', catalog_status: '' });
+  const [draft, setDraft] = useState({ ...EMPTY_MODEL_FILTERS });
+  const [filters, setFilters] = useState({ ...EMPTY_MODEL_FILTERS });
   const [providerOptions, setProviderOptions] = useState<Array<{ value: string; label: string }>>([]);
   const [providerOpen, setProviderOpen] = useState(false);
   const loader = useCallback((signal: AbortSignal) => getAdminModels({
@@ -57,6 +58,13 @@ export default function AdminModelsPanel({
     ? [selectedProvider, ...providerOptions]
     : providerOptions;
 
+  const resetFilters = () => {
+    setPage(1);
+    setDraft({ ...EMPTY_MODEL_FILTERS });
+    setFilters({ ...EMPTY_MODEL_FILTERS });
+    setProviderOpen(false);
+  };
+
   if (selectedModelId) {
     return <AdminModelDetailView key={selectedModelId} modelId={selectedModelId} onBack={onBack} onForbidden={onForbidden} onViewConversations={onViewConversations} />;
   }
@@ -77,7 +85,7 @@ export default function AdminModelsPanel({
         <Input aria-label="搜索模型" placeholder="模型名称或 ID" value={draft.q} onChange={event => setDraft(current => ({ ...current, q: event.target.value }))} />
         <Select open={active && providerOpen} onOpenChange={setProviderOpen} value={draft.provider || ALL_PROVIDERS_VALUE} onValueChange={value => setDraft(current => ({ ...current, provider: value === ALL_PROVIDERS_VALUE ? '' : value }))}><SelectTrigger aria-label="模型提供商">{selectedProvider ? <span className="flex min-w-0 items-center gap-2"><span className="shrink-0" aria-hidden="true"><ProviderIcon providerId={selectedProvider.value} size={18} /></span><span className="truncate">{selectedProvider.label}</span></span> : <span>不限</span>}</SelectTrigger><SelectContent className="w-[max(232px,var(--radix-select-trigger-width))] max-w-[calc(100vw-2rem)]"><SelectItem value={ALL_PROVIDERS_VALUE} className="min-h-10 py-2">不限</SelectItem>{renderedProviderOptions.map(option => <SelectItem key={option.value} value={option.value} textValue={option.label} className="min-h-10 py-2"><span className="flex min-w-0 items-center gap-3"><span className="shrink-0" aria-hidden="true"><ProviderIcon providerId={option.value} size={20} /></span><span className="min-w-0 flex-1 truncate" title={option.label}>{option.label}</span></span></SelectItem>)}</SelectContent></Select>
         <select aria-label="模型目录状态" className="h-9 rounded-md border border-input bg-background px-3 text-sm" value={draft.catalog_status} onChange={event => setDraft(current => ({ ...current, catalog_status: event.target.value }))}><option value="">目录状态不限</option><option value="active">当前模型</option><option value="historical">历史模型</option><option value="unknown">状态未知</option></select>
-        <Button type="submit"><Filter />筛选</Button>
+        <AdminFilterActions submitLabel="筛选" submitIcon={<Filter />} onReset={resetFilters} />
       </form>
       {resource.loading ? <AdminLoading /> : resource.error ? <AdminError message={resource.error} onRetry={resource.reload} /> : null}
       {resource.data?.catalog_availability === 'degraded' || (resource.data?.excluded_invalid_model_count ?? 0) > 0 ? <div className="mb-3 space-y-1 text-xs text-muted-foreground">{resource.data?.catalog_availability === 'degraded' ? <p>{CATALOG_DEGRADED_MESSAGE}</p> : null}{(resource.data?.excluded_invalid_model_count ?? 0) > 0 ? <p>有 {resource.data?.excluded_invalid_model_count} 条异常模型记录未展示，请检查历史数据</p> : null}</div> : null}

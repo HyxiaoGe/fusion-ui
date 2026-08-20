@@ -75,6 +75,36 @@ describe('AdminAuditEventsPanel', () => {
     await waitFor(() => expect(document.activeElement).toBe(trigger));
   });
 
+  it('重置筛选会清空审计动作和用户 ID 并立即恢复完整列表', async () => {
+    render(<AdminAuditEventsPanel onForbidden={vi.fn()} />);
+    await screen.findByRole('table', { name: '管理员访问审计记录' });
+
+    fireEvent.change(screen.getByLabelText('审计动作'), { target: { value: 'admin.audit.user.view' } });
+    fireEvent.change(screen.getByLabelText('管理员用户 ID'), { target: { value: 'admin-1' } });
+    fireEvent.change(screen.getByLabelText('目标用户 ID'), { target: { value: 'user-1' } });
+    fireEvent.click(screen.getByRole('button', { name: '筛选' }));
+    await waitFor(() => expect(apiMocks.getAdminAuditEvents).toHaveBeenLastCalledWith({
+      page: 1,
+      page_size: 25,
+      action: 'admin.audit.user.view',
+      admin_user_id: 'admin-1',
+      target_user_id: 'user-1',
+    }, expect.any(AbortSignal)));
+
+    fireEvent.click(screen.getByRole('button', { name: '重置筛选' }));
+
+    expect(screen.getByLabelText('审计动作')).toHaveValue('');
+    expect(screen.getByLabelText('管理员用户 ID')).toHaveValue('');
+    expect(screen.getByLabelText('目标用户 ID')).toHaveValue('');
+    await waitFor(() => expect(apiMocks.getAdminAuditEvents).toHaveBeenLastCalledWith({
+      page: 1,
+      page_size: 25,
+      action: '',
+      admin_user_id: '',
+      target_user_id: '',
+    }, expect.any(AbortSignal)));
+  });
+
   it('缺失管理员和目标信息安全降级，未知原始值不进入主表', async () => {
     render(<AdminAuditEventsPanel onForbidden={vi.fn()} />);
     const admin = await screen.findByLabelText('审计管理员 event-missing');

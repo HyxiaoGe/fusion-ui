@@ -69,6 +69,40 @@ describe('AdminUsersPanel', () => {
     expect(screen.getAllByText('s***@example.com')).toHaveLength(2);
   });
 
+  it('重置筛选会清空用户筛选并立即恢复完整列表', async () => {
+    render(<ControlledUsersPanel />);
+    await screen.findByText('@alpha');
+
+    fireEvent.change(screen.getByLabelText('搜索用户'), { target: { value: 'beta' } });
+    fireEvent.change(screen.getByLabelText('管理员筛选'), { target: { value: 'true' } });
+    fireEvent.change(screen.getByLabelText('注册开始日期'), { target: { value: '2026-07-01' } });
+    fireEvent.change(screen.getByLabelText('注册结束日期'), { target: { value: '2026-07-14' } });
+    fireEvent.click(screen.getByRole('button', { name: '搜索' }));
+    await waitFor(() => expect(apiMocks.getAdminUsers).toHaveBeenLastCalledWith({
+      page: 1,
+      page_size: 25,
+      q: 'beta',
+      is_superuser: true,
+      created_from: '2026-07-01',
+      created_to: '2026-07-14',
+    }, expect.any(AbortSignal)));
+
+    fireEvent.click(screen.getByRole('button', { name: '重置筛选' }));
+
+    expect(screen.getByLabelText('搜索用户')).toHaveValue('');
+    expect(screen.getByLabelText('管理员筛选')).toHaveValue('');
+    expect(screen.getByLabelText('注册开始日期')).toHaveValue('');
+    expect(screen.getByLabelText('注册结束日期')).toHaveValue('');
+    await waitFor(() => expect(apiMocks.getAdminUsers).toHaveBeenLastCalledWith({
+      page: 1,
+      page_size: 25,
+      q: '',
+      is_superuser: undefined,
+      created_from: '',
+      created_to: '',
+    }, expect.any(AbortSignal)));
+  });
+
   it('关闭详情会中止旧请求且不串数据，之后可继续筛选查看其他用户', async () => {
     let resolveDetail!: (value: Record<string, unknown>) => void;
     apiMocks.getAdminUser.mockReturnValue(new Promise(resolve => { resolveDetail = resolve; }));

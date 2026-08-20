@@ -219,6 +219,7 @@ export default function AdminAuditCenter() {
         </TabsContent> : null}
         {visitedTabs.has('conversations') ? <TabsContent value="conversations" forceMount hidden={activeTab !== 'conversations'} className="mt-4 data-[state=inactive]:hidden">
           <AdminConversationsPanel
+            active={activeTab === 'conversations'}
             onForbidden={handleForbidden}
             userIdFilter={conversationsRoute.userId}
             modelIdFilter={conversationsRoute.modelId}
