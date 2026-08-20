@@ -290,7 +290,7 @@ describe('AdminConversationsPanel', () => {
     await waitFor(() => expect(apiMocks.getAdminModels).toHaveBeenLastCalledWith(
       expect.objectContaining({ page_size: 100, q: 'beta' }), expect.any(AbortSignal),
     ));
-    expect(within(listbox).queryByRole('option', { name: /模型 Alpha/ })).toBeNull();
+    await waitFor(() => expect(within(listbox).queryByRole('option', { name: /模型 Alpha/ })).toBeNull());
     expect(within(listbox).getByRole('option', { name: /模型 Beta/ })).toBeInTheDocument();
 
     fireEvent.change(search, { target: { value: 'model-a' } });
