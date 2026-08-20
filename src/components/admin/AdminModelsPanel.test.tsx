@@ -332,7 +332,7 @@ describe('AdminModelsPanel', () => {
     apiMocks.getAdminModel.mockResolvedValue({ ...detail, catalog_status: 'unknown' });
     render(<ControlledModelsPanel initialModelId="kimi-k2.5" />);
     const view = await screen.findByLabelText('模型详情 kimi-k2.5');
-    expect(view).toHaveTextContent('目录状态状态未知');
+    await waitFor(() => expect(view).toHaveTextContent('目录状态状态未知'));
     expect(view).not.toHaveTextContent('目录状态历史模型');
   });
 
@@ -340,8 +340,8 @@ describe('AdminModelsPanel', () => {
     apiMocks.getAdminModel.mockResolvedValue({ ...detail, catalog_availability: 'degraded' });
     render(<ControlledModelsPanel initialModelId="kimi-k2.5" />);
     const view = await screen.findByLabelText('模型详情 kimi-k2.5');
-    expect(view).toHaveTextContent('目录状态当前模型');
-    expect(view).toHaveTextContent('模型目录暂时不可用，当前信息可能来自缓存或仅包含历史数据。');
+    await waitFor(() => expect(view).toHaveTextContent('目录状态当前模型'));
+    await waitFor(() => expect(view).toHaveTextContent('模型目录暂时不可用，当前信息可能来自缓存或仅包含历史数据。'));
   });
 
   it('详情展示安全运营信息并可关联查看该模型对话', async () => {
