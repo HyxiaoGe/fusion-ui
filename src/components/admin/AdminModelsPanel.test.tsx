@@ -283,7 +283,7 @@ describe('AdminModelsPanel', () => {
 
     fireEvent.click(within(row).getByRole('button', { name: '查看模型详情 kimi-k2.5' }));
     const view = await screen.findByLabelText('模型详情 kimi-k2.5');
-    expect(view).toHaveTextContent('联网搜索');
+    await waitFor(() => expect(view).toHaveTextContent('联网搜索'));
     expect(view).toHaveTextContent('Agent 工具');
     expect(view).not.toHaveTextContent('+4项');
   });
@@ -414,7 +414,7 @@ describe('AdminModelsPanel', () => {
     });
     render(<ControlledModelsPanel initialModelId="model-history" />);
     const view = await screen.findByLabelText('模型详情 model-history');
-    expect(view).toHaveTextContent('model-history · 未记录');
+    await waitFor(() => expect(view).toHaveTextContent('model-history · 未记录'));
     expect(view).not.toHaveTextContent('model-history · ·');
     expect(view).toHaveTextContent('成本层级低');
     expect(view).toHaveTextContent('Agent、编程、长上下文、快速响应、通用、custom');

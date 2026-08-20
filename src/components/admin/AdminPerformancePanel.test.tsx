@@ -173,7 +173,7 @@ describe('AdminPerformancePanel', () => {
     }));
 
     const detail = await screen.findByLabelText(`压测详情 ${listRun.run_id}`);
-    expect(detail).toHaveTextContent('门禁停止');
+    await waitFor(() => expect(detail).toHaveTextContent('门禁停止'));
     expect(detail).toHaveTextContent('状态仅表示压测流程结果，不等同于零错误或服务崩溃');
     expect(detail).toHaveTextContent('resource:monitoring_unavailable');
     expect(detail).toHaveTextContent('conversation_list');

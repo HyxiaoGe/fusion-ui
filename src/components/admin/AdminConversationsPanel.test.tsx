@@ -141,7 +141,7 @@ describe('AdminConversationsPanel', () => {
     fireEvent.click(screen.getByRole('button', { name: '查看对话详情 conv-1' }));
 
     const detail = await screen.findByLabelText('对话详情 conv-1');
-    expect(detail).toHaveTextContent('同名用户');
+    await waitFor(() => expect(detail).toHaveTextContent('同名用户'));
     expect(detail).toHaveTextContent('@alpha');
     expect(detail).toHaveTextContent('user-alpha');
     expect(detail).toHaveTextContent('s***@example.com');
