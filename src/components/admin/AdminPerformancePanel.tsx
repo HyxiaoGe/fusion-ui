@@ -9,7 +9,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import PerformanceRunImport from './PerformanceRunImport';
 import AdminPerformanceRunDetail from './AdminPerformanceRunDetail';
-import { AdminEmpty, AdminError, AdminLoading, AdminPagination, AdminPanelHeader, formatAdminDate } from './AdminPanelPrimitives';
+import { AdminEmpty, AdminError, AdminFilterActions, AdminLoading, AdminPagination, AdminPanelHeader, formatAdminDate } from './AdminPanelPrimitives';
 
 function performanceDetailId(runId: string): string {
   return `performance-run-detail-${runId.replace(/[^A-Za-z0-9_-]/g, '-')}`;
@@ -54,12 +54,20 @@ export default function AdminPerformancePanel({
     setStatus(statusDraft.trim());
     resource.reload();
   };
+  const resetFilters = () => {
+    if (selectedRunId) onToggle(null);
+    setPage(1);
+    setEnvironmentDraft('');
+    setEnvironment('');
+    setStatusDraft('');
+    setStatus('');
+  };
 
   return (
     <section>
       <AdminPanelHeader title="压测记录" description="压测聊天清理后，脱敏汇总仍独立保留在这里。" action={<Button variant="outline" size="sm" aria-label="刷新压测列表" onClick={refreshList}><RefreshCw />刷新</Button>} />
       <PerformanceRunImport onImported={refreshList} onForbidden={onForbidden} />
-      <form className="my-4 grid max-w-2xl gap-2 sm:grid-cols-[1fr_1fr_auto]" onSubmit={applyFilters}><Input aria-label="压测环境" placeholder="环境，例如 production" value={environmentDraft} onChange={event => setEnvironmentDraft(event.target.value)} /><Input aria-label="压测状态" placeholder="状态，例如 completed" value={statusDraft} onChange={event => setStatusDraft(event.target.value)} /><Button type="submit" variant="outline">筛选</Button></form>
+      <form className="my-4 grid max-w-2xl gap-2 sm:grid-cols-[1fr_1fr_auto]" onSubmit={applyFilters}><Input aria-label="压测环境" placeholder="环境，例如 production" value={environmentDraft} onChange={event => setEnvironmentDraft(event.target.value)} /><Input aria-label="压测状态" placeholder="状态，例如 completed" value={statusDraft} onChange={event => setStatusDraft(event.target.value)} /><AdminFilterActions submitLabel="筛选" submitVariant="outline" onReset={resetFilters} /></form>
       {resource.loading ? <AdminLoading /> : resource.error ? <AdminError message={resource.error} onRetry={resource.reload} /> : null}
       {resource.data && resource.data.items.length === 0 ? <AdminEmpty>暂无压测记录</AdminEmpty> : null}
       {resource.data && resource.data.items.length > 0 ? <><div className="space-y-3">{resource.data.items.map(run => {

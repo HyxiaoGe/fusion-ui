@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process';
 import { createRequire } from 'node:module';
 import { describe, expect, it } from 'vitest';
 
@@ -24,6 +25,25 @@ describe('/admin 防点击劫持响应头', () => {
     expect(headers['content-security-policy']).toContain("script-src 'self' 'unsafe-inline'");
     expect(headers['content-security-policy']).not.toContain("'unsafe-eval'");
     expect(headers['x-frame-options']).toBe('DENY');
+  });
+
+  it('仅在 Next 开发服务器为热更新放行 unsafe-eval', () => {
+    const output = execFileSync(
+      process.execPath,
+      [
+        '-e',
+        `process.env.NODE_ENV = 'development';
+         const config = require('./next.config.js');
+         config.headers().then(rules => {
+           const rule = rules.find(item => item.source === '/admin/:path*');
+           const csp = rule.headers.find(header => header.key === 'Content-Security-Policy').value;
+           process.stdout.write(csp);
+         });`,
+      ],
+      { cwd: process.cwd(), encoding: 'utf8' },
+    );
+
+    expect(output).toContain("script-src 'self' 'unsafe-inline' 'unsafe-eval'");
   });
 
   it('禁止管理员页面及详情响应被浏览器或中间缓存保存', async () => {

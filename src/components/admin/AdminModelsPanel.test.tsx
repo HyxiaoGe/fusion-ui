@@ -139,6 +139,38 @@ describe('AdminModelsPanel', () => {
     await waitFor(() => expect(apiMocks.getAdminModels).toHaveBeenLastCalledWith(expect.objectContaining({ page: 1, provider: '' }), expect.any(AbortSignal)));
   }, 15_000);
 
+  it('重置筛选会清空模型名称、提供商和目录状态并立即恢复完整列表', async () => {
+    render(<ControlledModelsPanel />);
+    await screen.findByText('Kimi K2.5');
+
+    fireEvent.change(screen.getByLabelText('搜索模型'), { target: { value: 'gpt' } });
+    const providerSelect = screen.getByRole('combobox', { name: '模型提供商' });
+    fireEvent.click(providerSelect);
+    fireEvent.click(await screen.findByRole('option', { name: 'OpenAI' }));
+    fireEvent.change(screen.getByLabelText('模型目录状态'), { target: { value: 'historical' } });
+    fireEvent.click(screen.getByRole('button', { name: '筛选' }));
+    await waitFor(() => expect(apiMocks.getAdminModels).toHaveBeenLastCalledWith({
+      page: 1,
+      page_size: 25,
+      q: 'gpt',
+      provider: 'openai',
+      catalog_status: 'historical',
+    }, expect.any(AbortSignal)));
+
+    fireEvent.click(screen.getByRole('button', { name: '重置筛选' }));
+
+    expect(screen.getByLabelText('搜索模型')).toHaveValue('');
+    expect(providerSelect).toHaveTextContent('不限');
+    expect(screen.getByLabelText('模型目录状态')).toHaveValue('');
+    await waitFor(() => expect(apiMocks.getAdminModels).toHaveBeenLastCalledWith({
+      page: 1,
+      page_size: 25,
+      q: '',
+      provider: '',
+      catalog_status: '',
+    }, expect.any(AbortSignal)));
+  });
+
   it('提供商下拉使用舒展宽度和行距，长名称截断且不改变可访问名称', async () => {
     const longProvider = { value: 'long-provider', label: '这是一个非常非常长的模型提供商名称' };
     apiMocks.getAdminModels.mockResolvedValue({ ...page, provider_options: [...page.provider_options, longProvider] });

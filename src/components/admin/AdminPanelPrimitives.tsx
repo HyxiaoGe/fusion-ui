@@ -1,6 +1,7 @@
-import type { ReactNode } from 'react';
-import { AlertCircle, ChevronLeft, ChevronRight, Loader2, RefreshCw } from 'lucide-react';
+import type { ComponentProps, ReactNode } from 'react';
+import { AlertCircle, ChevronLeft, ChevronRight, Loader2, RefreshCw, RotateCcw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
 import type { AdminPage } from '@/types/adminAudit';
 
 export function AdminPanelHeader({ title, description, action }: { title: string; description: string; action?: ReactNode }) {
@@ -12,6 +13,27 @@ export function AdminPanelHeader({ title, description, action }: { title: string
       </div>
       {action}
     </header>
+  );
+}
+
+export function AdminFilterActions({
+  submitLabel,
+  submitIcon,
+  submitVariant,
+  onReset,
+  className,
+}: {
+  submitLabel: string;
+  submitIcon?: ReactNode;
+  submitVariant?: ComponentProps<typeof Button>['variant'];
+  onReset: () => void;
+  className?: string;
+}) {
+  return (
+    <div className={cn('grid grid-cols-[minmax(max-content,1fr)_max-content] gap-2', className)}>
+      <Button type="submit" variant={submitVariant}>{submitIcon}{submitLabel}</Button>
+      <Button type="button" variant="outline" onClick={onReset} aria-label="重置筛选"><RotateCcw />重置</Button>
+    </div>
   );
 }
 

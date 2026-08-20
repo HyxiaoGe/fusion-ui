@@ -171,7 +171,7 @@ describe('AdminAuditCenter', () => {
     const detail = await screen.findByLabelText('模型详情 model-a');
     fireEvent.click(within(detail).getByRole('button', { name: '查看该模型的对话' }));
     expect(navigationMocks.push).toHaveBeenLastCalledWith('/admin?tab=conversations&model_id=model-a', { scroll: false });
-    expect(await screen.findByLabelText('模型 ID')).toHaveValue('model-a');
+    expect(await screen.findByRole('combobox', { name: '模型筛选' })).toHaveTextContent('model-a');
     expect(apiMocks.getAdminConversations).toHaveBeenCalledWith(expect.objectContaining({ model_id: 'model-a' }), expect.any(AbortSignal));
     act(() => navigationMocks.backUrl());
     expect(await screen.findByLabelText('模型详情 model-a')).toBeInTheDocument();
@@ -317,6 +317,24 @@ describe('AdminAuditCenter', () => {
     expect(screen.getByLabelText('其余模型能力')).toBeInTheDocument();
     fireEvent.mouseDown(screen.getByRole('tab', { name: '用户' }), { button: 0, ctrlKey: false });
     expect(screen.queryByLabelText('其余模型能力')).toBeNull();
+  });
+
+  it('切换出对话页签时关闭模型筛选浮层', async () => {
+    apiMocks.getAdminModels.mockResolvedValue({
+      ...emptyPage,
+      total: 1,
+      total_pages: 1,
+      items: [modelSummary],
+      provider_options: [],
+    });
+    navigationMocks.seed('/admin?tab=conversations');
+    render(<AdminAuditCenter />);
+
+    fireEvent.click(await screen.findByRole('combobox', { name: '模型筛选' }));
+    expect(await screen.findByRole('listbox', { name: '模型筛选选项' })).toBeInTheDocument();
+
+    fireEvent.mouseDown(screen.getByRole('tab', { name: '用户' }), { button: 0, ctrlKey: false });
+    await waitFor(() => expect(screen.queryByRole('listbox', { name: '模型筛选选项' })).toBeNull());
   });
 
   it('模型深链首屏只挂载目标页签，不预取其他管理列表', async () => {

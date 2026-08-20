@@ -14,7 +14,7 @@ import type { AdminUserDetail } from '@/types/adminAudit';
 import { isAdminAccessError } from '@/lib/admin/adminAccess';
 import AdminUserIdentity from './AdminUserIdentity';
 import {
-  AdminEmpty, AdminError, AdminLoading, AdminPagination, AdminPanelHeader, formatAdminDate, formatNumber,
+  AdminEmpty, AdminError, AdminFilterActions, AdminLoading, AdminPagination, AdminPanelHeader, formatAdminDate, formatNumber,
 } from './AdminPanelPrimitives';
 
 interface AdminUsersPanelProps {
@@ -72,6 +72,15 @@ export default function AdminUsersPanel({
     setQuery(searchDraft.trim());
   };
 
+  const resetFilters = () => {
+    setPage(1);
+    setSearchDraft('');
+    setQuery('');
+    setAdminFilter('');
+    setCreatedFrom('');
+    setCreatedTo('');
+  };
+
   const loadUser = useCallback(async (userId: string) => {
     detailControllerRef.current?.abort();
     const controller = new AbortController();
@@ -111,12 +120,12 @@ export default function AdminUsersPanel({
         description="检索全部用户，查看活跃度、对话统计与 token 汇总。"
         action={<Button variant="outline" size="sm" onClick={refreshUsers} aria-label="刷新用户列表"><RefreshCw />刷新</Button>}
       />
-      <form onSubmit={submitSearch} className="mb-4 grid gap-2 rounded-xl border border-border bg-card p-3 md:grid-cols-2 xl:grid-cols-5">
+      <form onSubmit={submitSearch} className="mb-4 grid gap-2 rounded-xl border border-border bg-card p-3 md:grid-cols-2 xl:grid-cols-[repeat(4,minmax(0,1fr))_auto]">
         <Input ref={searchInputRef} aria-label="搜索用户" value={searchDraft} onChange={event => setSearchDraft(event.target.value)} placeholder="用户 ID、用户名、昵称或邮箱" />
         <select aria-label="管理员筛选" className="h-9 rounded-md border border-input bg-background px-3 text-sm" value={adminFilter} onChange={event => setAdminFilter(event.target.value as '' | 'true' | 'false')}><option value="">权限不限</option><option value="true">仅管理员</option><option value="false">仅普通用户</option></select>
         <Input aria-label="注册开始日期" type="date" value={createdFrom} onChange={event => setCreatedFrom(event.target.value)} />
         <Input aria-label="注册结束日期" type="date" value={createdTo} onChange={event => setCreatedTo(event.target.value)} />
-        <Button type="submit"><Search />搜索</Button>
+        <AdminFilterActions className="md:col-span-2 xl:col-span-1" submitLabel="搜索" submitIcon={<Search />} onReset={resetFilters} />
       </form>
 
       {resource.loading ? <AdminLoading /> : resource.error ? <AdminError message={resource.error} onRetry={refreshUsers} retryLabel="刷新用户列表" /> : null}
