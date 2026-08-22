@@ -301,6 +301,19 @@ function joinRun(
     };
   }
 
+  const isLegacyAssistantId = assistantMessageId !== null
+    && run.turnMessageId === run.messageId;
+  if (isLegacyAssistantId) {
+    const adjacentUser = previousAdjacentUser(messages, messageIndexes, assistantMessageId);
+    return {
+      runId: run.runId,
+      userMessageId: adjacentUser,
+      assistantMessageId,
+      strategy: adjacentUser ? 'legacy-adjacent-user' : 'unassociated',
+      bucket: adjacentUser ? 'conversation' : 'unassociated',
+    };
+  }
+
   if (userMessageId || assistantMessageId) {
     if (userMessageId) {
       return {
@@ -311,23 +324,11 @@ function joinRun(
         bucket: 'conversation',
       };
     }
-    const legacyUser = run.turnMessageId === null && assistantMessageId
-      ? previousAdjacentUser(messages, messageIndexes, assistantMessageId)
-      : null;
-    if (run.turnMessageId === null && assistantMessageId && !legacyUser) {
-      return {
-        runId: run.runId,
-        userMessageId: null,
-        assistantMessageId,
-        strategy: 'unassociated',
-        bucket: 'unassociated',
-      };
-    }
     return {
       runId: run.runId,
-      userMessageId: legacyUser,
+      userMessageId: null,
       assistantMessageId,
-      strategy: legacyUser ? 'legacy-adjacent-user' : 'assistant-only',
+      strategy: 'assistant-only',
       bucket: 'conversation',
     };
   }
@@ -530,6 +531,9 @@ function deriveTrajectoryBadge(
         reason: snapshot.completeness.degraded_reason,
       };
     }
+    if (snapshot.completeness.status === 'legacy' || run.trajectoryStatus === 'legacy') {
+      return { status: 'legacy', source: 'durable-snapshot', reason: null };
+    }
     if (snapshot.events.some(item => item.schemaVersion !== 1)) {
       const version = snapshot.events.find(item => item.schemaVersion !== 1)?.schemaVersion;
       return {
@@ -558,7 +562,9 @@ function deriveTrajectoryBadge(
 }
 
 function normalizeTrajectoryBadgeStatus(value: string | null): TrajectoryBadgeStatus {
-  if (value === 'recording' || value === 'complete' || value === 'degraded') return value;
+  if (value === 'recording' || value === 'complete' || value === 'degraded' || value === 'legacy') {
+    return value;
+  }
   return 'unknown';
 }
 

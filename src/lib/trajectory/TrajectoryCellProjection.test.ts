@@ -142,67 +142,57 @@ describe('TrajectoryCellProjection', () => {
     ]);
   });
 
-  it('legacy assistant-id 只回看同会话相邻 user，跨过 assistant 时进入未关联运行', () => {
+  it('真实 legacy assistant-id 只回看同会话相邻 user', () => {
     const adjacent = runSummary('legacy-adjacent', {
       message_id: 'assistant-adjacent',
-      turn_message_id: null,
+      turn_message_id: 'assistant-adjacent',
       attempt_index: null,
-      trajectory_status: 'complete',
-    });
-    const notAdjacent = runSummary('legacy-not-adjacent', {
-      message_id: 'assistant-not-adjacent',
-      turn_message_id: null,
-      attempt_index: null,
-      trajectory_status: 'complete',
-    });
-    const missing = runSummary('orphan', {
-      message_id: 'missing-assistant',
-      turn_message_id: null,
-      attempt_index: null,
+      trajectory_status: 'legacy',
     });
 
     const projection = projectTrajectoryCells(input({
       messages: [
         message('user-adjacent', 'user'),
         message('assistant-adjacent', 'assistant'),
+      ],
+      runs: [adjacent],
+      runSummariesById: { 'legacy-adjacent': adjacent },
+    }));
+
+    expect(projection.joins).toEqual([{
+      runId: 'legacy-adjacent',
+      userMessageId: 'user-adjacent',
+      assistantMessageId: 'assistant-adjacent',
+      strategy: 'legacy-adjacent-user',
+      bucket: 'conversation',
+    }]);
+  });
+
+  it('真实 legacy assistant-id 没有紧邻 user 时进入未关联运行', () => {
+    const legacy = runSummary('legacy-not-adjacent', {
+      message_id: 'assistant-not-adjacent',
+      turn_message_id: 'assistant-not-adjacent',
+      attempt_index: null,
+      trajectory_status: 'legacy',
+    });
+    const projection = projectTrajectoryCells(input({
+      messages: [
+        message('user-before-divider', 'user'),
         message('assistant-divider', 'assistant'),
         message('assistant-not-adjacent', 'assistant'),
       ],
-      runs: [adjacent, notAdjacent, missing],
-      runSummariesById: {
-        'legacy-adjacent': adjacent,
-        'legacy-not-adjacent': notAdjacent,
-        orphan: missing,
-      },
+      runs: [legacy],
+      runSummariesById: { 'legacy-not-adjacent': legacy },
     }));
 
-    expect(projection.joins).toEqual([
-      {
-        runId: 'legacy-adjacent',
-        userMessageId: 'user-adjacent',
-        assistantMessageId: 'assistant-adjacent',
-        strategy: 'legacy-adjacent-user',
-        bucket: 'conversation',
-      },
-      {
-        runId: 'legacy-not-adjacent',
-        userMessageId: null,
-        assistantMessageId: 'assistant-not-adjacent',
-        strategy: 'unassociated',
-        bucket: 'unassociated',
-      },
-      {
-        runId: 'orphan',
-        userMessageId: null,
-        assistantMessageId: null,
-        strategy: 'unassociated',
-        bucket: 'unassociated',
-      },
-    ]);
-    expect(projection.unassociatedCells.map(cell => cell.key)).toEqual([
-      'run:legacy-not-adjacent',
-      'run:orphan',
-    ]);
+    expect(projection.joins).toEqual([{
+      runId: 'legacy-not-adjacent',
+      userMessageId: null,
+      assistantMessageId: 'assistant-not-adjacent',
+      strategy: 'unassociated',
+      bucket: 'unassociated',
+    }]);
+    expect(projection.unassociatedCells.map(cell => cell.key)).toEqual(['run:legacy-not-adjacent']);
   });
 
   it('未选中或未水合 run 只给骨架，selected hydrated run 才投影完整细节与 live tail', () => {
@@ -488,6 +478,81 @@ describe('TrajectoryCellProjection', () => {
           source: 'durable-snapshot',
           reason: 'writer_timeout',
         },
+      },
+    ]);
+  });
+
+  it('直接识别 P1 legacy 摘要与空 records legacy snapshot，且 truncated 优先', () => {
+    const unhydrated = runSummary('legacy-unhydrated', {
+      message_id: 'assistant-legacy-unhydrated',
+      turn_message_id: 'user-legacy-unhydrated',
+      trajectory_status: 'legacy',
+    });
+    const hydrated = runSummary('legacy-hydrated', {
+      message_id: 'assistant-legacy-hydrated',
+      turn_message_id: 'user-legacy-hydrated',
+      trajectory_status: 'legacy',
+    });
+    const truncated = runSummary('legacy-truncated', {
+      message_id: 'assistant-legacy-truncated',
+      turn_message_id: 'user-legacy-truncated',
+      trajectory_status: 'legacy',
+    });
+    const legacyCompleteness = {
+      status: 'legacy',
+      degraded_reason: null,
+      event_count: null,
+      expected_last_sequence: null,
+      loaded_event_count: 0,
+      first_sequence: null,
+      last_sequence: null,
+    };
+    const projection = projectTrajectoryCells(input({
+      messages: [
+        message('user-legacy-unhydrated', 'user'),
+        message('assistant-legacy-unhydrated', 'assistant'),
+        message('user-legacy-hydrated', 'user'),
+        message('assistant-legacy-hydrated', 'assistant'),
+        message('user-legacy-truncated', 'user'),
+        message('assistant-legacy-truncated', 'assistant'),
+      ],
+      runs: [unhydrated, hydrated, truncated],
+      runSummariesById: { unhydrated, hydrated, truncated },
+      snapshotsByRunId: {
+        'legacy-hydrated': {
+          run: hydrated,
+          spans: [],
+          completeness: legacyCompleteness,
+          truncated: false,
+          durableLastSequence: null,
+          events: [],
+        },
+        'legacy-truncated': {
+          run: truncated,
+          spans: [],
+          completeness: legacyCompleteness,
+          truncated: true,
+          durableLastSequence: null,
+          events: [],
+        },
+      },
+    }));
+
+    expect(projection.cells.filter(cell => cell.type === 'run').map(cell => ({
+      runId: cell.runId,
+      badge: cell.trajectoryBadge,
+    }))).toEqual([
+      {
+        runId: 'legacy-unhydrated',
+        badge: { status: 'legacy', source: 'run-summary', reason: null },
+      },
+      {
+        runId: 'legacy-hydrated',
+        badge: { status: 'legacy', source: 'durable-snapshot', reason: null },
+      },
+      {
+        runId: 'legacy-truncated',
+        badge: { status: 'truncated', source: 'durable-snapshot', reason: null },
       },
     ]);
   });
