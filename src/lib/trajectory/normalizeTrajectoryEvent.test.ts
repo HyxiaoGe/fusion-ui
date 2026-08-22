@@ -208,6 +208,53 @@ describe('normalizeTrajectoryEvent', () => {
     expect(normalizeTrajectoryRecord('run-1', record)).toEqual(normalizeSseTrajectoryEvent(sse));
   });
 
+  it.each([
+    ['UTC 整秒', '2026-08-22T00:00:00Z', '2026-08-22T00:00:00.000Z'],
+    ['六位微秒', '2026-08-22T00:00:00.123456Z', '2026-08-22T00:00:00.123Z'],
+    ['带 offset', '2026-08-22T08:00:00.123+08:00', '2026-08-22T00:00:00.123Z'],
+  ])('把真实 P1 %s timestamp 归一为 UTC 毫秒 ISO', (_label, durableTimestamp, expected) => {
+    const normalized = normalizeTrajectoryRecord('run-1', {
+      sequence: 1,
+      event_type: 'step_started',
+      schema_version: 1,
+      timestamp: durableTimestamp,
+      step_id: 'step-1',
+      tool_call_id: null,
+      parent_step_id: null,
+      trace_id: 'trace-1',
+      span_id: 'step:step-1',
+      payload: {
+        type: 'step_started',
+        run_id: 'run-1',
+        step_number: 1,
+      },
+    });
+
+    expect(normalized?.timestamp).toBe(expected);
+  });
+
+  it.each([
+    ['非时间字符串', 'not-a-timestamp'],
+    ['不存在的日期', '2026-02-30T00:00:00Z'],
+  ])('拒绝%s的真实 P1 timestamp，不回退到当前时间', (_label, timestamp) => {
+    expect(normalizeTrajectoryRecord('run-1', {
+      sequence: 1,
+      event_type: 'step_started',
+      schema_version: 1,
+      timestamp,
+      step_id: 'step-1',
+      tool_call_id: null,
+      parent_step_id: null,
+      trace_id: 'trace-1',
+      span_id: 'step:step-1',
+      payload: {
+        type: 'step_started',
+        run_id: 'run-1',
+        step_number: 1,
+      },
+    })).toBeNull();
+  });
+
   it('将 P1 schema_version=0 record 与缺失版本的 SSE 归一为相同 legacy 事件', () => {
     const record = {
       sequence: 5,

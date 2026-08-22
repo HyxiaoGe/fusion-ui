@@ -16,6 +16,7 @@ const SUPPORTED_SCHEMA_VERSIONS = new Set([0, 1]);
 const MAX_LEDGER_TEXT_LENGTH = 512;
 const MAX_LEDGER_LIST_ITEMS = 50;
 const SECRET_PATTERN = /\b(api[_-]?key|authorization|access[_-]?token|token|password|secret)\s*[:=]\s*(?:bearer\s+)?[^\s,;]+/gi;
+const ISO_TIMESTAMP_PATTERN = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.(\d+))?(Z|[+-](\d{2}):(\d{2}))$/;
 
 const EVENT_PAYLOAD_FIELDS: Record<string, readonly string[]> = {
   run_started: ['conversation_id', 'message_id', 'task_id', 'model', 'tools'],
@@ -147,6 +148,34 @@ function normalizeSchemaVersion(value: unknown): number | null {
     : null;
 }
 
+function canonicalTimestamp(value: string): string | null {
+  const match = ISO_TIMESTAMP_PATTERN.exec(value);
+  if (!match) return null;
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const hour = Number(match[4]);
+  const minute = Number(match[5]);
+  const second = Number(match[6]);
+  const offsetHour = match[9] === undefined ? 0 : Number(match[9]);
+  const offsetMinute = match[10] === undefined ? 0 : Number(match[10]);
+  const isLeapYear = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
+  const daysInMonth = [31, isLeapYear ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+  if (
+    month < 1
+    || month > 12
+    || day < 1
+    || day > daysInMonth[month - 1]
+    || hour > 23
+    || minute > 59
+    || second > 59
+    || offsetHour > 23
+    || offsetMinute > 59
+  ) return null;
+  const timestamp = new Date(value);
+  return Number.isNaN(timestamp.getTime()) ? null : timestamp.toISOString();
+}
+
 function sanitizePayload(eventType: string, source: Record<string, unknown>): Record<string, unknown> | null {
   const fields = EVENT_PAYLOAD_FIELDS[eventType];
   if (!fields) return null;
@@ -245,13 +274,15 @@ export function normalizeTrajectoryRecord(runId: string, input: unknown): Normal
 
   const payload = sanitizePayload(record.event_type, record.payload);
   if (payload === null) return null;
+  const timestamp = canonicalTimestamp(record.timestamp);
+  if (timestamp === null) return null;
 
   return {
     runId,
     sequence: record.sequence,
     eventType: record.event_type,
     schemaVersion,
-    timestamp: record.timestamp,
+    timestamp,
     stepId,
     toolCallId,
     parentStepId,

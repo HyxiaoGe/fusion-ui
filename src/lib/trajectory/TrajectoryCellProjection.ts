@@ -179,6 +179,11 @@ interface DetailContext {
   liveTail: NormalizedTrajectoryEvent[];
 }
 
+const normalizedEventArrayCache = new WeakMap<
+  NormalizedTrajectoryEvent[],
+  NormalizedTrajectoryEvent[]
+>();
+
 /** 将消息、运行摘要、快照和实时尾部确定性地投影为虚拟账本单元。 */
 export function projectTrajectoryCells(
   input: TrajectoryCellProjectionInput,
@@ -230,12 +235,6 @@ function collectProjectedRuns(input: TrajectoryCellProjectionInput): ProjectedRu
   const byRunId = new Map<string, ProjectedRun>();
 
   for (const summary of input.runs) byRunId.set(summary.run_id, fromRunSummary(summary));
-  for (const summary of Object.values(input.runSummariesById)) {
-    byRunId.set(summary.run_id, fromRunSummary(summary));
-  }
-  for (const snapshot of Object.values(input.snapshotsByRunId)) {
-    if (snapshot) byRunId.set(snapshot.run.run_id, fromRunSummary(snapshot.run));
-  }
 
   for (const item of input.messages) {
     if (item.role !== 'assistant' || !item.agent_run) continue;
@@ -462,11 +461,26 @@ function createDetailContext(
 }
 
 function uniqueSortedEvents(events: NormalizedTrajectoryEvent[]): NormalizedTrajectoryEvent[] {
+  const cached = normalizedEventArrayCache.get(events);
+  if (cached) return cached;
+  let isStrictlySorted = true;
+  for (let index = 1; index < events.length; index += 1) {
+    if (events[index - 1].sequence >= events[index].sequence) {
+      isStrictlySorted = false;
+      break;
+    }
+  }
+  if (isStrictlySorted) {
+    normalizedEventArrayCache.set(events, events);
+    return events;
+  }
   const bySequence = new Map<number, NormalizedTrajectoryEvent>();
   for (const item of events) {
     if (!bySequence.has(item.sequence)) bySequence.set(item.sequence, item);
   }
-  return [...bySequence.values()].sort((left, right) => left.sequence - right.sequence);
+  const normalized = [...bySequence.values()].sort((left, right) => left.sequence - right.sequence);
+  normalizedEventArrayCache.set(events, normalized);
+  return normalized;
 }
 
 function createRunCell(
@@ -534,8 +548,12 @@ function deriveTrajectoryBadge(
     if (snapshot.completeness.status === 'legacy' || run.trajectoryStatus === 'legacy') {
       return { status: 'legacy', source: 'durable-snapshot', reason: null };
     }
-    if (snapshot.events.some(item => item.schemaVersion !== 1)) {
-      const version = snapshot.events.find(item => item.schemaVersion !== 1)?.schemaVersion;
+    const legacyEvent = snapshot.hasLegacyEvents
+      ? snapshot.events.find(item => item.schemaVersion !== 1)
+      : undefined;
+    if (snapshot.hasLegacyEvents ?? snapshot.events.some(item => item.schemaVersion !== 1)) {
+      const version = legacyEvent?.schemaVersion
+        ?? snapshot.events.find(item => item.schemaVersion !== 1)?.schemaVersion;
       return {
         status: 'legacy',
         source: 'durable-snapshot',
@@ -576,7 +594,7 @@ function projectDetailCells(detail: DetailContext, runCell: RunCell): Trajectory
   const events = [
     ...detail.durableEvents.map(item => ({ item, source: 'durable-snapshot' as const })),
     ...detail.liveTail.map(item => ({ item, source: 'live-tail' as const })),
-  ].sort((left, right) => left.item.sequence - right.item.sequence);
+  ];
 
   for (const { item, source } of events) {
     if (item.eventType === 'plan_snapshot' || item.eventType === 'plan_step_updated') {

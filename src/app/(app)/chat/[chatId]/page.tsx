@@ -1057,6 +1057,7 @@ export default function ChatPage() {
               <TrajectoryTabView
                 conversationId={chatId}
                 messages={isHydratingWithoutContent ? [] : displayMessages}
+                visible={activeSurface === 'trajectory'}
                 onRevealInChat={handleRevealInChat}
                 runActions={{
                   enabled: activeSurface === 'trajectory'

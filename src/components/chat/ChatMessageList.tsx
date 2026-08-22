@@ -14,13 +14,11 @@ import { isNearBottom } from '@/lib/chat/scrollBehavior';
 import type { AgentRunState } from '@/types/agentRun';
 import { selectChatModel } from '@/redux/selectors';
 import { useRenderProbe } from '@/lib/debug/perfProbe';
+import type { TrajectoryBadgeStatus } from '@/lib/trajectory/TrajectoryCellProjection';
+import { deriveTrajectoryBadgeStatusByMessageId } from '@/lib/trajectory/trajectoryBadgeProjection';
 import {
-  projectTrajectoryCells,
-  type TrajectoryBadgeStatus,
-} from '@/lib/trajectory/TrajectoryCellProjection';
-import {
-  selectTrajectoryConversation,
-  selectTrajectoryRuns,
+  getVisibleTrajectoryRuns,
+  type TrajectorySnapshotCacheEntry,
 } from '@/redux/slices/trajectorySlice';
 import type { TrajectoryRunSummary } from '@/types/trajectory';
 
@@ -62,6 +60,9 @@ const DEFAULT_EMPTY_STATE = {
 
 const EMPTY_SUGGESTED_QUESTIONS: string[] = [];
 const EMPTY_TRAJECTORY_RUNS: TrajectoryRunSummary[] = [];
+const EMPTY_TRAJECTORY_RUN_SUMMARIES: Record<string, TrajectoryRunSummary> = {};
+const EMPTY_TRAJECTORY_SNAPSHOTS: Record<string, TrajectorySnapshotCacheEntry> = {};
+const EMPTY_PROVISIONAL_RUN_IDS: string[] = [];
 
 interface ChatMessageRowProps {
   message: Message;
@@ -346,35 +347,54 @@ const ChatMessageList: React.FC<ChatMessageListProps> = ({
   const modelId = model?.id;
   const providerId = model?.provider;
   const modelName = model?.name ?? 'AI助手';
-  const trajectoryState = useAppSelector(state => state.trajectory);
-  const trajectoryConversation = useMemo(() => (
+  const trajectoryServerRuns = useAppSelector(state => (
     conversationId
-      ? selectTrajectoryConversation({ trajectory: trajectoryState }, conversationId)
-      : undefined
-  ), [conversationId, trajectoryState]);
-  const trajectoryRuns = useMemo(() => (
-    conversationId
-      ? selectTrajectoryRuns({ trajectory: trajectoryState }, conversationId)
+      ? state.trajectory.byConversationId[conversationId]?.runs ?? EMPTY_TRAJECTORY_RUNS
       : EMPTY_TRAJECTORY_RUNS
-  ), [conversationId, trajectoryState]);
-  const trajectoryStatusByMessageId = useMemo(() => {
-    const projection = projectTrajectoryCells({
+  ));
+  const trajectoryRunSummaries = useAppSelector(state => (
+    conversationId
+      ? state.trajectory.byConversationId[conversationId]?.runSummariesById
+        ?? EMPTY_TRAJECTORY_RUN_SUMMARIES
+      : EMPTY_TRAJECTORY_RUN_SUMMARIES
+  ));
+  const trajectorySnapshots = useAppSelector(state => (
+    conversationId
+      ? state.trajectory.byConversationId[conversationId]?.snapshotsByRunId
+        ?? EMPTY_TRAJECTORY_SNAPSHOTS
+      : EMPTY_TRAJECTORY_SNAPSHOTS
+  ));
+  const provisionalRunIds = useAppSelector(state => (
+    conversationId
+      ? state.trajectory.byConversationId[conversationId]?.provisionalRunIds
+        ?? EMPTY_PROVISIONAL_RUN_IDS
+      : EMPTY_PROVISIONAL_RUN_IDS
+  ));
+  const selectedTrajectoryRunId = useAppSelector(state => (
+    conversationId
+      ? state.trajectory.byConversationId[conversationId]?.selectedRunId ?? null
+      : null
+  ));
+  const trajectoryRuns = useMemo(() => (
+    getVisibleTrajectoryRuns({
+      runs: trajectoryServerRuns,
+      runSummariesById: trajectoryRunSummaries,
+      selectedRunId: selectedTrajectoryRunId,
+      provisionalRunIds,
+    })
+  ), [
+    provisionalRunIds,
+    selectedTrajectoryRunId,
+    trajectoryRunSummaries,
+    trajectoryServerRuns,
+  ]);
+  const trajectoryStatusByMessageId = useMemo(() => (
+    deriveTrajectoryBadgeStatusByMessageId({
       messages,
       runs: trajectoryRuns,
-      runSummariesById: trajectoryConversation?.runSummariesById ?? {},
-      snapshotsByRunId: trajectoryConversation?.snapshotsByRunId ?? {},
-      liveEventsByRunId: trajectoryConversation?.liveEventsByRunId ?? {},
-      selectedRunId: trajectoryConversation?.selectedRunId ?? null,
-      runsTruncated: trajectoryConversation?.runsTruncated ?? false,
-    });
-    const result = new Map<string, TrajectoryBadgeStatus>();
-    for (const cell of [...projection.cells, ...projection.unassociatedCells]) {
-      if (cell.type === 'run' && cell.assistantMessageId) {
-        result.set(cell.assistantMessageId, cell.trajectoryBadge.status);
-      }
-    }
-    return result;
-  }, [messages, trajectoryConversation, trajectoryRuns]);
+      snapshotsByRunId: trajectorySnapshots,
+    })
+  ), [messages, trajectoryRuns, trajectorySnapshots]);
   const isStreamingForMessage = (message: Message, index: number): boolean => {
     if (!isStreaming || message.role !== 'assistant') {
       return false;

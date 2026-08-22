@@ -1,6 +1,8 @@
 import { combineReducers, configureStore } from '@reduxjs/toolkit';
 import { describe, expect, it } from 'vitest';
 import { normalizeSseTrajectoryEvent } from '@/lib/trajectory/normalizeTrajectoryEvent';
+import { projectTrajectoryCells } from '@/lib/trajectory/TrajectoryCellProjection';
+import { resolveTrajectoryActionPolicy } from '@/lib/trajectory/trajectoryActionPolicy';
 import type { TrajectoryRunSummary, TrajectorySnapshot } from '@/types/trajectory';
 import streamReducer, { initRun, startStream } from './streamSlice';
 import trajectoryReducer, {
@@ -50,7 +52,7 @@ function snapshot(runId: string, sequences: number[]): TrajectorySnapshot {
       sequence,
       event_type: sequence === 0 ? 'run_started' : 'step_started',
       schema_version: 1,
-      timestamp: `2026-08-22T00:00:0${sequence}.000Z`,
+      timestamp: new Date(Date.UTC(2026, 7, 22, 0, 0, sequence)).toISOString(),
       step_id: sequence === 0 ? null : `step-${sequence}`,
       tool_call_id: null,
       parent_step_id: null,
@@ -557,6 +559,69 @@ describe('trajectorySlice', () => {
     ]);
   });
 
+  it.each([
+    ['UTC 整秒', '2026-08-22T00:00:01Z', 1787356801],
+    ['六位微秒', '2026-08-22T00:00:01.123456Z', 1787356801.123],
+    ['带 offset', '2026-08-22T08:00:01.123+08:00', 1787356801.123],
+  ])('真实 P1 %s timestamp 与同 instant SSE overlap 不产生冲突', (
+    _label,
+    durableTimestamp,
+    liveTimestamp,
+  ) => {
+    const durable = snapshot('run-a', [1]);
+    durable.records[0].timestamp = durableTimestamp;
+    const matchingLive = liveEvent('run-a', 1, { ts: liveTimestamp });
+    let state = reducer(undefined, mergeLiveTrajectoryEvent({
+      conversationId: 'conversation-a',
+      event: matchingLive,
+    }));
+    state = reducer(state, trajectorySnapshotRequested({
+      conversationId: 'conversation-a',
+      runId: 'run-a',
+      requestId: 'snapshot-canonical',
+    }));
+    state = reducer(state, trajectorySnapshotReceived({
+      conversationId: 'conversation-a',
+      requestId: 'snapshot-canonical',
+      snapshot: durable,
+    }));
+
+    expect(state.byConversationId['conversation-a'].reconciliationByRunId['run-a'].conflicts)
+      .toEqual([]);
+  });
+
+  it('canonical timestamp 相同时真实 payload 差异仍记录 snapshot-live 冲突', () => {
+    const durable = snapshot('run-a', [1]);
+    durable.records[0].timestamp = '2026-08-22T00:00:01.123456Z';
+    const conflictingLive = liveEvent('run-a', 1, {
+      ts: 1787356801.123,
+      step_number: 99,
+    });
+    let state = reducer(undefined, mergeLiveTrajectoryEvent({
+      conversationId: 'conversation-a',
+      event: conflictingLive,
+    }));
+    state = reducer(state, trajectorySnapshotRequested({
+      conversationId: 'conversation-a',
+      runId: 'run-a',
+      requestId: 'snapshot-payload-conflict',
+    }));
+    state = reducer(state, trajectorySnapshotReceived({
+      conversationId: 'conversation-a',
+      requestId: 'snapshot-payload-conflict',
+      snapshot: durable,
+    }));
+
+    expect(state.byConversationId['conversation-a'].reconciliationByRunId['run-a'].conflicts)
+      .toEqual([
+        expect.objectContaining({
+          kind: 'snapshot-live',
+          sequence: 1,
+          retainedSource: 'snapshot',
+        }),
+      ]);
+  });
+
   it('terminal live 到达后进入 reconciling，refetch 成功或失败结束请求生命周期', () => {
     const terminal = normalizeSseTrajectoryEvent({
       type: 'run_completed',
@@ -845,6 +910,10 @@ describe('trajectorySlice', () => {
       requestId: 'runs-first',
       response: { items: firstWindow, truncated: true },
     }));
+    state = reducer(state, mergeLiveTrajectoryEvent({
+      conversationId: 'conversation-a',
+      event: liveEvent('run-0', 1),
+    }));
     state = reducer(state, trajectoryRunListRequested({
       conversationId: 'conversation-a',
       requestId: 'runs-second',
@@ -865,10 +934,166 @@ describe('trajectorySlice', () => {
     expect(visibleRuns[0].run_id).toBe('run-live');
     expect(visibleRuns.some(run => run.run_id === 'run-0')).toBe(false);
     expect(conversation.runs).toHaveLength(500);
+    expect(conversation.runSummariesById['run-0']).toBeUndefined();
+    expect(conversation.liveEventsByRunId['run-0']).toBeUndefined();
+    expect(conversation.reconciliationByRunId['run-0']).toBeUndefined();
+    expect(Object.keys(conversation.runSummariesById)).toHaveLength(501);
     expect(conversation.runSummariesById['run-live']).toMatchObject({
       run_id: 'run-live',
       message_id: 'message-live',
     });
+
+    const projection = projectTrajectoryCells({
+      messages: [],
+      runs: visibleRuns,
+      runSummariesById: conversation.runSummariesById,
+      snapshotsByRunId: conversation.snapshotsByRunId,
+      liveEventsByRunId: conversation.liveEventsByRunId,
+      selectedRunId: conversation.selectedRunId,
+      runsTruncated: conversation.runsTruncated,
+    });
+    const projectedRunIds = [...projection.cells, ...projection.unassociatedCells]
+      .filter(cell => cell.type === 'run')
+      .map(cell => cell.runId);
+    expect(projectedRunIds).toHaveLength(500);
+    expect(projectedRunIds).not.toContain('run-0');
+
+    const actionPolicy = resolveTrajectoryActionPolicy({
+      runs: visibleRuns,
+      messages: [],
+      selectedRunId: conversation.selectedRunId,
+      runListStatus: conversation.runListStatus,
+      selectedRunHydrated: false,
+      selectedTrajectoryStatus: null,
+      selectedRunTruncated: false,
+      reconciliationStatus: 'idle',
+      hasActiveStream: false,
+      retryCapabilityAvailable: true,
+      modelAvailable: true,
+      knowledgeBaseStatus: 'ready',
+      knowledgeBaseIds: [],
+    });
+    expect(actionPolicy.retry.blockers).not.toContain('run-not-selected');
+  });
+
+  it('500 run 窗口只额外保留有界的 selected、provisional 与 snapshot 例外', () => {
+    const firstWindow = Array.from({ length: 500 }, (_, index) => runSummary(`run-${index}`));
+    const secondWindow = Array.from({ length: 500 }, (_, index) => runSummary(`run-${index + 1}`));
+    let state = reducer(undefined, trajectoryRunListRequested({
+      conversationId: 'conversation-a',
+      requestId: 'runs-first',
+    }));
+    state = reducer(state, trajectoryRunListReceived({
+      conversationId: 'conversation-a',
+      requestId: 'runs-first',
+      response: { items: firstWindow, truncated: true },
+    }));
+    state = reducer(state, trajectorySnapshotRequested({
+      conversationId: 'conversation-a',
+      runId: 'run-snapshot',
+      requestId: 'snapshot-exception',
+    }));
+    state = reducer(state, trajectorySnapshotReceived({
+      conversationId: 'conversation-a',
+      requestId: 'snapshot-exception',
+      snapshot: snapshot('run-snapshot', [0]),
+    }));
+    state = reducer(state, mergeLiveTrajectoryEvent({
+      conversationId: 'conversation-a',
+      event: liveEvent('run-live', 0, { message_id: 'message-live' }),
+    }));
+    state = reducer(state, selectTrajectoryTarget({
+      conversationId: 'conversation-a',
+      messageId: 'message-run-0',
+      runId: 'run-0',
+      spanId: null,
+    }));
+    state = reducer(state, trajectoryRunListRequested({
+      conversationId: 'conversation-a',
+      requestId: 'runs-second',
+    }));
+    state = reducer(state, trajectoryRunListReceived({
+      conversationId: 'conversation-a',
+      requestId: 'runs-second',
+      response: { items: secondWindow, truncated: true },
+    }));
+
+    const conversation = state.byConversationId['conversation-a'];
+    expect(Object.keys(conversation.runSummariesById)).toHaveLength(503);
+    expect(conversation.runSummariesById).toEqual(expect.objectContaining({
+      'run-0': expect.objectContaining({ run_id: 'run-0' }),
+      'run-live': expect.objectContaining({ run_id: 'run-live' }),
+      'run-snapshot': expect.objectContaining({ run_id: 'run-snapshot' }),
+    }));
+    expect(conversation.provisionalRunIds).toEqual(['run-live']);
+    expect(conversation.snapshotLru).toEqual(['run-snapshot']);
+    expect(Object.keys(conversation.snapshotsByRunId)).toHaveLength(1);
+    expect(Object.keys(conversation.liveEventsByRunId).length).toBeLessThanOrEqual(503);
+    expect(Object.keys(conversation.reconciliationByRunId).length).toBeLessThanOrEqual(503);
+
+    const visibleRuns = selectTrajectoryRuns({ trajectory: state }, 'conversation-a');
+    const projection = projectTrajectoryCells({
+      messages: [],
+      runs: visibleRuns,
+      runSummariesById: conversation.runSummariesById,
+      snapshotsByRunId: conversation.snapshotsByRunId,
+      liveEventsByRunId: conversation.liveEventsByRunId,
+      selectedRunId: conversation.selectedRunId,
+      runsTruncated: conversation.runsTruncated,
+    });
+    const projectedRunIds = [...projection.cells, ...projection.unassociatedCells]
+      .filter(cell => cell.type === 'run')
+      .map(cell => cell.runId);
+    expect(projectedRunIds).toContain('run-0');
+    expect(projectedRunIds).toContain('run-live');
+    expect(projectedRunIds).not.toContain('run-snapshot');
+    expect(projectedRunIds).toHaveLength(500);
+
+    const actionPolicy = resolveTrajectoryActionPolicy({
+      runs: visibleRuns,
+      messages: [],
+      selectedRunId: 'run-0',
+      runListStatus: 'ready',
+      selectedRunHydrated: false,
+      selectedTrajectoryStatus: null,
+      selectedRunTruncated: false,
+      reconciliationStatus: 'idle',
+      hasActiveStream: false,
+      retryCapabilityAvailable: true,
+      modelAvailable: true,
+      knowledgeBaseStatus: 'ready',
+      knowledgeBaseIds: [],
+    });
+    expect(actionPolicy.retry.blockers).not.toContain('run-not-selected');
+  });
+
+  it('连续 provisional run 不会令例外集合和关联 map 无界增长', () => {
+    let state = reducer(undefined, { type: '@@init' });
+    for (let index = 0; index < 20; index += 1) {
+      state = reducer(state, mergeLiveTrajectoryEvent({
+        conversationId: 'conversation-a',
+        event: liveEvent(`run-live-${index}`, 0, { message_id: `message-live-${index}` }),
+      }));
+    }
+
+    const conversation = state.byConversationId['conversation-a'];
+    expect(conversation.provisionalRunIds).toHaveLength(8);
+    expect(Object.keys(conversation.runSummariesById)).toHaveLength(8);
+    expect(Object.keys(conversation.liveEventsByRunId)).toHaveLength(8);
+    expect(Object.keys(conversation.reconciliationByRunId)).toHaveLength(8);
+    expect(conversation.selectedRunId).toBe('run-live-19');
+
+    for (let index = 0; index < 20; index += 1) {
+      state = reducer(state, mergeLiveTrajectoryEvent({
+        conversationId: 'conversation-a',
+        event: liveEvent(`run-orphan-${index}`, 1),
+      }));
+    }
+    const boundedConversation = state.byConversationId['conversation-a'];
+    expect(boundedConversation.provisionalRunIds).toHaveLength(8);
+    expect(Object.keys(boundedConversation.runSummariesById)).toHaveLength(9);
+    expect(Object.keys(boundedConversation.liveEventsByRunId)).toHaveLength(9);
+    expect(Object.keys(boundedConversation.reconciliationByRunId)).toHaveLength(9);
   });
 
   it('snapshot 权威摘要更新 server window 中的公开 run 且列表仍不超过 500', () => {

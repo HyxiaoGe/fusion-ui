@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useStore } from 'react-redux';
 
 import { getTrajectoryRuns, getTrajectorySnapshot } from '@/lib/api/trajectory';
@@ -7,7 +7,7 @@ import { useAppDispatch, useAppSelector } from '@/redux/hooks';
 import type { AppDispatch, RootState } from '@/redux/store';
 import {
   selectTrajectoryConversation,
-  selectTrajectoryRuns,
+  getVisibleTrajectoryRuns,
   touchTrajectorySnapshot,
   trajectoryAuthScopeChanged,
   trajectoryRunListCancelled,
@@ -20,9 +20,13 @@ import {
   trajectorySnapshotReceived,
   trajectorySnapshotRequested,
   trajectorySnapshotUnavailable,
+  type TrajectoryReconciliationState,
+  type TrajectorySnapshotCacheEntry,
   type TrajectorySnapshotRequestPurpose,
 } from '@/redux/slices/trajectorySlice';
 import { ApiError } from '@/types/api';
+import type { NormalizedTrajectoryEvent } from '@/lib/trajectory/normalizeTrajectoryEvent';
+import type { TrajectoryRunSummary } from '@/types/trajectory';
 
 let requestSequence = 0;
 
@@ -73,6 +77,23 @@ interface RequestSubscription {
 
 const ANONYMOUS_AUTH_SCOPE = '__anonymous__';
 const requestCoordinators = new WeakMap<object, Map<string, StoreRequestCoordinator>>();
+const EMPTY_RUNS: TrajectoryRunSummary[] = [];
+const EMPTY_RUN_SUMMARIES: Record<string, TrajectoryRunSummary> = {};
+const EMPTY_PROVISIONAL_RUN_IDS: string[] = [];
+const EMPTY_SNAPSHOT_MAP: Record<string, TrajectorySnapshotCacheEntry> = {};
+const EMPTY_LIVE_EVENT_MAP: Record<string, NormalizedTrajectoryEvent[]> = {};
+
+interface FrameBatchedTrajectoryDetail {
+  identity: string;
+  snapshot: TrajectorySnapshotCacheEntry | undefined;
+  liveEvents: NormalizedTrajectoryEvent[];
+}
+
+const EMPTY_BATCHED_DETAIL: FrameBatchedTrajectoryDetail = {
+  identity: '',
+  snapshot: undefined,
+  liveEvents: [],
+};
 
 function authScopeKey(state: RootState): string {
   return selectStableAuthIdentity(state) ?? ANONYMOUS_AUTH_SCOPE;
@@ -97,6 +118,89 @@ function requestCoordinator(
 
 function snapshotRequestKey(conversationId: string, runId: string): string {
   return `${conversationId}\u0000${runId}`;
+}
+
+function readTrajectoryDetail(
+  store: { getState: () => RootState },
+  conversationId: string,
+  runId: string,
+): FrameBatchedTrajectoryDetail {
+  const conversation = selectTrajectoryConversation(store.getState(), conversationId);
+  return {
+    identity: snapshotRequestKey(conversationId, runId),
+    snapshot: conversation?.snapshotsByRunId[runId],
+    liveEvents: conversation?.liveEventsByRunId[runId] ?? [],
+  };
+}
+
+function useFrameBatchedTrajectoryDetail(
+  store: { getState: () => RootState; subscribe: (listener: () => void) => () => void },
+  conversationId: string | null,
+  runId: string | null,
+  enabled: boolean,
+): FrameBatchedTrajectoryDetail {
+  const identity = enabled && conversationId && runId
+    ? snapshotRequestKey(conversationId, runId)
+    : '';
+  const [detail, setDetail] = useState<FrameBatchedTrajectoryDetail>(() => (
+    identity && conversationId && runId
+      ? readTrajectoryDetail(store, conversationId, runId)
+      : EMPTY_BATCHED_DETAIL
+  ));
+
+  useEffect(() => {
+    if (!identity || !conversationId || !runId) {
+      setDetail(EMPTY_BATCHED_DETAIL);
+      return;
+    }
+    setDetail(readTrajectoryDetail(store, conversationId, runId));
+  }, [conversationId, identity, runId, store]);
+
+  useEffect(() => {
+    if (!identity || !conversationId || !runId) return;
+    let current = readTrajectoryDetail(store, conversationId, runId);
+    let frameId: number | null = null;
+    let timeoutId: ReturnType<typeof setTimeout> | null = null;
+    const flush = () => {
+      frameId = null;
+      timeoutId = null;
+      setDetail(current);
+    };
+    const unsubscribe = store.subscribe(() => {
+      const next = readTrajectoryDetail(store, conversationId, runId);
+      if (next.snapshot === current.snapshot && next.liveEvents === current.liveEvents) return;
+      const snapshotIdentityChanged = next.snapshot?.snapshotRequestId
+        !== current.snapshot?.snapshotRequestId;
+      current = next;
+      if (snapshotIdentityChanged) {
+        if (frameId !== null && typeof window !== 'undefined') {
+          window.cancelAnimationFrame(frameId);
+          frameId = null;
+        }
+        if (timeoutId !== null) {
+          clearTimeout(timeoutId);
+          timeoutId = null;
+        }
+        setDetail(next);
+        return;
+      }
+      if (frameId !== null || timeoutId !== null) return;
+      if (typeof window !== 'undefined' && typeof window.requestAnimationFrame === 'function') {
+        frameId = window.requestAnimationFrame(flush);
+      } else {
+        timeoutId = setTimeout(flush, 16);
+      }
+    });
+    return () => {
+      unsubscribe();
+      if (frameId !== null && typeof window !== 'undefined') {
+        window.cancelAnimationFrame(frameId);
+      }
+      if (timeoutId !== null) clearTimeout(timeoutId);
+    };
+  }, [conversationId, identity, runId, store]);
+
+  return detail.identity === identity ? detail : EMPTY_BATCHED_DETAIL;
 }
 
 function releaseRequestSubscription(subscription: RequestSubscription | null): void {
@@ -134,16 +238,140 @@ export function useConversationTrajectory(conversationId: string | null) {
   const dispatch = useAppDispatch();
   const store = useStore<RootState>();
   const authScope = useAppSelector(authScopeKey);
-  const trajectoryState = useAppSelector(state => state.trajectory);
-  const isCurrentAuthScope = trajectoryState.authScope === authScope;
-  const conversation = conversationId && isCurrentAuthScope
-    ? selectTrajectoryConversation({ trajectory: trajectoryState }, conversationId)
-    : undefined;
-  const runs = useMemo(() => (
+  const trajectoryAuthScope = useAppSelector(state => state.trajectory.authScope);
+  const isCurrentAuthScope = trajectoryAuthScope === authScope;
+  const serverRuns = useAppSelector(state => (
     conversationId && isCurrentAuthScope
-      ? selectTrajectoryRuns({ trajectory: trajectoryState }, conversationId)
-      : []
-  ), [conversationId, isCurrentAuthScope, trajectoryState]);
+      ? state.trajectory.byConversationId[conversationId]?.runs ?? EMPTY_RUNS
+      : EMPTY_RUNS
+  ));
+  const runSummariesById = useAppSelector(state => (
+    conversationId && isCurrentAuthScope
+      ? state.trajectory.byConversationId[conversationId]?.runSummariesById
+        ?? EMPTY_RUN_SUMMARIES
+      : EMPTY_RUN_SUMMARIES
+  ));
+  const provisionalRunIds = useAppSelector(state => (
+    conversationId && isCurrentAuthScope
+      ? state.trajectory.byConversationId[conversationId]?.provisionalRunIds
+        ?? EMPTY_PROVISIONAL_RUN_IDS
+      : EMPTY_PROVISIONAL_RUN_IDS
+  ));
+  const selectedRunId = useAppSelector(state => (
+    conversationId && isCurrentAuthScope
+      ? state.trajectory.byConversationId[conversationId]?.selectedRunId ?? null
+      : null
+  ));
+  const runs = useMemo(() => (
+    getVisibleTrajectoryRuns({
+      runs: serverRuns,
+      runSummariesById,
+      provisionalRunIds,
+      selectedRunId,
+    })
+  ), [provisionalRunIds, runSummariesById, selectedRunId, serverRuns]);
+  const runListStatus = useAppSelector(state => (
+    conversationId && isCurrentAuthScope
+      ? state.trajectory.byConversationId[conversationId]?.runListStatus ?? 'idle'
+      : 'idle'
+  ));
+  const runListError = useAppSelector(state => (
+    conversationId && isCurrentAuthScope
+      ? state.trajectory.byConversationId[conversationId]?.runListError ?? null
+      : null
+  ));
+  const activeRunListRequestId = useAppSelector(state => (
+    conversationId && isCurrentAuthScope
+      ? state.trajectory.byConversationId[conversationId]?.activeRunListRequestId ?? null
+      : null
+  ));
+  const runsTruncated = useAppSelector(state => Boolean(
+    conversationId
+    && isCurrentAuthScope
+    && state.trajectory.byConversationId[conversationId]?.runsTruncated
+  ));
+  const selectedMessageId = useAppSelector(state => (
+    conversationId && isCurrentAuthScope
+      ? state.trajectory.byConversationId[conversationId]?.selectedMessageId ?? null
+      : null
+  ));
+  const selectedSpanId = useAppSelector(state => (
+    conversationId && isCurrentAuthScope
+      ? state.trajectory.byConversationId[conversationId]?.selectedSpanId ?? null
+      : null
+  ));
+  const selectionSource = useAppSelector(state => (
+    conversationId && isCurrentAuthScope
+      ? state.trajectory.byConversationId[conversationId]?.selectionSource ?? 'none'
+      : 'none'
+  ));
+  const activeSurface = useAppSelector(state => (
+    conversationId && isCurrentAuthScope
+      ? state.trajectory.byConversationId[conversationId]?.activeSurface ?? 'chat'
+      : 'chat'
+  ));
+  const scrollMode = useAppSelector(state => (
+    conversationId && isCurrentAuthScope
+      ? state.trajectory.byConversationId[conversationId]?.scrollMode ?? 'follow-live'
+      : 'follow-live'
+  ));
+  const isInspectorOpen = useAppSelector(state => Boolean(
+    conversationId
+    && isCurrentAuthScope
+    && state.trajectory.byConversationId[conversationId]?.isInspectorOpen
+  ));
+  const inspectRequest = useAppSelector(state => (
+    conversationId && isCurrentAuthScope
+      ? state.trajectory.byConversationId[conversationId]?.inspectRequest ?? null
+      : null
+  ));
+  const reconciliation = useAppSelector<TrajectoryReconciliationState | undefined>(state => (
+    conversationId && selectedRunId && isCurrentAuthScope
+      ? state.trajectory.byConversationId[conversationId]?.reconciliationByRunId[selectedRunId]
+      : undefined
+  ));
+  const selectedSnapshotExists = useAppSelector(state => Boolean(
+    conversationId
+    && selectedRunId
+    && isCurrentAuthScope
+    && state.trajectory.byConversationId[conversationId]?.snapshotsByRunId[selectedRunId]
+  ));
+  const selectedSnapshotRequestId = useAppSelector(state => (
+    conversationId && selectedRunId && isCurrentAuthScope
+      ? state.trajectory.byConversationId[conversationId]
+        ?.snapshotsByRunId[selectedRunId]?.snapshotRequestId ?? null
+      : null
+  ));
+  const snapshotLruTail = useAppSelector(state => (
+    conversationId && isCurrentAuthScope
+      ? state.trajectory.byConversationId[conversationId]?.snapshotLru.at(-1) ?? null
+      : null
+  ));
+  const detailEnabled = activeSurface === 'trajectory'
+    || Boolean(inspectRequest && inspectRequest.runId === selectedRunId);
+  const batchedDetail = useFrameBatchedTrajectoryDetail(
+    store,
+    conversationId,
+    selectedRunId,
+    detailEnabled,
+  );
+  const passiveSnapshot = useMemo(() => (
+    conversationId && selectedRunId && selectedSnapshotRequestId
+      ? selectTrajectoryConversation(store.getState(), conversationId)
+        ?.snapshotsByRunId[selectedRunId]
+      : undefined
+  ), [conversationId, selectedRunId, selectedSnapshotRequestId, store]);
+  const snapshot = detailEnabled ? batchedDetail.snapshot : passiveSnapshot;
+  const snapshotsByRunId = useMemo(() => (
+    selectedRunId && snapshot
+      ? { [selectedRunId]: snapshot }
+      : EMPTY_SNAPSHOT_MAP
+  ), [selectedRunId, snapshot]);
+  const liveEventsByRunId = useMemo(() => (
+    selectedRunId && detailEnabled
+      ? { [selectedRunId]: batchedDetail.liveEvents }
+      : EMPTY_LIVE_EVENT_MAP
+  ), [batchedDetail.liveEvents, detailEnabled, selectedRunId]);
   const consumerIdRef = useRef(Symbol('trajectory-consumer'));
   const runListSubscriptionRef = useRef<RequestSubscription | null>(null);
   const snapshotSubscriptionRef = useRef<RequestSubscription | null>(null);
@@ -356,8 +584,8 @@ export function useConversationTrajectory(conversationId: string | null) {
 
   useEffect(() => {
     if (!conversationId) return;
-    const status = conversation?.runListStatus ?? 'idle';
-    const activeRequestId = conversation?.activeRunListRequestId;
+    const status = runListStatus;
+    const activeRequestId = activeRunListRequestId;
     if (activeRequestId) {
       const active = requestCoordinator(store, authScope)
         .runListRequests.get(conversationId);
@@ -368,42 +596,33 @@ export function useConversationTrajectory(conversationId: string | null) {
     requestRunList(conversationId);
   }, [
     authScope,
-    conversation?.activeRunListRequestId,
-    conversation?.runListStatus,
+    activeRunListRequestId,
     conversationId,
     requestRunList,
+    runListStatus,
     store,
   ]);
-
-  const selectedRunId = conversation?.selectedRunId ?? null;
 
   useEffect(() => () => {
     releaseRequestSubscription(snapshotSubscriptionRef.current);
     snapshotSubscriptionRef.current = null;
   }, [authScope, conversationId, selectedRunId, store]);
 
-  const snapshot = selectedRunId
-    ? conversation?.snapshotsByRunId[selectedRunId]
-    : undefined;
-  const reconciliation = selectedRunId
-    ? conversation?.reconciliationByRunId[selectedRunId]
-    : undefined;
   const inspectNeedsSnapshot = Boolean(
-    selectedRunId && conversation?.inspectRequest?.runId === selectedRunId,
+    selectedRunId && inspectRequest?.runId === selectedRunId,
   );
   const shouldHydrateSnapshot = Boolean(
     selectedRunId
     && (
-      conversation?.activeSurface === 'trajectory'
+      activeSurface === 'trajectory'
       || inspectNeedsSnapshot
       || reconciliation?.status === 'reconciling'
     ),
   );
-  const snapshotLruTail = conversation?.snapshotLru.at(-1) ?? null;
 
   useEffect(() => {
     if (!conversationId || !selectedRunId || !shouldHydrateSnapshot) return;
-    if (snapshot && reconciliation?.status !== 'reconciling') {
+    if (selectedSnapshotExists && reconciliation?.status !== 'reconciling') {
       if (snapshotLruTail !== selectedRunId) {
         dispatch(touchTrajectorySnapshot({ conversationId, runId: selectedRunId }));
       }
@@ -437,7 +656,7 @@ export function useConversationTrajectory(conversationId: string | null) {
     requestSnapshot,
     selectedRunId,
     shouldHydrateSnapshot,
-    snapshot,
+    selectedSnapshotExists,
     snapshotLruTail,
     store,
   ]);
@@ -469,20 +688,20 @@ export function useConversationTrajectory(conversationId: string | null) {
 
   return {
     runs,
-    runSummariesById: conversation?.runSummariesById ?? {},
-    snapshotsByRunId: conversation?.snapshotsByRunId ?? {},
-    liveEventsByRunId: conversation?.liveEventsByRunId ?? {},
-    runListStatus: conversation?.runListStatus ?? 'idle',
-    runListError: conversation?.runListError ?? null,
-    runsTruncated: conversation?.runsTruncated ?? false,
-    selectedMessageId: conversation?.selectedMessageId ?? null,
+    runSummariesById,
+    snapshotsByRunId,
+    liveEventsByRunId,
+    runListStatus,
+    runListError,
+    runsTruncated,
+    selectedMessageId,
     selectedRunId,
-    selectedSpanId: conversation?.selectedSpanId ?? null,
-    selectionSource: conversation?.selectionSource ?? 'none',
-    activeSurface: conversation?.activeSurface ?? 'chat',
-    scrollMode: conversation?.scrollMode ?? 'follow-live',
-    isInspectorOpen: conversation?.isInspectorOpen ?? false,
-    inspectRequest: conversation?.inspectRequest ?? null,
+    selectedSpanId,
+    selectionSource,
+    activeSurface,
+    scrollMode,
+    isInspectorOpen,
+    inspectRequest,
     snapshot,
     reconciliation,
     refreshRuns,

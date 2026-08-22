@@ -8,6 +8,7 @@ import { useConversationTrajectory } from '@/hooks/useConversationTrajectory';
 import {
   projectTrajectoryCells,
   type TrajectoryCell,
+  type TrajectoryCellProjection,
 } from '@/lib/trajectory/TrajectoryCellProjection';
 import { useAppDispatch } from '@/redux/hooks';
 import {
@@ -53,9 +54,16 @@ export interface TrajectoryRunActionContext {
 export interface TrajectoryTabViewProps {
   conversationId: string;
   messages: Message[];
+  visible?: boolean;
   onRevealInChat?: (messageId: string) => void;
   runActions?: TrajectoryRunActionContext;
 }
+
+const EMPTY_PROJECTION: TrajectoryCellProjection = {
+  cells: [],
+  unassociatedCells: [],
+  joins: [],
+};
 
 interface InspectResolution {
   target: TrajectoryInspectTarget;
@@ -145,6 +153,7 @@ function LoadingState() {
 export function TrajectoryTabView({
   conversationId,
   messages,
+  visible = true,
   onRevealInChat,
   runActions,
 }: TrajectoryTabViewProps) {
@@ -154,15 +163,19 @@ export function TrajectoryTabView({
   const runActionsRef = useRef(runActions);
   runActionsRef.current = runActions;
   const [inspectFeedback, setInspectFeedback] = useState<InspectFeedback | null>(null);
-  const projection = useMemo(() => projectTrajectoryCells({
-    messages,
-    runs: trajectory.runs,
-    runSummariesById: trajectory.runSummariesById,
-    snapshotsByRunId: trajectory.snapshotsByRunId,
-    liveEventsByRunId: trajectory.liveEventsByRunId,
-    selectedRunId: trajectory.selectedRunId,
-    runsTruncated: trajectory.runsTruncated,
-  }), [
+  const projection = useMemo(() => (
+    visible
+      ? projectTrajectoryCells({
+          messages,
+          runs: trajectory.runs,
+          runSummariesById: trajectory.runSummariesById,
+          snapshotsByRunId: trajectory.snapshotsByRunId,
+          liveEventsByRunId: trajectory.liveEventsByRunId,
+          selectedRunId: trajectory.selectedRunId,
+          runsTruncated: trajectory.runsTruncated,
+        })
+      : EMPTY_PROJECTION
+  ), [
     messages,
     trajectory.liveEventsByRunId,
     trajectory.runSummariesById,
@@ -170,6 +183,7 @@ export function TrajectoryTabView({
     trajectory.runsTruncated,
     trajectory.selectedRunId,
     trajectory.snapshotsByRunId,
+    visible,
   ]);
   const cells = useMemo(
     () => [...projection.cells, ...projection.unassociatedCells],
