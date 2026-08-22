@@ -14,6 +14,15 @@ import { isNearBottom } from '@/lib/chat/scrollBehavior';
 import type { AgentRunState } from '@/types/agentRun';
 import { selectChatModel } from '@/redux/selectors';
 import { useRenderProbe } from '@/lib/debug/perfProbe';
+import {
+  projectTrajectoryCells,
+  type TrajectoryBadgeStatus,
+} from '@/lib/trajectory/TrajectoryCellProjection';
+import {
+  selectTrajectoryConversation,
+  selectTrajectoryRuns,
+} from '@/redux/slices/trajectorySlice';
+import type { TrajectoryRunSummary } from '@/types/trajectory';
 
 interface ChatMessageListProps {
   messages: Message[];
@@ -23,6 +32,7 @@ interface ChatMessageListProps {
   loadingState?: 'default' | 'history-hydration';
   onRetry?: (messageId: string) => void;
   onContinueAgentRun?: (messageId: string, previousRunId?: string) => void;
+  onInspectTrajectory?: (messageId: string, runId: string) => void;
   onEdit?: (messageId: string, content: string) => void;
   suggestedQuestions?: string[];
   isLoadingQuestions?: boolean;
@@ -51,6 +61,7 @@ const DEFAULT_EMPTY_STATE = {
 };
 
 const EMPTY_SUGGESTED_QUESTIONS: string[] = [];
+const EMPTY_TRAJECTORY_RUNS: TrajectoryRunSummary[] = [];
 
 interface ChatMessageRowProps {
   message: Message;
@@ -66,6 +77,8 @@ interface ChatMessageRowProps {
   providerId?: string;
   modelName: string;
   currentRun: AgentRunState | null;
+  trajectoryStatus: TrajectoryBadgeStatus;
+  onInspectTrajectory?: (messageId: string, runId: string) => void;
   suggestedQuestions: string[];
   isLoadingQuestions: boolean;
   onSelectQuestion?: (question: string) => void;
@@ -102,6 +115,8 @@ const ChatMessageRow = React.memo(function ChatMessageRow({
   providerId,
   modelName,
   currentRun,
+  trajectoryStatus,
+  onInspectTrajectory,
   suggestedQuestions,
   isLoadingQuestions,
   onSelectQuestion,
@@ -123,6 +138,8 @@ const ChatMessageRow = React.memo(function ChatMessageRow({
         providerId={providerId}
         modelName={modelName}
         agentRun={getMessageRun(message, currentRun)}
+        trajectoryStatus={trajectoryStatus}
+        onInspectTrajectory={onInspectTrajectory}
         suggestedQuestions={suggestedQuestions}
         isLoadingQuestions={isLoadingQuestions}
         onSelectQuestion={onSelectQuestion}
@@ -146,6 +163,8 @@ function areChatMessageRowPropsEqual(prev: ChatMessageRowProps, next: ChatMessag
     && prev.providerId === next.providerId
     && prev.modelName === next.modelName
     && getMessageRun(prev.message, prev.currentRun) === getMessageRun(next.message, next.currentRun)
+    && prev.trajectoryStatus === next.trajectoryStatus
+    && prev.onInspectTrajectory === next.onInspectTrajectory
     && prev.suggestedQuestions === next.suggestedQuestions
     && prev.isLoadingQuestions === next.isLoadingQuestions
     && prev.onSelectQuestion === next.onSelectQuestion
@@ -160,6 +179,7 @@ const ChatMessageList: React.FC<ChatMessageListProps> = ({
   loadingState = 'default',
   onRetry,
   onContinueAgentRun,
+  onInspectTrajectory,
   onEdit,
   suggestedQuestions = EMPTY_SUGGESTED_QUESTIONS,
   isLoadingQuestions = false,
@@ -326,6 +346,35 @@ const ChatMessageList: React.FC<ChatMessageListProps> = ({
   const modelId = model?.id;
   const providerId = model?.provider;
   const modelName = model?.name ?? 'AI助手';
+  const trajectoryState = useAppSelector(state => state.trajectory);
+  const trajectoryConversation = useMemo(() => (
+    conversationId
+      ? selectTrajectoryConversation({ trajectory: trajectoryState }, conversationId)
+      : undefined
+  ), [conversationId, trajectoryState]);
+  const trajectoryRuns = useMemo(() => (
+    conversationId
+      ? selectTrajectoryRuns({ trajectory: trajectoryState }, conversationId)
+      : EMPTY_TRAJECTORY_RUNS
+  ), [conversationId, trajectoryState]);
+  const trajectoryStatusByMessageId = useMemo(() => {
+    const projection = projectTrajectoryCells({
+      messages,
+      runs: trajectoryRuns,
+      runSummariesById: trajectoryConversation?.runSummariesById ?? {},
+      snapshotsByRunId: trajectoryConversation?.snapshotsByRunId ?? {},
+      liveEventsByRunId: trajectoryConversation?.liveEventsByRunId ?? {},
+      selectedRunId: trajectoryConversation?.selectedRunId ?? null,
+      runsTruncated: trajectoryConversation?.runsTruncated ?? false,
+    });
+    const result = new Map<string, TrajectoryBadgeStatus>();
+    for (const cell of [...projection.cells, ...projection.unassociatedCells]) {
+      if (cell.type === 'run' && cell.assistantMessageId) {
+        result.set(cell.assistantMessageId, cell.trajectoryBadge.status);
+      }
+    }
+    return result;
+  }, [messages, trajectoryConversation, trajectoryRuns]);
   const isStreamingForMessage = (message: Message, index: number): boolean => {
     if (!isStreaming || message.role !== 'assistant') {
       return false;
@@ -443,6 +492,8 @@ const ChatMessageList: React.FC<ChatMessageListProps> = ({
             providerId={providerId}
             modelName={modelName}
             currentRun={currentRun}
+            trajectoryStatus={trajectoryStatusByMessageId.get(message.id) ?? 'unknown'}
+            onInspectTrajectory={onInspectTrajectory}
             suggestedQuestions={index === lastAssistantIndex ? suggestedQuestions : EMPTY_SUGGESTED_QUESTIONS}
             isLoadingQuestions={index === lastAssistantIndex ? isLoadingQuestions : false}
             onSelectQuestion={onSelectQuestion}

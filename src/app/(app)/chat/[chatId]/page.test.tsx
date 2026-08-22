@@ -4,7 +4,13 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Conversation, Message } from '@/types/conversation';
 import type { StreamCallbacks } from '@/lib/api/chat';
 import type { NormalizedTrajectoryEvent } from '@/lib/trajectory/normalizeTrajectoryEvent';
-import trajectoryReducer from '@/redux/slices/trajectorySlice';
+import trajectoryReducer, {
+  trajectoryRunListReceived,
+  trajectoryRunListRequested,
+  trajectorySnapshotReceived,
+  trajectorySnapshotRequested,
+} from '@/redux/slices/trajectorySlice';
+import type { TrajectoryRunSummary, TrajectorySnapshot } from '@/types/trajectory';
 import {
   CONTEXT_STATUS_INTERACTED_FIRST_TURN_STORAGE_KEY,
   CONTEXT_STATUS_PENDING_FIRST_TURN_STORAGE_KEY,
@@ -112,6 +118,7 @@ vi.mock('@/redux/hooks', () => ({
         lastReadyConversationSnapshot: lastReadyConversationSnapshotState.value,
       },
       stream: streamState,
+      trajectory: trajectoryState,
     }),
 }));
 
@@ -188,6 +195,39 @@ vi.mock('@/hooks/useTransientCompletionState', () => ({
 
 vi.mock('@/hooks/useConversationFiles', () => ({
   useConversationFiles: () => useConversationFilesState,
+}));
+
+vi.mock('@/hooks/useConversationTrajectory', () => ({
+  useConversationTrajectory: (conversationId: string | null) => {
+    const conversation = conversationId
+      ? trajectoryState.byConversationId[conversationId]
+      : undefined;
+    return {
+      runs: conversation?.runs ?? [],
+      runSummariesById: conversation?.runSummariesById ?? {},
+      snapshotsByRunId: conversation?.snapshotsByRunId ?? {},
+      liveEventsByRunId: conversation?.liveEventsByRunId ?? {},
+      runListStatus: conversation?.runListStatus ?? 'idle',
+      runListError: conversation?.runListError ?? null,
+      runsTruncated: conversation?.runsTruncated ?? false,
+      selectedMessageId: conversation?.selectedMessageId ?? null,
+      selectedRunId: conversation?.selectedRunId ?? null,
+      selectedSpanId: conversation?.selectedSpanId ?? null,
+      selectionSource: conversation?.selectionSource ?? 'none',
+      activeSurface: conversation?.activeSurface ?? 'chat',
+      scrollMode: conversation?.scrollMode ?? 'follow-live',
+      isInspectorOpen: conversation?.isInspectorOpen ?? false,
+      inspectRequest: conversation?.inspectRequest ?? null,
+      snapshot: conversation?.selectedRunId
+        ? conversation.snapshotsByRunId[conversation.selectedRunId]
+        : undefined,
+      reconciliation: conversation?.selectedRunId
+        ? conversation.reconciliationByRunId[conversation.selectedRunId]
+        : undefined,
+      refreshRuns: vi.fn(),
+      retrySelectedSnapshot: vi.fn(),
+    };
+  },
 }));
 
 vi.mock('@/lib/api/files', () => ({
@@ -409,6 +449,14 @@ vi.mock('@/components/lazy/LazyComponents', () => ({
         data-message-ids={props.messages.map((message: Message) => message.id).join(',')}
         data-loading-state={props.loadingState ?? ''}
       >
+        {props.messages.map((message: Message) => (
+          <div
+            key={message.id}
+            id={`chat-message-${message.id}`}
+            data-chat-message-id={message.id}
+            tabIndex={-1}
+          />
+        ))}
         {props.messages.length === 0 && props.loadingState === 'history-hydration'
           ? '正在加载这段对话'
           : null}
@@ -422,6 +470,17 @@ vi.mock('@/components/lazy/LazyComponents', () => ({
             重试消息
           </button>
         ) : null}
+        {props.onInspectTrajectory ? props.messages
+          .filter((message: Message) => message.role === 'assistant' && message.agent_run)
+          .map((message: Message) => (
+            <button
+              key={`inspect-${message.id}`}
+              type="button"
+              onClick={() => props.onInspectTrajectory(message.id, message.agent_run!.runId)}
+            >
+              查看 {message.id} 的轨迹
+            </button>
+          )) : null}
       </div>
     );
   },
@@ -474,6 +533,78 @@ function recoveredTrajectoryEvent(): NormalizedTrajectoryEvent {
     traceId: 'trace-recovered',
     payload: { conversation_id: 'chat-a', message_id: 'assistant-1' },
   };
+}
+
+function trajectoryRun(runId = 'run-1'): TrajectoryRunSummary {
+  return {
+    run_id: runId,
+    message_id: 'assistant-1',
+    turn_message_id: 'user-1',
+    attempt_index: 0,
+    status: 'completed',
+    trajectory_status: 'complete',
+    total_steps: 1,
+    total_tool_calls: 0,
+    duration_ms: 120,
+    started_at: '2026-08-22T00:00:00.000Z',
+    ended_at: '2026-08-22T00:00:00.120Z',
+  };
+}
+
+function trajectorySnapshot(run = trajectoryRun()): TrajectorySnapshot {
+  return {
+    run,
+    records: [{
+      sequence: 0,
+      event_type: 'run_started',
+      schema_version: 1,
+      timestamp: run.started_at,
+      step_id: null,
+      tool_call_id: null,
+      parent_step_id: null,
+      trace_id: run.run_id,
+      span_id: null,
+      payload: { conversation_id: 'chat-a', message_id: 'assistant-1' },
+    }],
+    spans: [],
+    completeness: {
+      status: 'complete',
+      degraded_reason: null,
+      event_count: 1,
+      expected_last_sequence: 0,
+      loaded_event_count: 1,
+      first_sequence: 0,
+      last_sequence: 0,
+    },
+    truncated: false,
+  };
+}
+
+function primeTrajectory(run = trajectoryRun()) {
+  trajectoryState = trajectoryReducer(trajectoryState, trajectoryRunListRequested({
+    conversationId: 'chat-a',
+    requestId: 'runs-1',
+  }));
+  trajectoryState = trajectoryReducer(trajectoryState, trajectoryRunListReceived({
+    conversationId: 'chat-a',
+    requestId: 'runs-1',
+    response: { items: [run], truncated: false },
+  }));
+  trajectoryState = trajectoryReducer(trajectoryState, trajectorySnapshotRequested({
+    conversationId: 'chat-a',
+    runId: run.run_id,
+    requestId: 'snapshot-1',
+    purpose: 'hydrate',
+  }));
+  trajectoryState = trajectoryReducer(trajectoryState, trajectorySnapshotReceived({
+    conversationId: 'chat-a',
+    requestId: 'snapshot-1',
+    snapshot: trajectorySnapshot(run),
+  }));
+}
+
+function activateConversationTab(name: '聊天' | '轨迹') {
+  fireEvent.mouseDown(screen.getByRole('tab', { name }), { button: 0, ctrlKey: false });
 }
 
 function countSnapshotDispatches() {
@@ -535,6 +666,187 @@ describe('ChatPage 会话切换体验', () => {
     stopRecoveredStreamMock.mockReset();
     stopRecoveredStreamMock.mockResolvedValue(true);
     window.sessionStorage.clear();
+  });
+
+  it('以受控 Chat 和 Trajectory 双 Tab 装配会话正文且只有一个 Composer', () => {
+    conversationsById.set('chat-a', createConversation('chat-a', [textMessage('user-1')]));
+    hydrationById.set('chat-a', { view: 'ready' });
+
+    render(<ChatPage />);
+
+    expect(screen.getByRole('tab', { name: '聊天' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByRole('tab', { name: '轨迹' })).toHaveAttribute('aria-selected', 'false');
+    expect(screen.getAllByTestId('chat-input')).toHaveLength(1);
+  });
+
+  it('切换 Trajectory 不重建 Composer、不终止流且发送后仍停留在 Trajectory', () => {
+    conversationsById.set('chat-a', createConversation('chat-a', [textMessage('user-1')]));
+    hydrationById.set('chat-a', { view: 'ready' });
+
+    const { rerender } = render(<ChatPage />);
+    chatInputMountMock.mockClear();
+    chatInputUnmountMock.mockClear();
+    dispatchMock.mockClear();
+
+    activateConversationTab('轨迹');
+    expect(dispatchMock).toHaveBeenCalledWith(expect.objectContaining({
+      type: 'trajectory/setTrajectoryActiveSurface',
+      payload: { conversationId: 'chat-a', surface: 'trajectory' },
+    }));
+    rerender(<ChatPage />);
+
+    expect(screen.getByRole('tab', { name: '轨迹' })).toHaveAttribute('aria-selected', 'true');
+    expect(chatInputMountMock).not.toHaveBeenCalled();
+    expect(chatInputUnmountMock).not.toHaveBeenCalled();
+    expect(dispatchMock.mock.calls.some(([action]) => action?.type === 'stream/endStream')).toBe(false);
+
+    fireEvent.click(screen.getByRole('button', { name: '发送消息' }));
+    rerender(<ChatPage />);
+
+    expect(sendMessageMock).toHaveBeenCalledWith(
+      '你好',
+      expect.objectContaining({ conversationId: 'chat-a' }),
+      undefined,
+    );
+    expect(screen.getByRole('tab', { name: '轨迹' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getAllByTestId('chat-input')).toHaveLength(1);
+  });
+
+  it('同会话 Tab 往返保留轨迹选择、滚动和检查器实例', () => {
+    const assistant: Message = {
+      id: 'assistant-1',
+      role: 'assistant',
+      content: [{ type: 'text', id: 'answer-1', text: '回答' }],
+      timestamp: 2,
+      agent_run: {
+        runId: 'run-1',
+        messageId: 'assistant-1',
+        status: 'completed',
+        config: { maxSteps: 8, maxToolCalls: 16, timeoutS: 300 },
+        totalSteps: 1,
+        totalToolCalls: 0,
+        steps: [],
+        lastSequence: 0,
+      },
+    };
+    conversationsById.set('chat-a', createConversation('chat-a', [textMessage('user-1'), assistant]));
+    hydrationById.set('chat-a', { view: 'ready' });
+    primeTrajectory();
+
+    const { rerender } = render(<ChatPage />);
+    activateConversationTab('轨迹');
+    rerender(<ChatPage />);
+
+    const ledger = screen.getByRole('listbox', { name: '轨迹账本' });
+    const runOption = screen.getByRole('option', { name: /执行.*已完成/i });
+    fireEvent.click(runOption);
+    Object.defineProperty(ledger, 'scrollTop', { configurable: true, writable: true, value: 56 });
+    fireEvent.scroll(ledger);
+    rerender(<ChatPage />);
+
+    expect(screen.getByLabelText('轨迹检查器')).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: /执行.*已完成/i })).toHaveAttribute('aria-selected', 'true');
+
+    activateConversationTab('聊天');
+    rerender(<ChatPage />);
+    activateConversationTab('轨迹');
+    rerender(<ChatPage />);
+
+    expect(screen.getByRole('listbox', { name: '轨迹账本' })).toBe(ledger);
+    expect(ledger.scrollTop).toBe(56);
+    expect(screen.getByLabelText('轨迹检查器')).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: /执行.*已完成/i })).toHaveAttribute('aria-selected', 'true');
+  });
+
+  it('Chat 状态行 inspect 依次切 Tab、选 run、水合、定位高亮并 consume', async () => {
+    const assistant: Message = {
+      id: 'assistant-1',
+      role: 'assistant',
+      content: [{ type: 'text', id: 'answer-1', text: '回答' }],
+      timestamp: 2,
+      agent_run: {
+        runId: 'run-1',
+        messageId: 'assistant-1',
+        status: 'completed',
+        config: { maxSteps: 8, maxToolCalls: 16, timeoutS: 300 },
+        totalSteps: 1,
+        totalToolCalls: 0,
+        steps: [],
+        lastSequence: 0,
+      },
+    };
+    conversationsById.set('chat-a', createConversation('chat-a', [textMessage('user-1'), assistant]));
+    hydrationById.set('chat-a', { view: 'ready' });
+    primeTrajectory();
+
+    const { rerender } = render(<ChatPage />);
+    dispatchMock.mockClear();
+    fireEvent.click(screen.getByRole('button', { name: '查看 assistant-1 的轨迹' }));
+
+    expect(dispatchMock).toHaveBeenCalledWith(expect.objectContaining({
+      type: 'trajectory/requestTrajectoryInspect',
+      payload: expect.objectContaining({
+        conversationId: 'chat-a',
+        messageId: 'assistant-1',
+        runId: 'run-1',
+        spanId: null,
+      }),
+    }));
+
+    rerender(<ChatPage />);
+    const runOption = await screen.findByRole('option', { name: /执行.*已完成/i });
+    await waitFor(() => expect(runOption).toHaveAttribute('data-highlighted', 'true'));
+    expect(runOption).toHaveFocus();
+    expect(dispatchMock.mock.calls.some(([action]) => (
+      action?.type === 'trajectory/consumeTrajectoryInspectRequest'
+    ))).toBe(true);
+    expect(screen.getByRole('tab', { name: '轨迹' })).toHaveAttribute('aria-selected', 'true');
+  });
+
+  it('Trajectory 只 reveal 稳定消息 DOM，切回 Chat 后滚动并聚焦该消息', () => {
+    const assistant: Message = {
+      id: 'assistant-1',
+      role: 'assistant',
+      content: [{ type: 'text', id: 'answer-1', text: '回答' }],
+      timestamp: 2,
+      agent_run: {
+        runId: 'run-1',
+        messageId: 'assistant-1',
+        status: 'completed',
+        config: { maxSteps: 8, maxToolCalls: 16, timeoutS: 300 },
+        totalSteps: 1,
+        totalToolCalls: 0,
+        steps: [],
+        lastSequence: 0,
+      },
+    };
+    conversationsById.set('chat-a', createConversation('chat-a', [textMessage('user-1'), assistant]));
+    hydrationById.set('chat-a', { view: 'ready' });
+    primeTrajectory();
+    const scrollIntoView = vi.fn();
+    const previousScrollIntoView = HTMLElement.prototype.scrollIntoView;
+    HTMLElement.prototype.scrollIntoView = scrollIntoView;
+    const animationFrame = vi.spyOn(window, 'requestAnimationFrame').mockImplementation((callback) => {
+      callback(0);
+      return 1;
+    });
+
+    const { rerender } = render(<ChatPage />);
+    activateConversationTab('轨迹');
+    rerender(<ChatPage />);
+    fireEvent.click(screen.getByRole('option', { name: /执行.*已完成/i }));
+    rerender(<ChatPage />);
+
+    fireEvent.click(screen.getByRole('button', { name: '在聊天中查看' }));
+    rerender(<ChatPage />);
+
+    const target = document.getElementById('chat-message-assistant-1');
+    expect(screen.getByRole('tab', { name: '聊天' })).toHaveAttribute('aria-selected', 'true');
+    expect(scrollIntoView).toHaveBeenCalledWith({ behavior: 'smooth', block: 'center' });
+    expect(target).toHaveFocus();
+
+    animationFrame.mockRestore();
+    HTMLElement.prototype.scrollIntoView = previousScrollIntoView;
   });
 
   it('把定位授权提示固定装配在消息滚动区顶部', () => {

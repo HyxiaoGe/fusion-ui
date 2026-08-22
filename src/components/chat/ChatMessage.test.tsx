@@ -120,6 +120,43 @@ vi.mock('../models/ProviderIcon', () => ({
 import ChatMessage from './ChatMessage';
 
 describe('ChatMessage', () => {
+  it('为消息提供稳定 DOM 锚点，并从 Agent 状态行发起 inspect', () => {
+    const onInspectTrajectory = vi.fn();
+    const message = {
+      id: 'assistant-inspect',
+      role: 'assistant' as const,
+      content: [{ type: 'text' as const, id: 'answer', text: '回答' }],
+      timestamp: 1,
+      chatId: 'chat-1',
+    };
+    const run: AgentRunState = {
+      runId: 'run-inspect',
+      messageId: message.id,
+      status: 'completed',
+      config: { maxSteps: 8, maxToolCalls: 16, timeoutS: 300 },
+      totalSteps: 0,
+      totalToolCalls: 0,
+      steps: [],
+      lastSequence: 2,
+    };
+
+    render(
+      <ChatMessage
+        message={message}
+        agentRun={run}
+        trajectoryStatus="summary-only"
+        onInspectTrajectory={onInspectTrajectory}
+      />,
+    );
+
+    const anchor = document.getElementById('chat-message-assistant-inspect');
+    expect(anchor).toHaveAttribute('data-chat-message-id', 'assistant-inspect');
+    expect(anchor).toHaveAttribute('tabindex', '-1');
+
+    fireEvent.click(screen.getByRole('button', { name: '查看轨迹' }));
+    expect(onInspectTrajectory).toHaveBeenCalledWith('assistant-inspect', 'run-inspect');
+  });
+
   it('助手消息在宽屏限制结构化结果最大宽度，不再按视口百分比无限拉伸', () => {
     const { container } = render(
       <ChatMessage
@@ -423,8 +460,9 @@ describe('ChatMessage', () => {
       />,
     );
 
-    expect(screen.getByRole('status')).toHaveTextContent('部分搜索结果未能使用');
-    expect(screen.getByRole('status')).toHaveTextContent('已基于可用信息回答');
+    const degradedNotice = screen.getByText('已基于可用信息回答').closest('[role="status"]');
+    expect(degradedNotice).toHaveTextContent('部分搜索结果未能使用');
+    expect(degradedNotice).toHaveTextContent('已基于可用信息回答');
     expect(screen.queryByText(/参考 \d+ 篇资料/)).toBeNull();
 
   });

@@ -3,6 +3,7 @@
 import { memo } from 'react';
 import type { SearchSourceSummary, StructuredToolResultBlock } from '@/types/conversation';
 import type { AgentRunState } from '@/types/agentRun';
+import type { TrajectoryBadgeStatus } from '@/lib/trajectory/TrajectoryCellProjection';
 import ReasoningContent from './ReasoningContent';
 import AssistantActivityStatus from './AssistantActivityStatus';
 import type { AssistantActivity } from './assistantActivity';
@@ -13,6 +14,7 @@ import { AgentRunTimeline } from './agent';
 import type { ExecutionProcessSource } from './agent/executionProcessModel';
 import MarkdownRenderer from './MarkdownRenderer';
 import StructuredToolResults from './StructuredToolResults';
+import TrajectoryStatusLine from './trajectory/TrajectoryStatusLine';
 
 interface AssistantResponseStackProps {
   assistantMessageId: string;
@@ -29,6 +31,8 @@ interface AssistantResponseStackProps {
   };
   activity: AssistantActivity;
   agentRun?: AgentRunState | null;
+  trajectoryStatus?: TrajectoryBadgeStatus;
+  onInspectTrajectory?: () => void;
   onRetry?: () => void;
   onContinueAgentRun?: (previousRunId?: string) => void;
   answerEvidence: AnswerEvidenceModel | null;
@@ -52,6 +56,8 @@ function AssistantResponseStack({
   reasoning,
   activity,
   agentRun,
+  trajectoryStatus = 'unknown',
+  onInspectTrajectory,
   onRetry,
   onContinueAgentRun,
   answerEvidence,
@@ -105,6 +111,14 @@ function AssistantResponseStack({
         ) : null}
 
         {showActivityStatus ? <AssistantActivityStatus activity={activity} /> : null}
+
+        {agentRun ? (
+          <TrajectoryStatusLine
+            run={agentRun}
+            trajectoryStatus={trajectoryStatus}
+            onInspect={onInspectTrajectory}
+          />
+        ) : null}
 
         <AgentRunTimeline {...agentRunTimelineProps} />
       </div>

@@ -18,6 +18,8 @@ import {
   type ConversationComposerAttachment,
 } from '@/components/chat/composerAttachments';
 import { Button } from '@/components/ui/button';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import TrajectoryTabView from '@/components/chat/trajectory/TrajectoryTabView';
 import type { FileAttachment } from '@/lib/utils/fileHelpers';
 import ConfirmDialog from '@/components/ui/confirm-dialog';
 import { useAppDispatch, useAppSelector } from '@/redux/hooks';
@@ -56,6 +58,7 @@ import { useConversationFiles } from '@/hooks/useConversationFiles';
 import { createAgentStreamEventHandlers } from '@/lib/agent/streamEventHandlers';
 import { consumeConversationFilesPanelOpen } from '@/lib/chat/filesPanelHandoff';
 import { clearFirstTurnContextState } from '@/lib/chat/contextStatusPersistence';
+import { getChatMessageDomId } from '@/lib/chat/messageDom';
 import {
   recoverReasoningOnlyFinalBlocks,
   shouldRecoverReasoningOnlyFinalBlocks,
@@ -63,6 +66,11 @@ import {
 import { hasFormalTextContent } from '@/lib/chat/suggestedQuestionState';
 import { CHAT_NEW_PATH } from '@/lib/routes/chatRoutes';
 import { deleteFile, type FileInfo } from '@/lib/api/files';
+import {
+  requestTrajectoryInspect,
+  selectTrajectoryViewState,
+  setTrajectoryActiveSurface,
+} from '@/redux/slices/trajectorySlice';
 
 const CHAT_EMPTY_STATE = {
   title: '这个会话还没有消息',
@@ -149,6 +157,7 @@ export default function ChatPage() {
     fileIds: [],
   });
   const chatInputRef = useRef<HTMLDivElement>(null);
+  const trajectoryInspectSequenceRef = useRef(0);
   const reconnectControllerRef = useRef<AbortController | null>(null);
   const recoveryStreamModeRef = useRef<'initial' | 'retry' | 'continuation' | null>(null);
   const recoveryTaskIdRef = useRef<string | null>(null);
@@ -189,6 +198,9 @@ export default function ChatPage() {
     (state) => state.conversation.lastReadyConversationSnapshot
   );
   const streamConversationId = useAppSelector((state) => state.stream.conversationId);
+  const activeSurface = useAppSelector((state) => (
+    selectTrajectoryViewState(state, chatId)?.activeSurface ?? 'chat'
+  ));
   const conversationMessages = conversation?.messages;
   const composerKnowledgeBaseIds = useMemo(
     () => composerKnowledgeSelection.chatId === chatId
@@ -899,6 +911,32 @@ export default function ChatPage() {
   const isDisplayConversationStreaming =
     !isHydratingWithoutContent && isStreaming && streamConversationId === displayConversationId;
 
+  const handleSurfaceChange = useCallback((surface: string) => {
+    if (surface !== 'chat' && surface !== 'trajectory') return;
+    dispatch(setTrajectoryActiveSurface({ conversationId: chatId, surface }));
+  }, [chatId, dispatch]);
+
+  const handleInspectTrajectory = useCallback((messageId: string, runId: string) => {
+    trajectoryInspectSequenceRef.current += 1;
+    dispatch(requestTrajectoryInspect({
+      conversationId: chatId,
+      requestId: `${chatId}:${runId}:${trajectoryInspectSequenceRef.current}`,
+      messageId,
+      runId,
+      spanId: null,
+    }));
+  }, [chatId, dispatch]);
+
+  const handleRevealInChat = useCallback((messageId: string) => {
+    dispatch(setTrajectoryActiveSurface({ conversationId: chatId, surface: 'chat' }));
+    window.requestAnimationFrame(() => {
+      const target = document.getElementById(getChatMessageDomId(messageId));
+      if (!target) return;
+      target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      target.focus({ preventScroll: true });
+    });
+  }, [chatId, dispatch]);
+
   if ((!conversation && !shouldKeepPreviousContent && !isHydratingWithoutContent) || hydrationView === 'error') {
     return (
       <div className="h-full flex items-center justify-center">
@@ -930,27 +968,68 @@ export default function ChatPage() {
     <ChatDetailOverlayProvider>
       <div className="relative flex h-full min-h-0">
         <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
-          <LocationContextBanner conversationId={chatId} />
-          <div className="flex-1 overflow-y-auto px-4 pt-4" data-chat-scroll-container="true">
-            <ChatMessageListLazy
-              messages={isHydratingWithoutContent ? [] : displayMessages}
-              conversationId={displayConversationId}
-              isStreaming={isDisplayConversationStreaming}
-              loadingState={isHydratingWithoutContent ? 'history-hydration' : undefined}
-              onRetry={shouldKeepPreviousContent || isHydratingWithoutContent ? undefined : handleRetry}
-              onContinueAgentRun={
-                shouldKeepPreviousContent || isHydratingWithoutContent || isDisplayConversationStreaming
-                  ? undefined
-                  : handleContinueAgentRun
-              }
-              suggestedQuestions={shouldKeepPreviousContent || isHydratingWithoutContent ? [] : suggestedQuestions}
-              isLoadingQuestions={shouldKeepPreviousContent || isHydratingWithoutContent ? false : isLoadingQuestions}
-              onSelectQuestion={shouldKeepPreviousContent || isHydratingWithoutContent ? undefined : handleSelectQuestion}
-              onRefreshQuestions={shouldKeepPreviousContent || isHydratingWithoutContent ? undefined : handleRefreshQuestions}
-              completionStateVisible={shouldKeepPreviousContent || isHydratingWithoutContent ? false : showCompletionState}
-              emptyState={CHAT_EMPTY_STATE}
-            />
-          </div>
+          <Tabs
+            value={activeSurface}
+            onValueChange={handleSurfaceChange}
+            activationMode="manual"
+            className="min-h-0 flex-1 gap-0"
+          >
+            <div className="flex shrink-0 justify-center border-b border-border/60 px-4 py-2">
+              <TabsList aria-label="会话视图">
+                <TabsTrigger value="chat">聊天</TabsTrigger>
+                <TabsTrigger value="trajectory">轨迹</TabsTrigger>
+              </TabsList>
+            </div>
+
+            <TabsContent
+              value="chat"
+              forceMount
+              hidden={activeSurface !== 'chat'}
+              className="min-h-0 data-[state=inactive]:hidden"
+            >
+              <div className="flex h-full min-h-0 flex-col">
+                <LocationContextBanner conversationId={chatId} />
+                <div className="flex-1 overflow-y-auto px-4 pt-4" data-chat-scroll-container="true">
+                  <ChatMessageListLazy
+                    messages={isHydratingWithoutContent ? [] : displayMessages}
+                    conversationId={displayConversationId}
+                    isStreaming={isDisplayConversationStreaming}
+                    loadingState={isHydratingWithoutContent ? 'history-hydration' : undefined}
+                    onRetry={shouldKeepPreviousContent || isHydratingWithoutContent ? undefined : handleRetry}
+                    onContinueAgentRun={
+                      shouldKeepPreviousContent || isHydratingWithoutContent || isDisplayConversationStreaming
+                        ? undefined
+                        : handleContinueAgentRun
+                    }
+                    onInspectTrajectory={
+                      shouldKeepPreviousContent || isHydratingWithoutContent
+                        ? undefined
+                        : handleInspectTrajectory
+                    }
+                    suggestedQuestions={shouldKeepPreviousContent || isHydratingWithoutContent ? [] : suggestedQuestions}
+                    isLoadingQuestions={shouldKeepPreviousContent || isHydratingWithoutContent ? false : isLoadingQuestions}
+                    onSelectQuestion={shouldKeepPreviousContent || isHydratingWithoutContent ? undefined : handleSelectQuestion}
+                    onRefreshQuestions={shouldKeepPreviousContent || isHydratingWithoutContent ? undefined : handleRefreshQuestions}
+                    completionStateVisible={shouldKeepPreviousContent || isHydratingWithoutContent ? false : showCompletionState}
+                    emptyState={CHAT_EMPTY_STATE}
+                  />
+                </div>
+              </div>
+            </TabsContent>
+
+            <TabsContent
+              value="trajectory"
+              forceMount
+              hidden={activeSurface !== 'trajectory'}
+              className="min-h-0 data-[state=inactive]:hidden"
+            >
+              <TrajectoryTabView
+                conversationId={chatId}
+                messages={isHydratingWithoutContent ? [] : displayMessages}
+                onRevealInChat={handleRevealInChat}
+              />
+            </TabsContent>
+          </Tabs>
 
           <div ref={chatInputRef} tabIndex={-1} className="flex-shrink-0 px-4 pb-4 pt-2">
             {shouldShowFilesPanelButton ? (

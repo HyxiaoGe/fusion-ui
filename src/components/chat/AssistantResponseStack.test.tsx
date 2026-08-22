@@ -191,6 +191,51 @@ const agentRun: AgentRunState = {
 };
 
 describe('AssistantResponseStack', () => {
+  it('使用真实状态行展示状态、耗时、轨迹 badge 并进入轨迹', () => {
+    const onInspectTrajectory = vi.fn();
+    render(
+      <AssistantResponseStack
+        assistantMessageId="assistant-1"
+        reasoning={{
+          shouldRender: false,
+          content: '',
+          isVisible: false,
+          isStreaming: false,
+          onToggle: vi.fn(),
+        }}
+        activity={activity()}
+        agentRun={{
+          ...agentRun,
+          status: 'completed',
+          steps: [{
+            stepId: 'step-1',
+            stepNumber: 1,
+            status: 'completed',
+            toolCalls: [],
+            contentBlockIds: [],
+            startedAt: 1_000,
+            completedAt: 2_500,
+          }],
+        }}
+        trajectoryStatus="complete"
+        onInspectTrajectory={onInspectTrajectory}
+        answerEvidence={null}
+        onSourceClick={vi.fn()}
+        onOpenSources={vi.fn()}
+        markdown={{ content: '回答', sources: [] }}
+        showStreamingCursor={false}
+      />,
+    );
+
+    const status = screen.getByRole('status', { name: 'Agent 运行状态' });
+    expect(status).toHaveTextContent('Agent 已完成');
+    expect(status).toHaveTextContent('耗时 1.5 秒');
+    expect(status).toHaveTextContent('轨迹完整');
+
+    fireEvent.click(screen.getByRole('button', { name: '查看轨迹' }));
+    expect(onInspectTrajectory).toHaveBeenCalledTimes(1);
+  });
+
   it('所有模型在计划期间统一展示经后端净化的思考', () => {
     const plannedRun: AgentRunState = {
       ...agentRun,

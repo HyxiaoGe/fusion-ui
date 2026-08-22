@@ -7,6 +7,7 @@ import type { FileWithPreview } from '@/lib/utils/fileHelpers';
 import { useAppDispatch } from '@/redux/hooks';
 import { toggleReasoningVisibility } from '@/redux/slices/conversationSlice';
 import type { AgentRunState } from '@/types/agentRun';
+import type { TrajectoryBadgeStatus } from '@/lib/trajectory/TrajectoryCellProjection';
 import type { Message } from '@/types/conversation';
 
 import ProviderIcon from '../models/ProviderIcon';
@@ -31,6 +32,8 @@ interface AssistantMessageProps {
   onRetry?: (messageId: string) => void;
   onContinueAgentRun?: (messageId: string, previousRunId?: string) => void;
   agentRun?: AgentRunState | null;
+  trajectoryStatus?: TrajectoryBadgeStatus;
+  onInspectTrajectory?: (messageId: string, runId: string) => void;
   suggestedQuestions: string[];
   isLoadingQuestions: boolean;
   onSelectQuestion?: (question: string) => void;
@@ -49,6 +52,8 @@ function AssistantMessage({
   onRetry,
   onContinueAgentRun,
   agentRun,
+  trajectoryStatus,
+  onInspectTrajectory,
   suggestedQuestions,
   isLoadingQuestions,
   onSelectQuestion,
@@ -70,6 +75,8 @@ function AssistantMessage({
         onRetry={onRetry}
         onContinueAgentRun={onContinueAgentRun}
         agentRun={agentRun}
+        trajectoryStatus={trajectoryStatus}
+        onInspectTrajectory={onInspectTrajectory}
         suggestedQuestions={suggestedQuestions}
         isLoadingQuestions={isLoadingQuestions}
         onSelectQuestion={onSelectQuestion}
@@ -91,6 +98,8 @@ function AssistantMessage({
       onRetry={onRetry}
       onContinueAgentRun={onContinueAgentRun}
       agentRun={agentRun}
+      trajectoryStatus={trajectoryStatus}
+      onInspectTrajectory={onInspectTrajectory}
       suggestedQuestions={suggestedQuestions}
       isLoadingQuestions={isLoadingQuestions}
       onSelectQuestion={onSelectQuestion}
@@ -145,6 +154,8 @@ function AssistantMessageFrame({
   onRetry,
   onContinueAgentRun,
   agentRun,
+  trajectoryStatus = 'unknown',
+  onInspectTrajectory,
   suggestedQuestions,
   isLoadingQuestions,
   onSelectQuestion,
@@ -233,6 +244,13 @@ function AssistantMessageFrame({
     [knowledgeBlocks.length, message.id, onContinueAgentRun],
   );
 
+  const handleInspectTrajectory = useMemo(
+    () => agentRun && onInspectTrajectory
+      ? () => onInspectTrajectory(message.id, agentRun.runId)
+      : undefined,
+    [agentRun, message.id, onInspectTrajectory],
+  );
+
   useEffect(() => {
     userToggledReasoningRef.current = false;
   }, [message.id]);
@@ -303,6 +321,8 @@ function AssistantMessageFrame({
             reasoning={reasoningProps}
             activity={activity}
             agentRun={agentRun}
+            trajectoryStatus={trajectoryStatus}
+            onInspectTrajectory={handleInspectTrajectory}
             onRetry={handleRetry}
             onContinueAgentRun={handleContinue}
             answerEvidence={answerEvidence}

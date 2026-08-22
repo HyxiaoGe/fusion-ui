@@ -7,6 +7,8 @@ import { extractTextFromBlocks } from '@/types/conversation';
 import React, { useState, useEffect, useMemo } from 'react';
 import { chatStore } from '@/lib/db/chatStore';
 import type { AgentRunState } from '@/types/agentRun';
+import type { TrajectoryBadgeStatus } from '@/lib/trajectory/TrajectoryCellProjection';
+import { getChatMessageDomId } from '@/lib/chat/messageDom';
 import ImageViewer from './ImageViewer';
 import UserMessage from './UserMessage';
 import AssistantMessage from './AssistantMessage';
@@ -24,13 +26,15 @@ interface ChatMessageProps {
   providerId?: string;
   modelName?: string;
   agentRun?: AgentRunState | null;
+  trajectoryStatus?: TrajectoryBadgeStatus;
+  onInspectTrajectory?: (messageId: string, runId: string) => void;
   suggestedQuestions?: string[];
   isLoadingQuestions?: boolean;
   onSelectQuestion?: (question: string) => void;
   onRefreshQuestions?: () => void;
 }
 
-const ChatMessage: React.FC<ChatMessageProps> = ({ message, files, isLastMessage = false, isStreaming = false, onRetry, onContinueAgentRun, onEdit, activeChatId = null, modelId, providerId, modelName = 'AI助手', agentRun = null, suggestedQuestions = [], isLoadingQuestions = false, onSelectQuestion, onRefreshQuestions }) => {
+const ChatMessage: React.FC<ChatMessageProps> = ({ message, files, isLastMessage = false, isStreaming = false, onRetry, onContinueAgentRun, onEdit, activeChatId = null, modelId, providerId, modelName = 'AI助手', agentRun = null, trajectoryStatus = 'unknown', onInspectTrajectory, suggestedQuestions = [], isLoadingQuestions = false, onSelectQuestion, onRefreshQuestions }) => {
   const isUser = message.role === 'user';
 
   // 从 content blocks 中提取文本（用于编辑）
@@ -59,6 +63,9 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, files, isLastMessage
 
   return (
     <div
+      id={getChatMessageDomId(message.id)}
+      data-chat-message-id={message.id}
+      tabIndex={-1}
       className={cn(
         'flex w-full gap-3 py-2 px-4 group',
         isUser ? 'justify-end' : 'justify-start'
@@ -87,6 +94,8 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, files, isLastMessage
             onRetry={onRetry}
             onContinueAgentRun={onContinueAgentRun}
             agentRun={agentRun}
+            trajectoryStatus={trajectoryStatus}
+            onInspectTrajectory={onInspectTrajectory}
             suggestedQuestions={suggestedQuestions}
             isLoadingQuestions={isLoadingQuestions}
             onSelectQuestion={onSelectQuestion}

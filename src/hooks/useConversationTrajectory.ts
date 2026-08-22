@@ -438,6 +438,9 @@ export function useConversationTrajectory(conversationId: string | null) {
 
   return {
     runs,
+    runSummariesById: conversation?.runSummariesById ?? {},
+    snapshotsByRunId: conversation?.snapshotsByRunId ?? {},
+    liveEventsByRunId: conversation?.liveEventsByRunId ?? {},
     runListStatus: conversation?.runListStatus ?? 'idle',
     runListError: conversation?.runListError ?? null,
     runsTruncated: conversation?.runsTruncated ?? false,
@@ -446,6 +449,8 @@ export function useConversationTrajectory(conversationId: string | null) {
     selectedSpanId: conversation?.selectedSpanId ?? null,
     selectionSource: conversation?.selectionSource ?? 'none',
     activeSurface: conversation?.activeSurface ?? 'chat',
+    scrollMode: conversation?.scrollMode ?? 'follow-live',
+    isInspectorOpen: conversation?.isInspectorOpen ?? false,
     inspectRequest: conversation?.inspectRequest ?? null,
     snapshot,
     reconciliation,
