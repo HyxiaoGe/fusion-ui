@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import type { TrajectoryCell } from '@/lib/trajectory/TrajectoryCellProjection';
 import { TrajectoryLedger } from './TrajectoryLedger';
@@ -328,6 +328,103 @@ describe('TrajectoryLedger', () => {
     } finally {
       clientHeight.mockRestore();
     }
+  });
+
+  it('首帧高度为零时等待 ResizeObserver 的首个正高度再消费恢复', () => {
+    let resizeCallback: ResizeObserverCallback | null = null;
+    const clientHeight = vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get')
+      .mockReturnValue(0);
+    vi.stubGlobal('ResizeObserver', class ResizeObserverMock {
+      constructor(callback: ResizeObserverCallback) {
+        resizeCallback = callback;
+      }
+
+      observe() {}
+
+      disconnect() {}
+    });
+    try {
+      render(
+        <TrajectoryLedger
+          cells={manyCells(100)}
+          selectedCellKey={null}
+          initialScrollTop={99_999}
+          restoreKey="conversation-a"
+        />,
+      );
+
+      const ledger = screen.getByRole('listbox', { name: '轨迹账本' });
+      expect(ledger.scrollTop).toBe(0);
+
+      act(() => {
+        resizeCallback?.([{
+          contentRect: { height: 112 },
+        } as ResizeObserverEntry], {} as ResizeObserver);
+      });
+
+      expect(ledger.scrollTop).toBe(5488);
+      expect(within(ledger).getByRole('option', {
+        name: /第 100 轮.*第 100 条消息/,
+      })).toBeInTheDocument();
+
+      ledger.scrollTop = 1120;
+      fireEvent.scroll(ledger);
+      act(() => {
+        resizeCallback?.([{
+          contentRect: { height: 224 },
+        } as ResizeObserverEntry], {} as ResizeObserver);
+      });
+      expect(ledger.scrollTop).toBe(1120);
+    } finally {
+      clientHeight.mockRestore();
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('restore identity 变化时恢复一次，普通 rerender 不覆盖后续用户滚动', () => {
+    const firstScrollChange = vi.fn();
+    const { rerender } = render(
+      <TrajectoryLedger
+        cells={manyCells(100)}
+        selectedCellKey={null}
+        viewportHeight={112}
+        initialScrollTop={5040}
+        restoreKey="conversation-a"
+        onScrollTopChange={firstScrollChange}
+      />,
+    );
+    const ledger = screen.getByRole('listbox', { name: '轨迹账本' });
+    expect(ledger.scrollTop).toBe(5040);
+
+    ledger.scrollTop = 1120;
+    fireEvent.scroll(ledger);
+    expect(firstScrollChange).toHaveBeenCalledWith(1120);
+
+    rerender(
+      <TrajectoryLedger
+        cells={manyCells(100)}
+        selectedCellKey={null}
+        viewportHeight={112}
+        initialScrollTop={99_999}
+        restoreKey="conversation-b"
+        onScrollTopChange={vi.fn()}
+      />,
+    );
+    expect(ledger.scrollTop).toBe(5488);
+
+    ledger.scrollTop = 2240;
+    fireEvent.scroll(ledger);
+    rerender(
+      <TrajectoryLedger
+        cells={manyCells(101)}
+        selectedCellKey={null}
+        viewportHeight={112}
+        initialScrollTop={99_999}
+        restoreKey="conversation-b"
+        onScrollTopChange={vi.fn()}
+      />,
+    );
+    expect(ledger.scrollTop).toBe(2240);
   });
 
   it('外部受控选择远端未挂载行时滚动挂载，但不抢走时间线焦点', async () => {

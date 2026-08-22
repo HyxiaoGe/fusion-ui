@@ -76,3 +76,34 @@
 - 三个 P1 评审问题均有对应真实组件 RED 与最终 GREEN；未引入依赖、fetch、Redux、服务或浏览器操作。
 - Task 7 仍未装配页面级 `TrajectoryTabView`，因此本轮没有真实页面数据与 Chrome 用户路径证据。
 - 全仓 TypeScript 基线仍非零；本轮修改路径没有新增类型错误。
+
+---
+
+## Fix round 2：有效高度门闩与恢复事务 identity
+
+### 修复
+
+- 无显式正 `viewportHeight` 时，将“虚拟窗口渲染 fallback 560”与“可消费恢复的有效高度”分离；首帧 `clientHeight=0` 只建立 ResizeObserver，不再写入 DOM 或消费恢复门闩，等首个正 `contentRect.height` 后再按真实高度钳制并恢复。
+- `TrajectoryLedger` 新增可选 `restoreKey: string | number | null`。组件按该 identity 记录已完成的恢复事务；identity 变化才允许同实例以新的 `initialScrollTop` 恢复一次，同 identity 的 rows append、callback 变化、ResizeObserver 重复通知与用户滚动不会重新覆盖当前位置。
+- identity 在 layout effect 成功写入 DOM/state 时才标记完成；空 rows 或无有效高度只保持待恢复，不消费事务。Strict Effect 重放会看到同 identity 已完成并直接跳过，不形成恢复循环。
+
+### TDD 证据
+
+1. RED：`npm test -- --run src/components/chat/trajectory/TrajectoryLedger.test.tsx` → 13 tests 中 2 failed、11 passed，退出码 1。
+   - 首帧 `clientHeight=0` 时实际错误写入 `scrollTop=5040`，期望保持 0 等待首个正高度。
+   - 同实例从 `restoreKey=conversation-a, initialScrollTop=5040` 切到 `conversation-b, initialScrollTop=99_999` 后实际仍为用户位置 1120，期望按 112px 视口恢复到 5488。
+2. GREEN：同一命令 → 1 file、13 tests passed，退出码 0。
+3. 零高度测试在 ResizeObserver 报告 112 后断言 DOM 恢复到 5488、末行挂载；用户滚到 1120 后再次报告 224，DOM 仍保持 1120。
+4. identity 测试在第二个事务恢复到 5488 后让用户滚到 2240，再同时追加 rows 并更换 callback，普通 rerender 不覆盖 2240。
+
+### 最终验证
+
+- Task 6 聚焦：`npm test -- --run src/lib/trajectory/virtualRange.test.ts src/components/chat/trajectory/TrajectoryLedger.test.tsx src/components/chat/trajectory/TrajectoryTimeline.test.tsx src/components/chat/trajectory/TrajectoryInspector.test.tsx src/components/chat/trajectory/TrajectoryIntegrityBanner.test.tsx` → 5 files、38 tests passed，退出码 0。
+- 全量：`npm test` → 190 files、2106 tests passed，退出码 0。
+- 目标 ESLint：本轮 Ledger 源文件与测试退出码 0；仅有仓库既有 `.eslintignore` 迁移 warning。
+- TypeScript：`npx tsc --noEmit --pretty false` 退出码 2，仍由仓库既有页面测试、旧组件、Task 1 归一化等基线错误阻断；本轮 Ledger 源文件与测试没有错误输出。
+
+### Concerns
+
+- Task 7 装配时必须为会话/视图恢复事务传入稳定且在新事务时变化的 `restoreKey`；同 identity 下只改变 `initialScrollTop` 按设计不会覆盖用户滚动。
+- Task 7 页面装配与真实浏览器路径仍不在本任务范围；全仓 TypeScript 基线仍非零。

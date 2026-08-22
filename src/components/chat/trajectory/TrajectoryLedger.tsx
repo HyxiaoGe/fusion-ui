@@ -28,6 +28,8 @@ export interface TrajectoryLedgerProps {
   inspectTarget?: TrajectoryInspectTarget | null;
   viewportHeight?: number;
   initialScrollTop?: number;
+  /** 新会话或新视图恢复事务必须更换 identity；同 identity 不会覆盖后续用户滚动。 */
+  restoreKey?: string | number | null;
   onSelectCell?: (cell: TrajectoryCell, index: number) => void;
   onInspectTargetResolved?: (
     target: TrajectoryInspectTarget,
@@ -82,6 +84,7 @@ export function TrajectoryLedger({
   inspectTarget = null,
   viewportHeight,
   initialScrollTop = 0,
+  restoreKey = null,
   onSelectCell,
   onInspectTargetResolved,
   onScrollTopChange,
@@ -90,7 +93,7 @@ export function TrajectoryLedger({
   const viewportRef = useRef<HTMLDivElement>(null);
   const resolvedInspectRequestRef = useRef<string | null>(null);
   const handledControlledSelectionRef = useRef<{ key: string; index: number } | null>(null);
-  const didRestoreInitialScrollRef = useRef(false);
+  const restoredIdentityRef = useRef<{ key: string | number | null } | null>(null);
   const restoringInitialScrollRef = useRef<number | null>(null);
   const rows = useMemo(() => buildLedgerRows(cells), [cells]);
   const selectedIndex = rows.findIndex(row => row.cell.key === selectedCellKey);
@@ -99,7 +102,13 @@ export function TrajectoryLedger({
   ));
   const [scrollTop, setScrollTop] = useState(() => Math.max(0, initialScrollTop));
   const scrollTopRef = useRef(scrollTop);
-  const [measuredHeight, setMeasuredHeight] = useState(() => viewportHeight ?? 560);
+  const explicitViewportHeight = typeof viewportHeight === 'number'
+    && Number.isFinite(viewportHeight)
+    && viewportHeight > 0
+    ? viewportHeight
+    : null;
+  const [observedViewportHeight, setObservedViewportHeight] = useState<number | null>(null);
+  const measuredHeight = explicitViewportHeight ?? observedViewportHeight ?? 560;
   const [focusRequestIndex, setFocusRequestIndex] = useState<number | null>(null);
   const requestedActiveIndex = rows.findIndex(row => row.cell.key === activeKey);
   const range = getVirtualRange({
@@ -112,44 +121,43 @@ export function TrajectoryLedger({
     ? requestedActiveIndex
     : range.startIndex;
 
-  useEffect(() => {
-    if (viewportHeight !== undefined) setMeasuredHeight(viewportHeight);
-  }, [viewportHeight]);
-
   useLayoutEffect(() => {
-    if (viewportHeight !== undefined) return;
+    if (explicitViewportHeight !== null) return;
     const viewport = viewportRef.current;
     if (!viewport) return;
-    const measure = () => {
-      if (viewport.clientHeight > 0) setMeasuredHeight(viewport.clientHeight);
+    const observeHeight = (height: number) => {
+      const nextHeight = Number.isFinite(height) && height > 0 ? height : null;
+      setObservedViewportHeight(current => current === nextHeight ? current : nextHeight);
     };
-    measure();
+    observeHeight(viewport.clientHeight);
     if (typeof ResizeObserver === 'undefined') return;
     const observer = new ResizeObserver(entries => {
       const height = entries[0]?.contentRect.height ?? viewport.clientHeight;
-      if (height > 0) setMeasuredHeight(height);
+      observeHeight(height);
     });
     observer.observe(viewport);
     return () => observer.disconnect();
-  }, [viewportHeight]);
+  }, [explicitViewportHeight]);
 
   useLayoutEffect(() => {
-    if (didRestoreInitialScrollRef.current || rows.length === 0) return;
+    const restoredIdentity = restoredIdentityRef.current;
+    if (restoredIdentity && Object.is(restoredIdentity.key, restoreKey)) return;
+    if (rows.length === 0) return;
     const viewport = viewportRef.current;
     if (!viewport) return;
-    didRestoreInitialScrollRef.current = true;
-    const restoreViewportHeight = viewportHeight
-      ?? (viewport.clientHeight > 0 ? viewport.clientHeight : measuredHeight);
+    const restoreViewportHeight = explicitViewportHeight ?? observedViewportHeight;
+    if (restoreViewportHeight === null) return;
     const restoredScrollTop = clampTrajectoryScrollTop({
       itemCount: rows.length,
       scrollTop: initialScrollTop,
       viewportHeight: restoreViewportHeight,
     });
+    restoredIdentityRef.current = { key: restoreKey };
     restoringInitialScrollRef.current = restoredScrollTop;
     viewport.scrollTop = restoredScrollTop;
     scrollTopRef.current = restoredScrollTop;
     setScrollTop(current => current === restoredScrollTop ? current : restoredScrollTop);
-  }, [initialScrollTop, measuredHeight, rows.length, viewportHeight]);
+  }, [explicitViewportHeight, initialScrollTop, observedViewportHeight, restoreKey, rows.length]);
 
   const scrollToIndex = useCallback((index: number, align: 'auto' | 'center' = 'auto') => {
     const viewport = viewportRef.current;
