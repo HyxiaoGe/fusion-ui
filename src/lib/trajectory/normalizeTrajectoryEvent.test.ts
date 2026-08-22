@@ -31,7 +31,7 @@ describe('normalizeTrajectoryEvent', () => {
       runId: 'run-1',
       sequence: 0,
       eventType: 'run_started',
-      schemaVersion: null,
+      schemaVersion: 0,
       timestamp,
       stepId: null,
       toolCallId: null,
@@ -106,6 +106,66 @@ describe('normalizeTrajectoryEvent', () => {
     expect(normalized?.payload).not.toBe(payload);
   });
 
+  it('对 plan_snapshot 的嵌套项应用字段白名单、脱敏和有界列表', () => {
+    const normalized = normalizeSseTrajectoryEvent({
+      type: 'plan_snapshot',
+      schema_version: 1,
+      run_id: 'run-1',
+      parent_run_id: null,
+      step_id: null,
+      parent_step_id: null,
+      tool_call_id: null,
+      sequence: 3,
+      trace_id: 'trace-1',
+      ts: Date.parse(timestamp) / 1000,
+      protocol_version: 2,
+      plan_id: 'plan-1',
+      items: Array.from({ length: 51 }, (_, index) => ({
+        id: `item-${index}`,
+        title: 'api_key=live-secret',
+        summary: '长文本'.repeat(300),
+        tool_names: Array.from({ length: 51 }, (_, toolIndex) => `token=tool-${toolIndex}`),
+        arguments: { api_key: '不能进入 UI' },
+        raw_tool_output: '不能进入 UI',
+      })),
+    });
+
+    const items = normalized?.payload.items as Array<Record<string, unknown>>;
+    expect(items).toHaveLength(50);
+    expect(Object.keys(items[0]).sort()).toEqual(['id', 'summary', 'title', 'tool_names']);
+    expect(items[0].title).toBe('api_key=[REDACTED]');
+    expect(items[0].summary).toHaveLength(512);
+    expect(items[0].tool_names).toEqual(Array(50).fill('token=[REDACTED]'));
+  });
+
+  it('对 evidence URL、嵌套未知字段和文本 secret 应用普通用户安全边界', () => {
+    const normalized = normalizeSseTrajectoryEvent({
+      type: 'evidence_item_upserted',
+      schema_version: 1,
+      run_id: 'run-1',
+      parent_run_id: null,
+      step_id: null,
+      parent_step_id: null,
+      tool_call_id: null,
+      sequence: 4,
+      trace_id: 'trace-1',
+      ts: Date.parse(timestamp) / 1000,
+      protocol_version: 2,
+      evidence: {
+        id: 'evidence-1',
+        title: 'authorization: Bearer live-token',
+        url: 'https://example.com/guide?access_token=live-token#section',
+        raw_tool_output: '不能进入 UI',
+      },
+    });
+
+    expect(normalized?.payload.evidence).toEqual({
+      id: 'evidence-1',
+      title: 'authorization=[REDACTED]',
+      url: 'https://example.com/guide',
+    });
+  });
+
   it('将 P1 record 与相同 SSE 事件归一为同一普通用户事件', () => {
     const record = {
       sequence: 2,
@@ -146,5 +206,43 @@ describe('normalizeTrajectoryEvent', () => {
     };
 
     expect(normalizeTrajectoryRecord('run-1', record)).toEqual(normalizeSseTrajectoryEvent(sse));
+  });
+
+  it('将 P1 schema_version=0 record 与缺失版本的 SSE 归一为相同 legacy 事件', () => {
+    const record = {
+      sequence: 5,
+      event_type: 'run_completed',
+      schema_version: 0,
+      timestamp,
+      step_id: null,
+      tool_call_id: null,
+      parent_step_id: null,
+      trace_id: 'trace-1',
+      span_id: null,
+      payload: {
+        type: 'run_completed',
+        run_id: 'run-1',
+        total_steps: 2,
+        total_tool_calls: 1,
+        finish_reason: 'stop',
+      },
+    };
+    const sse = {
+      type: 'run_completed',
+      run_id: 'run-1',
+      parent_run_id: null,
+      step_id: null,
+      parent_step_id: null,
+      tool_call_id: null,
+      sequence: 5,
+      trace_id: 'trace-1',
+      ts: Date.parse(timestamp) / 1000,
+      total_steps: 2,
+      total_tool_calls: 1,
+      finish_reason: 'stop',
+    };
+
+    expect(normalizeTrajectoryRecord('run-1', record)).toEqual(normalizeSseTrajectoryEvent(sse));
+    expect(normalizeSseTrajectoryEvent(sse)?.schemaVersion).toBe(0);
   });
 });

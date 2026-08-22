@@ -4,8 +4,8 @@ export interface NormalizedTrajectoryEvent {
   runId: string;
   sequence: number;
   eventType: string;
-  /** null 表示 P0 升级前缺失的 legacy schema_version。 */
-  schemaVersion: number | null;
+  /** 0 表示 P0 升级前缺失的 legacy schema_version。 */
+  schemaVersion: number;
   timestamp: string;
   stepId: string | null;
   toolCallId: string | null;
@@ -15,6 +15,9 @@ export interface NormalizedTrajectoryEvent {
 }
 
 const SUPPORTED_SCHEMA_VERSIONS = new Set([0, 1]);
+const MAX_LEDGER_TEXT_LENGTH = 512;
+const MAX_LEDGER_LIST_ITEMS = 50;
+const SECRET_PATTERN = /\b(api[_-]?key|authorization|access[_-]?token|token|password|secret)\s*[:=]\s*(?:bearer\s+)?[^\s,;]+/gi;
 
 const EVENT_PAYLOAD_FIELDS: Record<string, readonly string[]> = {
   run_started: ['conversation_id', 'message_id', 'task_id', 'model', 'tools'],
@@ -64,6 +67,19 @@ const EVENT_PAYLOAD_FIELDS: Record<string, readonly string[]> = {
   context_result: ['protocol_version', 'context_type', 'request_id', 'status'],
 };
 
+const PLAN_ITEM_FIELDS = new Set([
+  'id', 'title', 'phase_id', 'phase_title', 'status', 'kind', 'summary', 'tool_names',
+  'evidence_item_ids', 'depends_on', 'planned_tools',
+]);
+const PLAN_ITEM_LIST_FIELDS = new Set([
+  'tool_names', 'evidence_item_ids', 'depends_on', 'planned_tools',
+]);
+const EVIDENCE_FIELDS = new Set([
+  'id', 'kind', 'status', 'title', 'url', 'domain', 'claim', 'snippet',
+  'used_by_final_answer', 'citation_index',
+]);
+const LIST_FIELDS = new Set(['tools', 'key_findings', 'source_refs']);
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
@@ -72,23 +88,69 @@ function nullableString(value: unknown): string | null | undefined {
   return value === null || typeof value === 'string' ? value : undefined;
 }
 
-function cloneValue(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(cloneValue);
-  if (isRecord(value)) {
-    return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, cloneValue(item)]));
+function boundedText(value: unknown): string {
+  return String(value).replace(SECRET_PATTERN, (_, key: string) => `${key}=[REDACTED]`)
+    .slice(0, MAX_LEDGER_TEXT_LENGTH);
+}
+
+function boundedList(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.slice(0, MAX_LEDGER_LIST_ITEMS).map(boundedText);
+}
+
+function safeUrl(value: unknown): string | null {
+  if (value === null) return null;
+  try {
+    const url = new URL(boundedText(value));
+    if (!['http:', 'https:'].includes(url.protocol) || !url.hostname) return null;
+    return `${url.protocol}//${url.host}${url.pathname}`.slice(0, MAX_LEDGER_TEXT_LENGTH);
+  } catch {
+    return null;
   }
-  return value;
+}
+
+function sanitizeScalar(value: unknown): unknown {
+  return value === null || typeof value === 'boolean' || typeof value === 'number'
+    ? value
+    : boundedText(value);
+}
+
+function sanitizePlanItem(value: unknown): Record<string, unknown> {
+  if (!isRecord(value)) return {};
+  const item: Record<string, unknown> = {};
+  for (const field of PLAN_ITEM_FIELDS) {
+    if (!(field in value)) continue;
+    item[field] = PLAN_ITEM_LIST_FIELDS.has(field)
+      ? boundedList(value[field])
+      : sanitizeScalar(value[field]);
+  }
+  return item;
+}
+
+function sanitizePlanItems(value: unknown): Record<string, unknown>[] {
+  if (!Array.isArray(value)) return [];
+  return value.slice(0, MAX_LEDGER_LIST_ITEMS).map(sanitizePlanItem);
+}
+
+function sanitizeEvidence(value: unknown): Record<string, unknown> {
+  if (!isRecord(value)) return {};
+  const evidence: Record<string, unknown> = {};
+  for (const field of EVIDENCE_FIELDS) {
+    if (!(field in value)) continue;
+    evidence[field] = field === 'url' ? safeUrl(value[field]) : sanitizeScalar(value[field]);
+  }
+  return evidence;
 }
 
 function normalizeSchemaVersion(value: unknown): number | null {
-  if (value === undefined || value === null) return null;
+  if (value === undefined || value === null) return 0;
   return typeof value === 'number' && Number.isInteger(value) && SUPPORTED_SCHEMA_VERSIONS.has(value)
     ? value
     : null;
 }
 
 function hasSupportedSchemaVersion(value: unknown): boolean {
-  return value === undefined || value === null || normalizeSchemaVersion(value) !== null;
+  return normalizeSchemaVersion(value) !== null;
 }
 
 function sanitizePayload(eventType: string, source: Record<string, unknown>): Record<string, unknown> | null {
@@ -97,7 +159,12 @@ function sanitizePayload(eventType: string, source: Record<string, unknown>): Re
 
   const payload: Record<string, unknown> = {};
   for (const field of fields) {
-    if (field in source) payload[field] = cloneValue(source[field]);
+    if (!(field in source)) continue;
+    if (field === 'items') payload[field] = sanitizePlanItems(source[field]);
+    else if (field === 'item') payload[field] = sanitizePlanItem(source[field]);
+    else if (field === 'evidence') payload[field] = sanitizeEvidence(source[field]);
+    else if (LIST_FIELDS.has(field)) payload[field] = boundedList(source[field]);
+    else payload[field] = sanitizeScalar(source[field]);
   }
   return payload;
 }
