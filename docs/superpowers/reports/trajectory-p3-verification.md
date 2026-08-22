@@ -3,7 +3,7 @@
 - 验证时间：2026-08-23 07:52 CST（Asia/Shanghai）
 - UI 分支：`feat/trajectory-p3-ui`
 - UI 验证提交：`b19ca13aeb11b7bc98ff77f8f38645060f3bfedf`
-- API 分支：`docs/trajectory-p3-v018`
+- API 分支：`feat/trajectory-p3-contract-guard`
 - API 验证提交：`1e97cad0f4d56c78603fc741c8c6377f83db1ebe`
 - 设计依据：`TRAJECTORY_DESIGN.md` v0.19 §8
 
