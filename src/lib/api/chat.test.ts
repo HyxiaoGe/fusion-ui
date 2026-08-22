@@ -296,6 +296,7 @@ function agentEvent(
 ): string {
   return envelope('agent_event', {
     type,
+    schema_version: 1,
     run_id: runId,
     parent_run_id: null,
     step_id: fields.step_id ?? null,

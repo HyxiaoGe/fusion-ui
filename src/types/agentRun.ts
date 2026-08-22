@@ -290,6 +290,8 @@ export interface SseEnvelope<T = unknown> {
 /** agent_event 内层 payload 共享字段. */
 export interface AgentEventEnvelope {
   type: string;
+  /** P0 统一事件版本；部署窗口中的旧 SSE 允许缺失。 */
+  schema_version?: number;
   protocol_version?: number;
   run_id: string;
   parent_run_id: string | null;
