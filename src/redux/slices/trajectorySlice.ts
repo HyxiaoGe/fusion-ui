@@ -10,6 +10,8 @@ import type {
 } from '@/types/trajectory';
 
 const MAX_SNAPSHOT_CACHE_SIZE = 8;
+const MAX_RUN_LIST_SIZE = 500;
+const MAX_EVENTS_PER_RUN = 5000;
 const TERMINAL_EVENT_TYPES = new Set([
   'run_completed',
   'run_failed',
@@ -20,6 +22,7 @@ const TERMINAL_EVENT_TYPES = new Set([
 export type TrajectoryActiveSurface = 'chat' | 'trajectory';
 export type TrajectoryScrollMode = 'follow-live' | 'manual';
 export type TrajectoryRunListStatus = 'idle' | 'loading' | 'ready' | 'failed';
+export type TrajectorySelectionSource = 'none' | 'auto-live' | 'auto-snapshot' | 'manual' | 'inspect';
 export type TrajectoryReconciliationStatus =
   | 'idle'
   | 'loading'
@@ -39,6 +42,10 @@ export interface TrajectoryEventConflict {
 export interface TrajectoryReconciliationState {
   status: TrajectoryReconciliationStatus;
   error: string | null;
+  activeRequestId: string | null;
+  durableLastSequence: number | null;
+  liveTruncatedThroughSequence: number | null;
+  eventsTruncated: boolean;
   conflicts: TrajectoryEventConflict[];
 }
 
@@ -47,6 +54,7 @@ export interface TrajectorySnapshotCacheEntry {
   spans: TrajectorySnapshot['spans'];
   completeness: TrajectorySnapshot['completeness'];
   truncated: TrajectorySnapshot['truncated'];
+  durableLastSequence: number | null;
   events: NormalizedTrajectoryEvent[];
 }
 
@@ -59,8 +67,11 @@ export interface TrajectoryInspectRequest {
 
 export interface TrajectoryConversationState {
   runs: TrajectoryRunSummary[];
+  runSummariesById: Record<string, TrajectoryRunSummary>;
+  provisionalRunIds: string[];
   runListStatus: TrajectoryRunListStatus;
   runListError: string | null;
+  activeRunListRequestId: string | null;
   runsTruncated: boolean;
   snapshotsByRunId: Record<string, TrajectorySnapshotCacheEntry>;
   liveEventsByRunId: Record<string, NormalizedTrajectoryEvent[]>;
@@ -69,6 +80,7 @@ export interface TrajectoryConversationState {
   selectedMessageId: string | null;
   selectedRunId: string | null;
   selectedSpanId: string | null;
+  selectionSource: TrajectorySelectionSource;
   inspectRequest: TrajectoryInspectRequest | null;
   activeSurface: TrajectoryActiveSurface;
   scrollMode: TrajectoryScrollMode;
@@ -84,8 +96,11 @@ const initialState: TrajectoryState = { byConversationId: {} };
 function createConversationState(): TrajectoryConversationState {
   return {
     runs: [],
+    runSummariesById: {},
+    provisionalRunIds: [],
     runListStatus: 'idle',
     runListError: null,
+    activeRunListRequestId: null,
     runsTruncated: false,
     snapshotsByRunId: {},
     liveEventsByRunId: {},
@@ -94,6 +109,7 @@ function createConversationState(): TrajectoryConversationState {
     selectedMessageId: null,
     selectedRunId: null,
     selectedSpanId: null,
+    selectionSource: 'none',
     inspectRequest: null,
     activeSurface: 'chat',
     scrollMode: 'follow-live',
@@ -116,6 +132,10 @@ function ensureReconciliation(
   conversation.reconciliationByRunId[runId] ??= {
     status: 'idle',
     error: null,
+    activeRequestId: null,
+    durableLastSequence: null,
+    liveTruncatedThroughSequence: null,
+    eventsTruncated: false,
     conflicts: [],
   };
   return conversation.reconciliationByRunId[runId];
@@ -146,9 +166,7 @@ function upsertRunSummary(
   conversation: TrajectoryConversationState,
   run: TrajectoryRunSummary,
 ): void {
-  const index = conversation.runs.findIndex(existing => existing.run_id === run.run_id);
-  if (index === -1) conversation.runs.push(run);
-  else conversation.runs[index] = run;
+  conversation.runSummariesById[run.run_id] = run;
 }
 
 function touchSnapshotLru(
@@ -159,7 +177,13 @@ function touchSnapshotLru(
   conversation.snapshotLru.push(runId);
   while (conversation.snapshotLru.length > MAX_SNAPSHOT_CACHE_SIZE) {
     const evictedRunId = conversation.snapshotLru.shift();
-    if (evictedRunId) delete conversation.snapshotsByRunId[evictedRunId];
+    if (evictedRunId) {
+      delete conversation.snapshotsByRunId[evictedRunId];
+      const reconciliation = conversation.reconciliationByRunId[evictedRunId];
+      if (reconciliation && reconciliation.durableLastSequence !== null) {
+        reconciliation.eventsTruncated = true;
+      }
+    }
   }
 }
 
@@ -168,6 +192,38 @@ function normalizedSnapshotEvents(snapshot: TrajectorySnapshot): NormalizedTraje
     .map(record => normalizeTrajectoryRecord(snapshot.run.run_id, record))
     .filter((event): event is NormalizedTrajectoryEvent => event !== null)
     .sort((left, right) => left.sequence - right.sequence);
+}
+
+function trimLiveEvents(
+  conversation: TrajectoryConversationState,
+  runId: string,
+): void {
+  const liveEvents = conversation.liveEventsByRunId[runId] ?? [];
+  if (liveEvents.length <= MAX_EVENTS_PER_RUN) return;
+  const removed = liveEvents.splice(0, liveEvents.length - MAX_EVENTS_PER_RUN);
+  const reconciliation = ensureReconciliation(conversation, runId);
+  const removedThrough = removed.at(-1)?.sequence ?? null;
+  if (removedThrough !== null) {
+    reconciliation.liveTruncatedThroughSequence = Math.max(
+      reconciliation.liveTruncatedThroughSequence ?? -1,
+      removedThrough,
+    );
+  }
+  reconciliation.eventsTruncated = true;
+}
+
+function trimMergedEventWindow(
+  conversation: TrajectoryConversationState,
+  runId: string,
+): void {
+  const snapshot = conversation.snapshotsByRunId[runId];
+  if (!snapshot) return;
+  const liveCount = conversation.liveEventsByRunId[runId]?.length ?? 0;
+  const overflow = snapshot.events.length + liveCount - MAX_EVENTS_PER_RUN;
+  if (overflow <= 0) return;
+  snapshot.events.splice(0, Math.min(overflow, snapshot.events.length));
+  snapshot.truncated = true;
+  ensureReconciliation(conversation, runId).eventsTruncated = true;
 }
 
 function provisionalRun(event: NormalizedTrajectoryEvent): TrajectoryRunSummary {
@@ -193,54 +249,71 @@ const trajectorySlice = createSlice({
   name: 'trajectory',
   initialState,
   reducers: {
-    trajectoryRunListRequested(state, action: PayloadAction<{ conversationId: string }>) {
+    trajectoryRunListRequested(state, action: PayloadAction<{
+      conversationId: string;
+      requestId: string;
+    }>) {
       const conversation = ensureConversation(state, action.payload.conversationId);
       conversation.runListStatus = 'loading';
       conversation.runListError = null;
+      conversation.activeRunListRequestId = action.payload.requestId;
     },
     trajectoryRunListReceived(state, action: PayloadAction<{
       conversationId: string;
+      requestId: string;
       response: TrajectoryRunListResponse;
     }>) {
       const conversation = ensureConversation(state, action.payload.conversationId);
-      const durableRunIds = new Set(action.payload.response.items.map(run => run.run_id));
-      conversation.runs = [
-        ...action.payload.response.items,
-        ...conversation.runs.filter(run => !durableRunIds.has(run.run_id)),
-      ];
+      if (conversation.activeRunListRequestId !== action.payload.requestId) return;
+      conversation.runs = action.payload.response.items.slice(0, MAX_RUN_LIST_SIZE);
+      for (const run of conversation.runs) upsertRunSummary(conversation, run);
+      const durableRunIds = new Set(conversation.runs.map(run => run.run_id));
+      conversation.provisionalRunIds = conversation.provisionalRunIds
+        .filter(runId => !durableRunIds.has(runId));
       conversation.runListStatus = 'ready';
       conversation.runListError = null;
-      conversation.runsTruncated = action.payload.response.truncated;
+      conversation.activeRunListRequestId = null;
+      conversation.runsTruncated = action.payload.response.truncated
+        || action.payload.response.items.length > MAX_RUN_LIST_SIZE;
     },
     trajectoryRunListFailed(state, action: PayloadAction<{
       conversationId: string;
+      requestId: string;
       error: string;
     }>) {
       const conversation = ensureConversation(state, action.payload.conversationId);
+      if (conversation.activeRunListRequestId !== action.payload.requestId) return;
       conversation.runListStatus = 'failed';
       conversation.runListError = action.payload.error;
+      conversation.activeRunListRequestId = null;
     },
     trajectorySnapshotRequested(state, action: PayloadAction<{
       conversationId: string;
       runId: string;
+      requestId: string;
     }>) {
       const conversation = ensureConversation(state, action.payload.conversationId);
       const reconciliation = ensureReconciliation(conversation, action.payload.runId);
       if (reconciliation.status !== 'reconciling') reconciliation.status = 'loading';
       reconciliation.error = null;
+      reconciliation.activeRequestId = action.payload.requestId;
     },
     trajectorySnapshotReceived(state, action: PayloadAction<{
       conversationId: string;
+      requestId: string;
       snapshot: TrajectorySnapshot;
     }>) {
       const conversation = ensureConversation(state, action.payload.conversationId);
       const { snapshot } = action.payload;
       const runId = snapshot.run.run_id;
-      const events = normalizedSnapshotEvents(snapshot);
       const reconciliation = ensureReconciliation(conversation, runId);
+      if (reconciliation.activeRequestId !== action.payload.requestId) return;
+      const allEvents = normalizedSnapshotEvents(snapshot);
+      const durableLastSequence = allEvents.at(-1)?.sequence ?? null;
+      const events = allEvents.slice(-MAX_EVENTS_PER_RUN);
       const liveEvents = conversation.liveEventsByRunId[runId] ?? [];
-      const snapshotBySequence = new Map(events.map(event => [event.sequence, event]));
-      const maximumDurableSequence = events.at(-1)?.sequence ?? -1;
+      const snapshotBySequence = new Map(allEvents.map(event => [event.sequence, event]));
+      const maximumDurableSequence = durableLastSequence ?? -1;
 
       for (const liveEvent of liveEvents) {
         const durableEvent = snapshotBySequence.get(liveEvent.sequence);
@@ -262,23 +335,43 @@ const trajectorySlice = createSlice({
         run: snapshot.run,
         spans: snapshot.spans,
         completeness: snapshot.completeness,
-        truncated: snapshot.truncated,
+        truncated: snapshot.truncated || allEvents.length > MAX_EVENTS_PER_RUN,
+        durableLastSequence,
         events,
       };
       upsertRunSummary(conversation, snapshot.run);
+      conversation.provisionalRunIds = conversation.provisionalRunIds
+        .filter(existingRunId => existingRunId !== runId);
+      const durableRunStarted = allEvents.find(event => event.eventType === 'run_started');
+      if (conversation.selectedRunId === runId
+        && conversation.selectionSource === 'auto-live'
+        && durableRunStarted) {
+        conversation.selectedMessageId = typeof durableRunStarted.payload.message_id === 'string'
+          ? durableRunStarted.payload.message_id
+          : snapshot.run.message_id;
+        conversation.selectionSource = 'auto-snapshot';
+      }
       touchSnapshotLru(conversation, runId);
+      reconciliation.activeRequestId = null;
+      reconciliation.durableLastSequence = durableLastSequence;
+      reconciliation.liveTruncatedThroughSequence = null;
+      reconciliation.eventsTruncated = snapshot.truncated || allEvents.length > MAX_EVENTS_PER_RUN;
+      trimMergedEventWindow(conversation, runId);
       reconciliation.status = 'ready';
       reconciliation.error = null;
     },
     trajectorySnapshotFailed(state, action: PayloadAction<{
       conversationId: string;
       runId: string;
+      requestId: string;
       error: string;
     }>) {
       const conversation = ensureConversation(state, action.payload.conversationId);
       const reconciliation = ensureReconciliation(conversation, action.payload.runId);
+      if (reconciliation.activeRequestId !== action.payload.requestId) return;
       reconciliation.status = 'failed';
       reconciliation.error = action.payload.error;
+      reconciliation.activeRequestId = null;
     },
     touchTrajectorySnapshot(state, action: PayloadAction<{
       conversationId: string;
@@ -298,11 +391,14 @@ const trajectorySlice = createSlice({
       const reconciliation = ensureReconciliation(conversation, event.runId);
       const durableEvent = conversation.snapshotsByRunId[event.runId]?.events
         .find(existing => existing.sequence === event.sequence);
-      let retainedEvent = event;
+      const isCoveredByDurable = reconciliation.durableLastSequence !== null
+        && event.sequence <= reconciliation.durableLastSequence;
+      const isCoveredByTrimmedLive = reconciliation.liveTruncatedThroughSequence !== null
+        && event.sequence <= reconciliation.liveTruncatedThroughSequence;
+      let acceptedLive = false;
 
-      if (durableEvent) {
-        retainedEvent = durableEvent;
-        if (!eventsEqual(durableEvent, event)) {
+      if (isCoveredByDurable) {
+        if (durableEvent && !eventsEqual(durableEvent, event)) {
           recordConflict(reconciliation, {
             kind: 'snapshot-live',
             runId: event.runId,
@@ -312,15 +408,17 @@ const trajectorySlice = createSlice({
             incomingEvent: event,
           });
         }
-      } else {
+      } else if (!isCoveredByTrimmedLive) {
         const liveEvents = conversation.liveEventsByRunId[event.runId] ?? [];
         const existing = liveEvents.find(candidate => candidate.sequence === event.sequence);
         if (!existing) {
           liveEvents.push(event);
           liveEvents.sort((left, right) => left.sequence - right.sequence);
           conversation.liveEventsByRunId[event.runId] = liveEvents;
+          trimLiveEvents(conversation, event.runId);
+          trimMergedEventWindow(conversation, event.runId);
+          acceptedLive = true;
         } else {
-          retainedEvent = existing;
           if (!eventsEqual(existing, event)) {
             recordConflict(reconciliation, {
               kind: 'live-live',
@@ -334,17 +432,19 @@ const trajectorySlice = createSlice({
         }
       }
 
-      if (retainedEvent.eventType === 'run_started') {
-        if (!conversation.runs.some(run => run.run_id === retainedEvent.runId)) {
-          conversation.runs.push(provisionalRun(retainedEvent));
+      if (acceptedLive && event.eventType === 'run_started') {
+        if (!conversation.runSummariesById[event.runId]) {
+          upsertRunSummary(conversation, provisionalRun(event));
+          conversation.provisionalRunIds.push(event.runId);
         }
-        conversation.selectedMessageId = typeof retainedEvent.payload.message_id === 'string'
-          ? retainedEvent.payload.message_id
+        conversation.selectedMessageId = typeof event.payload.message_id === 'string'
+          ? event.payload.message_id
           : null;
-        conversation.selectedRunId = retainedEvent.runId;
+        conversation.selectedRunId = event.runId;
         conversation.selectedSpanId = null;
+        conversation.selectionSource = 'auto-live';
       }
-      if (TERMINAL_EVENT_TYPES.has(retainedEvent.eventType)) {
+      if (acceptedLive && TERMINAL_EVENT_TYPES.has(event.eventType)) {
         reconciliation.status = 'reconciling';
         reconciliation.error = null;
       }
@@ -374,6 +474,7 @@ const trajectorySlice = createSlice({
       conversation.selectedMessageId = action.payload.messageId;
       conversation.selectedRunId = action.payload.runId;
       conversation.selectedSpanId = action.payload.spanId;
+      conversation.selectionSource = 'manual';
     },
     requestTrajectoryInspect(state, action: PayloadAction<{
       conversationId: string;
@@ -392,6 +493,7 @@ const trajectorySlice = createSlice({
       conversation.selectedMessageId = action.payload.messageId;
       conversation.selectedRunId = action.payload.runId;
       conversation.selectedSpanId = action.payload.spanId;
+      conversation.selectionSource = 'inspect';
       conversation.activeSurface = 'trajectory';
       conversation.isInspectorOpen = true;
     },
@@ -432,19 +534,45 @@ export function selectTrajectoryRuns(
   state: TrajectoryRootState,
   conversationId: string,
 ): TrajectoryRunSummary[] {
-  return selectTrajectoryConversation(state, conversationId)?.runs ?? [];
+  const conversation = selectTrajectoryConversation(state, conversationId);
+  if (!conversation) return [];
+  const extraRunIds = [
+    conversation.selectedRunId,
+    ...conversation.provisionalRunIds,
+  ].filter((runId): runId is string => (
+    runId !== null && !conversation.runs.some(run => run.run_id === runId)
+  ));
+  const uniqueExtraRunIds = [...new Set(extraRunIds)];
+  return [
+    ...uniqueExtraRunIds
+      .map(runId => conversation.runSummariesById[runId])
+      .filter((run): run is TrajectoryRunSummary => run !== undefined),
+    ...conversation.runs,
+  ].slice(0, MAX_RUN_LIST_SIZE);
+}
+
+export function selectTrajectoryRunSummary(
+  state: TrajectoryRootState,
+  conversationId: string,
+  runId: string,
+): TrajectoryRunSummary | undefined {
+  return selectTrajectoryConversation(state, conversationId)?.runSummariesById[runId];
 }
 
 export function selectTrajectoryRunListRequest(
   state: TrajectoryRootState,
   conversationId: string,
-): Pick<TrajectoryConversationState, 'runListStatus' | 'runListError' | 'runsTruncated'> | undefined {
+): Pick<
+  TrajectoryConversationState,
+  'runListStatus' | 'runListError' | 'runsTruncated' | 'activeRunListRequestId'
+> | undefined {
   const conversation = selectTrajectoryConversation(state, conversationId);
   if (!conversation) return undefined;
   return {
     runListStatus: conversation.runListStatus,
     runListError: conversation.runListError,
     runsTruncated: conversation.runsTruncated,
+    activeRunListRequestId: conversation.activeRunListRequestId,
   };
 }
 
@@ -469,7 +597,7 @@ export function selectTrajectorySelection(
   conversationId: string,
 ): Pick<
   TrajectoryConversationState,
-  'selectedMessageId' | 'selectedRunId' | 'selectedSpanId'
+  'selectedMessageId' | 'selectedRunId' | 'selectedSpanId' | 'selectionSource'
 > | undefined {
   const conversation = selectTrajectoryConversation(state, conversationId);
   if (!conversation) return undefined;
@@ -477,6 +605,7 @@ export function selectTrajectorySelection(
     selectedMessageId: conversation.selectedMessageId,
     selectedRunId: conversation.selectedRunId,
     selectedSpanId: conversation.selectedSpanId,
+    selectionSource: conversation.selectionSource,
   };
 }
 
@@ -505,7 +634,9 @@ export function selectMergedTrajectoryEvents(
   const conversation = selectTrajectoryConversation(state, conversationId);
   const durableEvents = conversation?.snapshotsByRunId[runId]?.events ?? [];
   const liveEvents = conversation?.liveEventsByRunId[runId] ?? [];
-  return [...durableEvents, ...liveEvents].sort((left, right) => left.sequence - right.sequence);
+  return [...durableEvents, ...liveEvents]
+    .sort((left, right) => left.sequence - right.sequence)
+    .slice(-MAX_EVENTS_PER_RUN);
 }
 
 export const {
