@@ -37,6 +37,7 @@ function snapshot(
   overrides: Partial<TrajectorySnapshotCacheEntry> = {},
 ): TrajectorySnapshotCacheEntry {
   return {
+    snapshotRequestId: 'snapshot-a',
     run: {
       run_id: 'run-a',
       message_id: 'assistant-a',

@@ -7,6 +7,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import trajectoryReducer, {
   consumeTrajectoryInspectRequest,
   requestTrajectoryInspect,
+  trajectorySnapshotReceived,
+  trajectorySnapshotRequested,
 } from '@/redux/slices/trajectorySlice';
 import type { Message } from '@/types/conversation';
 import type { TrajectoryRunSummary, TrajectorySnapshot } from '@/types/trajectory';
@@ -18,7 +20,7 @@ const {
   getTrajectorySnapshotMock,
   latestLedgerTarget,
 } = vi.hoisted(() => ({
-  capturedLedgerCallbacks: new Map<string, () => void>(),
+  capturedLedgerCallbacks: new Map<string, Array<{ cellKey: string; callback: () => void }>>(),
   getTrajectoryRunsMock: vi.fn(),
   getTrajectorySnapshotMock: vi.fn(),
   latestLedgerTarget: { current: null as string | null },
@@ -42,7 +44,14 @@ vi.mock('./TrajectoryLedger', async () => {
         const index = props.cells.findIndex(cell => cell.key === target.cellKey);
         const cell = props.cells[index];
         if (index >= 0 && cell) {
-          capturedLedgerCallbacks.set(target.requestId, () => callback(target, index, cell));
+          const captured = capturedLedgerCallbacks.get(target.requestId) ?? [];
+          if (!captured.some(item => item.cellKey === target.cellKey)) {
+            captured.push({
+              cellKey: target.cellKey,
+              callback: () => callback(target, index, cell),
+            });
+            capturedLedgerCallbacks.set(target.requestId, captured);
+          }
         }
       }
       return ReactModule.createElement(actual.TrajectoryLedger, {
@@ -170,6 +179,15 @@ const messages: Message[] = [
   },
 ];
 
+function capturedCallback(requestId: string, cellKey?: string): () => void {
+  const captured = capturedLedgerCallbacks.get(requestId) ?? [];
+  const entry = cellKey
+    ? captured.find(item => item.cellKey === cellKey)
+    : captured[0];
+  if (!entry) throw new Error(`必须捕获 ${requestId} 的 Ledger callback`);
+  return entry.callback;
+}
+
 describe('TrajectoryTabView stale inspect callback', () => {
   beforeEach(() => {
     capturedLedgerCallbacks.clear();
@@ -200,8 +218,7 @@ describe('TrajectoryTabView stale inspect callback', () => {
     );
 
     await waitFor(() => expect(capturedLedgerCallbacks.has('inspect-a-fallback')).toBe(true));
-    const staleCallback = capturedLedgerCallbacks.get('inspect-a-fallback');
-    if (!staleCallback) throw new Error('必须捕获旧 A Ledger callback');
+    const staleCallback = capturedCallback('inspect-a-fallback');
     fireEvent.click(await screen.findByRole('button', { name: /运行 2，已完成/ }));
     await waitFor(() => expect(store.getState().trajectory.byConversationId['chat-a']).toMatchObject({
       selectedRunId: 'run-b',
@@ -245,8 +262,7 @@ describe('TrajectoryTabView stale inspect callback', () => {
     );
 
     await waitFor(() => expect(capturedLedgerCallbacks.has('inspect-a-success')).toBe(true));
-    const staleCallback = capturedLedgerCallbacks.get('inspect-a-success');
-    if (!staleCallback) throw new Error('必须捕获旧 A Ledger callback');
+    const staleCallback = capturedCallback('inspect-a-success');
     act(() => {
       store.dispatch(requestTrajectoryInspect({
         conversationId: 'chat-a',
@@ -276,5 +292,68 @@ describe('TrajectoryTabView stale inspect callback', () => {
     expect(screen.getAllByRole('option', { name: /搜索.*工具调用.*完成/ }).map(option => (
       option.getAttribute('data-highlighted')
     ))).toEqual(['false']);
+  });
+
+  it('同 request/run 的 S2 覆盖 S1 后旧 fallback callback 不消费请求，S2 继续正确定位', async () => {
+    const store = createStore();
+    const runA = runSummary('run-a', 0);
+    getTrajectoryRunsMock.mockResolvedValue({ items: [runA], truncated: false });
+    getTrajectorySnapshotMock.mockResolvedValue(snapshot(runA, false));
+    store.dispatch(requestTrajectoryInspect({
+      conversationId: 'chat-a',
+      requestId: 'inspect-same-run',
+      messageId: 'assistant-1',
+      runId: 'run-a',
+      spanId: 'span-tool',
+    }));
+
+    render(
+      <TrajectoryTabView conversationId="chat-a" messages={messages} />,
+      { wrapper: wrapper(store) },
+    );
+
+    await waitFor(() => expect(
+      capturedLedgerCallbacks.get('inspect-same-run')?.some(item => item.cellKey === 'run:run-a'),
+    ).toBe(true));
+    const staleS1Fallback = capturedCallback('inspect-same-run', 'run:run-a');
+
+    act(() => {
+      store.dispatch(trajectorySnapshotRequested({
+        conversationId: 'chat-a',
+        runId: 'run-a',
+        requestId: 'snapshot-s2',
+        purpose: 'reconcile',
+      }));
+      store.dispatch(trajectorySnapshotReceived({
+        conversationId: 'chat-a',
+        requestId: 'snapshot-s2',
+        snapshot: snapshot(runA),
+      }));
+    });
+    await waitFor(() => expect(
+      capturedLedgerCallbacks.get('inspect-same-run')?.some(item => item.cellKey !== 'run:run-a'),
+    ).toBe(true));
+    const s2Resolution = capturedLedgerCallbacks.get('inspect-same-run')
+      ?.find(item => item.cellKey !== 'run:run-a');
+    if (!s2Resolution) throw new Error('必须捕获 S2 span Ledger callback');
+
+    act(() => staleS1Fallback());
+
+    expect(store.getState().trajectory.byConversationId['chat-a']).toMatchObject({
+      selectedRunId: 'run-a',
+      selectedSpanId: 'span-tool',
+      selectionSource: 'inspect',
+      inspectRequest: expect.objectContaining({ requestId: 'inspect-same-run' }),
+    });
+    expect(screen.queryByText('该节点不在当前有界快照中')).toBeNull();
+    expect(screen.getByRole('option', { name: /第 1 次执行/ }))
+      .toHaveAttribute('data-highlighted', 'false');
+
+    act(() => s2Resolution.callback());
+
+    expect(store.getState().trajectory.byConversationId['chat-a'].inspectRequest).toBeNull();
+    const target = screen.getByRole('option', { name: /搜索.*工具调用.*完成/ });
+    expect(target).toHaveAttribute('data-highlighted', 'true');
+    expect(screen.queryByText('该节点不在当前有界快照中')).toBeNull();
   });
 });

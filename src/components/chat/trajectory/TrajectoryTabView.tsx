@@ -16,6 +16,7 @@ import {
   selectTrajectoryTarget,
   setTrajectoryInspectorOpen,
   setTrajectoryScrollMode,
+  type TrajectorySnapshotResultIdentity,
   type TrajectoryState,
 } from '@/redux/slices/trajectorySlice';
 import type { Message } from '@/types/conversation';
@@ -35,7 +36,7 @@ export interface TrajectoryTabViewProps {
 interface InspectResolution {
   target: TrajectoryInspectTarget;
   runId: string;
-  snapshotRunId: string | null;
+  resultIdentity: TrajectorySnapshotResultIdentity;
   fallback: boolean;
 }
 
@@ -182,11 +183,12 @@ export function TrajectoryTabView({
     if (!trajectory.snapshot) {
       const terminalHydrationState = trajectory.reconciliation?.status === 'failed'
         || trajectory.reconciliation?.status === 'unavailable';
-      if (!terminalHydrationState) return null;
+      const terminalResultRequestId = trajectory.reconciliation?.terminalResultRequestId;
+      if (!terminalHydrationState || !terminalResultRequestId) return null;
       return {
         target: { requestId: request.requestId, cellKey: fallbackRun.key },
         runId: request.runId,
-        snapshotRunId: null,
+        resultIdentity: { kind: 'terminal', requestId: terminalResultRequestId },
         fallback: true,
       };
     }
@@ -195,7 +197,10 @@ export function TrajectoryTabView({
       return {
         target: { requestId: request.requestId, cellKey: fallbackRun.key },
         runId: request.runId,
-        snapshotRunId: trajectory.snapshot.run.run_id,
+        resultIdentity: {
+          kind: 'snapshot',
+          requestId: trajectory.snapshot.snapshotRequestId,
+        },
         fallback: false,
       };
     }
@@ -205,13 +210,17 @@ export function TrajectoryTabView({
     return {
       target: { requestId: request.requestId, cellKey: targetCell?.key ?? fallbackRun.key },
       runId: request.runId,
-      snapshotRunId: trajectory.snapshot.run.run_id,
+      resultIdentity: {
+        kind: 'snapshot',
+        requestId: trajectory.snapshot.snapshotRequestId,
+      },
       fallback: targetCell === null,
     };
   }, [
     cells,
     trajectory.inspectRequest,
     trajectory.reconciliation?.status,
+    trajectory.reconciliation?.terminalResultRequestId,
     trajectory.selectedRunId,
     trajectory.selectionSource,
     trajectory.snapshot,
@@ -281,12 +290,13 @@ export function TrajectoryTabView({
       || current.selectedRunId !== resolution.runId
     ) return;
     const currentSnapshot = current.snapshotsByRunId[resolution.runId];
-    if (resolution.snapshotRunId !== null) {
-      if (currentSnapshot?.run.run_id !== resolution.snapshotRunId) return;
+    if (resolution.resultIdentity.kind === 'snapshot') {
+      if (currentSnapshot?.snapshotRequestId !== resolution.resultIdentity.requestId) return;
     } else {
       const reconciliation = current.reconciliationByRunId[resolution.runId];
       if (
         currentSnapshot
+        || reconciliation?.terminalResultRequestId !== resolution.resultIdentity.requestId
         || (reconciliation?.status !== 'failed' && reconciliation?.status !== 'unavailable')
       ) return;
     }
@@ -295,7 +305,7 @@ export function TrajectoryTabView({
       conversationId,
       requestId: target.requestId,
       runId: resolution.runId,
-      snapshotRunId: resolution.snapshotRunId,
+      resultIdentity: resolution.resultIdentity,
       fallback: resolution.fallback,
     }));
     const resolved = selectTrajectoryConversation(store.getState(), conversationId);

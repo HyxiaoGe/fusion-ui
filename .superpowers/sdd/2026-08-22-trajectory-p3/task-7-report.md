@@ -90,3 +90,26 @@
 - 目标 ESLint：本轮相关源/测试文件退出码 0，仅仓库既有 `.eslintignore` 迁移 warning。
 - TypeScript：`npx tsc --noEmit --pretty false` 仍由仓库既有基线错误阻断；本轮生产与新增 stale callback/slice 测试文件未新增类型错误，page 测试仍是已披露的 4 处 `ContentBlock` fixture 错误。
 - `git diff --check` 退出码 0；未启动服务或浏览器，未触碰 Task 8 timeline/action policy，未推送或发布。
+
+## Review fix round 3（2026-08-23）
+
+### 修复
+
+- `TrajectorySnapshotCacheEntry` 新增必填 `snapshotRequestId`，每次成功的 `trajectorySnapshotReceived` 都保存真正写入 cache 的唯一请求身份；同一 run 后续 S2 覆盖 S1 时，实例身份随之变化。
+- `TrajectoryReconciliationState` 新增 `terminalResultRequestId`。failed/unavailable 保存对应 terminal requestId；新 requested 立即清除旧 terminal identity，success 也清除，cancelled 不恢复旧结果，因此 retry/loading/新 terminal result 都会使旧无快照 fallback 失效。
+- inspect resolution 改为捕获 discriminated `resultIdentity`（`snapshot` 或 `terminal`）。组件执行时最新 store 门禁与 `resolveTrajectoryInspectRequest` 原子 reducer 都比较 request 实例 identity，不再把 run id 充当 snapshot identity。
+
+### RED / GREEN
+
+1. 组件 RED：同一个 inspect request/run 先从缺 span 的 S1 捕获 fallback callback，再以 `snapshot-s2` 写入含目标 span 的 S2；旧实现执行 S1 callback 后错误 consume request、清空 span 并回退。实例 identity 门禁后旧 callback 完全 no-op，pending request 与 S2 span selection 保持，随后捕获的 S2 callback 正确定位并完成 request。
+2. slice RED：第一次 failed result 没有 terminal identity。新增字段后，`snapshot-failed-1` 可被识别；retry requested 将其置空，第二次 failure 写入 `snapshot-failed-2`，旧 result action 在 loading 和新 failure 后均引用级 no-op，仅最新 terminal identity 能原子完成 inspect。
+3. 类型传播：为 projection/consistency 的强类型 snapshot fixtures 补齐 request identity；全仓 TypeScript 输出恢复为原有基线，不含本轮新增类型错误。
+
+### 最终验证
+
+- Tab + slice + hook 聚焦：4 files、52 tests passed，退出码 0。
+- Task 7 聚焦：19 files、293 tests passed，退出码 0。
+- 全量：193 files、2141 tests passed，退出码 0。
+- 目标 ESLint：本轮 6 个相关源/测试文件退出码 0，仅仓库既有 `.eslintignore` 迁移 warning。
+- TypeScript：`npx tsc --noEmit --pretty false` 仍由仓库既有基线错误阻断；本轮新增的 snapshot identity 生产/测试文件无新增错误。
+- `git diff --check` 退出码 0；未启动服务或浏览器，未触碰 Task 8 timeline/action policy，未推送或发布。

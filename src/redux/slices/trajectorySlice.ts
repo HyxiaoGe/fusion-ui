@@ -46,6 +46,7 @@ export interface TrajectoryReconciliationState {
   error: string | null;
   activeRequestId: string | null;
   activeRequestPurpose: TrajectorySnapshotRequestPurpose | null;
+  terminalResultRequestId: string | null;
   durableLastSequence: number | null;
   liveTruncatedThroughSequence: number | null;
   eventsTruncated: boolean;
@@ -53,6 +54,7 @@ export interface TrajectoryReconciliationState {
 }
 
 export interface TrajectorySnapshotCacheEntry {
+  snapshotRequestId: string;
   run: TrajectorySnapshot['run'];
   spans: TrajectorySnapshot['spans'];
   completeness: TrajectorySnapshot['completeness'];
@@ -67,6 +69,10 @@ export interface TrajectoryInspectRequest {
   runId: string;
   spanId: string | null;
 }
+
+export type TrajectorySnapshotResultIdentity =
+  | { kind: 'snapshot'; requestId: string }
+  | { kind: 'terminal'; requestId: string };
 
 export interface TrajectoryConversationState {
   runs: TrajectoryRunSummary[];
@@ -141,6 +147,7 @@ function ensureReconciliation(
     error: null,
     activeRequestId: null,
     activeRequestPurpose: null,
+    terminalResultRequestId: null,
     durableLastSequence: null,
     liveTruncatedThroughSequence: null,
     eventsTruncated: false,
@@ -377,6 +384,7 @@ const trajectorySlice = createSlice({
       reconciliation.error = null;
       reconciliation.activeRequestId = action.payload.requestId;
       reconciliation.activeRequestPurpose = purpose;
+      reconciliation.terminalResultRequestId = null;
     },
     trajectorySnapshotReceived(state, action: PayloadAction<{
       conversationId: string;
@@ -415,6 +423,7 @@ const trajectorySlice = createSlice({
       conversation.liveEventsByRunId[runId] = liveEvents
         .filter(event => event.sequence > maximumDurableSequence);
       conversation.snapshotsByRunId[runId] = {
+        snapshotRequestId: action.payload.requestId,
         run: snapshot.run,
         spans: snapshot.spans,
         completeness: snapshot.completeness,
@@ -443,6 +452,7 @@ const trajectorySlice = createSlice({
       trimMergedEventWindow(conversation, runId);
       reconciliation.status = terminalArrivedDuringHydration ? 'reconciling' : 'ready';
       reconciliation.error = null;
+      reconciliation.terminalResultRequestId = null;
     },
     trajectorySnapshotFailed(state, action: PayloadAction<{
       conversationId: string;
@@ -457,6 +467,7 @@ const trajectorySlice = createSlice({
       reconciliation.error = action.payload.error;
       reconciliation.activeRequestId = null;
       reconciliation.activeRequestPurpose = null;
+      reconciliation.terminalResultRequestId = action.payload.requestId;
     },
     trajectorySnapshotUnavailable(state, action: PayloadAction<{
       conversationId: string;
@@ -473,6 +484,7 @@ const trajectorySlice = createSlice({
       reconciliation.error = null;
       reconciliation.activeRequestId = null;
       reconciliation.activeRequestPurpose = null;
+      reconciliation.terminalResultRequestId = action.payload.requestId;
     },
     trajectorySnapshotCancelled(state, action: PayloadAction<{
       conversationId: string;
@@ -632,7 +644,7 @@ const trajectorySlice = createSlice({
       conversationId: string;
       requestId: string;
       runId: string;
-      snapshotRunId: string | null;
+      resultIdentity: TrajectorySnapshotResultIdentity;
       fallback: boolean;
     }>) {
       const conversation = state.byConversationId[action.payload.conversationId];
@@ -646,15 +658,13 @@ const trajectorySlice = createSlice({
       ) return;
 
       const snapshot = conversation.snapshotsByRunId[action.payload.runId];
-      if (action.payload.snapshotRunId !== null) {
-        if (
-          action.payload.snapshotRunId !== action.payload.runId
-          || snapshot?.run.run_id !== action.payload.snapshotRunId
-        ) return;
+      if (action.payload.resultIdentity.kind === 'snapshot') {
+        if (snapshot?.snapshotRequestId !== action.payload.resultIdentity.requestId) return;
       } else {
         const reconciliation = conversation.reconciliationByRunId[action.payload.runId];
         if (
           snapshot
+          || reconciliation?.terminalResultRequestId !== action.payload.resultIdentity.requestId
           || (reconciliation?.status !== 'failed' && reconciliation?.status !== 'unavailable')
         ) return;
       }

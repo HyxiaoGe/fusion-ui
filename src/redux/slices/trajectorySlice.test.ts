@@ -362,7 +362,7 @@ describe('trajectorySlice', () => {
       conversationId: 'conversation-a',
       requestId: 'inspect-a',
       runId: 'run-a',
-      snapshotRunId: 'run-a',
+      resultIdentity: { kind: 'snapshot', requestId: 'snapshot-a' },
       fallback: true,
     }));
     expect(state.byConversationId['conversation-a']).toMatchObject({
@@ -385,10 +385,80 @@ describe('trajectorySlice', () => {
       conversationId: 'conversation-a',
       requestId: 'inspect-a',
       runId: 'run-a',
-      snapshotRunId: 'run-a',
+      resultIdentity: { kind: 'snapshot', requestId: 'snapshot-a' },
       fallback: true,
     }));
     expect(state).toBe(beforeStaleResolution);
+  });
+
+  it('无快照 terminal result identity 会被 retry 失效，并只允许最新失败完成 inspect', () => {
+    let state = reducer(undefined, requestTrajectoryInspect({
+      conversationId: 'conversation-a',
+      requestId: 'inspect-a',
+      messageId: 'message-run-a',
+      runId: 'run-a',
+      spanId: 'span-missing',
+    }));
+    state = reducer(state, trajectorySnapshotRequested({
+      conversationId: 'conversation-a',
+      runId: 'run-a',
+      requestId: 'snapshot-failed-1',
+    }));
+    state = reducer(state, trajectorySnapshotFailed({
+      conversationId: 'conversation-a',
+      runId: 'run-a',
+      requestId: 'snapshot-failed-1',
+      error: '第一次失败',
+    }));
+    expect(state.byConversationId['conversation-a'].reconciliationByRunId['run-a'])
+      .toMatchObject({ status: 'failed', terminalResultRequestId: 'snapshot-failed-1' });
+
+    state = reducer(state, trajectorySnapshotRequested({
+      conversationId: 'conversation-a',
+      runId: 'run-a',
+      requestId: 'snapshot-failed-2',
+    }));
+    expect(state.byConversationId['conversation-a'].reconciliationByRunId['run-a'])
+      .toMatchObject({ status: 'loading', terminalResultRequestId: null });
+    const duringRetry = state;
+    state = reducer(state, resolveTrajectoryInspectRequest({
+      conversationId: 'conversation-a',
+      requestId: 'inspect-a',
+      runId: 'run-a',
+      resultIdentity: { kind: 'terminal', requestId: 'snapshot-failed-1' },
+      fallback: true,
+    }));
+    expect(state).toBe(duringRetry);
+
+    state = reducer(state, trajectorySnapshotFailed({
+      conversationId: 'conversation-a',
+      runId: 'run-a',
+      requestId: 'snapshot-failed-2',
+      error: '第二次失败',
+    }));
+    const afterNewFailure = state;
+    state = reducer(state, resolveTrajectoryInspectRequest({
+      conversationId: 'conversation-a',
+      requestId: 'inspect-a',
+      runId: 'run-a',
+      resultIdentity: { kind: 'terminal', requestId: 'snapshot-failed-1' },
+      fallback: true,
+    }));
+    expect(state).toBe(afterNewFailure);
+
+    state = reducer(state, resolveTrajectoryInspectRequest({
+      conversationId: 'conversation-a',
+      requestId: 'inspect-a',
+      runId: 'run-a',
+      resultIdentity: { kind: 'terminal', requestId: 'snapshot-failed-2' },
+      fallback: true,
+    }));
+    expect(state.byConversationId['conversation-a']).toMatchObject({
+      selectedRunId: 'run-a',
+      selectedSpanId: null,
+      selectionSource: 'inspect',
+      inspectRequest: null,
+    });
   });
 
   it('按 sequence 排序并幂等合并 live，且同 key 异内容保留首值并记录冲突', () => {

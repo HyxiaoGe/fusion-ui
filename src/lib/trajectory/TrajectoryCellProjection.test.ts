@@ -264,6 +264,7 @@ describe('TrajectoryCellProjection', () => {
       selectedRunId: 'selected',
       snapshotsByRunId: {
         selected: {
+          snapshotRequestId: 'snapshot-selected',
           run: selected,
           spans: [{
             span_id: 'run:selected',
@@ -295,6 +296,7 @@ describe('TrajectoryCellProjection', () => {
           events: durableEvents,
         },
         other: {
+          snapshotRequestId: 'snapshot-other',
           run: other,
           spans: [],
           completeness: {
@@ -421,6 +423,7 @@ describe('TrajectoryCellProjection', () => {
       runSummariesById: { legacy, degraded },
       snapshotsByRunId: {
         legacy: {
+          snapshotRequestId: 'snapshot-legacy',
           run: legacy,
           spans: [],
           completeness: {
@@ -437,6 +440,7 @@ describe('TrajectoryCellProjection', () => {
           events: [event('legacy', 0, 'run_started', { schemaVersion: 0 })],
         },
         degraded: {
+          snapshotRequestId: 'snapshot-degraded',
           run: degraded,
           spans: [],
           completeness: {
@@ -520,6 +524,7 @@ describe('TrajectoryCellProjection', () => {
       runSummariesById: { unhydrated, hydrated, truncated },
       snapshotsByRunId: {
         'legacy-hydrated': {
+          snapshotRequestId: 'snapshot-legacy-hydrated',
           run: hydrated,
           spans: [],
           completeness: legacyCompleteness,
@@ -528,6 +533,7 @@ describe('TrajectoryCellProjection', () => {
           events: [],
         },
         'legacy-truncated': {
+          snapshotRequestId: 'snapshot-legacy-truncated',
           run: truncated,
           spans: [],
           completeness: legacyCompleteness,
@@ -628,6 +634,7 @@ describe('TrajectoryCellProjection', () => {
       selectedRunId: 'missing-tool-id',
       snapshotsByRunId: {
         'missing-tool-id': {
+          snapshotRequestId: 'snapshot-missing-tool-id',
           run,
           spans: [],
           completeness: {
@@ -673,6 +680,7 @@ describe('TrajectoryCellProjection', () => {
       selectedRunId: 'benchmark',
       snapshotsByRunId: {
         benchmark: {
+          snapshotRequestId: 'snapshot-benchmark',
           run,
           spans: [],
           completeness: {
