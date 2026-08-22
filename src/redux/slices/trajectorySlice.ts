@@ -596,6 +596,7 @@ const trajectorySlice = createSlice({
       conversation.selectedRunId = action.payload.runId;
       conversation.selectedSpanId = action.payload.spanId;
       conversation.selectionSource = 'manual';
+      conversation.inspectRequest = null;
     },
     requestTrajectoryInspect(state, action: PayloadAction<{
       conversationId: string;
@@ -626,6 +627,43 @@ const trajectorySlice = createSlice({
       if (conversation?.inspectRequest?.requestId === action.payload.requestId) {
         conversation.inspectRequest = null;
       }
+    },
+    resolveTrajectoryInspectRequest(state, action: PayloadAction<{
+      conversationId: string;
+      requestId: string;
+      runId: string;
+      snapshotRunId: string | null;
+      fallback: boolean;
+    }>) {
+      const conversation = state.byConversationId[action.payload.conversationId];
+      if (!conversation) return;
+      const request = conversation.inspectRequest;
+      if (
+        request?.requestId !== action.payload.requestId
+        || request.runId !== action.payload.runId
+        || conversation.selectionSource !== 'inspect'
+        || conversation.selectedRunId !== action.payload.runId
+      ) return;
+
+      const snapshot = conversation.snapshotsByRunId[action.payload.runId];
+      if (action.payload.snapshotRunId !== null) {
+        if (
+          action.payload.snapshotRunId !== action.payload.runId
+          || snapshot?.run.run_id !== action.payload.snapshotRunId
+        ) return;
+      } else {
+        const reconciliation = conversation.reconciliationByRunId[action.payload.runId];
+        if (
+          snapshot
+          || (reconciliation?.status !== 'failed' && reconciliation?.status !== 'unavailable')
+        ) return;
+      }
+
+      if (action.payload.fallback) {
+        conversation.selectedMessageId = request.messageId;
+        conversation.selectedSpanId = null;
+      }
+      conversation.inspectRequest = null;
     },
     setTrajectoryScrollMode(state, action: PayloadAction<{
       conversationId: string;
@@ -765,6 +803,7 @@ export const {
   markTrajectoryRunReconciliation,
   mergeLiveTrajectoryEvent,
   requestTrajectoryInspect,
+  resolveTrajectoryInspectRequest,
   selectTrajectoryTarget,
   setTrajectoryActiveSurface,
   setTrajectoryInspectorOpen,

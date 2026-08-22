@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useStore } from 'react-redux';
 import { AlertTriangle, Loader2, MessageSquareText, RefreshCw } from 'lucide-react';
 
 import { useConversationTrajectory } from '@/hooks/useConversationTrajectory';
@@ -10,10 +11,12 @@ import {
 } from '@/lib/trajectory/TrajectoryCellProjection';
 import { useAppDispatch } from '@/redux/hooks';
 import {
-  consumeTrajectoryInspectRequest,
+  resolveTrajectoryInspectRequest,
+  selectTrajectoryConversation,
   selectTrajectoryTarget,
   setTrajectoryInspectorOpen,
   setTrajectoryScrollMode,
+  type TrajectoryState,
 } from '@/redux/slices/trajectorySlice';
 import type { Message } from '@/types/conversation';
 import type { TrajectoryRunSummary, TrajectorySpan } from '@/types/trajectory';
@@ -31,6 +34,8 @@ export interface TrajectoryTabViewProps {
 
 interface InspectResolution {
   target: TrajectoryInspectTarget;
+  runId: string;
+  snapshotRunId: string | null;
   fallback: boolean;
 }
 
@@ -118,6 +123,7 @@ export function TrajectoryTabView({
   onRevealInChat,
 }: TrajectoryTabViewProps) {
   const dispatch = useAppDispatch();
+  const store = useStore<{ trajectory: TrajectoryState }>();
   const trajectory = useConversationTrajectory(conversationId);
   const [inspectFeedback, setInspectFeedback] = useState<InspectFeedback | null>(null);
   const projection = useMemo(() => projectTrajectoryCells({
@@ -179,6 +185,8 @@ export function TrajectoryTabView({
       if (!terminalHydrationState) return null;
       return {
         target: { requestId: request.requestId, cellKey: fallbackRun.key },
+        runId: request.runId,
+        snapshotRunId: null,
         fallback: true,
       };
     }
@@ -186,6 +194,8 @@ export function TrajectoryTabView({
     if (!request.spanId) {
       return {
         target: { requestId: request.requestId, cellKey: fallbackRun.key },
+        runId: request.runId,
+        snapshotRunId: trajectory.snapshot.run.run_id,
         fallback: false,
       };
     }
@@ -194,6 +204,8 @@ export function TrajectoryTabView({
     const targetCell = cellForSpan(cells, span, request.runId);
     return {
       target: { requestId: request.requestId, cellKey: targetCell?.key ?? fallbackRun.key },
+      runId: request.runId,
+      snapshotRunId: trajectory.snapshot.run.run_id,
       fallback: targetCell === null,
     };
   }, [
@@ -205,19 +217,13 @@ export function TrajectoryTabView({
     trajectory.snapshot,
   ]);
 
-  const cancelPendingInspect = useCallback(() => {
-    const request = trajectory.inspectRequest;
+  const clearInspectFeedback = useCallback(() => {
     setInspectFeedback(null);
-    if (!request) return;
-    dispatch(consumeTrajectoryInspectRequest({
-      conversationId,
-      requestId: request.requestId,
-    }));
-  }, [conversationId, dispatch, trajectory.inspectRequest]);
+  }, []);
 
   const handleSelectCell = useCallback((cell: TrajectoryCell) => {
     const span = spanForCell(cell, trajectory.snapshot?.spans ?? []);
-    cancelPendingInspect();
+    clearInspectFeedback();
     dispatch(selectTrajectoryTarget({
       conversationId,
       messageId: cell.assistantMessageId ?? cell.userMessageId,
@@ -225,23 +231,23 @@ export function TrajectoryTabView({
       spanId: span?.span_id ?? null,
     }));
     dispatch(setTrajectoryInspectorOpen({ conversationId, isOpen: true }));
-  }, [cancelPendingInspect, conversationId, dispatch, trajectory.snapshot?.spans]);
+  }, [clearInspectFeedback, conversationId, dispatch, trajectory.snapshot?.spans]);
 
   const handleSelectRun = useCallback((run: TrajectoryRunSummary) => {
-    cancelPendingInspect();
+    clearInspectFeedback();
     dispatch(selectTrajectoryTarget({
       conversationId,
       messageId: run.message_id,
       runId: run.run_id,
       spanId: null,
     }));
-  }, [cancelPendingInspect, conversationId, dispatch]);
+  }, [clearInspectFeedback, conversationId, dispatch]);
 
   const handleSelectSpan = useCallback((span: TrajectorySpan) => {
     const run = trajectory.selectedRunId
       ? trajectory.runSummariesById[trajectory.selectedRunId]
       : undefined;
-    cancelPendingInspect();
+    clearInspectFeedback();
     dispatch(selectTrajectoryTarget({
       conversationId,
       messageId: run?.message_id ?? trajectory.selectedMessageId,
@@ -251,52 +257,63 @@ export function TrajectoryTabView({
     dispatch(setTrajectoryInspectorOpen({ conversationId, isOpen: true }));
   }, [
     conversationId,
-    cancelPendingInspect,
+    clearInspectFeedback,
     dispatch,
     trajectory.runSummariesById,
     trajectory.selectedMessageId,
     trajectory.selectedRunId,
   ]);
 
-  const handleInspectResolved = useCallback(() => {
-    const request = trajectory.inspectRequest;
-    if (!request || !inspectResolution) return;
+  const handleInspectResolved = useCallback((target: TrajectoryInspectTarget) => {
+    const resolution = inspectResolution;
+    if (!resolution) return;
     if (
-      request.requestId !== inspectResolution.target.requestId
-      || trajectory.selectionSource !== 'inspect'
-      || trajectory.selectedRunId !== request.runId
+      target.requestId !== resolution.target.requestId
+      || target.cellKey !== resolution.target.cellKey
     ) return;
-    const terminalWithoutSnapshot = !trajectory.snapshot
-      && (trajectory.reconciliation?.status === 'failed'
-        || trajectory.reconciliation?.status === 'unavailable');
-    if (trajectory.snapshot?.run.run_id !== request.runId && !terminalWithoutSnapshot) return;
 
-    setInspectFeedback({
-      requestId: request.requestId,
-      notice: inspectResolution.fallback ? '该节点不在当前有界快照中' : null,
-      highlight: inspectResolution.target,
-    });
-    if (inspectResolution.fallback) {
-      dispatch(selectTrajectoryTarget({
-        conversationId,
-        messageId: request.messageId,
-        runId: request.runId,
-        spanId: null,
-      }));
+    const current = selectTrajectoryConversation(store.getState(), conversationId);
+    const request = current?.inspectRequest;
+    if (
+      request?.requestId !== target.requestId
+      || request.runId !== resolution.runId
+      || current?.selectionSource !== 'inspect'
+      || current.selectedRunId !== resolution.runId
+    ) return;
+    const currentSnapshot = current.snapshotsByRunId[resolution.runId];
+    if (resolution.snapshotRunId !== null) {
+      if (currentSnapshot?.run.run_id !== resolution.snapshotRunId) return;
+    } else {
+      const reconciliation = current.reconciliationByRunId[resolution.runId];
+      if (
+        currentSnapshot
+        || (reconciliation?.status !== 'failed' && reconciliation?.status !== 'unavailable')
+      ) return;
     }
-    dispatch(consumeTrajectoryInspectRequest({
+
+    dispatch(resolveTrajectoryInspectRequest({
       conversationId,
-      requestId: request.requestId,
+      requestId: target.requestId,
+      runId: resolution.runId,
+      snapshotRunId: resolution.snapshotRunId,
+      fallback: resolution.fallback,
     }));
+    const resolved = selectTrajectoryConversation(store.getState(), conversationId);
+    if (
+      resolved?.inspectRequest !== null
+      || resolved?.selectedRunId !== resolution.runId
+      || resolved.selectionSource !== 'inspect'
+    ) return;
+    setInspectFeedback({
+      requestId: target.requestId,
+      notice: resolution.fallback ? '该节点不在当前有界快照中' : null,
+      highlight: resolution.target,
+    });
   }, [
     conversationId,
     dispatch,
     inspectResolution,
-    trajectory.inspectRequest,
-    trajectory.reconciliation?.status,
-    trajectory.selectedRunId,
-    trajectory.selectionSource,
-    trajectory.snapshot,
+    store,
   ]);
 
   const revealMessageId = selectedCell?.assistantMessageId

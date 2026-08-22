@@ -1,0 +1,280 @@
+import React from 'react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { configureStore } from '@reduxjs/toolkit';
+import { Provider } from 'react-redux';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+import trajectoryReducer, {
+  consumeTrajectoryInspectRequest,
+  requestTrajectoryInspect,
+} from '@/redux/slices/trajectorySlice';
+import type { Message } from '@/types/conversation';
+import type { TrajectoryRunSummary, TrajectorySnapshot } from '@/types/trajectory';
+import type { TrajectoryLedgerProps } from './TrajectoryLedger';
+
+const {
+  capturedLedgerCallbacks,
+  getTrajectoryRunsMock,
+  getTrajectorySnapshotMock,
+  latestLedgerTarget,
+} = vi.hoisted(() => ({
+  capturedLedgerCallbacks: new Map<string, () => void>(),
+  getTrajectoryRunsMock: vi.fn(),
+  getTrajectorySnapshotMock: vi.fn(),
+  latestLedgerTarget: { current: null as string | null },
+}));
+
+vi.mock('@/lib/api/trajectory', () => ({
+  getTrajectoryRuns: getTrajectoryRunsMock,
+  getTrajectorySnapshot: getTrajectorySnapshotMock,
+}));
+
+vi.mock('./TrajectoryLedger', async () => {
+  const ReactModule = await import('react');
+  const actual = await vi.importActual<typeof import('./TrajectoryLedger')>('./TrajectoryLedger');
+  return {
+    ...actual,
+    TrajectoryLedger: (props: TrajectoryLedgerProps) => {
+      const target = props.inspectTarget;
+      latestLedgerTarget.current = target?.requestId ?? null;
+      const callback = props.onInspectTargetResolved;
+      if (target && callback) {
+        const index = props.cells.findIndex(cell => cell.key === target.cellKey);
+        const cell = props.cells[index];
+        if (index >= 0 && cell) {
+          capturedLedgerCallbacks.set(target.requestId, () => callback(target, index, cell));
+        }
+      }
+      return ReactModule.createElement(actual.TrajectoryLedger, {
+        ...props,
+        onInspectTargetResolved: undefined,
+      });
+    },
+  };
+});
+
+import TrajectoryTabView from './TrajectoryTabView';
+
+function createStore() {
+  return configureStore({ reducer: { trajectory: trajectoryReducer } });
+}
+
+function wrapper(store: ReturnType<typeof createStore>) {
+  const TestProvider = Provider as unknown as React.ComponentType<{
+    store: typeof store;
+    children?: React.ReactNode;
+  }>;
+  return function StoreProvider({ children }: { children: React.ReactNode }) {
+    return <TestProvider store={store}>{children}</TestProvider>;
+  };
+}
+
+function runSummary(runId: string, attemptIndex: number): TrajectoryRunSummary {
+  return {
+    run_id: runId,
+    message_id: 'assistant-1',
+    turn_message_id: 'user-1',
+    attempt_index: attemptIndex,
+    status: 'completed',
+    trajectory_status: 'complete',
+    total_steps: 1,
+    total_tool_calls: 1,
+    duration_ms: 180,
+    started_at: `2026-08-22T00:00:0${attemptIndex}.000Z`,
+    ended_at: `2026-08-22T00:00:0${attemptIndex}.180Z`,
+  };
+}
+
+function snapshot(run: TrajectoryRunSummary, withToolSpan = true): TrajectorySnapshot {
+  const toolRecords: TrajectorySnapshot['records'] = withToolSpan ? [
+    {
+      sequence: 1,
+      event_type: 'tool_call_started',
+      schema_version: 1,
+      timestamp: '2026-08-22T00:00:00.020Z',
+      step_id: 'step-1',
+      tool_call_id: 'tool-1',
+      parent_step_id: null,
+      trace_id: run.run_id,
+      span_id: 'span-tool',
+      payload: { tool_name: 'web_search' },
+    },
+    {
+      sequence: 2,
+      event_type: 'tool_call_completed',
+      schema_version: 1,
+      timestamp: '2026-08-22T00:00:00.120Z',
+      step_id: 'step-1',
+      tool_call_id: 'tool-1',
+      parent_step_id: null,
+      trace_id: run.run_id,
+      span_id: 'span-tool',
+      payload: { tool_name: 'web_search', status: 'success', duration_ms: 100 },
+    },
+  ] : [];
+  return {
+    run,
+    records: [{
+      sequence: 0,
+      event_type: 'run_started',
+      schema_version: 1,
+      timestamp: run.started_at,
+      step_id: null,
+      tool_call_id: null,
+      parent_step_id: null,
+      trace_id: run.run_id,
+      span_id: null,
+      payload: { conversation_id: 'chat-a', message_id: 'assistant-1' },
+    }, ...toolRecords],
+    spans: withToolSpan ? [{
+      span_id: 'span-tool',
+      kind: 'tool',
+      name: '联网搜索',
+      parent_span_id: null,
+      start_sequence: 1,
+      end_sequence: 2,
+      started_at: '2026-08-22T00:00:00.020Z',
+      ended_at: '2026-08-22T00:00:00.120Z',
+      duration_ms: 100,
+      status: 'completed',
+      terminal_source: 'recorded',
+      inferred_reason: null,
+      ttft_ms: null,
+      record_sequences: [1, 2],
+    }] : [],
+    completeness: {
+      status: 'complete',
+      degraded_reason: null,
+      event_count: withToolSpan ? 3 : 1,
+      expected_last_sequence: withToolSpan ? 2 : 0,
+      loaded_event_count: withToolSpan ? 3 : 1,
+      first_sequence: 0,
+      last_sequence: withToolSpan ? 2 : 0,
+    },
+    truncated: !withToolSpan,
+  };
+}
+
+const messages: Message[] = [
+  {
+    id: 'user-1',
+    role: 'user',
+    content: [{ type: 'text', id: 'question-1', text: '查天气' }],
+    timestamp: 1,
+  },
+  {
+    id: 'assistant-1',
+    role: 'assistant',
+    content: [{ type: 'text', id: 'answer-1', text: '天气晴朗' }],
+    timestamp: 2,
+  },
+];
+
+describe('TrajectoryTabView stale inspect callback', () => {
+  beforeEach(() => {
+    capturedLedgerCallbacks.clear();
+    latestLedgerTarget.current = null;
+    getTrajectoryRunsMock.mockReset();
+    getTrajectorySnapshotMock.mockReset();
+  });
+
+  it('旧 fallback A 回调在手选 B 后不能抢回选择或写回 A 提示和高亮', async () => {
+    const store = createStore();
+    const runA = runSummary('run-a', 0);
+    const runB = runSummary('run-b', 1);
+    getTrajectoryRunsMock.mockResolvedValue({ items: [runA, runB], truncated: false });
+    getTrajectorySnapshotMock.mockImplementation((_conversationId: string, runId: string) => (
+      Promise.resolve(snapshot(runId === 'run-a' ? runA : runB, runId !== 'run-a'))
+    ));
+    store.dispatch(requestTrajectoryInspect({
+      conversationId: 'chat-a',
+      requestId: 'inspect-a-fallback',
+      messageId: 'assistant-1',
+      runId: 'run-a',
+      spanId: 'span-missing',
+    }));
+
+    render(
+      <TrajectoryTabView conversationId="chat-a" messages={messages} />,
+      { wrapper: wrapper(store) },
+    );
+
+    await waitFor(() => expect(capturedLedgerCallbacks.has('inspect-a-fallback')).toBe(true));
+    const staleCallback = capturedLedgerCallbacks.get('inspect-a-fallback');
+    if (!staleCallback) throw new Error('必须捕获旧 A Ledger callback');
+    fireEvent.click(await screen.findByRole('button', { name: /运行 2，已完成/ }));
+    await waitFor(() => expect(store.getState().trajectory.byConversationId['chat-a']).toMatchObject({
+      selectedRunId: 'run-b',
+      selectionSource: 'manual',
+      inspectRequest: null,
+    }));
+
+    act(() => staleCallback());
+
+    expect(store.getState().trajectory.byConversationId['chat-a']).toMatchObject({
+      selectedRunId: 'run-b',
+      selectionSource: 'manual',
+      inspectRequest: null,
+    });
+    expect(screen.queryByText('该节点不在当前有界快照中')).toBeNull();
+    expect(screen.getByRole('option', { name: /第 1 次执行/ }))
+      .toHaveAttribute('data-highlighted', 'false');
+    expect(screen.getByRole('option', { name: /第 2 次执行/ }))
+      .toHaveAttribute('aria-selected', 'true');
+  });
+
+  it('旧成功 A 回调在新 request B 后不能留下随后可见的 A feedback', async () => {
+    const store = createStore();
+    const runA = runSummary('run-a', 0);
+    const runB = runSummary('run-b', 1);
+    getTrajectoryRunsMock.mockResolvedValue({ items: [runA, runB], truncated: false });
+    getTrajectorySnapshotMock.mockImplementation((_conversationId: string, runId: string) => (
+      Promise.resolve(snapshot(runId === 'run-a' ? runA : runB))
+    ));
+    store.dispatch(requestTrajectoryInspect({
+      conversationId: 'chat-a',
+      requestId: 'inspect-a-success',
+      messageId: 'assistant-1',
+      runId: 'run-a',
+      spanId: 'span-tool',
+    }));
+
+    render(
+      <TrajectoryTabView conversationId="chat-a" messages={messages} />,
+      { wrapper: wrapper(store) },
+    );
+
+    await waitFor(() => expect(capturedLedgerCallbacks.has('inspect-a-success')).toBe(true));
+    const staleCallback = capturedLedgerCallbacks.get('inspect-a-success');
+    if (!staleCallback) throw new Error('必须捕获旧 A Ledger callback');
+    act(() => {
+      store.dispatch(requestTrajectoryInspect({
+        conversationId: 'chat-a',
+        requestId: 'inspect-b-pending',
+        messageId: 'assistant-1',
+        runId: 'run-b',
+        spanId: 'span-tool',
+      }));
+    });
+    await waitFor(() => expect(capturedLedgerCallbacks.has('inspect-b-pending')).toBe(true));
+
+    act(() => staleCallback());
+
+    expect(store.getState().trajectory.byConversationId['chat-a']).toMatchObject({
+      selectedRunId: 'run-b',
+      selectionSource: 'inspect',
+      inspectRequest: expect.objectContaining({ requestId: 'inspect-b-pending', runId: 'run-b' }),
+    });
+    act(() => {
+      store.dispatch(consumeTrajectoryInspectRequest({
+        conversationId: 'chat-a',
+        requestId: 'inspect-b-pending',
+      }));
+    });
+
+    expect(latestLedgerTarget.current).toBeNull();
+    expect(screen.getAllByRole('option', { name: /搜索.*工具调用.*完成/ }).map(option => (
+      option.getAttribute('data-highlighted')
+    ))).toEqual(['false']);
+  });
+});

@@ -67,3 +67,26 @@
 - 目标 ESLint：本轮 5 个变更源/测试文件退出码 0，仅仓库既有 `.eslintignore` 迁移 warning。
 - TypeScript：`npx tsc --noEmit --pretty false` 仍由仓库既有基线错误阻断；本轮变更的 StatusLine/Tab 生产与测试文件未新增类型错误。page 测试仍有原报告披露的 4 处 `ContentBlock` fixture 错误。
 - 未启动服务或浏览器；未改 Task 8 的旧内联 timeline、retry/continue policy，未推送或发布。
+
+## Review fix round 2（2026-08-23）
+
+### 修复
+
+- 新增 `resolveTrajectoryInspectRequest` 原子 reducer action。action 携带 expected `requestId + runId + snapshotRunId` 与 fallback 标记；reducer 在同一事务内校验当前 inspect request、`selectionSource === 'inspect'`、selected run 和 snapshot/终态无快照身份，匹配时一次完成 consume 与 fallback run-header selection，不匹配时整组 no-op。
+- `selectTrajectoryTarget` 现在以单个 reducer action 同时清除 pending inspect 并建立 manual selection；Ledger、Timeline、Inspector 手动选择不再执行“先 consume、后 selection”的分裂 dispatch。
+- Ledger resolution callback 改为使用实际回传 target，并在执行时通过 Redux store 读取最新 request/selection/snapshot identity；原子 action 执行后再次核验 inspect 已完成且 selection 未变化，才允许写入本地 notice/highlight。旧 render 闭包因此不能写反馈、consume 新请求或抢回选择。
+
+### RED / GREEN
+
+1. slice RED：“手动选择以单个 action 原子取消 pending inspect”收到的 `inspectRequest` 仍是 A；加入原子 manual selection 后 GREEN。
+2. slice RED：“inspect resolution 以 request、run 与 snapshot identity 原子完成”中 raw resolution action 被忽略，request/span 未完成；加入 identity-gated reducer 后匹配 action 原子完成、旧 A action 对新 B state 保持引用级 no-op。
+3. 组件 RED：测试包装真实 `TrajectoryLedger`，显式捕获已排队的旧 A callback。fallback A 在手选 B 后执行会把 selection 抢回 A；修复后 B/manual/request-null/无旧提示高亮全部保持。
+4. 组件 RED：成功 A callback 在新 request B 后执行会把 A feedback 留在本地，B request consume 后旧 A highlight 再次显现；最新 store identity 门禁后旧 callback 完全不写 feedback。
+
+### 最终验证
+
+- Task 7 聚焦：19 files、291 tests passed，退出码 0（page、消息路径、StatusLine、Tab、stale callback、其余 trajectory components/hook/projection/slice）。
+- 全量：193 files、2139 tests passed，退出码 0。
+- 目标 ESLint：本轮相关源/测试文件退出码 0，仅仓库既有 `.eslintignore` 迁移 warning。
+- TypeScript：`npx tsc --noEmit --pretty false` 仍由仓库既有基线错误阻断；本轮生产与新增 stale callback/slice 测试文件未新增类型错误，page 测试仍是已披露的 4 处 `ContentBlock` fixture 错误。
+- `git diff --check` 退出码 0；未启动服务或浏览器，未触碰 Task 8 timeline/action policy，未推送或发布。

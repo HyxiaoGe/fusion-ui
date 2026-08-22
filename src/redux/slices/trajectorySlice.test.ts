@@ -7,6 +7,7 @@ import trajectoryReducer, {
   consumeTrajectoryInspectRequest,
   mergeLiveTrajectoryEvent,
   requestTrajectoryInspect,
+  resolveTrajectoryInspectRequest,
   selectMergedTrajectoryEvents,
   selectTrajectoryRuns,
   selectTrajectoryTarget,
@@ -311,6 +312,83 @@ describe('trajectorySlice', () => {
       requestId: 'inspect-1',
     }));
     expect(state.byConversationId['conversation-a'].inspectRequest).toBeNull();
+  });
+
+  it('手动选择以单个 action 原子取消 pending inspect 并建立 manual selection', () => {
+    let state = reducer(undefined, requestTrajectoryInspect({
+      conversationId: 'conversation-a',
+      requestId: 'inspect-a',
+      messageId: 'message-run-a',
+      runId: 'run-a',
+      spanId: 'span-a',
+    }));
+
+    state = reducer(state, selectTrajectoryTarget({
+      conversationId: 'conversation-a',
+      messageId: 'message-run-b',
+      runId: 'run-b',
+      spanId: null,
+    }));
+
+    expect(state.byConversationId['conversation-a']).toMatchObject({
+      selectedMessageId: 'message-run-b',
+      selectedRunId: 'run-b',
+      selectedSpanId: null,
+      selectionSource: 'manual',
+      inspectRequest: null,
+    });
+  });
+
+  it('inspect resolution 以 request、run 与 snapshot identity 原子完成，旧 action 整组 no-op', () => {
+    let state = reducer(undefined, trajectorySnapshotRequested({
+      conversationId: 'conversation-a',
+      runId: 'run-a',
+      requestId: 'snapshot-a',
+    }));
+    state = reducer(state, trajectorySnapshotReceived({
+      conversationId: 'conversation-a',
+      requestId: 'snapshot-a',
+      snapshot: snapshot('run-a', [0, 1]),
+    }));
+    state = reducer(state, requestTrajectoryInspect({
+      conversationId: 'conversation-a',
+      requestId: 'inspect-a',
+      messageId: 'message-run-a',
+      runId: 'run-a',
+      spanId: 'span-missing',
+    }));
+
+    state = reducer(state, resolveTrajectoryInspectRequest({
+      conversationId: 'conversation-a',
+      requestId: 'inspect-a',
+      runId: 'run-a',
+      snapshotRunId: 'run-a',
+      fallback: true,
+    }));
+    expect(state.byConversationId['conversation-a']).toMatchObject({
+      selectedMessageId: 'message-run-a',
+      selectedRunId: 'run-a',
+      selectedSpanId: null,
+      selectionSource: 'inspect',
+      inspectRequest: null,
+    });
+
+    state = reducer(state, requestTrajectoryInspect({
+      conversationId: 'conversation-a',
+      requestId: 'inspect-b',
+      messageId: 'message-run-b',
+      runId: 'run-b',
+      spanId: 'span-b',
+    }));
+    const beforeStaleResolution = state;
+    state = reducer(state, resolveTrajectoryInspectRequest({
+      conversationId: 'conversation-a',
+      requestId: 'inspect-a',
+      runId: 'run-a',
+      snapshotRunId: 'run-a',
+      fallback: true,
+    }));
+    expect(state).toBe(beforeStaleResolution);
   });
 
   it('按 sequence 排序并幂等合并 live，且同 key 异内容保留首值并记录冲突', () => {

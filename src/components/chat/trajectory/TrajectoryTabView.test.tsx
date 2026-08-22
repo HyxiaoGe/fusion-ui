@@ -355,8 +355,6 @@ describe('TrajectoryTabView', () => {
       runId: 'run-a',
       spanId: 'span-tool',
     }));
-    const dispatchSpy = vi.spyOn(store, 'dispatch');
-
     render(
       <TrajectoryTabView conversationId="chat-a" messages={messages} />,
       { wrapper: wrapper(store) },
@@ -374,10 +372,6 @@ describe('TrajectoryTabView', () => {
       selectionSource: 'manual',
       inspectRequest: null,
     });
-    expect(dispatchSpy.mock.calls.filter(([action]) => (
-      action.type === 'trajectory/consumeTrajectoryInspectRequest'
-    ))).toHaveLength(1);
-
     await act(async () => {
       snapshotA.resolve(snapshot({ run: runA }));
       await snapshotA.promise;
@@ -397,9 +391,6 @@ describe('TrajectoryTabView', () => {
       selectionSource: 'manual',
       inspectRequest: null,
     });
-    expect(dispatchSpy.mock.calls.filter(([action]) => (
-      action.type === 'trajectory/consumeTrajectoryInspectRequest'
-    ))).toHaveLength(1);
     expect(screen.getByRole('option', { name: /第 2 次执行/ }))
       .toHaveAttribute('aria-selected', 'true');
     expect(screen.getByRole('option', { name: /第 1 次执行/ }))

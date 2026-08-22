@@ -126,6 +126,7 @@ vi.mock('react-redux', () => ({
   useStore: () => ({
     getState: () => ({
       stream: storeStreamState,
+      trajectory: trajectoryState,
     }),
   }),
 }));
@@ -758,7 +759,7 @@ describe('ChatPage 会话切换体验', () => {
     expect(screen.getByRole('option', { name: /执行.*已完成/i })).toHaveAttribute('aria-selected', 'true');
   });
 
-  it('Chat 状态行 inspect 依次切 Tab、选 run、水合、定位高亮并 consume', async () => {
+  it('Chat 状态行 inspect 依次切 Tab、选 run、水合、定位高亮并原子完成', async () => {
     const assistant: Message = {
       id: 'assistant-1',
       role: 'assistant',
@@ -797,9 +798,7 @@ describe('ChatPage 会话切换体验', () => {
     const runOption = await screen.findByRole('option', { name: /执行.*已完成/i });
     await waitFor(() => expect(runOption).toHaveAttribute('data-highlighted', 'true'));
     expect(runOption).toHaveFocus();
-    expect(dispatchMock.mock.calls.some(([action]) => (
-      action?.type === 'trajectory/consumeTrajectoryInspectRequest'
-    ))).toBe(true);
+    expect(trajectoryState.byConversationId['chat-a'].inspectRequest).toBeNull();
     expect(screen.getByRole('tab', { name: '轨迹' })).toHaveAttribute('aria-selected', 'true');
   });
 
