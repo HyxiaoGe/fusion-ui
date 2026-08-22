@@ -31,6 +31,7 @@ const {
   sendMessageMock,
   stopStreamingMock,
   retryMessageMock,
+  refreshTrajectoryRunsMock,
   continueAgentRunMock,
   stopContinueAgentRunMock,
   clearQuestionsMock,
@@ -87,6 +88,7 @@ const {
   sendMessageMock: vi.fn(),
   stopStreamingMock: vi.fn(),
   retryMessageMock: vi.fn(),
+  refreshTrajectoryRunsMock: vi.fn(),
   continueAgentRunMock: vi.fn(),
   stopContinueAgentRunMock: vi.fn(),
   clearQuestionsMock: vi.fn(),
@@ -143,6 +145,9 @@ vi.mock('@/redux/hooks', () => ({
 vi.mock('react-redux', () => ({
   useStore: () => ({
     getState: () => ({
+      conversation: {
+        byId: Object.fromEntries(conversationsById),
+      },
       stream: storeStreamState,
       trajectory: trajectoryState,
     }),
@@ -243,7 +248,7 @@ vi.mock('@/hooks/useConversationTrajectory', () => ({
       reconciliation: conversation?.selectedRunId
         ? conversation.reconciliationByRunId[conversation.selectedRunId]
         : undefined,
-      refreshRuns: vi.fn(),
+      refreshRuns: refreshTrajectoryRunsMock,
       retrySelectedSnapshot: vi.fn(),
     };
   },
@@ -657,6 +662,8 @@ describe('ChatPage 会话切换体验', () => {
     sendMessageMock.mockClear();
     stopStreamingMock.mockClear();
     retryMessageMock.mockClear();
+    refreshTrajectoryRunsMock.mockReset();
+    refreshTrajectoryRunsMock.mockResolvedValue('ready');
     continueAgentRunMock.mockClear();
     stopContinueAgentRunMock.mockClear();
     stopContinueAgentRunMock.mockResolvedValue(false);
@@ -1832,12 +1839,17 @@ describe('ChatPage 会话切换体验', () => {
     rerender(<ChatPage />);
 
     fireEvent.click(await screen.findByRole('button', { name: '重试所选运行' }));
-    expect(retryMessageMock).toHaveBeenCalledWith(
+    await waitFor(() => expect(retryMessageMock).toHaveBeenCalledWith(
       'assistant-1',
       'chat-a',
       [],
       'run-selected',
-    );
+      expect.objectContaining({
+        canStart: expect.any(Function),
+        onAccepted: expect.any(Function),
+        onRejected: expect.any(Function),
+      }),
+    ));
 
     const limitRun = trajectoryRun('run-limit');
     limitRun.status = 'limit_reached';
@@ -1848,11 +1860,14 @@ describe('ChatPage 会话切换体验', () => {
     rerender(<ChatPage />);
 
     fireEvent.click(await screen.findByRole('button', { name: '继续所选运行' }));
-    expect(continueAgentRunMock).toHaveBeenCalledWith({
+    await waitFor(() => expect(continueAgentRunMock).toHaveBeenCalledWith({
       conversationId: 'chat-a',
       assistantMessageId: 'assistant-1',
       previousRunId: 'run-limit',
-    });
+      canStart: expect.any(Function),
+      onAccepted: expect.any(Function),
+      onRejectedBeforeStart: expect.any(Function),
+    }));
   });
 
   it('流式中不下发 continuation handler，避免显示继续入口', async () => {

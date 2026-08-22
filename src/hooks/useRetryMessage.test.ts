@@ -79,6 +79,14 @@ function createWrapper(store: ReturnType<typeof createStore>) {
   };
 }
 
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((promiseResolve) => {
+    resolve = promiseResolve;
+  });
+  return { promise, resolve };
+}
+
 describe('useRetryMessage', () => {
   beforeEach(() => {
     getChatCapabilitiesMock.mockReset();
@@ -213,6 +221,51 @@ describe('useRetryMessage', () => {
       },
       undefined,
     );
+  });
+
+  it('Agent retry 能力等待期间 eligibility 失效时不进入 sendMessage', async () => {
+    const capability = deferred<{
+      knowledge_grounding_v1: boolean;
+      knowledge_grounding_max_bases: number;
+      message_retry_v1: boolean;
+    }>();
+    getChatCapabilitiesMock.mockReturnValueOnce(capability.promise);
+    const store = createStore('hidden');
+    const sendMessage = vi.fn().mockResolvedValue(undefined);
+    const onAccepted = vi.fn();
+    const onRejected = vi.fn();
+    let eligible = true;
+    const { result } = renderHook(() => useRetryMessage(sendMessage), {
+      wrapper: createWrapper(store),
+    });
+
+    let retryPromise!: Promise<void>;
+    act(() => {
+      retryPromise = result.current(
+        'assistant-1',
+        'existing-conv',
+        undefined,
+        'run-selected',
+        {
+          canStart: () => eligible,
+          onAccepted,
+          onRejected,
+        },
+      );
+    });
+    eligible = false;
+    await act(async () => {
+      capability.resolve({
+        knowledge_grounding_v1: true,
+        knowledge_grounding_max_bases: 5,
+        message_retry_v1: true,
+      });
+      await retryPromise;
+    });
+
+    expect(sendMessage).not.toHaveBeenCalled();
+    expect(onAccepted).not.toHaveBeenCalled();
+    expect(onRejected).toHaveBeenCalledTimes(1);
   });
 
   it('失败用户消息没有持久化回答时只复用 user ID', async () => {

@@ -194,6 +194,68 @@ describe('useConversationTrajectory', () => {
     expect(getTrajectorySnapshotMock).not.toHaveBeenCalled();
   });
 
+  it('动作前强制刷新 run list，并在 Redux 接受最新结果后返回 ready', async () => {
+    const store = createStore();
+    const refreshRequest = deferred<{ items: TrajectoryRunSummary[]; truncated: boolean }>();
+    getTrajectoryRunsMock
+      .mockResolvedValueOnce({ items: [runSummary('run-old')], truncated: false })
+      .mockReturnValueOnce(refreshRequest.promise);
+    const { result } = renderHook(() => useConversationTrajectory('conversation-a'), {
+      wrapper: createWrapper(store),
+    });
+    await waitFor(() => expect(result.current.runListStatus).toBe('ready'));
+
+    let refreshResult!: Promise<string>;
+    act(() => {
+      refreshResult = result.current.refreshRuns();
+    });
+    expect(getTrajectoryRunsMock).toHaveBeenCalledTimes(2);
+
+    await act(async () => {
+      refreshRequest.resolve({
+        items: [
+          runSummary('run-old'),
+          runSummary('run-new', { attempt_index: 2 }),
+        ],
+        truncated: false,
+      });
+      await expect(refreshResult).resolves.toBe('ready');
+    });
+    expect(store.getState().trajectory.byConversationId['conversation-a'].runs)
+      .toHaveLength(2);
+  });
+
+  it('首载请求仍在进行时，动作刷新等待首载后再发起独立 freshness 请求', async () => {
+    const store = createStore();
+    const initialRequest = deferred<{ items: TrajectoryRunSummary[]; truncated: boolean }>();
+    const freshnessRequest = deferred<{ items: TrajectoryRunSummary[]; truncated: boolean }>();
+    getTrajectoryRunsMock
+      .mockReturnValueOnce(initialRequest.promise)
+      .mockReturnValueOnce(freshnessRequest.promise);
+    const { result } = renderHook(() => useConversationTrajectory('conversation-a'), {
+      wrapper: createWrapper(store),
+    });
+    await waitFor(() => expect(getTrajectoryRunsMock).toHaveBeenCalledTimes(1));
+
+    let refreshResult!: Promise<string>;
+    act(() => {
+      refreshResult = result.current.refreshRuns();
+    });
+    await act(async () => {
+      initialRequest.resolve({ items: [runSummary('run-old')], truncated: false });
+      await initialRequest.promise;
+    });
+    await waitFor(() => expect(getTrajectoryRunsMock).toHaveBeenCalledTimes(2));
+    await act(async () => {
+      freshnessRequest.resolve({
+        items: [runSummary('run-old'), runSummary('run-new')],
+        truncated: false,
+      });
+      await expect(refreshResult).resolves.toBe('ready');
+    });
+    expect(result.current.runs.map(item => item.run_id)).toEqual(['run-old', 'run-new']);
+  });
+
   it('同一 conversation 的并发 hook 挂载共享 slice 中的单个 run-list 请求', async () => {
     const store = createStore();
     const pendingRequest = deferred<{ items: TrajectoryRunSummary[]; truncated: boolean }>();
@@ -764,7 +826,9 @@ describe('useConversationTrajectory', () => {
     expect(result.current.runs.map(run => run.run_id)).toEqual(['run-stale']);
     expect(result.current.snapshot?.run.run_id).toBe('run-stale');
 
-    act(() => result.current.refreshRuns());
+    act(() => {
+      void result.current.refreshRuns();
+    });
 
     await waitFor(() => expect(result.current.runListStatus).toBe('unavailable'));
     expect(result.current.runs).toEqual([]);

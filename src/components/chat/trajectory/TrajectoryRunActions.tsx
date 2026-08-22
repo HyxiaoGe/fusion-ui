@@ -1,10 +1,11 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Play, RotateCcw } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { getChatCapabilities } from '@/lib/api/chat';
+import type { RunListRefreshResult } from '@/hooks/useConversationTrajectory';
 import {
   resolveTrajectoryActionPolicy,
   type TrajectoryActionPolicyInput,
@@ -13,11 +14,24 @@ import {
 
 type CapabilityStatus = 'idle' | 'loading' | 'supported' | 'unsupported';
 
+export interface TrajectoryRunActionLifecycle {
+  canStart: () => boolean;
+  onAccepted: () => void;
+  onRejected: () => void;
+}
+
+type TrajectoryRunActionHandler = (
+  target: TrajectoryRunActionTarget,
+  lifecycle: TrajectoryRunActionLifecycle,
+) => void | Promise<void>;
+
 export interface TrajectoryRunActionsProps
   extends Omit<TrajectoryActionPolicyInput, 'retryCapabilityAvailable'> {
   enabled?: boolean;
-  onRetry?: (target: TrajectoryRunActionTarget) => void;
-  onContinue?: (target: TrajectoryRunActionTarget) => void;
+  refreshRuns: () => Promise<RunListRefreshResult>;
+  getLatestPolicyInput: () => Omit<TrajectoryActionPolicyInput, 'retryCapabilityAvailable'>;
+  onRetry?: TrajectoryRunActionHandler;
+  onContinue?: TrajectoryRunActionHandler;
 }
 
 function readOnlyMessage(
@@ -59,11 +73,15 @@ function readOnlyMessage(
 
 export function TrajectoryRunActions({
   enabled = true,
+  refreshRuns,
+  getLatestPolicyInput,
   onRetry,
   onContinue,
   ...policyInput
 }: TrajectoryRunActionsProps) {
   const [capabilityStatus, setCapabilityStatus] = useState<CapabilityStatus>('idle');
+  const [actionPending, setActionPending] = useState(false);
+  const activeActionRef = useRef<symbol | null>(null);
   const structuralPolicy = useMemo(() => resolveTrajectoryActionPolicy({
     ...policyInput,
     retryCapabilityAvailable: true,
@@ -94,10 +112,67 @@ export function TrajectoryRunActions({
     retryCapabilityAvailable: capabilityStatus === 'supported',
   });
 
-  if (!enabled || !policy.terminal) return null;
   const target = policy.target;
   const showRetry = Boolean(target && policy.retry.allowed && onRetry);
   const showContinue = Boolean(target && policy.continue.allowed && onContinue);
+
+  const startAction = useCallback((kind: 'retry' | 'continue') => {
+    if (activeActionRef.current) return;
+    const currentTarget = policy.target;
+    const handler = kind === 'retry' ? onRetry : onContinue;
+    const decision = kind === 'retry' ? policy.retry : policy.continue;
+    if (!currentTarget || !handler || !decision.allowed) return;
+
+    const token = Symbol(`trajectory-${kind}`);
+    const selectedRunId = currentTarget.previousRunId;
+    activeActionRef.current = token;
+    setActionPending(true);
+
+    const release = () => {
+      if (activeActionRef.current !== token) return;
+      activeActionRef.current = null;
+      setActionPending(false);
+    };
+    const latestDecision = () => {
+      if (activeActionRef.current !== token) return null;
+      const latestPolicy = resolveTrajectoryActionPolicy({
+        ...getLatestPolicyInput(),
+        retryCapabilityAvailable: capabilityStatus === 'supported',
+      });
+      const latestTarget = latestPolicy.target;
+      const latestAction = kind === 'retry' ? latestPolicy.retry : latestPolicy.continue;
+      if (
+        !latestAction.allowed
+        || !latestTarget
+        || latestTarget.previousRunId !== selectedRunId
+      ) return null;
+      return latestTarget;
+    };
+
+    void (async () => {
+      try {
+        if (await refreshRuns() !== 'ready') return;
+        const latestTarget = latestDecision();
+        if (!latestTarget) return;
+        await handler(latestTarget, {
+          canStart: () => latestDecision() !== null,
+          onAccepted: release,
+          onRejected: release,
+        });
+      } finally {
+        release();
+      }
+    })();
+  }, [
+    capabilityStatus,
+    getLatestPolicyInput,
+    onContinue,
+    onRetry,
+    policy,
+    refreshRuns,
+  ]);
+
+  if (!enabled || !policy.terminal) return null;
 
   return (
     <section
@@ -106,7 +181,11 @@ export function TrajectoryRunActions({
     >
       <div className="min-w-0">
         <p className="text-xs font-medium text-foreground">所选运行已结束</p>
-        {!showRetry && !showContinue ? (
+        {actionPending ? (
+          <p role="status" aria-label="运行操作状态" className="truncate text-xs text-muted-foreground">
+            正在刷新并验证最新运行
+          </p>
+        ) : !showRetry && !showContinue ? (
           <p role="status" aria-label="运行操作状态" className="truncate text-xs text-muted-foreground">
             {readOnlyMessage(policy, capabilityStatus)}
           </p>
@@ -121,7 +200,8 @@ export function TrajectoryRunActions({
             size="sm"
             variant="outline"
             className="gap-1.5"
-            onClick={() => target && onRetry?.(target)}
+            disabled={actionPending}
+            onClick={() => startAction('retry')}
           >
             <RotateCcw className="h-3.5 w-3.5" aria-hidden="true" />
             重试所选运行
@@ -132,7 +212,8 @@ export function TrajectoryRunActions({
             type="button"
             size="sm"
             className="gap-1.5"
-            onClick={() => target && onContinue?.(target)}
+            disabled={actionPending}
+            onClick={() => startAction('continue')}
           >
             <Play className="h-3.5 w-3.5" aria-hidden="true" />
             继续所选运行

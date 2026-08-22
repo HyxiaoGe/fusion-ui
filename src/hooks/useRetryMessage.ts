@@ -21,11 +21,18 @@ type SendMessageFn = (
     retryUserMessageId?: string;
     retryAssistantMessageId?: string;
     previousRunId?: string;
+    canStart?: () => boolean;
     onRejectedBeforeSend?: () => void;
     onAccepted?: () => void;
   },
   attachments?: FileAttachment[],
 ) => Promise<void>;
+
+export interface RetryMessageControl {
+  canStart: () => boolean;
+  onAccepted: () => void;
+  onRejected: () => void;
+}
 
 function extractMessageContent(msg: Message) {
   const text = msg.content
@@ -62,7 +69,23 @@ export function useRetryMessage(
       conversationId: string,
       knowledgeBaseIds?: string[],
       previousRunId?: string,
+      control?: RetryMessageControl,
     ) => {
+      let lifecycleSettled = false;
+      const accept = () => {
+        if (lifecycleSettled) return;
+        lifecycleSettled = true;
+        control?.onAccepted();
+      };
+      const reject = () => {
+        if (lifecycleSettled) return;
+        lifecycleSettled = true;
+        control?.onRejected();
+      };
+      const canStart = () => !control || control.canStart();
+
+      try {
+      if (!canStart()) return;
       const state = store.getState() as RootState;
       const conversation = state.conversation.byId[conversationId];
       if (!conversation) return;
@@ -110,6 +133,7 @@ export function useRetryMessage(
         return;
       }
 
+      if (!canStart()) return;
       if (
         activeConversationIdRef.current !== undefined
         && activeConversationIdRef.current !== conversationId
@@ -172,6 +196,7 @@ export function useRetryMessage(
         }
 
         if (text || attachments.length > 0) {
+          if (!canStart()) return;
           await sendMessage(
             text,
             {
@@ -181,6 +206,11 @@ export function useRetryMessage(
               retryUserMessageId: userMessage.id,
               retryAssistantMessageId: refreshedTargetMsg.id,
               ...runLineageOptions,
+              ...(control ? {
+                canStart,
+                onRejectedBeforeSend: reject,
+                onAccepted: accept,
+              } : {}),
             },
             attachments.length > 0 ? attachments : undefined,
           );
@@ -199,6 +229,7 @@ export function useRetryMessage(
         }
 
         if (text || attachments.length > 0) {
+          if (!canStart()) return;
           await sendMessage(
             text,
             {
@@ -210,10 +241,18 @@ export function useRetryMessage(
                 ? { retryAssistantMessageId: nextMsg.id }
                 : {}),
               ...runLineageOptions,
+              ...(control ? {
+                canStart,
+                onRejectedBeforeSend: reject,
+                onAccepted: accept,
+              } : {}),
             },
             attachments.length > 0 ? attachments : undefined,
           );
         }
+      }
+      } finally {
+        reject();
       }
     },
     [dispatch, sendMessage, store],

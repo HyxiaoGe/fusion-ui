@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useStore } from 'react-redux';
 import { AlertTriangle, Loader2, MessageSquareText, RefreshCw } from 'lucide-react';
 
@@ -13,12 +13,13 @@ import { useAppDispatch } from '@/redux/hooks';
 import {
   resolveTrajectoryInspectRequest,
   selectTrajectoryConversation,
+  selectTrajectoryRuns,
   selectTrajectoryTarget,
   setTrajectoryInspectorOpen,
   setTrajectoryScrollMode,
   type TrajectorySnapshotResultIdentity,
-  type TrajectoryState,
 } from '@/redux/slices/trajectorySlice';
+import type { RootState } from '@/redux/store';
 import type { Message } from '@/types/conversation';
 import type { TrajectoryRunSummary, TrajectorySpan } from '@/types/trajectory';
 import type { KnowledgeSelectionStatus } from '@/lib/chat/knowledgeBaseCatalogResource';
@@ -27,7 +28,10 @@ import { Button } from '@/components/ui/button';
 import { TrajectoryIntegrityBanner } from './TrajectoryIntegrityBanner';
 import { TrajectoryInspector } from './TrajectoryInspector';
 import { TrajectoryLedger, type TrajectoryInspectTarget } from './TrajectoryLedger';
-import { TrajectoryRunActions } from './TrajectoryRunActions';
+import {
+  TrajectoryRunActions,
+  type TrajectoryRunActionLifecycle,
+} from './TrajectoryRunActions';
 import { TrajectoryTimeline } from './TrajectoryTimeline';
 
 export interface TrajectoryRunActionContext {
@@ -36,8 +40,14 @@ export interface TrajectoryRunActionContext {
   modelAvailable: boolean;
   knowledgeBaseStatus: KnowledgeSelectionStatus;
   knowledgeBaseIds: readonly string[];
-  onRetry?: (target: TrajectoryRunActionTarget) => void;
-  onContinue?: (target: TrajectoryRunActionTarget) => void;
+  onRetry?: (
+    target: TrajectoryRunActionTarget,
+    lifecycle: TrajectoryRunActionLifecycle,
+  ) => void | Promise<void>;
+  onContinue?: (
+    target: TrajectoryRunActionTarget,
+    lifecycle: TrajectoryRunActionLifecycle,
+  ) => void | Promise<void>;
 }
 
 export interface TrajectoryTabViewProps {
@@ -139,8 +149,10 @@ export function TrajectoryTabView({
   runActions,
 }: TrajectoryTabViewProps) {
   const dispatch = useAppDispatch();
-  const store = useStore<{ trajectory: TrajectoryState }>();
+  const store = useStore<RootState>();
   const trajectory = useConversationTrajectory(conversationId);
+  const runActionsRef = useRef(runActions);
+  runActionsRef.current = runActions;
   const [inspectFeedback, setInspectFeedback] = useState<InspectFeedback | null>(null);
   const projection = useMemo(() => projectTrajectoryCells({
     messages,
@@ -173,6 +185,35 @@ export function TrajectoryTabView({
     selectedSpan,
   );
   const selectedRunCell = runCell(cells, trajectory.selectedRunId);
+
+  const getLatestPolicyInput = useCallback(() => {
+    const state = store.getState();
+    const current = selectTrajectoryConversation(state, conversationId);
+    const selectedRunId = current?.selectedRunId ?? null;
+    const selectedSnapshot = selectedRunId
+      ? current?.snapshotsByRunId[selectedRunId]
+      : undefined;
+    const selectedReconciliation = selectedRunId
+      ? current?.reconciliationByRunId[selectedRunId]
+      : undefined;
+    const actionContext = runActionsRef.current;
+    return {
+      runs: selectTrajectoryRuns(state, conversationId),
+      messages: state.conversation.byId[conversationId]?.messages ?? [],
+      selectedRunId,
+      runListStatus: current?.runListStatus ?? 'idle',
+      selectedRunHydrated: selectedSnapshot?.run.run_id === selectedRunId,
+      selectedTrajectoryStatus: selectedSnapshot?.completeness.status ?? null,
+      selectedRunTruncated: Boolean(
+        selectedSnapshot?.truncated || selectedReconciliation?.eventsTruncated
+      ),
+      reconciliationStatus: selectedReconciliation?.status ?? null,
+      hasActiveStream: state.stream.isStreaming,
+      modelAvailable: actionContext?.modelAvailable ?? false,
+      knowledgeBaseStatus: actionContext?.knowledgeBaseStatus ?? 'unavailable',
+      knowledgeBaseIds: actionContext?.knowledgeBaseIds ?? [],
+    };
+  }, [conversationId, store]);
 
   useEffect(() => {
     setInspectFeedback(null);
@@ -422,6 +463,8 @@ export function TrajectoryTabView({
             modelAvailable={runActions.modelAvailable}
             knowledgeBaseStatus={runActions.knowledgeBaseStatus}
             knowledgeBaseIds={runActions.knowledgeBaseIds}
+            refreshRuns={trajectory.refreshRuns}
+            getLatestPolicyInput={getLatestPolicyInput}
             onRetry={runActions.onRetry}
             onContinue={runActions.onContinue}
           />

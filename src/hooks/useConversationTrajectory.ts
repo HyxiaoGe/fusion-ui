@@ -46,13 +46,20 @@ interface ActiveRequest {
   dispatch: AppDispatch;
 }
 
+export type RunListRefreshResult = 'ready' | 'failed' | 'unavailable' | 'cancelled';
+
+interface ActiveRunListRequest extends ActiveRequest {
+  completion: Promise<RunListRefreshResult>;
+  resolveCompletion: (result: RunListRefreshResult) => void;
+}
+
 interface ActiveSnapshotRequest extends ActiveRequest {
   conversationId: string;
   runId: string;
 }
 
 interface StoreRequestCoordinator {
-  runListRequests: Map<string, ActiveRequest>;
+  runListRequests: Map<string, ActiveRunListRequest>;
   snapshotRequests: Map<string, ActiveSnapshotRequest>;
 }
 
@@ -104,6 +111,7 @@ function releaseRequestSubscription(subscription: RequestSubscription | null): v
   requests.delete(subscription.key);
   active.controller.abort();
   if (subscription.kind === 'runs') {
+    (active as ActiveRunListRequest).resolveCompletion('cancelled');
     active.dispatch(trajectoryRunListCancelled({
       conversationId: subscription.key,
       requestId: active.requestId,
@@ -144,7 +152,7 @@ export function useConversationTrajectory(conversationId: string | null) {
     dispatch(trajectoryAuthScopeChanged({ authScope }));
   }, [authScope, dispatch]);
 
-  const requestRunList = useCallback((targetConversationId: string) => {
+  const requestRunList = useCallback((targetConversationId: string): Promise<RunListRefreshResult> => {
     const coordinator = requestCoordinator(store, authScope);
     const consumerId = consumerIdRef.current;
     const existing = coordinator.runListRequests.get(targetConversationId);
@@ -157,15 +165,21 @@ export function useConversationTrajectory(conversationId: string | null) {
         consumerId,
         kind: 'runs',
       };
-      return;
+      return existing.completion;
     }
     const requestId = nextRequestId('runs');
     const controller = new AbortController();
-    const activeRequest: ActiveRequest = {
+    let resolveCompletion!: (result: RunListRefreshResult) => void;
+    const completion = new Promise<RunListRefreshResult>((resolve) => {
+      resolveCompletion = resolve;
+    });
+    const activeRequest: ActiveRunListRequest = {
       requestId,
       controller,
       subscribers: new Set([consumerId]),
       dispatch,
+      completion,
+      resolveCompletion,
     };
     coordinator.runListRequests.set(targetConversationId, activeRequest);
     runListSubscriptionRef.current = {
@@ -189,6 +203,7 @@ export function useConversationTrajectory(conversationId: string | null) {
             conversationId: targetConversationId,
             requestId,
           }));
+          resolveCompletion('cancelled');
           return;
         }
         dispatch(trajectoryRunListReceived({
@@ -196,6 +211,7 @@ export function useConversationTrajectory(conversationId: string | null) {
           requestId,
           response,
         }));
+        resolveCompletion('ready');
       })
       .catch(error => {
         if (coordinator.runListRequests.get(targetConversationId) !== activeRequest) return;
@@ -205,6 +221,7 @@ export function useConversationTrajectory(conversationId: string | null) {
             conversationId: targetConversationId,
             requestId,
           }));
+          resolveCompletion('cancelled');
           return;
         }
         if (authScopeKey(store.getState()) !== authScope) {
@@ -212,6 +229,7 @@ export function useConversationTrajectory(conversationId: string | null) {
             conversationId: targetConversationId,
             requestId,
           }));
+          resolveCompletion('cancelled');
           return;
         }
         if (isNotFound(error)) {
@@ -219,6 +237,7 @@ export function useConversationTrajectory(conversationId: string | null) {
             conversationId: targetConversationId,
             requestId,
           }));
+          resolveCompletion('unavailable');
           return;
         }
         dispatch(trajectoryRunListFailed({
@@ -226,7 +245,9 @@ export function useConversationTrajectory(conversationId: string | null) {
           requestId,
           error: errorMessage(error, '轨迹运行列表加载失败'),
         }));
+        resolveCompletion('failed');
       });
+    return completion;
   }, [authScope, dispatch, store]);
 
   const requestSnapshot = useCallback((
@@ -421,10 +442,20 @@ export function useConversationTrajectory(conversationId: string | null) {
     store,
   ]);
 
-  const refreshRuns = useCallback(() => {
-    if (!conversationId || conversation?.activeRunListRequestId) return;
-    requestRunList(conversationId);
-  }, [conversation?.activeRunListRequestId, conversationId, requestRunList]);
+  const refreshRuns = useCallback((): Promise<RunListRefreshResult> => {
+    if (!conversationId) return Promise.resolve('cancelled');
+    const activeRequest = requestCoordinator(store, authScope)
+      .runListRequests.get(conversationId);
+    if (activeRequest) {
+      return requestRunList(conversationId).then((result) => {
+        if (result !== 'ready' || authScopeKey(store.getState()) !== authScope) {
+          return result === 'ready' ? 'cancelled' : result;
+        }
+        return requestRunList(conversationId);
+      });
+    }
+    return requestRunList(conversationId);
+  }, [authScope, conversationId, requestRunList, store]);
 
   const retrySelectedSnapshot = useCallback(() => {
     if (!conversationId || !selectedRunId || reconciliation?.activeRequestId) return;

@@ -20,6 +20,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import TrajectoryTabView from '@/components/chat/trajectory/TrajectoryTabView';
+import type { TrajectoryRunActionLifecycle } from '@/components/chat/trajectory/TrajectoryRunActions';
 import type { TrajectoryRunActionTarget } from '@/lib/trajectory/trajectoryActionPolicy';
 import type { FileAttachment } from '@/lib/utils/fileHelpers';
 import ConfirmDialog from '@/components/ui/confirm-dialog';
@@ -612,35 +613,44 @@ export default function ChatPage() {
     ]
   );
 
-  const handleRetrySelectedRun = useCallback((target: TrajectoryRunActionTarget) => {
-    if (!chatId || isStreaming || composerKnowledgeSelectionStatus !== 'ready') return;
-    void retryMessage(
+  const handleRetrySelectedRun = useCallback((
+    target: TrajectoryRunActionTarget,
+    lifecycle: TrajectoryRunActionLifecycle,
+  ) => {
+    if (!chatId) {
+      lifecycle.onRejected();
+      return;
+    }
+    return retryMessage(
       target.retryMessageId,
       chatId,
       composerKnowledgeBaseIds,
       target.previousRunId,
+      lifecycle,
     );
   }, [
     chatId,
     composerKnowledgeBaseIds,
-    composerKnowledgeSelectionStatus,
-    isStreaming,
     retryMessage,
   ]);
 
-  const handleContinueSelectedRun = useCallback((target: TrajectoryRunActionTarget) => {
-    if (
-      !chatId
-      || !target.assistantMessageId
-      || isStreaming
-      || composerKnowledgeSelectionStatus !== 'ready'
-    ) return;
-    void continueAgentRun({
+  const handleContinueSelectedRun = useCallback((
+    target: TrajectoryRunActionTarget,
+    lifecycle: TrajectoryRunActionLifecycle,
+  ) => {
+    if (!chatId || !target.assistantMessageId) {
+      lifecycle.onRejected();
+      return;
+    }
+    return continueAgentRun({
       conversationId: chatId,
       assistantMessageId: target.assistantMessageId,
       previousRunId: target.previousRunId,
+      canStart: lifecycle.canStart,
+      onAccepted: lifecycle.onAccepted,
+      onRejectedBeforeStart: lifecycle.onRejected,
     });
-  }, [chatId, composerKnowledgeSelectionStatus, continueAgentRun, isStreaming]);
+  }, [chatId, continueAgentRun]);
 
   const handleStopStreaming = useCallback(async () => {
     const recoveryController = reconnectControllerRef.current;

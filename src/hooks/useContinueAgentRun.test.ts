@@ -96,6 +96,70 @@ describe('useContinueAgentRun', () => {
     vi.mocked(stopStream).mockResolvedValue(true);
   });
 
+  it('最新策略在请求前失效时拒绝 continuation，且不建立 stream', async () => {
+    const { store, dispatch } = createReducerBackedHarness();
+    const onRejectedBeforeStart = vi.fn();
+    const { result } = renderHook(() => useContinueAgentRun({
+      dispatch: dispatch as never,
+      store: store as never,
+    }));
+
+    await act(async () => {
+      await result.current.continueAgentRun({
+        conversationId: 'conv-1',
+        assistantMessageId: 'msg-1',
+        canStart: () => false,
+        onRejectedBeforeStart,
+      });
+    });
+
+    expect(onRejectedBeforeStart).toHaveBeenCalledTimes(1);
+    expect(continueAgentRunStream).not.toHaveBeenCalled();
+    expect(store.getState().stream.isStreaming).toBe(false);
+  });
+
+  it('已有 continuation 时第二次调用直接拒绝且不 abort 第一次', async () => {
+    const { store, dispatch } = createReducerBackedHarness();
+    let resolveFirst!: () => void;
+    let firstSignal: AbortSignal | undefined;
+    vi.mocked(continueAgentRunStream).mockImplementationOnce(async (_payload, _callbacks, signal) => {
+      firstSignal = signal;
+      await new Promise<void>((resolve) => {
+        resolveFirst = resolve;
+      });
+    });
+    const onRejectedBeforeStart = vi.fn();
+    const { result } = renderHook(() => useContinueAgentRun({
+      dispatch: dispatch as never,
+      store: store as never,
+    }));
+
+    let first!: Promise<void>;
+    act(() => {
+      first = result.current.continueAgentRun({
+        conversationId: 'conv-1',
+        assistantMessageId: 'msg-1',
+      });
+    });
+    await waitFor(() => expect(continueAgentRunStream).toHaveBeenCalledTimes(1));
+    await act(async () => {
+      await result.current.continueAgentRun({
+        conversationId: 'conv-1',
+        assistantMessageId: 'msg-1',
+        onRejectedBeforeStart,
+      });
+    });
+
+    expect(onRejectedBeforeStart).toHaveBeenCalledTimes(1);
+    expect(continueAgentRunStream).toHaveBeenCalledTimes(1);
+    expect(firstSignal?.aborted).toBe(false);
+
+    resolveFirst();
+    await act(async () => {
+      await first;
+    });
+  });
+
   it('以已有 assistant content 启动 continuation stream', async () => {
     const dispatch = vi.fn();
     const store = {
@@ -387,7 +451,7 @@ describe('useContinueAgentRun', () => {
       blockTypes: { 'new-text': 'text' },
       totalTextLength: 4,
       displayedTextLength: 4,
-      isStreaming: true,
+      isStreaming: false,
       isStreamingReasoning: false,
       isThinkingPhaseComplete: false,
       reasoningStartTime: null,
@@ -496,7 +560,7 @@ describe('useContinueAgentRun', () => {
           blockTypes: {},
           totalTextLength: 0,
           displayedTextLength: 0,
-          isStreaming: true,
+          isStreaming: false,
           isStreamingReasoning: false,
           isThinkingPhaseComplete: false,
           reasoningStartTime: null,
@@ -894,7 +958,7 @@ describe('useContinueAgentRun', () => {
       blockTypes: { 'new-text': 'text' },
       totalTextLength: 4,
       displayedTextLength: 4,
-      isStreaming: true,
+      isStreaming: false,
       isStreamingReasoning: false,
       isThinkingPhaseComplete: false,
       reasoningStartTime: null,

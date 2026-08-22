@@ -419,6 +419,54 @@ describe('useSendMessage', () => {
     expect(sendMessageStreamMock).toHaveBeenCalledTimes(1);
   });
 
+  it('轨迹 retry 在知识库能力等待期间失效时拒绝发送且不替换消息', async () => {
+    const store = createStore();
+    store.dispatch(upsertConversation({
+      id: 'existing-conv',
+      title: 'Existing',
+      model_id: 'model-1',
+      knowledge_base_ids: ['kb-1'],
+      messages: [],
+      createdAt: 100,
+      updatedAt: 200,
+    }));
+    let resolveCapabilities!: (value: {
+      knowledge_grounding_v1: boolean;
+      knowledge_grounding_max_bases: number;
+    }) => void;
+    getChatCapabilitiesMock.mockImplementationOnce(() => new Promise((resolve) => {
+      resolveCapabilities = resolve;
+    }));
+    let eligible = true;
+    const onRejectedBeforeSend = vi.fn();
+    const { result } = renderHook(() => useSendMessage(), {
+      wrapper: createWrapper(store),
+    });
+
+    let pendingSend!: Promise<void>;
+    act(() => {
+      pendingSend = result.current.sendMessage('重新回答', {
+        conversationId: 'existing-conv',
+        knowledgeBaseIds: ['kb-1'],
+        canStart: () => eligible,
+        onRejectedBeforeSend,
+      });
+    });
+    await waitFor(() => expect(getChatCapabilitiesMock).toHaveBeenCalledTimes(1));
+    eligible = false;
+    resolveCapabilities({
+      knowledge_grounding_v1: true,
+      knowledge_grounding_max_bases: 5,
+    });
+    await act(async () => {
+      await pendingSend;
+    });
+
+    expect(onRejectedBeforeSend).toHaveBeenCalledTimes(1);
+    expect(sendMessageStreamMock).not.toHaveBeenCalled();
+    expect(store.getState().conversation.byId['existing-conv'].messages).toEqual([]);
+  });
+
   it('严格知识库能力预检期间切换账号时拒绝旧会话草稿且不启动后台流', async () => {
     const store = createStore();
     store.dispatch(upsertConversation({

@@ -96,6 +96,8 @@ type SendMessageOptions = {
   retryAssistantMessageId?: string;
   /** Agent run 重试必须指向用户在轨迹标签页选择的真实 run。 */
   previousRunId?: string;
+  /** 异步准备期间持续复核轨迹动作仍指向可操作的最新运行。 */
+  canStart?: () => boolean;
   /** 发送尚未被本地消息队列接收时通知输入区保留草稿。 */
   onRejectedBeforeSend?: () => void;
   /** 本地消息与流控制器均已建立，可以提交输入区清理或重试替换。 */
@@ -506,6 +508,10 @@ export function useSendMessage(activeConversationId?: string | null) {
 
   const sendMessage = useCallback(
     async (content: string, options: SendMessageOptions, attachments?: FileAttachment[]) => {
+      if (options.canStart && !options.canStart()) {
+        options.onRejectedBeforeSend?.();
+        return;
+      }
       if (!content.trim() && (!attachments || attachments.length === 0)) return;
       const preparationContext = captureSendSessionContext(
         store.getState(),
@@ -534,13 +540,17 @@ export function useSendMessage(activeConversationId?: string | null) {
         activeSendPreparations.delete(sendSessionKey);
       };
       const rejectStalePreparation = () => {
-        if (isSendSessionCurrent(store.getState(), preparationContext)) return false;
+        if (
+          isSendSessionCurrent(store.getState(), preparationContext)
+          && (!options.canStart || options.canStart())
+        ) return false;
         releaseSendPreparation();
         options.onRejectedBeforeSend?.();
         return true;
       };
 
       try {
+        if (rejectStalePreparation()) return;
         if (stopInFlightPromiseRef.current) {
           await stopInFlightPromiseRef.current;
           if (rejectStalePreparation()) return;
@@ -623,6 +633,7 @@ export function useSendMessage(activeConversationId?: string | null) {
         enabledModel.capabilities,
       );
 
+      if (rejectStalePreparation()) return;
       const nextGeneration = sendGenerationRef.current + 1;
       const sendContext = captureSendSessionContext(store.getState(), nextGeneration);
       if (!sendContext) {
