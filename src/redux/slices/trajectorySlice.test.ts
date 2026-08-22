@@ -96,6 +96,104 @@ function liveEvent(
 }
 
 describe('trajectorySlice', () => {
+  it('run list 到达后默认选择 started_at 最新的 attempt', () => {
+    let state = reducer(undefined, trajectoryRunListRequested({
+      conversationId: 'conversation-a',
+      requestId: 'runs-a',
+    }));
+    state = reducer(state, trajectoryRunListReceived({
+      conversationId: 'conversation-a',
+      requestId: 'runs-a',
+      response: {
+        items: [
+          runSummary('run-old', {
+            attempt_index: 3,
+            started_at: '2026-08-22T00:00:00.000Z',
+          }),
+          runSummary('run-new', {
+            attempt_index: 1,
+            started_at: '2026-08-22T02:00:00.000Z',
+          }),
+          runSummary('run-middle', {
+            attempt_index: 9,
+            started_at: '2026-08-22T01:00:00.000Z',
+          }),
+        ],
+        truncated: false,
+      },
+    }));
+
+    expect(state.byConversationId['conversation-a']).toMatchObject({
+      selectedMessageId: 'message-run-new',
+      selectedRunId: 'run-new',
+      selectedSpanId: null,
+      selectionSource: 'auto-snapshot',
+    });
+  });
+
+  it('run list 刷新不会覆盖用户手动选择', () => {
+    let state = reducer(undefined, selectTrajectoryTarget({
+      conversationId: 'conversation-a',
+      messageId: 'manual-message',
+      runId: 'manual-run',
+      spanId: 'manual-span',
+    }));
+    state = reducer(state, trajectoryRunListRequested({
+      conversationId: 'conversation-a',
+      requestId: 'runs-a',
+    }));
+    state = reducer(state, trajectoryRunListReceived({
+      conversationId: 'conversation-a',
+      requestId: 'runs-a',
+      response: { items: [runSummary('run-new')], truncated: false },
+    }));
+
+    expect(state.byConversationId['conversation-a']).toMatchObject({
+      selectedMessageId: 'manual-message',
+      selectedRunId: 'manual-run',
+      selectedSpanId: 'manual-span',
+      selectionSource: 'manual',
+    });
+  });
+
+  it('普通水合进行中到达 terminal 时，先收下旧快照再保留 reconciling 触发终态 refetch', () => {
+    const terminal = normalizeSseTrajectoryEvent({
+      type: 'run_completed',
+      schema_version: 1,
+      run_id: 'run-a',
+      sequence: 4,
+      ts: 1787356804,
+      trace_id: 'trace-run-a',
+      step_id: null,
+      tool_call_id: null,
+      parent_step_id: null,
+      total_steps: 1,
+      total_tool_calls: 0,
+      finish_reason: 'stop',
+    });
+    if (!terminal) throw new Error('测试终态事件必须可归一化');
+
+    let state = reducer(undefined, trajectorySnapshotRequested({
+      conversationId: 'conversation-a',
+      runId: 'run-a',
+      requestId: 'hydrate-a',
+    }));
+    state = reducer(state, mergeLiveTrajectoryEvent({
+      conversationId: 'conversation-a',
+      event: terminal,
+    }));
+    state = reducer(state, trajectorySnapshotReceived({
+      conversationId: 'conversation-a',
+      requestId: 'hydrate-a',
+      snapshot: snapshot('run-a', [0, 1, 2]),
+    }));
+
+    expect(state.byConversationId['conversation-a'].snapshotsByRunId['run-a'])
+      .toBeDefined();
+    expect(state.byConversationId['conversation-a'].reconciliationByRunId['run-a'])
+      .toMatchObject({ status: 'reconciling', activeRequestId: null });
+  });
+
   it('按 conversation 隔离 run list 的 loading、结果和错误', () => {
     let state = reducer(undefined, trajectoryRunListRequested({
       conversationId: 'conversation-a',

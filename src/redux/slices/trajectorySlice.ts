@@ -28,7 +28,9 @@ export type TrajectoryReconciliationStatus =
   | 'loading'
   | 'reconciling'
   | 'ready'
+  | 'unavailable'
   | 'failed';
+export type TrajectorySnapshotRequestPurpose = 'hydrate' | 'reconcile';
 
 export interface TrajectoryEventConflict {
   kind: 'live-live' | 'snapshot-live';
@@ -43,6 +45,7 @@ export interface TrajectoryReconciliationState {
   status: TrajectoryReconciliationStatus;
   error: string | null;
   activeRequestId: string | null;
+  activeRequestPurpose: TrajectorySnapshotRequestPurpose | null;
   durableLastSequence: number | null;
   liveTruncatedThroughSequence: number | null;
   eventsTruncated: boolean;
@@ -133,6 +136,7 @@ function ensureReconciliation(
     status: 'idle',
     error: null,
     activeRequestId: null,
+    activeRequestPurpose: null,
     durableLastSequence: null,
     liveTruncatedThroughSequence: null,
     eventsTruncated: false,
@@ -183,6 +187,19 @@ function upsertRunSummary(
   conversation.runSummariesById[run.run_id] = run;
   const serverWindowIndex = conversation.runs.findIndex(existing => existing.run_id === run.run_id);
   if (serverWindowIndex !== -1) conversation.runs[serverWindowIndex] = run;
+}
+
+function newestRunAttempt(
+  runs: readonly TrajectoryRunSummary[],
+): TrajectoryRunSummary | undefined {
+  return runs.reduce<TrajectoryRunSummary | undefined>((newest, candidate) => {
+    if (!newest) return candidate;
+    const startedAtOrder = candidate.started_at.localeCompare(newest.started_at);
+    if (startedAtOrder !== 0) return startedAtOrder > 0 ? candidate : newest;
+    return (candidate.attempt_index ?? -1) > (newest.attempt_index ?? -1)
+      ? candidate
+      : newest;
+  }, undefined);
 }
 
 function touchSnapshotLru(
@@ -291,6 +308,15 @@ const trajectorySlice = createSlice({
       conversation.activeRunListRequestId = null;
       conversation.runsTruncated = action.payload.response.truncated
         || action.payload.response.items.length > MAX_RUN_LIST_SIZE;
+      if (conversation.selectedRunId === null) {
+        const defaultRun = newestRunAttempt(conversation.runs);
+        if (defaultRun) {
+          conversation.selectedMessageId = defaultRun.message_id;
+          conversation.selectedRunId = defaultRun.run_id;
+          conversation.selectedSpanId = null;
+          conversation.selectionSource = 'auto-snapshot';
+        }
+      }
     },
     trajectoryRunListFailed(state, action: PayloadAction<{
       conversationId: string;
@@ -303,16 +329,30 @@ const trajectorySlice = createSlice({
       conversation.runListError = action.payload.error;
       conversation.activeRunListRequestId = null;
     },
+    trajectoryRunListCancelled(state, action: PayloadAction<{
+      conversationId: string;
+      requestId: string;
+    }>) {
+      const conversation = ensureConversation(state, action.payload.conversationId);
+      if (conversation.activeRunListRequestId !== action.payload.requestId) return;
+      conversation.runListStatus = 'idle';
+      conversation.runListError = null;
+      conversation.activeRunListRequestId = null;
+    },
     trajectorySnapshotRequested(state, action: PayloadAction<{
       conversationId: string;
       runId: string;
       requestId: string;
+      purpose?: TrajectorySnapshotRequestPurpose;
     }>) {
       const conversation = ensureConversation(state, action.payload.conversationId);
       const reconciliation = ensureReconciliation(conversation, action.payload.runId);
-      if (reconciliation.status !== 'reconciling') reconciliation.status = 'loading';
+      const purpose = action.payload.purpose
+        ?? (reconciliation.status === 'reconciling' ? 'reconcile' : 'hydrate');
+      if (purpose !== 'reconcile') reconciliation.status = 'loading';
       reconciliation.error = null;
       reconciliation.activeRequestId = action.payload.requestId;
+      reconciliation.activeRequestPurpose = purpose;
     },
     trajectorySnapshotReceived(state, action: PayloadAction<{
       conversationId: string;
@@ -324,6 +364,9 @@ const trajectorySlice = createSlice({
       const runId = snapshot.run.run_id;
       const reconciliation = ensureReconciliation(conversation, runId);
       if (reconciliation.activeRequestId !== action.payload.requestId) return;
+      const requestPurpose = reconciliation.activeRequestPurpose;
+      const terminalArrivedDuringHydration = requestPurpose === 'hydrate'
+        && reconciliation.status === 'reconciling';
       const allEvents = normalizedSnapshotEvents(snapshot);
       const durableLastSequence = allEvents.at(-1)?.sequence ?? null;
       const events = allEvents.slice(-MAX_EVENTS_PER_RUN);
@@ -369,11 +412,12 @@ const trajectorySlice = createSlice({
       }
       touchSnapshotLru(conversation, runId);
       reconciliation.activeRequestId = null;
+      reconciliation.activeRequestPurpose = null;
       reconciliation.durableLastSequence = durableLastSequence;
       reconciliation.liveTruncatedThroughSequence = null;
       reconciliation.eventsTruncated = snapshot.truncated || allEvents.length > MAX_EVENTS_PER_RUN;
       trimMergedEventWindow(conversation, runId);
-      reconciliation.status = 'ready';
+      reconciliation.status = terminalArrivedDuringHydration ? 'reconciling' : 'ready';
       reconciliation.error = null;
     },
     trajectorySnapshotFailed(state, action: PayloadAction<{
@@ -388,6 +432,40 @@ const trajectorySlice = createSlice({
       reconciliation.status = 'failed';
       reconciliation.error = action.payload.error;
       reconciliation.activeRequestId = null;
+      reconciliation.activeRequestPurpose = null;
+    },
+    trajectorySnapshotUnavailable(state, action: PayloadAction<{
+      conversationId: string;
+      runId: string;
+      requestId: string;
+    }>) {
+      const conversation = ensureConversation(state, action.payload.conversationId);
+      const reconciliation = ensureReconciliation(conversation, action.payload.runId);
+      if (reconciliation.activeRequestId !== action.payload.requestId) return;
+      delete conversation.snapshotsByRunId[action.payload.runId];
+      conversation.snapshotLru = conversation.snapshotLru
+        .filter(runId => runId !== action.payload.runId);
+      reconciliation.status = 'unavailable';
+      reconciliation.error = null;
+      reconciliation.activeRequestId = null;
+      reconciliation.activeRequestPurpose = null;
+    },
+    trajectorySnapshotCancelled(state, action: PayloadAction<{
+      conversationId: string;
+      runId: string;
+      requestId: string;
+    }>) {
+      const conversation = ensureConversation(state, action.payload.conversationId);
+      const reconciliation = ensureReconciliation(conversation, action.payload.runId);
+      if (reconciliation.activeRequestId !== action.payload.requestId) return;
+      const wasReconciling = reconciliation.status === 'reconciling'
+        || reconciliation.activeRequestPurpose === 'reconcile';
+      reconciliation.status = wasReconciling
+        ? 'reconciling'
+        : (conversation.snapshotsByRunId[action.payload.runId] ? 'ready' : 'idle');
+      reconciliation.error = null;
+      reconciliation.activeRequestId = null;
+      reconciliation.activeRequestPurpose = null;
     },
     touchTrajectorySnapshot(state, action: PayloadAction<{
       conversationId: string;
@@ -668,12 +746,15 @@ export const {
   setTrajectoryInspectorOpen,
   setTrajectoryScrollMode,
   touchTrajectorySnapshot,
+  trajectoryRunListCancelled,
   trajectoryRunListFailed,
   trajectoryRunListReceived,
   trajectoryRunListRequested,
+  trajectorySnapshotCancelled,
   trajectorySnapshotFailed,
   trajectorySnapshotReceived,
   trajectorySnapshotRequested,
+  trajectorySnapshotUnavailable,
 } = trajectorySlice.actions;
 
 export default trajectorySlice.reducer;
