@@ -1,14 +1,19 @@
 import React from 'react';
 import { act, renderHook, waitFor } from '@testing-library/react';
-import { configureStore } from '@reduxjs/toolkit';
+import { configureStore, type UnknownAction } from '@reduxjs/toolkit';
 import { Provider } from 'react-redux';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { normalizeSseTrajectoryEvent } from '@/lib/trajectory/normalizeTrajectoryEvent';
 import trajectoryReducer, {
   mergeLiveTrajectoryEvent,
+  requestTrajectoryInspect,
   selectTrajectoryTarget,
   setTrajectoryActiveSurface,
+  setTrajectoryInspectorOpen,
+  setTrajectoryScrollMode,
+  trajectoryRunListReceived,
+  trajectoryRunListRequested,
   trajectorySnapshotReceived,
   trajectorySnapshotRequested,
 } from '@/redux/slices/trajectorySlice';
@@ -30,6 +35,26 @@ import { useConversationTrajectory } from './useConversationTrajectory';
 function createStore() {
   return configureStore({
     reducer: { trajectory: trajectoryReducer },
+  });
+}
+
+interface TestAuthState {
+  isAuthenticated: boolean;
+  user: { id: string } | null;
+  token: string | null;
+}
+
+function testAuthReducer(
+  state: TestAuthState = { isAuthenticated: true, user: { id: 'user-a' }, token: null },
+  action: UnknownAction,
+): TestAuthState {
+  if (action.type !== 'test/switch-auth' || typeof action.payload !== 'string') return state;
+  return { isAuthenticated: true, user: { id: action.payload }, token: null };
+}
+
+function createAuthenticatedStore() {
+  return configureStore({
+    reducer: { trajectory: trajectoryReducer, auth: testAuthReducer },
   });
 }
 
@@ -177,6 +202,119 @@ describe('useConversationTrajectory', () => {
       expect(result.current[0].runListStatus).toBe('ready');
       expect(result.current[1].runListStatus).toBe('ready');
     });
+  });
+
+  it('两个独立 store 的同 key 请求各自完成，结果不会只派发给先发起的 store', async () => {
+    const firstStore = createStore();
+    const secondStore = createStore();
+    const firstRequest = deferred<{ items: TrajectoryRunSummary[]; truncated: boolean }>();
+    const secondRequest = deferred<{ items: TrajectoryRunSummary[]; truncated: boolean }>();
+    getTrajectoryRunsMock
+      .mockReturnValueOnce(firstRequest.promise)
+      .mockReturnValueOnce(secondRequest.promise);
+
+    const firstHook = renderHook(() => useConversationTrajectory('conversation-shared'), {
+      wrapper: createWrapper(firstStore),
+    });
+    const secondHook = renderHook(() => useConversationTrajectory('conversation-shared'), {
+      wrapper: createWrapper(secondStore),
+    });
+
+    expect(getTrajectoryRunsMock).toHaveBeenCalledTimes(2);
+    await act(async () => {
+      firstRequest.resolve({ items: [runSummary('run-first')], truncated: false });
+      await firstRequest.promise;
+    });
+    await waitFor(() => expect(firstHook.result.current.runListStatus).toBe('ready'));
+    expect(firstHook.result.current.runs.map(run => run.run_id)).toEqual(['run-first']);
+    expect(secondHook.result.current.runListStatus).toBe('loading');
+    expect(secondHook.result.current.runs).toEqual([]);
+
+    await act(async () => {
+      secondRequest.resolve({ items: [runSummary('run-second')], truncated: false });
+      await secondRequest.promise;
+    });
+    await waitFor(() => expect(secondHook.result.current.runListStatus).toBe('ready'));
+    expect(secondHook.result.current.runs.map(run => run.run_id)).toEqual(['run-second']);
+    expect(firstHook.result.current.runs.map(run => run.run_id)).toEqual(['run-first']);
+  });
+
+  it('同 store 切换认证身份会隔离旧请求，旧响应不能写入新会话作用域', async () => {
+    const store = createAuthenticatedStore();
+    const oldRequest = deferred<{ items: TrajectoryRunSummary[]; truncated: boolean }>();
+    const newRequest = deferred<{ items: TrajectoryRunSummary[]; truncated: boolean }>();
+    let oldSignal: AbortSignal | undefined;
+    getTrajectoryRunsMock
+      .mockImplementationOnce((_conversationId: string, signal: AbortSignal) => {
+        oldSignal = signal;
+        return oldRequest.promise;
+      })
+      .mockReturnValueOnce(newRequest.promise);
+    const { result } = renderHook(() => useConversationTrajectory('conversation-auth'), {
+      wrapper: createWrapper(store as unknown as ReturnType<typeof createStore>),
+    });
+    await waitFor(() => expect(getTrajectoryRunsMock).toHaveBeenCalledTimes(1));
+
+    act(() => {
+      store.dispatch({ type: 'test/switch-auth', payload: 'user-b' });
+    });
+
+    await waitFor(() => expect(oldSignal?.aborted).toBe(true));
+    await waitFor(() => expect(getTrajectoryRunsMock).toHaveBeenCalledTimes(2));
+    await act(async () => {
+      oldRequest.resolve({ items: [runSummary('run-user-a')], truncated: false });
+      newRequest.resolve({ items: [runSummary('run-user-b')], truncated: false });
+      await Promise.all([oldRequest.promise, newRequest.promise]);
+    });
+    await waitFor(() => expect(result.current.runListStatus).toBe('ready'));
+
+    expect(result.current.runs.map(run => run.run_id)).toEqual(['run-user-b']);
+    expect(result.current.selectedRunId).toBe('run-user-b');
+  });
+
+  it('同 store 两个 snapshot consumer 共享请求，发起者先卸载不会 abort 或额外 GET', async () => {
+    const store = createStore();
+    store.dispatch(trajectoryRunListRequested({
+      conversationId: 'conversation-a',
+      requestId: 'seed-runs',
+    }));
+    store.dispatch(trajectoryRunListReceived({
+      conversationId: 'conversation-a',
+      requestId: 'seed-runs',
+      response: { items: [runSummary('run-a')], truncated: false },
+    }));
+    store.dispatch(setTrajectoryActiveSurface({
+      conversationId: 'conversation-a',
+      surface: 'trajectory',
+    }));
+    const pendingSnapshot = deferred<TrajectorySnapshot>();
+    let sharedSignal: AbortSignal | undefined;
+    getTrajectorySnapshotMock.mockImplementation(
+      (_conversationId: string, _runId: string, signal: AbortSignal) => {
+        sharedSignal = signal;
+        return pendingSnapshot.promise;
+      },
+    );
+
+    const ownerHook = renderHook(() => useConversationTrajectory('conversation-a'), {
+      wrapper: createWrapper(store),
+    });
+    await waitFor(() => expect(getTrajectorySnapshotMock).toHaveBeenCalledTimes(1));
+    const remainingHook = renderHook(() => useConversationTrajectory('conversation-a'), {
+      wrapper: createWrapper(store),
+    });
+    await act(async () => Promise.resolve());
+
+    ownerHook.unmount();
+
+    expect(sharedSignal?.aborted).toBe(false);
+    expect(getTrajectorySnapshotMock).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      pendingSnapshot.resolve(snapshot('run-a', [0, 1]));
+      await pendingSnapshot.promise;
+    });
+    await waitFor(() => expect(remainingHook.result.current.snapshot?.events).toHaveLength(2));
+    expect(getTrajectorySnapshotMock).toHaveBeenCalledTimes(1);
   });
 
   it('Trajectory 激活后只水合 selected run', async () => {
@@ -462,7 +600,7 @@ describe('useConversationTrajectory', () => {
     const emptyHook = renderHook(() => useConversationTrajectory('conversation-empty'), {
       wrapper: createWrapper(emptyStore),
     });
-    await waitFor(() => expect(emptyHook.result.current.runListStatus).toBe('ready'));
+    await waitFor(() => expect(emptyHook.result.current.runListStatus).toBe('unavailable'));
     expect(emptyHook.result.current.runs).toEqual([]);
     expect(emptyHook.result.current.runListError).toBeNull();
     emptyHook.unmount();
@@ -477,6 +615,94 @@ describe('useConversationTrajectory', () => {
     );
     await waitFor(() => expect(unauthorizedHook.result.current.runListStatus).toBe('failed'));
     expect(unauthorizedHook.result.current.runListError).toBe('Unauthorized');
+  });
+
+  it('已有 selection 与 snapshot 时 run-list 404 会清空整段 conversation 轨迹缓存', async () => {
+    const store = createStore();
+    store.dispatch(trajectoryRunListRequested({
+      conversationId: 'conversation-stale',
+      requestId: 'seed-runs',
+    }));
+    store.dispatch(trajectoryRunListReceived({
+      conversationId: 'conversation-stale',
+      requestId: 'seed-runs',
+      response: { items: [runSummary('run-stale')], truncated: true },
+    }));
+    store.dispatch(trajectorySnapshotRequested({
+      conversationId: 'conversation-stale',
+      runId: 'run-stale',
+      requestId: 'seed-snapshot',
+    }));
+    store.dispatch(trajectorySnapshotReceived({
+      conversationId: 'conversation-stale',
+      requestId: 'seed-snapshot',
+      snapshot: snapshot('run-stale', [0, 1]),
+    }));
+    store.dispatch(mergeLiveTrajectoryEvent({
+      conversationId: 'conversation-stale',
+      event: normalizeSseTrajectoryEvent({
+        type: 'step_started',
+        schema_version: 1,
+        run_id: 'run-stale',
+        sequence: 2,
+        ts: 1787356802,
+        trace_id: 'trace-run-stale',
+        step_id: 'step-2',
+        tool_call_id: null,
+        parent_step_id: null,
+        step_number: 2,
+      })!,
+    }));
+    store.dispatch(requestTrajectoryInspect({
+      conversationId: 'conversation-stale',
+      requestId: 'inspect-stale',
+      messageId: 'message-run-stale',
+      runId: 'run-stale',
+      spanId: 'span-stale',
+    }));
+    store.dispatch(setTrajectoryScrollMode({
+      conversationId: 'conversation-stale',
+      mode: 'manual',
+    }));
+    store.dispatch(setTrajectoryInspectorOpen({
+      conversationId: 'conversation-stale',
+      isOpen: true,
+    }));
+    getTrajectoryRunsMock.mockRejectedValue(
+      new ApiError('NOT_FOUND', '会话不存在', 'request-404'),
+    );
+
+    const { result } = renderHook(() => useConversationTrajectory('conversation-stale'), {
+      wrapper: createWrapper(store),
+    });
+    expect(result.current.runs.map(run => run.run_id)).toEqual(['run-stale']);
+    expect(result.current.snapshot?.run.run_id).toBe('run-stale');
+
+    act(() => result.current.refreshRuns());
+
+    await waitFor(() => expect(result.current.runListStatus).toBe('unavailable'));
+    expect(result.current.runs).toEqual([]);
+    expect(result.current.selectedRunId).toBeNull();
+    expect(result.current.snapshot).toBeUndefined();
+    expect(result.current.inspectRequest).toBeNull();
+    expect(result.current.activeSurface).toBe('chat');
+    expect(store.getState().trajectory.byConversationId['conversation-stale']).toMatchObject({
+      runs: [],
+      runSummariesById: {},
+      provisionalRunIds: [],
+      snapshotsByRunId: {},
+      liveEventsByRunId: {},
+      reconciliationByRunId: {},
+      snapshotLru: [],
+      selectedMessageId: null,
+      selectedRunId: null,
+      selectedSpanId: null,
+      selectionSource: 'none',
+      inspectRequest: null,
+      activeSurface: 'chat',
+      scrollMode: 'follow-live',
+      isInspectorOpen: false,
+    });
   });
 
   it('snapshot 404 进入可区分的正常 unavailable 状态，网络错误保持 failed', async () => {

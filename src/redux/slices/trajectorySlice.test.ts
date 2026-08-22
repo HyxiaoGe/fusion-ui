@@ -16,6 +16,7 @@ import trajectoryReducer, {
   trajectoryRunListFailed,
   trajectoryRunListReceived,
   trajectoryRunListRequested,
+  trajectoryRunListUnavailable,
   trajectorySnapshotFailed,
   trajectorySnapshotReceived,
   trajectorySnapshotRequested,
@@ -539,6 +540,76 @@ describe('trajectorySlice', () => {
       runListStatus: 'ready',
       runListError: null,
       runs: [expect.objectContaining({ run_id: 'run-new' })],
+    });
+  });
+
+  it('run-list unavailable 只接受当前 requestId 并清空 conversation 轨迹缓存', () => {
+    let state = reducer(undefined, trajectoryRunListRequested({
+      conversationId: 'conversation-a',
+      requestId: 'seed-runs',
+    }));
+    state = reducer(state, trajectoryRunListReceived({
+      conversationId: 'conversation-a',
+      requestId: 'seed-runs',
+      response: { items: [runSummary('run-a')], truncated: true },
+    }));
+    state = reducer(state, trajectorySnapshotRequested({
+      conversationId: 'conversation-a',
+      runId: 'run-a',
+      requestId: 'seed-snapshot',
+    }));
+    state = reducer(state, trajectorySnapshotReceived({
+      conversationId: 'conversation-a',
+      requestId: 'seed-snapshot',
+      snapshot: snapshot('run-a', [0, 1]),
+    }));
+    state = reducer(state, requestTrajectoryInspect({
+      conversationId: 'conversation-a',
+      requestId: 'inspect-a',
+      messageId: 'message-run-a',
+      runId: 'run-a',
+      spanId: 'span-a',
+    }));
+    state = reducer(state, setTrajectoryScrollMode({
+      conversationId: 'conversation-a',
+      mode: 'manual',
+    }));
+    state = reducer(state, trajectoryRunListRequested({
+      conversationId: 'conversation-a',
+      requestId: 'refresh-current',
+    }));
+
+    const beforeStaleUnavailable = state;
+    state = reducer(state, trajectoryRunListUnavailable({
+      conversationId: 'conversation-a',
+      requestId: 'refresh-stale',
+    }));
+    expect(state).toEqual(beforeStaleUnavailable);
+
+    state = reducer(state, trajectoryRunListUnavailable({
+      conversationId: 'conversation-a',
+      requestId: 'refresh-current',
+    }));
+    expect(state.byConversationId['conversation-a']).toMatchObject({
+      runs: [],
+      runSummariesById: {},
+      provisionalRunIds: [],
+      runListStatus: 'unavailable',
+      runListError: null,
+      activeRunListRequestId: null,
+      runsTruncated: false,
+      snapshotsByRunId: {},
+      liveEventsByRunId: {},
+      reconciliationByRunId: {},
+      snapshotLru: [],
+      selectedMessageId: null,
+      selectedRunId: null,
+      selectedSpanId: null,
+      selectionSource: 'none',
+      inspectRequest: null,
+      activeSurface: 'chat',
+      scrollMode: 'follow-live',
+      isInspectorOpen: false,
     });
   });
 

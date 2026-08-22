@@ -21,7 +21,7 @@ const TERMINAL_EVENT_TYPES = new Set([
 
 export type TrajectoryActiveSurface = 'chat' | 'trajectory';
 export type TrajectoryScrollMode = 'follow-live' | 'manual';
-export type TrajectoryRunListStatus = 'idle' | 'loading' | 'ready' | 'failed';
+export type TrajectoryRunListStatus = 'idle' | 'loading' | 'ready' | 'unavailable' | 'failed';
 export type TrajectorySelectionSource = 'none' | 'auto-live' | 'auto-snapshot' | 'manual' | 'inspect';
 export type TrajectoryReconciliationStatus =
   | 'idle'
@@ -338,6 +338,17 @@ const trajectorySlice = createSlice({
       conversation.runListStatus = 'idle';
       conversation.runListError = null;
       conversation.activeRunListRequestId = null;
+    },
+    trajectoryRunListUnavailable(state, action: PayloadAction<{
+      conversationId: string;
+      requestId: string;
+    }>) {
+      const conversation = ensureConversation(state, action.payload.conversationId);
+      if (conversation.activeRunListRequestId !== action.payload.requestId) return;
+      state.byConversationId[action.payload.conversationId] = {
+        ...createConversationState(),
+        runListStatus: 'unavailable',
+      };
     },
     trajectorySnapshotRequested(state, action: PayloadAction<{
       conversationId: string;
@@ -750,6 +761,7 @@ export const {
   trajectoryRunListFailed,
   trajectoryRunListReceived,
   trajectoryRunListRequested,
+  trajectoryRunListUnavailable,
   trajectorySnapshotCancelled,
   trajectorySnapshotFailed,
   trajectorySnapshotReceived,
