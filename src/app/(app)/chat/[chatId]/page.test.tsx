@@ -2,6 +2,9 @@ import React, { useEffect } from 'react';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Conversation, Message } from '@/types/conversation';
+import type { StreamCallbacks } from '@/lib/api/chat';
+import type { NormalizedTrajectoryEvent } from '@/lib/trajectory/normalizeTrajectoryEvent';
+import trajectoryReducer from '@/redux/slices/trajectorySlice';
 import {
   CONTEXT_STATUS_INTERACTED_FIRST_TURN_STORAGE_KEY,
   CONTEXT_STATUS_PENDING_FIRST_TURN_STORAGE_KEY,
@@ -436,6 +439,8 @@ vi.mock('@/components/ui/confirm-dialog', () => ({
 
 import ChatPage from './page';
 
+let trajectoryState = trajectoryReducer(undefined, { type: '@@init' });
+
 function createConversation(id: string, messages: Message[]): Conversation {
   return {
     id,
@@ -456,6 +461,21 @@ function textMessage(id: string): Message {
   };
 }
 
+function recoveredTrajectoryEvent(): NormalizedTrajectoryEvent {
+  return {
+    runId: 'run-recovered',
+    sequence: 0,
+    eventType: 'run_started',
+    schemaVersion: 1,
+    timestamp: '2026-08-22T00:00:00.000Z',
+    stepId: null,
+    toolCallId: null,
+    parentStepId: null,
+    traceId: 'trace-recovered',
+    payload: { conversation_id: 'chat-a', message_id: 'assistant-1' },
+  };
+}
+
 function countSnapshotDispatches() {
   return dispatchMock.mock.calls.filter(
     ([action]) => action?.type === 'conversation/setLastReadyConversationSnapshot'
@@ -467,8 +487,10 @@ describe('ChatPage 会话切换体验', () => {
     currentRoute.chatId = 'chat-a';
     conversationsById.clear();
     hydrationById.clear();
+    trajectoryState = trajectoryReducer(undefined, { type: '@@init' });
     dispatchMock.mockClear();
     dispatchMock.mockImplementation((action: { type?: string; payload?: unknown }) => {
+      trajectoryState = trajectoryReducer(trajectoryState, action as never);
       if (action?.type === 'conversation/setLastReadyConversationSnapshot') {
         lastReadyConversationSnapshotState.value = action.payload as { chatId: string; messages: Message[] };
       }
@@ -708,6 +730,44 @@ describe('ChatPage 会话切换体验', () => {
     await waitFor(() => expect(reconnectSignal?.aborted).toBe(true));
     await new Promise((resolve) => setTimeout(resolve, 150));
     expect(reconnectStreamMock).toHaveBeenCalledTimes(callsBeforeAbort);
+  });
+
+  it('页面切换后旧 reconnect 的迟到轨迹仍隔离写回原会话', async () => {
+    conversationsById.set('chat-a', createConversation('chat-a', [textMessage('user-a')]));
+    conversationsById.set('chat-b', createConversation('chat-b', [textMessage('user-b')]));
+    hydrationById.set('chat-a', { view: 'ready' });
+    hydrationById.set('chat-b', { view: 'ready' });
+    fetchStreamStatusMock.mockImplementation(async (chatId) => (
+      chatId === 'chat-a'
+        ? { status: 'streaming', message_id: 'assistant-1' }
+        : { status: 'not_found' }
+    ));
+    let recoveryCallbacks: StreamCallbacks | undefined;
+    let recoverySignal: AbortSignal | undefined;
+    reconnectStreamMock.mockImplementation((_chatId, _cursor, callbacks, signal) => {
+      recoveryCallbacks = callbacks;
+      recoverySignal = signal;
+      return new Promise((_resolve, reject) => {
+        signal.addEventListener('abort', () => {
+          reject(Object.assign(new Error('aborted'), { name: 'AbortError' }));
+        }, { once: true });
+      });
+    });
+
+    const view = render(<ChatPage />);
+    await waitFor(() => expect(recoveryCallbacks).toBeDefined());
+
+    currentRoute.chatId = 'chat-b';
+    view.rerender(<ChatPage />);
+    await waitFor(() => expect(recoverySignal?.aborted).toBe(true));
+
+    recoveryCallbacks?.onTrajectoryEvent?.(recoveredTrajectoryEvent());
+
+    expect(
+      trajectoryState.byConversationId['chat-a']
+        .liveEventsByRunId['run-recovered'].map(event => event.eventType),
+    ).toEqual(['run_started']);
+    expect(trajectoryState.byConversationId['chat-b']).toBeUndefined();
   });
 
   it('停止生成会 abort 已进入的重试等待', async () => {

@@ -397,9 +397,11 @@ export default function ChatPage() {
           },
           ...createAgentStreamEventHandlers({
             dispatch,
+            trajectoryDispatch: dispatch,
             isActive: () => !cancelled,
             resolveMessageId: () => messageId,
             resolveConversationId: () => chatId,
+            resolveTrajectoryConversationId: () => chatId,
           }),
           onSuggestedQuestionsPending: ev => {
             if (cancelled) return;

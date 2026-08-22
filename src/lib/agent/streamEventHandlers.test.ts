@@ -1,5 +1,31 @@
+import { createNextState } from '@reduxjs/toolkit';
 import { describe, expect, it, vi } from 'vitest';
+import type { NormalizedTrajectoryEvent } from '@/lib/trajectory/normalizeTrajectoryEvent';
+import trajectoryReducer, {
+  mergeLiveTrajectoryEvent,
+  selectMergedTrajectoryEvents,
+} from '@/redux/slices/trajectorySlice';
 import { createAgentStreamEventHandlers } from './streamEventHandlers';
+
+function trajectoryEvent(
+  sequence: number,
+  eventType = 'step_started',
+): NormalizedTrajectoryEvent {
+  return {
+    runId: 'run-live',
+    sequence,
+    eventType,
+    schemaVersion: 1,
+    timestamp: `2026-08-22T00:00:${String(sequence % 60).padStart(2, '0')}.000Z`,
+    stepId: eventType === 'step_started' ? `step-${sequence}` : null,
+    toolCallId: null,
+    parentStepId: null,
+    traceId: 'trace-live',
+    payload: eventType === 'run_started'
+      ? { conversation_id: 'conversation-live', message_id: 'message-live' }
+      : {},
+  };
+}
 
 describe('createAgentStreamEventHandlers', () => {
   it('映射 v1 run_started 和 v2 progress 到 Redux action', () => {
@@ -964,5 +990,113 @@ describe('createAgentStreamEventHandlers', () => {
         sequence: 6,
       }),
     }));
+  });
+
+  it('即时进度失活时仍把轨迹归并到解析出的原会话，并由 terminal 进入 reconciling', () => {
+    let trajectoryState = trajectoryReducer(undefined, { type: '@@init' });
+    const trajectoryDispatch = (action: unknown) => {
+      trajectoryState = trajectoryReducer(trajectoryState, action as never);
+      return action;
+    };
+    const handlers = createAgentStreamEventHandlers({
+      dispatch: vi.fn(),
+      trajectoryDispatch,
+      isActive: () => false,
+      resolveMessageId: ev => ev.message_id,
+      resolveConversationId: () => 'conversation-progress',
+      resolveTrajectoryConversationId: () => 'conversation-live',
+    });
+
+    handlers.onTrajectoryEvent?.(trajectoryEvent(0, 'run_started'));
+    handlers.onTrajectoryEvent?.(trajectoryEvent(1, 'run_completed'));
+
+    expect(selectMergedTrajectoryEvents(
+      { trajectory: trajectoryState },
+      'conversation-live',
+      'run-live',
+    ).map(event => event.eventType)).toEqual(['run_started', 'run_completed']);
+    expect(trajectoryState.byConversationId['conversation-progress']).toBeUndefined();
+    expect(
+      trajectoryState.byConversationId['conversation-live']
+        .reconciliationByRunId['run-live'].status,
+    ).toBe('reconciling');
+  });
+
+  it.each([
+    'run_completed',
+    'run_failed',
+    'run_interrupted',
+    'run_limit_reached',
+  ])('%s 仅通过 reducer 状态进入 reconciling', eventType => {
+    let trajectoryState = trajectoryReducer(undefined, { type: '@@init' });
+    const handlers = createAgentStreamEventHandlers({
+      dispatch: vi.fn(),
+      trajectoryDispatch: action => {
+        trajectoryState = trajectoryReducer(trajectoryState, action as never);
+        return action;
+      },
+      isActive: () => true,
+      resolveMessageId: ev => ev.message_id,
+      resolveConversationId: () => 'conversation-live',
+      resolveTrajectoryConversationId: () => 'conversation-live',
+    });
+
+    handlers.onTrajectoryEvent?.(trajectoryEvent(1, eventType));
+
+    expect(
+      trajectoryState.byConversationId['conversation-live']
+        .reconciliationByRunId['run-live'].status,
+    ).toBe('reconciling');
+  });
+
+  it('同一 reconnect replay 交给 slice 幂等处理', () => {
+    let trajectoryState = trajectoryReducer(undefined, { type: '@@init' });
+    const trajectoryDispatch = (action: unknown) => {
+      trajectoryState = trajectoryReducer(trajectoryState, action as never);
+      return action;
+    };
+    const handlers = createAgentStreamEventHandlers({
+      dispatch: vi.fn(),
+      trajectoryDispatch,
+      isActive: () => true,
+      resolveMessageId: ev => ev.message_id,
+      resolveConversationId: () => 'conversation-live',
+      resolveTrajectoryConversationId: () => 'conversation-live',
+    });
+    const terminal = trajectoryEvent(1, 'run_completed');
+
+    handlers.onTrajectoryEvent?.(terminal);
+    handlers.onTrajectoryEvent?.(terminal);
+
+    expect(selectMergedTrajectoryEvents(
+      { trajectory: trajectoryState },
+      'conversation-live',
+      'run-live',
+    )).toHaveLength(1);
+    expect(trajectoryState.byConversationId['conversation-live'].reconciliationByRunId['run-live'])
+      .toMatchObject({ status: 'reconciling', conflicts: [] });
+  });
+
+  it('1000 条受控事件 reducer batch 在 500ms 内完成', () => {
+    const actions = Array.from({ length: 1000 }, (_, sequence) => (
+      mergeLiveTrajectoryEvent({
+        conversationId: 'conversation-batch',
+        event: trajectoryEvent(sequence),
+      })
+    ));
+    const initialState = trajectoryReducer(undefined, { type: '@@init' });
+
+    const startedAt = performance.now();
+    const state = createNextState(initialState, draft => {
+      for (const action of actions) trajectoryReducer(draft as typeof initialState, action);
+    });
+    const elapsedMs = performance.now() - startedAt;
+
+    expect(selectMergedTrajectoryEvents(
+      { trajectory: state },
+      'conversation-batch',
+      'run-live',
+    )).toHaveLength(1000);
+    expect(elapsedMs).toBeLessThan(500);
   });
 });

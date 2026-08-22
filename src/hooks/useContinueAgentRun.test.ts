@@ -13,6 +13,8 @@ import conversationReducer, {
   upsertConversation,
 } from '@/redux/slices/conversationSlice';
 import streamReducer from '@/redux/slices/streamSlice';
+import trajectoryReducer from '@/redux/slices/trajectorySlice';
+import type { NormalizedTrajectoryEvent } from '@/lib/trajectory/normalizeTrajectoryEvent';
 
 vi.mock('@/lib/api/chat', () => ({
   continueAgentRunStream: vi.fn(),
@@ -45,6 +47,7 @@ function createReducerBackedHarness() {
     reducer: {
       conversation: conversationReducer,
       stream: streamReducer,
+      trajectory: trajectoryReducer,
     },
   });
   store.dispatch(upsertConversation({
@@ -62,6 +65,26 @@ function createReducerBackedHarness() {
   }));
   const dispatch = vi.spyOn(store, 'dispatch');
   return { store, dispatch };
+}
+
+function normalizedContinuationEvent(
+  eventType: 'run_started' | 'run_failed',
+  sequence: number,
+): NormalizedTrajectoryEvent {
+  return {
+    runId: 'run-continuation',
+    sequence,
+    eventType,
+    schemaVersion: 1,
+    timestamp: `2026-08-22T00:00:0${sequence}.000Z`,
+    stepId: null,
+    toolCallId: null,
+    parentStepId: null,
+    traceId: 'trace-continuation',
+    payload: eventType === 'run_started'
+      ? { conversation_id: 'conv-1', message_id: 'msg-1' }
+      : { error_code: 'PROVIDER_ERROR', message: '调用失败' },
+  };
 }
 
 describe('useContinueAgentRun', () => {
@@ -968,5 +991,34 @@ describe('useContinueAgentRun', () => {
       { type: 'text', id: 'new-text', text: '补充回答' },
     ]);
     expect(dispatch).toHaveBeenCalledWith(expect.objectContaining({ type: 'stream/endStream' }));
+  });
+
+  it('continuation 在无轨迹视图消费者时仍归并实时事件并标记 terminal 对账', async () => {
+    const { store, dispatch } = createReducerBackedHarness();
+    vi.mocked(getConversation).mockImplementation(() => new Promise(() => {}));
+    vi.mocked(continueAgentRunStream).mockImplementation(async (_payload, callbacks) => {
+      callbacks.onTrajectoryEvent?.(normalizedContinuationEvent('run_started', 0));
+      callbacks.onTrajectoryEvent?.(normalizedContinuationEvent('run_failed', 1));
+      callbacks.onDone({ messageId: 'msg-1', conversationId: 'conv-1' });
+    });
+
+    const { result } = renderHook(() => useContinueAgentRun({
+      dispatch: dispatch as never,
+      store: store as never,
+    }));
+
+    await act(async () => {
+      await result.current.continueAgentRun({
+        conversationId: 'conv-1',
+        assistantMessageId: 'msg-1',
+        previousRunId: 'run-previous',
+      });
+    });
+
+    const trajectory = store.getState().trajectory.byConversationId['conv-1'];
+    expect(
+      trajectory.liveEventsByRunId['run-continuation'].map(event => event.eventType),
+    ).toEqual(['run_started', 'run_failed']);
+    expect(trajectory.reconciliationByRunId['run-continuation'].status).toBe('reconciling');
   });
 });

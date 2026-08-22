@@ -1117,6 +1117,160 @@ describe('sendMessageStream — 新 envelope 协议', () => {
     expect(cbs.onEvidenceItemUpserted).toHaveBeenCalledTimes(1);
   });
 
+  it('已知安全 agent_event 同时投影原进度回调和单一受控轨迹回调', async () => {
+    fetchWithAuthMock.mockResolvedValue(
+      createStreamResponse([
+        agentEvent('run_progress_updated', {
+          protocol_version: 2,
+          phase: 'researching',
+          label: '正在检索',
+          completed_steps: 1,
+          total_steps: 2,
+          authorization: 'Bearer must-not-leak',
+        }, 4),
+        envelope('done', {}),
+        'data: [DONE]\n\n',
+      ]),
+    );
+    const onRunProgressUpdated = vi.fn();
+    const onTrajectoryEvent = vi.fn();
+
+    await sendMessageStream(
+      { model_id: 'g', message: 'q', conversation_id: 'conv-1' },
+      {
+        onReady: vi.fn(),
+        onRunProgressUpdated,
+        onTrajectoryEvent,
+        onReasoning: vi.fn(),
+        onAnswering: vi.fn(),
+        onDone: vi.fn(),
+        onError: vi.fn(),
+      },
+    );
+
+    expect(onRunProgressUpdated).toHaveBeenCalledTimes(1);
+    expect(onTrajectoryEvent).toHaveBeenCalledTimes(1);
+    expect(onTrajectoryEvent).toHaveBeenCalledWith({
+      runId: 'r1',
+      sequence: 4,
+      eventType: 'run_progress_updated',
+      schemaVersion: 1,
+      timestamp: '1970-01-01T00:00:00.000Z',
+      stepId: null,
+      toolCallId: null,
+      parentStepId: null,
+      traceId: 'r1',
+      payload: {
+        protocol_version: 2,
+        phase: 'researching',
+        label: '正在检索',
+        completed_steps: 1,
+        total_steps: 2,
+      },
+    });
+    expect(JSON.stringify(onTrajectoryEvent.mock.calls)).not.toContain('must-not-leak');
+  });
+
+  it('仅供轨迹消费的已知 agent_event 进入受控回调且不误报未知事件', async () => {
+    fetchWithAuthMock.mockResolvedValue(
+      createStreamResponse([
+        agentEvent('llm_round_started', {
+          llm_round_id: 'round-1',
+          round_index: 0,
+          model: 'deepseek-chat',
+          provider: 'litellm',
+        }, 5),
+        envelope('done', {}),
+        'data: [DONE]\n\n',
+      ]),
+    );
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const onTrajectoryEvent = vi.fn();
+
+    await sendMessageStream(
+      { model_id: 'g', message: 'q' },
+      {
+        onReady: vi.fn(),
+        onTrajectoryEvent,
+        onReasoning: vi.fn(),
+        onAnswering: vi.fn(),
+        onDone: vi.fn(),
+        onError: vi.fn(),
+      },
+    );
+
+    expect(onTrajectoryEvent).toHaveBeenCalledWith(expect.objectContaining({
+      eventType: 'llm_round_started',
+      payload: {
+        llm_round_id: 'round-1',
+        round_index: 0,
+        model: 'deepseek-chat',
+        provider: 'litellm',
+      },
+    }));
+    expect(warn).not.toHaveBeenCalledWith(
+      expect.stringContaining('未知 agent_event'),
+      'llm_round_started',
+    );
+    warn.mockRestore();
+  });
+
+  it('未知、非法与不支持 schema 的 agent_event 不进入轨迹回调', async () => {
+    fetchWithAuthMock.mockResolvedValue(
+      createStreamResponse([
+        agentEvent('future_private_event', { secret: 'unknown' }, 0),
+        envelope('agent_event', {
+          type: 'step_started',
+          schema_version: 2,
+          run_id: 'r1',
+          parent_run_id: null,
+          step_id: 's1',
+          parent_step_id: null,
+          tool_call_id: null,
+          sequence: 1,
+          trace_id: 'r1',
+          ts: 1,
+          step_number: 1,
+        }),
+        envelope('agent_event', {
+          type: 'step_started',
+          schema_version: 1,
+          run_id: 'r1',
+          parent_run_id: null,
+          step_id: 's2',
+          parent_step_id: null,
+          tool_call_id: null,
+          sequence: 2,
+          trace_id: 42,
+          ts: 2,
+          step_number: 2,
+        }),
+        envelope('done', {}),
+        'data: [DONE]\n\n',
+      ]),
+    );
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const onStepStarted = vi.fn();
+    const onTrajectoryEvent = vi.fn();
+
+    await sendMessageStream(
+      { model_id: 'g', message: 'q' },
+      {
+        onReady: vi.fn(),
+        onStepStarted,
+        onTrajectoryEvent,
+        onReasoning: vi.fn(),
+        onAnswering: vi.fn(),
+        onDone: vi.fn(),
+        onError: vi.fn(),
+      },
+    );
+
+    expect(onStepStarted).toHaveBeenCalledTimes(2);
+    expect(onTrajectoryEvent).not.toHaveBeenCalled();
+    warn.mockRestore();
+  });
+
   it('未知 chunk_type warn 不抛', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     fetchWithAuthMock.mockResolvedValue(
@@ -1164,6 +1318,7 @@ describe('sendMessageStream — 新 envelope 协议', () => {
       ]),
     );
     const onStepStarted = vi.fn();
+    const onTrajectoryEvent = vi.fn();
     await sendMessageStream(
       { model_id: 'g', message: 'q' },
       {
@@ -1171,11 +1326,17 @@ describe('sendMessageStream — 新 envelope 协议', () => {
         onReasoning: vi.fn(),
         onAnswering: vi.fn(),
         onStepStarted,
+        onTrajectoryEvent,
         onDone: vi.fn(),
         onError: vi.fn(),
       },
     );
     expect(onStepStarted).not.toHaveBeenCalled();
+    expect(onTrajectoryEvent).toHaveBeenCalledTimes(1);
+    expect(onTrajectoryEvent).toHaveBeenCalledWith(expect.objectContaining({
+      eventType: 'run_started',
+      sequence: 5,
+    }));
     expect(warn).toHaveBeenCalledWith(
       expect.stringContaining('sequence 倒退'),
       expect.objectContaining({ sequence: 3 }),

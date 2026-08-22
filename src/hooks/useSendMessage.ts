@@ -958,6 +958,7 @@ export function useSendMessage(activeConversationId?: string | null) {
 
             ...createAgentStreamEventHandlers({
               dispatch,
+              trajectoryDispatch: dispatch,
               isActive: () => Boolean(activeConvIdRef.current) && isActiveSendCurrent(),
               // 优先本地 placeholder（streaming 期 message.id 是它），ref 为 null 时兜底用后端 ID。
               resolveMessageId: ev => assistantMessageIdRef.current ?? ev.message_id,
@@ -967,6 +968,13 @@ export function useSendMessage(activeConversationId?: string | null) {
                 }
               },
               resolveConversationId: () => activeConvIdRef.current,
+              resolveTrajectoryConversationId: event => {
+                const eventConversationId = event.eventType === 'run_started'
+                  && typeof event.payload.conversation_id === 'string'
+                  ? event.payload.conversation_id
+                  : null;
+                return eventConversationId || serverConvId || tempConvId;
+              },
             }),
 
             onSuggestedQuestionsPending: ev => {

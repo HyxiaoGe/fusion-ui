@@ -35,26 +35,37 @@ import {
   normalizeAgentPlanMetadata,
 } from '@/lib/agent/planState';
 import { normalizeAgentRunConfig } from '@/lib/agent/runConfig';
+import { mergeLiveTrajectoryEvent } from '@/redux/slices/trajectorySlice';
 
 type DispatchLike = (action: unknown) => unknown;
 type RunStartedEvent = Parameters<NonNullable<StreamCallbacks['onRunStarted']>>[0];
+type TrajectoryEvent = Parameters<NonNullable<StreamCallbacks['onTrajectoryEvent']>>[0];
 
 interface AgentStreamEventHandlerOptions {
   dispatch: DispatchLike;
+  trajectoryDispatch?: DispatchLike;
   isActive: () => boolean;
   resolveMessageId: (ev: RunStartedEvent) => string;
   setServerMessageId?: (messageId: string) => void;
   resolveConversationId: () => string | null;
+  resolveTrajectoryConversationId?: (event: TrajectoryEvent) => string | null;
 }
 
 export function createAgentStreamEventHandlers({
   dispatch,
+  trajectoryDispatch,
   isActive,
   resolveMessageId,
   setServerMessageId,
   resolveConversationId,
+  resolveTrajectoryConversationId,
 }: AgentStreamEventHandlerOptions): Partial<StreamCallbacks> {
   return {
+    onTrajectoryEvent: event => {
+      const conversationId = resolveTrajectoryConversationId?.(event);
+      if (!trajectoryDispatch || !conversationId) return;
+      trajectoryDispatch(mergeLiveTrajectoryEvent({ conversationId, event }));
+    },
     onRunStarted: ev => {
       if (!isActive()) return;
       setServerMessageId?.(ev.message_id);

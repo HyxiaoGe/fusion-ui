@@ -161,10 +161,12 @@ function buildContinuationStreamCallbacks({
     },
     ...createAgentStreamEventHandlers({
       dispatch,
+      trajectoryDispatch: dispatch,
       isActive,
       resolveMessageId: () => assistantMessageId,
       setServerMessageId,
       resolveConversationId: () => conversationId,
+      resolveTrajectoryConversationId: () => conversationId,
     }),
     onSuggestedQuestionsPending: ev => {
       if (!isActive()) return;

@@ -15,9 +15,11 @@ import modelsReducer, {
   updateModels,
 } from '@/redux/slices/modelsSlice';
 import streamReducer from '@/redux/slices/streamSlice';
+import trajectoryReducer from '@/redux/slices/trajectorySlice';
 import { resetConversationState, upsertConversation } from '@/redux/slices/conversationSlice';
 import { useSendMessage } from './useSendMessage';
 import type { StreamCallbacks } from '@/lib/api/chat';
+import type { NormalizedTrajectoryEvent } from '@/lib/trajectory/normalizeTrajectoryEvent';
 import type { Message } from '@/types/conversation';
 import {
   loadConversationDetail,
@@ -94,6 +96,7 @@ function createStore({
       conversation: conversationReducer,
       models: modelsReducer,
       stream: streamReducer,
+      trajectory: trajectoryReducer,
     },
     middleware: (getDefaultMiddleware: any) =>
       getDefaultMiddleware({
@@ -179,6 +182,26 @@ function emitRunStarted(callbacks: StreamCallbacks) {
       task_mode: 'standard',
     },
   });
+}
+
+function normalizedRunEvent(
+  eventType: 'run_started' | 'run_completed',
+  sequence: number,
+): NormalizedTrajectoryEvent {
+  return {
+    runId: 'run-trajectory',
+    sequence,
+    eventType,
+    schemaVersion: 1,
+    timestamp: `2026-08-22T00:00:0${sequence}.000Z`,
+    stepId: null,
+    toolCallId: null,
+    parentStepId: null,
+    traceId: 'trace-trajectory',
+    payload: eventType === 'run_started'
+      ? { conversation_id: 'server-conv', message_id: 'assistant-1' }
+      : { total_steps: 1, total_tool_calls: 0, finish_reason: 'stop' },
+  };
 }
 
 function knowledgeEvidenceBlock(status: 'success' | 'empty') {
@@ -3717,5 +3740,33 @@ describe('useSendMessage', () => {
         ])
       );
     });
+  });
+
+  it('初次发送在轨迹 Tab 未挂载时仍归并到物化后的服务端会话', async () => {
+    const store = createStore();
+    sendMessageStreamMock.mockImplementationOnce(async (_payload: unknown, callbacks: StreamCallbacks) => {
+      callbacks.onReady({ messageId: 'assistant-1', conversationId: 'server-conv' });
+      callbacks.onTrajectoryEvent?.(normalizedRunEvent('run_started', 0));
+      callbacks.onTrajectoryEvent?.(normalizedRunEvent('run_completed', 1));
+      callbacks.onDone({ messageId: 'assistant-1', conversationId: 'server-conv' });
+    });
+    const { result } = renderHook(() => useSendMessage(), {
+      wrapper: createWrapper(store),
+    });
+
+    await act(async () => {
+      await result.current.sendMessage('记录实时轨迹', { conversationId: null });
+    });
+
+    const trajectory = store.getState().trajectory;
+    expect(trajectory.byConversationId['temp-conv']).toBeUndefined();
+    expect(
+      trajectory.byConversationId['server-conv'].liveEventsByRunId['run-trajectory']
+        .map((event: NormalizedTrajectoryEvent) => event.eventType),
+    ).toEqual(['run_started', 'run_completed']);
+    expect(
+      trajectory.byConversationId['server-conv']
+        .reconciliationByRunId['run-trajectory'].status,
+    ).toBe('reconciling');
   });
 });

@@ -19,6 +19,10 @@ import type {
 import type { ContentBlock, SuggestedQuestionsStatus } from '@/types/conversation';
 import type { ContextUsage } from '@/types/conversation';
 import { normalizeContextUsage, type ContextUsagePhase } from '@/lib/chat/contextUsage';
+import {
+  normalizeSseTrajectoryEvent,
+  type NormalizedTrajectoryEvent,
+} from '@/lib/trajectory/normalizeTrajectoryEvent';
 
 const API_BASE_URL = API_CONFIG.BASE_URL;
 
@@ -397,6 +401,8 @@ export interface StreamCallbacks {
       status: 'pending';
     },
   ) => void;
+  /** 已通过普通用户 allowlist 归一化的实时轨迹事件。 */
+  onTrajectoryEvent?: (event: NormalizedTrajectoryEvent) => void;
 
   /** done chunk：协议层流完成（与 [DONE] SSE 通道终止并存） */
   onDone: (meta: { messageId: string; conversationId: string }) => void;
@@ -537,122 +543,129 @@ async function parseSseEnvelopeStream(
   const dispatchAgentEvent = (
     ev: AgentEventEnvelope & Record<string, unknown>,
   ) => {
-    switch (ev.type) {
-      case 'run_started': {
-        const payload = ev as unknown as AgentEventEnvelope & {
-          conversation_id: string;
-          message_id: string;
-          task_id?: string;
-          model: string;
-          tools: string[];
-          config: Record<string, unknown>;
-        };
-        messageId = payload.message_id;
-        conversationId = payload.conversation_id;
-        if (!readyFired) {
-          readyFired = true;
-          callbacks.onReady({
-            messageId,
-            conversationId,
-            ...(payload.task_id ? { taskId: payload.task_id } : {}),
-          });
-        }
-        callbacks.onRunStarted?.(payload);
-        return;
-      }
-      case 'step_started':
-        return callbacks.onStepStarted?.(ev as never);
-      case 'tool_call_started':
-        return callbacks.onToolCallStarted?.(ev as never);
-      case 'tool_call_delta':
-        return callbacks.onToolCallDelta?.(ev as never);
-      case 'tool_call_completed':
-        return callbacks.onToolCallCompleted?.(ev as never);
-      case 'step_completed':
-        return callbacks.onStepCompleted?.(ev as never);
-      case 'run_limit_reached':
-        return callbacks.onRunLimitReached?.(ev as never);
-      case 'run_interrupted':
-        return callbacks.onRunInterrupted?.(ev as never);
-      case 'run_failed':
-        return callbacks.onRunFailed?.(ev as never);
-      case 'run_completed':
-        return callbacks.onRunCompleted?.(ev as never);
-      case 'run_progress_updated':
-        return callbacks.onRunProgressUpdated?.(ev as never);
-      case 'plan_snapshot':
-        return callbacks.onPlanSnapshot?.(ev as never);
-      case 'plan_step_updated':
-        return callbacks.onPlanStepUpdated?.(ev as never);
-      case 'tool_result_digest':
-        return callbacks.onToolResultDigest?.(ev as never);
-      case 'evidence_item_upserted':
-        return callbacks.onEvidenceItemUpserted?.(ev as never);
-      case 'content_block_upserted':
-        return callbacks.onContentBlockUpserted?.(ev as never);
-      case 'content_block_discarded':
-        return callbacks.onContentBlockDiscarded?.(ev as never);
-      case 'context_required': {
-        const event = contextRequiredEvent(ev);
-        if (!event) {
-          console.warn('[chat] context_required 数据无效，已忽略');
+    const trajectoryEvent = normalizeSseTrajectoryEvent(ev);
+    try {
+      switch (ev.type) {
+        case 'run_started': {
+          const payload = ev as unknown as AgentEventEnvelope & {
+            conversation_id: string;
+            message_id: string;
+            task_id?: string;
+            model: string;
+            tools: string[];
+            config: Record<string, unknown>;
+          };
+          messageId = payload.message_id;
+          conversationId = payload.conversation_id;
+          if (!readyFired) {
+            readyFired = true;
+            callbacks.onReady({
+              messageId,
+              conversationId,
+              ...(payload.task_id ? { taskId: payload.task_id } : {}),
+            });
+          }
+          callbacks.onRunStarted?.(payload);
           return;
         }
-        return callbacks.onContextRequired?.(event);
-      }
-      case 'context_result': {
-        const event = contextResultEvent(ev);
-        if (!event) {
-          console.warn('[chat] context_result 数据无效，已忽略');
-          return;
+        case 'step_started':
+          return callbacks.onStepStarted?.(ev as never);
+        case 'tool_call_started':
+          return callbacks.onToolCallStarted?.(ev as never);
+        case 'tool_call_delta':
+          return callbacks.onToolCallDelta?.(ev as never);
+        case 'tool_call_completed':
+          return callbacks.onToolCallCompleted?.(ev as never);
+        case 'step_completed':
+          return callbacks.onStepCompleted?.(ev as never);
+        case 'run_limit_reached':
+          return callbacks.onRunLimitReached?.(ev as never);
+        case 'run_interrupted':
+          return callbacks.onRunInterrupted?.(ev as never);
+        case 'run_failed':
+          return callbacks.onRunFailed?.(ev as never);
+        case 'run_completed':
+          return callbacks.onRunCompleted?.(ev as never);
+        case 'run_progress_updated':
+          return callbacks.onRunProgressUpdated?.(ev as never);
+        case 'plan_snapshot':
+          return callbacks.onPlanSnapshot?.(ev as never);
+        case 'plan_step_updated':
+          return callbacks.onPlanStepUpdated?.(ev as never);
+        case 'tool_result_digest':
+          return callbacks.onToolResultDigest?.(ev as never);
+        case 'evidence_item_upserted':
+          return callbacks.onEvidenceItemUpserted?.(ev as never);
+        case 'content_block_upserted':
+          return callbacks.onContentBlockUpserted?.(ev as never);
+        case 'content_block_discarded':
+          return callbacks.onContentBlockDiscarded?.(ev as never);
+        case 'context_required': {
+          const event = contextRequiredEvent(ev);
+          if (!event) {
+            console.warn('[chat] context_required 数据无效，已忽略');
+            return;
+          }
+          return callbacks.onContextRequired?.(event);
         }
-        return callbacks.onContextResult?.(event);
-      }
-      case 'context_status_updated': {
-        const usage = normalizeContextUsage(ev);
-        const phase = ev.phase;
-        const messageId = ev.message_id;
-        if (
-          !usage
-          || ev.protocol_version !== 2
-          || (phase !== 'estimated' && phase !== 'final' && phase !== 'error')
-          || typeof messageId !== 'string'
-          || !messageId
-        ) {
-          console.warn('[chat] context_status_updated 数据无效，已忽略', ev);
-          return;
+        case 'context_result': {
+          const event = contextResultEvent(ev);
+          if (!event) {
+            console.warn('[chat] context_result 数据无效，已忽略');
+            return;
+          }
+          return callbacks.onContextResult?.(event);
         }
-        return callbacks.onContextStatusUpdated?.({
-          ...ev,
-          ...usage,
-          protocol_version: 2,
-          phase,
-          message_id: messageId,
-        } as never);
-      }
-      case 'suggested_questions_pending': {
-        const messageId = ev.message_id;
-        const revision = ev.revision;
-        if (
-          typeof messageId !== 'string'
-          || !messageId
-          || typeof revision !== 'number'
-          || !Number.isInteger(revision)
-          || revision < 1
-          || ev.status !== 'pending'
-        ) {
-          console.warn('[chat] suggested_questions_pending 数据无效，已忽略', ev);
-          return;
+        case 'context_status_updated': {
+          const usage = normalizeContextUsage(ev);
+          const phase = ev.phase;
+          const messageId = ev.message_id;
+          if (
+            !usage
+            || ev.protocol_version !== 2
+            || (phase !== 'estimated' && phase !== 'final' && phase !== 'error')
+            || typeof messageId !== 'string'
+            || !messageId
+          ) {
+            console.warn('[chat] context_status_updated 数据无效，已忽略', ev);
+            return;
+          }
+          return callbacks.onContextStatusUpdated?.({
+            ...ev,
+            ...usage,
+            protocol_version: 2,
+            phase,
+            message_id: messageId,
+          } as never);
         }
-        return callbacks.onSuggestedQuestionsPending?.({
-          ...ev,
-          message_id: messageId,
-          revision,
-          status: 'pending',
-        } as never);
+        case 'suggested_questions_pending': {
+          const messageId = ev.message_id;
+          const revision = ev.revision;
+          if (
+            typeof messageId !== 'string'
+            || !messageId
+            || typeof revision !== 'number'
+            || !Number.isInteger(revision)
+            || revision < 1
+            || ev.status !== 'pending'
+          ) {
+            console.warn('[chat] suggested_questions_pending 数据无效，已忽略', ev);
+            return;
+          }
+          return callbacks.onSuggestedQuestionsPending?.({
+            ...ev,
+            message_id: messageId,
+            revision,
+            status: 'pending',
+          } as never);
+        }
+        default:
+          if (!trajectoryEvent) {
+            console.warn('[chat] 未知 agent_event type，已忽略', ev.type);
+          }
       }
-      default:
-        console.warn('[chat] 未知 agent_event type，已忽略', ev.type);
+    } finally {
+      if (trajectoryEvent) callbacks.onTrajectoryEvent?.(trajectoryEvent);
     }
   };
 
