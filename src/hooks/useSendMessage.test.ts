@@ -1068,6 +1068,54 @@ describe('useSendMessage', () => {
     expect(messages[1]).toEqual(expect.objectContaining({ content: [] }));
   });
 
+  it('Agent run retry 把 previousRunId 映射为后端 previous_run_id', async () => {
+    const store = createStore();
+    store.dispatch(
+      upsertConversation({
+        id: 'existing-conv',
+        title: 'Existing',
+        model_id: 'model-1',
+        messages: [
+          {
+            id: 'retry-user',
+            role: 'user',
+            content: [{ type: 'text', id: 'user-text', text: '原始问题' }],
+          },
+          {
+            id: 'retry-assistant',
+            role: 'assistant',
+            content: [{ type: 'text', id: 'old-answer', text: '旧回答' }],
+          },
+        ],
+        createdAt: 1,
+        updatedAt: 2,
+      }),
+    );
+    sendMessageStreamMock.mockResolvedValueOnce(undefined);
+
+    const { result } = renderHook(() => useSendMessage(), {
+      wrapper: createWrapper(store),
+    });
+    await act(async () => {
+      await result.current.sendMessage('原始问题', {
+        conversationId: 'existing-conv',
+        retryUserMessageId: 'retry-user',
+        retryAssistantMessageId: 'retry-assistant',
+        previousRunId: 'run-selected',
+      });
+    });
+
+    expect(sendMessageStreamMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        retry_user_message_id: 'retry-user',
+        retry_assistant_message_id: 'retry-assistant',
+        previous_run_id: 'run-selected',
+      }),
+      expect.any(Object),
+      expect.any(AbortSignal),
+    );
+  });
+
   it('安全重试在服务端接管前失败时恢复原问题和原回答', async () => {
     const store = createStore();
     const originalUser: Message = {

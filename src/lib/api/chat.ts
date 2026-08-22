@@ -38,6 +38,7 @@ export interface ChatRequest {
   assistant_message_id?: string;
   retry_user_message_id?: string;
   retry_assistant_message_id?: string;
+  previous_run_id?: string;
   stream?: boolean;
   options?: {
     use_reasoning?: boolean;

@@ -94,6 +94,8 @@ type SendMessageOptions = {
   retryUserMessageId?: string;
   /** 原轮次已有回答时复用 assistant ID，并由服务端原位替换。 */
   retryAssistantMessageId?: string;
+  /** Agent run 重试必须指向用户在轨迹标签页选择的真实 run。 */
+  previousRunId?: string;
   /** 发送尚未被本地消息队列接收时通知输入区保留草稿。 */
   onRejectedBeforeSend?: () => void;
   /** 本地消息与流控制器均已建立，可以提交输入区清理或重试替换。 */
@@ -1056,6 +1058,7 @@ export function useSendMessage(activeConversationId?: string | null) {
               assistant_message_id: assistantMessageId,
               retry_user_message_id: options.retryUserMessageId,
               retry_assistant_message_id: options.retryAssistantMessageId,
+              previous_run_id: options.previousRunId,
               stream: true,
               options: {
                 use_reasoning: useReasoning,

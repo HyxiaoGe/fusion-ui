@@ -20,6 +20,7 @@ type SendMessageFn = (
     knowledgeBaseIds?: string[];
     retryUserMessageId?: string;
     retryAssistantMessageId?: string;
+    previousRunId?: string;
     onRejectedBeforeSend?: () => void;
     onAccepted?: () => void;
   },
@@ -60,6 +61,7 @@ export function useRetryMessage(
       messageId: string,
       conversationId: string,
       knowledgeBaseIds?: string[],
+      previousRunId?: string,
     ) => {
       const state = store.getState() as RootState;
       const conversation = state.conversation.byId[conversationId];
@@ -85,6 +87,9 @@ export function useRetryMessage(
       const knowledgeScopeOptions = knowledgeBaseIds === undefined
         ? {}
         : { knowledgeBaseIds };
+      const runLineageOptions = previousRunId === undefined
+        ? {}
+        : { previousRunId };
       let modelResolution = resolveSendModel(state, conversationId);
       if (modelResolution.status !== 'ready') {
         dispatch(setGlobalError(getSendModelErrorMessage(modelResolution)));
@@ -175,6 +180,7 @@ export function useRetryMessage(
               ...knowledgeScopeOptions,
               retryUserMessageId: userMessage.id,
               retryAssistantMessageId: refreshedTargetMsg.id,
+              ...runLineageOptions,
             },
             attachments.length > 0 ? attachments : undefined,
           );
@@ -203,6 +209,7 @@ export function useRetryMessage(
               ...(nextMsg?.role === 'assistant'
                 ? { retryAssistantMessageId: nextMsg.id }
                 : {}),
+              ...runLineageOptions,
             },
             attachments.length > 0 ? attachments : undefined,
           );

@@ -495,7 +495,7 @@ describe('AssistantResponseStack', () => {
     expect(screen.queryByTestId('stack-activity')).not.toBeInTheDocument();
   });
 
-  it('把结构化工具结果放在执行过程之后、Markdown 正文之前', () => {
+  it('移除消息内联执行过程后，仍把结构化工具结果放在 Markdown 正文之前', () => {
     const structuredResult: PlaceResultsBlock = {
       type: 'place_results',
       id: 'places-1',
@@ -527,10 +527,9 @@ describe('AssistantResponseStack', () => {
       />,
     );
 
-    const execution = screen.getByTestId('stack-agent');
     const result = screen.getByTestId('structured-tool-results');
     const markdown = screen.getByTestId('stack-markdown');
-    expect(execution.compareDocumentPosition(result) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(screen.queryByTestId('stack-agent')).toBeNull();
     expect(result.compareDocumentPosition(markdown) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
@@ -567,17 +566,15 @@ describe('AssistantResponseStack', () => {
     expect(stack.className).toContain('[&>*:last-child]:mb-0');
     expect(screen.getByTestId('stack-reasoning')).toBeInTheDocument();
     expect(screen.getByTestId('stack-activity')).toBeInTheDocument();
-    expect(screen.getByTestId('stack-agent')).toBeInTheDocument();
+    expect(screen.queryByTestId('stack-agent')).toBeNull();
     expect(screen.getByTestId('stack-evidence')).toBeInTheDocument();
     expect(screen.getByTestId('stack-markdown')).toBeInTheDocument();
     expect(screen.getByTestId('streaming-cursor')).toBeInTheDocument();
     expect(stack.querySelectorAll('.max-w-6xl')).toHaveLength(2);
-    expect(screen.getByTestId('stack-agent')).toHaveAttribute('data-message-id', 'assistant-1');
   });
 
   it('透传各子组件事件和 Markdown 渲染参数', () => {
     const onToggle = vi.fn();
-    const onRetry = vi.fn();
     const onSourceClick = vi.fn();
     const onOpenSources = vi.fn();
     const onCitationClick = vi.fn();
@@ -595,7 +592,6 @@ describe('AssistantResponseStack', () => {
           endTime: 22,
         }}
         activity={activity({ kind: 'completed' })}
-        onRetry={onRetry}
         answerEvidence={answerEvidence}
         onSourceClick={onSourceClick}
         onOpenSources={onOpenSources}
@@ -619,217 +615,14 @@ describe('AssistantResponseStack', () => {
     expect(screen.getByTestId('stack-markdown')).toHaveAttribute('data-source-count', '1');
 
     fireEvent.click(screen.getByTestId('stack-reasoning'));
-    fireEvent.click(screen.getByRole('button', { name: '重试运行' }));
-    fireEvent.click(screen.getByRole('button', { name: '过程查看依据' }));
     fireEvent.click(screen.getByRole('button', { name: '打开来源' }));
     fireEvent.click(screen.getByRole('button', { name: '打开全部来源' }));
     fireEvent.click(screen.getByRole('button', { name: '引用来源' }));
 
     expect(onToggle).toHaveBeenCalledTimes(1);
-    expect(onRetry).toHaveBeenCalledTimes(1);
-    expect(onOpenSources).toHaveBeenCalledTimes(2);
+    expect(onOpenSources).toHaveBeenCalledTimes(1);
     expect(onSourceClick).toHaveBeenCalledWith(0);
     expect(onCitationClick).toHaveBeenCalledWith(0);
-  });
-
-  it('向 AgentRunTimeline 透传 continuation 事件', () => {
-    const onContinueAgentRun = vi.fn();
-
-    render(
-      <AssistantResponseStack
-        assistantMessageId="assistant-1"
-        reasoning={{
-          shouldRender: false,
-          content: '',
-          isVisible: false,
-          isStreaming: false,
-          onToggle: vi.fn(),
-        }}
-        activity={activity()}
-        agentRun={agentRun}
-        onRetry={undefined}
-        onContinueAgentRun={onContinueAgentRun}
-        answerEvidence={null}
-        onSourceClick={vi.fn()}
-        onOpenSources={vi.fn()}
-        markdown={{
-          content: '回答',
-          sources: [],
-          onCitationClick: undefined,
-        }}
-        showStreamingCursor={false}
-      />,
-    );
-
-    fireEvent.click(screen.getByRole('button', { name: '继续查' }));
-
-    expect(onContinueAgentRun).toHaveBeenCalledWith('run-1');
-  });
-
-  it('向 AgentRunTimeline 透传当前 agentRun', () => {
-    agentRunTimelinePropsMock.mockClear();
-
-    render(
-      <AssistantResponseStack
-        assistantMessageId="assistant-1"
-        reasoning={{
-          shouldRender: false,
-          content: '',
-          isVisible: false,
-          isStreaming: false,
-          onToggle: vi.fn(),
-        }}
-        activity={activity()}
-        agentRun={agentRun}
-        onRetry={undefined}
-        answerEvidence={null}
-        onSourceClick={vi.fn()}
-        onOpenSources={vi.fn()}
-        markdown={{
-          content: '回答',
-          sources: [],
-          onCitationClick: undefined,
-        }}
-        showStreamingCursor={false}
-      />,
-    );
-
-    expect(screen.getByTestId('stack-agent')).toHaveAttribute('data-run-id', 'run-1');
-    expect(agentRunTimelinePropsMock).toHaveBeenLastCalledWith({
-      hasRunProp: true,
-      hasOpenSources: true,
-      run: agentRun,
-    });
-  });
-
-  it('向 AgentRunTimeline 透传回答依据中的搜索来源，供执行过程侧栏兜底展示', () => {
-    agentRunTimelinePropsMock.mockClear();
-
-    render(
-      <AssistantResponseStack
-        assistantMessageId="assistant-1"
-        reasoning={{
-          shouldRender: false,
-          content: '',
-          isVisible: false,
-          isStreaming: false,
-          onToggle: vi.fn(),
-        }}
-        activity={activity()}
-        agentRun={agentRun}
-        onRetry={undefined}
-        answerEvidence={answerEvidence}
-        onSourceClick={vi.fn()}
-        onOpenSources={vi.fn()}
-        markdown={{
-          content: '回答',
-          sources: [],
-          onCitationClick: undefined,
-        }}
-        showStreamingCursor={false}
-      />,
-    );
-
-    expect(agentRunTimelinePropsMock).toHaveBeenLastCalledWith({
-      hasRunProp: true,
-      hasOpenSources: true,
-      run: agentRun,
-      searchSources: [
-        {
-          id: 'search-0',
-          title: '来源一',
-          url: 'https://example.com/source',
-          domain: 'example.com',
-          favicon: undefined,
-        },
-      ],
-    });
-  });
-
-  it('向 AgentRunTimeline 透传搜索关键词，供历史执行过程展示', () => {
-    agentRunTimelinePropsMock.mockClear();
-
-    render(
-      <AssistantResponseStack
-        assistantMessageId="assistant-1"
-        reasoning={{
-          shouldRender: false,
-          content: '',
-          isVisible: false,
-          isStreaming: false,
-          onToggle: vi.fn(),
-        }}
-        activity={activity()}
-        agentRun={agentRun}
-        onRetry={undefined}
-        answerEvidence={answerEvidence}
-        searchQueries={[
-          '暑期旅游哪里最火 2026 热门目的地',
-          '2026暑期旅游热门城市 目的地 排行榜',
-        ]}
-        onSourceClick={vi.fn()}
-        onOpenSources={vi.fn()}
-        markdown={{
-          content: '回答',
-          sources: [],
-          onCitationClick: undefined,
-        }}
-        showStreamingCursor={false}
-      />,
-    );
-
-    expect(agentRunTimelinePropsMock).toHaveBeenLastCalledWith({
-      hasRunProp: true,
-      hasOpenSources: true,
-      run: agentRun,
-      searchSources: [
-        {
-          id: 'search-0',
-          title: '来源一',
-          url: 'https://example.com/source',
-          domain: 'example.com',
-          favicon: undefined,
-        },
-      ],
-      searchQueries: [
-        '暑期旅游哪里最火 2026 热门目的地',
-        '2026暑期旅游热门城市 目的地 排行榜',
-      ],
-    });
-  });
-
-  it('未传 agentRun 时不向 AgentRunTimeline 传 run prop，保留旧 store fallback', () => {
-    agentRunTimelinePropsMock.mockClear();
-
-    render(
-      <AssistantResponseStack
-        assistantMessageId="assistant-1"
-        reasoning={{
-          shouldRender: false,
-          content: '',
-          isVisible: false,
-          isStreaming: false,
-          onToggle: vi.fn(),
-        }}
-        activity={activity()}
-        onRetry={undefined}
-        answerEvidence={null}
-        onSourceClick={vi.fn()}
-        onOpenSources={vi.fn()}
-        markdown={{
-          content: '回答',
-          sources: [],
-          onCitationClick: undefined,
-        }}
-        showStreamingCursor={false}
-      />,
-    );
-
-    expect(agentRunTimelinePropsMock).toHaveBeenLastCalledWith({
-      hasRunProp: false,
-      hasOpenSources: true,
-      run: undefined,
-    });
   });
 
   it('只在显式要求时渲染推理区和流式光标', () => {

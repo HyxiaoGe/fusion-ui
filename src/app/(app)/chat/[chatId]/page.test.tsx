@@ -46,6 +46,7 @@ const {
   fetchStreamStatusMock,
   reconnectStreamMock,
   stopRecoveredStreamMock,
+  getChatCapabilitiesMock,
 } = vi.hoisted(() => ({
   currentRoute: { chatId: 'chat-a' },
   conversationsById: new Map<string, Conversation>(),
@@ -75,6 +76,7 @@ const {
   fetchStreamStatusMock: vi.fn(),
   reconnectStreamMock: vi.fn(),
   stopRecoveredStreamMock: vi.fn(),
+  getChatCapabilitiesMock: vi.fn(),
   dispatchMock: vi.fn(),
   routerPushMock: vi.fn(),
   chatInputMountMock: vi.fn(),
@@ -116,6 +118,22 @@ vi.mock('@/redux/hooks', () => ({
       conversation: {
         globalError: null,
         lastReadyConversationSnapshot: lastReadyConversationSnapshotState.value,
+        byId: Object.fromEntries(conversationsById),
+      },
+      models: {
+        models: [{
+          id: 'model-1',
+          name: 'Model One',
+          provider: 'test',
+          enabled: true,
+          routable: true,
+          temperature: 0.7,
+          capabilities: {},
+        }],
+        providers: [],
+        selectedModelId: 'model-1',
+        isLoading: false,
+        loadStatus: 'ready',
       },
       stream: streamState,
       trajectory: trajectoryState,
@@ -262,6 +280,7 @@ vi.mock('@/lib/api/streamStatus', () => ({
 }));
 
 vi.mock('@/lib/api/chat', () => ({
+  getChatCapabilities: getChatCapabilitiesMock,
   reconnectStream: reconnectStreamMock,
   stopStream: stopRecoveredStreamMock,
   isRecoverableStreamError: (error: unknown) => (
@@ -666,6 +685,12 @@ describe('ChatPage 会话切换体验', () => {
     reconnectStreamMock.mockReset();
     stopRecoveredStreamMock.mockReset();
     stopRecoveredStreamMock.mockResolvedValue(true);
+    getChatCapabilitiesMock.mockReset();
+    getChatCapabilitiesMock.mockResolvedValue({
+      knowledge_grounding_v1: true,
+      knowledge_grounding_max_bases: 5,
+      message_retry_v1: true,
+    });
     window.sessionStorage.clear();
   });
 
@@ -1764,7 +1789,7 @@ describe('ChatPage 会话切换体验', () => {
     expect(lastMessageListProps?.onRetry).toBeUndefined();
   });
 
-  it('向消息列表下发 continuation handler，点击后续跑同一条 assistant message', async () => {
+  it('Chat 只保留消息级 retry，不再下发 Agent run continuation 入口', async () => {
     conversationsById.set('chat-a', createConversation('chat-a', [
       textMessage('user-1'),
       {
@@ -1783,12 +1808,50 @@ describe('ChatPage 会话切换体验', () => {
     });
 
     const lastMessageListProps = chatMessageListMock.mock.calls.at(-1)?.[0];
-    lastMessageListProps.onContinueAgentRun('assistant-1', 'run-1');
+    expect(lastMessageListProps.onRetry).toBeTypeOf('function');
+    expect(lastMessageListProps.onContinueAgentRun).toBeUndefined();
+    expect(continueAgentRunMock).not.toHaveBeenCalled();
+  });
 
+  it('Trajectory 终态区域用 selected run id 发起 Agent retry/continue', async () => {
+    const assistant: Message = {
+      id: 'assistant-1',
+      role: 'assistant',
+      content: [{ type: 'text', id: 'answer-1', text: '旧回答' }],
+      timestamp: 2,
+    };
+    conversationsById.set('chat-a', createConversation('chat-a', [
+      textMessage('user-1'),
+      assistant,
+    ]));
+    hydrationById.set('chat-a', { view: 'ready' });
+    primeTrajectory(trajectoryRun('run-selected'));
+
+    const { rerender } = render(<ChatPage />);
+    activateConversationTab('轨迹');
+    rerender(<ChatPage />);
+
+    fireEvent.click(await screen.findByRole('button', { name: '重试所选运行' }));
+    expect(retryMessageMock).toHaveBeenCalledWith(
+      'assistant-1',
+      'chat-a',
+      [],
+      'run-selected',
+    );
+
+    const limitRun = trajectoryRun('run-limit');
+    limitRun.status = 'limit_reached';
+    trajectoryState = trajectoryReducer(undefined, { type: '@@init' });
+    primeTrajectory(limitRun);
+    rerender(<ChatPage />);
+    activateConversationTab('轨迹');
+    rerender(<ChatPage />);
+
+    fireEvent.click(await screen.findByRole('button', { name: '继续所选运行' }));
     expect(continueAgentRunMock).toHaveBeenCalledWith({
       conversationId: 'chat-a',
       assistantMessageId: 'assistant-1',
-      previousRunId: 'run-1',
+      previousRunId: 'run-limit',
     });
   });
 

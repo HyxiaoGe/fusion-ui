@@ -14,6 +14,7 @@ import {
   evaluateMessageJoinInvariants,
   selectStrictParityCohort,
 } from './trajectoryConsistency';
+import { resolveTrajectoryActionPolicy } from './trajectoryActionPolicy';
 
 const timestamp = '2026-08-22T00:00:00.000Z';
 
@@ -720,5 +721,52 @@ describe('trajectoryConsistency', () => {
         { runId: 'forbidden-user', code: 'strategy-forbidden-id' },
       ],
     });
+  });
+
+  it('action policy 独立校验消息级目标、selected run lineage 与只读降级态', () => {
+    const messages: Message[] = [
+      { id: 'user-a', role: 'user', content: [] },
+      { id: 'assistant-a', role: 'assistant', content: [] },
+    ];
+    const selected = snapshot().run;
+    const base = {
+      runs: [selected],
+      messages,
+      selectedRunId: selected.run_id,
+      runListStatus: 'ready' as const,
+      selectedRunHydrated: true,
+      selectedTrajectoryStatus: 'complete',
+      selectedRunTruncated: false,
+      reconciliationStatus: 'ready' as const,
+      hasActiveStream: false,
+      retryCapabilityAvailable: true,
+      modelAvailable: true,
+      knowledgeBaseStatus: 'ready' as const,
+      knowledgeBaseIds: [],
+    };
+
+    expect(resolveTrajectoryActionPolicy(base)).toMatchObject({
+      target: {
+        previousRunId: 'run-a',
+        retryMessageId: 'assistant-a',
+        userMessageId: 'user-a',
+        assistantMessageId: 'assistant-a',
+      },
+      retry: { allowed: true, blockers: [] },
+      continue: {
+        allowed: false,
+        blockers: expect.arrayContaining(['run-not-limit-reached']),
+      },
+    });
+
+    for (const excluded of [
+      { selectedTrajectoryStatus: 'legacy', selectedRunTruncated: false },
+      { selectedTrajectoryStatus: 'degraded', selectedRunTruncated: false },
+      { selectedTrajectoryStatus: 'complete', selectedRunTruncated: true },
+    ]) {
+      const policy = resolveTrajectoryActionPolicy({ ...base, ...excluded });
+      expect(policy.retry.allowed).toBe(false);
+      expect(policy.continue.allowed).toBe(false);
+    }
   });
 });

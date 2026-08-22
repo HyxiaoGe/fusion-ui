@@ -452,6 +452,36 @@ describe('sendMessageStream — 新 envelope 协议', () => {
     });
   });
 
+  it('Agent retry 把 selected run id 作为 previous_run_id 写入 send payload', async () => {
+    fetchWithAuthMock.mockResolvedValue(createStreamResponse(['data: [DONE]\n\n']));
+
+    await sendMessageStream(
+      {
+        model_id: 'gpt',
+        message: '重新执行',
+        conversation_id: 'conv-1',
+        retry_user_message_id: 'user-1',
+        retry_assistant_message_id: 'assistant-1',
+        previous_run_id: 'run-selected',
+      },
+      {
+        onReady: vi.fn(),
+        onReasoning: vi.fn(),
+        onAnswering: vi.fn(),
+        onDone: vi.fn(),
+        onError: vi.fn(),
+      },
+    );
+
+    const request = fetchWithAuthMock.mock.calls[0]?.[1] as RequestInit;
+    expect(JSON.parse(String(request.body))).toMatchObject({
+      retry_user_message_id: 'user-1',
+      retry_assistant_message_id: 'assistant-1',
+      previous_run_id: 'run-selected',
+      stream: true,
+    });
+  });
+
   it('run_started 触发 onReady 并携带 messageId / conversationId', async () => {
     fetchWithAuthMock.mockResolvedValue(
       createStreamResponse([

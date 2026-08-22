@@ -21,16 +21,30 @@ import {
 } from '@/redux/slices/trajectorySlice';
 import type { Message } from '@/types/conversation';
 import type { TrajectoryRunSummary, TrajectorySpan } from '@/types/trajectory';
+import type { KnowledgeSelectionStatus } from '@/lib/chat/knowledgeBaseCatalogResource';
+import type { TrajectoryRunActionTarget } from '@/lib/trajectory/trajectoryActionPolicy';
 import { Button } from '@/components/ui/button';
 import { TrajectoryIntegrityBanner } from './TrajectoryIntegrityBanner';
 import { TrajectoryInspector } from './TrajectoryInspector';
 import { TrajectoryLedger, type TrajectoryInspectTarget } from './TrajectoryLedger';
+import { TrajectoryRunActions } from './TrajectoryRunActions';
 import { TrajectoryTimeline } from './TrajectoryTimeline';
+
+export interface TrajectoryRunActionContext {
+  enabled: boolean;
+  hasActiveStream: boolean;
+  modelAvailable: boolean;
+  knowledgeBaseStatus: KnowledgeSelectionStatus;
+  knowledgeBaseIds: readonly string[];
+  onRetry?: (target: TrajectoryRunActionTarget) => void;
+  onContinue?: (target: TrajectoryRunActionTarget) => void;
+}
 
 export interface TrajectoryTabViewProps {
   conversationId: string;
   messages: Message[];
   onRevealInChat?: (messageId: string) => void;
+  runActions?: TrajectoryRunActionContext;
 }
 
 interface InspectResolution {
@@ -122,6 +136,7 @@ export function TrajectoryTabView({
   conversationId,
   messages,
   onRevealInChat,
+  runActions,
 }: TrajectoryTabViewProps) {
   const dispatch = useAppDispatch();
   const store = useStore<{ trajectory: TrajectoryState }>();
@@ -376,6 +391,9 @@ export function TrajectoryTabView({
     const trajectoryStatus = trajectory.snapshot?.completeness.status
       ?? selectedRunCell?.trajectoryBadge.status
       ?? null;
+    const selectedRun = trajectory.selectedRunId
+      ? trajectory.runSummariesById[trajectory.selectedRunId] ?? null
+      : null;
 
     return (
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
@@ -386,6 +404,28 @@ export function TrajectoryTabView({
           reconciliationStatus={reconciliationStatus}
           conflictCount={trajectory.reconciliation?.conflicts.length ?? 0}
         />
+
+        {runActions && selectedRun ? (
+          <TrajectoryRunActions
+            enabled={runActions.enabled}
+            runs={trajectory.runs}
+            messages={messages}
+            selectedRunId={trajectory.selectedRunId}
+            runListStatus={trajectory.runListStatus}
+            selectedRunHydrated={trajectory.snapshot?.run.run_id === trajectory.selectedRunId}
+            selectedTrajectoryStatus={trajectoryStatus}
+            selectedRunTruncated={Boolean(
+              trajectory.snapshot?.truncated || trajectory.reconciliation?.eventsTruncated
+            )}
+            reconciliationStatus={reconciliationStatus}
+            hasActiveStream={runActions.hasActiveStream}
+            modelAvailable={runActions.modelAvailable}
+            knowledgeBaseStatus={runActions.knowledgeBaseStatus}
+            knowledgeBaseIds={runActions.knowledgeBaseIds}
+            onRetry={runActions.onRetry}
+            onContinue={runActions.onContinue}
+          />
+        ) : null}
 
         {trajectory.runListStatus === 'failed' && trajectory.runs.length > 0 ? (
           <div

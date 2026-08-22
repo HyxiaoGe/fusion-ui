@@ -20,6 +20,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import TrajectoryTabView from '@/components/chat/trajectory/TrajectoryTabView';
+import type { TrajectoryRunActionTarget } from '@/lib/trajectory/trajectoryActionPolicy';
 import type { FileAttachment } from '@/lib/utils/fileHelpers';
 import ConfirmDialog from '@/components/ui/confirm-dialog';
 import { useAppDispatch, useAppSelector } from '@/redux/hooks';
@@ -64,6 +65,7 @@ import {
   shouldRecoverReasoningOnlyFinalBlocks,
 } from '@/lib/chat/contentBlocks';
 import { hasFormalTextContent } from '@/lib/chat/suggestedQuestionState';
+import { resolveSendModel } from '@/lib/chat/sendModelResolution';
 import { CHAT_NEW_PATH } from '@/lib/routes/chatRoutes';
 import { deleteFile, type FileInfo } from '@/lib/api/files';
 import {
@@ -194,6 +196,9 @@ export default function ChatPage() {
   });
   const conversationError = useAppSelector((state) => state.conversation.globalError);
   const isStreaming = useAppSelector((state) => state.stream.isStreaming);
+  const isConversationModelAvailable = useAppSelector(
+    (state) => resolveSendModel(state, chatId).status === 'ready'
+  );
   const lastReadyConversationSnapshot = useAppSelector(
     (state) => state.conversation.lastReadyConversationSnapshot
   );
@@ -607,14 +612,35 @@ export default function ChatPage() {
     ]
   );
 
-  const handleContinueAgentRun = useCallback((messageId: string, previousRunId?: string) => {
-    if (!chatId || isStreaming) return;
+  const handleRetrySelectedRun = useCallback((target: TrajectoryRunActionTarget) => {
+    if (!chatId || isStreaming || composerKnowledgeSelectionStatus !== 'ready') return;
+    void retryMessage(
+      target.retryMessageId,
+      chatId,
+      composerKnowledgeBaseIds,
+      target.previousRunId,
+    );
+  }, [
+    chatId,
+    composerKnowledgeBaseIds,
+    composerKnowledgeSelectionStatus,
+    isStreaming,
+    retryMessage,
+  ]);
+
+  const handleContinueSelectedRun = useCallback((target: TrajectoryRunActionTarget) => {
+    if (
+      !chatId
+      || !target.assistantMessageId
+      || isStreaming
+      || composerKnowledgeSelectionStatus !== 'ready'
+    ) return;
     void continueAgentRun({
       conversationId: chatId,
-      assistantMessageId: messageId,
-      previousRunId,
+      assistantMessageId: target.assistantMessageId,
+      previousRunId: target.previousRunId,
     });
-  }, [chatId, continueAgentRun, isStreaming]);
+  }, [chatId, composerKnowledgeSelectionStatus, continueAgentRun, isStreaming]);
 
   const handleStopStreaming = useCallback(async () => {
     const recoveryController = reconnectControllerRef.current;
@@ -996,11 +1022,6 @@ export default function ChatPage() {
                     isStreaming={isDisplayConversationStreaming}
                     loadingState={isHydratingWithoutContent ? 'history-hydration' : undefined}
                     onRetry={shouldKeepPreviousContent || isHydratingWithoutContent ? undefined : handleRetry}
-                    onContinueAgentRun={
-                      shouldKeepPreviousContent || isHydratingWithoutContent || isDisplayConversationStreaming
-                        ? undefined
-                        : handleContinueAgentRun
-                    }
                     onInspectTrajectory={
                       shouldKeepPreviousContent || isHydratingWithoutContent
                         ? undefined
@@ -1027,6 +1048,17 @@ export default function ChatPage() {
                 conversationId={chatId}
                 messages={isHydratingWithoutContent ? [] : displayMessages}
                 onRevealInChat={handleRevealInChat}
+                runActions={{
+                  enabled: activeSurface === 'trajectory'
+                    && !shouldKeepPreviousContent
+                    && !isHydratingWithoutContent,
+                  hasActiveStream: isStreaming,
+                  modelAvailable: isConversationModelAvailable,
+                  knowledgeBaseStatus: composerKnowledgeSelectionStatus,
+                  knowledgeBaseIds: composerKnowledgeBaseIds,
+                  onRetry: handleRetrySelectedRun,
+                  onContinue: handleContinueSelectedRun,
+                }}
               />
             </TabsContent>
           </Tabs>

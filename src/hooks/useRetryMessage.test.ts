@@ -191,6 +191,30 @@ describe('useRetryMessage', () => {
     ).toEqual(['user-1', 'assistant-1']);
   });
 
+  it('Agent run retry 在保留消息级 ID 的同时显式透传所选 previous run', async () => {
+    const store = createStore('hidden');
+    const sendMessage = vi.fn().mockResolvedValue(undefined);
+    const { result } = renderHook(() => useRetryMessage(sendMessage), {
+      wrapper: createWrapper(store),
+    });
+
+    await act(async () => {
+      await result.current('assistant-1', 'existing-conv', undefined, 'run-selected');
+    });
+
+    expect(sendMessage).toHaveBeenCalledWith(
+      '原始问题',
+      {
+        conversationId: 'existing-conv',
+        resolvedModelId: 'disabled-model',
+        retryUserMessageId: 'user-1',
+        retryAssistantMessageId: 'assistant-1',
+        previousRunId: 'run-selected',
+      },
+      undefined,
+    );
+  });
+
   it('失败用户消息没有持久化回答时只复用 user ID', async () => {
     const store = createStore('hidden');
     store.dispatch(upsertConversation({

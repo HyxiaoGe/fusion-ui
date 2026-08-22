@@ -10,8 +10,6 @@ import type { AssistantActivity } from './assistantActivity';
 import AnswerEvidence from './AnswerEvidence';
 import type { AnswerEvidenceModel } from './answerEvidenceModel';
 import type { AnswerEvidenceSidebarModel } from './answerEvidenceSidebarModel';
-import { AgentRunTimeline } from './agent';
-import type { ExecutionProcessSource } from './agent/executionProcessModel';
 import MarkdownRenderer from './MarkdownRenderer';
 import StructuredToolResults from './StructuredToolResults';
 import TrajectoryStatusLine from './trajectory/TrajectoryStatusLine';
@@ -52,44 +50,21 @@ interface AssistantResponseStackProps {
 }
 
 function AssistantResponseStack({
-  assistantMessageId,
   reasoning,
   activity,
   agentRun,
   trajectoryStatus = 'unknown',
   onInspectTrajectory,
-  onRetry,
-  onContinueAgentRun,
   answerEvidence,
   structuredResults = [],
   structuredResultsLoading = false,
   onStructuredResultFollowUp,
   answerEvidenceSidebar,
-  searchQueries,
   onSourceClick,
   onOpenSources,
   markdown,
   showStreamingCursor,
 }: AssistantResponseStackProps) {
-  const executionSearchSources = toExecutionSearchSources(answerEvidence);
-  const agentRunTimelineProps = agentRun === undefined
-    ? {
-      assistantMessageId,
-      onRetry,
-      onContinue: onContinueAgentRun,
-      searchSources: executionSearchSources,
-      searchQueries,
-      onOpenSources,
-    }
-    : {
-      assistantMessageId,
-      onRetry,
-      onContinue: onContinueAgentRun,
-      run: agentRun,
-      searchSources: executionSearchSources,
-      searchQueries,
-      onOpenSources,
-    };
   const showReasoning = reasoning.shouldRender;
   const showActivityStatus = activity.kind !== 'waiting' || !showReasoning;
 
@@ -120,7 +95,6 @@ function AssistantResponseStack({
           />
         ) : null}
 
-        <AgentRunTimeline {...agentRunTimelineProps} />
       </div>
 
       <StructuredToolResults
@@ -159,17 +133,3 @@ function AssistantResponseStack({
 }
 
 export default memo(AssistantResponseStack);
-
-function toExecutionSearchSources(answerEvidence: AnswerEvidenceModel | null): ExecutionProcessSource[] | undefined {
-  const sources = answerEvidence?.items
-    .filter(item => item.kind === 'search_source')
-    .map(item => ({
-      id: item.id,
-      title: item.title,
-      url: item.url,
-      domain: item.domain,
-      favicon: item.favicon,
-    })) ?? [];
-
-  return sources.length > 0 ? sources : undefined;
-}
