@@ -1,8 +1,10 @@
-import { createNextState } from '@reduxjs/toolkit';
+import { configureStore } from '@reduxjs/toolkit';
 import { describe, expect, it, vi } from 'vitest';
-import type { NormalizedTrajectoryEvent } from '@/lib/trajectory/normalizeTrajectoryEvent';
+import {
+  normalizeSseTrajectoryEvent,
+  type NormalizedTrajectoryEvent,
+} from '@/lib/trajectory/normalizeTrajectoryEvent';
 import trajectoryReducer, {
-  mergeLiveTrajectoryEvent,
   selectMergedTrajectoryEvents,
 } from '@/redux/slices/trajectorySlice';
 import { createAgentStreamEventHandlers } from './streamEventHandlers';
@@ -1077,26 +1079,46 @@ describe('createAgentStreamEventHandlers', () => {
       .toMatchObject({ status: 'reconciling', conflicts: [] });
   });
 
-  it('1000 条受控事件 reducer batch 在 500ms 内完成', () => {
-    const actions = Array.from({ length: 1000 }, (_, sequence) => (
-      mergeLiveTrajectoryEvent({
-        conversationId: 'conversation-batch',
-        event: trajectoryEvent(sequence),
-      })
-    ));
-    const initialState = trajectoryReducer(undefined, { type: '@@init' });
+  it('1000 条受控事件经 adapter、handler、store dispatch 与 reducer 在 500ms 内完成', () => {
+    const fixtures = Array.from({ length: 1000 }, (_, sequence) => ({
+      type: 'step_started',
+      schema_version: 1,
+      run_id: 'run-live',
+      parent_run_id: null,
+      step_id: `step-${sequence}`,
+      parent_step_id: null,
+      tool_call_id: null,
+      sequence,
+      trace_id: 'trace-live',
+      ts: 1_777_000_000 + sequence,
+      step_number: sequence,
+    }));
+    const store = configureStore({
+      reducer: { trajectory: trajectoryReducer },
+      middleware: getDefaultMiddleware => getDefaultMiddleware({ serializableCheck: false }),
+    });
+    const handlers = createAgentStreamEventHandlers({
+      dispatch: vi.fn(),
+      trajectoryDispatch: store.dispatch,
+      isActive: () => true,
+      resolveMessageId: () => '',
+      resolveConversationId: () => 'conversation-live',
+      resolveTrajectoryConversationId: () => 'conversation-live',
+    });
 
     const startedAt = performance.now();
-    const state = createNextState(initialState, draft => {
-      for (const action of actions) trajectoryReducer(draft as typeof initialState, action);
-    });
+    for (const fixture of fixtures) {
+      const normalized = normalizeSseTrajectoryEvent(fixture);
+      if (!normalized) throw new Error('稳定性能 fixture 必须通过 trajectory adapter');
+      handlers.onTrajectoryEvent?.(normalized);
+    }
     const elapsedMs = performance.now() - startedAt;
 
     expect(selectMergedTrajectoryEvents(
-      { trajectory: state },
-      'conversation-batch',
+      store.getState(),
+      'conversation-live',
       'run-live',
     )).toHaveLength(1000);
-    expect(elapsedMs).toBeLessThan(500);
+    expect(elapsedMs, `1000 条真实 dispatch 耗时 ${elapsedMs.toFixed(2)}ms`).toBeLessThan(500);
   });
 });

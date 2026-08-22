@@ -148,6 +148,20 @@ function eventsEqual(
   return JSON.stringify(left) === JSON.stringify(right);
 }
 
+function eventInsertionIndex(
+  events: readonly NormalizedTrajectoryEvent[],
+  sequence: number,
+): number {
+  let lower = 0;
+  let upper = events.length;
+  while (lower < upper) {
+    const middle = lower + Math.floor((upper - lower) / 2);
+    if (events[middle].sequence < sequence) lower = middle + 1;
+    else upper = middle;
+  }
+  return lower;
+}
+
 function recordConflict(
   reconciliation: TrajectoryReconciliationState,
   conflict: TrajectoryEventConflict,
@@ -412,10 +426,13 @@ const trajectorySlice = createSlice({
         }
       } else if (!isCoveredByTrimmedLive) {
         const liveEvents = conversation.liveEventsByRunId[event.runId] ?? [];
-        const existing = liveEvents.find(candidate => candidate.sequence === event.sequence);
+        const insertionIndex = eventInsertionIndex(liveEvents, event.sequence);
+        const existing = liveEvents[insertionIndex]?.sequence === event.sequence
+          ? liveEvents[insertionIndex]
+          : undefined;
         if (!existing) {
-          liveEvents.push(event);
-          liveEvents.sort((left, right) => left.sequence - right.sequence);
+          if (insertionIndex === liveEvents.length) liveEvents.push(event);
+          else liveEvents.splice(insertionIndex, 0, event);
           conversation.liveEventsByRunId[event.runId] = liveEvents;
           trimLiveEvents(conversation, event.runId);
           trimMergedEventWindow(conversation, event.runId);

@@ -542,8 +542,8 @@ async function parseSseEnvelopeStream(
 
   const dispatchAgentEvent = (
     ev: AgentEventEnvelope & Record<string, unknown>,
+    trajectoryEvent: NormalizedTrajectoryEvent,
   ) => {
-    const trajectoryEvent = normalizeSseTrajectoryEvent(ev);
     try {
       switch (ev.type) {
         case 'run_started': {
@@ -660,12 +660,10 @@ async function parseSseEnvelopeStream(
           } as never);
         }
         default:
-          if (!trajectoryEvent) {
-            console.warn('[chat] 未知 agent_event type，已忽略', ev.type);
-          }
+          // 已通过 trajectory adapter allowlist，仅作轨迹投影的事件不进入旧 progress 回调。
       }
     } finally {
-      if (trajectoryEvent) callbacks.onTrajectoryEvent?.(trajectoryEvent);
+      callbacks.onTrajectoryEvent?.(trajectoryEvent);
     }
   };
 
@@ -712,13 +710,18 @@ async function parseSseEnvelopeStream(
           case 'agent_event': {
             const ev = envelope.data as AgentEventEnvelope &
               Record<string, unknown>;
-            const last = lastSequenceByRun.get(ev.run_id) ?? -1;
-            if (ev.sequence <= last) {
+            const trajectoryEvent = normalizeSseTrajectoryEvent(ev);
+            if (!trajectoryEvent) {
+              console.warn('[chat] 未知或非法 agent_event，已忽略', ev?.type);
+              break;
+            }
+            const last = lastSequenceByRun.get(trajectoryEvent.runId) ?? -1;
+            if (trajectoryEvent.sequence <= last) {
               console.warn('[chat] agent_event sequence 倒退，丢弃', ev);
               break;
             }
-            lastSequenceByRun.set(ev.run_id, ev.sequence);
-            dispatchAgentEvent(ev);
+            lastSequenceByRun.set(trajectoryEvent.runId, trajectoryEvent.sequence);
+            dispatchAgentEvent(ev, trajectoryEvent);
             break;
           }
           case 'reasoning':

@@ -1215,7 +1215,7 @@ describe('sendMessageStream — 新 envelope 协议', () => {
     warn.mockRestore();
   });
 
-  it('未知、非法与不支持 schema 的 agent_event 不进入轨迹回调', async () => {
+  it('未知、非法与不支持 schema 的 agent_event 不进入任何回调', async () => {
     fetchWithAuthMock.mockResolvedValue(
       createStreamResponse([
         agentEvent('future_private_event', { secret: 'unknown' }, 0),
@@ -1266,8 +1266,91 @@ describe('sendMessageStream — 新 envelope 协议', () => {
       },
     );
 
-    expect(onStepStarted).toHaveBeenCalledTimes(2);
+    expect(onStepStarted).not.toHaveBeenCalled();
     expect(onTrajectoryEvent).not.toHaveBeenCalled();
+    warn.mockRestore();
+  });
+
+  it('非法 run_started 不物化会话、不触发 onReady 且不推进单连接 watermark', async () => {
+    fetchWithAuthMock.mockResolvedValue(
+      createStreamResponse([
+        envelope('agent_event', {
+          type: 'run_started',
+          schema_version: 2,
+          run_id: 'r-watermark',
+          parent_run_id: null,
+          step_id: null,
+          parent_step_id: null,
+          tool_call_id: null,
+          sequence: 9,
+          trace_id: 'r-watermark',
+          ts: 9,
+          conversation_id: 'conversation-invalid',
+          message_id: 'message-invalid',
+          model: 'g',
+          tools: [],
+          config: {},
+        }),
+        agentEvent(
+          'run_started',
+          {
+            conversation_id: 'conversation-valid',
+            message_id: 'message-valid',
+            model: 'g',
+            tools: [],
+            config: {},
+          },
+          1,
+          'r-watermark',
+        ),
+        envelope('done', {}),
+        'data: [DONE]\n\n',
+      ]),
+    );
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const onReady = vi.fn();
+    const onRunStarted = vi.fn();
+    const onTrajectoryEvent = vi.fn();
+    const onDone = vi.fn();
+
+    await sendMessageStream(
+      { model_id: 'g', message: 'q' },
+      {
+        onReady,
+        onRunStarted,
+        onTrajectoryEvent,
+        onReasoning: vi.fn(),
+        onAnswering: vi.fn(),
+        onDone,
+        onError: vi.fn(),
+      },
+    );
+
+    expect(onReady).toHaveBeenCalledTimes(1);
+    expect(onReady).toHaveBeenCalledWith({
+      messageId: 'message-valid',
+      conversationId: 'conversation-valid',
+    });
+    expect(onRunStarted).toHaveBeenCalledTimes(1);
+    expect(onRunStarted).toHaveBeenCalledWith(expect.objectContaining({
+      run_id: 'r-watermark',
+      sequence: 1,
+      conversation_id: 'conversation-valid',
+      message_id: 'message-valid',
+    }));
+    expect(onTrajectoryEvent).toHaveBeenCalledTimes(1);
+    expect(onTrajectoryEvent).toHaveBeenCalledWith(expect.objectContaining({
+      runId: 'r-watermark',
+      sequence: 1,
+      payload: expect.objectContaining({
+        conversation_id: 'conversation-valid',
+        message_id: 'message-valid',
+      }),
+    }));
+    expect(onDone).toHaveBeenCalledWith({
+      messageId: 'message-valid',
+      conversationId: 'conversation-valid',
+    });
     warn.mockRestore();
   });
 
