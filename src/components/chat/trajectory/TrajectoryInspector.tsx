@@ -2,6 +2,7 @@
 
 import { AlertTriangle, Clock3, GitBranch, Hash, TimerReset, X } from 'lucide-react';
 import type { TrajectoryCell } from '@/lib/trajectory/TrajectoryCellProjection';
+import type { NormalizedTrajectoryEvent } from '@/lib/trajectory/normalizeTrajectoryEvent';
 import type { TrajectorySpan } from '@/types/trajectory';
 import { cn } from '@/lib/utils';
 import {
@@ -27,6 +28,17 @@ interface InspectorModel {
 }
 
 const MAX_SHORT_ERROR_LENGTH = 160;
+const MESSAGE_EVENT_TYPES = new Set([
+  'run_failed',
+  'llm_round_failed',
+  'retrieval_failed',
+]);
+const REASON_EVENT_TYPES = new Set([
+  'run_limit_reached',
+  'run_interrupted',
+  'llm_round_cancelled',
+  'retrieval_cancelled',
+]);
 
 function shortText(value: string | null): string | null {
   if (!value) return null;
@@ -47,9 +59,7 @@ function cellParent(cell: TrajectoryCell): string | null {
 }
 
 function cellTtft(cell: TrajectoryCell): number | null {
-  const events = cell.type === 'run'
-    ? [...cell.records, ...cell.liveTail]
-    : (cell.type === 'tool' || cell.type === 'subtool' ? cell.events : []);
+  const events = cellEvents(cell);
   for (let index = events.length - 1; index >= 0; index -= 1) {
     const value = events[index].payload.ttft_ms;
     if (typeof value === 'number' && Number.isFinite(value)) return value;
@@ -57,21 +67,81 @@ function cellTtft(cell: TrajectoryCell): number | null {
   return null;
 }
 
-function cellError(cell: TrajectoryCell): string | null {
-  const events = cell.type === 'run'
+function cellEvents(cell: TrajectoryCell): NormalizedTrajectoryEvent[] {
+  return cell.type === 'run'
     ? [...cell.records, ...cell.liveTail]
     : (cell.type === 'tool' || cell.type === 'subtool' ? cell.events : []);
+}
+
+function safeEventDetail(event: NormalizedTrajectoryEvent): string | null {
+  if (MESSAGE_EVENT_TYPES.has(event.eventType) && typeof event.payload.message === 'string') {
+    return shortText(event.payload.message);
+  }
+  if (REASON_EVENT_TYPES.has(event.eventType) && typeof event.payload.reason === 'string') {
+    return shortText(event.payload.reason);
+  }
+  return null;
+}
+
+function controlledFailureSummary(
+  cell: TrajectoryCell,
+  eventType?: string,
+  spanKind?: string,
+): string {
+  if (cell.type === 'subtool' || eventType?.startsWith('tool_attempt_')) {
+    return '工具尝试未能完成';
+  }
+  if (cell.type === 'tool' || spanKind === 'tool' || eventType?.startsWith('tool_call_')) {
+    return '工具未能完成';
+  }
+  if (spanKind === 'llm' || eventType?.startsWith('llm_round_')) return '模型阶段未能完成';
+  if (spanKind === 'retrieval' || eventType?.startsWith('retrieval_')) {
+    return '资料获取阶段未能完成';
+  }
+  return '该阶段未能完成';
+}
+
+function cellError(cell: TrajectoryCell): string | null {
+  const events = cellEvents(cell);
   for (let index = events.length - 1; index >= 0; index -= 1) {
     const event = events[index];
-    const canCarryMessage = event.eventType.endsWith('_failed') || event.eventType === 'run_failed';
-    if (canCarryMessage && typeof event.payload.message === 'string') {
-      return shortText(event.payload.message);
-    }
-    if (typeof event.payload.error_code === 'string') return shortText(event.payload.error_code);
-    if (event.eventType.endsWith('_cancelled') && typeof event.payload.reason === 'string') {
-      return shortText(event.payload.reason);
+    const detail = safeEventDetail(event);
+    if (detail) return detail;
+    if (typeof event.payload.error_code === 'string') {
+      return controlledFailureSummary(cell, event.eventType);
     }
   }
+  if ('status' in cell && cell.status === 'failed') return controlledFailureSummary(cell);
+  return null;
+}
+
+function inferredSpanSummary(reason: string | null): string {
+  switch (reason) {
+    case 'truncated_prefix':
+      return '该阶段的开始记录不在当前有界快照中';
+    case 'run_failed_without_close':
+      return '运行失败前该阶段未能正常收口';
+    case 'run_interrupted_without_close':
+      return '运行中断前该阶段未能正常收口';
+    case 'run_completed_without_close':
+      return '运行完成时该阶段仍缺少明确的结束记录';
+    default:
+      return '该阶段的结束状态由当前有限记录推断';
+  }
+}
+
+function spanError(cell: TrajectoryCell, span: TrajectorySpan): string | null {
+  if (span.terminal_source === 'inferred' || span.inferred_reason !== null) {
+    return inferredSpanSummary(span.inferred_reason);
+  }
+
+  const sequences = new Set(span.record_sequences);
+  const events = cellEvents(cell).filter(event => sequences.has(event.sequence));
+  for (let index = events.length - 1; index >= 0; index -= 1) {
+    const detail = safeEventDetail(events[index]);
+    if (detail) return detail;
+  }
+  if (span.status === 'failed') return controlledFailureSummary(cell, undefined, span.kind);
   return null;
 }
 
@@ -84,7 +154,7 @@ function buildInspectorModel(cell: TrajectoryCell, span: TrajectorySpan | null):
       duration: formatTrajectoryDuration(span.duration_ms),
       ttft: formatTrajectoryDuration(span.ttft_ms),
       parent: span.parent_span_id ? `父阶段 ${span.parent_span_id}` : null,
-      error: shortText(span.inferred_reason),
+      error: spanError(cell, span),
       sequences: span.record_sequences,
     };
   }

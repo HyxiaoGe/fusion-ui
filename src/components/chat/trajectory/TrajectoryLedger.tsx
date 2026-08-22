@@ -10,6 +10,7 @@ import {
 } from 'react';
 import type { TrajectoryCell } from '@/lib/trajectory/TrajectoryCellProjection';
 import {
+  clampTrajectoryScrollTop,
   getScrollTopForIndex,
   getVirtualRange,
 } from '@/lib/trajectory/virtualRange';
@@ -88,24 +89,28 @@ export function TrajectoryLedger({
 }: TrajectoryLedgerProps) {
   const viewportRef = useRef<HTMLDivElement>(null);
   const resolvedInspectRequestRef = useRef<string | null>(null);
+  const handledControlledSelectionRef = useRef<{ key: string; index: number } | null>(null);
+  const didRestoreInitialScrollRef = useRef(false);
+  const restoringInitialScrollRef = useRef<number | null>(null);
   const rows = useMemo(() => buildLedgerRows(cells), [cells]);
   const selectedIndex = rows.findIndex(row => row.cell.key === selectedCellKey);
   const [activeKey, setActiveKey] = useState<string | null>(() => (
     selectedIndex >= 0 ? rows[selectedIndex].cell.key : rows[0]?.cell.key ?? null
   ));
   const [scrollTop, setScrollTop] = useState(() => Math.max(0, initialScrollTop));
+  const scrollTopRef = useRef(scrollTop);
   const [measuredHeight, setMeasuredHeight] = useState(() => viewportHeight ?? 560);
   const [focusRequestIndex, setFocusRequestIndex] = useState<number | null>(null);
-  const activeIndex = Math.max(0, rows.findIndex(row => row.cell.key === activeKey));
+  const requestedActiveIndex = rows.findIndex(row => row.cell.key === activeKey);
   const range = getVirtualRange({
     itemCount: rows.length,
     scrollTop,
     viewportHeight: measuredHeight,
   });
-
-  useEffect(() => {
-    if (selectedIndex >= 0) setActiveKey(rows[selectedIndex].cell.key);
-  }, [rows, selectedIndex]);
+  const activeIndex = requestedActiveIndex >= range.startIndex
+    && requestedActiveIndex < range.endIndex
+    ? requestedActiveIndex
+    : range.startIndex;
 
   useEffect(() => {
     if (viewportHeight !== undefined) setMeasuredHeight(viewportHeight);
@@ -128,19 +133,55 @@ export function TrajectoryLedger({
     return () => observer.disconnect();
   }, [viewportHeight]);
 
+  useLayoutEffect(() => {
+    if (didRestoreInitialScrollRef.current || rows.length === 0) return;
+    const viewport = viewportRef.current;
+    if (!viewport) return;
+    didRestoreInitialScrollRef.current = true;
+    const restoreViewportHeight = viewportHeight
+      ?? (viewport.clientHeight > 0 ? viewport.clientHeight : measuredHeight);
+    const restoredScrollTop = clampTrajectoryScrollTop({
+      itemCount: rows.length,
+      scrollTop: initialScrollTop,
+      viewportHeight: restoreViewportHeight,
+    });
+    restoringInitialScrollRef.current = restoredScrollTop;
+    viewport.scrollTop = restoredScrollTop;
+    scrollTopRef.current = restoredScrollTop;
+    setScrollTop(current => current === restoredScrollTop ? current : restoredScrollTop);
+  }, [initialScrollTop, measuredHeight, rows.length, viewportHeight]);
+
   const scrollToIndex = useCallback((index: number, align: 'auto' | 'center' = 'auto') => {
     const viewport = viewportRef.current;
     const nextScrollTop = getScrollTopForIndex({
       itemCount: rows.length,
       index,
-      currentScrollTop: viewport?.scrollTop ?? scrollTop,
+      currentScrollTop: viewport?.scrollTop ?? scrollTopRef.current,
       viewportHeight: measuredHeight,
       align,
     });
     if (viewport) viewport.scrollTop = nextScrollTop;
+    scrollTopRef.current = nextScrollTop;
     setScrollTop(nextScrollTop);
     onScrollTopChange?.(nextScrollTop);
-  }, [measuredHeight, onScrollTopChange, rows.length, scrollTop]);
+  }, [measuredHeight, onScrollTopChange, rows.length]);
+
+  useEffect(() => {
+    if (selectedIndex < 0 || selectedCellKey === null) {
+      handledControlledSelectionRef.current = null;
+      return;
+    }
+    const handled = handledControlledSelectionRef.current;
+    if (handled?.key === selectedCellKey && handled.index === selectedIndex) return;
+    handledControlledSelectionRef.current = { key: selectedCellKey, index: selectedIndex };
+    setActiveKey(selectedCellKey);
+    const mountedTarget = viewportRef.current?.querySelector(
+      `[data-trajectory-index="${selectedIndex}"]`,
+    );
+    if (!mountedTarget) {
+      scrollToIndex(selectedIndex, 'auto');
+    }
+  }, [scrollToIndex, selectedCellKey, selectedIndex]);
 
   useEffect(() => {
     if (!inspectTarget) {
@@ -193,7 +234,11 @@ export function TrajectoryLedger({
 
   const handleScroll = (event: React.UIEvent<HTMLDivElement>) => {
     const nextScrollTop = event.currentTarget.scrollTop;
+    scrollTopRef.current = nextScrollTop;
     setScrollTop(nextScrollTop);
+    const isInitialRestore = restoringInitialScrollRef.current === nextScrollTop;
+    restoringInitialScrollRef.current = null;
+    if (isInitialRestore) return;
     onScrollTopChange?.(nextScrollTop);
   };
 

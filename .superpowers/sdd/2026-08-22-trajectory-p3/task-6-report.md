@@ -42,3 +42,37 @@
 
 - Task 7 尚未把这些纯组件装配进全高 `TrajectoryTabView`，因此本任务没有页面级布局、真实数据或 Chrome 用户路径证据。
 - 全仓 TypeScript 基线仍非零；当前 Task 6 文件未出现在定向错误输出中。
+
+---
+
+## Fix round 1：滚动恢复、受控远端选择与检查器安全语义
+
+### 修复
+
+- 首次 layout 现在把 `initialScrollTop` 按固定行高列表总高度和视口高度钳制后，同时写入虚拟窗口 state 与真实 viewport `scrollTop`；首次程序滚动的同值 scroll event 被识别并忽略，不会误报为用户滚动。
+- 外部 `selectedCellKey` 变更后先按完整数据集解析 index；目标未挂载时使用 `auto` 对齐滚入视口，但不请求 DOM focus。虚拟窗口始终为一个已挂载 option 保留 roving `tabIndex=0`，`aria-activedescendant` 始终指向实际存在的节点。
+- Inspector 不再原样渲染 `error_code` 或 `inferred_reason`：`truncated_prefix` 与三类 run orphan 原因映射为受控普通用户文案，未知推断原因使用通用说明；错误码仅触发阶段类型对应的通用摘要。
+- recorded failed span 仅从 `span.record_sequences` 引用的已归一化 allowlist failure/cancel event 中选取允许的 `message/reason`，不会从无关事件取错误，也不会把结构性 `inferred_reason` 冒充用户错误。
+- Inspector fixture 改为调用真实 `normalizeTrajectoryRecord()` 并使用 P1 的 `terminal_source=recorded|inferred`、固定 `inferred_reason` 与 `record_sequences` 形状，覆盖 recorded failure、失败 orphan、truncated prefix、tool-attempt error code、secret 脱敏及非 allowlist 字段移除。
+
+### TDD 证据
+
+1. RED：`npm test -- --run src/components/chat/trajectory/TrajectoryLedger.test.tsx src/components/chat/trajectory/TrajectoryInspector.test.tsx` → 2 files failed；16 tests 中 6 failed、10 passed，退出码 1。失败分别为 DOM `scrollTop` 仍为 0、远端第 91/100 行未挂载，以及 recorded failure 无短错误、两类内部推断码被原样展示、tool-attempt 内部错误码被原样展示。
+2. GREEN：同一命令 → 2 files、16 tests passed，退出码 0。
+3. 恢复路径测试同时断言真实 `scrollTop=5040`、挂载范围为第 79–100 行、第 91 行存在、初始化同值 scroll event 不触发回调；随后真实用户滚动仍触发回调。
+4. 受控选择测试从第 1 行 rerender 到第 91/100 行，断言目标挂载并选中、唯一 roving tab stop 位于目标、active descendant 节点存在，且账本不抢走时间线控制按钮的焦点。
+5. 自审补充 RED/GREEN：空数据首次渲染后异步到达 100 行时，新增测试先复现 DOM 仍为 0，再延迟消费恢复标记；未显式传 `viewportHeight` 时，新增测试先复现 `99_999` 被 fallback 高度错误钳制为 `5040`，再改为读取真实 `clientHeight=112` 并正确钳制为 `5488`。
+
+### 最终验证
+
+- Task 6 聚焦：`npm test -- --run src/lib/trajectory/virtualRange.test.ts src/components/chat/trajectory/TrajectoryLedger.test.tsx src/components/chat/trajectory/TrajectoryTimeline.test.tsx src/components/chat/trajectory/TrajectoryInspector.test.tsx src/components/chat/trajectory/TrajectoryIntegrityBanner.test.tsx` → 5 files、36 tests passed，退出码 0。
+- 全量：`npm test` → 190 files、2104 tests passed，退出码 0。
+- 目标 ESLint：5 个本轮源/测试路径退出码 0；仅有仓库既有 `.eslintignore` 迁移 warning。
+- TypeScript：`npx tsc --noEmit --pretty false` 退出码 2，仍由仓库既有页面测试、旧组件、Task 1 归一化等基线错误阻断；本轮修改的 Ledger、Inspector、virtualRange 及测试路径没有错误输出。
+- `git diff --check` 退出码 0。
+
+### 自审与 Concerns
+
+- 三个 P1 评审问题均有对应真实组件 RED 与最终 GREEN；未引入依赖、fetch、Redux、服务或浏览器操作。
+- Task 7 仍未装配页面级 `TrajectoryTabView`，因此本轮没有真实页面数据与 Chrome 用户路径证据。
+- 全仓 TypeScript 基线仍非零；本轮修改路径没有新增类型错误。

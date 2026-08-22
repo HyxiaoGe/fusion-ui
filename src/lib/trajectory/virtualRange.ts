@@ -36,6 +36,18 @@ function clamp(value: number, minimum: number, maximum: number): number {
   return Math.min(maximum, Math.max(minimum, value));
 }
 
+/** 把持久化或外部传入的滚动位置钳制到当前固定行高列表。 */
+export function clampTrajectoryScrollTop(input: VirtualRangeInput): number {
+  const itemCount = normalizeItemCount(input.itemCount);
+  const viewportHeight = finiteNonNegative(input.viewportHeight);
+  const totalHeight = itemCount * TRAJECTORY_ROW_HEIGHT;
+  return clamp(
+    finiteNonNegative(input.scrollTop),
+    0,
+    Math.max(0, totalHeight - viewportHeight),
+  );
+}
+
 /** 计算固定行高账本当前需要挂载的半开区间。 */
 export function getVirtualRange(input: VirtualRangeInput): VirtualRange {
   const itemCount = normalizeItemCount(input.itemCount);
@@ -51,8 +63,11 @@ export function getVirtualRange(input: VirtualRangeInput): VirtualRange {
   }
 
   const viewportHeight = finiteNonNegative(input.viewportHeight);
-  const maximumScrollTop = Math.max(0, totalHeight - viewportHeight);
-  const scrollTop = clamp(finiteNonNegative(input.scrollTop), 0, maximumScrollTop);
+  const scrollTop = clampTrajectoryScrollTop({
+    itemCount,
+    scrollTop: input.scrollTop,
+    viewportHeight,
+  });
   const visibleStartIndex = clamp(
     Math.floor(scrollTop / TRAJECTORY_ROW_HEIGHT),
     0,

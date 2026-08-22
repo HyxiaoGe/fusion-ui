@@ -254,6 +254,122 @@ describe('TrajectoryLedger', () => {
       .toHaveAttribute('aria-selected', 'true');
   });
 
+  it('首次布局把恢复位置同步到真实滚动容器，并挂载该位置附近的行', () => {
+    const onScrollTopChange = vi.fn();
+    render(
+      <TrajectoryLedger
+        cells={manyCells(100)}
+        selectedCellKey={null}
+        viewportHeight={112}
+        initialScrollTop={5040}
+        onScrollTopChange={onScrollTopChange}
+      />,
+    );
+
+    const ledger = screen.getByRole('listbox', { name: '轨迹账本' });
+    const options = within(ledger).getAllByRole('option');
+    expect(ledger.scrollTop).toBe(5040);
+    expect(options[0]).toHaveAttribute('aria-posinset', '79');
+    expect(options.at(-1)).toHaveAttribute('aria-posinset', '100');
+    expect(within(ledger).getByRole('option', {
+      name: /第 91 轮.*第 91 条消息/,
+    })).toBeInTheDocument();
+    fireEvent.scroll(ledger);
+    expect(onScrollTopChange).not.toHaveBeenCalled();
+
+    ledger.scrollTop = 5096;
+    fireEvent.scroll(ledger);
+    expect(onScrollTopChange).toHaveBeenCalledWith(5096);
+  });
+
+  it('异步行数据到达后再恢复初始滚动位置', () => {
+    const { rerender } = render(
+      <TrajectoryLedger
+        cells={[]}
+        selectedCellKey={null}
+        viewportHeight={112}
+        initialScrollTop={5040}
+      />,
+    );
+
+    rerender(
+      <TrajectoryLedger
+        cells={manyCells(100)}
+        selectedCellKey={null}
+        viewportHeight={112}
+        initialScrollTop={5040}
+      />,
+    );
+
+    const ledger = screen.getByRole('listbox', { name: '轨迹账本' });
+    expect(ledger.scrollTop).toBe(5040);
+    expect(within(ledger).getByRole('option', {
+      name: /第 91 轮.*第 91 条消息/,
+    })).toBeInTheDocument();
+  });
+
+  it('未显式传入视口高度时按真实 clientHeight 钳制恢复位置', () => {
+    const clientHeight = vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get')
+      .mockReturnValue(112);
+    try {
+      render(
+        <TrajectoryLedger
+          cells={manyCells(100)}
+          selectedCellKey={null}
+          initialScrollTop={99_999}
+        />,
+      );
+
+      const ledger = screen.getByRole('listbox', { name: '轨迹账本' });
+      expect(ledger.scrollTop).toBe(5488);
+      expect(within(ledger).getByRole('option', {
+        name: /第 100 轮.*第 100 条消息/,
+      })).toBeInTheDocument();
+    } finally {
+      clientHeight.mockRestore();
+    }
+  });
+
+  it('外部受控选择远端未挂载行时滚动挂载，但不抢走时间线焦点', async () => {
+    const cells = manyCells(100);
+    const { rerender } = render(
+      <div>
+        <button type="button">时间线控制</button>
+        <TrajectoryLedger
+          cells={cells}
+          selectedCellKey="cell-0"
+          viewportHeight={112}
+        />
+      </div>,
+    );
+    const timelineControl = screen.getByRole('button', { name: '时间线控制' });
+    timelineControl.focus();
+
+    rerender(
+      <div>
+        <button type="button">时间线控制</button>
+        <TrajectoryLedger
+          cells={cells}
+          selectedCellKey="cell-90"
+          viewportHeight={112}
+        />
+      </div>,
+    );
+
+    const target = await screen.findByRole('option', {
+      name: /第 91 轮.*第 91 条消息/,
+    });
+    const ledger = screen.getByRole('listbox', { name: '轨迹账本' });
+    const tabStops = within(ledger).getAllByRole('option')
+      .filter(option => option.tabIndex === 0);
+    expect(target).toHaveAttribute('aria-selected', 'true');
+    expect(tabStops).toEqual([target]);
+    expect(ledger).toHaveAttribute('aria-activedescendant', target.id);
+    expect(document.getElementById(ledger.getAttribute('aria-activedescendant') ?? ''))
+      .toBe(target);
+    expect(document.activeElement).toBe(timelineControl);
+  });
+
   it('5000 条输入在任意滚动窗口中都不会挂载超过 200 个 option', async () => {
     render(
       <TrajectoryLedger
