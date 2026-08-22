@@ -13,6 +13,7 @@ import trajectoryReducer, {
   setTrajectoryActiveSurface,
   setTrajectoryInspectorOpen,
   setTrajectoryScrollMode,
+  trajectoryAuthScopeChanged,
   trajectoryRunListFailed,
   trajectoryRunListReceived,
   trajectoryRunListRequested,
@@ -97,6 +98,41 @@ function liveEvent(
 }
 
 describe('trajectorySlice', () => {
+  it('认证作用域仅在 stable identity 真变化时原子清空全部轨迹状态', () => {
+    let state = reducer(undefined, trajectoryAuthScopeChanged({ authScope: 'user-a' }));
+    state = reducer(state, trajectoryRunListRequested({
+      conversationId: 'conversation-a',
+      requestId: 'runs-a',
+    }));
+    state = reducer(state, trajectoryRunListReceived({
+      conversationId: 'conversation-a',
+      requestId: 'runs-a',
+      response: { items: [runSummary('run-a')], truncated: false },
+    }));
+    state = reducer(state, trajectorySnapshotRequested({
+      conversationId: 'conversation-a',
+      runId: 'run-a',
+      requestId: 'snapshot-a',
+    }));
+    state = reducer(state, trajectorySnapshotReceived({
+      conversationId: 'conversation-a',
+      requestId: 'snapshot-a',
+      snapshot: snapshot('run-a', [0, 1]),
+    }));
+
+    const sameScopeState = reducer(state, trajectoryAuthScopeChanged({ authScope: 'user-a' }));
+    expect(sameScopeState).toBe(state);
+    expect(sameScopeState.byConversationId['conversation-a']?.selectedRunId).toBe('run-a');
+    expect(sameScopeState.byConversationId['conversation-a']?.snapshotsByRunId['run-a'])
+      .toBeDefined();
+
+    const nextScopeState = reducer(state, trajectoryAuthScopeChanged({ authScope: 'user-b' }));
+    expect(nextScopeState).toEqual({
+      authScope: 'user-b',
+      byConversationId: {},
+    });
+  });
+
   it('run list 到达后默认选择 started_at 最新的 attempt', () => {
     let state = reducer(undefined, trajectoryRunListRequested({
       conversationId: 'conversation-a',

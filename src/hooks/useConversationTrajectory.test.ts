@@ -48,6 +48,9 @@ function testAuthReducer(
   state: TestAuthState = { isAuthenticated: true, user: { id: 'user-a' }, token: null },
   action: UnknownAction,
 ): TestAuthState {
+  if (action.type === 'test/refresh-token' && typeof action.payload === 'string') {
+    return { ...state, token: action.payload };
+  }
   if (action.type !== 'test/switch-auth' || typeof action.payload !== 'string') return state;
   return { isAuthenticated: true, user: { id: action.payload }, token: null };
 }
@@ -56,6 +59,14 @@ function createAuthenticatedStore() {
   return configureStore({
     reducer: { trajectory: trajectoryReducer, auth: testAuthReducer },
   });
+}
+
+function unsignedToken(subject: string, nonce: string): string {
+  const encode = (value: object) => btoa(JSON.stringify(value))
+    .replaceAll('+', '-')
+    .replaceAll('/', '_')
+    .replaceAll('=', '');
+  return `${encode({ alg: 'none', typ: 'JWT', nonce })}.${encode({ sub: subject })}.`;
 }
 
 function createWrapper(store: ReturnType<typeof createStore>) {
@@ -270,6 +281,81 @@ describe('useConversationTrajectory', () => {
 
     expect(result.current.runs.map(run => run.run_id)).toEqual(['run-user-b']);
     expect(result.current.selectedRunId).toBe('run-user-b');
+  });
+
+  it('completed cache 在认证身份变化时立即失效，并只接受新身份的独立 run list', async () => {
+    const store = createAuthenticatedStore();
+    const userBRuns = deferred<{ items: TrajectoryRunSummary[]; truncated: boolean }>();
+    getTrajectoryRunsMock
+      .mockResolvedValueOnce({ items: [runSummary('run-user-a')], truncated: false })
+      .mockReturnValueOnce(userBRuns.promise);
+    getTrajectorySnapshotMock.mockResolvedValue(snapshot('run-user-a', [0, 1]));
+    const { result } = renderHook(() => useConversationTrajectory('conversation-auth-ready'), {
+      wrapper: createWrapper(store as unknown as ReturnType<typeof createStore>),
+    });
+    await waitFor(() => expect(result.current.selectedRunId).toBe('run-user-a'));
+    act(() => {
+      store.dispatch(setTrajectoryActiveSurface({
+        conversationId: 'conversation-auth-ready',
+        surface: 'trajectory',
+      }));
+    });
+    await waitFor(() => expect(result.current.snapshot?.run.run_id).toBe('run-user-a'));
+
+    act(() => {
+      store.dispatch({ type: 'test/switch-auth', payload: 'user-b' });
+    });
+
+    expect(result.current.runs).toEqual([]);
+    expect(result.current.selectedRunId).toBeNull();
+    expect(result.current.snapshot).toBeUndefined();
+    await waitFor(() => expect(getTrajectoryRunsMock).toHaveBeenCalledTimes(2));
+    expect(result.current.runListStatus).toBe('loading');
+
+    await act(async () => {
+      userBRuns.resolve({ items: [runSummary('run-user-b')], truncated: false });
+      await userBRuns.promise;
+    });
+    await waitFor(() => expect(result.current.runListStatus).toBe('ready'));
+    expect(result.current.runs.map(run => run.run_id)).toEqual(['run-user-b']);
+    expect(result.current.selectedRunId).toBe('run-user-b');
+    expect(result.current.snapshot).toBeUndefined();
+  });
+
+  it('同一 stable identity 的 token refresh 不清 completed cache 或重复 GET', async () => {
+    const store = createAuthenticatedStore();
+    getTrajectoryRunsMock.mockResolvedValue({
+      items: [runSummary('run-user-a')],
+      truncated: false,
+    });
+    getTrajectorySnapshotMock.mockResolvedValue(snapshot('run-user-a', [0, 1]));
+    const { result } = renderHook(() => useConversationTrajectory('conversation-token-refresh'), {
+      wrapper: createWrapper(store as unknown as ReturnType<typeof createStore>),
+    });
+    await waitFor(() => expect(result.current.selectedRunId).toBe('run-user-a'));
+    act(() => {
+      store.dispatch(setTrajectoryActiveSurface({
+        conversationId: 'conversation-token-refresh',
+        surface: 'trajectory',
+      }));
+    });
+    await waitFor(() => expect(result.current.snapshot?.run.run_id).toBe('run-user-a'));
+    const runListCalls = getTrajectoryRunsMock.mock.calls.length;
+    const snapshotCalls = getTrajectorySnapshotMock.mock.calls.length;
+
+    act(() => {
+      store.dispatch({
+        type: 'test/refresh-token',
+        payload: unsignedToken('user-a', 'rotated'),
+      });
+    });
+    await act(async () => Promise.resolve());
+
+    expect(result.current.runs.map(run => run.run_id)).toEqual(['run-user-a']);
+    expect(result.current.selectedRunId).toBe('run-user-a');
+    expect(result.current.snapshot?.run.run_id).toBe('run-user-a');
+    expect(getTrajectoryRunsMock).toHaveBeenCalledTimes(runListCalls);
+    expect(getTrajectorySnapshotMock).toHaveBeenCalledTimes(snapshotCalls);
   });
 
   it('同 store 两个 snapshot consumer 共享请求，发起者先卸载不会 abort 或额外 GET', async () => {

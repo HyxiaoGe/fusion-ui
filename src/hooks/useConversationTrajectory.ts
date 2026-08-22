@@ -9,6 +9,7 @@ import {
   selectTrajectoryConversation,
   selectTrajectoryRuns,
   touchTrajectorySnapshot,
+  trajectoryAuthScopeChanged,
   trajectoryRunListCancelled,
   trajectoryRunListFailed,
   trajectoryRunListReceived,
@@ -126,17 +127,22 @@ export function useConversationTrajectory(conversationId: string | null) {
   const store = useStore<RootState>();
   const authScope = useAppSelector(authScopeKey);
   const trajectoryState = useAppSelector(state => state.trajectory);
-  const conversation = conversationId
+  const isCurrentAuthScope = trajectoryState.authScope === authScope;
+  const conversation = conversationId && isCurrentAuthScope
     ? selectTrajectoryConversation({ trajectory: trajectoryState }, conversationId)
     : undefined;
   const runs = useMemo(() => (
-    conversationId
+    conversationId && isCurrentAuthScope
       ? selectTrajectoryRuns({ trajectory: trajectoryState }, conversationId)
       : []
-  ), [conversationId, trajectoryState]);
+  ), [conversationId, isCurrentAuthScope, trajectoryState]);
   const consumerIdRef = useRef(Symbol('trajectory-consumer'));
   const runListSubscriptionRef = useRef<RequestSubscription | null>(null);
   const snapshotSubscriptionRef = useRef<RequestSubscription | null>(null);
+
+  useEffect(() => {
+    dispatch(trajectoryAuthScopeChanged({ authScope }));
+  }, [authScope, dispatch]);
 
   const requestRunList = useCallback((targetConversationId: string) => {
     const coordinator = requestCoordinator(store, authScope);

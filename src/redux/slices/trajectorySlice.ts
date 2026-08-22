@@ -91,10 +91,14 @@ export interface TrajectoryConversationState {
 }
 
 export interface TrajectoryState {
+  authScope: string;
   byConversationId: Record<string, TrajectoryConversationState>;
 }
 
-const initialState: TrajectoryState = { byConversationId: {} };
+const initialState: TrajectoryState = {
+  authScope: '__anonymous__',
+  byConversationId: {},
+};
 
 function createConversationState(): TrajectoryConversationState {
   return {
@@ -282,6 +286,15 @@ const trajectorySlice = createSlice({
   name: 'trajectory',
   initialState,
   reducers: {
+    trajectoryAuthScopeChanged(state, action: PayloadAction<{
+      authScope: string;
+    }>) {
+      if (state.authScope === action.payload.authScope) return;
+      return {
+        authScope: action.payload.authScope,
+        byConversationId: {},
+      };
+    },
     trajectoryRunListRequested(state, action: PayloadAction<{
       conversationId: string;
       requestId: string;
@@ -757,6 +770,7 @@ export const {
   setTrajectoryInspectorOpen,
   setTrajectoryScrollMode,
   touchTrajectorySnapshot,
+  trajectoryAuthScopeChanged,
   trajectoryRunListCancelled,
   trajectoryRunListFailed,
   trajectoryRunListReceived,
