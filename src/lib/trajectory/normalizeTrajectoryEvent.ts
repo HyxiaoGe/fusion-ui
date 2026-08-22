@@ -1,5 +1,3 @@
-import type { TrajectoryRecord } from '@/types/trajectory';
-
 export interface NormalizedTrajectoryEvent {
   runId: string;
   sequence: number;
@@ -149,10 +147,6 @@ function normalizeSchemaVersion(value: unknown): number | null {
     : null;
 }
 
-function hasSupportedSchemaVersion(value: unknown): boolean {
-  return normalizeSchemaVersion(value) !== null;
-}
-
 function sanitizePayload(eventType: string, source: Record<string, unknown>): Record<string, unknown> | null {
   const fields = EVENT_PAYLOAD_FIELDS[eventType];
   if (!fields) return null;
@@ -174,6 +168,7 @@ function hasValidEnvelope(
 ): source is Record<string, unknown> & { type: string; run_id: string; sequence: number; ts: number; trace_id: string } {
   return typeof source.type === 'string'
     && typeof source.run_id === 'string'
+    && typeof source.sequence === 'number'
     && Number.isInteger(source.sequence)
     && source.sequence >= 0
     && typeof source.ts === 'number'
@@ -181,11 +176,29 @@ function hasValidEnvelope(
     && typeof source.trace_id === 'string';
 }
 
+function hasValidRecordEnvelope(
+  source: Record<string, unknown>,
+): source is Record<string, unknown> & {
+  sequence: number;
+  event_type: string;
+  timestamp: string;
+  payload: Record<string, unknown>;
+} {
+  return typeof source.sequence === 'number'
+    && Number.isInteger(source.sequence)
+    && source.sequence >= 0
+    && typeof source.event_type === 'string'
+    && typeof source.timestamp === 'string'
+    && isRecord(source.payload);
+}
+
 /** 将实时 agent_event 转成普通用户轨迹可消费的受控事件。 */
 export function normalizeSseTrajectoryEvent(input: unknown): NormalizedTrajectoryEvent | null {
-  if (!isRecord(input) || !hasValidEnvelope(input) || !hasSupportedSchemaVersion(input.schema_version)) {
+  if (!isRecord(input) || !hasValidEnvelope(input)) {
     return null;
   }
+  const schemaVersion = normalizeSchemaVersion(input.schema_version);
+  if (schemaVersion === null) return null;
   const stepId = nullableString(input.step_id);
   const toolCallId = nullableString(input.tool_call_id);
   const parentStepId = nullableString(input.parent_step_id);
@@ -200,7 +213,7 @@ export function normalizeSseTrajectoryEvent(input: unknown): NormalizedTrajector
     runId: input.run_id,
     sequence: input.sequence,
     eventType: input.type,
-    schemaVersion: normalizeSchemaVersion(input.schema_version),
+    schemaVersion,
     timestamp: timestamp.toISOString(),
     stepId,
     toolCallId,
@@ -212,17 +225,14 @@ export function normalizeSseTrajectoryEvent(input: unknown): NormalizedTrajector
 
 /** 将 P1 durable record 转成与实时 SSE 相同的普通用户事件。 */
 export function normalizeTrajectoryRecord(runId: string, input: unknown): NormalizedTrajectoryEvent | null {
-  const record = input as Partial<TrajectoryRecord>;
   if (!isRecord(input)
     || typeof runId !== 'string'
-    || !Number.isInteger(record.sequence)
-    || (record.sequence as number) < 0
-    || typeof record.event_type !== 'string'
-    || typeof record.timestamp !== 'string'
-    || !hasSupportedSchemaVersion(record.schema_version)
-    || !isRecord(record.payload)) {
+    || !hasValidRecordEnvelope(input)) {
     return null;
   }
+  const record = input;
+  const schemaVersion = normalizeSchemaVersion(record.schema_version);
+  if (schemaVersion === null) return null;
   const stepId = nullableString(record.step_id);
   const toolCallId = nullableString(record.tool_call_id);
   const parentStepId = nullableString(record.parent_step_id);
@@ -240,7 +250,7 @@ export function normalizeTrajectoryRecord(runId: string, input: unknown): Normal
     runId,
     sequence: record.sequence,
     eventType: record.event_type,
-    schemaVersion: normalizeSchemaVersion(record.schema_version),
+    schemaVersion,
     timestamp: record.timestamp,
     stepId,
     toolCallId,

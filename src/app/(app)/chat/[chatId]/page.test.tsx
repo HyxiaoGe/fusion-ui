@@ -1,7 +1,7 @@
 import React, { useEffect } from 'react';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { Conversation, Message } from '@/types/conversation';
+import type { ContentBlock, Conversation, Message } from '@/types/conversation';
 import type { StreamCallbacks } from '@/lib/api/chat';
 import type { NormalizedTrajectoryEvent } from '@/lib/trajectory/normalizeTrajectoryEvent';
 import trajectoryReducer, {
@@ -1508,8 +1508,8 @@ describe('ChatPage 会话切换体验', () => {
   });
 
   it('刷新恢复 continuation 成功时以旧回答作为 staticBlocks 并合并新内容', async () => {
-    const oldBlocks = [{ type: 'text', id: 'old-answer', text: '旧回答' }];
-    const mergedBlocks = [...oldBlocks, { type: 'text', id: 'new-answer', text: '新回答' }];
+    const oldBlocks: ContentBlock[] = [{ type: 'text', id: 'old-answer', text: '旧回答' }];
+    const mergedBlocks: ContentBlock[] = [...oldBlocks, { type: 'text', id: 'new-answer', text: '新回答' }];
     conversationsById.set('chat-a', createConversation('chat-a', [
       textMessage('user-1'),
       { id: 'assistant-1', role: 'assistant', content: oldBlocks, timestamp: 2 },
@@ -1549,8 +1549,8 @@ describe('ChatPage 会话切换体验', () => {
   });
 
   it('刷新恢复 continuation 失败时 partial 仍合并保留旧回答', async () => {
-    const oldBlocks = [{ type: 'text', id: 'old-answer', text: '旧回答' }];
-    const mergedBlocks = [...oldBlocks, { type: 'text', id: 'partial-answer', text: '半截新增' }];
+    const oldBlocks: ContentBlock[] = [{ type: 'text', id: 'old-answer', text: '旧回答' }];
+    const mergedBlocks: ContentBlock[] = [...oldBlocks, { type: 'text', id: 'partial-answer', text: '半截新增' }];
     conversationsById.set('chat-a', createConversation('chat-a', [
       textMessage('user-1'),
       { id: 'assistant-1', role: 'assistant', content: oldBlocks, timestamp: 2 },
@@ -1590,8 +1590,8 @@ describe('ChatPage 会话切换体验', () => {
   });
 
   it('刷新恢复 retry 失败时丢弃半截新回答并重新水合原回答', async () => {
-    const oldBlocks = [{ type: 'text', id: 'old-answer', text: '旧完整回答' }];
-    const partialBlocks = [{ type: 'text', id: 'partial-answer', text: '半截新回答' }];
+    const oldBlocks: ContentBlock[] = [{ type: 'text', id: 'old-answer', text: '旧完整回答' }];
+    const partialBlocks: ContentBlock[] = [{ type: 'text', id: 'partial-answer', text: '半截新回答' }];
     conversationsById.set('chat-a', createConversation('chat-a', [
       textMessage('user-1'),
       { id: 'assistant-1', role: 'assistant', content: oldBlocks, timestamp: 2 },
@@ -1623,8 +1623,8 @@ describe('ChatPage 会话切换体验', () => {
   });
 
   it('普通 initial 恢复即使 DB 有 checkpoint 也从空 blocks 重放，避免重复旧内容', async () => {
-    const checkpointBlocks = [{ type: 'text', id: 'checkpoint-answer', text: '已落库 checkpoint' }];
-    const replayedBlocks = [{ type: 'text', id: 'replayed-answer', text: '重放后的完整回答' }];
+    const checkpointBlocks: ContentBlock[] = [{ type: 'text', id: 'checkpoint-answer', text: '已落库 checkpoint' }];
+    const replayedBlocks: ContentBlock[] = [{ type: 'text', id: 'replayed-answer', text: '重放后的完整回答' }];
     conversationsById.set('chat-a', createConversation('chat-a', [
       textMessage('user-1'),
       { id: 'assistant-1', role: 'assistant', content: checkpointBlocks, timestamp: 2 },
