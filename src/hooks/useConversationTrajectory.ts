@@ -120,14 +120,23 @@ function snapshotRequestKey(conversationId: string, runId: string): string {
   return `${conversationId}\u0000${runId}`;
 }
 
+function trajectoryDetailIdentity(
+  authScope: string,
+  conversationId: string,
+  runId: string,
+): string {
+  return `${authScope}\u0000${conversationId}\u0000${runId}`;
+}
+
 function readTrajectoryDetail(
   store: { getState: () => RootState },
   conversationId: string,
   runId: string,
+  identity: string,
 ): FrameBatchedTrajectoryDetail {
   const conversation = selectTrajectoryConversation(store.getState(), conversationId);
   return {
-    identity: snapshotRequestKey(conversationId, runId),
+    identity,
     snapshot: conversation?.snapshotsByRunId[runId],
     liveEvents: conversation?.liveEventsByRunId[runId] ?? [],
   };
@@ -135,16 +144,17 @@ function readTrajectoryDetail(
 
 function useFrameBatchedTrajectoryDetail(
   store: { getState: () => RootState; subscribe: (listener: () => void) => () => void },
+  authScope: string,
   conversationId: string | null,
   runId: string | null,
   enabled: boolean,
 ): FrameBatchedTrajectoryDetail {
   const identity = enabled && conversationId && runId
-    ? snapshotRequestKey(conversationId, runId)
+    ? trajectoryDetailIdentity(authScope, conversationId, runId)
     : '';
   const [detail, setDetail] = useState<FrameBatchedTrajectoryDetail>(() => (
     identity && conversationId && runId
-      ? readTrajectoryDetail(store, conversationId, runId)
+      ? readTrajectoryDetail(store, conversationId, runId, identity)
       : EMPTY_BATCHED_DETAIL
   ));
 
@@ -153,21 +163,23 @@ function useFrameBatchedTrajectoryDetail(
       setDetail(EMPTY_BATCHED_DETAIL);
       return;
     }
-    setDetail(readTrajectoryDetail(store, conversationId, runId));
+    setDetail(readTrajectoryDetail(store, conversationId, runId, identity));
   }, [conversationId, identity, runId, store]);
 
   useEffect(() => {
     if (!identity || !conversationId || !runId) return;
-    let current = readTrajectoryDetail(store, conversationId, runId);
+    let active = true;
+    let current = readTrajectoryDetail(store, conversationId, runId, identity);
     let frameId: number | null = null;
     let timeoutId: ReturnType<typeof setTimeout> | null = null;
     const flush = () => {
+      if (!active) return;
       frameId = null;
       timeoutId = null;
       setDetail(current);
     };
     const unsubscribe = store.subscribe(() => {
-      const next = readTrajectoryDetail(store, conversationId, runId);
+      const next = readTrajectoryDetail(store, conversationId, runId, identity);
       if (next.snapshot === current.snapshot && next.liveEvents === current.liveEvents) return;
       const snapshotIdentityChanged = next.snapshot?.snapshotRequestId
         !== current.snapshot?.snapshotRequestId;
@@ -192,6 +204,7 @@ function useFrameBatchedTrajectoryDetail(
       }
     });
     return () => {
+      active = false;
       unsubscribe();
       if (frameId !== null && typeof window !== 'undefined') {
         window.cancelAnimationFrame(frameId);
@@ -200,7 +213,10 @@ function useFrameBatchedTrajectoryDetail(
     };
   }, [conversationId, identity, runId, store]);
 
-  return detail.identity === identity ? detail : EMPTY_BATCHED_DETAIL;
+  if (!identity || !conversationId || !runId) return EMPTY_BATCHED_DETAIL;
+  return detail.identity === identity
+    ? detail
+    : readTrajectoryDetail(store, conversationId, runId, identity);
 }
 
 function releaseRequestSubscription(subscription: RequestSubscription | null): void {
@@ -351,6 +367,7 @@ export function useConversationTrajectory(conversationId: string | null) {
     || Boolean(inspectRequest && inspectRequest.runId === selectedRunId);
   const batchedDetail = useFrameBatchedTrajectoryDetail(
     store,
+    authScope,
     conversationId,
     selectedRunId,
     detailEnabled,
@@ -687,6 +704,7 @@ export function useConversationTrajectory(conversationId: string | null) {
   ]);
 
   return {
+    projectionIdentity: `${authScope}\u0000${conversationId ?? ''}`,
     runs,
     runSummariesById,
     snapshotsByRunId,

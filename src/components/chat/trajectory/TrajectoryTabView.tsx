@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useStore } from 'react-redux';
 import { AlertTriangle, Loader2, MessageSquareText, RefreshCw } from 'lucide-react';
 
@@ -76,6 +76,11 @@ interface InspectFeedback {
   requestId: string;
   notice: string | null;
   highlight: TrajectoryInspectTarget;
+}
+
+interface CommittedTrajectoryProjection {
+  identity: string;
+  projection: TrajectoryCellProjection;
 }
 
 function runCell(
@@ -163,7 +168,8 @@ export function TrajectoryTabView({
   const runActionsRef = useRef(runActions);
   runActionsRef.current = runActions;
   const [inspectFeedback, setInspectFeedback] = useState<InspectFeedback | null>(null);
-  const projection = useMemo(() => (
+  const committedProjectionRef = useRef<CommittedTrajectoryProjection | null>(null);
+  const visibleProjection = useMemo(() => (
     visible
       ? projectTrajectoryCells({
           messages,
@@ -174,7 +180,7 @@ export function TrajectoryTabView({
           selectedRunId: trajectory.selectedRunId,
           runsTruncated: trajectory.runsTruncated,
         })
-      : EMPTY_PROJECTION
+      : null
   ), [
     messages,
     trajectory.liveEventsByRunId,
@@ -185,6 +191,19 @@ export function TrajectoryTabView({
     trajectory.snapshotsByRunId,
     visible,
   ]);
+  useLayoutEffect(() => {
+    if (!visible || !visibleProjection) return;
+    committedProjectionRef.current = {
+      identity: trajectory.projectionIdentity,
+      projection: visibleProjection,
+    };
+  }, [trajectory.projectionIdentity, visible, visibleProjection]);
+  const committedProjection = committedProjectionRef.current;
+  const projection = visible
+    ? visibleProjection ?? EMPTY_PROJECTION
+    : committedProjection && committedProjection.identity === trajectory.projectionIdentity
+      ? committedProjection.projection
+      : EMPTY_PROJECTION;
   const cells = useMemo(
     () => [...projection.cells, ...projection.unassociatedCells],
     [projection.cells, projection.unassociatedCells],

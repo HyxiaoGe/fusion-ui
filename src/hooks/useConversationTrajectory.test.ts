@@ -164,6 +164,23 @@ function terminalEvent(runId: string, sequence: number) {
   return event;
 }
 
+function stepEvent(runId: string, sequence: number) {
+  const event = normalizeSseTrajectoryEvent({
+    type: 'step_started',
+    schema_version: 1,
+    run_id: runId,
+    sequence,
+    ts: 1787356800 + sequence,
+    trace_id: `trace-${runId}`,
+    step_id: `step-${sequence}`,
+    tool_call_id: null,
+    parent_step_id: null,
+    step_number: sequence,
+  });
+  if (!event) throw new Error('测试步骤事件必须可归一化');
+  return event;
+}
+
 describe('useConversationTrajectory', () => {
   beforeEach(() => {
     getTrajectoryRunsMock.mockReset();
@@ -665,6 +682,85 @@ describe('useConversationTrajectory', () => {
     await waitFor(() => expect(result.current.snapshot?.events).toHaveLength(2));
     expect(getTrajectorySnapshotMock).toHaveBeenCalledTimes(1);
     expect(getTrajectorySnapshotMock.mock.calls[0][1]).toBe('run-0');
+  });
+
+  it('隐藏 cleanup 后手动执行已取消的旧 rAF，也不能覆盖重新激活后的当前 detail', () => {
+    const callbacks: FrameRequestCallback[] = [];
+    const requestAnimationFrameSpy = vi.spyOn(window, 'requestAnimationFrame')
+      .mockImplementation(callback => {
+        callbacks.push(callback);
+        return callbacks.length;
+      });
+    const cancelAnimationFrameSpy = vi.spyOn(window, 'cancelAnimationFrame')
+      .mockImplementation(() => undefined);
+
+    try {
+      const store = createStore();
+      store.dispatch(trajectoryRunListRequested({
+        conversationId: 'conversation-a',
+        requestId: 'seed-runs',
+      }));
+      store.dispatch(trajectoryRunListReceived({
+        conversationId: 'conversation-a',
+        requestId: 'seed-runs',
+        response: { items: [runSummary('run-a')], truncated: false },
+      }));
+      store.dispatch(trajectorySnapshotRequested({
+        conversationId: 'conversation-a',
+        runId: 'run-a',
+        requestId: 'seed-snapshot',
+      }));
+      store.dispatch(trajectorySnapshotReceived({
+        conversationId: 'conversation-a',
+        requestId: 'seed-snapshot',
+        snapshot: snapshot('run-a', [0]),
+      }));
+      store.dispatch(setTrajectoryActiveSurface({
+        conversationId: 'conversation-a',
+        surface: 'trajectory',
+      }));
+      const { result } = renderHook(() => useConversationTrajectory('conversation-a'), {
+        wrapper: createWrapper(store),
+      });
+
+      act(() => {
+        store.dispatch(mergeLiveTrajectoryEvent({
+          conversationId: 'conversation-a',
+          event: stepEvent('run-a', 1),
+        }));
+      });
+      expect(callbacks).toHaveLength(1);
+      const staleFrame = callbacks[0];
+
+      act(() => {
+        store.dispatch(setTrajectoryActiveSurface({
+          conversationId: 'conversation-a',
+          surface: 'chat',
+        }));
+      });
+      act(() => {
+        store.dispatch(mergeLiveTrajectoryEvent({
+          conversationId: 'conversation-a',
+          event: stepEvent('run-a', 2),
+        }));
+      });
+      act(() => {
+        store.dispatch(setTrajectoryActiveSurface({
+          conversationId: 'conversation-a',
+          surface: 'trajectory',
+        }));
+      });
+      expect(result.current.liveEventsByRunId['run-a'].map(event => event.sequence))
+        .toEqual([1, 2]);
+
+      act(() => staleFrame(performance.now()));
+
+      expect(result.current.liveEventsByRunId['run-a'].map(event => event.sequence))
+        .toEqual([1, 2]);
+    } finally {
+      requestAnimationFrameSpy.mockRestore();
+      cancelAnimationFrameSpy.mockRestore();
+    }
   });
 
   it('terminal reconciling 每周期只 refetch 一次，失败显式收口且手动 retry 可恢复', async () => {

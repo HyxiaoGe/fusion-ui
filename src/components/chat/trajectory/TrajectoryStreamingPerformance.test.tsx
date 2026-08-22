@@ -1,7 +1,12 @@
 import React from 'react';
 import { act, render } from '@testing-library/react';
-import { combineReducers, configureStore, type Reducer } from '@reduxjs/toolkit';
-import { Provider } from 'react-redux';
+import {
+  combineReducers,
+  configureStore,
+  type Reducer,
+  type UnknownAction,
+} from '@reduxjs/toolkit';
+import { Provider, useSelector } from 'react-redux';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import ChatMessageList from '@/components/chat/ChatMessageList';
@@ -135,11 +140,25 @@ function staticReducer<T>(initialState: T): Reducer<T> {
   return (state = initialState) => state;
 }
 
+interface PerformanceAuthState {
+  isAuthenticated: boolean;
+  user: { id: string } | null;
+  token: null;
+}
+
+function performanceAuthReducer(
+  state: PerformanceAuthState = { isAuthenticated: false, user: null, token: null },
+  action: UnknownAction,
+): PerformanceAuthState {
+  if (action.type !== 'test/switch-auth' || typeof action.payload !== 'string') return state;
+  return { isAuthenticated: true, user: { id: action.payload }, token: null };
+}
+
 function createTestStore(prefixSize: number, surface: 'chat' | 'trajectory') {
   const store = configureStore({
     reducer: combineReducers({
       trajectory: trajectoryReducer,
-      auth: staticReducer({ isAuthenticated: false, user: null, token: null }),
+      auth: performanceAuthReducer,
       conversation: staticReducer({ byId: { 'chat-a': { messages } } }),
       stream: staticReducer({
         isStreaming: false,
@@ -190,19 +209,28 @@ function liveEvent(sequence: number) {
   return normalized;
 }
 
+type PerformanceState = ReturnType<ReturnType<typeof createTestStore>['getState']>;
+
+function ForceMountedSurfaces() {
+  const visible = useSelector((state: PerformanceState) => (
+    state.trajectory.byConversationId['chat-a']?.activeSurface === 'trajectory'
+  ));
+  return (
+    <ToastProvider>
+      <ChatMessageList messages={messages} conversationId="chat-a" />
+      <TrajectoryTabView conversationId="chat-a" messages={messages} visible={visible} />
+    </ToastProvider>
+  );
+}
+
 function renderForceMountedSurfaces(store: ReturnType<typeof createTestStore>) {
   const TestProvider = Provider as unknown as React.ComponentType<{
     store: typeof store;
     children: React.ReactNode;
   }>;
-  const visible = store.getState().trajectory.byConversationId['chat-a']?.activeSurface
-    === 'trajectory';
   return render(
     <TestProvider store={store}>
-      <ToastProvider>
-        <ChatMessageList messages={messages} conversationId="chat-a" />
-        <TrajectoryTabView conversationId="chat-a" messages={messages} visible={visible} />
-      </ToastProvider>
+      <ForceMountedSurfaces />
     </TestProvider>,
   );
 }
@@ -285,10 +313,84 @@ describe('Trajectory force-mount 流式性能', () => {
     });
     const elapsedMs = performance.now() - startedAt;
 
-    expect(projectionProbe.calls).toBeLessThanOrEqual(2);
+    expect(projectionProbe.calls).toBe(1);
     expect(trajectoryRenderProbe.calls).toBeLessThanOrEqual(3);
     expect(document.querySelectorAll('[role="option"]').length).toBeLessThanOrEqual(200);
     expect(elapsedMs, `Trajectory surface 5000 条真实 dispatch + 投影耗时 ${elapsedMs.toFixed(2)}ms`)
       .toBeLessThan(STREAM_TIME_BUDGET_MS + PROJECTION_TIME_BUDGET_MS);
+  });
+
+  it('已打开的 Trajectory 隐藏后保留同一 ledger rows，5000 events 不投影且返回只投影一次', async () => {
+    const store = createTestStore(20, 'trajectory');
+    renderForceMountedSurfaces(store);
+    const ledger = document.querySelector<HTMLElement>('[role="listbox"]');
+    if (!ledger) throw new Error('测试必须挂载真实 Trajectory ledger');
+    const retainedRowIndexes = Array.from(ledger.querySelectorAll('[role="option"]'))
+      .map(option => option.getAttribute('data-trajectory-index'));
+    expect(retainedRowIndexes.length).toBeGreaterThan(1);
+
+    const selectedRun = Array.from(ledger.querySelectorAll<HTMLElement>('[role="option"]'))
+      .find(option => option.textContent?.includes('第 1 次执行'));
+    if (!selectedRun) throw new Error('测试必须包含可选择的真实 run row');
+    act(() => selectedRun.click());
+    expect(document.querySelector('[aria-label="轨迹检查器"]')).not.toBeNull();
+
+    projectionProbe.calls = 0;
+    act(() => {
+      store.dispatch(setTrajectoryActiveSurface({ conversationId: 'chat-a', surface: 'chat' }));
+    });
+
+    expect(projectionProbe.calls).toBe(0);
+    expect(document.querySelector('[role="listbox"]')).toBe(ledger);
+    expect(Array.from(ledger.querySelectorAll('[role="option"]'))
+      .map(option => option.getAttribute('data-trajectory-index')))
+      .toEqual(retainedRowIndexes);
+    expect(document.querySelector('[aria-label="轨迹检查器"]')).not.toBeNull();
+
+    await dispatchStreamingEvents(store, 20);
+    expect(projectionProbe.calls).toBe(0);
+    expect(Array.from(ledger.querySelectorAll('[role="option"]'))
+      .map(option => option.getAttribute('data-trajectory-index')))
+      .toEqual(retainedRowIndexes);
+
+    act(() => {
+      store.dispatch(setTrajectoryActiveSurface({
+        conversationId: 'chat-a',
+        surface: 'trajectory',
+      }));
+    });
+    await act(async () => {
+      const callbacks = animationFrames.splice(0);
+      callbacks.forEach(callback => callback(performance.now()));
+      await Promise.resolve();
+    });
+
+    expect(projectionProbe.calls).toBe(1);
+    expect(document.querySelector('[role="listbox"]')).toBe(ledger);
+    expect(document.querySelectorAll('[role="option"]').length).toBeLessThanOrEqual(200);
+    expect(document.querySelector('[aria-label="轨迹检查器"]')).not.toBeNull();
+  });
+
+  it('隐藏缓存只属于当前 auth identity，账号切换后不保留旧 ledger rows', async () => {
+    const store = createTestStore(20, 'trajectory');
+    renderForceMountedSurfaces(store);
+    const ledger = document.querySelector<HTMLElement>('[role="listbox"]');
+    if (!ledger) throw new Error('测试必须挂载真实 Trajectory ledger');
+    expect(ledger.querySelectorAll('[role="option"]').length).toBeGreaterThan(1);
+
+    act(() => {
+      store.dispatch(setTrajectoryActiveSurface({ conversationId: 'chat-a', surface: 'chat' }));
+    });
+    expect(ledger.querySelectorAll('[role="option"]').length).toBeGreaterThan(1);
+    projectionProbe.calls = 0;
+    getTrajectoryRunsMock.mockResolvedValue({ items: [], truncated: false });
+
+    await act(async () => {
+      store.dispatch({ type: 'test/switch-auth', payload: 'user-b' });
+      await Promise.resolve();
+    });
+
+    expect(projectionProbe.calls).toBe(0);
+    expect(document.querySelectorAll('[role="option"]')).toHaveLength(0);
   });
 });
