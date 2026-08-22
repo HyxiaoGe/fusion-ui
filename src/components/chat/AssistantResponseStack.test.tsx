@@ -227,7 +227,7 @@ describe('AssistantResponseStack', () => {
       />,
     );
 
-    const status = screen.getByRole('status', { name: 'Agent 运行状态' });
+    const status = screen.getByRole('group', { name: 'Agent 运行状态' });
     expect(status).toHaveTextContent('Agent 已完成');
     expect(status).toHaveTextContent('耗时 1.5 秒');
     expect(status).toHaveTextContent('轨迹完整');

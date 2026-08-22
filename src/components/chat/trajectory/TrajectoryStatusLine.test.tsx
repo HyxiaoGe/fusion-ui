@@ -1,6 +1,6 @@
-import React from 'react';
+import React, { act } from 'react';
 import { fireEvent, render, screen, within } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { AgentRunState } from '@/types/agentRun';
 import type { TrajectoryBadgeStatus } from '@/lib/trajectory/TrajectoryCellProjection';
@@ -29,6 +29,41 @@ function run(overrides: Partial<AgentRunState> = {}): AgentRunState {
 }
 
 describe('TrajectoryStatusLine', () => {
+  afterEach(() => vi.useRealTimers());
+
+  it('running 耗时持续更新但不会把整行作为周期 live announcement', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(2_500);
+    const { unmount } = render(
+      <TrajectoryStatusLine
+        run={run({ status: 'running', steps: [{
+          stepId: 'step-1',
+          stepNumber: 1,
+          status: 'running',
+          toolCalls: [],
+          contentBlockIds: [],
+          startedAt: 1_000,
+        }] })}
+        trajectoryStatus="recording"
+      />,
+    );
+
+    const statusLine = screen.getByRole('group', { name: 'Agent 运行状态' });
+    const duration = within(statusLine).getByText('耗时 1.5 秒');
+    expect(duration).toHaveTextContent('耗时 1.5 秒');
+    expect(duration).toHaveAccessibleName('Agent 运行耗时 1.5 秒');
+    expect(duration).toHaveAttribute('aria-live', 'off');
+    expect(statusLine.querySelector('[aria-live="polite"], [aria-live="assertive"]')).toBeNull();
+
+    act(() => vi.advanceTimersByTime(2_000));
+
+    expect(duration).toHaveTextContent('耗时 3.5 秒');
+    expect(duration).toHaveAccessibleName('Agent 运行耗时 3.5 秒');
+    expect(statusLine.querySelector('[aria-live="polite"], [aria-live="assertive"]')).toBeNull();
+    unmount();
+    vi.useRealTimers();
+  });
+
   it('固定展示状态点及名称、耗时、独立轨迹 badge 和查看轨迹入口', () => {
     const onInspect = vi.fn();
     render(
@@ -39,7 +74,7 @@ describe('TrajectoryStatusLine', () => {
       />,
     );
 
-    const statusLine = screen.getByRole('status', { name: 'Agent 运行状态' });
+    const statusLine = screen.getByRole('group', { name: 'Agent 运行状态' });
     expect(statusLine).toHaveTextContent('Agent 已完成');
     expect(statusLine).toHaveTextContent('耗时 1.5 秒');
     expect(statusLine).toHaveTextContent('轨迹完整');
@@ -98,7 +133,7 @@ describe('TrajectoryStatusLine', () => {
       />,
     );
 
-    const statusLine = screen.getByRole('status', { name: 'Agent 运行状态' });
+    const statusLine = screen.getByRole('group', { name: 'Agent 运行状态' });
     expect(statusLine).toHaveTextContent('模型服务暂时不可用');
     expect(statusLine).not.toHaveTextContent('次级工具异常');
     expect(statusLine).not.toHaveTextContent('不要展示的计划');
@@ -129,7 +164,7 @@ describe('TrajectoryStatusLine', () => {
       />,
     );
 
-    const statusLine = screen.getByRole('status', { name: 'Agent 运行状态' });
+    const statusLine = screen.getByRole('group', { name: 'Agent 运行状态' });
     expect(statusLine).toHaveTextContent('Agent 已中断');
     expect(statusLine).toHaveTextContent('耗时未知');
   });

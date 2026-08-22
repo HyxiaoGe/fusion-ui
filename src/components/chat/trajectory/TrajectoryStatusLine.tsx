@@ -121,7 +121,7 @@ export function TrajectoryStatusLine({ run, trajectoryStatus, onInspect }: Traje
 
   return (
     <div
-      role="status"
+      role="group"
       aria-label="Agent 运行状态"
       className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 rounded-md border border-border/50 bg-muted/20 px-2.5 py-1.5 text-xs text-muted-foreground"
     >
@@ -133,7 +133,12 @@ export function TrajectoryStatusLine({ run, trajectoryStatus, onInspect }: Traje
         />
         Agent {statusTreatment.label}
       </span>
-      <span aria-label={`耗时 ${duration}`}>{duration === '未知' ? '耗时未知' : `耗时 ${duration}`}</span>
+      <span
+        aria-label={duration === '未知' ? 'Agent 运行耗时未知' : `Agent 运行耗时 ${duration}`}
+        aria-live="off"
+      >
+        {duration === '未知' ? '耗时未知' : `耗时 ${duration}`}
+      </span>
       {issue && (
         <span className="inline-flex min-w-0 items-center gap-1 text-warn">
           <TriangleAlert className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />

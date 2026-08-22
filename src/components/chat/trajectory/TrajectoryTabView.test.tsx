@@ -1,5 +1,5 @@
 import React from 'react';
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { configureStore } from '@reduxjs/toolkit';
 import { Provider } from 'react-redux';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -204,6 +204,40 @@ describe('TrajectoryTabView', () => {
     expect(screen.queryByRole('button', { name: '重试加载轨迹' })).toBeNull();
   });
 
+  it('已有 runs 后刷新失败保留旧列表，同时展示 stale alert 并可重试刷新', async () => {
+    const store = createStore();
+    const runA = runSummary({ run_id: 'run-a', attempt_index: 0 });
+    const runB = runSummary({
+      run_id: 'run-b',
+      attempt_index: 1,
+      started_at: '2026-08-22T00:00:01.000Z',
+      ended_at: '2026-08-22T00:00:01.180Z',
+    });
+    getTrajectoryRunsMock
+      .mockResolvedValueOnce({ items: [runA], truncated: false })
+      .mockRejectedValueOnce(new Error('轨迹服务暂时不可用'))
+      .mockResolvedValueOnce({ items: [runA, runB], truncated: false });
+
+    render(
+      <TrajectoryTabView conversationId="chat-a" messages={messages} />,
+      { wrapper: wrapper(store) },
+    );
+
+    expect(await screen.findByRole('option', { name: /第 1 次执行/ })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '刷新轨迹运行' }));
+
+    const staleAlert = await screen.findByRole('alert');
+    expect(staleAlert).toHaveTextContent('轨迹列表刷新失败');
+    expect(staleAlert).toHaveTextContent('轨迹服务暂时不可用');
+    expect(staleAlert).toHaveTextContent('当前数据可能不是最新');
+    expect(screen.getByRole('option', { name: /第 1 次执行/ })).toBeInTheDocument();
+
+    fireEvent.click(within(staleAlert).getByRole('button', { name: '重试刷新' }));
+
+    expect(await screen.findByRole('option', { name: /第 2 次执行/ })).toBeInTheDocument();
+    expect(screen.queryByText('当前数据可能不是最新')).toBeNull();
+  });
+
   it('只把 messages、run 摘要、所选快照和 live tail 投影一次后交给现有视图组件', async () => {
     const store = createStore();
     store.dispatch(setTrajectoryActiveSurface({ conversationId: 'chat-a', surface: 'trajectory' }));
@@ -297,6 +331,134 @@ describe('TrajectoryTabView', () => {
     await waitFor(() => expect(runHeader).toHaveFocus());
     expect(runHeader).toHaveAttribute('data-highlighted', 'true');
     expect(store.getState().trajectory.byConversationId['chat-a'].inspectRequest).toBeNull();
+  });
+
+  it('inspect A 水合中手选 B 会取消旧请求，A/B 迟到快照都不再消费或抢回选择', async () => {
+    const store = createStore();
+    const runA = runSummary({ run_id: 'run-a', attempt_index: 0 });
+    const runB = runSummary({
+      run_id: 'run-b',
+      attempt_index: 1,
+      started_at: '2026-08-22T00:00:01.000Z',
+      ended_at: '2026-08-22T00:00:01.180Z',
+    });
+    const snapshotA = deferred<TrajectorySnapshot>();
+    const snapshotB = deferred<TrajectorySnapshot>();
+    getTrajectoryRunsMock.mockResolvedValue({ items: [runA, runB], truncated: false });
+    getTrajectorySnapshotMock.mockImplementation((_conversationId: string, runId: string) => (
+      runId === 'run-a' ? snapshotA.promise : snapshotB.promise
+    ));
+    store.dispatch(requestTrajectoryInspect({
+      conversationId: 'chat-a',
+      requestId: 'inspect-a-pending',
+      messageId: 'assistant-1',
+      runId: 'run-a',
+      spanId: 'span-tool',
+    }));
+    const dispatchSpy = vi.spyOn(store, 'dispatch');
+
+    render(
+      <TrajectoryTabView conversationId="chat-a" messages={messages} />,
+      { wrapper: wrapper(store) },
+    );
+
+    await waitFor(() => expect(getTrajectorySnapshotMock).toHaveBeenCalledWith(
+      'chat-a',
+      'run-a',
+      expect.any(AbortSignal),
+    ));
+    fireEvent.click(await screen.findByRole('button', { name: /运行 2，已完成/ }));
+
+    expect(store.getState().trajectory.byConversationId['chat-a']).toMatchObject({
+      selectedRunId: 'run-b',
+      selectionSource: 'manual',
+      inspectRequest: null,
+    });
+    expect(dispatchSpy.mock.calls.filter(([action]) => (
+      action.type === 'trajectory/consumeTrajectoryInspectRequest'
+    ))).toHaveLength(1);
+
+    await act(async () => {
+      snapshotA.resolve(snapshot({ run: runA }));
+      await snapshotA.promise;
+    });
+    await waitFor(() => expect(getTrajectorySnapshotMock).toHaveBeenCalledWith(
+      'chat-a',
+      'run-b',
+      expect.any(AbortSignal),
+    ));
+    await act(async () => {
+      snapshotB.resolve(snapshot({ run: runB }));
+      await snapshotB.promise;
+    });
+
+    expect(store.getState().trajectory.byConversationId['chat-a']).toMatchObject({
+      selectedRunId: 'run-b',
+      selectionSource: 'manual',
+      inspectRequest: null,
+    });
+    expect(dispatchSpy.mock.calls.filter(([action]) => (
+      action.type === 'trajectory/consumeTrajectoryInspectRequest'
+    ))).toHaveLength(1);
+    expect(screen.getByRole('option', { name: /第 2 次执行/ }))
+      .toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByRole('option', { name: /第 1 次执行/ }))
+      .toHaveAttribute('data-highlighted', 'false');
+  });
+
+  it('新 inspect B 成功后清除 fallback A 的旧提示和高亮', async () => {
+    const store = createStore();
+    const runA = runSummary({ run_id: 'run-a', attempt_index: 0 });
+    const runB = runSummary({
+      run_id: 'run-b',
+      attempt_index: 1,
+      started_at: '2026-08-22T00:00:01.000Z',
+      ended_at: '2026-08-22T00:00:01.180Z',
+    });
+    getTrajectoryRunsMock.mockResolvedValue({ items: [runA, runB], truncated: false });
+    getTrajectorySnapshotMock.mockImplementation((_conversationId: string, runId: string) => (
+      Promise.resolve(runId === 'run-a'
+        ? snapshot({
+          run: runA,
+          spans: [],
+          records: [snapshot().records[0]],
+          truncated: true,
+        })
+        : snapshot({ run: runB }))
+    ));
+    store.dispatch(requestTrajectoryInspect({
+      conversationId: 'chat-a',
+      requestId: 'inspect-a-fallback',
+      messageId: 'assistant-1',
+      runId: 'run-a',
+      spanId: 'span-missing',
+    }));
+
+    render(
+      <TrajectoryTabView conversationId="chat-a" messages={messages} />,
+      { wrapper: wrapper(store) },
+    );
+
+    expect(await screen.findByText('该节点不在当前有界快照中')).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: /第 1 次执行/ }))
+      .toHaveAttribute('data-highlighted', 'true');
+
+    act(() => {
+      store.dispatch(requestTrajectoryInspect({
+        conversationId: 'chat-a',
+        requestId: 'inspect-b-success',
+        messageId: 'assistant-1',
+        runId: 'run-b',
+        spanId: 'span-tool',
+      }));
+    });
+
+    const tool = await screen.findByRole('option', { name: /搜索.*工具调用.*完成/ });
+    await waitFor(() => expect(tool).toHaveFocus());
+    expect(tool).toHaveAttribute('data-highlighted', 'true');
+    expect(screen.queryByText('该节点不在当前有界快照中')).toBeNull();
+    expect(screen.getByRole('option', { name: /第 1 次执行/ }))
+      .toHaveAttribute('data-highlighted', 'false');
   });
 
   it('InspectRequest 目标不在截断快照时回退 Run 头并提示，同时 reveal 只交付稳定 message id', async () => {

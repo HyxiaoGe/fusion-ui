@@ -45,3 +45,25 @@
 - Task 8 仍需移除已保留的旧内联 `AgentRunTimeline`/run actions 并收口 retry/continue；在此之前，新状态行与旧执行过程属于预期的过渡共存。
 - 按任务约束未启动本地服务或浏览器，因此本报告只声称真实 DOM/Redux 自动化验收，不声称真实浏览器或后端用户路径。
 - 全仓 TypeScript 基线仍非零；Task 7 生产文件未出现新的定向类型错误。
+
+## Review fix round 1（2026-08-23）
+
+### 修复
+
+- 收紧一次性 inspect 的请求隔离：resolution 同时校验 requestId、`selectionSource === 'inspect'`、`selectedRunId === request.runId` 与 `snapshot.run.run_id === request.runId`；Ledger、Timeline、Inspector 的手动选择会先 consume 当前 pending request，再建立 manual selection。inspect 反馈按 requestId 隔离，新请求立即隐藏旧 notice/highlight，成功定位显式清除旧 fallback 提示。
+- 将 `TrajectoryStatusLine` 从隐式 live 的 `role="status"` 改为非 live `role="group"`；每秒更新的耗时节点显式 `aria-live="off"`，同时保留包含实时值的 accessible name。
+- 已有 runs 的刷新失败继续保留旧列表，并在完整性区域展示非阻塞 `role="alert"`、`runListError` 安全文案、“当前数据可能不是最新”与“重试刷新”按钮；首次零 runs 失败页保持原行为。
+
+### RED / GREEN
+
+1. `TrajectoryTabView` 新增竞态测试“inspect A 水合中手选 B”与连续请求测试“fallback A → 成功 B”。RED 时 pending A 未被取消且旧 fallback 提示残留；完成请求/selection/snapshot identity 门禁和手动取消后，2 tests passed。
+2. `TrajectoryStatusLine` 新增 fake timers 多 tick 测试。RED 时整行仍是 `role="status"`；改为非 live group 且耗时 `aria-live="off"` 后，可见耗时从 1.5 秒更新到 3.5 秒且不存在 polite/assertive live region。
+3. `TrajectoryTabView` 新增“ready 有 runs → refresh rejected”测试。RED 时页面没有 alert；补 stale alert 与 retry 后，旧 Run 保留、错误及 stale 提示可达，重试成功后新 Run 出现且提示清除。零 runs 初次失败用例同时 GREEN。
+
+### 最终验证
+
+- Task 7 聚焦：18 files、287 tests passed，退出码 0（page、消息路径、StatusLine、Tab、其余 trajectory components/hook/projection/slice）。
+- 全量：192 files、2135 tests passed，退出码 0。
+- 目标 ESLint：本轮 5 个变更源/测试文件退出码 0，仅仓库既有 `.eslintignore` 迁移 warning。
+- TypeScript：`npx tsc --noEmit --pretty false` 仍由仓库既有基线错误阻断；本轮变更的 StatusLine/Tab 生产与测试文件未新增类型错误。page 测试仍有原报告披露的 4 处 `ContentBlock` fixture 错误。
+- 未启动服务或浏览器；未改 Task 8 的旧内联 timeline、retry/continue policy，未推送或发布。
