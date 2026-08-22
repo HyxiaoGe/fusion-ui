@@ -167,6 +167,8 @@ function upsertRunSummary(
   run: TrajectoryRunSummary,
 ): void {
   conversation.runSummariesById[run.run_id] = run;
+  const serverWindowIndex = conversation.runs.findIndex(existing => existing.run_id === run.run_id);
+  if (serverWindowIndex !== -1) conversation.runs[serverWindowIndex] = run;
 }
 
 function touchSnapshotLru(

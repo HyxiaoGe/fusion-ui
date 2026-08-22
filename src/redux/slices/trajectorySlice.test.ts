@@ -518,6 +518,61 @@ describe('trajectorySlice', () => {
     });
   });
 
+  it('snapshot 权威摘要更新 server window 中的公开 run 且列表仍不超过 500', () => {
+    const runningWindow = Array.from({ length: 500 }, (_, index) => runSummary(
+      `run-${index}`,
+      index === 0
+        ? {
+          message_id: 'running-message',
+          status: 'running',
+          trajectory_status: 'recording',
+          total_steps: 0,
+          total_tool_calls: 0,
+          ended_at: null,
+        }
+        : {},
+    ));
+    let state = reducer(undefined, trajectoryRunListRequested({
+      conversationId: 'conversation-a',
+      requestId: 'runs-running',
+    }));
+    state = reducer(state, trajectoryRunListReceived({
+      conversationId: 'conversation-a',
+      requestId: 'runs-running',
+      response: { items: runningWindow, truncated: true },
+    }));
+
+    const completedSnapshot = snapshot('run-0', [0, 1]);
+    completedSnapshot.run = runSummary('run-0', {
+      message_id: 'completed-message',
+      status: 'completed',
+      trajectory_status: 'complete',
+      total_steps: 4,
+      total_tool_calls: 2,
+    });
+    state = reducer(state, trajectorySnapshotRequested({
+      conversationId: 'conversation-a',
+      runId: 'run-0',
+      requestId: 'snapshot-completed',
+    }));
+    state = reducer(state, trajectorySnapshotReceived({
+      conversationId: 'conversation-a',
+      requestId: 'snapshot-completed',
+      snapshot: completedSnapshot,
+    }));
+
+    const visibleRuns = selectTrajectoryRuns({ trajectory: state }, 'conversation-a');
+    expect(visibleRuns).toHaveLength(500);
+    expect(visibleRuns[0]).toMatchObject({
+      run_id: 'run-0',
+      message_id: 'completed-message',
+      status: 'completed',
+      trajectory_status: 'complete',
+      total_steps: 4,
+      total_tool_calls: 2,
+    });
+  });
+
   it('live 乱序超过 5000 时保留最新有界窗口并公开裁剪状态', () => {
     const baseState = reducer(undefined, mergeLiveTrajectoryEvent({
       conversationId: 'conversation-a',
