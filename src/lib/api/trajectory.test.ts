@@ -8,7 +8,11 @@ vi.mock('./fetchWithAuth', () => ({
   apiRequest: apiRequestMock,
 }));
 
-import { getTrajectoryRuns, getTrajectorySnapshot } from './trajectory';
+import {
+  getTrajectoryRuns,
+  getTrajectorySnapshot,
+  getTrajectoryToolNodeDetail,
+} from './trajectory';
 
 describe('普通用户轨迹 API', () => {
   beforeEach(() => {
@@ -49,5 +53,34 @@ describe('普通用户轨迹 API', () => {
 
     await expect(getTrajectoryRuns('conversation-1')).rejects.toBe(notFound);
     await expect(getTrajectorySnapshot('conversation-1', 'run-1')).rejects.toBe(unauthorized);
+  });
+
+  it('通过普通 Tool Detail 端点编码每个路径段、透传 signal 并原样返回 wire DTO', async () => {
+    const signal = new AbortController().signal;
+    const response = {
+      status: 'available' as const,
+      node_type: 'tool' as const,
+      available_sections: ['summary', 'payload', 'result', 'timing'] as const,
+      detail: {
+        tool_call_id: 'tool/a b',
+        tool_name: 'weather',
+        status: 'completed',
+        duration_ms: 42,
+        payload: { city: '上海' },
+        result: { temperature: 28 },
+        error: null,
+      },
+      redacted_fields: ['payload.api_key'],
+      reason: null,
+    };
+    apiRequestMock.mockResolvedValue(response);
+
+    await expect(getTrajectoryToolNodeDetail('conversation/a b', 'run/a b', 'tool/a b', signal))
+      .resolves.toBe(response);
+
+    expect(apiRequestMock).toHaveBeenCalledWith(
+      '/api/conversations/conversation%2Fa%20b/runs/run%2Fa%20b/node-detail/tool/tool%2Fa%20b',
+      { signal },
+    );
   });
 });

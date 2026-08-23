@@ -65,3 +65,27 @@ export interface TrajectorySnapshot {
   completeness: TrajectoryCompleteness;
   truncated: boolean;
 }
+
+/** P3 普通用户 Tool Node Detail 端点的 wire DTO；字段保持后端 snake_case。 */
+export type TrajectoryNodeDetailStatus = 'available' | 'pending' | 'not_recorded' | 'degraded';
+
+export type TrajectoryToolNodeDetailSection = 'summary' | 'payload' | 'result' | 'timing' | 'schema';
+
+export interface TrajectoryToolNodeDetail {
+  tool_call_id: string;
+  tool_name: string;
+  status: string;
+  duration_ms: number | null;
+  payload: Record<string, unknown> | null;
+  result: Record<string, unknown> | null;
+  error: Record<string, string> | null;
+}
+
+export interface TrajectoryNodeDetailResponse {
+  status: TrajectoryNodeDetailStatus;
+  node_type: 'tool';
+  available_sections: TrajectoryToolNodeDetailSection[];
+  detail: TrajectoryToolNodeDetail | null;
+  redacted_fields: string[];
+  reason: string | null;
+}
