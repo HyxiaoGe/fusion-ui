@@ -74,23 +74,26 @@ export function projectTrajectoryOverview(
   for (const cell of input.cells) {
     if (cell.type === 'run') cellsByRunId.set(cell.runId, cell);
   }
-
-  const runBands = buildRunBands(runs, input.mode, input.focusedRunId, cellsByRunId);
-  const focusedBand = runBands.find(item => item.runId === input.focusedRunId);
-  if (!focusedBand?.hydrated) return { mode: input.mode, runBands, segments: [] };
-
   const events = input.focusedRunEvents
     .filter(item => item.runId === input.focusedRunId)
     .slice()
     .sort((left, right) => left.sequence - right.sequence);
-  if (events.length === 0) return { mode: input.mode, runBands, segments: [] };
-
   const focusedRun = runs.find(item => item.run_id === input.focusedRunId);
-  if (!focusedRun) return { mode: input.mode, runBands, segments: [] };
+  const actualDomain = focusedRun ? actualRunDomain(focusedRun, events) : null;
+  const runBands = buildRunBands(
+    runs,
+    input.mode,
+    input.focusedRunId,
+    cellsByRunId,
+    actualDomain,
+  );
+  const focusedBand = runBands.find(item => item.runId === input.focusedRunId);
+  if (!focusedBand?.hydrated || events.length === 0 || !focusedRun) {
+    return { mode: input.mode, runBands, segments: [] };
+  }
   const indexes = indexCells(input.cells, focusedRun.run_id);
   const sequenceStart = events[0].sequence;
   const sequenceEnd = events.at(-1)?.sequence ?? sequenceStart;
-  const actualDomain = actualRunDomain(focusedRun, events);
   const groups = groupEvents(events);
   const segments = groups.map(group => {
     const startSequence = group.events[0].sequence;
@@ -144,11 +147,12 @@ function buildRunBands(
   mode: TrajectoryOverviewMode,
   focusedRunId: string | null,
   cellsByRunId: Map<string, Extract<TrajectoryCell, { type: 'run' }>>,
+  focusedActualDomain: { start: number; end: number } | null,
 ): RunBand[] {
   if (runs.length === 0) return [];
   const weights = mode === 'sequence'
     ? runs.map(() => 1)
-    : actualRunWeights(runs);
+    : actualRunWeights(runs, focusedRunId, focusedActualDomain);
   const total = weights.reduce((sum, value) => sum + value, 0);
   let cursor = 0;
   return runs.map((run, index) => {
@@ -165,8 +169,14 @@ function buildRunBands(
   });
 }
 
-function actualRunWeights(runs: readonly TrajectoryRunSummary[]): number[] {
-  const durations = runs.map(runDuration);
+function actualRunWeights(
+  runs: readonly TrajectoryRunSummary[],
+  focusedRunId: string | null,
+  focusedActualDomain: { start: number; end: number } | null,
+): number[] {
+  const durations = runs.map(run => run.run_id === focusedRunId && focusedActualDomain
+    ? focusedActualDomain.end - focusedActualDomain.start
+    : runDuration(run));
   const positive = durations.filter(value => value > 0);
   const fallback = positive.length > 0
     ? Math.max(1, positive.reduce((sum, value) => sum + value, 0) / positive.length * 0.01)
@@ -330,12 +340,16 @@ function actualRunDomain(
   const start = summaryStart ?? firstEvent;
   if (start === null) return null;
   const summaryEnd = timestampValue(run.ended_at);
-  if (summaryEnd !== null && summaryEnd > start) return { start, end: summaryEnd };
+  const endCandidates = [summaryEnd, lastEvent];
   if (run.duration_ms !== null && Number.isFinite(run.duration_ms) && run.duration_ms > 0) {
-    return { start, end: start + run.duration_ms };
+    endCandidates.push(start + run.duration_ms);
   }
-  if (lastEvent !== null && lastEvent > start) return { start, end: lastEvent };
-  return null;
+  const end = endCandidates.reduce<number | null>((latest, candidate) => (
+    candidate !== null && candidate > start && (latest === null || candidate > latest)
+      ? candidate
+      : latest
+  ), null);
+  return end === null ? null : { start, end };
 }
 
 function boundedInterval(start: number, end: number, band: RunBand): { start: number; end: number } {

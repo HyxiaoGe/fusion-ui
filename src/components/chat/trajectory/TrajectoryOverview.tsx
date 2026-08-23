@@ -8,8 +8,9 @@ import {
   useState,
   type KeyboardEvent,
   type PointerEvent as ReactPointerEvent,
+  type Ref,
 } from 'react';
-import { Minus, Plus, RotateCcw, X } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Minus, Plus, RotateCcw, X } from 'lucide-react';
 import type { NormalizedTrajectoryEvent } from '@/lib/trajectory/normalizeTrajectoryEvent';
 import {
   projectTrajectoryOverview,
@@ -109,6 +110,8 @@ export function TrajectoryOverview({
 }: TrajectoryOverviewProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const tooltipRef = useRef<HTMLDivElement>(null);
+  const rangeStartHandleRef = useRef<HTMLInputElement>(null);
+  const focusNewRangeRef = useRef(false);
   const frameRef = useRef<number | null>(null);
   const drawRef = useRef<() => void>(() => {});
   const dragRef = useRef<DragState | null>(null);
@@ -146,6 +149,12 @@ export function TrajectoryOverview({
     const pendingBand = projection.runBands.find(item => item.runId === pendingRunId);
     if (focusedRunId === pendingRunId && pendingBand?.hydrated) setPendingRunId(null);
   }, [focusedRunId, pendingRunId, projection.runBands]);
+
+  useEffect(() => {
+    if (!currentRange || !focusNewRangeRef.current) return;
+    focusNewRangeRef.current = false;
+    rangeStartHandleRef.current?.focus();
+  }, [currentRange]);
 
   const setRange = useCallback((nextRange: TrajectoryOverviewRange | null) => {
     if (controlledRange === undefined) setInternalRange(nextRange);
@@ -314,10 +323,38 @@ export function TrajectoryOverview({
     scheduleDraw();
   }, [scheduleDraw, setRange]);
 
+  const createRange = () => {
+    const visibleWidth = 1 / zoom;
+    const nextRange = normalizeRange(
+      viewStart + visibleWidth * 0.25,
+      viewStart + visibleWidth * 0.75,
+    );
+    focusNewRangeRef.current = true;
+    setRange(nextRange);
+    requestFocusForRange(nextRange);
+  };
+
+  const panView = useCallback((direction: -1 | 1) => {
+    if (zoom <= 1) return;
+    const maximum = 1 - 1 / zoom;
+    const step = 0.5 / zoom;
+    setViewStart(current => roundDomain(clamp(current + direction * step, 0, maximum)));
+  }, [zoom]);
+
   const onCanvasKeyDown = (event: KeyboardEvent<HTMLCanvasElement>) => {
     if (event.key === 'Escape') {
       event.preventDefault();
       clearRange();
+      return;
+    }
+    if (zoom > 1 && event.shiftKey && event.key === 'ArrowLeft') {
+      event.preventDefault();
+      panView(-1);
+      return;
+    }
+    if (zoom > 1 && event.shiftKey && event.key === 'ArrowRight') {
+      event.preventDefault();
+      panView(1);
       return;
     }
     if (visibleSegments.length === 0) return;
@@ -389,6 +426,9 @@ export function TrajectoryOverview({
     ? projection.runBands.findIndex(item => item.runId === pendingRunId) + 1
     : 0;
   const activeText = activeSegment ? segmentAccessibleText(activeSegment) : '当前没有可见详细记录';
+  const maximumViewStart = 1 - 1 / zoom;
+  const canPanLeft = zoom > 1 && viewStart > 0;
+  const canPanRight = zoom > 1 && viewStart < maximumViewStart;
 
   return (
     <section
@@ -400,7 +440,7 @@ export function TrajectoryOverview({
           <ModeButton active={mode === 'sequence'} onClick={() => setMode('sequence')}>顺序</ModeButton>
           <ModeButton active={mode === 'actual'} onClick={() => setMode('actual')}>实际耗时</ModeButton>
         </div>
-        <div className="inline-flex items-center gap-1" aria-label="缩放控制">
+        <div className="inline-flex items-center gap-1" aria-label="缩放与平移控制">
           <ToolbarButton label="缩小" onClick={() => updateZoom(zoom / 2)} disabled={zoom === 1}>
             <Minus className="h-4 w-4" aria-hidden="true" />
           </ToolbarButton>
@@ -411,11 +451,17 @@ export function TrajectoryOverview({
           <ToolbarButton label="重置缩放" onClick={resetView}>
             <RotateCcw className="h-4 w-4" aria-hidden="true" />
           </ToolbarButton>
+          <ToolbarButton label="向左平移" onClick={() => panView(-1)} disabled={!canPanLeft}>
+            <ChevronLeft className="h-4 w-4" aria-hidden="true" />
+          </ToolbarButton>
+          <ToolbarButton label="向右平移" onClick={() => panView(1)} disabled={!canPanRight}>
+            <ChevronRight className="h-4 w-4" aria-hidden="true" />
+          </ToolbarButton>
         </div>
         <span className="text-xs text-muted-foreground">
           {searchMatchedCellKeys.size > 0 ? `${searchMatchedCellKeys.size} 条搜索匹配` : '无搜索匹配'}
         </span>
-        {currentRange && (
+        {currentRange ? (
           <button
             type="button"
             onClick={clearRange}
@@ -423,6 +469,14 @@ export function TrajectoryOverview({
           >
             <X className="h-3.5 w-3.5" aria-hidden="true" />
             清除范围
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={createRange}
+            className="ml-auto inline-flex min-h-9 items-center rounded-md border border-border/60 px-2.5 text-xs text-foreground outline-none hover:bg-muted/40 focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            创建范围
           </button>
         )}
       </div>
@@ -456,7 +510,7 @@ export function TrajectoryOverview({
           }}
         />
         <span id="trajectory-overview-instructions" className="sr-only">
-          方向键移动活动记录，Home 和 End 跳到首尾，Enter 或空格选择。拖动可选择范围。
+          方向键移动活动记录，Home 和 End 跳到首尾，Enter 或空格选择。放大后按 Shift 加左右方向键平移。拖动可选择范围。
         </span>
       </div>
 
@@ -477,6 +531,7 @@ export function TrajectoryOverview({
       {currentRange && (
         <div className="grid gap-2 sm:grid-cols-2" aria-label="范围键盘控制">
           <RangeHandle
+            inputRef={rangeStartHandleRef}
             label="范围起点"
             value={currentRange.start}
             onChange={value => updateRangeHandle('start', value)}
@@ -550,11 +605,13 @@ function ToolbarButton({
 }
 
 function RangeHandle({
+  inputRef,
   label,
   value,
   onChange,
   onKeyDown,
 }: {
+  inputRef?: Ref<HTMLInputElement>;
   label: string;
   value: number;
   onChange: (value: number) => void;
@@ -564,6 +621,7 @@ function RangeHandle({
     <label className="flex min-h-11 items-center gap-2 rounded-md border border-border/50 px-2.5">
       <span className="shrink-0 text-xs text-muted-foreground">{label}</span>
       <input
+        ref={inputRef}
         type="range"
         aria-label={label}
         min={0}

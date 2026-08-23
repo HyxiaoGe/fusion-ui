@@ -168,6 +168,38 @@ describe('trajectoryOverviewModel', () => {
     ]);
   });
 
+  it('actual 模式用聚焦 run 的 live timestamp 持续更新 run band 权重', () => {
+    const runs = [
+      run('run-done', '2026-08-24T00:00:00.000Z', 1_000),
+      run('run-live', '2026-08-24T01:00:00.000Z', null),
+    ];
+    const firstProjection = projectTrajectoryOverview({
+      runs,
+      focusedRunId: 'run-live',
+      focusedRunEvents: [
+        event('run-live', 0, 'run_started', '2026-08-24T01:00:00.000Z'),
+        event('run-live', 1, 'run_progress_updated', '2026-08-24T01:00:05.000Z'),
+      ],
+      cells: [runCell('run-done'), runCell('run-live')],
+      mode: 'actual',
+    });
+    const appendedProjection = projectTrajectoryOverview({
+      runs,
+      focusedRunId: 'run-live',
+      focusedRunEvents: [
+        event('run-live', 0, 'run_started', '2026-08-24T01:00:00.000Z'),
+        event('run-live', 1, 'run_progress_updated', '2026-08-24T01:00:05.000Z'),
+        event('run-live', 2, 'run_progress_updated', '2026-08-24T01:00:10.000Z'),
+      ],
+      cells: [runCell('run-done'), runCell('run-live')],
+      mode: 'actual',
+    });
+
+    expect(firstProjection.runBands[0].end).toBeCloseTo(1 / 6, 6);
+    expect(appendedProjection.runBands[0].end).toBeCloseTo(1 / 11, 6);
+    expect(appendedProjection.runBands[1].end).toBe(1);
+  });
+
   it('actual 模式在聚焦 run 自身时间域内定位详细 segment', () => {
     const runId = 'run-a';
     const result = projectTrajectoryOverview({

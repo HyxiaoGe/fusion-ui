@@ -241,6 +241,33 @@ describe('TrajectoryOverview', () => {
     expect(onRangeChange).toHaveBeenLastCalledWith(null);
   });
 
+  it('初始 range 为空时可只用可见按钮和键盘创建、调整并清除范围', () => {
+    const onRangeChange = vi.fn();
+    render(
+      <TrajectoryOverview
+        runs={[run('run-a')]}
+        focusedRunId="run-a"
+        focusedRunEvents={fixtureEvents()}
+        cells={[runCell('run-a', true)]}
+        onRangeChange={onRangeChange}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: '创建范围' }));
+    expect(onRangeChange).toHaveBeenLastCalledWith({ start: 0.25, end: 0.75 });
+    const startHandle = screen.getByRole('slider', { name: '范围起点' });
+    const endHandle = screen.getByRole('slider', { name: '范围终点' });
+    expect(startHandle).toHaveFocus();
+
+    fireEvent.keyDown(startHandle, { key: 'ArrowRight' });
+    fireEvent.keyDown(endHandle, { key: 'ArrowLeft' });
+    expect(onRangeChange).toHaveBeenLastCalledWith({ start: 0.26, end: 0.74 });
+
+    fireEvent.keyDown(endHandle, { key: 'Escape' });
+    expect(onRangeChange).toHaveBeenLastCalledWith(null);
+    expect(screen.getByRole('button', { name: '创建范围' })).toBeInTheDocument();
+  });
+
   it('mode、zoom、活动项与范围在 live append rerender 后保持，DOM 数量不随事件数线性增长', () => {
     const initialEvents = fixtureEvents();
     const view = render(
@@ -287,5 +314,62 @@ describe('TrajectoryOverview', () => {
     expect(screen.getByTestId('trajectory-overview-active')).toHaveTextContent('Tools');
     expect(screen.getByRole('slider', { name: '范围起点' })).toHaveValue('50');
     expect(view.container.querySelectorAll('*').length).toBeLessThan(80);
+  });
+
+  it('zoom 后可用可见按钮与键盘平移，边界夹紧且活动项和范围保持', () => {
+    const view = render(
+      <TrajectoryOverview
+        runs={[run('run-a')]}
+        focusedRunId="run-a"
+        focusedRunEvents={fixtureEvents()}
+        cells={[runCell('run-a', true)]}
+        selectedCellKey="run:run-a"
+      />,
+    );
+    const canvas = screen.getByRole('application', { name: /轨迹记录总览/ });
+    fireEvent.keyDown(canvas, { key: 'End' });
+    fireEvent.click(screen.getByRole('button', { name: '放大' }));
+    fireEvent.click(screen.getByRole('button', { name: '创建范围' }));
+    const rangeStart = screen.getByRole('slider', { name: '范围起点' });
+    const rangeEnd = screen.getByRole('slider', { name: '范围终点' });
+    const left = screen.getByRole('button', { name: '向左平移' });
+    const right = screen.getByRole('button', { name: '向右平移' });
+
+    canvas.focus();
+    fireEvent.keyDown(canvas, { key: 'ArrowRight', shiftKey: true });
+    expect(right).toBeDisabled();
+    expect(screen.getByTestId('trajectory-overview-active')).toHaveTextContent('Tools');
+    expect(rangeStart).toHaveValue('475');
+    expect(rangeEnd).toHaveValue('725');
+
+    fireEvent.keyDown(canvas, { key: 'ArrowLeft', shiftKey: true });
+    fireEvent.keyDown(canvas, { key: 'ArrowLeft', shiftKey: true });
+    expect(left).toBeDisabled();
+    fireEvent.click(right);
+    expect(left).toBeEnabled();
+    expect(right).toBeEnabled();
+    expect(screen.getByText('2×')).toBeInTheDocument();
+    expect(screen.getByTestId('trajectory-overview-active')).toHaveTextContent('Tools');
+    expect(rangeStart).toHaveValue('475');
+    expect(rangeEnd).toHaveValue('725');
+
+    view.rerender(
+      <TrajectoryOverview
+        runs={[run('run-a')]}
+        focusedRunId="run-a"
+        focusedRunEvents={[
+          ...fixtureEvents(),
+          event(5, 'run_progress_updated'),
+        ]}
+        cells={[runCell('run-a', true)]}
+        selectedCellKey="run:run-a"
+      />,
+    );
+    expect(left).toBeEnabled();
+    expect(right).toBeEnabled();
+    expect(screen.getByText('2×')).toBeInTheDocument();
+    expect(screen.getByTestId('trajectory-overview-active')).toHaveTextContent('Tools');
+    expect(rangeStart).toHaveValue('475');
+    expect(rangeEnd).toHaveValue('725');
   });
 });
