@@ -29,7 +29,6 @@ interface ChatMessageListProps {
   isStreaming?: boolean;
   loadingState?: 'default' | 'history-hydration';
   onRetry?: (messageId: string) => void;
-  onContinueAgentRun?: (messageId: string, previousRunId?: string) => void;
   onInspectTrajectory?: (messageId: string, runId: string) => void;
   onEdit?: (messageId: string, content: string) => void;
   suggestedQuestions?: string[];
@@ -71,7 +70,6 @@ interface ChatMessageRowProps {
   isLastMessage: boolean;
   isStreamingMessage: boolean;
   onRetry?: (messageId: string) => void;
-  onContinueAgentRun?: (messageId: string, previousRunId?: string) => void;
   onEdit?: (messageId: string, content: string) => void;
   conversationId: string | null;
   modelId?: string;
@@ -109,7 +107,6 @@ const ChatMessageRow = React.memo(function ChatMessageRow({
   isLastMessage,
   isStreamingMessage,
   onRetry,
-  onContinueAgentRun,
   onEdit,
   conversationId,
   modelId,
@@ -132,7 +129,6 @@ const ChatMessageRow = React.memo(function ChatMessageRow({
         isLastMessage={isLastMessage}
         isStreaming={isStreamingMessage}
         onRetry={onRetry}
-        onContinueAgentRun={onContinueAgentRun}
         onEdit={onEdit}
         activeChatId={conversationId}
         modelId={modelId}
@@ -157,7 +153,6 @@ function areChatMessageRowPropsEqual(prev: ChatMessageRowProps, next: ChatMessag
     && prev.isLastMessage === next.isLastMessage
     && prev.isStreamingMessage === next.isStreamingMessage
     && prev.onRetry === next.onRetry
-    && prev.onContinueAgentRun === next.onContinueAgentRun
     && prev.onEdit === next.onEdit
     && prev.conversationId === next.conversationId
     && prev.modelId === next.modelId
@@ -179,7 +174,6 @@ const ChatMessageList: React.FC<ChatMessageListProps> = ({
   isStreaming = false,
   loadingState = 'default',
   onRetry,
-  onContinueAgentRun,
   onInspectTrajectory,
   onEdit,
   suggestedQuestions = EMPTY_SUGGESTED_QUESTIONS,
@@ -505,7 +499,6 @@ const ChatMessageList: React.FC<ChatMessageListProps> = ({
             isLastMessage={index === messages.length - 1}
             isStreamingMessage={isStreamingForMessage(message, index)}
             onRetry={retryableMessageIds.has(message.id) ? onRetry : undefined}
-            onContinueAgentRun={onContinueAgentRun}
             onEdit={onEdit}
             conversationId={conversationId}
             modelId={modelId}

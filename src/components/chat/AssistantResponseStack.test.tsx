@@ -3,12 +3,9 @@ import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import type { AgentRunState } from '@/types/agentRun';
 import type { PlaceResultsBlock, SearchSourceSummary } from '@/types/conversation';
-import type { ExecutionProcessSource } from './agent/executionProcessModel';
 import type { AssistantActivity } from './assistantActivity';
 import type { AnswerEvidenceModel } from './answerEvidenceModel';
 import AssistantResponseStack from './AssistantResponseStack';
-
-const agentRunTimelinePropsMock = vi.hoisted(() => vi.fn());
 
 vi.mock('./ReasoningContent', () => ({
   default: ({
@@ -43,49 +40,6 @@ vi.mock('./AssistantActivityStatus', () => ({
   default: ({ activity }: { activity: AssistantActivity }) => (
     <section data-testid="stack-activity">{activity.kind}</section>
   ),
-}));
-
-vi.mock('./agent', () => ({
-  AgentRunTimeline: (props: {
-    assistantMessageId: string;
-    onRetry?: () => void;
-    onContinue?: (previousRunId?: string) => void;
-    run?: AgentRunState | null;
-    searchSources?: ExecutionProcessSource[];
-    searchQueries?: string[];
-    onOpenSources?: () => void;
-  }) => {
-    const payload: {
-      hasRunProp: boolean;
-      hasOpenSources?: boolean;
-      run?: AgentRunState | null;
-      searchSources?: ExecutionProcessSource[];
-      searchQueries?: string[];
-    } = {
-      hasRunProp: Object.prototype.hasOwnProperty.call(props, 'run'),
-      hasOpenSources: Boolean(props.onOpenSources),
-      run: props.run,
-    };
-    if (props.searchSources) {
-      payload.searchSources = props.searchSources;
-    }
-    if (props.searchQueries) {
-      payload.searchQueries = props.searchQueries;
-    }
-    agentRunTimelinePropsMock(payload);
-
-    return (
-      <section
-        data-testid="stack-agent"
-        data-message-id={props.assistantMessageId}
-        data-run-id={props.run?.runId ?? 'none'}
-      >
-        <button type="button" onClick={props.onRetry}>重试运行</button>
-        <button type="button" onClick={() => props.onContinue?.('run-1')}>继续查</button>
-        <button type="button" onClick={props.onOpenSources}>过程查看依据</button>
-      </section>
-    );
-  },
 }));
 
 vi.mock('./AnswerEvidence', () => ({
@@ -195,7 +149,6 @@ describe('AssistantResponseStack', () => {
     const onInspectTrajectory = vi.fn();
     render(
       <AssistantResponseStack
-        assistantMessageId="assistant-1"
         reasoning={{
           shouldRender: false,
           content: '',
@@ -254,7 +207,6 @@ describe('AssistantResponseStack', () => {
       },
     };
     const props = {
-      assistantMessageId: 'assistant-1',
       reasoning: {
         shouldRender: true,
         content: '正在核对问题边界',
@@ -263,7 +215,6 @@ describe('AssistantResponseStack', () => {
         onToggle: vi.fn(),
       },
       activity: activity(),
-      onRetry: undefined,
       answerEvidence: null,
       onSourceClick: vi.fn(),
       onOpenSources: vi.fn(),
@@ -274,8 +225,6 @@ describe('AssistantResponseStack', () => {
     const { rerender } = render(
       <AssistantResponseStack
         {...props}
-        modelId="kimi-k3"
-        providerId="moonshot"
         agentRun={plannedRun}
       />,
     );
@@ -284,8 +233,6 @@ describe('AssistantResponseStack', () => {
     rerender(
       <AssistantResponseStack
         {...props}
-        modelId="qwen-max"
-        providerId="qwen"
         agentRun={plannedRun}
       />,
     );
@@ -294,44 +241,10 @@ describe('AssistantResponseStack', () => {
     rerender(
       <AssistantResponseStack
         {...props}
-        modelId="qwen-max"
-        providerId="qwen"
         agentRun={agentRun}
       />,
     );
     expect(screen.getByTestId('stack-reasoning')).toHaveTextContent('正在核对问题边界');
-  });
-
-  it.each([
-    ['kimi-k2.5', 'moonshot'],
-    ['kimi-k3', 'openrouter'],
-  ])('模型标识不再控制计划思考展示：%s / %s', (modelId, providerId) => {
-    render(
-      <AssistantResponseStack
-        assistantMessageId="assistant-1"
-        modelId={modelId}
-        providerId={providerId}
-        reasoning={{
-          shouldRender: true,
-          content: '后端已净化的计划思考',
-          isVisible: true,
-          isStreaming: true,
-          onToggle: vi.fn(),
-        }}
-        activity={activity()}
-        agentRun={{
-          ...agentRun,
-          config: { ...agentRun.config, planMode: 'on' },
-        }}
-        answerEvidence={null}
-        onSourceClick={vi.fn()}
-        onOpenSources={vi.fn()}
-        markdown={{ content: '', sources: [] }}
-        showStreamingCursor={false}
-      />,
-    );
-
-    expect(screen.getByTestId('stack-reasoning')).toHaveTextContent('后端已净化的计划思考');
   });
 
   it.each([
@@ -340,12 +253,9 @@ describe('AssistantResponseStack', () => {
     'failed',
     'limit_reached',
     'interrupted',
-  ] as const)('K3 模型计划进入 %s 或历史恢复后仍展示净化后的思考', (status) => {
+  ] as const)('计划进入 %s 或历史恢复后仍展示净化后的思考', (status) => {
     render(
       <AssistantResponseStack
-        assistantMessageId="assistant-1"
-        modelId="kimi-k3"
-        providerId="moonshot"
         reasoning={{
           shouldRender: true,
           content: '已核对所需资料',
@@ -382,12 +292,9 @@ describe('AssistantResponseStack', () => {
     expect(screen.getByTestId('stack-reasoning')).toHaveTextContent('已核对所需资料');
   });
 
-  it('其他模型已结束的深度研究展示后端持久化思考', () => {
+  it('已结束的深度研究展示后端持久化思考', () => {
     render(
       <AssistantResponseStack
-        assistantMessageId="assistant-1"
-        modelId="qwen-max"
-        providerId="qwen"
         reasoning={{
           shouldRender: true,
           content: '深度研究内部搜索参数',
@@ -412,12 +319,9 @@ describe('AssistantResponseStack', () => {
     expect(screen.getByTestId('stack-reasoning')).toHaveTextContent('深度研究内部搜索参数');
   });
 
-  it('K3 深度研究在计划尚未生成时展示流式净化思考', () => {
+  it('深度研究在计划尚未生成时展示流式净化思考', () => {
     render(
       <AssistantResponseStack
-        assistantMessageId="assistant-1"
-        modelId="kimi-k3"
-        providerId="moonshot"
         reasoning={{
           shouldRender: true,
           content: '正在确认搜索范围',
@@ -441,12 +345,9 @@ describe('AssistantResponseStack', () => {
     expect(screen.getByTestId('stack-reasoning')).toHaveTextContent('正在确认搜索范围');
   });
 
-  it('K3 强制计划模式在首个计划快照到达前展示流式净化思考', () => {
+  it('强制计划模式在首个计划快照到达前展示流式净化思考', () => {
     render(
       <AssistantResponseStack
-        assistantMessageId="assistant-1"
-        modelId="kimi-k3"
-        providerId="moonshot"
         reasoning={{
           shouldRender: true,
           content: '正在整理执行步骤',
@@ -473,7 +374,6 @@ describe('AssistantResponseStack', () => {
   it('已有真实思考时不再同时显示正在准备回答占位', () => {
     render(
       <AssistantResponseStack
-        assistantMessageId="assistant-1"
         reasoning={{
           shouldRender: true,
           content: '正在核验问题边界',
@@ -509,7 +409,6 @@ describe('AssistantResponseStack', () => {
 
     render(
       <AssistantResponseStack
-        assistantMessageId="assistant-1"
         reasoning={{
           shouldRender: false,
           content: '',
@@ -536,7 +435,6 @@ describe('AssistantResponseStack', () => {
   it('按 assistant 内容栈顺序渲染，并收敛根节点和末尾间距', () => {
     render(
       <AssistantResponseStack
-        assistantMessageId="assistant-1"
         reasoning={{
           shouldRender: true,
           content: '先推理',
@@ -547,7 +445,6 @@ describe('AssistantResponseStack', () => {
           endTime: 20,
         }}
         activity={activity()}
-        onRetry={vi.fn()}
         answerEvidence={answerEvidence}
         onSourceClick={vi.fn()}
         onOpenSources={vi.fn()}
@@ -581,7 +478,6 @@ describe('AssistantResponseStack', () => {
 
     render(
       <AssistantResponseStack
-        assistantMessageId="assistant-1"
         reasoning={{
           shouldRender: true,
           content: '推理内容',
@@ -628,7 +524,6 @@ describe('AssistantResponseStack', () => {
   it('只在显式要求时渲染推理区和流式光标', () => {
     const { rerender } = render(
       <AssistantResponseStack
-        assistantMessageId="assistant-1"
         reasoning={{
           shouldRender: false,
           content: '',
@@ -637,7 +532,6 @@ describe('AssistantResponseStack', () => {
           onToggle: vi.fn(),
         }}
         activity={activity({ kind: 'completed' })}
-        onRetry={undefined}
         answerEvidence={null}
         onSourceClick={vi.fn()}
         onOpenSources={vi.fn()}
@@ -655,7 +549,6 @@ describe('AssistantResponseStack', () => {
 
     rerender(
       <AssistantResponseStack
-        assistantMessageId="assistant-1"
         reasoning={{
           shouldRender: false,
           content: '',
@@ -664,7 +557,6 @@ describe('AssistantResponseStack', () => {
           onToggle: vi.fn(),
         }}
         activity={activity({ kind: 'answering' })}
-        onRetry={undefined}
         answerEvidence={null}
         onSourceClick={vi.fn()}
         onOpenSources={vi.fn()}

@@ -15,9 +15,6 @@ import StructuredToolResults from './StructuredToolResults';
 import TrajectoryStatusLine from './trajectory/TrajectoryStatusLine';
 
 interface AssistantResponseStackProps {
-  assistantMessageId: string;
-  modelId?: string | null;
-  providerId?: string | null;
   reasoning: {
     shouldRender: boolean;
     content: string;
@@ -31,14 +28,11 @@ interface AssistantResponseStackProps {
   agentRun?: AgentRunState | null;
   trajectoryStatus?: TrajectoryBadgeStatus;
   onInspectTrajectory?: () => void;
-  onRetry?: () => void;
-  onContinueAgentRun?: (previousRunId?: string) => void;
   answerEvidence: AnswerEvidenceModel | null;
   structuredResults?: StructuredToolResultBlock[];
   structuredResultsLoading?: boolean;
   onStructuredResultFollowUp?: (question: string) => void;
   answerEvidenceSidebar?: AnswerEvidenceSidebarModel | null;
-  searchQueries?: string[];
   onSourceClick: (index: number) => void;
   onOpenSources: () => void;
   markdown: {

@@ -745,7 +745,7 @@ describe('ChatPage 会话切换体验', () => {
     expect(screen.getAllByTestId('chat-input')).toHaveLength(1);
   });
 
-  it('同会话 Tab 往返保留轨迹选择、滚动和检查器实例', () => {
+  it('同会话 Tab 往返保留轨迹选择、滚动和节点详情实例', () => {
     const assistant: Message = {
       id: 'assistant-1',
       role: 'assistant',
@@ -770,14 +770,14 @@ describe('ChatPage 会话切换体验', () => {
     activateConversationTab('轨迹');
     rerender(<ChatPage />);
 
-    const ledger = screen.getByRole('listbox', { name: '轨迹账本' });
+    const table = screen.getByRole('listbox', { name: '轨迹记录表' });
     const runOption = screen.getByRole('option', { name: /执行.*已完成/i });
     fireEvent.click(runOption);
-    Object.defineProperty(ledger, 'scrollTop', { configurable: true, writable: true, value: 56 });
-    fireEvent.scroll(ledger);
+    Object.defineProperty(table, 'scrollTop', { configurable: true, writable: true, value: 56 });
+    fireEvent.scroll(table);
     rerender(<ChatPage />);
 
-    expect(screen.getByLabelText('轨迹检查器')).toBeInTheDocument();
+    expect(screen.getByRole('complementary', { name: '轨迹节点详情' })).toBeInTheDocument();
     expect(screen.getByRole('option', { name: /执行.*已完成/i })).toHaveAttribute('aria-selected', 'true');
 
     activateConversationTab('聊天');
@@ -785,9 +785,9 @@ describe('ChatPage 会话切换体验', () => {
     activateConversationTab('轨迹');
     rerender(<ChatPage />);
 
-    expect(screen.getByRole('listbox', { name: '轨迹账本' })).toBe(ledger);
-    expect(ledger.scrollTop).toBe(56);
-    expect(screen.getByLabelText('轨迹检查器')).toBeInTheDocument();
+    expect(screen.getByRole('listbox', { name: '轨迹记录表' })).toBe(table);
+    expect(table.scrollTop).toBe(56);
+    expect(screen.getByRole('complementary', { name: '轨迹节点详情' })).toBeInTheDocument();
     expect(screen.getByRole('option', { name: /执行.*已完成/i })).toHaveAttribute('aria-selected', 'true');
   });
 

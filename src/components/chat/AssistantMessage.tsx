@@ -30,7 +30,6 @@ interface AssistantMessageProps {
   isLastMessage: boolean;
   isStreaming: boolean;
   onRetry?: (messageId: string) => void;
-  onContinueAgentRun?: (messageId: string, previousRunId?: string) => void;
   agentRun?: AgentRunState | null;
   trajectoryStatus?: TrajectoryBadgeStatus;
   onInspectTrajectory?: (messageId: string, runId: string) => void;
@@ -50,7 +49,6 @@ function AssistantMessage({
   isLastMessage,
   isStreaming,
   onRetry,
-  onContinueAgentRun,
   agentRun,
   trajectoryStatus,
   onInspectTrajectory,
@@ -73,7 +71,6 @@ function AssistantMessage({
         isLastMessage={isLastMessage}
         isStreaming={isStreaming}
         onRetry={onRetry}
-        onContinueAgentRun={onContinueAgentRun}
         agentRun={agentRun}
         trajectoryStatus={trajectoryStatus}
         onInspectTrajectory={onInspectTrajectory}
@@ -96,7 +93,6 @@ function AssistantMessage({
       isLastMessage={isLastMessage}
       isStreaming={isStreaming}
       onRetry={onRetry}
-      onContinueAgentRun={onContinueAgentRun}
       agentRun={agentRun}
       trajectoryStatus={trajectoryStatus}
       onInspectTrajectory={onInspectTrajectory}
@@ -152,7 +148,6 @@ function AssistantMessageFrame({
   isLastMessage,
   isStreaming,
   onRetry,
-  onContinueAgentRun,
   agentRun,
   trajectoryStatus = 'unknown',
   onInspectTrajectory,
@@ -161,7 +156,6 @@ function AssistantMessageFrame({
   onSelectQuestion,
   onRefreshQuestions,
   activeChatId,
-  modelId,
   providerId,
   modelName,
   viewModel,
@@ -237,13 +231,6 @@ function AssistantMessageFrame({
     [message.id, onRetry],
   );
 
-  const handleContinue = useMemo(
-    () => onContinueAgentRun && knowledgeBlocks.length === 0
-      ? (previousRunId?: string) => onContinueAgentRun(message.id, previousRunId)
-      : undefined,
-    [knowledgeBlocks.length, message.id, onContinueAgentRun],
-  );
-
   const handleInspectTrajectory = useMemo(
     () => agentRun && onInspectTrajectory
       ? () => onInspectTrajectory(message.id, agentRun.runId)
@@ -315,16 +302,11 @@ function AssistantMessageFrame({
       <div className="w-full min-w-0">
         <div className="w-full min-w-0">
           <AssistantResponseStack
-            assistantMessageId={message.id}
-            modelId={message.model_id ?? modelId}
-            providerId={providerId}
             reasoning={reasoningProps}
             activity={activity}
             agentRun={agentRun}
             trajectoryStatus={trajectoryStatus}
             onInspectTrajectory={handleInspectTrajectory}
-            onRetry={handleRetry}
-            onContinueAgentRun={handleContinue}
             answerEvidence={answerEvidence}
             structuredResults={renderableStructuredResults}
             structuredResultsLoading={isCurrentMessageStreaming}
@@ -332,7 +314,6 @@ function AssistantMessageFrame({
               isLastMessage && !isCurrentMessageStreaming ? onSelectQuestion : undefined
             }
             answerEvidenceSidebar={answerEvidenceSidebar}
-            searchQueries={searchQueries}
             onSourceClick={handleCitationClick}
             onOpenSources={handleOpenSources}
             markdown={markdownProps}

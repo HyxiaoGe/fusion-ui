@@ -19,7 +19,6 @@ interface ChatMessageProps {
   isLastMessage?: boolean;
   isStreaming?: boolean;
   onRetry?: (messageId: string) => void;
-  onContinueAgentRun?: (messageId: string, previousRunId?: string) => void;
   onEdit?: (messageId: string, content: string) => void;
   activeChatId?: string | null;
   modelId?: string | null;
@@ -34,7 +33,7 @@ interface ChatMessageProps {
   onRefreshQuestions?: () => void;
 }
 
-const ChatMessage: React.FC<ChatMessageProps> = ({ message, files, isLastMessage = false, isStreaming = false, onRetry, onContinueAgentRun, onEdit, activeChatId = null, modelId, providerId, modelName = 'AI助手', agentRun = null, trajectoryStatus = 'unknown', onInspectTrajectory, suggestedQuestions = [], isLoadingQuestions = false, onSelectQuestion, onRefreshQuestions }) => {
+const ChatMessage: React.FC<ChatMessageProps> = ({ message, files, isLastMessage = false, isStreaming = false, onRetry, onEdit, activeChatId = null, modelId, providerId, modelName = 'AI助手', agentRun = null, trajectoryStatus = 'unknown', onInspectTrajectory, suggestedQuestions = [], isLoadingQuestions = false, onSelectQuestion, onRefreshQuestions }) => {
   const isUser = message.role === 'user';
 
   // 从 content blocks 中提取文本（用于编辑）
@@ -92,7 +91,6 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message, files, isLastMessage
             isLastMessage={isLastMessage}
             isStreaming={isStreaming}
             onRetry={onRetry}
-            onContinueAgentRun={onContinueAgentRun}
             agentRun={agentRun}
             trajectoryStatus={trajectoryStatus}
             onInspectTrajectory={onInspectTrajectory}

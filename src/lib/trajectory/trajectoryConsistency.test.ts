@@ -559,6 +559,34 @@ describe('trajectoryConsistency', () => {
     });
   });
 
+  it('终态 refetch 把原 live tail 精确收敛为 durable overlap', () => {
+    const liveTerminal = event(2, {
+      eventType: 'run_completed',
+      payload: { total_steps: 1, total_tool_calls: 0 },
+    });
+
+    expect(evaluateLiveDurableReconciliation({
+      durableEvents: [event(0), event(1)],
+      liveEvents: [liveTerminal],
+    })).toMatchObject({
+      status: 'reconciled',
+      overlapSequences: [],
+      liveTailSequences: [2],
+    });
+
+    expect(evaluateLiveDurableReconciliation({
+      durableEvents: [event(0), event(1), liveTerminal],
+      liveEvents: [liveTerminal],
+    })).toEqual({
+      status: 'reconciled',
+      durableLastSequence: 2,
+      overlapSequences: [2],
+      conflictSequences: [],
+      prefixGapSequences: [],
+      liveTailSequences: [],
+    });
+  });
+
   it('message join invariants 接受显式 join、相邻 legacy 与显式 orphan，拒绝角色错误和非相邻回看', () => {
     const messages: Message[] = [
       { id: 'user-a', role: 'user', content: [] },
@@ -767,6 +795,104 @@ describe('trajectoryConsistency', () => {
       const policy = resolveTrajectoryActionPolicy({ ...base, ...excluded });
       expect(policy.retry.allowed).toBe(false);
       expect(policy.continue.allowed).toBe(false);
+    }
+  });
+
+  it('legacy/degraded/truncated 只公开已知摘要与已记录节点，不补造未知过程', () => {
+    const messages: Message[] = [
+      { id: 'user-a', role: 'user', content: [] },
+      { id: 'assistant-a', role: 'assistant', content: [] },
+    ];
+    const legacyRun = {
+      ...snapshot().run,
+      trajectory_status: 'legacy',
+      total_steps: 3,
+      total_tool_calls: 2,
+    };
+    const legacyProjection = projectTrajectoryCells({
+      messages,
+      runs: [legacyRun],
+      runSummariesById: { 'run-a': legacyRun },
+      snapshotsByRunId: {},
+      liveEventsByRunId: {},
+      selectedRunId: 'run-a',
+      runsTruncated: false,
+    });
+    const legacyCell = legacyProjection.cells.find(cell => cell.type === 'run');
+    expect(legacyCell).toMatchObject({
+      type: 'run',
+      totalSteps: 3,
+      totalToolCalls: 2,
+      trajectoryBadge: { status: 'legacy' },
+      sourceSequences: [],
+    });
+    expect(legacyProjection.cells.filter(cell => (
+      cell.type === 'plan' || cell.type === 'tool' || cell.type === 'subtool'
+    ))).toEqual([]);
+
+    const knownTool = event(0, {
+      eventType: 'tool_call_completed',
+      stepId: 'step-a',
+      toolCallId: 'tool-known',
+      payload: { tool_name: 'web_search', status: 'success', duration_ms: 80 },
+    });
+    for (const excludedSnapshot of [
+      snapshot({
+        run: { ...snapshot().run, trajectory_status: 'degraded' },
+        completeness: {
+          ...snapshot().completeness,
+          status: 'degraded',
+          degraded_reason: 'recording_gap',
+          event_count: 1,
+          loaded_event_count: 1,
+          expected_last_sequence: null,
+          first_sequence: 0,
+          last_sequence: 0,
+        },
+        durableLastSequence: 0,
+        events: [knownTool],
+      }),
+      snapshot({
+        truncated: true,
+        completeness: {
+          ...snapshot().completeness,
+          event_count: 1,
+          loaded_event_count: 1,
+          first_sequence: 0,
+          last_sequence: 0,
+        },
+        durableLastSequence: 0,
+        events: [knownTool],
+      }),
+    ]) {
+      const projection = projectTrajectoryCells({
+        messages,
+        runs: [excludedSnapshot.run],
+        runSummariesById: { 'run-a': excludedSnapshot.run },
+        snapshotsByRunId: { 'run-a': excludedSnapshot },
+        liveEventsByRunId: {},
+        selectedRunId: 'run-a',
+        runsTruncated: false,
+      });
+      const parity = evaluateEventProjectionParity({
+        snapshot: excludedSnapshot,
+        cells: projection.cells,
+        join: explicitJoin,
+      });
+
+      expect(parity.status).toBe('excluded');
+      expect(projection.cells).toEqual(expect.arrayContaining([
+        expect.objectContaining({ type: 'run', totalSteps: 1 }),
+        expect.objectContaining({
+          type: 'tool',
+          toolCallId: 'tool-known',
+          toolName: 'web_search',
+          sourceSequences: [0],
+        }),
+      ]));
+      expect(projection.cells.filter(cell => (
+        cell.type === 'plan' || cell.type === 'subtool' || cell.type === 'context'
+      ))).toEqual([]);
     }
   });
 });

@@ -59,7 +59,6 @@ vi.mock('./ChatMessage', () => ({
     agentRun,
     isStreaming,
     onRetry,
-    onContinueAgentRun,
     suggestedQuestions,
     trajectoryStatus,
     onInspectTrajectory,
@@ -68,7 +67,6 @@ vi.mock('./ChatMessage', () => ({
     agentRun?: AgentRunState | null;
     isStreaming?: boolean;
     onRetry?: (messageId: string) => void;
-    onContinueAgentRun?: (messageId: string, previousRunId?: string) => void;
     suggestedQuestions?: string[];
     trajectoryStatus?: string;
     onInspectTrajectory?: (messageId: string, runId: string) => void;
@@ -88,14 +86,6 @@ vi.mock('./ChatMessage', () => ({
         {onRetry ? (
           <button type="button" data-testid={`retry-${message.id}`} onClick={() => onRetry(message.id)}>
             重试
-          </button>
-        ) : null}
-        {agentRun?.status === 'limit_reached' ? (
-          <button
-            type="button"
-            onClick={() => onContinueAgentRun?.(message.id, agentRun.runId)}
-          >
-            继续查
           </button>
         ) : null}
         {agentRun && onInspectTrajectory ? (
@@ -734,12 +724,12 @@ describe('ChatMessageList', () => {
     expect(chatMessageRenderMock).toHaveBeenCalledWith('assistant-2', 'run-2');
   });
 
-  it('uses persisted latest agent run to continue a hydrated historical message', () => {
-    const onContinueAgentRun = vi.fn();
+  it('水合历史触顶 run 只保留轨迹入口，不在聊天消息提供 Agent continue', () => {
+    const onInspectTrajectory = vi.fn();
     render(
       <ChatMessageList
         conversationId="chat-1"
-        onContinueAgentRun={onContinueAgentRun}
+        onInspectTrajectory={onInspectTrajectory}
         messages={[
           {
             id: 'assistant-1',
@@ -766,8 +756,9 @@ describe('ChatMessageList', () => {
     );
 
     expect(screen.getByTestId('chat-message-assistant-1').dataset.runId).toBe('run-1');
-    fireEvent.click(screen.getByText('继续查'));
-    expect(onContinueAgentRun).toHaveBeenCalledWith('assistant-1', 'run-1');
+    expect(screen.queryByRole('button', { name: '继续查' })).toBeNull();
+    fireEvent.click(screen.getAllByRole('button', { name: '查看轨迹' })[0]);
+    expect(onInspectTrajectory).toHaveBeenCalledWith('assistant-1', 'run-1');
   });
 
   it('终态 live run 不遮挡消息水合得到的权威 agent run', () => {
