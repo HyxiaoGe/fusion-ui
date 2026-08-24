@@ -42,6 +42,9 @@ interface ContinueAgentRunInput {
   conversationId: string;
   assistantMessageId: string;
   previousRunId?: string;
+  canStart?: () => boolean;
+  onAccepted?: () => void;
+  onRejectedBeforeStart?: () => void;
 }
 
 interface HookDeps {
@@ -161,10 +164,12 @@ function buildContinuationStreamCallbacks({
     },
     ...createAgentStreamEventHandlers({
       dispatch,
+      trajectoryDispatch: dispatch,
       isActive,
       resolveMessageId: () => assistantMessageId,
       setServerMessageId,
       resolveConversationId: () => conversationId,
+      resolveTrajectoryConversationId: () => conversationId,
     }),
     onSuggestedQuestionsPending: ev => {
       if (!isActive()) return;
@@ -230,10 +235,20 @@ export function useContinueAgentRun(deps: HookDeps = {}) {
     conversationId,
     assistantMessageId,
     previousRunId,
+    canStart,
+    onAccepted,
+    onRejectedBeforeStart,
   }: ContinueAgentRunInput) => {
-    abortControllerRef.current?.abort();
+    if (activeContinuationRef.current || (canStart && !canStart())) {
+      onRejectedBeforeStart?.();
+      return;
+    }
 
     const state = store.getState() as RootStateForContinuation;
+    if (state.stream.isStreaming || (canStart && !canStart())) {
+      onRejectedBeforeStart?.();
+      return;
+    }
     const conversation = state.conversation.byId[conversationId];
     const assistantMessage = conversation?.messages.find(message => message.id === assistantMessageId);
     const staticBlocks = assistantMessage?.content ?? [];
@@ -252,6 +267,7 @@ export function useContinueAgentRun(deps: HookDeps = {}) {
       messageId: assistantMessageId,
       staticBlocks,
     }));
+    onAccepted?.();
 
     let terminalErrorHandled = false;
     const isActive = () => activeContinuationRef.current?.token === token;

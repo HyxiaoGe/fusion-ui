@@ -7,12 +7,14 @@ import type { AnswerEvidenceSidebarModel } from './answerEvidenceSidebarModel';
 const {
   dispatchMock,
   assistantResponseStackMock,
+  messageActionsMock,
   deriveStaticAssistantMessageViewModelMock,
   getMessageNetworkDiagnosticsMock,
   useAssistantMessageViewModelMock,
 } = vi.hoisted(() => ({
   dispatchMock: vi.fn(),
   assistantResponseStackMock: vi.fn(),
+  messageActionsMock: vi.fn(),
   deriveStaticAssistantMessageViewModelMock: vi.fn(),
   getMessageNetworkDiagnosticsMock: vi.fn(),
   useAssistantMessageViewModelMock: vi.fn(),
@@ -46,11 +48,8 @@ vi.mock('./AssistantResponseStack', () => ({
       sources: SearchSourceSummary[];
       onCitationClick?: (index: number) => void;
     };
-    searchQueries?: string[];
     onSourceClick: (index: number) => void;
     onOpenSources: () => void;
-    onRetry?: () => void;
-    onContinueAgentRun?: (previousRunId?: string) => void;
     onStructuredResultFollowUp?: (question: string) => void;
     structuredResultsLoading?: boolean;
   }) => {
@@ -109,7 +108,20 @@ vi.mock('./SuggestedQuestions', () => ({
 }));
 
 vi.mock('./MessageActions', () => ({
-  default: () => <section data-testid="message-actions">操作栏</section>,
+  default: ({
+    onRetry,
+    retryLabel,
+  }: {
+    onRetry?: () => void;
+    retryLabel?: string;
+  }) => {
+    messageActionsMock({ onRetry, retryLabel });
+    return (
+      <section data-testid="message-actions">
+        {onRetry ? <button type="button" onClick={onRetry}>{retryLabel}</button> : '操作栏'}
+      </section>
+    );
+  },
 }));
 
 vi.mock('./FileCard', () => ({
@@ -196,6 +208,7 @@ describe('AssistantMessage', () => {
   beforeEach(() => {
     dispatchMock.mockReset();
     assistantResponseStackMock.mockReset();
+    messageActionsMock.mockReset();
     deriveStaticAssistantMessageViewModelMock.mockReset();
     deriveStaticAssistantMessageViewModelMock.mockReturnValue(defaultViewModel());
     getMessageNetworkDiagnosticsMock.mockReset();
@@ -260,34 +273,23 @@ describe('AssistantMessage', () => {
     expect(screen.getByText('助手正文')).toBeInTheDocument();
   });
 
-  it('知识库回答不向响应栈暴露继续生成入口，普通回答保持可继续', () => {
-    const onContinueAgentRun = vi.fn();
-    renderAssistant({ onContinueAgentRun });
-    expect(assistantResponseStackMock.mock.calls.at(-1)?.[0].onContinueAgentRun).toEqual(
-      expect.any(Function),
-    );
+  it('Agent run action 不进入消息响应栈，消息级重新生成仍由 MessageActions 保留', () => {
+    const onRetry = vi.fn();
+    renderAssistant({ onRetry });
 
-    deriveStaticAssistantMessageViewModelMock.mockReturnValue(defaultViewModel({
-      knowledgeBlocks: [{
-        type: 'knowledge_evidence',
-        id: 'knowledge-1',
-        schema_version: 1,
-        query: '安装步骤',
-        status: 'empty',
-        source_count: 0,
-        knowledge_base_ids: ['kb-1'],
-        source_refs: [],
-      }],
-    }));
-    renderAssistant({
-      message: assistantMessage({ id: 'assistant-knowledge' }),
-      onContinueAgentRun,
+    const responseStackProps = assistantResponseStackMock.mock.calls.at(-1)?.[0];
+    expect(responseStackProps).not.toHaveProperty('onRetry');
+    expect(responseStackProps).not.toHaveProperty('onContinueAgentRun');
+    expect(messageActionsMock.mock.calls.at(-1)?.[0]).toMatchObject({
+      onRetry: expect.any(Function),
+      retryLabel: '重新生成',
     });
 
-    expect(assistantResponseStackMock.mock.calls.at(-1)?.[0].onContinueAgentRun).toBeUndefined();
+    fireEvent.click(screen.getByRole('button', { name: '重新生成' }));
+    expect(onRetry).toHaveBeenCalledWith('assistant-1');
   });
 
-  it('流式占位消息缺少模型 ID 时把会话模型与提供商显式传给思考展示链路', () => {
+  it('流式占位消息缺少模型 ID 时把会话模型与提供商显式传给思考派生链路', () => {
     renderAssistant({
       message: assistantMessage({ content: [], model_id: null }),
       modelId: 'kimi-k3',
@@ -299,24 +301,6 @@ describe('AssistantMessage', () => {
       modelId: 'kimi-k3',
       providerId: 'moonshot',
     }));
-    expect(assistantResponseStackMock).toHaveBeenCalledWith(expect.objectContaining({
-      modelId: 'kimi-k3',
-      providerId: 'moonshot',
-    }));
-  });
-
-  it('把 ViewModel 的搜索关键词传给 AssistantResponseStack', () => {
-    deriveStaticAssistantMessageViewModelMock.mockReturnValue(defaultViewModel({
-      searchQueries: ['暑期旅游哪里最火 2026 热门目的地', '2026暑期旅游热门城市 目的地 排行榜'],
-    }));
-
-    renderAssistant();
-
-    const props = assistantResponseStackMock.mock.calls.at(-1)?.[0];
-    expect(props.searchQueries).toEqual([
-      '暑期旅游哪里最火 2026 热门目的地',
-      '2026暑期旅游热门城市 目的地 排行榜',
-    ]);
   });
 
   it('把 ViewModel 的搜索关键词写入回答依据侧栏模型', () => {
@@ -448,6 +432,7 @@ describe('AssistantMessage', () => {
     );
 
     const firstProps = assistantResponseStackMock.mock.calls.at(-1)?.[0];
+    const firstMessageActionsProps = messageActionsMock.mock.calls.at(-1)?.[0];
 
     rerender(
       <AssistantMessage
@@ -463,6 +448,7 @@ describe('AssistantMessage', () => {
     );
 
     const secondProps = assistantResponseStackMock.mock.calls.at(-1)?.[0];
+    const secondMessageActionsProps = messageActionsMock.mock.calls.at(-1)?.[0];
 
     expect(secondProps.reasoning).toBe(firstProps.reasoning);
     expect(secondProps.reasoning.onToggle).toBe(firstProps.reasoning.onToggle);
@@ -470,7 +456,7 @@ describe('AssistantMessage', () => {
     expect(secondProps.markdown.onCitationClick).toBe(firstProps.markdown.onCitationClick);
     expect(secondProps.onSourceClick).toBe(firstProps.onSourceClick);
     expect(secondProps.onOpenSources).toBe(firstProps.onOpenSources);
-    expect(secondProps.onRetry).toBe(firstProps.onRetry);
+    expect(secondMessageActionsProps.onRetry).toBe(firstMessageActionsProps.onRetry);
   });
 
   it('点击 Markdown 引用后打开统一回答依据侧栏并高亮来源', () => {

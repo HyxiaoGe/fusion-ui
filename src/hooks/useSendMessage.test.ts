@@ -15,9 +15,13 @@ import modelsReducer, {
   updateModels,
 } from '@/redux/slices/modelsSlice';
 import streamReducer from '@/redux/slices/streamSlice';
+import trajectoryReducer, {
+  materializeTrajectoryLiveEvents,
+} from '@/redux/slices/trajectorySlice';
 import { resetConversationState, upsertConversation } from '@/redux/slices/conversationSlice';
 import { useSendMessage } from './useSendMessage';
 import type { StreamCallbacks } from '@/lib/api/chat';
+import type { NormalizedTrajectoryEvent } from '@/lib/trajectory/normalizeTrajectoryEvent';
 import type { Message } from '@/types/conversation';
 import {
   loadConversationDetail,
@@ -94,6 +98,7 @@ function createStore({
       conversation: conversationReducer,
       models: modelsReducer,
       stream: streamReducer,
+      trajectory: trajectoryReducer,
     },
     middleware: (getDefaultMiddleware: any) =>
       getDefaultMiddleware({
@@ -179,6 +184,26 @@ function emitRunStarted(callbacks: StreamCallbacks) {
       task_mode: 'standard',
     },
   });
+}
+
+function normalizedRunEvent(
+  eventType: 'run_started' | 'run_completed',
+  sequence: number,
+): NormalizedTrajectoryEvent {
+  return {
+    runId: 'run-trajectory',
+    sequence,
+    eventType,
+    schemaVersion: 1,
+    timestamp: `2026-08-22T00:00:0${sequence}.000Z`,
+    stepId: null,
+    toolCallId: null,
+    parentStepId: null,
+    traceId: 'trace-trajectory',
+    payload: eventType === 'run_started'
+      ? { conversation_id: 'server-conv', message_id: 'assistant-1' }
+      : { total_steps: 1, total_tool_calls: 0, finish_reason: 'stop' },
+  };
 }
 
 function knowledgeEvidenceBlock(status: 'success' | 'empty') {
@@ -394,6 +419,54 @@ describe('useSendMessage', () => {
 
     expect(firstRejected).not.toHaveBeenCalled();
     expect(sendMessageStreamMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('轨迹 retry 在知识库能力等待期间失效时拒绝发送且不替换消息', async () => {
+    const store = createStore();
+    store.dispatch(upsertConversation({
+      id: 'existing-conv',
+      title: 'Existing',
+      model_id: 'model-1',
+      knowledge_base_ids: ['kb-1'],
+      messages: [],
+      createdAt: 100,
+      updatedAt: 200,
+    }));
+    let resolveCapabilities!: (value: {
+      knowledge_grounding_v1: boolean;
+      knowledge_grounding_max_bases: number;
+    }) => void;
+    getChatCapabilitiesMock.mockImplementationOnce(() => new Promise((resolve) => {
+      resolveCapabilities = resolve;
+    }));
+    let eligible = true;
+    const onRejectedBeforeSend = vi.fn();
+    const { result } = renderHook(() => useSendMessage(), {
+      wrapper: createWrapper(store),
+    });
+
+    let pendingSend!: Promise<void>;
+    act(() => {
+      pendingSend = result.current.sendMessage('重新回答', {
+        conversationId: 'existing-conv',
+        knowledgeBaseIds: ['kb-1'],
+        canStart: () => eligible,
+        onRejectedBeforeSend,
+      });
+    });
+    await waitFor(() => expect(getChatCapabilitiesMock).toHaveBeenCalledTimes(1));
+    eligible = false;
+    resolveCapabilities({
+      knowledge_grounding_v1: true,
+      knowledge_grounding_max_bases: 5,
+    });
+    await act(async () => {
+      await pendingSend;
+    });
+
+    expect(onRejectedBeforeSend).toHaveBeenCalledTimes(1);
+    expect(sendMessageStreamMock).not.toHaveBeenCalled();
+    expect(store.getState().conversation.byId['existing-conv'].messages).toEqual([]);
   });
 
   it('严格知识库能力预检期间切换账号时拒绝旧会话草稿且不启动后台流', async () => {
@@ -1043,6 +1116,54 @@ describe('useSendMessage', () => {
     expect(messages.map((message) => message.id)).toEqual(['retry-user', 'retry-assistant']);
     expect(messages[0]).toEqual(expect.objectContaining({ status: 'pending' }));
     expect(messages[1]).toEqual(expect.objectContaining({ content: [] }));
+  });
+
+  it('Agent run retry 把 previousRunId 映射为后端 previous_run_id', async () => {
+    const store = createStore();
+    store.dispatch(
+      upsertConversation({
+        id: 'existing-conv',
+        title: 'Existing',
+        model_id: 'model-1',
+        messages: [
+          {
+            id: 'retry-user',
+            role: 'user',
+            content: [{ type: 'text', id: 'user-text', text: '原始问题' }],
+          },
+          {
+            id: 'retry-assistant',
+            role: 'assistant',
+            content: [{ type: 'text', id: 'old-answer', text: '旧回答' }],
+          },
+        ],
+        createdAt: 1,
+        updatedAt: 2,
+      }),
+    );
+    sendMessageStreamMock.mockResolvedValueOnce(undefined);
+
+    const { result } = renderHook(() => useSendMessage(), {
+      wrapper: createWrapper(store),
+    });
+    await act(async () => {
+      await result.current.sendMessage('原始问题', {
+        conversationId: 'existing-conv',
+        retryUserMessageId: 'retry-user',
+        retryAssistantMessageId: 'retry-assistant',
+        previousRunId: 'run-selected',
+      });
+    });
+
+    expect(sendMessageStreamMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        retry_user_message_id: 'retry-user',
+        retry_assistant_message_id: 'retry-assistant',
+        previous_run_id: 'run-selected',
+      }),
+      expect.any(Object),
+      expect.any(AbortSignal),
+    );
   });
 
   it('安全重试在服务端接管前失败时恢复原问题和原回答', async () => {
@@ -3717,5 +3838,34 @@ describe('useSendMessage', () => {
         ])
       );
     });
+  });
+
+  it('初次发送在轨迹 Tab 未挂载时仍归并到物化后的服务端会话', async () => {
+    const store = createStore();
+    sendMessageStreamMock.mockImplementationOnce(async (_payload: unknown, callbacks: StreamCallbacks) => {
+      callbacks.onReady({ messageId: 'assistant-1', conversationId: 'server-conv' });
+      callbacks.onTrajectoryEvent?.(normalizedRunEvent('run_started', 0));
+      callbacks.onTrajectoryEvent?.(normalizedRunEvent('run_completed', 1));
+      callbacks.onDone({ messageId: 'assistant-1', conversationId: 'server-conv' });
+    });
+    const { result } = renderHook(() => useSendMessage(), {
+      wrapper: createWrapper(store),
+    });
+
+    await act(async () => {
+      await result.current.sendMessage('记录实时轨迹', { conversationId: null });
+    });
+
+    const trajectory = store.getState().trajectory;
+    expect(trajectory.byConversationId['temp-conv']).toBeUndefined();
+    expect(
+      materializeTrajectoryLiveEvents(
+        trajectory.byConversationId['server-conv'].liveEventsByRunId['run-trajectory'],
+      ).map((event: NormalizedTrajectoryEvent) => event.eventType),
+    ).toEqual(['run_started', 'run_completed']);
+    expect(
+      trajectory.byConversationId['server-conv']
+        .reconciliationByRunId['run-trajectory'].status,
+    ).toBe('reconciling');
   });
 });

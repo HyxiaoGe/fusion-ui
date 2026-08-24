@@ -7,6 +7,7 @@ import type { FileWithPreview } from '@/lib/utils/fileHelpers';
 import { useAppDispatch } from '@/redux/hooks';
 import { toggleReasoningVisibility } from '@/redux/slices/conversationSlice';
 import type { AgentRunState } from '@/types/agentRun';
+import type { TrajectoryBadgeStatus } from '@/lib/trajectory/TrajectoryCellProjection';
 import type { Message } from '@/types/conversation';
 
 import ProviderIcon from '../models/ProviderIcon';
@@ -29,8 +30,9 @@ interface AssistantMessageProps {
   isLastMessage: boolean;
   isStreaming: boolean;
   onRetry?: (messageId: string) => void;
-  onContinueAgentRun?: (messageId: string, previousRunId?: string) => void;
   agentRun?: AgentRunState | null;
+  trajectoryStatus?: TrajectoryBadgeStatus;
+  onInspectTrajectory?: (messageId: string, runId: string) => void;
   suggestedQuestions: string[];
   isLoadingQuestions: boolean;
   onSelectQuestion?: (question: string) => void;
@@ -47,8 +49,9 @@ function AssistantMessage({
   isLastMessage,
   isStreaming,
   onRetry,
-  onContinueAgentRun,
   agentRun,
+  trajectoryStatus,
+  onInspectTrajectory,
   suggestedQuestions,
   isLoadingQuestions,
   onSelectQuestion,
@@ -68,8 +71,9 @@ function AssistantMessage({
         isLastMessage={isLastMessage}
         isStreaming={isStreaming}
         onRetry={onRetry}
-        onContinueAgentRun={onContinueAgentRun}
         agentRun={agentRun}
+        trajectoryStatus={trajectoryStatus}
+        onInspectTrajectory={onInspectTrajectory}
         suggestedQuestions={suggestedQuestions}
         isLoadingQuestions={isLoadingQuestions}
         onSelectQuestion={onSelectQuestion}
@@ -89,8 +93,9 @@ function AssistantMessage({
       isLastMessage={isLastMessage}
       isStreaming={isStreaming}
       onRetry={onRetry}
-      onContinueAgentRun={onContinueAgentRun}
       agentRun={agentRun}
+      trajectoryStatus={trajectoryStatus}
+      onInspectTrajectory={onInspectTrajectory}
       suggestedQuestions={suggestedQuestions}
       isLoadingQuestions={isLoadingQuestions}
       onSelectQuestion={onSelectQuestion}
@@ -143,14 +148,14 @@ function AssistantMessageFrame({
   isLastMessage,
   isStreaming,
   onRetry,
-  onContinueAgentRun,
   agentRun,
+  trajectoryStatus = 'unknown',
+  onInspectTrajectory,
   suggestedQuestions,
   isLoadingQuestions,
   onSelectQuestion,
   onRefreshQuestions,
   activeChatId,
-  modelId,
   providerId,
   modelName,
   viewModel,
@@ -226,11 +231,11 @@ function AssistantMessageFrame({
     [message.id, onRetry],
   );
 
-  const handleContinue = useMemo(
-    () => onContinueAgentRun && knowledgeBlocks.length === 0
-      ? (previousRunId?: string) => onContinueAgentRun(message.id, previousRunId)
+  const handleInspectTrajectory = useMemo(
+    () => agentRun && onInspectTrajectory
+      ? () => onInspectTrajectory(message.id, agentRun.runId)
       : undefined,
-    [knowledgeBlocks.length, message.id, onContinueAgentRun],
+    [agentRun, message.id, onInspectTrajectory],
   );
 
   useEffect(() => {
@@ -297,14 +302,11 @@ function AssistantMessageFrame({
       <div className="w-full min-w-0">
         <div className="w-full min-w-0">
           <AssistantResponseStack
-            assistantMessageId={message.id}
-            modelId={message.model_id ?? modelId}
-            providerId={providerId}
             reasoning={reasoningProps}
             activity={activity}
             agentRun={agentRun}
-            onRetry={handleRetry}
-            onContinueAgentRun={handleContinue}
+            trajectoryStatus={trajectoryStatus}
+            onInspectTrajectory={handleInspectTrajectory}
             answerEvidence={answerEvidence}
             structuredResults={renderableStructuredResults}
             structuredResultsLoading={isCurrentMessageStreaming}
@@ -312,7 +314,6 @@ function AssistantMessageFrame({
               isLastMessage && !isCurrentMessageStreaming ? onSelectQuestion : undefined
             }
             answerEvidenceSidebar={answerEvidenceSidebar}
-            searchQueries={searchQueries}
             onSourceClick={handleCitationClick}
             onOpenSources={handleOpenSources}
             markdown={markdownProps}

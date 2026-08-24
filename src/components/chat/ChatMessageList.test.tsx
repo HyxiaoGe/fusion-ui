@@ -4,6 +4,7 @@ import { flushSync } from 'react-dom';
 import { createRoot } from 'react-dom/client';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AgentRunState } from '@/types/agentRun';
+import type { TrajectoryState } from '@/redux/slices/trajectorySlice';
 
 const { selectorState, chatMessageRenderMock, isNearBottomMock, resizeObserverState } = vi.hoisted(() => ({
   selectorState: {
@@ -28,6 +29,10 @@ const { selectorState, chatMessageRenderMock, isNearBottomMock, resizeObserverSt
       selectedModelId: 'model-1',
       models: [{ id: 'model-1', provider: 'qwen', name: 'Qwen Max' }],
     },
+    trajectory: {
+      authScope: '__anonymous__',
+      byConversationId: {},
+    } as TrajectoryState,
   },
   chatMessageRenderMock: vi.fn(),
   isNearBottomMock: vi.fn(),
@@ -54,15 +59,17 @@ vi.mock('./ChatMessage', () => ({
     agentRun,
     isStreaming,
     onRetry,
-    onContinueAgentRun,
     suggestedQuestions,
+    trajectoryStatus,
+    onInspectTrajectory,
   }: {
     message: { id: string; content: Array<{ type: string; text?: string }> };
     agentRun?: AgentRunState | null;
     isStreaming?: boolean;
     onRetry?: (messageId: string) => void;
-    onContinueAgentRun?: (messageId: string, previousRunId?: string) => void;
     suggestedQuestions?: string[];
+    trajectoryStatus?: string;
+    onInspectTrajectory?: (messageId: string, runId: string) => void;
   }) => {
     chatMessageRenderMock(message.id, agentRun?.runId ?? null);
     return (
@@ -73,6 +80,7 @@ vi.mock('./ChatMessage', () => ({
         data-run-max-steps={agentRun?.config.maxSteps ?? ''}
         data-run-limit-reason={agentRun?.limitReachedReason ?? ''}
         data-streaming={isStreaming ? 'true' : 'false'}
+        data-trajectory-status={trajectoryStatus ?? ''}
       >
         <div>{message.content.filter(b => b.type === 'text').map(b => b.text).join('')}</div>
         {onRetry ? (
@@ -80,12 +88,9 @@ vi.mock('./ChatMessage', () => ({
             重试
           </button>
         ) : null}
-        {agentRun?.status === 'limit_reached' ? (
-          <button
-            type="button"
-            onClick={() => onContinueAgentRun?.(message.id, agentRun.runId)}
-          >
-            继续查
+        {agentRun && onInspectTrajectory ? (
+          <button type="button" onClick={() => onInspectTrajectory(message.id, agentRun.runId)}>
+            查看轨迹
           </button>
         ) : null}
         {suggestedQuestions?.map((question) => (
@@ -97,6 +102,12 @@ vi.mock('./ChatMessage', () => ({
 }));
 
 import ChatMessageList from './ChatMessageList';
+import trajectoryReducer, {
+  trajectoryRunListReceived,
+  trajectoryRunListRequested,
+  trajectorySnapshotReceived,
+  trajectorySnapshotRequested,
+} from '@/redux/slices/trajectorySlice';
 
 describe('ChatMessageList', () => {
   beforeEach(() => {
@@ -105,6 +116,10 @@ describe('ChatMessageList', () => {
     selectorState.stream.blockOrder = [];
     selectorState.stream.displayedTextLength = 0;
     selectorState.stream.lastError = null;
+    selectorState.trajectory = {
+      authScope: '__anonymous__',
+      byConversationId: {},
+    };
     isNearBottomMock.mockReset();
     isNearBottomMock.mockReturnValue(true);
     chatMessageRenderMock.mockClear();
@@ -144,6 +159,117 @@ describe('ChatMessageList', () => {
       'chat-message-user-2',
       'chat-message-assistant-2',
     ]);
+  });
+
+  it('只有 message.agent_run 时标记为仅运行摘要，并透传 inspect 精确目标', () => {
+    const onInspectTrajectory = vi.fn();
+    const run: AgentRunState = {
+      runId: 'run-summary',
+      messageId: 'assistant-summary',
+      status: 'completed',
+      config: { maxSteps: 8, maxToolCalls: 16, timeoutS: 300 },
+      totalSteps: 0,
+      totalToolCalls: 0,
+      steps: [],
+      lastSequence: 1,
+    };
+
+    render(
+      <ChatMessageList
+        conversationId="chat-1"
+        messages={[{
+          id: 'assistant-summary',
+          role: 'assistant',
+          content: [],
+          timestamp: 1,
+          agent_run: run,
+        }]}
+        onInspectTrajectory={onInspectTrajectory}
+      />,
+    );
+
+    expect(screen.getByTestId('chat-message-assistant-summary'))
+      .toHaveAttribute('data-trajectory-status', 'summary-only');
+    fireEvent.click(screen.getByRole('button', { name: '查看轨迹' }));
+    expect(onInspectTrajectory).toHaveBeenCalledWith('assistant-summary', 'run-summary');
+  });
+
+  it('通过唯一轨迹投影将已水合的截断快照映射为 truncated badge', () => {
+    const summary = {
+      run_id: 'run-truncated',
+      message_id: 'assistant-truncated',
+      turn_message_id: 'user-1',
+      attempt_index: 1,
+      status: 'completed',
+      trajectory_status: 'complete',
+      total_steps: 1,
+      total_tool_calls: 0,
+      duration_ms: 1_000,
+      started_at: '2026-08-23T00:00:00Z',
+      ended_at: '2026-08-23T00:00:01Z',
+    };
+    let trajectory = trajectoryReducer(undefined, trajectoryRunListRequested({
+      conversationId: 'chat-1',
+      requestId: 'runs-1',
+    }));
+    trajectory = trajectoryReducer(trajectory, trajectoryRunListReceived({
+      conversationId: 'chat-1',
+      requestId: 'runs-1',
+      response: { items: [summary], truncated: false },
+    }));
+    trajectory = trajectoryReducer(trajectory, trajectorySnapshotRequested({
+      conversationId: 'chat-1',
+      runId: 'run-truncated',
+      requestId: 'snapshot-1',
+    }));
+    trajectory = trajectoryReducer(trajectory, trajectorySnapshotReceived({
+      conversationId: 'chat-1',
+      requestId: 'snapshot-1',
+      snapshot: {
+        run: summary,
+        records: [],
+        spans: [],
+        completeness: {
+          status: 'complete',
+          degraded_reason: null,
+          event_count: 0,
+          expected_last_sequence: 0,
+          loaded_event_count: 0,
+          first_sequence: null,
+          last_sequence: null,
+        },
+        truncated: true,
+      },
+    }));
+    selectorState.trajectory = trajectory;
+
+    render(
+      <ChatMessageList
+        conversationId="chat-1"
+        messages={[
+          { id: 'user-1', role: 'user', content: [], timestamp: 1 },
+          {
+            id: 'assistant-truncated',
+            role: 'assistant',
+            content: [],
+            timestamp: 2,
+            agent_run: {
+              runId: 'run-truncated',
+              messageId: 'assistant-truncated',
+              status: 'completed',
+              config: { maxSteps: 8, maxToolCalls: 16, timeoutS: 300 },
+              totalSteps: 1,
+              totalToolCalls: 0,
+              steps: [],
+              lastSequence: 1,
+            },
+          },
+        ]}
+      />,
+    );
+
+    expect(screen.getByTestId('chat-message-assistant-truncated'))
+      .toHaveAttribute('data-trajectory-status', 'truncated');
   });
 
   it('只向最后一轮 user 和 assistant 暴露重试入口', () => {
@@ -598,12 +724,12 @@ describe('ChatMessageList', () => {
     expect(chatMessageRenderMock).toHaveBeenCalledWith('assistant-2', 'run-2');
   });
 
-  it('uses persisted latest agent run to continue a hydrated historical message', () => {
-    const onContinueAgentRun = vi.fn();
+  it('水合历史触顶 run 只保留轨迹入口，不在聊天消息提供 Agent continue', () => {
+    const onInspectTrajectory = vi.fn();
     render(
       <ChatMessageList
         conversationId="chat-1"
-        onContinueAgentRun={onContinueAgentRun}
+        onInspectTrajectory={onInspectTrajectory}
         messages={[
           {
             id: 'assistant-1',
@@ -630,8 +756,9 @@ describe('ChatMessageList', () => {
     );
 
     expect(screen.getByTestId('chat-message-assistant-1').dataset.runId).toBe('run-1');
-    fireEvent.click(screen.getByText('继续查'));
-    expect(onContinueAgentRun).toHaveBeenCalledWith('assistant-1', 'run-1');
+    expect(screen.queryByRole('button', { name: '继续查' })).toBeNull();
+    fireEvent.click(screen.getAllByRole('button', { name: '查看轨迹' })[0]);
+    expect(onInspectTrajectory).toHaveBeenCalledWith('assistant-1', 'run-1');
   });
 
   it('终态 live run 不遮挡消息水合得到的权威 agent run', () => {

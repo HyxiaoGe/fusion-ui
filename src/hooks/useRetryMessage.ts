@@ -20,11 +20,19 @@ type SendMessageFn = (
     knowledgeBaseIds?: string[];
     retryUserMessageId?: string;
     retryAssistantMessageId?: string;
+    previousRunId?: string;
+    canStart?: () => boolean;
     onRejectedBeforeSend?: () => void;
     onAccepted?: () => void;
   },
   attachments?: FileAttachment[],
 ) => Promise<void>;
+
+export interface RetryMessageControl {
+  canStart: () => boolean;
+  onAccepted: () => void;
+  onRejected: () => void;
+}
 
 function extractMessageContent(msg: Message) {
   const text = msg.content
@@ -60,7 +68,24 @@ export function useRetryMessage(
       messageId: string,
       conversationId: string,
       knowledgeBaseIds?: string[],
+      previousRunId?: string,
+      control?: RetryMessageControl,
     ) => {
+      let lifecycleSettled = false;
+      const accept = () => {
+        if (lifecycleSettled) return;
+        lifecycleSettled = true;
+        control?.onAccepted();
+      };
+      const reject = () => {
+        if (lifecycleSettled) return;
+        lifecycleSettled = true;
+        control?.onRejected();
+      };
+      const canStart = () => !control || control.canStart();
+
+      try {
+      if (!canStart()) return;
       const state = store.getState() as RootState;
       const conversation = state.conversation.byId[conversationId];
       if (!conversation) return;
@@ -85,6 +110,9 @@ export function useRetryMessage(
       const knowledgeScopeOptions = knowledgeBaseIds === undefined
         ? {}
         : { knowledgeBaseIds };
+      const runLineageOptions = previousRunId === undefined
+        ? {}
+        : { previousRunId };
       let modelResolution = resolveSendModel(state, conversationId);
       if (modelResolution.status !== 'ready') {
         dispatch(setGlobalError(getSendModelErrorMessage(modelResolution)));
@@ -105,6 +133,7 @@ export function useRetryMessage(
         return;
       }
 
+      if (!canStart()) return;
       if (
         activeConversationIdRef.current !== undefined
         && activeConversationIdRef.current !== conversationId
@@ -167,6 +196,7 @@ export function useRetryMessage(
         }
 
         if (text || attachments.length > 0) {
+          if (!canStart()) return;
           await sendMessage(
             text,
             {
@@ -175,6 +205,12 @@ export function useRetryMessage(
               ...knowledgeScopeOptions,
               retryUserMessageId: userMessage.id,
               retryAssistantMessageId: refreshedTargetMsg.id,
+              ...runLineageOptions,
+              ...(control ? {
+                canStart,
+                onRejectedBeforeSend: reject,
+                onAccepted: accept,
+              } : {}),
             },
             attachments.length > 0 ? attachments : undefined,
           );
@@ -193,6 +229,7 @@ export function useRetryMessage(
         }
 
         if (text || attachments.length > 0) {
+          if (!canStart()) return;
           await sendMessage(
             text,
             {
@@ -203,10 +240,19 @@ export function useRetryMessage(
               ...(nextMsg?.role === 'assistant'
                 ? { retryAssistantMessageId: nextMsg.id }
                 : {}),
+              ...runLineageOptions,
+              ...(control ? {
+                canStart,
+                onRejectedBeforeSend: reject,
+                onAccepted: accept,
+              } : {}),
             },
             attachments.length > 0 ? attachments : undefined,
           );
         }
+      }
+      } finally {
+        reject();
       }
     },
     [dispatch, sendMessage, store],
