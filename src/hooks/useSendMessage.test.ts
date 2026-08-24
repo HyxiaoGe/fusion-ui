@@ -15,7 +15,9 @@ import modelsReducer, {
   updateModels,
 } from '@/redux/slices/modelsSlice';
 import streamReducer from '@/redux/slices/streamSlice';
-import trajectoryReducer from '@/redux/slices/trajectorySlice';
+import trajectoryReducer, {
+  materializeTrajectoryLiveEvents,
+} from '@/redux/slices/trajectorySlice';
 import { resetConversationState, upsertConversation } from '@/redux/slices/conversationSlice';
 import { useSendMessage } from './useSendMessage';
 import type { StreamCallbacks } from '@/lib/api/chat';
@@ -3857,8 +3859,9 @@ describe('useSendMessage', () => {
     const trajectory = store.getState().trajectory;
     expect(trajectory.byConversationId['temp-conv']).toBeUndefined();
     expect(
-      trajectory.byConversationId['server-conv'].liveEventsByRunId['run-trajectory']
-        .map((event: NormalizedTrajectoryEvent) => event.eventType),
+      materializeTrajectoryLiveEvents(
+        trajectory.byConversationId['server-conv'].liveEventsByRunId['run-trajectory'],
+      ).map((event: NormalizedTrajectoryEvent) => event.eventType),
     ).toEqual(['run_started', 'run_completed']);
     expect(
       trajectory.byConversationId['server-conv']

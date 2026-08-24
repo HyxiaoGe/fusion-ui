@@ -5,6 +5,7 @@ import type { ContentBlock, Conversation, Message } from '@/types/conversation';
 import type { StreamCallbacks } from '@/lib/api/chat';
 import type { NormalizedTrajectoryEvent } from '@/lib/trajectory/normalizeTrajectoryEvent';
 import trajectoryReducer, {
+  materializeTrajectoryLiveEvents,
   trajectoryRunListReceived,
   trajectoryRunListRequested,
   trajectorySnapshotReceived,
@@ -230,7 +231,12 @@ vi.mock('@/hooks/useConversationTrajectory', () => ({
       runs: conversation?.runs ?? [],
       runSummariesById: conversation?.runSummariesById ?? {},
       snapshotsByRunId: conversation?.snapshotsByRunId ?? {},
-      liveEventsByRunId: conversation?.liveEventsByRunId ?? {},
+      liveEventsByRunId: Object.fromEntries(
+        Object.entries(conversation?.liveEventsByRunId ?? {}).map(([runId, buffer]) => [
+          runId,
+          materializeTrajectoryLiveEvents(buffer),
+        ]),
+      ),
       runListStatus: conversation?.runListStatus ?? 'idle',
       runListError: conversation?.runListError ?? null,
       runsTruncated: conversation?.runsTruncated ?? false,
@@ -1107,8 +1113,9 @@ describe('ChatPage 会话切换体验', () => {
     recoveryCallbacks?.onTrajectoryEvent?.(recoveredTrajectoryEvent());
 
     expect(
-      trajectoryState.byConversationId['chat-a']
-        .liveEventsByRunId['run-recovered'].map(event => event.eventType),
+      materializeTrajectoryLiveEvents(
+        trajectoryState.byConversationId['chat-a'].liveEventsByRunId['run-recovered'],
+      ).map(event => event.eventType),
     ).toEqual(['run_started']);
     expect(trajectoryState.byConversationId['chat-b']).toBeUndefined();
   });

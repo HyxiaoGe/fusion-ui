@@ -20,6 +20,8 @@ import {
   trajectorySnapshotReceived,
   trajectorySnapshotRequested,
   trajectorySnapshotUnavailable,
+  materializeTrajectoryLiveEvents,
+  type TrajectoryLiveEventBuffer,
   type TrajectoryReconciliationState,
   type TrajectorySnapshotCacheEntry,
   type TrajectorySnapshotRequestPurpose,
@@ -89,6 +91,12 @@ interface FrameBatchedTrajectoryDetail {
   liveEvents: NormalizedTrajectoryEvent[];
 }
 
+interface FrameBatchedTrajectorySource {
+  identity: string;
+  snapshot: TrajectorySnapshotCacheEntry | undefined;
+  liveEventBuffer: TrajectoryLiveEventBuffer | undefined;
+}
+
 const EMPTY_BATCHED_DETAIL: FrameBatchedTrajectoryDetail = {
   identity: '',
   snapshot: undefined,
@@ -128,17 +136,27 @@ function trajectoryDetailIdentity(
   return `${authScope}\u0000${conversationId}\u0000${runId}`;
 }
 
-function readTrajectoryDetail(
+function readTrajectoryDetailSource(
   store: { getState: () => RootState },
   conversationId: string,
   runId: string,
   identity: string,
-): FrameBatchedTrajectoryDetail {
+): FrameBatchedTrajectorySource {
   const conversation = selectTrajectoryConversation(store.getState(), conversationId);
   return {
     identity,
     snapshot: conversation?.snapshotsByRunId[runId],
-    liveEvents: conversation?.liveEventsByRunId[runId] ?? [],
+    liveEventBuffer: conversation?.liveEventsByRunId[runId],
+  };
+}
+
+function materializeTrajectoryDetail(
+  source: FrameBatchedTrajectorySource,
+): FrameBatchedTrajectoryDetail {
+  return {
+    identity: source.identity,
+    snapshot: source.snapshot,
+    liveEvents: materializeTrajectoryLiveEvents(source.liveEventBuffer),
   };
 }
 
@@ -154,7 +172,9 @@ function useFrameBatchedTrajectoryDetail(
     : '';
   const [detail, setDetail] = useState<FrameBatchedTrajectoryDetail>(() => (
     identity && conversationId && runId
-      ? readTrajectoryDetail(store, conversationId, runId, identity)
+      ? materializeTrajectoryDetail(
+          readTrajectoryDetailSource(store, conversationId, runId, identity),
+        )
       : EMPTY_BATCHED_DETAIL
   ));
 
@@ -163,24 +183,27 @@ function useFrameBatchedTrajectoryDetail(
       setDetail(EMPTY_BATCHED_DETAIL);
       return;
     }
-    setDetail(readTrajectoryDetail(store, conversationId, runId, identity));
+    setDetail(materializeTrajectoryDetail(
+      readTrajectoryDetailSource(store, conversationId, runId, identity),
+    ));
   }, [conversationId, identity, runId, store]);
 
   useEffect(() => {
     if (!identity || !conversationId || !runId) return;
     let active = true;
-    let current = readTrajectoryDetail(store, conversationId, runId, identity);
+    let current = readTrajectoryDetailSource(store, conversationId, runId, identity);
     let frameId: number | null = null;
     let timeoutId: ReturnType<typeof setTimeout> | null = null;
     const flush = () => {
       if (!active) return;
       frameId = null;
       timeoutId = null;
-      setDetail(current);
+      setDetail(materializeTrajectoryDetail(current));
     };
     const unsubscribe = store.subscribe(() => {
-      const next = readTrajectoryDetail(store, conversationId, runId, identity);
-      if (next.snapshot === current.snapshot && next.liveEvents === current.liveEvents) return;
+      const next = readTrajectoryDetailSource(store, conversationId, runId, identity);
+      if (next.snapshot === current.snapshot
+        && next.liveEventBuffer === current.liveEventBuffer) return;
       const snapshotIdentityChanged = next.snapshot?.snapshotRequestId
         !== current.snapshot?.snapshotRequestId;
       current = next;
@@ -193,7 +216,7 @@ function useFrameBatchedTrajectoryDetail(
           clearTimeout(timeoutId);
           timeoutId = null;
         }
-        setDetail(next);
+        setDetail(materializeTrajectoryDetail(next));
         return;
       }
       if (frameId !== null || timeoutId !== null) return;
@@ -216,7 +239,9 @@ function useFrameBatchedTrajectoryDetail(
   if (!identity || !conversationId || !runId) return EMPTY_BATCHED_DETAIL;
   return detail.identity === identity
     ? detail
-    : readTrajectoryDetail(store, conversationId, runId, identity);
+    : materializeTrajectoryDetail(
+        readTrajectoryDetailSource(store, conversationId, runId, identity),
+      );
 }
 
 function releaseRequestSubscription(subscription: RequestSubscription | null): void {

@@ -13,7 +13,9 @@ import conversationReducer, {
   upsertConversation,
 } from '@/redux/slices/conversationSlice';
 import streamReducer from '@/redux/slices/streamSlice';
-import trajectoryReducer from '@/redux/slices/trajectorySlice';
+import trajectoryReducer, {
+  materializeTrajectoryLiveEvents,
+} from '@/redux/slices/trajectorySlice';
 import type { NormalizedTrajectoryEvent } from '@/lib/trajectory/normalizeTrajectoryEvent';
 
 vi.mock('@/lib/api/chat', () => ({
@@ -1081,7 +1083,9 @@ describe('useContinueAgentRun', () => {
 
     const trajectory = store.getState().trajectory.byConversationId['conv-1'];
     expect(
-      trajectory.liveEventsByRunId['run-continuation'].map(event => event.eventType),
+      materializeTrajectoryLiveEvents(
+        trajectory.liveEventsByRunId['run-continuation'],
+      ).map(event => event.eventType),
     ).toEqual(['run_started', 'run_failed']);
     expect(trajectory.reconciliationByRunId['run-continuation'].status).toBe('reconciling');
   });

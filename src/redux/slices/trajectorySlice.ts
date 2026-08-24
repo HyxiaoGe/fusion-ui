@@ -13,6 +13,12 @@ const MAX_SNAPSHOT_CACHE_SIZE = 8;
 const MAX_RUN_LIST_SIZE = 500;
 const MAX_PROVISIONAL_RUNS = 8;
 const MAX_EVENTS_PER_RUN = 5000;
+const LIVE_EVENT_CHUNK_SIZE = 128;
+const EMPTY_LIVE_EVENTS: NormalizedTrajectoryEvent[] = [];
+const liveEventMaterializationCache = new WeakMap<
+  TrajectoryLiveEventBuffer,
+  NormalizedTrajectoryEvent[]
+>();
 const TERMINAL_EVENT_TYPES = new Set([
   'run_completed',
   'run_failed',
@@ -65,6 +71,11 @@ export interface TrajectorySnapshotCacheEntry {
   hasLegacyEvents?: boolean;
 }
 
+export interface TrajectoryLiveEventBuffer {
+  chunks: NormalizedTrajectoryEvent[][];
+  length: number;
+}
+
 export interface TrajectoryInspectRequest {
   requestId: string;
   messageId: string | null;
@@ -85,7 +96,7 @@ export interface TrajectoryConversationState {
   activeRunListRequestId: string | null;
   runsTruncated: boolean;
   snapshotsByRunId: Record<string, TrajectorySnapshotCacheEntry>;
-  liveEventsByRunId: Record<string, NormalizedTrajectoryEvent[]>;
+  liveEventsByRunId: Record<string, TrajectoryLiveEventBuffer>;
   reconciliationByRunId: Record<string, TrajectoryReconciliationState>;
   snapshotLru: string[];
   selectedMessageId: string | null;
@@ -177,6 +188,96 @@ function eventInsertionIndex(
     else upper = middle;
   }
   return lower;
+}
+
+export function createTrajectoryLiveEventBuffer(
+  events: readonly NormalizedTrajectoryEvent[] = [],
+): TrajectoryLiveEventBuffer {
+  const chunks: NormalizedTrajectoryEvent[][] = [];
+  for (let start = 0; start < events.length; start += LIVE_EVENT_CHUNK_SIZE) {
+    chunks.push(events.slice(start, start + LIVE_EVENT_CHUNK_SIZE));
+  }
+  return { chunks, length: events.length };
+}
+
+export function materializeTrajectoryLiveEvents(
+  buffer: TrajectoryLiveEventBuffer | undefined,
+): NormalizedTrajectoryEvent[] {
+  if (!buffer || buffer.length === 0) return EMPTY_LIVE_EVENTS;
+  const cached = liveEventMaterializationCache.get(buffer);
+  if (cached) return cached;
+  const events = buffer.chunks.flat();
+  liveEventMaterializationCache.set(buffer, events);
+  return events;
+}
+
+function ensureLiveEventBuffer(
+  conversation: TrajectoryConversationState,
+  runId: string,
+): TrajectoryLiveEventBuffer {
+  conversation.liveEventsByRunId[runId] ??= createTrajectoryLiveEventBuffer();
+  return conversation.liveEventsByRunId[runId];
+}
+
+function lastBufferedEvent(
+  buffer: TrajectoryLiveEventBuffer,
+): NormalizedTrajectoryEvent | undefined {
+  return buffer.chunks.at(-1)?.at(-1);
+}
+
+function appendBufferedEvent(
+  buffer: TrajectoryLiveEventBuffer,
+  event: NormalizedTrajectoryEvent,
+): void {
+  let tail = buffer.chunks.at(-1);
+  if (!tail || tail.length >= LIVE_EVENT_CHUNK_SIZE) {
+    tail = [];
+    buffer.chunks.push(tail);
+  }
+  tail.push(event);
+  buffer.length += 1;
+}
+
+function insertBufferedEvent(
+  buffer: TrajectoryLiveEventBuffer,
+  event: NormalizedTrajectoryEvent,
+): NormalizedTrajectoryEvent | undefined {
+  const tail = lastBufferedEvent(buffer);
+  if (!tail || event.sequence > tail.sequence) {
+    appendBufferedEvent(buffer, event);
+    return undefined;
+  }
+
+  const events = materializeTrajectoryLiveEvents(buffer);
+  const insertionIndex = eventInsertionIndex(events, event.sequence);
+  const existing = events[insertionIndex]?.sequence === event.sequence
+    ? events[insertionIndex]
+    : undefined;
+  if (existing) return existing;
+  events.splice(insertionIndex, 0, event);
+  const replacement = createTrajectoryLiveEventBuffer(events);
+  buffer.chunks = replacement.chunks;
+  buffer.length = replacement.length;
+  return undefined;
+}
+
+function removeBufferedPrefix(
+  buffer: TrajectoryLiveEventBuffer,
+  count: number,
+): NormalizedTrajectoryEvent[] {
+  const removed: NormalizedTrajectoryEvent[] = [];
+  let remaining = Math.min(count, buffer.length);
+  while (remaining > 0) {
+    const head = buffer.chunks[0];
+    if (!head) break;
+    const take = Math.min(remaining, head.length);
+    removed.push(...head.slice(0, take));
+    if (take === head.length) buffer.chunks.shift();
+    else head.splice(0, take);
+    buffer.length -= take;
+    remaining -= take;
+  }
+  return removed;
 }
 
 function recordConflict(
@@ -277,9 +378,12 @@ function trimLiveEvents(
   conversation: TrajectoryConversationState,
   runId: string,
 ): void {
-  const liveEvents = conversation.liveEventsByRunId[runId] ?? [];
-  if (liveEvents.length <= MAX_EVENTS_PER_RUN) return;
-  const removed = liveEvents.splice(0, liveEvents.length - MAX_EVENTS_PER_RUN);
+  const liveEvents = conversation.liveEventsByRunId[runId];
+  if (!liveEvents || liveEvents.length <= MAX_EVENTS_PER_RUN) return;
+  const removed = removeBufferedPrefix(
+    liveEvents,
+    liveEvents.length - MAX_EVENTS_PER_RUN,
+  );
   const reconciliation = ensureReconciliation(conversation, runId);
   const removedThrough = removed.at(-1)?.sequence ?? null;
   if (removedThrough !== null) {
@@ -438,7 +542,9 @@ const trajectorySlice = createSlice({
       const allEvents = normalizedSnapshotEvents(snapshot);
       const durableLastSequence = allEvents.at(-1)?.sequence ?? null;
       const events = allEvents.slice(-MAX_EVENTS_PER_RUN);
-      const liveEvents = conversation.liveEventsByRunId[runId] ?? [];
+      const liveEvents = materializeTrajectoryLiveEvents(
+        conversation.liveEventsByRunId[runId],
+      );
       const snapshotBySequence = new Map(allEvents.map(event => [event.sequence, event]));
       const maximumDurableSequence = durableLastSequence ?? -1;
 
@@ -456,8 +562,9 @@ const trajectorySlice = createSlice({
         }
       }
 
-      conversation.liveEventsByRunId[runId] = liveEvents
-        .filter(event => event.sequence > maximumDurableSequence);
+      conversation.liveEventsByRunId[runId] = createTrajectoryLiveEventBuffer(
+        liveEvents.filter(event => event.sequence > maximumDurableSequence),
+      );
       conversation.snapshotsByRunId[runId] = {
         snapshotRequestId: action.payload.requestId,
         run: snapshot.run,
@@ -577,15 +684,9 @@ const trajectorySlice = createSlice({
           });
         }
       } else if (!isCoveredByTrimmedLive) {
-        const liveEvents = conversation.liveEventsByRunId[event.runId] ?? [];
-        const insertionIndex = eventInsertionIndex(liveEvents, event.sequence);
-        const existing = liveEvents[insertionIndex]?.sequence === event.sequence
-          ? liveEvents[insertionIndex]
-          : undefined;
+        const liveEvents = ensureLiveEventBuffer(conversation, event.runId);
+        const existing = insertBufferedEvent(liveEvents, event);
         if (!existing) {
-          if (insertionIndex === liveEvents.length) liveEvents.push(event);
-          else liveEvents.splice(insertionIndex, 0, event);
-          conversation.liveEventsByRunId[event.runId] = liveEvents;
           trimLiveEvents(conversation, event.runId);
           trimMergedEventWindow(conversation, event.runId);
           acceptedLive = true;
@@ -852,7 +953,9 @@ export function selectMergedTrajectoryEvents(
 ): NormalizedTrajectoryEvent[] {
   const conversation = selectTrajectoryConversation(state, conversationId);
   const durableEvents = conversation?.snapshotsByRunId[runId]?.events ?? [];
-  const liveEvents = conversation?.liveEventsByRunId[runId] ?? [];
+  const liveEvents = materializeTrajectoryLiveEvents(
+    conversation?.liveEventsByRunId[runId],
+  );
   return [...durableEvents, ...liveEvents]
     .sort((left, right) => left.sequence - right.sequence)
     .slice(-MAX_EVENTS_PER_RUN);

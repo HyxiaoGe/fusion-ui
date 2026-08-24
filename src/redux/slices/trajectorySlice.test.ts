@@ -7,6 +7,8 @@ import type { TrajectoryRunSummary, TrajectorySnapshot } from '@/types/trajector
 import streamReducer, { initRun, startStream } from './streamSlice';
 import trajectoryReducer, {
   consumeTrajectoryInspectRequest,
+  createTrajectoryLiveEventBuffer,
+  materializeTrajectoryLiveEvents,
   mergeLiveTrajectoryEvent,
   requestTrajectoryInspect,
   resolveTrajectoryInspectRequest,
@@ -24,9 +26,21 @@ import trajectoryReducer, {
   trajectorySnapshotFailed,
   trajectorySnapshotReceived,
   trajectorySnapshotRequested,
+  type TrajectoryLiveEventBuffer,
 } from './trajectorySlice';
 
 const reducer = trajectoryReducer;
+
+function materializedLiveEventsByRunId(
+  buffers: Record<string, TrajectoryLiveEventBuffer>,
+) {
+  return Object.fromEntries(
+    Object.entries(buffers).map(([runId, buffer]) => [
+      runId,
+      materializeTrajectoryLiveEvents(buffer),
+    ]),
+  );
+}
 
 function runSummary(runId: string, overrides: Partial<TrajectoryRunSummary> = {}): TrajectoryRunSummary {
   return {
@@ -485,8 +499,11 @@ describe('trajectorySlice', () => {
     }));
 
     const conversation = state.byConversationId['conversation-a'];
-    expect(conversation.liveEventsByRunId['run-a'].map(event => event.sequence)).toEqual([1, 2]);
-    expect(conversation.liveEventsByRunId['run-a'][0].payload).toEqual({ step_number: 1 });
+    const liveEvents = materializeTrajectoryLiveEvents(
+      conversation.liveEventsByRunId['run-a'],
+    );
+    expect(liveEvents.map(event => event.sequence)).toEqual([1, 2]);
+    expect(liveEvents[0].payload).toEqual({ step_number: 1 });
     expect(conversation.reconciliationByRunId['run-a'].conflicts).toEqual([
       expect.objectContaining({ kind: 'live-live', runId: 'run-a', sequence: 1 }),
     ]);
@@ -513,7 +530,8 @@ describe('trajectorySlice', () => {
     }));
 
     const conversation = state.byConversationId['conversation-a'];
-    expect(conversation.liveEventsByRunId['run-a'].map(event => event.sequence)).toEqual([3]);
+    expect(materializeTrajectoryLiveEvents(conversation.liveEventsByRunId['run-a'])
+      .map(event => event.sequence)).toEqual([3]);
     expect(selectMergedTrajectoryEvents({ trajectory: state }, 'conversation-a', 'run-a')
       .map(event => [event.sequence, event.payload])).toEqual([
       [0, { conversation_id: 'conversation-a', message_id: 'message-run-a' }],
@@ -553,7 +571,7 @@ describe('trajectorySlice', () => {
     }));
 
     const conversation = state.byConversationId['conversation-a'];
-    expect(conversation.liveEventsByRunId['run-a']).toEqual([]);
+    expect(materializeTrajectoryLiveEvents(conversation.liveEventsByRunId['run-a'])).toEqual([]);
     expect(conversation.reconciliationByRunId['run-a'].conflicts).toEqual([
       expect.objectContaining({ kind: 'snapshot-live', retainedSource: 'snapshot', sequence: 1 }),
     ]);
@@ -719,7 +737,8 @@ describe('trajectorySlice', () => {
     expect(conversation.snapshotsByRunId['run-0']).toBeUndefined();
     expect(conversation.runs.some(run => run.run_id === 'run-0')).toBe(true);
     expect(conversation.selectedRunId).toBe('run-0');
-    expect(conversation.liveEventsByRunId['run-0'].map(event => event.sequence)).toEqual([10]);
+    expect(materializeTrajectoryLiveEvents(conversation.liveEventsByRunId['run-0'])
+      .map(event => event.sequence)).toEqual([10]);
   });
 
   it('run_started 登记 provisional run 并自动选择真实 run id，且不改变 stream.currentRun', () => {
@@ -948,7 +967,7 @@ describe('trajectorySlice', () => {
       runs: visibleRuns,
       runSummariesById: conversation.runSummariesById,
       snapshotsByRunId: conversation.snapshotsByRunId,
-      liveEventsByRunId: conversation.liveEventsByRunId,
+      liveEventsByRunId: materializedLiveEventsByRunId(conversation.liveEventsByRunId),
       selectedRunId: conversation.selectedRunId,
       runsTruncated: conversation.runsTruncated,
     });
@@ -1037,7 +1056,7 @@ describe('trajectorySlice', () => {
       runs: visibleRuns,
       runSummariesById: conversation.runSummariesById,
       snapshotsByRunId: conversation.snapshotsByRunId,
-      liveEventsByRunId: conversation.liveEventsByRunId,
+      liveEventsByRunId: materializedLiveEventsByRunId(conversation.liveEventsByRunId),
       selectedRunId: conversation.selectedRunId,
       runsTruncated: conversation.runsTruncated,
     });
@@ -1163,7 +1182,9 @@ describe('trajectorySlice', () => {
         'conversation-a': {
           ...baseState.byConversationId['conversation-a'],
           liveEventsByRunId: {
-            'run-a': Array.from({ length: 5000 }, (_, index) => liveEvent('run-a', index + 1)),
+            'run-a': createTrajectoryLiveEventBuffer(
+              Array.from({ length: 5000 }, (_, index) => liveEvent('run-a', index + 1)),
+            ),
           },
         },
       },
@@ -1178,12 +1199,34 @@ describe('trajectorySlice', () => {
     }));
 
     const conversation = state.byConversationId['conversation-a'];
-    expect(conversation.liveEventsByRunId['run-a']).toHaveLength(5000);
-    expect(conversation.liveEventsByRunId['run-a'][0].sequence).toBe(2);
-    expect(conversation.liveEventsByRunId['run-a'].at(-1)?.sequence).toBe(5001);
+    const liveEvents = materializeTrajectoryLiveEvents(
+      conversation.liveEventsByRunId['run-a'],
+    );
+    expect(liveEvents).toHaveLength(5000);
+    expect(liveEvents[0].sequence).toBe(2);
+    expect(liveEvents.at(-1)?.sequence).toBe(5001);
     expect(conversation.reconciliationByRunId['run-a'].eventsTruncated).toBe(true);
     expect(selectMergedTrajectoryEvents({ trajectory: state }, 'conversation-a', 'run-a'))
       .toHaveLength(5000);
+  });
+
+  it('live 事件使用固定大小分块存储，避免逐条追加复制完整窗口', () => {
+    let state = reducer(undefined, { type: '@@init' });
+    for (let sequence = 0; sequence < 129; sequence += 1) {
+      state = reducer(state, mergeLiveTrajectoryEvent({
+        conversationId: 'conversation-a',
+        event: liveEvent('run-a', sequence),
+      }));
+    }
+
+    const storage = state.byConversationId['conversation-a']
+      .liveEventsByRunId['run-a'] as unknown as {
+        chunks: unknown[][];
+        length: number;
+      };
+    expect(Array.isArray(storage)).toBe(false);
+    expect(storage.length).toBe(129);
+    expect(storage.chunks.map(chunk => chunk.length)).toEqual([128, 1]);
   });
 
   it('5000-event snapshot 加乱序 live tail 并 reconcile 后仍保留 tail 且不超过上限', () => {
@@ -1214,7 +1257,8 @@ describe('trajectorySlice', () => {
     const conversation = state.byConversationId['conversation-a'];
     const merged = selectMergedTrajectoryEvents({ trajectory: state }, 'conversation-a', 'run-a');
     expect(conversation.snapshotsByRunId['run-a'].events.length).toBe(4998);
-    expect(conversation.liveEventsByRunId['run-a'].map(event => event.sequence)).toEqual([5000, 5001]);
+    expect(materializeTrajectoryLiveEvents(conversation.liveEventsByRunId['run-a'])
+      .map(event => event.sequence)).toEqual([5000, 5001]);
     expect(merged).toHaveLength(5000);
     expect(merged[0].sequence).toBe(2);
     expect(merged.at(-1)?.sequence).toBe(5001);
