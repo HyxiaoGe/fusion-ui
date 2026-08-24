@@ -76,9 +76,8 @@ const STREAM_TIME_BUDGET_MS = EXISTING_STREAM_BASELINE.elapsedMs
   * (STREAM_EVENT_COUNT / EXISTING_STREAM_BASELINE.eventCount)
   * 2;
 const PROJECTION_TIME_BUDGET_MS = 750;
-const HEAVY_TRAJECTORY_TEST_TIMEOUT_MS = STREAM_TIME_BUDGET_MS
-  + PROJECTION_TIME_BUDGET_MS
-  + 1_250;
+const MAX_PERFORMANCE_ASSERTION_BUDGET_MS = STREAM_TIME_BUDGET_MS + PROJECTION_TIME_BUDGET_MS;
+const HEAVY_TRAJECTORY_TEST_TIMEOUT_MS = MAX_PERFORMANCE_ASSERTION_BUDGET_MS * 2 + 500;
 
 function runSummary(): TrajectoryRunSummary {
   return {
@@ -291,6 +290,18 @@ describe('Trajectory force-mount 流式性能', () => {
     });
   });
 
+  it('5000-event 重型用例的 watchdog 与产品性能预算分离', () => {
+    expect({
+      chatAssertionBudgetMs: STREAM_TIME_BUDGET_MS,
+      trajectoryAssertionBudgetMs: STREAM_TIME_BUDGET_MS + PROJECTION_TIME_BUDGET_MS,
+      watchdogMs: HEAVY_TRAJECTORY_TEST_TIMEOUT_MS,
+    }).toEqual({
+      chatAssertionBudgetMs: 5_000,
+      trajectoryAssertionBudgetMs: 5_750,
+      watchdogMs: 12_000,
+    });
+  });
+
   it('Chat surface 首次停留和逐条接收 5000 events 都不调用 full projector', async () => {
     const store = createTestStore(20, 'chat');
     const startedAt = performance.now();
@@ -303,7 +314,7 @@ describe('Trajectory force-mount 流式性能', () => {
     expect(trajectoryRenderProbe.calls).toBeLessThanOrEqual(2);
     expect(elapsedMs, `Chat surface 5000 条真实 dispatch 耗时 ${elapsedMs.toFixed(2)}ms`)
       .toBeLessThan(STREAM_TIME_BUDGET_MS);
-  });
+  }, HEAVY_TRAJECTORY_TEST_TIMEOUT_MS);
 
   it('Trajectory surface 对 5000 个逐条 dispatch 只做有界帧投影且 DOM 不超过 200', async () => {
     const store = createTestStore(20, 'trajectory');
