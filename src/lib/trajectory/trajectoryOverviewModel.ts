@@ -27,6 +27,13 @@ export interface OverviewSegment {
   endedAt: string | null;
   startSequence: number;
   endSequence: number;
+  spanIdentity: OverviewSpanIdentity | null;
+}
+
+export interface OverviewSpanIdentity {
+  spanId: string;
+  kind: string;
+  recordSequences: number[];
 }
 
 export interface TrajectoryOverviewProjection {
@@ -121,6 +128,7 @@ export function projectTrajectoryOverview(
       endedAt: times.length > 0 ? times.at(-1)?.timestamp ?? null : null,
       startSequence,
       endSequence,
+      spanIdentity: spanIdentityForGroup(group),
     } satisfies OverviewSegment;
   });
 
@@ -130,6 +138,24 @@ export function projectTrajectoryOverview(
     || left.key.localeCompare(right.key)
   ));
   return { mode: input.mode, runBands, segments };
+}
+
+function spanIdentityForGroup(group: EventGroup): OverviewSpanIdentity | null {
+  const prefixByKind: Partial<Record<GroupKind, string>> = {
+    run: 'run',
+    step: 'step',
+    model: 'llm',
+    tool: 'tool',
+    attempt: 'tool_attempt',
+    retrieval: 'retrieval',
+  };
+  const prefix = prefixByKind[group.kind];
+  if (!prefix || (group.kind === 'step' && group.stableId.startsWith('sequence-'))) return null;
+  return {
+    spanId: `${prefix}:${group.stableId}`,
+    kind: prefix,
+    recordSequences: group.events.map(item => item.sequence),
+  };
 }
 
 function chronologicalRuns(runs: readonly TrajectoryRunSummary[]): TrajectoryRunSummary[] {

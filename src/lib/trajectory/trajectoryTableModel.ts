@@ -53,7 +53,7 @@ export function projectTrajectoryTableRows({
   focusedCellKeys = null,
 }: TrajectoryTableModelInput): TrajectoryTableRow[] {
   const normalizedQuery = normalizeSearch(searchQuery);
-  const hasFocus = Boolean(focusedCellKeys?.size);
+  const hasFocus = focusedCellKeys !== null;
   const metadata = buildRowMetadata(cells);
   const attemptsByTool = collectAttemptsByTool(cells);
   const collapsedAttemptKeys = new Set<string>();

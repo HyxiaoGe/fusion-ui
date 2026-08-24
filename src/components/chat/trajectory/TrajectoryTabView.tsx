@@ -27,6 +27,8 @@ import {
 } from '@/lib/trajectory/TrajectoryCellProjection';
 import {
   projectTrajectoryNetworkView,
+  resolveTrajectoryCellSpan,
+  resolveTrajectoryOverviewSpan,
   resolveTrajectorySelectedCell,
 } from '@/lib/trajectory/trajectoryNetworkViewModel';
 import {
@@ -126,29 +128,6 @@ function runCell(
   return cells.find((cell): cell is Extract<TrajectoryCell, { type: 'run' }> => (
     cell.type === 'run' && cell.runId === runId
   )) ?? null;
-}
-
-function cellForSpan(
-  cells: readonly TrajectoryCell[],
-  span: TrajectorySpan | null,
-  runId: string | null,
-): TrajectoryCell | null {
-  if (!span || !runId) return null;
-  const sequences = new Set(span.record_sequences);
-  return cells.find(cell => (
-    cell.type !== 'run'
-    && cell.runId === runId
-    && cell.sourceSequences.some(sequence => sequences.has(sequence))
-  )) ?? null;
-}
-
-function spanForCell(
-  cell: TrajectoryCell,
-  spans: readonly TrajectorySpan[],
-): TrajectorySpan | null {
-  if (cell.type === 'run' || cell.runId === null || cell.sourceSequences.length === 0) return null;
-  const sequences = new Set(cell.sourceSequences);
-  return spans.find(span => span.record_sequences.some(sequence => sequences.has(sequence))) ?? null;
 }
 
 function selectionDomain(
@@ -253,6 +232,8 @@ export function TrajectoryTabView({
   const selectedSpan = trajectory.snapshot?.spans.find(
     span => span.span_id === trajectory.selectedSpanId,
   ) ?? null;
+  const inspectRequestId = trajectory.inspectRequest?.requestId ?? null;
+  const inspectRequestActive = inspectRequestId !== null;
   const currentSelectionDomain = selectionDomain(
     trajectory.selectedRunId,
     trajectory.selectedMessageId,
@@ -260,7 +241,8 @@ export function TrajectoryTabView({
   if (selectionDomainRef.current === '') selectionDomainRef.current = currentSelectionDomain;
   const selectedCell = resolveTrajectorySelectedCell({
     cells,
-    localSelectedCellKey: localSelection?.domain === currentSelectionDomain
+    localSelectedCellKey: !inspectRequestActive
+      && localSelection?.domain === currentSelectionDomain
       ? localSelection.cellKey
       : null,
     selectedMessageId: trajectory.selectedMessageId,
@@ -280,7 +262,7 @@ export function TrajectoryTabView({
     cells,
     mode: overviewMode,
   }), [cells, focusedRunEvents, overviewMode, trajectory.runs, trajectory.selectedRunId]);
-  const inspectOverridesFilters = trajectory.inspectRequest !== null;
+  const inspectOverridesFilters = inspectRequestActive;
   const effectiveSearchQuery = inspectOverridesFilters || searchQuery === ''
     ? ''
     : deferredSearchQuery;
@@ -306,11 +288,12 @@ export function TrajectoryTabView({
   }, [currentSelectionDomain]);
 
   useLayoutEffect(() => {
-    if (!trajectory.inspectRequest) return;
+    if (!inspectRequestId) return;
     setSearchQuery('');
     setOverviewRange(null);
+    setLocalSelection(null);
     setLocalFocusTarget(null);
-  }, [trajectory.inspectRequest]);
+  }, [inspectRequestId]);
 
   useEffect(() => {
     if (!hasActiveFilters || trajectory.scrollMode === 'manual') return;
@@ -424,7 +407,12 @@ export function TrajectoryTabView({
     }
 
     const span = trajectory.snapshot.spans.find(item => item.span_id === request.spanId) ?? null;
-    const targetCell = cellForSpan(cells, span, request.runId);
+    const targetCell = span
+      ? cells.find(cell => (
+        cell.runId === request.runId
+        && resolveTrajectoryCellSpan(cell, [span]) === span
+      )) ?? null
+      : null;
     return {
       target: { requestId: request.requestId, cellKey: targetCell?.key ?? fallbackRun.key },
       runId: request.runId,
@@ -432,7 +420,7 @@ export function TrajectoryTabView({
         kind: 'snapshot',
         requestId: trajectory.snapshot.snapshotRequestId,
       },
-      fallback: targetCell === null,
+      fallback: span === null,
     };
   }, [
     cells,
@@ -448,8 +436,10 @@ export function TrajectoryTabView({
     setInspectFeedback(null);
   }, []);
 
-  const handleSelectCell = useCallback((cell: TrajectoryCell) => {
-    const span = spanForCell(cell, trajectory.snapshot?.spans ?? []);
+  const commitCellSelection = useCallback((
+    cell: TrajectoryCell,
+    span: TrajectorySpan | null,
+  ) => {
     const domain = selectionDomainForCell(cell);
     selectionDomainRef.current = domain;
     setLocalSelection({ cellKey: cell.key, domain });
@@ -461,7 +451,12 @@ export function TrajectoryTabView({
       runId: cell.runId,
       spanId: span?.span_id ?? null,
     }));
-  }, [clearInspectFeedback, conversationId, dispatch, trajectory.snapshot?.spans]);
+  }, [clearInspectFeedback, conversationId, dispatch]);
+
+  const handleSelectCell = useCallback((cell: TrajectoryCell) => {
+    const span = resolveTrajectoryCellSpan(cell, trajectory.snapshot?.spans ?? []);
+    commitCellSelection(cell, span);
+  }, [commitCellSelection, trajectory.snapshot?.spans]);
 
   const handleSelectRun = useCallback((run: TrajectoryRunSummary) => {
     const domain = selectionDomain(run.run_id, run.message_id);
@@ -492,15 +487,20 @@ export function TrajectoryTabView({
   const handleSelectOverviewSegment = useCallback((segment: OverviewSegment) => {
     const cell = cells.find(item => item.key === segment.targetCellKey);
     if (!cell) return;
-    handleSelectCell(cell);
+    const span = resolveTrajectoryOverviewSpan(segment, trajectory.snapshot?.spans ?? []);
+    commitCellSelection(cell, span);
     localFocusRequestSequenceRef.current += 1;
     setLocalFocusTarget({
       requestId: `overview-${localFocusRequestSequenceRef.current}`,
       cellKey: cell.key,
     });
-  }, [cells, handleSelectCell]);
+  }, [cells, commitCellSelection, trajectory.snapshot?.spans]);
 
-  const handleInspectResolved = useCallback((target: TrajectoryInspectTarget) => {
+  const handleInspectResolved = useCallback((
+    target: TrajectoryInspectTarget,
+    _visibleIndex: number,
+    cell: TrajectoryCell,
+  ) => {
     if (
       localFocusTarget
       && target.requestId === localFocusTarget.requestId
@@ -549,6 +549,9 @@ export function TrajectoryTabView({
       || resolved?.selectedRunId !== resolution.runId
       || resolved.selectionSource !== 'inspect'
     ) return;
+    const domain = selectionDomainForCell(cell);
+    selectionDomainRef.current = domain;
+    setLocalSelection({ cellKey: cell.key, domain });
     setInspectFeedback({
       requestId: target.requestId,
       notice: resolution.fallback ? '该节点不在当前有界快照中' : null,

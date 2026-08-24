@@ -5,6 +5,8 @@ import type { TrajectoryCell } from './TrajectoryCellProjection';
 import type { TrajectoryOverviewProjection } from './trajectoryOverviewModel';
 import {
   projectTrajectoryNetworkView,
+  resolveTrajectoryCellSpan,
+  resolveTrajectoryOverviewSpan,
   resolveTrajectorySelectedCell,
 } from './trajectoryNetworkViewModel';
 
@@ -104,6 +106,47 @@ function planCell(runId: string, userMessageId: string): TrajectoryCell {
   };
 }
 
+function subtoolCell(runId: string, userMessageId: string): TrajectoryCell {
+  return {
+    key: `run:${runId}:subtool:attempt-1`,
+    type: 'subtool',
+    runId,
+    userMessageId,
+    assistantMessageId: `${runId}-answer`,
+    completenessSources: ['durable-snapshot'],
+    sourceSequences: [5],
+    toolCallId: `tool-${runId}`,
+    toolAttemptId: 'attempt-1',
+    toolName: 'web_search',
+    attemptIndex: 0,
+    status: 'success',
+    events: [],
+  };
+}
+
+function span(
+  spanId: string,
+  kind: string,
+  recordSequences: number[],
+): TrajectorySpan {
+  return {
+    span_id: spanId,
+    kind,
+    name: spanId,
+    parent_span_id: null,
+    start_sequence: recordSequences[0] ?? 0,
+    end_sequence: recordSequences.at(-1) ?? null,
+    started_at: '2026-08-24T00:00:00.000Z',
+    ended_at: '2026-08-24T00:00:01.000Z',
+    duration_ms: 1_000,
+    status: 'completed',
+    terminal_source: 'recorded',
+    inferred_reason: null,
+    ttft_ms: null,
+    record_sequences: recordSequences,
+  };
+}
+
 function overview(): TrajectoryOverviewProjection {
   return {
     mode: 'sequence',
@@ -138,6 +181,11 @@ function overview(): TrajectoryOverviewProjection {
       endedAt: '2026-08-24T00:00:00.400Z',
       startSequence: 4,
       endSequence: 5,
+      spanIdentity: {
+        spanId: 'tool:tool-run-a',
+        kind: 'tool',
+        recordSequences: [4, 5],
+      },
     }],
   };
 }
@@ -198,6 +246,102 @@ describe('trajectoryNetworkViewModel', () => {
     expect(result.hasPendingRangeMatch).toBe(false);
   });
 
+  it('actual 时间空洞中的范围保留激活态并投影为空结果', () => {
+    const projection = overview();
+    projection.mode = 'actual';
+    const result = projectTrajectoryNetworkView({
+      cells: [
+        userCell('user-a', '第一轮'),
+        runCell('run-a', 'user-a', true),
+        toolCell('run-a', 'user-a', 4),
+      ],
+      overview: projection,
+      searchQuery: '',
+      range: { start: 0.05, end: 0.1 },
+    });
+
+    expect(result.rangeFocusedCellKeys).not.toBeNull();
+    expect([...result.rangeFocusedCellKeys ?? []]).toEqual([]);
+    expect(result.rows).toEqual([]);
+  });
+
+  it('Overview segment 按 exact span_id 优先，并仅在 kind 与记录序列唯一匹配时回退', () => {
+    const exact = span('llm:round-1', 'llm', [1, 2]);
+    const fallback = span('legacy-llm', 'llm', [3, 4, 5]);
+    const segment = {
+      ...overview().segments[0],
+      spanIdentity: {
+        spanId: 'llm:round-1',
+        kind: 'llm',
+        recordSequences: [1, 2],
+      },
+    };
+
+    expect(resolveTrajectoryOverviewSpan(segment, [fallback, exact])).toBe(exact);
+    expect(resolveTrajectoryOverviewSpan({
+      ...segment,
+      spanIdentity: {
+        spanId: 'llm:missing',
+        kind: 'llm',
+        recordSequences: [3, 5],
+      },
+    }, [fallback])).toBe(fallback);
+    expect(resolveTrajectoryOverviewSpan({
+      ...segment,
+      spanIdentity: {
+        spanId: 'llm:missing',
+        kind: 'llm',
+        recordSequences: [3, 5],
+      },
+    }, [fallback, span('legacy-llm-2', 'llm', [3, 5])])).toBeNull();
+  });
+
+  it('普通行只给 Tool/Subtool 精确 span，其余 cell 即使序列重叠也保持 span=null', () => {
+    const tool = toolCell('run-a', 'user-a', 4);
+    const subtool = subtoolCell('run-a', 'user-a');
+    const plan = planCell('run-a', 'user-a');
+    const toolSpan = span('tool:tool-run-a', 'tool', [4]);
+    const attemptSpan = span('tool_attempt:attempt-1', 'tool_attempt', [5]);
+    const parentStep = span('step:step-1', 'step', [1, 3, 4, 5]);
+    const nonSpanCells: TrajectoryCell[] = [
+      userCell('user-a', '问题'),
+      messageCell('answer-a', '回答'),
+      runCell('run-a', 'user-a', true),
+      plan,
+      {
+        key: 'run:run-a:context:ctx-1',
+        type: 'context',
+        runId: 'run-a',
+        userMessageId: 'user-a',
+        assistantMessageId: 'run-a-answer',
+        completenessSources: ['durable-snapshot'],
+        sourceSequences: [3],
+        contextId: 'ctx-1',
+        eventType: 'context_required',
+        payload: {},
+      },
+      {
+        key: 'run:run-a:compacted:3',
+        type: 'compacted',
+        runId: 'run-a',
+        userMessageId: 'user-a',
+        assistantMessageId: 'run-a-answer',
+        completenessSources: ['durable-snapshot'],
+        sourceSequences: [3],
+        roundIndex: 1,
+        removedTurns: 1,
+        removedMessages: 1,
+        removedToolTransactions: 0,
+      },
+    ];
+
+    expect(resolveTrajectoryCellSpan(tool, [parentStep, toolSpan])).toBe(toolSpan);
+    expect(resolveTrajectoryCellSpan(subtool, [parentStep, attemptSpan])).toBe(attemptSpan);
+    for (const cell of nonSpanCells) {
+      expect(resolveTrajectoryCellSpan(cell, [parentStep]), cell.type).toBeNull();
+    }
+  });
+
   it('局部无 span cell 仅在当前 Redux 选择域内生效，失效后按 span、Run、message 回退', () => {
     const cells = [
       userCell('user-a', '第一轮'),
@@ -208,7 +352,7 @@ describe('trajectoryNetworkViewModel', () => {
       runCell('run-b', 'user-b', true),
       messageCell('assistant-b', '完成'),
     ];
-    const span: TrajectorySpan = {
+    const selectedToolSpan: TrajectorySpan = {
       span_id: 'tool:tool-run-a',
       kind: 'tool',
       name: 'tool-run-a',
@@ -246,7 +390,7 @@ describe('trajectoryNetworkViewModel', () => {
       localSelectedCellKey: null,
       selectedMessageId: 'run-a-answer',
       selectedRunId: 'run-a',
-      selectedSpan: span,
+      selectedSpan: selectedToolSpan,
     })?.key).toBe('run:run-a:tool:tool-run-a');
 
     expect(resolveTrajectorySelectedCell({
@@ -256,5 +400,13 @@ describe('trajectoryNetworkViewModel', () => {
       selectedRunId: null,
       selectedSpan: null,
     })?.key).toBe('message:assistant:assistant-b');
+
+    expect(resolveTrajectorySelectedCell({
+      cells,
+      localSelectedCellKey: null,
+      selectedMessageId: 'run-a-answer',
+      selectedRunId: 'run-a',
+      selectedSpan: span('step:step-1', 'step', [3]),
+    })?.key).toBe('run:run-a');
   });
 });

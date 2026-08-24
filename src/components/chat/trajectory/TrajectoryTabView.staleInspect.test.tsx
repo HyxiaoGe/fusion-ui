@@ -108,7 +108,7 @@ function snapshot(run: TrajectoryRunSummary, withToolSpan = true): TrajectorySna
       tool_call_id: 'tool-1',
       parent_step_id: null,
       trace_id: run.run_id,
-      span_id: 'span-tool',
+      span_id: 'tool:tool-1',
       payload: { tool_name: 'web_search' },
     },
     {
@@ -120,7 +120,7 @@ function snapshot(run: TrajectoryRunSummary, withToolSpan = true): TrajectorySna
       tool_call_id: 'tool-1',
       parent_step_id: null,
       trace_id: run.run_id,
-      span_id: 'span-tool',
+      span_id: 'tool:tool-1',
       payload: { tool_name: 'web_search', status: 'success', duration_ms: 100 },
     },
   ] : [];
@@ -139,7 +139,7 @@ function snapshot(run: TrajectoryRunSummary, withToolSpan = true): TrajectorySna
       payload: { conversation_id: 'chat-a', message_id: 'assistant-1' },
     }, ...toolRecords],
     spans: withToolSpan ? [{
-      span_id: 'span-tool',
+      span_id: 'tool:tool-1',
       kind: 'tool',
       name: '联网搜索',
       parent_span_id: null,
@@ -288,7 +288,7 @@ describe('TrajectoryTabView stale inspect callback', () => {
       requestId: 'inspect-a-success',
       messageId: 'assistant-1',
       runId: 'run-a',
-      spanId: 'span-tool',
+      spanId: 'tool:tool-1',
     }));
 
     render(
@@ -304,7 +304,7 @@ describe('TrajectoryTabView stale inspect callback', () => {
         requestId: 'inspect-b-pending',
         messageId: 'assistant-1',
         runId: 'run-b',
-        spanId: 'span-tool',
+        spanId: 'tool:tool-1',
       }));
     });
     await waitFor(() => expect(capturedTableCallbacks.has('inspect-b-pending')).toBe(true));
@@ -339,7 +339,7 @@ describe('TrajectoryTabView stale inspect callback', () => {
       requestId: 'inspect-same-run',
       messageId: 'assistant-1',
       runId: 'run-a',
-      spanId: 'span-tool',
+      spanId: 'tool:tool-1',
     }));
 
     render(
@@ -376,7 +376,7 @@ describe('TrajectoryTabView stale inspect callback', () => {
 
     expect(store.getState().trajectory.byConversationId['chat-a']).toMatchObject({
       selectedRunId: 'run-a',
-      selectedSpanId: 'span-tool',
+      selectedSpanId: 'tool:tool-1',
       selectionSource: 'inspect',
       inspectRequest: expect.objectContaining({ requestId: 'inspect-same-run' }),
     });

@@ -235,6 +235,19 @@ describe('trajectoryTableModel', () => {
     })).toEqual([]);
   });
 
+  it('已激活但零命中的范围返回空表，不把空 Set 降级为无范围', () => {
+    const cells = [
+      userCell('user-1', '查询北京天气'),
+      runCell('run-1', 'user-1', 0),
+      toolCell('tool-1'),
+    ];
+
+    expect(projectTrajectoryTableRows({
+      cells,
+      focusedCellKeys: new Set(),
+    })).toEqual([]);
+  });
+
   it('未水合 Run 在范围与搜索相交时保留 user 与 Run 占位，并把细粒度匹配标为待确认', () => {
     const cells = [
       userCell('user-1', '查询天气'),

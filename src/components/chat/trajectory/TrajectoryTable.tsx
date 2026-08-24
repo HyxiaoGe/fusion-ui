@@ -345,7 +345,7 @@ export function TrajectoryTable({
     reportViewport(nextScrollTop, true);
   };
 
-  const isFiltered = Boolean(searchQuery.trim()) || Boolean(focusedCellKeys?.size);
+  const isFiltered = Boolean(searchQuery.trim()) || focusedCellKeys !== null;
 
   return (
     <div className={cn(

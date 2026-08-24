@@ -596,6 +596,20 @@ describe('TrajectoryTable', () => {
     expect(screen.getByText('没有匹配记录')).toBeInTheDocument();
   });
 
+  it('已激活但零命中的范围显示没有匹配记录，不回退渲染全表', () => {
+    render(
+      <TrajectoryTable
+        cells={[userCell('user-1', '查询天气')]}
+        selectedCellKey={null}
+        focusedCellKeys={new Set()}
+        viewportHeight={112}
+      />,
+    );
+
+    expect(screen.queryByRole('option')).toBeNull();
+    expect(screen.getByText('没有匹配记录')).toBeInTheDocument();
+  });
+
   it('首帧高度为零时等待 ResizeObserver 的正高度再恢复，且不误报用户滚动', () => {
     let resizeCallback: ResizeObserverCallback | null = null;
     const clientHeight = vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get')

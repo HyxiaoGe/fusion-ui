@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import trajectoryReducer, {
   mergeLiveTrajectoryEvent,
   requestTrajectoryInspect,
+  resolveTrajectoryInspectRequest,
   setTrajectoryActiveSurface,
 } from '@/redux/slices/trajectorySlice';
 import { ApiError } from '@/types/api';
@@ -82,7 +83,7 @@ function snapshot(overrides: Partial<TrajectorySnapshot> = {}): TrajectorySnapsh
         tool_call_id: 'tool-1',
         parent_step_id: null,
         trace_id: run.run_id,
-        span_id: 'span-tool',
+        span_id: 'tool:tool-1',
         payload: { tool_name: 'web_search' },
       },
       {
@@ -94,12 +95,12 @@ function snapshot(overrides: Partial<TrajectorySnapshot> = {}): TrajectorySnapsh
         tool_call_id: 'tool-1',
         parent_step_id: null,
         trace_id: run.run_id,
-        span_id: 'span-tool',
+        span_id: 'tool:tool-1',
         payload: { tool_name: 'web_search', status: 'success', duration_ms: 100 },
       },
     ],
     spans: [{
-      span_id: 'span-tool',
+      span_id: 'tool:tool-1',
       kind: 'tool',
       name: '联网搜索',
       parent_span_id: null,
@@ -146,7 +147,7 @@ function snapshotWithTools(count: number): TrajectorySnapshot {
       tool_call_id: `tool-${index}`,
       parent_step_id: null,
       trace_id: run.run_id,
-      span_id: `span-tool-${index}`,
+      span_id: `tool:tool-${index}`,
       payload: { tool_name: `tool_${index}` },
     }, {
       sequence: endSequence,
@@ -157,11 +158,11 @@ function snapshotWithTools(count: number): TrajectorySnapshot {
       tool_call_id: `tool-${index}`,
       parent_step_id: null,
       trace_id: run.run_id,
-      span_id: `span-tool-${index}`,
+      span_id: `tool:tool-${index}`,
       payload: { tool_name: `tool_${index}`, status: 'success', duration_ms: 1 },
     });
     spans.push({
-      span_id: `span-tool-${index}`,
+      span_id: `tool:tool-${index}`,
       kind: 'tool',
       name: `tool_${index}`,
       parent_span_id: null,
@@ -189,6 +190,157 @@ function snapshotWithTools(count: number): TrajectorySnapshot {
       loaded_event_count: records.length,
       first_sequence: 0,
       last_sequence: records.at(-1)?.sequence ?? 0,
+    },
+  });
+}
+
+function snapshotWithModelSpan(): TrajectorySnapshot {
+  const run = runSummary({ total_steps: 1, total_tool_calls: 0 });
+  const records: TrajectorySnapshot['records'] = [
+    {
+      ...snapshot().records[0],
+      span_id: `run:${run.run_id}`,
+    },
+    {
+      sequence: 1,
+      event_type: 'llm_round_started',
+      schema_version: 1,
+      timestamp: '2026-08-22T00:00:00.050Z',
+      step_id: 'step-1',
+      tool_call_id: null,
+      parent_step_id: null,
+      trace_id: run.run_id,
+      span_id: 'llm:round-1',
+      payload: { llm_round_id: 'round-1', model: 'deepseek-chat' },
+    },
+    {
+      sequence: 2,
+      event_type: 'llm_round_completed',
+      schema_version: 1,
+      timestamp: '2026-08-22T00:00:00.150Z',
+      step_id: 'step-1',
+      tool_call_id: null,
+      parent_step_id: null,
+      trace_id: run.run_id,
+      span_id: 'llm:round-1',
+      payload: {
+        llm_round_id: 'round-1',
+        model: 'deepseek-chat',
+        status: 'completed',
+        duration_ms: 100,
+        ttft_ms: 40,
+      },
+    },
+  ];
+  return snapshot({
+    run,
+    records,
+    spans: [{
+      span_id: 'llm:round-1',
+      kind: 'llm',
+      name: 'deepseek-chat',
+      parent_span_id: 'step:step-1',
+      start_sequence: 1,
+      end_sequence: 2,
+      started_at: '2026-08-22T00:00:00.050Z',
+      ended_at: '2026-08-22T00:00:00.150Z',
+      duration_ms: 100,
+      status: 'completed',
+      terminal_source: 'recorded',
+      inferred_reason: null,
+      ttft_ms: 40,
+      record_sequences: [1, 2],
+    }],
+    completeness: {
+      status: 'complete',
+      degraded_reason: null,
+      event_count: records.length,
+      expected_last_sequence: 2,
+      loaded_event_count: records.length,
+      first_sequence: 0,
+      last_sequence: 2,
+    },
+  });
+}
+
+function snapshotWithPlanInsideStep(): TrajectorySnapshot {
+  const run = runSummary({ total_steps: 1, total_tool_calls: 0 });
+  const records: TrajectorySnapshot['records'] = [
+    {
+      ...snapshot().records[0],
+      span_id: `run:${run.run_id}`,
+    },
+    {
+      sequence: 1,
+      event_type: 'step_started',
+      schema_version: 1,
+      timestamp: '2026-08-22T00:00:00.020Z',
+      step_id: 'step-1',
+      tool_call_id: null,
+      parent_step_id: null,
+      trace_id: run.run_id,
+      span_id: 'step:step-1',
+      payload: { step_number: 1 },
+    },
+    {
+      sequence: 2,
+      event_type: 'plan_snapshot',
+      schema_version: 1,
+      timestamp: '2026-08-22T00:00:00.040Z',
+      step_id: 'step-1',
+      tool_call_id: null,
+      parent_step_id: null,
+      trace_id: run.run_id,
+      span_id: 'step:step-1',
+      payload: {
+        protocol_version: 1,
+        plan_id: 'plan-1',
+        mode: 'replace',
+        source: 'agent',
+        revision: 1,
+        items: [],
+      },
+    },
+    {
+      sequence: 3,
+      event_type: 'step_completed',
+      schema_version: 1,
+      timestamp: '2026-08-22T00:00:00.120Z',
+      step_id: 'step-1',
+      tool_call_id: null,
+      parent_step_id: null,
+      trace_id: run.run_id,
+      span_id: 'step:step-1',
+      payload: { step_number: 1, status: 'completed', duration_ms: 100 },
+    },
+  ];
+  return snapshot({
+    run,
+    records,
+    spans: [{
+      span_id: 'step:step-1',
+      kind: 'step',
+      name: '1',
+      parent_span_id: `run:${run.run_id}`,
+      start_sequence: 1,
+      end_sequence: 3,
+      started_at: '2026-08-22T00:00:00.020Z',
+      ended_at: '2026-08-22T00:00:00.120Z',
+      duration_ms: 100,
+      status: 'completed',
+      terminal_source: 'recorded',
+      inferred_reason: null,
+      ttft_ms: null,
+      record_sequences: [1, 2, 3],
+    }],
+    completeness: {
+      status: 'complete',
+      degraded_reason: null,
+      event_count: records.length,
+      expected_last_sequence: 3,
+      loaded_event_count: records.length,
+      first_sequence: 0,
+      last_sequence: 3,
     },
   });
 }
@@ -392,8 +544,8 @@ describe('TrajectoryTabView', () => {
     fireEvent.click(tool);
     expect(screen.getByTestId('trajectory-overview-active')).toHaveTextContent('Tools');
     const detail = screen.getByLabelText('轨迹节点详情');
-    expect(within(detail).getByRole('heading', { name: '工具' })).toBeInTheDocument();
-    expect(within(detail).getByText('span-tool')).toBeInTheDocument();
+    expect(within(detail).getByRole('heading', { name: /工具.*搜索/ })).toBeInTheDocument();
+    expect(within(detail).getByText('tool:tool-1')).toBeInTheDocument();
 
     const canvas = screen.getByRole('application', { name: /轨迹记录总览/ });
     fireEvent.keyDown(canvas, { key: 'Home' });
@@ -401,6 +553,120 @@ describe('TrajectoryTabView', () => {
     fireEvent.keyDown(canvas, { key: 'Enter' });
     await waitFor(() => expect(tool).toHaveFocus());
     expect(tool).toHaveAttribute('aria-selected', 'true');
+  });
+
+  it('actual 时间空洞中的激活范围显示没有匹配记录，不回退全表', async () => {
+    const store = createStore();
+    store.dispatch(setTrajectoryActiveSurface({ conversationId: 'chat-a', surface: 'trajectory' }));
+    getTrajectoryRunsMock.mockResolvedValue({ items: [runSummary()], truncated: false });
+    getTrajectorySnapshotMock.mockResolvedValue(snapshot());
+
+    render(
+      <TrajectoryTabView conversationId="chat-a" messages={messages} />,
+      { wrapper: wrapper(store) },
+    );
+
+    await screen.findByRole('option', { name: /搜索.*工具调用.*完成/ });
+    fireEvent.click(screen.getByRole('button', { name: '实际耗时' }));
+    fireEvent.click(screen.getByRole('button', { name: '创建范围' }));
+    fireEvent.change(screen.getByRole('slider', { name: '范围起点' }), {
+      target: { value: '50' },
+    });
+    fireEvent.change(screen.getByRole('slider', { name: '范围终点' }), {
+      target: { value: '80' },
+    });
+
+    await waitFor(() => expect(screen.queryByRole('option')).toBeNull());
+    expect(screen.getByText('没有匹配记录')).toBeInTheDocument();
+  });
+
+  it('Overview Model segment 定位 Run 行时仍用对应 P1 span 驱动 Detail Summary 与 Timing', async () => {
+    const store = createStore();
+    store.dispatch(setTrajectoryActiveSurface({ conversationId: 'chat-a', surface: 'trajectory' }));
+    const modelSnapshot = snapshotWithModelSpan();
+    getTrajectoryRunsMock.mockResolvedValue({ items: [modelSnapshot.run], truncated: false });
+    getTrajectorySnapshotMock.mockResolvedValue(modelSnapshot);
+
+    render(
+      <TrajectoryTabView conversationId="chat-a" messages={messages} />,
+      { wrapper: wrapper(store) },
+    );
+
+    const runRow = await screen.findByRole('option', { name: /第 1 次执行/ });
+    const canvas = screen.getByRole('application', { name: /轨迹记录总览/ });
+    fireEvent.keyDown(canvas, { key: 'End' });
+    fireEvent.keyDown(canvas, { key: 'Enter' });
+
+    await waitFor(() => expect(runRow).toHaveFocus());
+    expect(runRow).toHaveAttribute('aria-selected', 'true');
+    const detail = screen.getByLabelText('轨迹节点详情');
+    expect(within(detail).getByRole('heading', { name: '模型调用' })).toBeInTheDocument();
+    expect(within(detail).getByText('模型阶段')).toBeInTheDocument();
+    expect(within(detail).getByText('llm:round-1')).toBeInTheDocument();
+    fireEvent.click(within(detail).getByRole('tab', { name: '计时' }));
+    expect(within(detail).getByText('40 毫秒')).toBeInTheDocument();
+  });
+
+  it('同 Run 已选 A 时 one-shot inspect B 清除本地优先级并只消费一次', async () => {
+    const store = createStore();
+    const dispatchSpy = vi.spyOn(store, 'dispatch');
+    store.dispatch(setTrajectoryActiveSurface({ conversationId: 'chat-a', surface: 'trajectory' }));
+    const toolsSnapshot = snapshotWithTools(2);
+    getTrajectoryRunsMock.mockResolvedValue({ items: [toolsSnapshot.run], truncated: false });
+    getTrajectorySnapshotMock.mockResolvedValue(toolsSnapshot);
+
+    render(
+      <TrajectoryTabView conversationId="chat-a" messages={messages} />,
+      { wrapper: wrapper(store) },
+    );
+
+    const toolA = await screen.findByRole('option', { name: /tool_0.*工具调用.*完成/ });
+    const toolB = screen.getByRole('option', { name: /tool_1.*工具调用.*完成/ });
+    fireEvent.click(toolA);
+    expect(toolA).toHaveAttribute('aria-selected', 'true');
+
+    act(() => {
+      store.dispatch(requestTrajectoryInspect({
+        conversationId: 'chat-a',
+        requestId: 'inspect-tool-b',
+        messageId: 'assistant-1',
+        runId: 'run-1',
+        spanId: 'tool:tool-1',
+      }));
+    });
+
+    await waitFor(() => expect(toolB).toHaveFocus());
+    await waitFor(() => expect(store.getState().trajectory.byConversationId['chat-a'].inspectRequest)
+      .toBeNull());
+    expect(toolB).toHaveAttribute('aria-selected', 'true');
+    expect(toolA).toHaveAttribute('aria-selected', 'false');
+    expect(within(screen.getByLabelText('轨迹节点详情')).getByText('tool:tool-1'))
+      .toBeInTheDocument();
+    expect(dispatchSpy.mock.calls.filter(([action]) => (
+      action.type === resolveTrajectoryInspectRequest.type
+    ))).toHaveLength(1);
+  });
+
+  it('Plan 行即使记录被 Step span 覆盖也保持本地 Plan 详情与 span=null', async () => {
+    const store = createStore();
+    store.dispatch(setTrajectoryActiveSurface({ conversationId: 'chat-a', surface: 'trajectory' }));
+    const planSnapshot = snapshotWithPlanInsideStep();
+    getTrajectoryRunsMock.mockResolvedValue({ items: [planSnapshot.run], truncated: false });
+    getTrajectorySnapshotMock.mockResolvedValue(planSnapshot);
+
+    render(
+      <TrajectoryTabView conversationId="chat-a" messages={messages} />,
+      { wrapper: wrapper(store) },
+    );
+
+    const plan = await screen.findByRole('option', { name: /计划.*计划/ });
+    fireEvent.click(plan);
+
+    expect(plan).toHaveAttribute('aria-selected', 'true');
+    const detail = screen.getByLabelText('轨迹节点详情');
+    expect(within(detail).getByRole('heading', { name: '计划' })).toBeInTheDocument();
+    expect(within(detail).queryByRole('heading', { name: '执行步骤' })).toBeNull();
+    expect(store.getState().trajectory.byConversationId['chat-a'].selectedSpanId).toBeNull();
   });
 
   it('one-shot inspect 会先清除遮蔽目标的搜索，再定位并只消费一次', async () => {
@@ -424,7 +690,7 @@ describe('TrajectoryTabView', () => {
         requestId: 'inspect-filtered-tool',
         messageId: 'assistant-1',
         runId: 'run-1',
-        spanId: 'span-tool',
+        spanId: 'tool:tool-1',
       }));
     });
 
@@ -457,7 +723,7 @@ describe('TrajectoryTabView', () => {
     await waitFor(() => expect(screen.getByRole('button', { name: '继续跟随' })).toBeInTheDocument());
     const firstTool = await screen.findByRole('option', { name: /tool_0.*工具调用.*完成/ });
     fireEvent.click(firstTool);
-    expect(within(screen.getByLabelText('轨迹节点详情')).getByText('span-tool-0'))
+    expect(within(screen.getByLabelText('轨迹节点详情')).getByText('tool:tool-0'))
       .toBeInTheDocument();
 
     table.scrollTop = 10_000;
@@ -483,7 +749,7 @@ describe('TrajectoryTabView', () => {
     });
 
     await waitFor(() => expect(table.scrollTop).toBeGreaterThan(700));
-    expect(within(screen.getByLabelText('轨迹节点详情')).getByText('span-tool-0'))
+    expect(within(screen.getByLabelText('轨迹节点详情')).getByText('tool:tool-0'))
       .toBeInTheDocument();
 
     const search = screen.getByRole('searchbox', { name: '搜索轨迹记录' });
@@ -515,7 +781,7 @@ describe('TrajectoryTabView', () => {
     const selectedTool = (await screen.findAllByRole('option', { name: /tool_\d+.*工具调用.*完成/ }))[0];
     fireEvent.click(selectedTool);
     const selectedSpanId = within(screen.getByLabelText('轨迹节点详情'))
-      .getByText(/^span-tool-\d+$/).textContent;
+      .getByText(/^tool:tool-\d+$/).textContent;
     if (!selectedSpanId) throw new Error('测试必须选择带 span 的工具记录');
     table.scrollTop = 56;
     fireEvent.scroll(table);
@@ -574,7 +840,7 @@ describe('TrajectoryTabView', () => {
       requestId: 'inspect-tool',
       messageId: 'assistant-1',
       runId: 'run-1',
-      spanId: 'span-tool',
+      spanId: 'tool:tool-1',
     }));
 
     render(
@@ -654,7 +920,7 @@ describe('TrajectoryTabView', () => {
       requestId: 'inspect-a-pending',
       messageId: 'assistant-1',
       runId: 'run-a',
-      spanId: 'span-tool',
+      spanId: 'tool:tool-1',
     }));
     render(
       <TrajectoryTabView conversationId="chat-a" messages={messages} />,
@@ -741,7 +1007,7 @@ describe('TrajectoryTabView', () => {
         requestId: 'inspect-b-success',
         messageId: 'assistant-1',
         runId: 'run-b',
-        spanId: 'span-tool',
+        spanId: 'tool:tool-1',
       }));
     });
 

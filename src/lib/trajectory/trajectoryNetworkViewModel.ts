@@ -1,7 +1,10 @@
 import type { TrajectorySpan } from '@/types/trajectory';
 
 import type { TrajectoryCell } from './TrajectoryCellProjection';
-import type { TrajectoryOverviewProjection } from './trajectoryOverviewModel';
+import type {
+  OverviewSegment,
+  TrajectoryOverviewProjection,
+} from './trajectoryOverviewModel';
 import {
   projectTrajectoryTableRows,
   type TrajectoryTableRow,
@@ -95,6 +98,39 @@ export interface ResolveTrajectorySelectedCellInput {
   selectedSpan: TrajectorySpan | null;
 }
 
+/** 普通 Table 行只能凭 Tool/Subtool 的正式 P1 identity 绑定 span。 */
+export function resolveTrajectoryCellSpan(
+  cell: TrajectoryCell,
+  spans: readonly TrajectorySpan[],
+): TrajectorySpan | null {
+  const identity = cell.type === 'tool'
+    ? { spanId: `tool:${cell.toolCallId}`, kind: 'tool' }
+    : cell.type === 'subtool'
+      ? { spanId: `tool_attempt:${cell.toolAttemptId}`, kind: 'tool_attempt' }
+      : null;
+  if (!identity) return null;
+  return spans.find(span => (
+    span.span_id === identity.spanId && span.kind === identity.kind
+  )) ?? null;
+}
+
+/** Overview 可在 Table 仅定位 Run 时，仍用显式 segment identity 选择 Detail span。 */
+export function resolveTrajectoryOverviewSpan(
+  segment: OverviewSegment,
+  spans: readonly TrajectorySpan[],
+): TrajectorySpan | null {
+  const identity = segment.spanIdentity;
+  if (!identity) return null;
+  const exact = spans.find(span => span.span_id === identity.spanId);
+  if (exact) return exact;
+  if (identity.recordSequences.length === 0) return null;
+  const candidates = spans.filter(span => (
+    span.kind === identity.kind
+    && identity.recordSequences.every(sequence => span.record_sequences.includes(sequence))
+  ));
+  return candidates.length === 1 ? candidates[0] : null;
+}
+
 /** 局部 cell 选择失效时，按 Redux span → Run → message 确定性回退。 */
 export function resolveTrajectorySelectedCell({
   cells,
@@ -141,10 +177,7 @@ function cellForSpan(
   runId: string | null,
 ): TrajectoryCell | null {
   if (!span || !runId) return null;
-  const sequences = new Set(span.record_sequences);
   return cells.find(cell => (
-    cell.type !== 'run'
-    && cell.runId === runId
-    && cell.sourceSequences.some(sequence => sequences.has(sequence))
+    cell.runId === runId && resolveTrajectoryCellSpan(cell, [span]) === span
   )) ?? null;
 }

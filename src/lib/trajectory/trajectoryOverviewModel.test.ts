@@ -295,10 +295,23 @@ describe('trajectoryOverviewModel', () => {
       segment.startSequence,
       segment.endSequence,
       segment.targetCellKey,
+      segment.spanIdentity,
     ])).toEqual([
-      ['input', 0, 0, `run:${runId}`],
-      ['model', 1, 4, `run:${runId}`],
-      ['tools', 2, 3, `run:${runId}:tool:tool-1`],
+      ['input', 0, 0, `run:${runId}`, {
+        spanId: `run:${runId}`,
+        kind: 'run',
+        recordSequences: [0],
+      }],
+      ['model', 1, 4, `run:${runId}`, {
+        spanId: 'llm:round-1',
+        kind: 'llm',
+        recordSequences: [1, 4],
+      }],
+      ['tools', 2, 3, `run:${runId}:tool:tool-1`, {
+        spanId: 'tool:tool-1',
+        kind: 'tool',
+        recordSequences: [2, 3],
+      }],
     ]);
   });
 
@@ -325,9 +338,21 @@ describe('trajectoryOverviewModel', () => {
       mode: 'sequence',
     });
 
-    expect(result.segments.map(segment => [segment.label, segment.targetCellKey])).toEqual([
-      ['联网搜索', `run:${runId}:subtool:attempt-1`],
-      ['查资料', `run:${runId}`],
+    expect(result.segments.map(segment => [
+      segment.label,
+      segment.targetCellKey,
+      segment.spanIdentity,
+    ])).toEqual([
+      ['联网搜索', `run:${runId}:subtool:attempt-1`, {
+        spanId: 'tool_attempt:attempt-1',
+        kind: 'tool_attempt',
+        recordSequences: [0, 1],
+      }],
+      ['查资料', `run:${runId}`, {
+        spanId: 'retrieval:retrieval-1',
+        kind: 'retrieval',
+        recordSequences: [2, 3],
+      }],
     ]);
   });
 
