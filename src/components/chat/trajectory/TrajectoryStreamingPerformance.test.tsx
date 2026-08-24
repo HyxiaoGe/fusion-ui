@@ -76,6 +76,9 @@ const STREAM_TIME_BUDGET_MS = EXISTING_STREAM_BASELINE.elapsedMs
   * (STREAM_EVENT_COUNT / EXISTING_STREAM_BASELINE.eventCount)
   * 2;
 const PROJECTION_TIME_BUDGET_MS = 750;
+const HEAVY_TRAJECTORY_TEST_TIMEOUT_MS = STREAM_TIME_BUDGET_MS
+  + PROJECTION_TIME_BUDGET_MS
+  + 1_250;
 
 function runSummary(): TrajectoryRunSummary {
   return {
@@ -325,7 +328,7 @@ describe('Trajectory force-mount 流式性能', () => {
     expect(document.querySelectorAll('[role="option"]').length).toBeLessThanOrEqual(200);
     expect(elapsedMs, `Trajectory surface 5000 条真实 dispatch + 投影耗时 ${elapsedMs.toFixed(2)}ms`)
       .toBeLessThan(STREAM_TIME_BUDGET_MS + PROJECTION_TIME_BUDGET_MS);
-  });
+  }, HEAVY_TRAJECTORY_TEST_TIMEOUT_MS);
 
   it('已打开的 Trajectory 隐藏后保留同一 Table rows 与 Detail，5000 events 不投影且返回只投影一次', async () => {
     const store = createTestStore(20, 'trajectory');
@@ -376,7 +379,7 @@ describe('Trajectory force-mount 流式性能', () => {
     expect(document.querySelector('[role="listbox"]')).toBe(ledger);
     expect(document.querySelectorAll('[role="option"]').length).toBeLessThanOrEqual(200);
     expect(document.querySelector('[aria-label="轨迹节点详情"]')).not.toBeNull();
-  });
+  }, HEAVY_TRAJECTORY_TEST_TIMEOUT_MS);
 
   it('隐藏缓存只属于当前 auth identity，账号切换后不保留旧 ledger rows', async () => {
     const store = createTestStore(20, 'trajectory');
