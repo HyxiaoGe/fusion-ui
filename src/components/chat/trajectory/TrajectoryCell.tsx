@@ -18,10 +18,21 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import type { TrajectoryCell as TrajectoryCellModel } from '@/lib/trajectory/TrajectoryCellProjection';
+import {
+  formatTrajectoryDuration,
+  getTrajectoryCellPresentation,
+  type TrajectoryCellPresentation,
+} from '@/lib/trajectory/trajectoryCellPresentation';
 import { TRAJECTORY_ROW_HEIGHT } from '@/lib/trajectory/virtualRange';
 import { getToolMeta } from '@/lib/agent/toolRegistry';
 import { cn } from '@/lib/utils';
-import { extractTextFromBlocks } from '@/types/conversation';
+
+export {
+  formatTrajectoryDuration,
+  formatTrajectoryStatus,
+  getTrajectoryCellPresentation,
+  type TrajectoryCellPresentation,
+} from '@/lib/trajectory/trajectoryCellPresentation';
 
 export interface TrajectoryCellProps {
   cell: TrajectoryCellModel;
@@ -32,210 +43,16 @@ export interface TrajectoryCellProps {
   active: boolean;
   position: number;
   setSize: number;
+  sourceNumber?: number;
+  kindLabel?: string;
+  summary?: string;
+  statusLabel?: string | null;
+  durationMs?: number | null;
+  attemptCount?: number;
+  searchQuery?: string;
+  matched?: boolean;
   onSelect: () => void;
   onKeyDown: React.KeyboardEventHandler<HTMLButtonElement>;
-}
-
-export interface TrajectoryCellPresentation {
-  kindLabel: string;
-  summary: string;
-  statusLabel: string | null;
-  durationMs: number | null;
-  icon: LucideIcon;
-  tone: 'neutral' | 'info' | 'success' | 'warn' | 'danger';
-  trajectoryStatusLabel?: string | null;
-  trajectoryTone?: 'neutral' | 'info' | 'success' | 'warn' | 'danger';
-  isSkeleton?: boolean;
-}
-
-const STATUS_LABELS: Record<string, string> = {
-  running: '运行中',
-  recording: '记录中',
-  completed: '已完成',
-  complete: '已完成',
-  success: '完成',
-  failed: '失败',
-  degraded: '部分可用',
-  interrupted: '已中断',
-  cancelled: '已取消',
-  limit_reached: '已达上限',
-  incomplete: '部分完成',
-  legacy: '历史未记录',
-  unknown: '状态未知',
-};
-
-const MAX_CELL_SUMMARY_LENGTH = 160;
-
-export function formatTrajectoryStatus(status: string): string {
-  return STATUS_LABELS[status] ?? '状态未知';
-}
-
-export function formatTrajectoryDuration(durationMs: number | null): string | null {
-  if (durationMs === null || !Number.isFinite(durationMs) || durationMs < 0) return null;
-  if (durationMs < 1000) return `${Math.round(durationMs)} 毫秒`;
-  const seconds = (durationMs / 1000).toFixed(2).replace(/\.00$/, '').replace(/0$/, '');
-  return `${seconds} 秒`;
-}
-
-function finiteNumber(value: unknown): number | null {
-  return typeof value === 'number' && Number.isFinite(value) ? value : null;
-}
-
-function stringValue(value: unknown): string | null {
-  return typeof value === 'string' && value.trim() ? value.trim() : null;
-}
-
-function boundedSummary(value: string): string {
-  const normalized = value.trim().replace(/\s+/g, ' ');
-  if (!normalized) return '';
-  return normalized.length > MAX_CELL_SUMMARY_LENGTH
-    ? `${normalized.slice(0, MAX_CELL_SUMMARY_LENGTH - 1)}…`
-    : normalized;
-}
-
-function latestDuration(cell: Extract<TrajectoryCellModel, { type: 'tool' | 'subtool' }>): number | null {
-  for (let index = cell.events.length - 1; index >= 0; index -= 1) {
-    const duration = finiteNumber(cell.events[index].payload.duration_ms);
-    if (duration !== null) return duration;
-  }
-  return null;
-}
-
-function runDuration(cell: Extract<TrajectoryCellModel, { type: 'run' }>): number | null {
-  if (!cell.startedAt || !cell.endedAt) return null;
-  const duration = Date.parse(cell.endedAt) - Date.parse(cell.startedAt);
-  return Number.isFinite(duration) && duration >= 0 ? duration : null;
-}
-
-function trajectoryBadgeLabel(
-  status: Extract<TrajectoryCellModel, { type: 'run' }>['trajectoryBadge']['status'],
-): string {
-  switch (status) {
-    case 'recording': return '轨迹记录中';
-    case 'complete': return '轨迹完整';
-    case 'degraded': return '轨迹降级';
-    case 'truncated': return '轨迹已截断';
-    case 'legacy': return '历史未记录轨迹';
-    case 'summary-only': return '仅运行摘要';
-    case 'unknown': return '轨迹状态未知';
-  }
-}
-
-function trajectoryBadgeTone(
-  status: Extract<TrajectoryCellModel, { type: 'run' }>['trajectoryBadge']['status'],
-): TrajectoryCellPresentation['tone'] {
-  if (status === 'complete') return 'success';
-  if (status === 'recording') return 'info';
-  if (status === 'degraded' || status === 'truncated') return 'warn';
-  return 'neutral';
-}
-
-function contextSummary(cell: Extract<TrajectoryCellModel, { type: 'context' }>): string {
-  if (cell.eventType === 'context_required') {
-    return boundedSummary(stringValue(cell.payload.purpose) ?? '等待补充信息');
-  }
-  if (cell.eventType === 'context_result') {
-    return formatTrajectoryStatus(stringValue(cell.payload.status) ?? 'complete');
-  }
-  return boundedSummary(stringValue(cell.payload.phase)
-    ?? stringValue(cell.payload.status)
-    ?? '上下文已更新');
-}
-
-export function getTrajectoryCellPresentation(cell: TrajectoryCellModel): TrajectoryCellPresentation {
-  switch (cell.type) {
-    case 'user':
-      return {
-        kindLabel: '用户提问',
-        summary: boundedSummary(extractTextFromBlocks(cell.message.content)) || '无文字内容',
-        statusLabel: null,
-        durationMs: null,
-        icon: UserRound,
-        tone: 'neutral',
-      };
-    case 'message':
-      return {
-        kindLabel: '回答',
-        summary: boundedSummary(extractTextFromBlocks(cell.message.content)) || '回答内容待生成',
-        statusLabel: cell.message.status === 'failed' ? '失败' : null,
-        durationMs: null,
-        icon: MessageSquare,
-        tone: cell.message.status === 'failed' ? 'danger' : 'neutral',
-      };
-    case 'run':
-      return {
-        kindLabel: cell.attemptIndex === null ? '执行' : `第 ${cell.attemptIndex + 1} 次执行`,
-        summary: cell.isHydrated
-          ? `${cell.totalSteps} 步 · ${cell.totalToolCalls} 次工具`
-          : '轨迹详情待加载',
-        statusLabel: formatTrajectoryStatus(cell.runStatus),
-        durationMs: runDuration(cell),
-        icon: Bot,
-        tone: statusTone(cell.runStatus),
-        trajectoryStatusLabel: trajectoryBadgeLabel(cell.trajectoryBadge.status),
-        trajectoryTone: trajectoryBadgeTone(cell.trajectoryBadge.status),
-        isSkeleton: !cell.isHydrated,
-      };
-    case 'plan': {
-      const items = Array.isArray(cell.payload.items) ? cell.payload.items.length : 0;
-      return {
-        kindLabel: '计划',
-        summary: items > 0 ? `${items} 个步骤` : '计划已更新',
-        statusLabel: cell.revision === null ? null : `第 ${cell.revision} 版`,
-        durationMs: null,
-        icon: ListChecks,
-        tone: 'info',
-      };
-    }
-    case 'context':
-      return {
-        kindLabel: '上下文',
-        summary: contextSummary(cell),
-        statusLabel: null,
-        durationMs: null,
-        icon: FileClock,
-        tone: 'info',
-      };
-    case 'tool': {
-      const meta = getToolMeta(cell.toolName ?? '');
-      return {
-        kindLabel: meta.label,
-        summary: '工具调用',
-        statusLabel: formatTrajectoryStatus(cell.status),
-        durationMs: latestDuration(cell),
-        icon: meta.icon,
-        tone: statusTone(cell.status),
-      };
-    }
-    case 'subtool': {
-      const meta = getToolMeta(cell.toolName ?? '');
-      return {
-        kindLabel: '工具尝试',
-        summary: `${meta.label}${cell.attemptIndex === null ? '' : ` · 第 ${cell.attemptIndex + 1} 次`}`,
-        statusLabel: formatTrajectoryStatus(cell.status),
-        durationMs: latestDuration(cell),
-        icon: RotateCcw,
-        tone: statusTone(cell.status),
-      };
-    }
-    case 'compacted':
-      return {
-        kindLabel: '上下文压缩',
-        summary: `移除 ${cell.removedTurns} 轮 · ${cell.removedMessages} 条消息 · ${cell.removedToolTransactions} 次工具`,
-        statusLabel: '已完成',
-        durationMs: null,
-        icon: PackageOpen,
-        tone: 'neutral',
-      };
-  }
-}
-
-function statusTone(status: string): TrajectoryCellPresentation['tone'] {
-  if (status === 'failed') return 'danger';
-  if (status === 'degraded' || status === 'limit_reached' || status === 'incomplete') return 'warn';
-  if (status === 'running' || status === 'recording') return 'info';
-  if (status === 'completed' || status === 'complete' || status === 'success') return 'success';
-  return 'neutral';
 }
 
 function StatusIcon({ tone }: { tone: TrajectoryCellPresentation['tone'] }) {
@@ -263,24 +80,46 @@ export function TrajectoryCell({
   active,
   position,
   setSize,
+  sourceNumber = position,
+  kindLabel: providedKindLabel,
+  summary: providedSummary,
+  statusLabel: providedStatusLabel,
+  durationMs: providedDurationMs,
+  attemptCount = 0,
+  searchQuery = '',
+  matched = false,
   onSelect,
   onKeyDown,
 }: TrajectoryCellProps) {
   const presentation = getTrajectoryCellPresentation(cell);
   const groupLabel = turnNumber === null ? '未关联运行' : `第 ${turnNumber} 轮`;
-  const kindLabel = cell.type === 'run' && attemptNumber !== null
-    ? `第 ${attemptNumber} 次执行`
-    : presentation.kindLabel;
-  const duration = formatTrajectoryDuration(presentation.durationMs);
+  const attemptLabel = attemptNumber === null
+    ? null
+    : cell.type === 'subtool'
+      ? `第 ${attemptNumber} 次尝试`
+      : `第 ${attemptNumber} 次执行`;
+  const turnAttemptLabel = [groupLabel, attemptLabel].filter(Boolean).join(' · ');
+  const kindLabel = providedKindLabel ?? presentation.kindLabel;
+  const summary = providedSummary ?? presentation.summary;
+  const statusLabel = providedStatusLabel === undefined
+    ? presentation.statusLabel
+    : providedStatusLabel;
+  const duration = formatTrajectoryDuration(
+    providedDurationMs === undefined ? presentation.durationMs : providedDurationMs,
+  );
   const accessibleName = [
-    groupLabel,
+    matched ? '搜索命中' : null,
+    `#${sourceNumber}`,
+    turnAttemptLabel,
     kindLabel,
-    presentation.summary,
-    presentation.statusLabel,
+    presentation.kindLabel === kindLabel ? null : presentation.kindLabel,
+    summary,
+    statusLabel,
     presentation.trajectoryStatusLabel,
+    attemptCount > 0 ? `${attemptCount} 次尝试` : null,
     duration,
   ].filter(Boolean).join('，');
-  const Icon = presentation.icon;
+  const Icon = trajectoryCellIcon(cell);
 
   return (
     <button
@@ -299,50 +138,115 @@ export function TrajectoryCell({
       onKeyDown={onKeyDown}
       style={{ height: `${TRAJECTORY_ROW_HEIGHT}px` }}
       className={cn(
-        'group flex w-full shrink-0 cursor-pointer items-center gap-3 border-b border-border/40 px-3 text-left outline-none transition-colors',
+        'group grid w-full shrink-0 cursor-pointer grid-cols-[3rem_minmax(7.5rem,0.9fr)_minmax(4.5rem,0.55fr)_minmax(12rem,2.5fr)_minmax(8rem,1fr)_5.5rem] items-center gap-2 border-b border-border/40 px-3 text-left outline-none transition-colors',
         'hover:bg-muted/50 focus-visible:bg-muted/50 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring',
         selected && 'bg-primary/[0.08]',
         highlighted && 'bg-primary/[0.12] ring-2 ring-inset ring-primary/50',
       )}
     >
-      <span className="w-20 shrink-0 truncate text-[11px] font-medium text-muted-foreground">
-        {groupLabel}
+      <span className="truncate text-xs tabular-nums text-muted-foreground">
+        #{sourceNumber}
       </span>
-      <span className={cn('flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-muted/60', TONE_CLASSES[presentation.tone])}>
-        <Icon className="h-4 w-4" aria-hidden="true" />
+      <span className="min-w-0 truncate text-[11px] font-medium text-muted-foreground">
+        {turnAttemptLabel}
       </span>
-      <span className="min-w-0 flex-1">
-        <span className="flex items-center gap-2">
-          <span className="truncate text-sm font-medium text-foreground">{kindLabel}</span>
-          {presentation.statusLabel && (
-            <span className={cn('inline-flex shrink-0 items-center gap-1 text-[11px]', TONE_CLASSES[presentation.tone])}>
-              <StatusIcon tone={presentation.tone} />
-              {presentation.statusLabel}
-            </span>
-          )}
-          {presentation.trajectoryStatusLabel && (
-            <span className={cn(
-              'inline-flex shrink-0 items-center gap-1 text-[11px]',
-              TONE_CLASSES[presentation.trajectoryTone ?? 'neutral'],
-            )}>
-              {presentation.trajectoryTone === 'success'
-                ? <ShieldCheck className="h-3.5 w-3.5" aria-hidden="true" />
-                : <ShieldAlert className="h-3.5 w-3.5" aria-hidden="true" />}
-              {presentation.trajectoryStatusLabel}
-            </span>
-          )}
-        </span>
+      <span className={cn(
+        'flex min-w-0 items-center gap-1.5 truncate text-xs font-medium',
+        TONE_CLASSES[presentation.tone],
+      )}>
+        <Icon className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+        <HighlightText text={kindLabel} query={searchQuery} />
+      </span>
+      <span className="flex min-w-0 items-center gap-2">
         {presentation.isSkeleton && cell.type === 'run' ? (
           <span
             data-testid={`trajectory-cell-skeleton-${cell.runId}`}
-            className="mt-1 block h-2 w-28 rounded bg-muted"
+            className="block h-2 w-28 rounded bg-muted"
             aria-hidden="true"
           />
         ) : (
-          <span className="block truncate text-xs text-muted-foreground">{presentation.summary}</span>
+          <span className="min-w-0 flex-1 truncate text-xs text-foreground">
+            <HighlightText text={summary} query={searchQuery} />
+          </span>
+        )}
+        {attemptCount > 0 && (
+          <span className="shrink-0 rounded border border-border/70 px-1.5 py-0.5 text-[10px] text-muted-foreground">
+            {attemptCount} 次尝试
+          </span>
+        )}
+        {matched && (
+          <span className="shrink-0 rounded bg-warn/10 px-1.5 py-0.5 text-[10px] font-medium text-warn">
+            匹配
+          </span>
         )}
       </span>
-      {duration && <span className="shrink-0 text-xs tabular-nums text-muted-foreground">{duration}</span>}
+      <span className="flex min-w-0 items-center gap-2">
+        {statusLabel ? (
+          <span className={cn(
+            'inline-flex min-w-0 items-center gap-1 truncate text-[11px]',
+            TONE_CLASSES[presentation.tone],
+          )}>
+            <StatusIcon tone={presentation.tone} />
+            <HighlightText text={statusLabel} query={searchQuery} />
+          </span>
+        ) : (
+          <span className="text-xs text-muted-foreground" aria-hidden="true">—</span>
+        )}
+        {presentation.trajectoryStatusLabel && (
+          <span className={cn(
+            'inline-flex min-w-0 items-center gap-1 truncate text-[10px]',
+            TONE_CLASSES[presentation.trajectoryTone ?? 'neutral'],
+          )}>
+            {presentation.trajectoryTone === 'success'
+              ? <ShieldCheck className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+              : <ShieldAlert className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />}
+            <span className="truncate">{presentation.trajectoryStatusLabel}</span>
+          </span>
+        )}
+      </span>
+      <span className="truncate text-right text-xs tabular-nums text-muted-foreground">
+        {duration ?? '—'}
+      </span>
     </button>
   );
+}
+
+function trajectoryCellIcon(cell: TrajectoryCellModel): LucideIcon {
+  switch (cell.type) {
+    case 'user': return UserRound;
+    case 'message': return MessageSquare;
+    case 'run': return Bot;
+    case 'plan': return ListChecks;
+    case 'context': return FileClock;
+    case 'tool': return getToolMeta(cell.toolName ?? '').icon;
+    case 'subtool': return RotateCcw;
+    case 'compacted': return PackageOpen;
+  }
+}
+
+function HighlightText({ text, query }: { text: string; query: string }) {
+  const normalizedQuery = query.trim().toLocaleLowerCase();
+  if (!normalizedQuery) return text;
+  const normalizedText = text.toLocaleLowerCase();
+  const parts: React.ReactNode[] = [];
+  let startIndex = 0;
+  let matchIndex = normalizedText.indexOf(normalizedQuery, startIndex);
+  while (matchIndex >= 0) {
+    if (matchIndex > startIndex) parts.push(text.slice(startIndex, matchIndex));
+    const endIndex = matchIndex + normalizedQuery.length;
+    parts.push(
+      <mark
+        key={`${matchIndex}-${endIndex}`}
+        data-trajectory-match="true"
+        className="bg-warn/15 font-semibold text-inherit underline decoration-warn/70 underline-offset-2"
+      >
+        {text.slice(matchIndex, endIndex)}
+      </mark>,
+    );
+    startIndex = endIndex;
+    matchIndex = normalizedText.indexOf(normalizedQuery, startIndex);
+  }
+  if (startIndex === 0) return text;
+  if (startIndex < text.length) parts.push(text.slice(startIndex));
+  return parts;
 }
