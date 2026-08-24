@@ -82,7 +82,11 @@ function toolCell(key: string): Extract<TrajectoryCell, { type: 'tool' }> {
   };
 }
 
-function attemptCell(key: string, toolCallId: string): Extract<TrajectoryCell, { type: 'subtool' }> {
+function attemptCell(
+  key: string,
+  toolCallId: string,
+  status = 'success',
+): Extract<TrajectoryCell, { type: 'subtool' }> {
   return {
     key,
     type: 'subtool',
@@ -95,7 +99,7 @@ function attemptCell(key: string, toolCallId: string): Extract<TrajectoryCell, {
     toolAttemptId: key,
     toolName: 'web_search',
     attemptIndex: 0,
-    status: 'success',
+    status,
     events: [],
   };
 }
@@ -256,7 +260,8 @@ describe('TrajectoryTable', () => {
     expect(screen.getByRole('option', { name: /前一条/ })).not.toHaveFocus();
   });
 
-  it('inspect 回调同步移除目标时明确结束定位且不聚焦同 index 的其他行', async () => {
+  it('inspect 已定位后目标同步移除时不再发出矛盾的 unavailable', async () => {
+    const onInspectTargetResolved = vi.fn();
     const onInspectTargetUnavailable = vi.fn();
 
     function RemovedTargetHarness() {
@@ -269,18 +274,51 @@ describe('TrajectoryTable', () => {
           selectedCellKey={null}
           inspectTarget={{ requestId: 'inspect-removed-key', cellKey: 'target' }}
           viewportHeight={112}
-          onInspectTargetResolved={() => setRemoved(true)}
+          onInspectTargetResolved={(...args) => {
+            onInspectTargetResolved(...args);
+            setRemoved(true);
+          }}
           onInspectTargetUnavailable={onInspectTargetUnavailable}
         />
       );
     }
 
     render(<RemovedTargetHarness />);
-    await waitFor(() => expect(onInspectTargetUnavailable).toHaveBeenCalledWith({
-      requestId: 'inspect-removed-key',
-      cellKey: 'target',
-    }));
+    await waitFor(() => expect(onInspectTargetResolved).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(screen.queryByRole('option', { name: /目标/ })).not.toBeInTheDocument());
+    expect(onInspectTargetUnavailable).not.toHaveBeenCalled();
     expect(screen.getByRole('option', { name: /替代项/ })).not.toHaveFocus();
+  });
+
+  it('inspect 中 running Attempt 同步折叠后按原 cell key 重解 alias 并最终聚焦 Tool', async () => {
+    const onInspectTargetResolved = vi.fn();
+    const onInspectTargetUnavailable = vi.fn();
+
+    function FoldingInspectHarness() {
+      const [succeeded, setSucceeded] = useState(false);
+      return (
+        <TrajectoryTable
+          cells={[
+            toolCell('tool-1'),
+            attemptCell('attempt-1', 'tool-1', succeeded ? 'success' : 'running'),
+          ]}
+          selectedCellKey={null}
+          inspectTarget={{ requestId: 'inspect-folding-attempt', cellKey: 'attempt-1' }}
+          viewportHeight={112}
+          onInspectTargetResolved={(...args) => {
+            onInspectTargetResolved(...args);
+            setSucceeded(true);
+          }}
+          onInspectTargetUnavailable={onInspectTargetUnavailable}
+        />
+      );
+    }
+
+    render(<FoldingInspectHarness />);
+    const tool = await screen.findByRole('option', { name: /已折叠的 1 次成功尝试/ });
+    await waitFor(() => expect(tool).toHaveFocus());
+    expect(onInspectTargetResolved).toHaveBeenCalledTimes(1);
+    expect(onInspectTargetUnavailable).not.toHaveBeenCalled();
   });
 
   it('键盘选择回调同步在头部插入行后仍按稳定 key 聚焦目标', async () => {
@@ -304,6 +342,43 @@ describe('TrajectoryTable', () => {
     fireEvent.keyDown(before, { key: 'ArrowDown' });
     await waitFor(() => expect(screen.getByRole('option', { name: /目标/ })).toHaveFocus());
     expect(screen.getByRole('option', { name: /前一条/ })).not.toHaveFocus();
+  });
+
+  it('键盘 End 目标 Attempt 同步折叠后按原 cell key 重解 alias 并聚焦 Tool', async () => {
+    const onSelectCell = vi.fn();
+
+    function FoldingKeyboardHarness() {
+      const [succeeded, setSucceeded] = useState(false);
+      return (
+        <TrajectoryTable
+          cells={[
+            userCell('before', '前一条'),
+            toolCell('tool-1'),
+            attemptCell('attempt-1', 'tool-1', succeeded ? 'success' : 'running'),
+          ]}
+          selectedCellKey={null}
+          viewportHeight={168}
+          onSelectCell={(...args) => {
+            onSelectCell(...args);
+            setSucceeded(true);
+          }}
+        />
+      );
+    }
+
+    render(<FoldingKeyboardHarness />);
+    const before = screen.getByRole('option', { name: /前一条/ });
+    before.focus();
+    fireEvent.keyDown(before, { key: 'End' });
+
+    const tool = await screen.findByRole('option', { name: /已折叠的 1 次成功尝试/ });
+    await waitFor(() => expect(tool).toHaveFocus());
+    expect(tool).toHaveAttribute('tabindex', '0');
+    expect(onSelectCell).toHaveBeenCalledTimes(1);
+    expect(onSelectCell).toHaveBeenCalledWith(
+      expect.objectContaining({ key: 'attempt-1', type: 'subtool' }),
+      2,
+    );
   });
 
   it('过滤后 ARIA 位置、Home/End、选择回调与 inspect index 均基于可见行', async () => {

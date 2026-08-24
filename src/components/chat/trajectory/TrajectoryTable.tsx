@@ -58,8 +58,9 @@ const DEFAULT_VIEWPORT_HEIGHT = 560;
 const AT_TAIL_TOLERANCE_PX = 8;
 
 interface FocusRequest {
-  rowKey: string;
+  cellKey: string;
   inspectTarget: TrajectoryInspectTarget | null;
+  inspectResolved: boolean;
 }
 
 export function TrajectoryTable({
@@ -212,9 +213,12 @@ export function TrajectoryTable({
     }
     setActiveKey(rows[index].key);
     scrollToIndex(index, 'center');
-    setFocusRequest({ rowKey: rows[index].key, inspectTarget });
-    onInspectTargetResolved?.(inspectTarget, index, rows[index].cell);
-  }, [inspectTarget, onInspectTargetResolved, onInspectTargetUnavailable, rows, scrollToIndex]);
+    setFocusRequest({
+      cellKey: inspectTarget.cellKey,
+      inspectTarget,
+      inspectResolved: false,
+    });
+  }, [inspectTarget, onInspectTargetUnavailable, rows, scrollToIndex]);
 
   useEffect(() => {
     if (rows.length === 0) {
@@ -226,23 +230,37 @@ export function TrajectoryTable({
 
   useLayoutEffect(() => {
     if (!focusRequest) return;
-    const focusIndex = rows.findIndex(row => row.key === focusRequest.rowKey);
+    const focusIndex = rows.findIndex(row => rowMatchesCellKey(row, focusRequest.cellKey));
     if (focusIndex < 0) {
       setFocusRequest(null);
-      if (focusRequest.inspectTarget) onInspectTargetUnavailable?.(focusRequest.inspectTarget);
+      if (focusRequest.inspectTarget && !focusRequest.inspectResolved) {
+        onInspectTargetUnavailable?.(focusRequest.inspectTarget);
+      }
+      return;
+    }
+    const row = rows[focusIndex];
+    if (activeKey !== row.key) {
+      setActiveKey(row.key);
       return;
     }
     const target = viewportRef.current?.querySelector<HTMLElement>(
       `[data-trajectory-index="${focusIndex}"]`,
     );
-    if (!target || target.dataset.trajectoryKey !== focusRequest.rowKey) {
+    if (!target || target.dataset.trajectoryKey !== row.key) {
       scrollToIndex(focusIndex, 'center');
       return;
     }
     target.focus({ preventScroll: true });
+    if (focusRequest.inspectTarget && !focusRequest.inspectResolved) {
+      setFocusRequest({ ...focusRequest, inspectResolved: true });
+      onInspectTargetResolved?.(focusRequest.inspectTarget, focusIndex, row.cell);
+      return;
+    }
     setFocusRequest(null);
   }, [
+    activeKey,
     focusRequest,
+    onInspectTargetResolved,
     onInspectTargetUnavailable,
     range.endIndex,
     range.startIndex,
@@ -256,7 +274,11 @@ export function TrajectoryTable({
     const row = rows[nextIndex];
     setActiveKey(row.key);
     scrollToIndex(nextIndex, 'center');
-    setFocusRequest({ rowKey: row.key, inspectTarget: null });
+    setFocusRequest({
+      cellKey: row.cell.key,
+      inspectTarget: null,
+      inspectResolved: true,
+    });
     onSelectCell?.(row.cell, row.sourceIndex);
   }, [onSelectCell, rows, scrollToIndex]);
 
