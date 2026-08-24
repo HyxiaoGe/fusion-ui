@@ -271,7 +271,7 @@ describe('buildTrajectoryNodeDetailModel', () => {
     expect(model.title).not.toContain('internal-sensitive-id');
   });
 
-  it('真实 tool_attempt span 只使用 span 身份与 Timing，不回退承载 Cell 的 attempt index', () => {
+  it('真实 tool_attempt span 与 SubtoolCell 身份精确匹配时保留自身 ordinal', () => {
     const attempt: Extract<TrajectoryCell, { type: 'subtool' }> = {
       ...baseCell(),
       key: 'run:run-1:subtool:attempt-sensitive-id',
@@ -280,7 +280,7 @@ describe('buildTrajectoryNodeDetailModel', () => {
       toolCallId: 'tool-1',
       toolAttemptId: 'attempt-sensitive-id',
       toolName: 'web_search',
-      attemptIndex: 7,
+      attemptIndex: 1,
       status: 'success',
       events: [
         event(5, 'tool_attempt_started', '2026-08-23T00:00:01.100Z', {
@@ -320,9 +320,45 @@ describe('buildTrajectoryNodeDetailModel', () => {
       summary: '工具尝试',
       duration: '40 毫秒',
       ttft: null,
+      attemptCount: 2,
+      attemptMode: 'ordinal',
+      errorSummary: '工具尝试未能完成',
+    });
+  });
+
+  it('tool_attempt span id 与 SubtoolCell 不匹配时不读取其 ordinal', () => {
+    const attempt: Extract<TrajectoryCell, { type: 'subtool' }> = {
+      ...baseCell(),
+      key: 'run:run-1:subtool:attempt-2',
+      type: 'subtool',
+      sourceSequences: [5, 6],
+      toolCallId: 'tool-1',
+      toolAttemptId: 'attempt-2',
+      toolName: 'web_search',
+      attemptIndex: 1,
+      status: 'success',
+      events: [],
+    };
+    const mismatchedSpan: TrajectorySpan = {
+      span_id: 'tool_attempt:attempt-other',
+      kind: 'tool_attempt',
+      name: 'attempt-other',
+      parent_span_id: 'tool:tool-1',
+      start_sequence: 5,
+      end_sequence: 6,
+      started_at: '2026-08-23T00:00:01.100Z',
+      ended_at: '2026-08-23T00:00:01.140Z',
+      duration_ms: 40,
+      status: 'completed',
+      terminal_source: 'recorded',
+      inferred_reason: null,
+      ttft_ms: null,
+      record_sequences: [5, 6],
+    };
+
+    expect(buildTrajectoryNodeDetailModel(attempt, mismatchedSpan)).toMatchObject({
       attemptCount: null,
       attemptMode: null,
-      errorSummary: '工具尝试未能完成',
     });
   });
 

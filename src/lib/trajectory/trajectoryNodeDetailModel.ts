@@ -88,6 +88,7 @@ function buildSpanDetailModel(
   const events = cellEvents.filter(event => sequences.has(event.sequence));
   const presentation = spanPresentation(span.kind);
   const toolLabel = safeSpanToolLabel(cell, span);
+  const attemptOrdinal = matchingSpanAttemptOrdinal(cell, span);
 
   return {
     title: toolLabel ? `${presentation.title} · ${toolLabel}` : presentation.title,
@@ -98,8 +99,8 @@ function buildSpanDetailModel(
     ttft: formatTrajectoryDuration(span.ttft_ms),
     startedAt: formatTrajectoryTimestamp(span.started_at),
     endedAt: formatTrajectoryTimestamp(span.ended_at),
-    attemptCount: null,
-    attemptMode: null,
+    attemptCount: attemptOrdinal,
+    attemptMode: attemptOrdinal === null ? null : 'ordinal',
     errorSummary: spanError(span, events),
     diagnostics: spanDiagnostics(span),
   };
@@ -136,6 +137,19 @@ function safeSpanToolLabel(cell: TrajectoryCell, span: TrajectorySpan): string |
     && span.span_id === `tool_attempt:${cell.toolAttemptId}`
   ) return getToolMeta(cell.toolName ?? '').label;
   return null;
+}
+
+function matchingSpanAttemptOrdinal(
+  cell: TrajectoryCell,
+  span: TrajectorySpan,
+): number | null {
+  if (
+    cell.type !== 'subtool'
+    || span.kind !== 'tool_attempt'
+    || span.span_id !== `tool_attempt:${cell.toolAttemptId}`
+    || !span.record_sequences.some(sequence => cell.sourceSequences.includes(sequence))
+  ) return null;
+  return cell.attemptIndex === null ? null : cell.attemptIndex + 1;
 }
 
 function cellEvents(cell: TrajectoryCell): NormalizedTrajectoryEvent[] {

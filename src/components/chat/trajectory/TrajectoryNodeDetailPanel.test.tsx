@@ -2,7 +2,7 @@ import { act, fireEvent, render, screen, waitFor, within } from '@testing-librar
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { TrajectoryCell } from '@/lib/trajectory/TrajectoryCellProjection';
-import type { TrajectoryNodeDetailResponse } from '@/types/trajectory';
+import type { TrajectoryNodeDetailResponse, TrajectorySpan } from '@/types/trajectory';
 
 const getTrajectoryToolNodeDetailMock = vi.hoisted(() => vi.fn());
 
@@ -58,6 +58,25 @@ function attemptCell(
     attemptIndex,
     status: 'success',
     events: [],
+  };
+}
+
+function attemptSpan(toolAttemptId = 'attempt-1'): TrajectorySpan {
+  return {
+    span_id: `tool_attempt:${toolAttemptId}`,
+    kind: 'tool_attempt',
+    name: toolAttemptId,
+    parent_span_id: 'tool:tool-1',
+    start_sequence: 5,
+    end_sequence: 5,
+    started_at: '2026-08-23T00:00:01.100Z',
+    ended_at: '2026-08-23T00:00:01.140Z',
+    duration_ms: 40,
+    status: 'completed',
+    terminal_source: 'recorded',
+    inferred_reason: null,
+    ttft_ms: null,
+    record_sequences: [5],
   };
 }
 
@@ -149,7 +168,7 @@ describe('TrajectoryNodeDetailPanel', () => {
       <TrajectoryNodeDetailPanel
         conversationId="conversation-1"
         cell={secondAttempt}
-        span={null}
+        span={attemptSpan('attempt-2')}
         relatedCells={[firstAttempt, secondAttempt, unrelatedAttempt]}
       />,
     );
@@ -158,6 +177,17 @@ describe('TrajectoryNodeDetailPanel', () => {
     expect(screen.queryByRole('tab', { name: '载荷' })).not.toBeInTheDocument();
     expect(screen.queryByRole('tab', { name: '结果' })).not.toBeInTheDocument();
     expect(getTrajectoryToolNodeDetailMock).not.toHaveBeenCalled();
+
+    rerender(
+      <TrajectoryNodeDetailPanel
+        conversationId="conversation-1"
+        cell={secondAttempt}
+        span={attemptSpan('attempt-other')}
+        relatedCells={[firstAttempt, secondAttempt, unrelatedAttempt]}
+      />,
+    );
+    expect(screen.queryByText('尝试')).not.toBeInTheDocument();
+    expect(screen.queryByText('第 2 次')).not.toBeInTheDocument();
   });
 
   it('切换 Tool 会 abort 旧请求、隔离迟到结果，并让新节点重新从零请求开始', async () => {
