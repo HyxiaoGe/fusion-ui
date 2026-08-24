@@ -38,7 +38,10 @@ export interface TrajectoryOverviewProps {
   selectedCellKey?: string | null;
   searchMatchedCellKeys?: ReadonlySet<string>;
   range?: TrajectoryOverviewRange | null;
+  mode?: TrajectoryOverviewMode;
   initialMode?: TrajectoryOverviewMode;
+  projection?: TrajectoryOverviewProjection;
+  onModeChange?: (mode: TrajectoryOverviewMode) => void;
   onSelectSegment?: (segment: OverviewSegment) => void;
   onSelectRun?: (runId: string) => void;
   onRequestRunFocus?: (runId: string) => void;
@@ -101,7 +104,10 @@ export function TrajectoryOverview({
   selectedCellKey = null,
   searchMatchedCellKeys = EMPTY_SEARCH_MATCHES,
   range: controlledRange,
+  mode: controlledMode,
   initialMode = 'sequence',
+  projection: controlledProjection,
+  onModeChange,
   onSelectSegment,
   onSelectRun,
   onRequestRunFocus,
@@ -116,20 +122,22 @@ export function TrajectoryOverview({
   const drawRef = useRef<() => void>(() => {});
   const dragRef = useRef<DragState | null>(null);
   const hoveredKeyRef = useRef<string | null>(null);
-  const [mode, setMode] = useState<TrajectoryOverviewMode>(initialMode);
+  const previousSelectedCellKeyRef = useRef(selectedCellKey);
+  const [internalMode, setInternalMode] = useState<TrajectoryOverviewMode>(initialMode);
+  const mode = controlledMode ?? internalMode;
   const [zoom, setZoom] = useState(1);
   const [viewStart, setViewStart] = useState(0);
   const [internalRange, setInternalRange] = useState<TrajectoryOverviewRange | null>(null);
   const [activeKey, setActiveKey] = useState<string | null>(null);
   const [pendingRunId, setPendingRunId] = useState<string | null>(null);
   const currentRange = controlledRange === undefined ? internalRange : controlledRange;
-  const projection = useMemo(() => projectTrajectoryOverview({
+  const projection = useMemo(() => controlledProjection ?? projectTrajectoryOverview({
     runs,
     focusedRunId,
     focusedRunEvents,
     cells,
     mode,
-  }), [cells, focusedRunEvents, focusedRunId, mode, runs]);
+  }), [cells, controlledProjection, focusedRunEvents, focusedRunId, mode, runs]);
   const visibleSegments = useMemo(() => {
     const viewEnd = viewStart + 1 / zoom;
     return projection.segments.filter(segment => segment.end >= viewStart && segment.start <= viewEnd);
@@ -137,9 +145,12 @@ export function TrajectoryOverview({
   const activeSegment = projection.segments.find(segment => segment.key === activeKey) ?? null;
 
   useEffect(() => {
+    const selectionChanged = previousSelectedCellKeyRef.current !== selectedCellKey;
+    previousSelectedCellKeyRef.current = selectedCellKey;
     setActiveKey(current => {
-      if (current && projection.segments.some(segment => segment.key === current)) return current;
       const selected = projection.segments.find(segment => segment.targetCellKey === selectedCellKey);
+      if (selectionChanged && selected) return selected.key;
+      if (current && projection.segments.some(segment => segment.key === current)) return current;
       return selected?.key ?? projection.segments[0]?.key ?? null;
     });
   }, [projection.segments, selectedCellKey]);
@@ -429,6 +440,10 @@ export function TrajectoryOverview({
   const maximumViewStart = 1 - 1 / zoom;
   const canPanLeft = zoom > 1 && viewStart > 0;
   const canPanRight = zoom > 1 && viewStart < maximumViewStart;
+  const changeMode = (nextMode: TrajectoryOverviewMode) => {
+    if (controlledMode === undefined) setInternalMode(nextMode);
+    onModeChange?.(nextMode);
+  };
 
   return (
     <section
@@ -437,8 +452,8 @@ export function TrajectoryOverview({
     >
       <div className="flex flex-wrap items-center gap-2">
         <div className="inline-flex rounded-md border border-border/60 bg-muted/20 p-0.5" aria-label="投影模式">
-          <ModeButton active={mode === 'sequence'} onClick={() => setMode('sequence')}>顺序</ModeButton>
-          <ModeButton active={mode === 'actual'} onClick={() => setMode('actual')}>实际耗时</ModeButton>
+          <ModeButton active={mode === 'sequence'} onClick={() => changeMode('sequence')}>顺序</ModeButton>
+          <ModeButton active={mode === 'actual'} onClick={() => changeMode('actual')}>实际耗时</ModeButton>
         </div>
         <div className="inline-flex items-center gap-1" aria-label="缩放与平移控制">
           <ToolbarButton label="缩小" onClick={() => updateZoom(zoom / 2)} disabled={zoom === 1}>

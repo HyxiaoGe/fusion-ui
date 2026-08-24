@@ -270,6 +270,13 @@ describe('Trajectory force-mount 流式性能', () => {
       return animationFrames.length;
     });
     vi.spyOn(window, 'cancelAnimationFrame').mockImplementation(() => undefined);
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue({
+      clearRect: vi.fn(),
+      fillRect: vi.fn(),
+      strokeRect: vi.fn(),
+      fillText: vi.fn(),
+      setTransform: vi.fn(),
+    } as unknown as CanvasRenderingContext2D);
   });
 
   afterEach(() => {
@@ -320,7 +327,7 @@ describe('Trajectory force-mount 流式性能', () => {
       .toBeLessThan(STREAM_TIME_BUDGET_MS + PROJECTION_TIME_BUDGET_MS);
   });
 
-  it('已打开的 Trajectory 隐藏后保留同一 ledger rows，5000 events 不投影且返回只投影一次', async () => {
+  it('已打开的 Trajectory 隐藏后保留同一 Table rows 与 Detail，5000 events 不投影且返回只投影一次', async () => {
     const store = createTestStore(20, 'trajectory');
     renderForceMountedSurfaces(store);
     const ledger = document.querySelector<HTMLElement>('[role="listbox"]');
@@ -333,7 +340,7 @@ describe('Trajectory force-mount 流式性能', () => {
       .find(option => option.textContent?.includes('第 1 次执行'));
     if (!selectedRun) throw new Error('测试必须包含可选择的真实 run row');
     act(() => selectedRun.click());
-    expect(document.querySelector('[aria-label="轨迹检查器"]')).not.toBeNull();
+    expect(document.querySelector('[aria-label="轨迹节点详情"]')).not.toBeNull();
 
     projectionProbe.calls = 0;
     act(() => {
@@ -345,7 +352,7 @@ describe('Trajectory force-mount 流式性能', () => {
     expect(Array.from(ledger.querySelectorAll('[role="option"]'))
       .map(option => option.getAttribute('data-trajectory-index')))
       .toEqual(retainedRowIndexes);
-    expect(document.querySelector('[aria-label="轨迹检查器"]')).not.toBeNull();
+    expect(document.querySelector('[aria-label="轨迹节点详情"]')).not.toBeNull();
 
     await dispatchStreamingEvents(store, 20);
     expect(projectionProbe.calls).toBe(0);
@@ -368,7 +375,7 @@ describe('Trajectory force-mount 流式性能', () => {
     expect(projectionProbe.calls).toBe(1);
     expect(document.querySelector('[role="listbox"]')).toBe(ledger);
     expect(document.querySelectorAll('[role="option"]').length).toBeLessThanOrEqual(200);
-    expect(document.querySelector('[aria-label="轨迹检查器"]')).not.toBeNull();
+    expect(document.querySelector('[aria-label="轨迹节点详情"]')).not.toBeNull();
   });
 
   it('隐藏缓存只属于当前 auth identity，账号切换后不保留旧 ledger rows', async () => {

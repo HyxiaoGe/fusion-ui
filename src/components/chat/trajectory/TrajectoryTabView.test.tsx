@@ -2,9 +2,10 @@ import React from 'react';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { configureStore } from '@reduxjs/toolkit';
 import { Provider } from 'react-redux';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import trajectoryReducer, {
+  mergeLiveTrajectoryEvent,
   requestTrajectoryInspect,
   setTrajectoryActiveSurface,
 } from '@/redux/slices/trajectorySlice';
@@ -127,6 +128,71 @@ function snapshot(overrides: Partial<TrajectorySnapshot> = {}): TrajectorySnapsh
   };
 }
 
+function snapshotWithTools(count: number): TrajectorySnapshot {
+  const run = runSummary({ total_tool_calls: count, total_steps: count });
+  const records: TrajectorySnapshot['records'] = [snapshot().records[0]];
+  const spans: TrajectorySnapshot['spans'] = [];
+  for (let index = 0; index < count; index += 1) {
+    const startSequence = index * 2 + 1;
+    const endSequence = startSequence + 1;
+    const startedAt = `2026-08-22T00:00:00.${String(index * 2 + 20).padStart(3, '0')}Z`;
+    const endedAt = `2026-08-22T00:00:00.${String(index * 2 + 21).padStart(3, '0')}Z`;
+    records.push({
+      sequence: startSequence,
+      event_type: 'tool_call_started',
+      schema_version: 1,
+      timestamp: startedAt,
+      step_id: `step-${index}`,
+      tool_call_id: `tool-${index}`,
+      parent_step_id: null,
+      trace_id: run.run_id,
+      span_id: `span-tool-${index}`,
+      payload: { tool_name: `tool_${index}` },
+    }, {
+      sequence: endSequence,
+      event_type: 'tool_call_completed',
+      schema_version: 1,
+      timestamp: endedAt,
+      step_id: `step-${index}`,
+      tool_call_id: `tool-${index}`,
+      parent_step_id: null,
+      trace_id: run.run_id,
+      span_id: `span-tool-${index}`,
+      payload: { tool_name: `tool_${index}`, status: 'success', duration_ms: 1 },
+    });
+    spans.push({
+      span_id: `span-tool-${index}`,
+      kind: 'tool',
+      name: `tool_${index}`,
+      parent_span_id: null,
+      start_sequence: startSequence,
+      end_sequence: endSequence,
+      started_at: startedAt,
+      ended_at: endedAt,
+      duration_ms: 1,
+      status: 'completed',
+      terminal_source: 'recorded',
+      inferred_reason: null,
+      ttft_ms: null,
+      record_sequences: [startSequence, endSequence],
+    });
+  }
+  return snapshot({
+    run,
+    records,
+    spans,
+    completeness: {
+      status: 'complete',
+      degraded_reason: null,
+      event_count: records.length,
+      expected_last_sequence: records.at(-1)?.sequence ?? 0,
+      loaded_event_count: records.length,
+      first_sequence: 0,
+      last_sequence: records.at(-1)?.sequence ?? 0,
+    },
+  });
+}
+
 const messages: Message[] = [
   {
     id: 'user-1',
@@ -152,10 +218,52 @@ function deferred<T>() {
   return { promise, resolve, reject };
 }
 
+function installCanvasMocks() {
+  vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue({
+    clearRect: vi.fn(),
+    fillRect: vi.fn(),
+    strokeRect: vi.fn(),
+    fillText: vi.fn(),
+    setTransform: vi.fn(),
+  } as unknown as CanvasRenderingContext2D);
+  vi.spyOn(HTMLCanvasElement.prototype, 'getBoundingClientRect').mockReturnValue({
+    x: 0,
+    y: 0,
+    top: 0,
+    right: 1000,
+    bottom: 160,
+    left: 0,
+    width: 1000,
+    height: 160,
+    toJSON: () => ({}),
+  });
+  vi.stubGlobal('ResizeObserver', class {
+    constructor(private readonly callback: ResizeObserverCallback) {}
+    observe(target: Element) {
+      this.callback([{
+        target,
+        contentRect: { height: target instanceof HTMLCanvasElement ? 160 : 560 },
+      } as ResizeObserverEntry], this as unknown as ResizeObserver);
+    }
+    disconnect() {}
+  });
+  vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+    callback(0);
+    return 1;
+  });
+  vi.stubGlobal('cancelAnimationFrame', vi.fn());
+}
+
 describe('TrajectoryTabView', () => {
   beforeEach(() => {
+    installCanvasMocks();
     getTrajectoryRunsMock.mockReset();
     getTrajectorySnapshotMock.mockReset();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
   });
 
   it('挂载即拉取 run list，并把加载态与空态明确标为有界视图', async () => {
@@ -238,7 +346,7 @@ describe('TrajectoryTabView', () => {
     expect(screen.queryByText('当前数据可能不是最新')).toBeNull();
   });
 
-  it('只把 messages、run 摘要、所选快照和 live tail 投影一次后交给现有视图组件', async () => {
+  it('把同一份 Network 投影接入顶部 Overview、主区 Table 与右侧 Detail，不再渲染旧视图', async () => {
     const store = createStore();
     store.dispatch(setTrajectoryActiveSurface({ conversationId: 'chat-a', surface: 'trajectory' }));
     getTrajectoryRunsMock.mockResolvedValue({ items: [runSummary()], truncated: true });
@@ -256,11 +364,204 @@ describe('TrajectoryTabView', () => {
       { wrapper: wrapper(store) },
     );
 
-    expect(await screen.findByRole('listbox', { name: '轨迹账本' })).toBeInTheDocument();
+    const overview = await screen.findByLabelText('轨迹记录总览');
+    const table = screen.getByRole('listbox', { name: '轨迹记录表' });
+    const detail = screen.getByLabelText('轨迹节点详情');
+    expect(overview).toHaveClass('w-full');
+    expect(overview.compareDocumentPosition(table) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(table.compareDocumentPosition(detail) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(screen.getByRole('option', { name: /第 1 次执行.*已完成.*轨迹已截断/ })).toBeInTheDocument();
-    expect(screen.getByLabelText('轨迹时间线')).toBeInTheDocument();
+    expect(screen.queryByLabelText('轨迹时间线')).toBeNull();
+    expect(screen.queryByLabelText('轨迹检查器')).toBeNull();
     expect(screen.getByText('当前仅展示有界轨迹，部分记录已截断')).toBeInTheDocument();
     expect(screen.getByText('部分轨迹记录不可用，以下内容可能不完整')).toBeInTheDocument();
+  });
+
+  it('Table 选择会同步 Overview 活动记录与 Detail，Overview 选择也会反向定位 Table', async () => {
+    const store = createStore();
+    store.dispatch(setTrajectoryActiveSurface({ conversationId: 'chat-a', surface: 'trajectory' }));
+    getTrajectoryRunsMock.mockResolvedValue({ items: [runSummary()], truncated: false });
+    getTrajectorySnapshotMock.mockResolvedValue(snapshot());
+
+    render(
+      <TrajectoryTabView conversationId="chat-a" messages={messages} />,
+      { wrapper: wrapper(store) },
+    );
+
+    const tool = await screen.findByRole('option', { name: /搜索.*工具调用.*完成/ });
+    fireEvent.click(tool);
+    expect(screen.getByTestId('trajectory-overview-active')).toHaveTextContent('Tools');
+    const detail = screen.getByLabelText('轨迹节点详情');
+    expect(within(detail).getByRole('heading', { name: '工具' })).toBeInTheDocument();
+    expect(within(detail).getByText('span-tool')).toBeInTheDocument();
+
+    const canvas = screen.getByRole('application', { name: /轨迹记录总览/ });
+    fireEvent.keyDown(canvas, { key: 'Home' });
+    fireEvent.keyDown(canvas, { key: 'End' });
+    fireEvent.keyDown(canvas, { key: 'Enter' });
+    await waitFor(() => expect(tool).toHaveFocus());
+    expect(tool).toHaveAttribute('aria-selected', 'true');
+  });
+
+  it('one-shot inspect 会先清除遮蔽目标的搜索，再定位并只消费一次', async () => {
+    const store = createStore();
+    store.dispatch(setTrajectoryActiveSurface({ conversationId: 'chat-a', surface: 'trajectory' }));
+    getTrajectoryRunsMock.mockResolvedValue({ items: [runSummary()], truncated: false });
+    getTrajectorySnapshotMock.mockResolvedValue(snapshot());
+
+    render(
+      <TrajectoryTabView conversationId="chat-a" messages={messages} />,
+      { wrapper: wrapper(store) },
+    );
+
+    const search = await screen.findByRole('searchbox', { name: '搜索轨迹记录' });
+    fireEvent.change(search, { target: { value: '不存在的记录' } });
+    expect(screen.queryByRole('option', { name: /搜索.*工具调用.*完成/ })).toBeNull();
+
+    act(() => {
+      store.dispatch(requestTrajectoryInspect({
+        conversationId: 'chat-a',
+        requestId: 'inspect-filtered-tool',
+        messageId: 'assistant-1',
+        runId: 'run-1',
+        spanId: 'span-tool',
+      }));
+    });
+
+    expect(search).toHaveValue('');
+    const tool = await screen.findByRole('option', { name: /搜索.*工具调用.*完成/ });
+    await waitFor(() => expect(tool).toHaveFocus());
+    await waitFor(() => {
+      expect(store.getState().trajectory.byConversationId['chat-a'].inspectRequest).toBeNull();
+    });
+    expect(tool).toHaveAttribute('data-highlighted', 'true');
+  });
+
+  it('follow-live 首载到尾，用户滚动控制 manual/恢复，live append 不抢当前详情', async () => {
+    const store = createStore();
+    store.dispatch(setTrajectoryActiveSurface({ conversationId: 'chat-a', surface: 'trajectory' }));
+    const manyTools = snapshotWithTools(20);
+    getTrajectoryRunsMock.mockResolvedValue({ items: [manyTools.run], truncated: false });
+    getTrajectorySnapshotMock.mockResolvedValue(manyTools);
+
+    render(
+      <TrajectoryTabView conversationId="chat-a" messages={messages} />,
+      { wrapper: wrapper(store) },
+    );
+
+    const table = await screen.findByRole('listbox', { name: '轨迹记录表' });
+    await waitFor(() => expect(table.scrollTop).toBeGreaterThan(0));
+
+    table.scrollTop = 0;
+    fireEvent.scroll(table);
+    await waitFor(() => expect(screen.getByRole('button', { name: '继续跟随' })).toBeInTheDocument());
+    const firstTool = await screen.findByRole('option', { name: /tool_0.*工具调用.*完成/ });
+    fireEvent.click(firstTool);
+    expect(within(screen.getByLabelText('轨迹节点详情')).getByText('span-tool-0'))
+      .toBeInTheDocument();
+
+    table.scrollTop = 10_000;
+    fireEvent.scroll(table);
+    await waitFor(() => expect(screen.queryByRole('button', { name: '继续跟随' })).toBeNull());
+
+    act(() => {
+      store.dispatch(mergeLiveTrajectoryEvent({
+        conversationId: 'chat-a',
+        event: {
+          runId: 'run-1',
+          sequence: 41,
+          eventType: 'tool_call_started',
+          schemaVersion: 1,
+          timestamp: '2026-08-22T00:00:00.900Z',
+          stepId: 'step-live',
+          toolCallId: 'tool-live',
+          parentStepId: null,
+          traceId: 'run-1',
+          payload: { tool_name: 'live_tool' },
+        },
+      }));
+    });
+
+    await waitFor(() => expect(table.scrollTop).toBeGreaterThan(700));
+    expect(within(screen.getByLabelText('轨迹节点详情')).getByText('span-tool-0'))
+      .toBeInTheDocument();
+
+    const search = screen.getByRole('searchbox', { name: '搜索轨迹记录' });
+    fireEvent.change(search, { target: { value: 'live_tool' } });
+    const resume = await screen.findByRole('button', { name: '继续跟随' });
+    expect(resume).toBeDisabled();
+    fireEvent.click(screen.getByRole('button', { name: '清除搜索' }));
+    expect(resume).toBeEnabled();
+    fireEvent.click(resume);
+    await waitFor(() => expect(screen.queryByRole('button', { name: '继续跟随' })).toBeNull());
+  });
+
+  it('force-mounted hidden 往返保持 mode/range/search/selection/scroll，隐藏期间不投影新行', async () => {
+    const store = createStore();
+    store.dispatch(setTrajectoryActiveSurface({ conversationId: 'chat-a', surface: 'trajectory' }));
+    const manyTools = snapshotWithTools(20);
+    getTrajectoryRunsMock.mockResolvedValue({ items: [manyTools.run], truncated: false });
+    getTrajectorySnapshotMock.mockResolvedValue(manyTools);
+    const view = render(
+      <TrajectoryTabView conversationId="chat-a" messages={messages} visible />,
+      { wrapper: wrapper(store) },
+    );
+
+    const table = await screen.findByRole('listbox', { name: '轨迹记录表' });
+    fireEvent.click(screen.getByRole('button', { name: '实际耗时' }));
+    fireEvent.click(screen.getByRole('button', { name: '创建范围' }));
+    const search = screen.getByRole('searchbox', { name: '搜索轨迹记录' });
+    fireEvent.change(search, { target: { value: 'tool' } });
+    const selectedTool = (await screen.findAllByRole('option', { name: /tool_\d+.*工具调用.*完成/ }))[0];
+    fireEvent.click(selectedTool);
+    const selectedSpanId = within(screen.getByLabelText('轨迹节点详情'))
+      .getByText(/^span-tool-\d+$/).textContent;
+    if (!selectedSpanId) throw new Error('测试必须选择带 span 的工具记录');
+    table.scrollTop = 56;
+    fireEvent.scroll(table);
+    const retainedRows = [...table.querySelectorAll('[role="option"]')]
+      .map(row => row.getAttribute('data-trajectory-key'));
+
+    act(() => {
+      store.dispatch(setTrajectoryActiveSurface({ conversationId: 'chat-a', surface: 'chat' }));
+    });
+    view.rerender(<TrajectoryTabView conversationId="chat-a" messages={messages} visible={false} />);
+    act(() => {
+      store.dispatch(mergeLiveTrajectoryEvent({
+        conversationId: 'chat-a',
+        event: {
+          runId: 'run-1',
+          sequence: 41,
+          eventType: 'tool_call_started',
+          schemaVersion: 1,
+          timestamp: '2026-08-22T00:00:00.900Z',
+          stepId: 'step-hidden',
+          toolCallId: 'tool-hidden',
+          parentStepId: null,
+          traceId: 'run-1',
+          payload: { tool_name: 'hidden_tool' },
+        },
+      }));
+    });
+
+    expect(table.scrollTop).toBe(56);
+    expect([...table.querySelectorAll('[role="option"]')]
+      .map(row => row.getAttribute('data-trajectory-key'))).toEqual(retainedRows);
+    expect(screen.getByRole('button', { name: '实际耗时' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('slider', { name: '范围起点' })).toBeInTheDocument();
+    expect(search).toHaveValue('tool');
+    expect(within(screen.getByLabelText('轨迹节点详情')).getByText(selectedSpanId))
+      .toBeInTheDocument();
+
+    act(() => {
+      store.dispatch(setTrajectoryActiveSurface({ conversationId: 'chat-a', surface: 'trajectory' }));
+    });
+    view.rerender(<TrajectoryTabView conversationId="chat-a" messages={messages} visible />);
+    expect(table.scrollTop).toBe(56);
+    expect(screen.getByRole('button', { name: '实际耗时' })).toHaveAttribute('aria-pressed', 'true');
+    expect(search).toHaveValue('tool');
+    expect(within(screen.getByLabelText('轨迹节点详情')).getByText(selectedSpanId))
+      .toBeInTheDocument();
   });
 
   it('InspectRequest 等待水合后定位目标、聚焦高亮并最后清除 request', async () => {
@@ -365,7 +666,7 @@ describe('TrajectoryTabView', () => {
       'run-a',
       expect.any(AbortSignal),
     ));
-    fireEvent.click(await screen.findByRole('button', { name: /运行 2，已完成/ }));
+    fireEvent.click(await screen.findByRole('option', { name: /第 2 次执行.*已完成/ }));
 
     expect(store.getState().trajectory.byConversationId['chat-a']).toMatchObject({
       selectedRunId: 'run-b',

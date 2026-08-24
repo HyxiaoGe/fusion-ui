@@ -372,4 +372,39 @@ describe('TrajectoryOverview', () => {
     expect(rangeStart).toHaveValue('475');
     expect(rangeEnd).toHaveValue('725');
   });
+
+  it('受控 mode 与 projection 由父层统一驱动，不在组件内镜像派生状态', () => {
+    const onModeChange = vi.fn();
+    render(
+      <TrajectoryOverview
+        runs={[run('run-a')]}
+        focusedRunId="run-a"
+        focusedRunEvents={fixtureEvents()}
+        cells={[runCell('run-a', true)]}
+        mode="actual"
+        projection={{
+          mode: 'actual',
+          runBands: [{
+            runId: 'run-a',
+            start: 0,
+            end: 1,
+            hydrated: true,
+            selected: true,
+            status: 'completed',
+          }],
+          segments: [],
+        }}
+        onModeChange={onModeChange}
+      />,
+    );
+
+    expect(screen.getByRole('button', { name: '实际耗时' }))
+      .toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByTestId('trajectory-overview-active'))
+      .toHaveTextContent('当前没有可见详细记录');
+    fireEvent.click(screen.getByRole('button', { name: '顺序' }));
+    expect(onModeChange).toHaveBeenCalledWith('sequence');
+    expect(screen.getByRole('button', { name: '实际耗时' }))
+      .toHaveAttribute('aria-pressed', 'true');
+  });
 });

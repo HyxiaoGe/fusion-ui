@@ -10,7 +10,10 @@ import {
 } from 'react';
 
 import type { TrajectoryCell } from '@/lib/trajectory/TrajectoryCellProjection';
-import { projectTrajectoryTableRows } from '@/lib/trajectory/trajectoryTableModel';
+import {
+  projectTrajectoryTableRows,
+  type TrajectoryTableRow,
+} from '@/lib/trajectory/trajectoryTableModel';
 import {
   clampTrajectoryScrollTop,
   getScrollTopForIndex,
@@ -37,10 +40,15 @@ export interface TrajectoryTableProps {
   inspectTarget?: TrajectoryInspectTarget | null;
   searchQuery?: string;
   focusedCellKeys?: ReadonlySet<string> | null;
+  projectedRows?: readonly TrajectoryTableRow[];
   viewportHeight?: number;
   initialScrollTop?: number;
   /** 新会话或新视图恢复事务必须更换 identity；同 identity 不会覆盖后续用户滚动。 */
   restoreKey?: string | number | null;
+  /** identity 变化时程序化滚到当前可见行尾，不会伪装成用户滚动。 */
+  followTailRequest?: string | number | null;
+  /** hidden-resume 可关闭受控选择的自动 reveal，同时仍同步 roving active。 */
+  revealSelectedCell?: boolean;
   onSelectCell?: (cell: TrajectoryCell, sourceIndex: number) => void;
   onInspectTargetResolved?: (
     target: TrajectoryInspectTarget,
@@ -69,9 +77,12 @@ export function TrajectoryTable({
   inspectTarget = null,
   searchQuery = '',
   focusedCellKeys = null,
+  projectedRows,
   viewportHeight,
   initialScrollTop = 0,
   restoreKey = null,
+  followTailRequest = null,
+  revealSelectedCell = true,
   onSelectCell,
   onInspectTargetResolved,
   onInspectTargetUnavailable,
@@ -83,12 +94,13 @@ export function TrajectoryTable({
   const handledInspectRequestRef = useRef<string | null>(null);
   const handledControlledSelectionRef = useRef<{ key: string; rowKey: string } | null>(null);
   const restoredIdentityRef = useRef<{ key: string | number | null } | null>(null);
+  const handledFollowTailRequestRef = useRef<{ key: string | number } | null>(null);
   const suppressedScrollTopRef = useRef<number | null>(null);
-  const rows = useMemo(() => projectTrajectoryTableRows({
+  const rows = useMemo(() => projectedRows ?? projectTrajectoryTableRows({
     cells,
     searchQuery,
     focusedCellKeys,
-  }), [cells, focusedCellKeys, searchQuery]);
+  }), [cells, focusedCellKeys, projectedRows, searchQuery]);
   const selectedIndex = rows.findIndex(row => rowMatchesCellKey(row, selectedCellKey));
   const [activeKey, setActiveKey] = useState<string | null>(() => (
     selectedIndex >= 0 ? rows[selectedIndex].key : rows[0]?.key ?? null
@@ -193,21 +205,47 @@ export function TrajectoryTable({
     if (handled?.key === selectedCellKey && handled.rowKey === selectedRowKey) return;
     handledControlledSelectionRef.current = { key: selectedCellKey, rowKey: selectedRowKey };
     setActiveKey(selectedRowKey);
+    if (!revealSelectedCell) return;
     const mountedTarget = viewportRef.current?.querySelector(
       `[data-trajectory-index="${selectedIndex}"]`,
     );
     if (!mountedTarget) scrollToIndex(selectedIndex, 'auto');
-  }, [rows, scrollToIndex, selectedCellKey, selectedIndex]);
+  }, [revealSelectedCell, rows, scrollToIndex, selectedCellKey, selectedIndex]);
+
+  useLayoutEffect(() => {
+    if (followTailRequest === null || rows.length === 0) return;
+    if (handledFollowTailRequestRef.current
+      && Object.is(handledFollowTailRequestRef.current.key, followTailRequest)) return;
+    const followViewportHeight = explicitViewportHeight ?? observedViewportHeight;
+    if (followViewportHeight === null) return;
+    handledFollowTailRequestRef.current = { key: followTailRequest };
+    applyProgrammaticScroll(clampTrajectoryScrollTop({
+      itemCount: rows.length,
+      scrollTop: Number.MAX_SAFE_INTEGER,
+      viewportHeight: followViewportHeight,
+    }));
+  }, [
+    applyProgrammaticScroll,
+    explicitViewportHeight,
+    followTailRequest,
+    observedViewportHeight,
+    rows.length,
+  ]);
 
   useEffect(() => {
     if (!inspectTarget) {
       handledInspectRequestRef.current = null;
       return;
     }
-    if (handledInspectRequestRef.current === inspectTarget.requestId) return;
-    handledInspectRequestRef.current = inspectTarget.requestId;
+    const inspectIdentity = `${inspectTarget.requestId}\u0000${inspectTarget.cellKey}`;
+    if (handledInspectRequestRef.current === inspectIdentity) return;
+    if (
+      focusRequest?.inspectTarget?.requestId === inspectTarget.requestId
+      && focusRequest.inspectTarget.cellKey === inspectTarget.cellKey
+    ) return;
     const index = rows.findIndex(row => rowMatchesCellKey(row, inspectTarget.cellKey));
     if (index < 0) {
+      handledInspectRequestRef.current = inspectIdentity;
       onInspectTargetUnavailable?.(inspectTarget);
       return;
     }
@@ -218,7 +256,7 @@ export function TrajectoryTable({
       inspectTarget,
       inspectResolved: false,
     });
-  }, [inspectTarget, onInspectTargetUnavailable, rows, scrollToIndex]);
+  }, [focusRequest?.inspectTarget, inspectTarget, onInspectTargetUnavailable, rows, scrollToIndex]);
 
   useEffect(() => {
     if (rows.length === 0) {
@@ -252,6 +290,7 @@ export function TrajectoryTable({
     }
     target.focus({ preventScroll: true });
     if (focusRequest.inspectTarget && !focusRequest.inspectResolved) {
+      handledInspectRequestRef.current = `${focusRequest.inspectTarget.requestId}\u0000${focusRequest.inspectTarget.cellKey}`;
       setFocusRequest({ ...focusRequest, inspectResolved: true });
       onInspectTargetResolved?.(focusRequest.inspectTarget, focusIndex, row.cell);
       return;

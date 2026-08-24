@@ -1,8 +1,23 @@
 'use client';
 
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import {
+  useCallback,
+  useDeferredValue,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { useStore } from 'react-redux';
-import { AlertTriangle, Loader2, MessageSquareText, RefreshCw } from 'lucide-react';
+import {
+  AlertTriangle,
+  Loader2,
+  MessageSquareText,
+  RefreshCw,
+  Search,
+  X,
+} from 'lucide-react';
 
 import { useConversationTrajectory } from '@/hooks/useConversationTrajectory';
 import {
@@ -10,13 +25,21 @@ import {
   type TrajectoryCell,
   type TrajectoryCellProjection,
 } from '@/lib/trajectory/TrajectoryCellProjection';
+import {
+  projectTrajectoryNetworkView,
+  resolveTrajectorySelectedCell,
+} from '@/lib/trajectory/trajectoryNetworkViewModel';
+import {
+  projectTrajectoryOverview,
+  type OverviewSegment,
+  type TrajectoryOverviewMode,
+} from '@/lib/trajectory/trajectoryOverviewModel';
 import { useAppDispatch } from '@/redux/hooks';
 import {
   resolveTrajectoryInspectRequest,
   selectTrajectoryConversation,
   selectTrajectoryRuns,
   selectTrajectoryTarget,
-  setTrajectoryInspectorOpen,
   setTrajectoryScrollMode,
   type TrajectorySnapshotResultIdentity,
 } from '@/redux/slices/trajectorySlice';
@@ -27,13 +50,20 @@ import type { KnowledgeSelectionStatus } from '@/lib/chat/knowledgeBaseCatalogRe
 import type { TrajectoryRunActionTarget } from '@/lib/trajectory/trajectoryActionPolicy';
 import { Button } from '@/components/ui/button';
 import { TrajectoryIntegrityBanner } from './TrajectoryIntegrityBanner';
-import { TrajectoryInspector } from './TrajectoryInspector';
-import { TrajectoryLedger, type TrajectoryInspectTarget } from './TrajectoryLedger';
+import { TrajectoryNodeDetailPanel } from './TrajectoryNodeDetailPanel';
+import {
+  TrajectoryOverview,
+  type TrajectoryOverviewRange,
+} from './TrajectoryOverview';
 import {
   TrajectoryRunActions,
   type TrajectoryRunActionLifecycle,
 } from './TrajectoryRunActions';
-import { TrajectoryTimeline } from './TrajectoryTimeline';
+import {
+  TrajectoryTable,
+  type TrajectoryInspectTarget,
+  type TrajectoryViewportState,
+} from './TrajectoryTable';
 
 export interface TrajectoryRunActionContext {
   enabled: boolean;
@@ -83,6 +113,11 @@ interface CommittedTrajectoryProjection {
   projection: TrajectoryCellProjection;
 }
 
+interface LocalCellSelection {
+  cellKey: string;
+  domain: string;
+}
+
 function runCell(
   cells: readonly TrajectoryCell[],
   runId: string | null,
@@ -116,23 +151,18 @@ function spanForCell(
   return spans.find(span => span.record_sequences.some(sequence => sequences.has(sequence))) ?? null;
 }
 
-function messageCellKey(messageId: string): string[] {
-  return [`message:user:${messageId}`, `message:assistant:${messageId}`];
+function selectionDomain(
+  runId: string | null,
+  messageId: string | null,
+): string {
+  return runId ? `run:${runId}` : `message:${messageId ?? ''}`;
 }
 
-function selectedCellFromState(
-  cells: readonly TrajectoryCell[],
-  selectedMessageId: string | null,
-  selectedRunId: string | null,
-  selectedSpan: TrajectorySpan | null,
-): TrajectoryCell | null {
-  const spanCell = cellForSpan(cells, selectedSpan, selectedRunId);
-  if (spanCell) return spanCell;
-  const selectedRunCell = runCell(cells, selectedRunId);
-  if (selectedRunCell) return selectedRunCell;
-  if (!selectedMessageId) return null;
-  const keys = new Set(messageCellKey(selectedMessageId));
-  return cells.find(cell => keys.has(cell.key)) ?? null;
+function selectionDomainForCell(cell: TrajectoryCell): string {
+  return selectionDomain(
+    cell.runId,
+    cell.assistantMessageId ?? cell.userMessageId,
+  );
 }
 
 function LoadingState() {
@@ -168,7 +198,19 @@ export function TrajectoryTabView({
   const runActionsRef = useRef(runActions);
   runActionsRef.current = runActions;
   const [inspectFeedback, setInspectFeedback] = useState<InspectFeedback | null>(null);
+  const [localSelection, setLocalSelection] = useState<LocalCellSelection | null>(null);
+  const [localFocusTarget, setLocalFocusTarget] = useState<TrajectoryInspectTarget | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const deferredSearchQuery = useDeferredValue(searchQuery);
+  const [overviewMode, setOverviewMode] = useState<TrajectoryOverviewMode>('sequence');
+  const [overviewRange, setOverviewRange] = useState<TrajectoryOverviewRange | null>(null);
+  const [followTailRequest, setFollowTailRequest] = useState(0);
   const committedProjectionRef = useRef<CommittedTrajectoryProjection | null>(null);
+  const localFocusRequestSequenceRef = useRef(0);
+  const selectionDomainRef = useRef('');
+  const previousVisibleRef = useRef(visible);
+  const tableScrollTopRef = useRef(0);
+  const liveTailIdentityRef = useRef<{ identity: string; visible: boolean } | null>(null);
   const visibleProjection = useMemo(() => (
     visible
       ? projectTrajectoryCells({
@@ -211,13 +253,93 @@ export function TrajectoryTabView({
   const selectedSpan = trajectory.snapshot?.spans.find(
     span => span.span_id === trajectory.selectedSpanId,
   ) ?? null;
-  const selectedCell = selectedCellFromState(
-    cells,
-    trajectory.selectedMessageId,
+  const currentSelectionDomain = selectionDomain(
     trajectory.selectedRunId,
-    selectedSpan,
+    trajectory.selectedMessageId,
   );
+  if (selectionDomainRef.current === '') selectionDomainRef.current = currentSelectionDomain;
+  const selectedCell = resolveTrajectorySelectedCell({
+    cells,
+    localSelectedCellKey: localSelection?.domain === currentSelectionDomain
+      ? localSelection.cellKey
+      : null,
+    selectedMessageId: trajectory.selectedMessageId,
+    selectedRunId: trajectory.selectedRunId,
+    selectedSpan,
+  });
   const selectedRunCell = runCell(cells, trajectory.selectedRunId);
+  const focusedRunEvents = useMemo(() => (
+    selectedRunCell
+      ? [...selectedRunCell.records, ...selectedRunCell.liveTail]
+      : []
+  ), [selectedRunCell]);
+  const overviewProjection = useMemo(() => projectTrajectoryOverview({
+    runs: trajectory.runs,
+    focusedRunId: trajectory.selectedRunId,
+    focusedRunEvents,
+    cells,
+    mode: overviewMode,
+  }), [cells, focusedRunEvents, overviewMode, trajectory.runs, trajectory.selectedRunId]);
+  const inspectOverridesFilters = trajectory.inspectRequest !== null;
+  const effectiveSearchQuery = inspectOverridesFilters || searchQuery === ''
+    ? ''
+    : deferredSearchQuery;
+  const effectiveOverviewRange = inspectOverridesFilters ? null : overviewRange;
+  const networkView = useMemo(() => projectTrajectoryNetworkView({
+    cells,
+    overview: overviewProjection,
+    searchQuery: effectiveSearchQuery,
+    range: effectiveOverviewRange,
+  }), [cells, effectiveOverviewRange, effectiveSearchQuery, overviewProjection]);
+  const hasActiveFilters = Boolean(searchQuery.trim()) || overviewRange !== null;
+  const resumedThisRender = visible && !previousVisibleRef.current;
+
+  useLayoutEffect(() => {
+    previousVisibleRef.current = visible;
+  }, [visible]);
+
+  useEffect(() => {
+    if (selectionDomainRef.current === currentSelectionDomain) return;
+    selectionDomainRef.current = currentSelectionDomain;
+    setLocalSelection(null);
+    setLocalFocusTarget(null);
+  }, [currentSelectionDomain]);
+
+  useLayoutEffect(() => {
+    if (!trajectory.inspectRequest) return;
+    setSearchQuery('');
+    setOverviewRange(null);
+    setLocalFocusTarget(null);
+  }, [trajectory.inspectRequest]);
+
+  useEffect(() => {
+    if (!hasActiveFilters || trajectory.scrollMode === 'manual') return;
+    dispatch(setTrajectoryScrollMode({ conversationId, mode: 'manual' }));
+  }, [conversationId, dispatch, hasActiveFilters, trajectory.scrollMode]);
+
+  const liveTailIdentity = useMemo(() => {
+    const lastRow = networkView.rows.at(-1);
+    const lastEvent = focusedRunEvents.at(-1);
+    return [
+      trajectory.selectedRunId ?? '',
+      networkView.rows.length,
+      lastRow?.key ?? '',
+      lastEvent?.sequence ?? '',
+    ].join(':');
+  }, [focusedRunEvents, networkView.rows, trajectory.selectedRunId]);
+
+  useEffect(() => {
+    const previous = liveTailIdentityRef.current;
+    liveTailIdentityRef.current = { identity: liveTailIdentity, visible };
+    if (
+      !visible
+      || !previous?.visible
+      || previous.identity === liveTailIdentity
+      || trajectory.scrollMode !== 'follow-live'
+      || hasActiveFilters
+    ) return;
+    setFollowTailRequest(current => current + 1);
+  }, [hasActiveFilters, liveTailIdentity, trajectory.scrollMode, visible]);
 
   const getLatestPolicyInput = useCallback(() => {
     const state = store.getState();
@@ -250,6 +372,13 @@ export function TrajectoryTabView({
 
   useEffect(() => {
     setInspectFeedback(null);
+    setLocalSelection(null);
+    setLocalFocusTarget(null);
+    setSearchQuery('');
+    setOverviewMode('sequence');
+    setOverviewRange(null);
+    tableScrollTopRef.current = 0;
+    setFollowTailRequest(current => current + 1);
   }, [conversationId]);
 
   const visibleInspectFeedback = trajectory.inspectRequest
@@ -321,6 +450,10 @@ export function TrajectoryTabView({
 
   const handleSelectCell = useCallback((cell: TrajectoryCell) => {
     const span = spanForCell(cell, trajectory.snapshot?.spans ?? []);
+    const domain = selectionDomainForCell(cell);
+    selectionDomainRef.current = domain;
+    setLocalSelection({ cellKey: cell.key, domain });
+    setLocalFocusTarget(null);
     clearInspectFeedback();
     dispatch(selectTrajectoryTarget({
       conversationId,
@@ -328,10 +461,13 @@ export function TrajectoryTabView({
       runId: cell.runId,
       spanId: span?.span_id ?? null,
     }));
-    dispatch(setTrajectoryInspectorOpen({ conversationId, isOpen: true }));
   }, [clearInspectFeedback, conversationId, dispatch, trajectory.snapshot?.spans]);
 
   const handleSelectRun = useCallback((run: TrajectoryRunSummary) => {
+    const domain = selectionDomain(run.run_id, run.message_id);
+    selectionDomainRef.current = domain;
+    setLocalSelection(null);
+    setLocalFocusTarget(null);
     clearInspectFeedback();
     dispatch(selectTrajectoryTarget({
       conversationId,
@@ -341,28 +477,38 @@ export function TrajectoryTabView({
     }));
   }, [clearInspectFeedback, conversationId, dispatch]);
 
-  const handleSelectSpan = useCallback((span: TrajectorySpan) => {
-    const run = trajectory.selectedRunId
-      ? trajectory.runSummariesById[trajectory.selectedRunId]
-      : undefined;
-    clearInspectFeedback();
-    dispatch(selectTrajectoryTarget({
-      conversationId,
-      messageId: run?.message_id ?? trajectory.selectedMessageId,
-      runId: trajectory.selectedRunId,
-      spanId: span.span_id,
-    }));
-    dispatch(setTrajectoryInspectorOpen({ conversationId, isOpen: true }));
+  const handleSelectRunById = useCallback((runId: string) => {
+    const current = selectTrajectoryConversation(store.getState(), conversationId);
+    if (current?.selectedRunId === runId && current.selectionSource === 'manual') return;
+    const run = trajectory.runSummariesById[runId];
+    if (run) handleSelectRun(run);
   }, [
     conversationId,
-    clearInspectFeedback,
-    dispatch,
+    handleSelectRun,
+    store,
     trajectory.runSummariesById,
-    trajectory.selectedMessageId,
-    trajectory.selectedRunId,
   ]);
 
+  const handleSelectOverviewSegment = useCallback((segment: OverviewSegment) => {
+    const cell = cells.find(item => item.key === segment.targetCellKey);
+    if (!cell) return;
+    handleSelectCell(cell);
+    localFocusRequestSequenceRef.current += 1;
+    setLocalFocusTarget({
+      requestId: `overview-${localFocusRequestSequenceRef.current}`,
+      cellKey: cell.key,
+    });
+  }, [cells, handleSelectCell]);
+
   const handleInspectResolved = useCallback((target: TrajectoryInspectTarget) => {
+    if (
+      localFocusTarget
+      && target.requestId === localFocusTarget.requestId
+      && target.cellKey === localFocusTarget.cellKey
+    ) {
+      setLocalFocusTarget(null);
+      return;
+    }
     const resolution = inspectResolution;
     if (!resolution) return;
     if (
@@ -412,8 +558,33 @@ export function TrajectoryTabView({
     conversationId,
     dispatch,
     inspectResolution,
+    localFocusTarget,
     store,
   ]);
+
+  const handleInspectUnavailable = useCallback((target: TrajectoryInspectTarget) => {
+    if (target.requestId === localFocusTarget?.requestId) setLocalFocusTarget(null);
+  }, [localFocusTarget?.requestId]);
+
+  const handleViewportStateChange = useCallback((state: TrajectoryViewportState) => {
+    tableScrollTopRef.current = state.scrollTop;
+    if (!state.userInitiated) return;
+    if (state.atTail && !hasActiveFilters) {
+      if (trajectory.scrollMode !== 'follow-live') {
+        dispatch(setTrajectoryScrollMode({ conversationId, mode: 'follow-live' }));
+      }
+      return;
+    }
+    if (!state.atTail && trajectory.scrollMode !== 'manual') {
+      dispatch(setTrajectoryScrollMode({ conversationId, mode: 'manual' }));
+    }
+  }, [conversationId, dispatch, hasActiveFilters, trajectory.scrollMode]);
+
+  const resumeFollowing = useCallback(() => {
+    if (hasActiveFilters) return;
+    dispatch(setTrajectoryScrollMode({ conversationId, mode: 'follow-live' }));
+    setFollowTailRequest(current => current + 1);
+  }, [conversationId, dispatch, hasActiveFilters]);
 
   const revealMessageId = selectedCell?.assistantMessageId
     ?? selectedCell?.userMessageId
@@ -541,44 +712,69 @@ export function TrajectoryTabView({
           </div>
         ) : null}
 
-        <div className="grid min-h-0 flex-1 gap-3 overflow-hidden p-4 xl:grid-cols-[minmax(0,3fr)_minmax(20rem,2fr)]">
-          <div className="min-h-0">
-            <TrajectoryLedger
-              cells={cells}
-              selectedCellKey={selectedCell?.key ?? null}
-              inspectTarget={inspectResolution?.target ?? visibleInspectFeedback?.highlight ?? null}
-              initialScrollTop={0}
-              restoreKey={conversationId}
-              onSelectCell={handleSelectCell}
-              onInspectTargetResolved={handleInspectResolved}
-              onScrollTopChange={() => {
-                if (trajectory.scrollMode !== 'manual') {
-                  dispatch(setTrajectoryScrollMode({ conversationId, mode: 'manual' }));
-                }
-              }}
-              className="h-full"
-            />
-          </div>
+        <div className="flex min-h-0 flex-1 flex-col overflow-y-auto p-4 xl:overflow-hidden">
+          <TrajectoryOverview
+            runs={trajectory.runs}
+            focusedRunId={trajectory.selectedRunId}
+            focusedRunEvents={focusedRunEvents}
+            cells={cells}
+            selectedCellKey={selectedCell?.key ?? null}
+            searchMatchedCellKeys={networkView.searchMatchedCellKeys}
+            range={overviewRange}
+            mode={overviewMode}
+            projection={overviewProjection}
+            onModeChange={setOverviewMode}
+            onSelectSegment={handleSelectOverviewSegment}
+            onSelectRun={handleSelectRunById}
+            onRequestRunFocus={handleSelectRunById}
+            onRangeChange={setOverviewRange}
+            className="w-full shrink-0"
+          />
 
-          <div className="min-h-0 space-y-3 overflow-y-auto pr-1">
-            <TrajectoryTimeline
-              runs={trajectory.runs}
-              selectedRunId={trajectory.selectedRunId}
-              selectedSpanId={trajectory.selectedSpanId}
-              spans={trajectory.snapshot?.spans ?? []}
-              onSelectRun={handleSelectRun}
-              onSelectSpan={handleSelectSpan}
-            />
-            {trajectory.isInspectorOpen ? (
-              <TrajectoryInspector
+          {networkView.hasPendingRangeMatch ? (
+            <p role="status" className="mt-3 text-xs text-muted-foreground">
+              范围包含待水合运行，正在聚焦后补充匹配记录
+            </p>
+          ) : null}
+
+          <div className="mt-3 grid min-h-[24rem] flex-1 gap-3 xl:min-h-0 xl:grid-cols-[minmax(0,1fr)_clamp(22rem,28vw,28rem)]">
+            <div className="min-h-80 xl:min-h-0">
+              <TrajectoryTable
+                cells={cells}
+                selectedCellKey={selectedCell?.key ?? null}
+                inspectTarget={visible
+                  ? inspectResolution?.target
+                    ?? visibleInspectFeedback?.highlight
+                    ?? localFocusTarget
+                    ?? null
+                  : null}
+                searchQuery={effectiveSearchQuery}
+                focusedCellKeys={networkView.rangeFocusedCellKeys}
+                projectedRows={networkView.rows}
+                initialScrollTop={tableScrollTopRef.current}
+                restoreKey={conversationId}
+                followTailRequest={visible
+                  && trajectory.scrollMode === 'follow-live'
+                  && !hasActiveFilters
+                  ? followTailRequest
+                  : null}
+                revealSelectedCell={!resumedThisRender}
+                onSelectCell={handleSelectCell}
+                onInspectTargetResolved={handleInspectResolved}
+                onInspectTargetUnavailable={handleInspectUnavailable}
+                onViewportStateChange={handleViewportStateChange}
+                className="h-full"
+              />
+            </div>
+
+            <div className="min-h-0 overflow-y-auto pr-1">
+              <TrajectoryNodeDetailPanel
+                conversationId={conversationId}
                 cell={selectedCell}
                 span={selectedSpan}
-                onClose={() => dispatch(setTrajectoryInspectorOpen({
-                  conversationId,
-                  isOpen: false,
-                }))}
+                relatedCells={cells}
               />
-            ) : null}
+            </div>
           </div>
         </div>
       </div>
@@ -591,12 +787,48 @@ export function TrajectoryTabView({
       data-conversation-id={conversationId}
       className="flex h-full min-h-0 flex-col"
     >
-      <header className="flex min-h-12 shrink-0 items-center justify-between gap-3 border-b border-border/60 px-4 py-2">
+      <header className="flex min-h-12 shrink-0 flex-wrap items-center justify-between gap-3 border-b border-border/60 px-4 py-2">
         <div className="min-w-0">
           <h1 className="text-sm font-semibold text-foreground">会话轨迹（有界）</h1>
           <p className="truncate text-xs text-muted-foreground">最近运行与所选运行的有限事件快照</p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex min-w-0 flex-1 flex-wrap items-center justify-end gap-2">
+          <label className="flex min-w-56 max-w-md flex-1 items-center gap-2 text-xs text-muted-foreground">
+            <span className="shrink-0">搜索</span>
+            <span className="flex min-w-0 flex-1 items-center rounded-md border border-border/60 bg-background px-2 focus-within:ring-2 focus-within:ring-ring">
+              <Search className="h-4 w-4 shrink-0" aria-hidden="true" />
+              <input
+                type="search"
+                aria-label="搜索轨迹记录"
+                placeholder="搜索类型、名称、状态或消息正文"
+                value={searchQuery}
+                onChange={event => setSearchQuery(event.currentTarget.value)}
+                className="h-9 min-w-0 flex-1 bg-transparent px-2 text-sm text-foreground outline-none placeholder:text-muted-foreground"
+              />
+              {searchQuery ? (
+                <button
+                  type="button"
+                  aria-label="清除搜索"
+                  onClick={() => setSearchQuery('')}
+                  className="rounded p-1 outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring"
+                >
+                  <X className="h-3.5 w-3.5" aria-hidden="true" />
+                </button>
+              ) : null}
+            </span>
+          </label>
+          {trajectory.scrollMode === 'manual' ? (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={hasActiveFilters}
+              title={hasActiveFilters ? '清除搜索与范围后可继续跟随' : undefined}
+              onClick={resumeFollowing}
+            >
+              继续跟随
+            </Button>
+          ) : null}
           {revealMessageId && onRevealInChat ? (
             <Button
               type="button"

@@ -3,6 +3,7 @@ import { act, fireEvent, render, screen, waitFor, within } from '@testing-librar
 import { describe, expect, it, vi } from 'vitest';
 
 import type { TrajectoryCell } from '@/lib/trajectory/TrajectoryCellProjection';
+import { projectTrajectoryTableRows } from '@/lib/trajectory/trajectoryTableModel';
 import { TrajectoryTable } from './TrajectoryTable';
 
 function userCell(key: string, text: string): TrajectoryCell {
@@ -640,5 +641,83 @@ describe('TrajectoryTable', () => {
       clientHeight.mockRestore();
       vi.unstubAllGlobals();
     }
+  });
+
+  it('受控行投影直接驱动 Table，避免父子重复计算搜索与范围语义', () => {
+    const cells = [
+      userCell('cell-a', '保留记录'),
+      userCell('cell-b', '隐藏记录'),
+    ];
+    const projectedRows = projectTrajectoryTableRows({
+      cells,
+      searchQuery: '保留',
+    });
+    render(
+      <TrajectoryTable
+        cells={cells}
+        projectedRows={projectedRows}
+        selectedCellKey={null}
+        viewportHeight={112}
+      />,
+    );
+
+    expect(screen.getAllByRole('option')).toHaveLength(1);
+    expect(screen.getByRole('option', { name: /保留记录/ })).toBeInTheDocument();
+    expect(screen.queryByRole('option', { name: /隐藏记录/ })).toBeNull();
+  });
+
+  it('follow-tail 请求滚到当前可见行尾且只报告程序化滚动', () => {
+    const onViewportStateChange = vi.fn();
+    const cells = manyCells(100);
+    const { rerender } = render(
+      <TrajectoryTable
+        cells={cells}
+        selectedCellKey={null}
+        viewportHeight={112}
+        followTailRequest={1}
+        onViewportStateChange={onViewportStateChange}
+      />,
+    );
+    const table = screen.getByRole('listbox', { name: '轨迹记录表' });
+
+    expect(table.scrollTop).toBe(5488);
+    expect(onViewportStateChange).toHaveBeenLastCalledWith({
+      scrollTop: 5488,
+      atTail: true,
+      userInitiated: false,
+    });
+
+    rerender(
+      <TrajectoryTable
+        cells={[...cells, userCell('cell-100', '第 101 条消息')]}
+        selectedCellKey={null}
+        viewportHeight={112}
+        followTailRequest={2}
+        onViewportStateChange={onViewportStateChange}
+      />,
+    );
+    expect(table.scrollTop).toBe(5544);
+    expect(onViewportStateChange).toHaveBeenLastCalledWith({
+      scrollTop: 5544,
+      atTail: true,
+      userInitiated: false,
+    });
+  });
+
+  it('隐藏页恢复时可更新受控选择而不强制改变既有滚动位置', () => {
+    const cells = manyCells(100);
+    render(
+      <TrajectoryTable
+        cells={cells}
+        selectedCellKey="cell-90"
+        viewportHeight={112}
+        initialScrollTop={560}
+        restoreKey="conversation-a"
+        revealSelectedCell={false}
+      />,
+    );
+
+    const table = screen.getByRole('listbox', { name: '轨迹记录表' });
+    expect(table.scrollTop).toBe(560);
   });
 });

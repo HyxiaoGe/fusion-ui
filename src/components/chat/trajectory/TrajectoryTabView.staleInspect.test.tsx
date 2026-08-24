@@ -2,7 +2,7 @@ import React from 'react';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { configureStore } from '@reduxjs/toolkit';
 import { Provider } from 'react-redux';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import trajectoryReducer, {
   consumeTrajectoryInspectRequest,
@@ -12,18 +12,18 @@ import trajectoryReducer, {
 } from '@/redux/slices/trajectorySlice';
 import type { Message } from '@/types/conversation';
 import type { TrajectoryRunSummary, TrajectorySnapshot } from '@/types/trajectory';
-import type { TrajectoryLedgerProps } from './TrajectoryLedger';
+import type { TrajectoryTableProps } from './TrajectoryTable';
 
 const {
-  capturedLedgerCallbacks,
+  capturedTableCallbacks,
   getTrajectoryRunsMock,
   getTrajectorySnapshotMock,
-  latestLedgerTarget,
+  latestTableTarget,
 } = vi.hoisted(() => ({
-  capturedLedgerCallbacks: new Map<string, Array<{ cellKey: string; callback: () => void }>>(),
+  capturedTableCallbacks: new Map<string, Array<{ cellKey: string; callback: () => void }>>(),
   getTrajectoryRunsMock: vi.fn(),
   getTrajectorySnapshotMock: vi.fn(),
-  latestLedgerTarget: { current: null as string | null },
+  latestTableTarget: { current: null as string | null },
 }));
 
 vi.mock('@/lib/api/trajectory', () => ({
@@ -31,30 +31,33 @@ vi.mock('@/lib/api/trajectory', () => ({
   getTrajectorySnapshot: getTrajectorySnapshotMock,
 }));
 
-vi.mock('./TrajectoryLedger', async () => {
+vi.mock('./TrajectoryTable', async () => {
   const ReactModule = await import('react');
-  const actual = await vi.importActual<typeof import('./TrajectoryLedger')>('./TrajectoryLedger');
+  const actual = await vi.importActual<typeof import('./TrajectoryTable')>('./TrajectoryTable');
   return {
     ...actual,
-    TrajectoryLedger: (props: TrajectoryLedgerProps) => {
+    TrajectoryTable: (props: TrajectoryTableProps) => {
       const target = props.inspectTarget;
-      latestLedgerTarget.current = target?.requestId ?? null;
+      latestTableTarget.current = target?.requestId ?? null;
       const callback = props.onInspectTargetResolved;
       if (target && callback) {
-        const index = props.cells.findIndex(cell => cell.key === target.cellKey);
-        const cell = props.cells[index];
+        const rows = props.projectedRows ?? [];
+        const index = rows.findIndex(row => (
+          row.key === target.cellKey || row.aliasedCellKeys.includes(target.cellKey)
+        ));
+        const cell = rows[index]?.cell;
         if (index >= 0 && cell) {
-          const captured = capturedLedgerCallbacks.get(target.requestId) ?? [];
+          const captured = capturedTableCallbacks.get(target.requestId) ?? [];
           if (!captured.some(item => item.cellKey === target.cellKey)) {
             captured.push({
               cellKey: target.cellKey,
               callback: () => callback(target, index, cell),
             });
-            capturedLedgerCallbacks.set(target.requestId, captured);
+            capturedTableCallbacks.set(target.requestId, captured);
           }
         }
       }
-      return ReactModule.createElement(actual.TrajectoryLedger, {
+      return ReactModule.createElement(actual.TrajectoryTable, {
         ...props,
         onInspectTargetResolved: undefined,
       });
@@ -180,20 +183,52 @@ const messages: Message[] = [
 ];
 
 function capturedCallback(requestId: string, cellKey?: string): () => void {
-  const captured = capturedLedgerCallbacks.get(requestId) ?? [];
+  const captured = capturedTableCallbacks.get(requestId) ?? [];
   const entry = cellKey
     ? captured.find(item => item.cellKey === cellKey)
     : captured[0];
-  if (!entry) throw new Error(`必须捕获 ${requestId} 的 Ledger callback`);
+  if (!entry) throw new Error(`必须捕获 ${requestId} 的 Table callback`);
   return entry.callback;
 }
 
 describe('TrajectoryTabView stale inspect callback', () => {
   beforeEach(() => {
-    capturedLedgerCallbacks.clear();
-    latestLedgerTarget.current = null;
+    capturedTableCallbacks.clear();
+    latestTableTarget.current = null;
     getTrajectoryRunsMock.mockReset();
     getTrajectorySnapshotMock.mockReset();
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue({
+      clearRect: vi.fn(),
+      fillRect: vi.fn(),
+      strokeRect: vi.fn(),
+      fillText: vi.fn(),
+      setTransform: vi.fn(),
+    } as unknown as CanvasRenderingContext2D);
+    vi.spyOn(HTMLCanvasElement.prototype, 'getBoundingClientRect').mockReturnValue({
+      x: 0,
+      y: 0,
+      top: 0,
+      right: 1000,
+      bottom: 160,
+      left: 0,
+      width: 1000,
+      height: 160,
+      toJSON: () => ({}),
+    });
+    vi.stubGlobal('ResizeObserver', class {
+      observe() {}
+      disconnect() {}
+    });
+    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+      callback(0);
+      return 1;
+    });
+    vi.stubGlobal('cancelAnimationFrame', vi.fn());
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
   });
 
   it('旧 fallback A 回调在手选 B 后不能抢回选择或写回 A 提示和高亮', async () => {
@@ -217,9 +252,9 @@ describe('TrajectoryTabView stale inspect callback', () => {
       { wrapper: wrapper(store) },
     );
 
-    await waitFor(() => expect(capturedLedgerCallbacks.has('inspect-a-fallback')).toBe(true));
+    await waitFor(() => expect(capturedTableCallbacks.has('inspect-a-fallback')).toBe(true));
     const staleCallback = capturedCallback('inspect-a-fallback');
-    fireEvent.click(await screen.findByRole('button', { name: /运行 2，已完成/ }));
+    fireEvent.click(await screen.findByRole('option', { name: /第 2 次执行.*已完成/ }));
     await waitFor(() => expect(store.getState().trajectory.byConversationId['chat-a']).toMatchObject({
       selectedRunId: 'run-b',
       selectionSource: 'manual',
@@ -261,7 +296,7 @@ describe('TrajectoryTabView stale inspect callback', () => {
       { wrapper: wrapper(store) },
     );
 
-    await waitFor(() => expect(capturedLedgerCallbacks.has('inspect-a-success')).toBe(true));
+    await waitFor(() => expect(capturedTableCallbacks.has('inspect-a-success')).toBe(true));
     const staleCallback = capturedCallback('inspect-a-success');
     act(() => {
       store.dispatch(requestTrajectoryInspect({
@@ -272,7 +307,7 @@ describe('TrajectoryTabView stale inspect callback', () => {
         spanId: 'span-tool',
       }));
     });
-    await waitFor(() => expect(capturedLedgerCallbacks.has('inspect-b-pending')).toBe(true));
+    await waitFor(() => expect(capturedTableCallbacks.has('inspect-b-pending')).toBe(true));
 
     act(() => staleCallback());
 
@@ -288,7 +323,7 @@ describe('TrajectoryTabView stale inspect callback', () => {
       }));
     });
 
-    expect(latestLedgerTarget.current).toBeNull();
+    expect(latestTableTarget.current).toBeNull();
     expect(screen.getAllByRole('option', { name: /搜索.*工具调用.*完成/ }).map(option => (
       option.getAttribute('data-highlighted')
     ))).toEqual(['false']);
@@ -313,7 +348,7 @@ describe('TrajectoryTabView stale inspect callback', () => {
     );
 
     await waitFor(() => expect(
-      capturedLedgerCallbacks.get('inspect-same-run')?.some(item => item.cellKey === 'run:run-a'),
+      capturedTableCallbacks.get('inspect-same-run')?.some(item => item.cellKey === 'run:run-a'),
     ).toBe(true));
     const staleS1Fallback = capturedCallback('inspect-same-run', 'run:run-a');
 
@@ -331,11 +366,11 @@ describe('TrajectoryTabView stale inspect callback', () => {
       }));
     });
     await waitFor(() => expect(
-      capturedLedgerCallbacks.get('inspect-same-run')?.some(item => item.cellKey !== 'run:run-a'),
+      capturedTableCallbacks.get('inspect-same-run')?.some(item => item.cellKey !== 'run:run-a'),
     ).toBe(true));
-    const s2Resolution = capturedLedgerCallbacks.get('inspect-same-run')
+    const s2Resolution = capturedTableCallbacks.get('inspect-same-run')
       ?.find(item => item.cellKey !== 'run:run-a');
-    if (!s2Resolution) throw new Error('必须捕获 S2 span Ledger callback');
+    if (!s2Resolution) throw new Error('必须捕获 S2 span Table callback');
 
     act(() => staleS1Fallback());
 
