@@ -39,19 +39,23 @@ function toolCell(toolCallId = 'tool-1'): Extract<TrajectoryCell, { type: 'tool'
   };
 }
 
-function attemptCell(): Extract<TrajectoryCell, { type: 'subtool' }> {
+function attemptCell(
+  toolAttemptId = 'attempt-1',
+  attemptIndex = 0,
+  toolCallId = 'tool-1',
+): Extract<TrajectoryCell, { type: 'subtool' }> {
   return {
-    key: 'run:run-1:subtool:attempt-1',
+    key: `run:run-1:subtool:${toolAttemptId}`,
     type: 'subtool',
     runId: 'run-1',
     userMessageId: 'user-1',
     assistantMessageId: 'assistant-1',
     completenessSources: ['durable-snapshot'],
     sourceSequences: [5],
-    toolCallId: 'tool-1',
-    toolAttemptId: 'attempt-1',
+    toolCallId,
+    toolAttemptId,
     toolName: 'web_search',
-    attemptIndex: 0,
+    attemptIndex,
     status: 'success',
     events: [],
   };
@@ -84,9 +88,17 @@ function detail(
   };
 }
 
-function renderPanel(cell: TrajectoryCell | null = toolCell()) {
+function renderPanel(
+  cell: TrajectoryCell | null = toolCell(),
+  relatedCells: readonly TrajectoryCell[] = [],
+) {
   return render(
-    <TrajectoryNodeDetailPanel conversationId="conversation-1" cell={cell} span={null} />,
+    <TrajectoryNodeDetailPanel
+      conversationId="conversation-1"
+      cell={cell}
+      span={null}
+      relatedCells={relatedCells}
+    />,
   );
 }
 
@@ -122,6 +134,30 @@ describe('TrajectoryNodeDetailPanel', () => {
     expect(within(panel).queryByRole('tab', { name: '载荷' })).not.toBeInTheDocument();
     expect(within(panel).getByRole('tab', { name: '摘要' })).toHaveAttribute('aria-selected', 'true');
     expect(getTrajectoryToolNodeDetailMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('逻辑 Tool 显示 sibling attempt 总数，Attempt 自身只显示自己的序号且没有远端页签', () => {
+    const firstAttempt = attemptCell('attempt-1', 0);
+    const secondAttempt = attemptCell('attempt-2', 1);
+    const unrelatedAttempt = attemptCell('attempt-other', 4, 'tool-other');
+    const { rerender } = renderPanel(toolCell(), [firstAttempt, secondAttempt, unrelatedAttempt]);
+
+    expect(screen.getByText('尝试次数')).toBeInTheDocument();
+    expect(screen.getByText('2 次')).toBeInTheDocument();
+
+    rerender(
+      <TrajectoryNodeDetailPanel
+        conversationId="conversation-1"
+        cell={secondAttempt}
+        span={null}
+        relatedCells={[firstAttempt, secondAttempt, unrelatedAttempt]}
+      />,
+    );
+    expect(screen.getByText('尝试')).toBeInTheDocument();
+    expect(screen.getByText('第 2 次')).toBeInTheDocument();
+    expect(screen.queryByRole('tab', { name: '载荷' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('tab', { name: '结果' })).not.toBeInTheDocument();
+    expect(getTrajectoryToolNodeDetailMock).not.toHaveBeenCalled();
   });
 
   it('切换 Tool 会 abort 旧请求、隔离迟到结果，并让新节点重新从零请求开始', async () => {

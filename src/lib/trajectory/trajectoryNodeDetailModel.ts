@@ -1,4 +1,5 @@
 import type { TrajectorySpan } from '@/types/trajectory';
+import { getToolMeta } from '@/lib/agent/toolRegistry';
 
 import type { NormalizedTrajectoryEvent } from './normalizeTrajectoryEvent';
 import type { TrajectoryCell } from './TrajectoryCellProjection';
@@ -23,6 +24,7 @@ export interface TrajectoryNodeDetailModel {
   startedAt: string | null;
   endedAt: string | null;
   attemptCount: number | null;
+  attemptMode: 'count' | 'ordinal' | null;
   errorSummary: string | null;
   diagnostics: TrajectoryNodeDiagnostic[];
 }
@@ -55,39 +57,85 @@ const SHANGHAI_TIME_FORMAT = new Intl.DateTimeFormat('en-CA', {
 export function buildTrajectoryNodeDetailModel(
   cell: TrajectoryCell,
   span: TrajectorySpan | null,
+  relatedCells: readonly TrajectoryCell[] = [],
 ): TrajectoryNodeDetailModel {
   const presentation = getTrajectoryCellPresentation(cell);
   const events = cellEvents(cell);
-  const spanSequences = span ? new Set(span.record_sequences) : null;
-  const spanEvents = spanSequences
-    ? events.filter(event => spanSequences.has(event.sequence))
-    : events;
-  const startedAt = span
-    ? formatTrajectoryTimestamp(span.started_at)
-    : localStartedAt(cell, events);
-  const endedAt = span
-    ? formatTrajectoryTimestamp(span.ended_at)
-    : localEndedAt(cell, events);
+  if (span) return buildSpanDetailModel(cell, span, events);
 
   return {
-    title: nonEmptyString(span?.name) ?? presentation.kindLabel,
-    nodeType: span ? spanKindLabel(span.kind) : cellTypeLabel(cell.type),
-    status: span
-      ? formatTrajectoryStatus(span.status)
-      : presentation.statusLabel ?? '已记录',
+    title: presentation.kindLabel,
+    nodeType: cellTypeLabel(cell.type),
+    status: presentation.statusLabel ?? '已记录',
     summary: presentation.summary,
-    duration: formatTrajectoryDuration(
-      span?.duration_ms ?? localDuration(cell, events, presentation.durationMs),
-    ),
-    ttft: formatTrajectoryDuration(span?.ttft_ms ?? latestNumber(events, 'ttft_ms')),
-    startedAt,
-    endedAt,
-    attemptCount: attemptCount(cell),
-    errorSummary: span
-      ? spanError(cell, span, spanEvents)
-      : cellError(cell, events),
-    diagnostics: diagnostics(cell, span),
+    duration: formatTrajectoryDuration(localDuration(cell, events, presentation.durationMs)),
+    ttft: formatTrajectoryDuration(latestNumber(events, 'ttft_ms')),
+    startedAt: localStartedAt(cell, events),
+    endedAt: localEndedAt(cell, events),
+    attemptCount: attemptCount(cell, relatedCells),
+    attemptMode: cellAttemptMode(cell, relatedCells),
+    errorSummary: cellError(cell, events),
+    diagnostics: cellDiagnostics(cell),
   };
+}
+
+function buildSpanDetailModel(
+  cell: TrajectoryCell,
+  span: TrajectorySpan,
+  cellEvents: readonly NormalizedTrajectoryEvent[],
+): TrajectoryNodeDetailModel {
+  const sequences = new Set(span.record_sequences);
+  const events = cellEvents.filter(event => sequences.has(event.sequence));
+  const presentation = spanPresentation(span.kind);
+  const toolLabel = safeSpanToolLabel(cell, span);
+
+  return {
+    title: toolLabel ? `${presentation.title} · ${toolLabel}` : presentation.title,
+    nodeType: presentation.nodeType,
+    status: formatTrajectoryStatus(span.status),
+    summary: presentation.summary,
+    duration: formatTrajectoryDuration(span.duration_ms),
+    ttft: formatTrajectoryDuration(span.ttft_ms),
+    startedAt: formatTrajectoryTimestamp(span.started_at),
+    endedAt: formatTrajectoryTimestamp(span.ended_at),
+    attemptCount: null,
+    attemptMode: null,
+    errorSummary: spanError(span, events),
+    diagnostics: spanDiagnostics(span),
+  };
+}
+
+function spanPresentation(kind: string): {
+  title: string;
+  nodeType: string;
+  summary: string;
+} {
+  switch (kind) {
+    case 'run': return { title: '运行', nodeType: '运行', summary: '运行' };
+    case 'step': return { title: '执行步骤', nodeType: '步骤', summary: '执行步骤' };
+    case 'llm': return { title: '模型调用', nodeType: '模型阶段', summary: '模型调用' };
+    case 'retrieval': return { title: '资料获取', nodeType: '资料获取阶段', summary: '资料获取' };
+    case 'tool': return { title: '工具', nodeType: '工具阶段', summary: '工具调用' };
+    case 'tool_attempt': return { title: '工具尝试', nodeType: '工具尝试', summary: '工具尝试' };
+    case 'message': return { title: '消息', nodeType: '消息', summary: '消息' };
+    default: return { title: '轨迹阶段', nodeType: '轨迹阶段', summary: '轨迹阶段' };
+  }
+}
+
+function safeSpanToolLabel(cell: TrajectoryCell, span: TrajectorySpan): string | null {
+  const overlapsCell = span.record_sequences.some(sequence => cell.sourceSequences.includes(sequence));
+  if (!overlapsCell) return null;
+  if (
+    span.kind === 'tool'
+    && cell.type === 'tool'
+    && span.span_id === `tool:${cell.toolCallId}`
+  ) return getToolMeta(cell.toolName ?? '').label;
+  if (
+    span.kind === 'tool_attempt'
+    && cell.type === 'subtool'
+    && span.span_id === `tool_attempt:${cell.toolAttemptId}`
+  ) return getToolMeta(cell.toolName ?? '').label;
+  return null;
 }
 
 function cellEvents(cell: TrajectoryCell): NormalizedTrajectoryEvent[] {
@@ -122,18 +170,6 @@ function cellTypeLabel(type: TrajectoryCell['type']): string {
     case 'tool': return '工具';
     case 'subtool': return '工具尝试';
     case 'compacted': return '上下文压缩';
-  }
-}
-
-function spanKindLabel(kind: string): string {
-  switch (kind) {
-    case 'llm': return '模型阶段';
-    case 'tool': return '工具阶段';
-    case 'retrieval': return '资料获取阶段';
-    case 'run': return '运行';
-    case 'step': return '步骤';
-    case 'message': return '消息';
-    default: return '轨迹阶段';
   }
 }
 
@@ -172,19 +208,35 @@ function latestNumber(
   return null;
 }
 
-function attemptCount(cell: TrajectoryCell): number | null {
+function attemptCount(
+  cell: TrajectoryCell,
+  relatedCells: readonly TrajectoryCell[],
+): number | null {
   if (cell.type === 'run' || cell.type === 'subtool') {
     return cell.attemptIndex === null ? null : cell.attemptIndex + 1;
   }
   if (cell.type !== 'tool') return null;
 
   const attemptIds = new Set<string>();
-  for (const event of cell.events) {
-    if (!event.eventType.startsWith('tool_attempt_')) continue;
-    const id = nonEmptyString(event.payload.tool_attempt_id);
-    if (id) attemptIds.add(id);
+  for (const relatedCell of relatedCells) {
+    if (
+      relatedCell.type === 'subtool'
+      && relatedCell.runId === cell.runId
+      && relatedCell.toolCallId === cell.toolCallId
+    ) attemptIds.add(relatedCell.toolAttemptId);
   }
   return attemptIds.size || null;
+}
+
+function cellAttemptMode(
+  cell: TrajectoryCell,
+  relatedCells: readonly TrajectoryCell[],
+): TrajectoryNodeDetailModel['attemptMode'] {
+  if (cell.type === 'run' || cell.type === 'subtool') {
+    return cell.attemptIndex === null ? null : 'ordinal';
+  }
+  if (cell.type !== 'tool') return null;
+  return attemptCount(cell, relatedCells) === null ? null : 'count';
 }
 
 function cellError(
@@ -201,7 +253,6 @@ function cellError(
 }
 
 function spanError(
-  cell: TrajectoryCell,
   span: TrajectorySpan,
   events: readonly NormalizedTrajectoryEvent[],
 ): string | null {
@@ -211,8 +262,8 @@ function spanError(
   const eventDetail = latestSafeEventDetail(events);
   if (eventDetail) return eventDetail;
   if (span.status !== 'failed') return null;
-  if (cell.type === 'subtool' || span.kind === 'attempt') return '工具尝试未能完成';
-  if (cell.type === 'tool' || span.kind === 'tool') return '工具未能完成';
+  if (span.kind === 'tool_attempt') return '工具尝试未能完成';
+  if (span.kind === 'tool') return '工具未能完成';
   if (span.kind === 'llm') return '模型阶段未能完成';
   if (span.kind === 'retrieval') return '资料获取阶段未能完成';
   return '该阶段未能完成';
@@ -252,10 +303,7 @@ function shortText(value: unknown): string | null {
     : normalized;
 }
 
-function diagnostics(
-  cell: TrajectoryCell,
-  span: TrajectorySpan | null,
-): TrajectoryNodeDiagnostic[] {
+function cellDiagnostics(cell: TrajectoryCell): TrajectoryNodeDiagnostic[] {
   const items: TrajectoryNodeDiagnostic[] = [];
   if (cell.runId) items.push({ label: '运行 ID', value: cell.runId });
   if (cell.type === 'tool' || cell.type === 'subtool') {
@@ -263,10 +311,17 @@ function diagnostics(
   }
   if (cell.type === 'tool' && cell.stepId) items.push({ label: '步骤 ID', value: cell.stepId });
   if (cell.type === 'subtool') items.push({ label: '工具尝试 ID', value: cell.toolAttemptId });
-  if (span?.parent_span_id) items.push({ label: '父阶段 ID', value: span.parent_span_id });
-  const sequences = span?.record_sequences ?? cell.sourceSequences;
-  if (sequences.length > 0) {
-    items.push({ label: '记录序号', value: sequenceReferences(sequences) });
+  if (cell.sourceSequences.length > 0) {
+    items.push({ label: '记录序号', value: sequenceReferences(cell.sourceSequences) });
+  }
+  return items;
+}
+
+function spanDiagnostics(span: TrajectorySpan): TrajectoryNodeDiagnostic[] {
+  const items = [{ label: '阶段 ID', value: span.span_id }];
+  if (span.parent_span_id) items.push({ label: '父阶段 ID', value: span.parent_span_id });
+  if (span.record_sequences.length > 0) {
+    items.push({ label: '记录序号', value: sequenceReferences(span.record_sequences) });
   }
   return items;
 }

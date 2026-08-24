@@ -15,6 +15,7 @@ export interface TrajectoryNodeDetailPanelProps {
   conversationId: string | null;
   cell: TrajectoryCell | null;
   span: TrajectorySpan | null;
+  relatedCells?: readonly TrajectoryCell[];
 }
 
 type DetailSection = 'summary' | 'payload' | 'result' | 'timing';
@@ -36,11 +37,13 @@ const SECTION_LABELS: Record<DetailSection, string> = {
 const PENDING_RETRY_INTERVAL_MS = 1_000;
 const PENDING_RETRY_DEADLINE_MS = 7_000;
 const PENDING_MAX_REQUESTS = 7;
+const EMPTY_RELATED_CELLS: readonly TrajectoryCell[] = [];
 
 export function TrajectoryNodeDetailPanel({
   conversationId,
   cell,
   span,
+  relatedCells = EMPTY_RELATED_CELLS,
 }: TrajectoryNodeDetailPanelProps) {
   return (
     <aside
@@ -53,6 +56,7 @@ export function TrajectoryNodeDetailPanel({
           conversationId={conversationId}
           cell={cell}
           span={span}
+          relatedCells={relatedCells}
         />
       ) : (
         <div className="flex min-h-40 items-center justify-center text-sm text-muted-foreground">
@@ -67,14 +71,19 @@ function TrajectoryNodeDetailContent({
   conversationId,
   cell,
   span,
+  relatedCells,
 }: {
   conversationId: string | null;
   cell: TrajectoryCell;
   span: TrajectorySpan | null;
+  relatedCells: readonly TrajectoryCell[];
 }) {
   const isTool = cell.type === 'tool';
   const sections = isTool ? TOOL_SECTIONS : LOCAL_SECTIONS;
-  const model = useMemo(() => buildTrajectoryNodeDetailModel(cell, span), [cell, span]);
+  const model = useMemo(
+    () => buildTrajectoryNodeDetailModel(cell, span, relatedCells),
+    [cell, relatedCells, span],
+  );
   const tabsId = useId();
   const tabRefs = useRef<Partial<Record<DetailSection, HTMLButtonElement | null>>>({});
   const [activeSection, setActiveSection] = useState<DetailSection>('summary');
@@ -271,8 +280,13 @@ function SummarySection({ model }: { model: TrajectoryNodeDetailModel }) {
       <dl className="grid gap-2 sm:grid-cols-2">
         <DetailField label="状态" value={model.status} />
         <DetailField label="摘要" value={model.summary} />
-        {model.attemptCount !== null && (
-          <DetailField label="尝试" value={`第 ${model.attemptCount} 次`} />
+        {model.attemptCount !== null && model.attemptMode && (
+          <DetailField
+            label={model.attemptMode === 'count' ? '尝试次数' : '尝试'}
+            value={model.attemptMode === 'count'
+              ? `${model.attemptCount} 次`
+              : `第 ${model.attemptCount} 次`}
+          />
         )}
       </dl>
       {model.errorSummary && (
