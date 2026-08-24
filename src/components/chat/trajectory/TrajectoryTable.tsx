@@ -57,6 +57,11 @@ export interface TrajectoryTableProps {
 const DEFAULT_VIEWPORT_HEIGHT = 560;
 const AT_TAIL_TOLERANCE_PX = 8;
 
+interface FocusRequest {
+  rowKey: string;
+  inspectTarget: TrajectoryInspectTarget | null;
+}
+
 export function TrajectoryTable({
   cells,
   selectedCellKey,
@@ -75,7 +80,7 @@ export function TrajectoryTable({
 }: TrajectoryTableProps) {
   const viewportRef = useRef<HTMLDivElement>(null);
   const handledInspectRequestRef = useRef<string | null>(null);
-  const handledControlledSelectionRef = useRef<{ key: string; index: number } | null>(null);
+  const handledControlledSelectionRef = useRef<{ key: string; rowKey: string } | null>(null);
   const restoredIdentityRef = useRef<{ key: string | number | null } | null>(null);
   const suppressedScrollTopRef = useRef<number | null>(null);
   const rows = useMemo(() => projectTrajectoryTableRows({
@@ -83,9 +88,9 @@ export function TrajectoryTable({
     searchQuery,
     focusedCellKeys,
   }), [cells, focusedCellKeys, searchQuery]);
-  const selectedIndex = rows.findIndex(row => row.cell.key === selectedCellKey);
+  const selectedIndex = rows.findIndex(row => rowMatchesCellKey(row, selectedCellKey));
   const [activeKey, setActiveKey] = useState<string | null>(() => (
-    selectedIndex >= 0 ? rows[selectedIndex].cell.key : rows[0]?.cell.key ?? null
+    selectedIndex >= 0 ? rows[selectedIndex].key : rows[0]?.key ?? null
   ));
   const [scrollTop, setScrollTop] = useState(() => Math.max(0, initialScrollTop));
   const scrollTopRef = useRef(scrollTop);
@@ -96,8 +101,8 @@ export function TrajectoryTable({
     : null;
   const [observedViewportHeight, setObservedViewportHeight] = useState<number | null>(null);
   const measuredHeight = explicitViewportHeight ?? observedViewportHeight ?? DEFAULT_VIEWPORT_HEIGHT;
-  const [focusRequestIndex, setFocusRequestIndex] = useState<number | null>(null);
-  const requestedActiveIndex = rows.findIndex(row => row.cell.key === activeKey);
+  const [focusRequest, setFocusRequest] = useState<FocusRequest | null>(null);
+  const requestedActiveIndex = rows.findIndex(row => row.key === activeKey);
   const range = getVirtualRange({
     itemCount: rows.length,
     scrollTop,
@@ -182,15 +187,16 @@ export function TrajectoryTable({
       handledControlledSelectionRef.current = null;
       return;
     }
+    const selectedRowKey = rows[selectedIndex].key;
     const handled = handledControlledSelectionRef.current;
-    if (handled?.key === selectedCellKey && handled.index === selectedIndex) return;
-    handledControlledSelectionRef.current = { key: selectedCellKey, index: selectedIndex };
-    setActiveKey(selectedCellKey);
+    if (handled?.key === selectedCellKey && handled.rowKey === selectedRowKey) return;
+    handledControlledSelectionRef.current = { key: selectedCellKey, rowKey: selectedRowKey };
+    setActiveKey(selectedRowKey);
     const mountedTarget = viewportRef.current?.querySelector(
       `[data-trajectory-index="${selectedIndex}"]`,
     );
     if (!mountedTarget) scrollToIndex(selectedIndex, 'auto');
-  }, [scrollToIndex, selectedCellKey, selectedIndex]);
+  }, [rows, scrollToIndex, selectedCellKey, selectedIndex]);
 
   useEffect(() => {
     if (!inspectTarget) {
@@ -199,14 +205,14 @@ export function TrajectoryTable({
     }
     if (handledInspectRequestRef.current === inspectTarget.requestId) return;
     handledInspectRequestRef.current = inspectTarget.requestId;
-    const index = rows.findIndex(row => row.cell.key === inspectTarget.cellKey);
+    const index = rows.findIndex(row => rowMatchesCellKey(row, inspectTarget.cellKey));
     if (index < 0) {
       onInspectTargetUnavailable?.(inspectTarget);
       return;
     }
-    setActiveKey(rows[index].cell.key);
+    setActiveKey(rows[index].key);
     scrollToIndex(index, 'center');
-    setFocusRequestIndex(index);
+    setFocusRequest({ rowKey: rows[index].key, inspectTarget });
     onInspectTargetResolved?.(inspectTarget, index, rows[index].cell);
   }, [inspectTarget, onInspectTargetResolved, onInspectTargetUnavailable, rows, scrollToIndex]);
 
@@ -219,22 +225,38 @@ export function TrajectoryTable({
   }, [activeKey, rows]);
 
   useLayoutEffect(() => {
-    if (focusRequestIndex === null) return;
+    if (!focusRequest) return;
+    const focusIndex = rows.findIndex(row => row.key === focusRequest.rowKey);
+    if (focusIndex < 0) {
+      setFocusRequest(null);
+      if (focusRequest.inspectTarget) onInspectTargetUnavailable?.(focusRequest.inspectTarget);
+      return;
+    }
     const target = viewportRef.current?.querySelector<HTMLElement>(
-      `[data-trajectory-index="${focusRequestIndex}"]`,
+      `[data-trajectory-index="${focusIndex}"]`,
     );
-    if (!target) return;
+    if (!target || target.dataset.trajectoryKey !== focusRequest.rowKey) {
+      scrollToIndex(focusIndex, 'center');
+      return;
+    }
     target.focus({ preventScroll: true });
-    setFocusRequestIndex(null);
-  }, [focusRequestIndex, range.endIndex, range.startIndex]);
+    setFocusRequest(null);
+  }, [
+    focusRequest,
+    onInspectTargetUnavailable,
+    range.endIndex,
+    range.startIndex,
+    rows,
+    scrollToIndex,
+  ]);
 
   const moveToIndex = useCallback((index: number) => {
     if (rows.length === 0) return;
     const nextIndex = Math.max(0, Math.min(rows.length - 1, index));
     const row = rows[nextIndex];
-    setActiveKey(row.cell.key);
+    setActiveKey(row.key);
     scrollToIndex(nextIndex, 'center');
-    setFocusRequestIndex(nextIndex);
+    setFocusRequest({ rowKey: row.key, inspectTarget: null });
     onSelectCell?.(row.cell, row.sourceIndex);
   }, [onSelectCell, rows, scrollToIndex]);
 
@@ -304,8 +326,8 @@ export function TrajectoryTable({
                   cell={row.cell}
                   turnNumber={row.turnNumber}
                   attemptNumber={row.attemptNumber}
-                  selected={row.cell.key === selectedCellKey}
-                  highlighted={row.cell.key === inspectTarget?.cellKey}
+                  selected={rowMatchesCellKey(row, selectedCellKey)}
+                  highlighted={rowMatchesCellKey(row, inspectTarget?.cellKey ?? null)}
                   active={index === activeIndex}
                   position={index + 1}
                   setSize={rows.length}
@@ -315,10 +337,14 @@ export function TrajectoryTable({
                   statusLabel={row.statusLabel}
                   durationMs={row.durationMs}
                   attemptCount={row.attemptCount}
+                  collapsedAttemptCount={row.aliasedCellKeys.length}
                   searchQuery={searchQuery}
                   matched={row.matched}
+                  matchPending={row.matchPending}
+                  matchFieldLabel={row.matchFieldLabel}
+                  matchExcerpt={row.matchExcerpt}
                   onSelect={() => {
-                    setActiveKey(row.cell.key);
+                    setActiveKey(row.key);
                     onSelectCell?.(row.cell, row.sourceIndex);
                   }}
                   onKeyDown={event => handleKeyDown(event, index)}
@@ -336,4 +362,11 @@ export function TrajectoryTable({
 function isAtTail(itemCount: number, scrollTop: number, viewportHeight: number): boolean {
   const maximumScrollTop = Math.max(0, (itemCount * TRAJECTORY_ROW_HEIGHT) - viewportHeight);
   return maximumScrollTop - scrollTop <= AT_TAIL_TOLERANCE_PX;
+}
+
+function rowMatchesCellKey(
+  row: { key: string; aliasedCellKeys: readonly string[] },
+  cellKey: string | null,
+): boolean {
+  return cellKey !== null && (row.key === cellKey || row.aliasedCellKeys.includes(cellKey));
 }

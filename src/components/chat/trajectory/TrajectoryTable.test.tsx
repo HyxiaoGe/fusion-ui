@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -21,7 +22,24 @@ function userCell(key: string, text: string): TrajectoryCell {
   };
 }
 
-function runCell(key: string, userMessageId: string): TrajectoryCell {
+function messageCell(key: string, text: string): TrajectoryCell {
+  return {
+    key,
+    type: 'message',
+    runId: null,
+    userMessageId: null,
+    assistantMessageId: key,
+    completenessSources: ['message'],
+    sourceSequences: [],
+    message: {
+      id: key,
+      role: 'assistant',
+      content: [{ id: `${key}-text`, type: 'text', text }],
+    },
+  };
+}
+
+function runCell(key: string, userMessageId: string, isHydrated = true): TrajectoryCell {
   return {
     key,
     type: 'run',
@@ -38,12 +56,47 @@ function runCell(key: string, userMessageId: string): TrajectoryCell {
     startedAt: '2026-08-23T00:00:00.000Z',
     endedAt: '2026-08-23T00:00:01.250Z',
     isSelected: false,
-    isHydrated: true,
+    isHydrated,
     association: 'explicit',
     trajectoryBadge: { status: 'complete', source: 'run-summary', reason: null },
     records: [],
     spans: [],
     liveTail: [],
+  };
+}
+
+function toolCell(key: string): Extract<TrajectoryCell, { type: 'tool' }> {
+  return {
+    key,
+    type: 'tool',
+    runId: 'run-1',
+    userMessageId: 'user-1',
+    assistantMessageId: 'run-1-answer',
+    completenessSources: ['durable-snapshot'],
+    sourceSequences: [8, 9],
+    toolCallId: key,
+    stepId: 'step-1',
+    toolName: 'web_search',
+    status: 'success',
+    events: [],
+  };
+}
+
+function attemptCell(key: string, toolCallId: string): Extract<TrajectoryCell, { type: 'subtool' }> {
+  return {
+    key,
+    type: 'subtool',
+    runId: 'run-1',
+    userMessageId: 'user-1',
+    assistantMessageId: 'run-1-answer',
+    completenessSources: ['durable-snapshot'],
+    sourceSequences: [10],
+    toolCallId,
+    toolAttemptId: key,
+    toolName: 'web_search',
+    attemptIndex: 0,
+    status: 'success',
+    events: [],
   };
 }
 
@@ -91,6 +144,166 @@ describe('TrajectoryTable', () => {
     expect(screen.getAllByRole('option')).toHaveLength(1);
     expect(within(row).getByText('北京')).toHaveAttribute('data-trajectory-match', 'true');
     expect(within(row).getByText('匹配')).toBeInTheDocument();
+  });
+
+  it('单次成功 Attempt 折叠后把受控选择与 inspect 精确别名到所属 Tool 行', async () => {
+    const target = { requestId: 'inspect-attempt', cellKey: 'attempt-1' };
+    const onInspectTargetResolved = vi.fn();
+    const onInspectTargetUnavailable = vi.fn();
+    render(
+      <TrajectoryTable
+        cells={[toolCell('tool-1'), attemptCell('attempt-1', 'tool-1')]}
+        selectedCellKey="attempt-1"
+        inspectTarget={target}
+        viewportHeight={112}
+        onInspectTargetResolved={onInspectTargetResolved}
+        onInspectTargetUnavailable={onInspectTargetUnavailable}
+      />,
+    );
+
+    const tool = screen.getByRole('option', { name: /已折叠的 1 次成功尝试/ });
+    expect(tool).toHaveAttribute('aria-selected', 'true');
+    expect(tool).toHaveAttribute('data-highlighted', 'true');
+    await waitFor(() => expect(tool).toHaveFocus());
+    expect(onInspectTargetResolved).toHaveBeenCalledWith(
+      target,
+      0,
+      expect.objectContaining({ key: 'tool-1', type: 'tool' }),
+    );
+    expect(onInspectTargetUnavailable).not.toHaveBeenCalled();
+  });
+
+  it('未水合 Run 在范围与搜索相交时展示占位和匹配待确认，而不是没有匹配', () => {
+    render(
+      <TrajectoryTable
+        cells={[
+          userCell('user-1', '查询天气'),
+          runCell('run-1', 'user-1', false),
+        ]}
+        selectedCellKey={null}
+        searchQuery="web_search"
+        focusedCellKeys={new Set(['run-1'])}
+        viewportHeight={112}
+      />,
+    );
+
+    expect(screen.getAllByRole('option')).toHaveLength(2);
+    expect(screen.getByRole('option', {
+      name: /运行.*轨迹详情待加载.*匹配待确认/,
+    })).toBeInTheDocument();
+    expect(screen.queryByText('没有匹配记录')).not.toBeInTheDocument();
+  });
+
+  it('原始类型、原始工具名与长正文尾部命中时都展示字段和高亮片段', () => {
+    const longTail = '尾部唯一关键字';
+    const { rerender } = render(
+      <TrajectoryTable
+        cells={[messageCell('message-1', '模型回答')]}
+        selectedCellKey={null}
+        searchQuery="message"
+        viewportHeight={112}
+      />,
+    );
+    expect(screen.getByText('message')).toHaveAttribute('data-trajectory-match', 'true');
+
+    rerender(
+      <TrajectoryTable
+        cells={[toolCell('tool-1'), attemptCell('attempt-1', 'tool-1')]}
+        selectedCellKey={null}
+        searchQuery="web_search"
+        viewportHeight={112}
+      />,
+    );
+    expect(screen.getByText('web_search')).toHaveAttribute('data-trajectory-match', 'true');
+
+    rerender(
+      <TrajectoryTable
+        cells={[messageCell('message-long', `${'内容'.repeat(100)}${longTail}`)]}
+        selectedCellKey={null}
+        searchQuery={longTail}
+        viewportHeight={112}
+      />,
+    );
+    const row = screen.getByRole('option', { name: /搜索命中/ });
+    expect(within(row).getByText('命中正文：')).toBeInTheDocument();
+    expect(within(row).getByText(longTail)).toHaveAttribute('data-trajectory-match', 'true');
+  });
+
+  it('inspect 回调同步在头部插入行后仍按稳定 key 聚焦原目标', async () => {
+    const onInspectTargetResolved = vi.fn();
+
+    function InspectHarness() {
+      const [inserted, setInserted] = useState(false);
+      return (
+        <TrajectoryTable
+          cells={inserted
+            ? [userCell('inserted', '新插入'), userCell('before', '前一条'), userCell('target', '目标')]
+            : [userCell('before', '前一条'), userCell('target', '目标')]}
+          selectedCellKey={null}
+          inspectTarget={{ requestId: 'inspect-stable-key', cellKey: 'target' }}
+          viewportHeight={168}
+          onInspectTargetResolved={(...args) => {
+            onInspectTargetResolved(...args);
+            setInserted(true);
+          }}
+        />
+      );
+    }
+
+    render(<InspectHarness />);
+    await waitFor(() => expect(onInspectTargetResolved).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(screen.getByRole('option', { name: /目标/ })).toHaveFocus());
+    expect(screen.getByRole('option', { name: /前一条/ })).not.toHaveFocus();
+  });
+
+  it('inspect 回调同步移除目标时明确结束定位且不聚焦同 index 的其他行', async () => {
+    const onInspectTargetUnavailable = vi.fn();
+
+    function RemovedTargetHarness() {
+      const [removed, setRemoved] = useState(false);
+      return (
+        <TrajectoryTable
+          cells={removed
+            ? [userCell('before', '前一条'), userCell('replacement', '替代项')]
+            : [userCell('before', '前一条'), userCell('target', '目标')]}
+          selectedCellKey={null}
+          inspectTarget={{ requestId: 'inspect-removed-key', cellKey: 'target' }}
+          viewportHeight={112}
+          onInspectTargetResolved={() => setRemoved(true)}
+          onInspectTargetUnavailable={onInspectTargetUnavailable}
+        />
+      );
+    }
+
+    render(<RemovedTargetHarness />);
+    await waitFor(() => expect(onInspectTargetUnavailable).toHaveBeenCalledWith({
+      requestId: 'inspect-removed-key',
+      cellKey: 'target',
+    }));
+    expect(screen.getByRole('option', { name: /替代项/ })).not.toHaveFocus();
+  });
+
+  it('键盘选择回调同步在头部插入行后仍按稳定 key 聚焦目标', async () => {
+    function KeyboardHarness() {
+      const [inserted, setInserted] = useState(false);
+      return (
+        <TrajectoryTable
+          cells={inserted
+            ? [userCell('inserted', '新插入'), userCell('before', '前一条'), userCell('target', '目标')]
+            : [userCell('before', '前一条'), userCell('target', '目标')]}
+          selectedCellKey={null}
+          viewportHeight={168}
+          onSelectCell={() => setInserted(true)}
+        />
+      );
+    }
+
+    render(<KeyboardHarness />);
+    const before = screen.getByRole('option', { name: /前一条/ });
+    before.focus();
+    fireEvent.keyDown(before, { key: 'ArrowDown' });
+    await waitFor(() => expect(screen.getByRole('option', { name: /目标/ })).toHaveFocus());
+    expect(screen.getByRole('option', { name: /前一条/ })).not.toHaveFocus();
   });
 
   it('过滤后 ARIA 位置、Home/End、选择回调与 inspect index 均基于可见行', async () => {

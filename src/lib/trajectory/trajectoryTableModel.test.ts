@@ -166,7 +166,7 @@ describe('trajectoryTableModel', () => {
       },
       {
         key: 'tool-1', sourceIndex: 2, turnNumber: 1, attemptNumber: null,
-        kindLabel: '工具', summary: '搜索 · 工具调用', statusLabel: '完成',
+        kindLabel: '工具', summary: '搜索 · web_search · 工具调用', statusLabel: '完成',
         durationMs: 80, attemptCount: 0,
       },
       {
@@ -235,7 +235,7 @@ describe('trajectoryTableModel', () => {
     })).toEqual([]);
   });
 
-  it('未水合 Run 在范围中仅保留 user 与 Run 占位', () => {
+  it('未水合 Run 在范围与搜索相交时保留 user 与 Run 占位，并把细粒度匹配标为待确认', () => {
     const cells = [
       userCell('user-1', '查询天气'),
       runCell('run-1', 'user-1', 0, { isHydrated: false }),
@@ -244,11 +244,16 @@ describe('trajectoryTableModel', () => {
 
     const rows = projectTrajectoryTableRows({
       cells,
+      searchQuery: 'web_search',
       focusedCellKeys: new Set(['run-1']),
     });
 
     expect(rows.map(row => row.key)).toEqual(['user-1', 'run-1']);
-    expect(rows[1]).toMatchObject({ summary: '轨迹详情待加载', matched: false });
+    expect(rows[1]).toMatchObject({
+      summary: '轨迹详情待加载',
+      matched: false,
+      matchPending: true,
+    });
   });
 
   it('单次成功 Attempt 默认折叠到 Tool 并标记一次尝试', () => {
@@ -262,7 +267,10 @@ describe('trajectoryTableModel', () => {
     });
 
     expect(rows.map(row => row.key)).toEqual(['user-1', 'run-1', 'tool-1']);
-    expect(rows[2].attemptCount).toBe(1);
+    expect(rows[2]).toMatchObject({
+      attemptCount: 1,
+      aliasedCellKeys: ['attempt-1'],
+    });
   });
 
   it('多次、失败或超时 Attempt 全部展开，无法精确归属的 Attempt 不误折叠', () => {

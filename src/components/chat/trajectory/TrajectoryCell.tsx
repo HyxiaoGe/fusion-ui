@@ -49,8 +49,12 @@ export interface TrajectoryCellProps {
   statusLabel?: string | null;
   durationMs?: number | null;
   attemptCount?: number;
+  collapsedAttemptCount?: number;
   searchQuery?: string;
   matched?: boolean;
+  matchPending?: boolean;
+  matchFieldLabel?: string | null;
+  matchExcerpt?: string | null;
   onSelect: () => void;
   onKeyDown: React.KeyboardEventHandler<HTMLButtonElement>;
 }
@@ -86,8 +90,12 @@ export function TrajectoryCell({
   statusLabel: providedStatusLabel,
   durationMs: providedDurationMs,
   attemptCount = 0,
+  collapsedAttemptCount = 0,
   searchQuery = '',
   matched = false,
+  matchPending = false,
+  matchFieldLabel = null,
+  matchExcerpt = null,
   onSelect,
   onKeyDown,
 }: TrajectoryCellProps) {
@@ -114,9 +122,12 @@ export function TrajectoryCell({
     kindLabel,
     presentation.kindLabel === kindLabel ? null : presentation.kindLabel,
     summary,
+    matchPending ? '匹配待确认' : null,
+    matchExcerpt && matchFieldLabel ? `命中${matchFieldLabel}：${matchExcerpt}` : null,
     statusLabel,
     presentation.trajectoryStatusLabel,
     attemptCount > 0 ? `${attemptCount} 次尝试` : null,
+    collapsedAttemptCount > 0 ? `已折叠的 ${collapsedAttemptCount} 次成功尝试` : null,
     duration,
   ].filter(Boolean).join('，');
   const Icon = trajectoryCellIcon(cell);
@@ -132,6 +143,7 @@ export function TrajectoryCell({
       aria-posinset={position}
       aria-setsize={setSize}
       data-trajectory-index={position - 1}
+      data-trajectory-key={cell.key}
       data-highlighted={highlighted ? 'true' : 'false'}
       tabIndex={active ? 0 : -1}
       onClick={onSelect}
@@ -155,15 +167,33 @@ export function TrajectoryCell({
         TONE_CLASSES[presentation.tone],
       )}>
         <Icon className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-        <HighlightText text={kindLabel} query={searchQuery} />
+        <span className="min-w-0 truncate">
+          <HighlightText text={kindLabel} query={searchQuery} />
+          {' '}
+          <span className="font-mono text-[10px] opacity-70">
+            <HighlightText text={cell.type} query={searchQuery} />
+          </span>
+        </span>
       </span>
       <span className="flex min-w-0 items-center gap-2">
         {presentation.isSkeleton && cell.type === 'run' ? (
-          <span
-            data-testid={`trajectory-cell-skeleton-${cell.runId}`}
-            className="block h-2 w-28 rounded bg-muted"
-            aria-hidden="true"
-          />
+          <span className="flex min-w-0 flex-1 items-center gap-2 text-xs text-muted-foreground">
+            <span
+              data-testid={`trajectory-cell-skeleton-${cell.runId}`}
+              className="block h-2 w-12 shrink-0 rounded bg-muted"
+              aria-hidden="true"
+            />
+            <span className="truncate">
+              <HighlightText text={summary} query={searchQuery} />
+            </span>
+          </span>
+        ) : matchExcerpt ? (
+          <span className="flex min-w-0 flex-1 items-center gap-1 text-xs text-foreground">
+            <span className="shrink-0 text-muted-foreground">命中正文：</span>
+            <span className="min-w-0 truncate">
+              <HighlightText text={matchExcerpt} query={searchQuery} />
+            </span>
+          </span>
         ) : (
           <span className="min-w-0 flex-1 truncate text-xs text-foreground">
             <HighlightText text={summary} query={searchQuery} />
@@ -177,6 +207,11 @@ export function TrajectoryCell({
         {matched && (
           <span className="shrink-0 rounded bg-warn/10 px-1.5 py-0.5 text-[10px] font-medium text-warn">
             匹配
+          </span>
+        )}
+        {matchPending && (
+          <span className="shrink-0 rounded bg-info/10 px-1.5 py-0.5 text-[10px] font-medium text-info">
+            匹配待确认
           </span>
         )}
       </span>
@@ -200,7 +235,9 @@ export function TrajectoryCell({
             {presentation.trajectoryTone === 'success'
               ? <ShieldCheck className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
               : <ShieldAlert className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />}
-            <span className="truncate">{presentation.trajectoryStatusLabel}</span>
+            <span className="truncate">
+              <HighlightText text={presentation.trajectoryStatusLabel} query={searchQuery} />
+            </span>
           </span>
         )}
       </span>

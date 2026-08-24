@@ -15,7 +15,11 @@ export interface TrajectoryTableRow {
   durationMs: number | null;
   searchText: string;
   matched: boolean;
+  matchPending: boolean;
+  matchFieldLabel: string | null;
+  matchExcerpt: string | null;
   attemptCount: number;
+  aliasedCellKeys: string[];
 }
 
 export interface TrajectoryTableModelInput {
@@ -54,7 +58,6 @@ export function projectTrajectoryTableRows({
   const attemptsByTool = collectAttemptsByTool(cells);
   const collapsedAttemptKeys = new Set<string>();
   const collapsedKeysByTool = new Map<string, string[]>();
-  const cellsByKey = new Map(cells.map(cell => [cell.key, cell]));
 
   for (const [toolIdentity, attempts] of attemptsByTool) {
     if (attempts.length !== 1 || !COLLAPSIBLE_ATTEMPT_STATUSES.has(attempts[0].status)) continue;
@@ -74,33 +77,35 @@ export function projectTrajectoryTableRows({
     const presentation = getTrajectoryCellPresentation(cell);
     const kindLabel = KIND_LABELS[cell.type];
     const summary = tableSummary(cell, presentation.kindLabel, presentation.summary);
+    const aliasedCellKeys = cell.type === 'tool'
+      ? (collapsedKeysByTool.get(toolIdentity(cell.runId, cell.toolCallId)) ?? [])
+      : [];
     const attemptCount = cell.type === 'tool'
       ? (attemptsByTool.get(toolIdentity(cell.runId, cell.toolCallId))?.length ?? 0)
       : 0;
-    const collapsedSearchText = cell.type === 'tool'
-      ? (collapsedKeysByTool.get(toolIdentity(cell.runId, cell.toolCallId)) ?? [])
-        .map(key => {
-          const attempt = cellsByKey.get(key);
-          return attempt ? cellSearchParts(attempt).join(' ') : '';
-        })
-      : [];
+    const messageText = searchableMessageText(cell);
     const searchText = normalizeSearch([
       cell.type,
       kindLabel,
-      presentation.kindLabel,
       summary,
       presentation.statusLabel,
       presentation.trajectoryStatusLabel,
-      ...cellSearchParts(cell),
-      ...collapsedSearchText,
+      messageText,
     ].filter(Boolean).join(' '));
     const collapsedFocusMatch = cell.type === 'tool'
-      && (collapsedKeysByTool.get(toolIdentity(cell.runId, cell.toolCallId)) ?? [])
-        .some(key => focusedCellKeys?.has(key));
+      && aliasedCellKeys.some(key => focusedCellKeys?.has(key));
     const directSearchMatch = normalizedQuery ? searchText.includes(normalizedQuery) : true;
     const directFocusMatch = hasFocus
       ? Boolean(focusedCellKeys?.has(cell.key) || collapsedFocusMatch)
       : true;
+    const matchPending = Boolean(normalizedQuery)
+      && directFocusMatch
+      && cell.type === 'run'
+      && !cell.isHydrated
+      && !directSearchMatch;
+    const matchExcerpt = normalizedQuery && directSearchMatch
+      ? messageMatchExcerpt(messageText, summary, normalizedQuery)
+      : null;
     const row: MutableTableRow = {
       key: cell.key,
       cell,
@@ -116,7 +121,11 @@ export function projectTrajectoryTableRows({
       durationMs: presentation.durationMs,
       searchText,
       matched: Boolean(normalizedQuery) && directSearchMatch && directFocusMatch,
+      matchPending,
+      matchFieldLabel: matchExcerpt ? '消息正文' : null,
+      matchExcerpt,
       attemptCount,
+      aliasedCellKeys,
       directSearchMatch,
       directFocusMatch,
     };
@@ -137,7 +146,9 @@ export function projectTrajectoryTableRows({
   }
 
   const selectedKeys = new Set<string>();
-  const roots = rows.filter(row => row.directFocusMatch && row.directSearchMatch);
+  const roots = rows.filter(row => (
+    row.directFocusMatch && (row.directSearchMatch || row.matchPending)
+  ));
   for (const row of roots) {
     selectedKeys.add(row.key);
     const runRow = row.cell.runId ? runRowsById.get(row.cell.runId) : undefined;
@@ -207,23 +218,33 @@ function toolIdentity(runId: string, toolCallId: string): string {
 }
 
 function tableSummary(cell: TrajectoryCell, presentationKind: string, summary: string): string {
-  if (cell.type === 'tool') return `${presentationKind} · ${summary}`;
+  if (cell.type === 'tool') {
+    return [presentationKind, cell.toolName, summary].filter(Boolean).join(' · ');
+  }
+  if (cell.type === 'subtool' && cell.toolName) return `${summary} · ${cell.toolName}`;
   return summary;
 }
 
-function cellSearchParts(cell: TrajectoryCell): string[] {
-  const parts = [cell.key];
+function searchableMessageText(cell: TrajectoryCell): string {
   if (cell.type === 'user' || cell.type === 'message') {
-    parts.push(extractTextFromBlocks(cell.message.content));
+    return extractTextFromBlocks(cell.message.content).trim().replace(/\s+/g, ' ');
   }
-  if (cell.type === 'run') {
-    parts.push(cell.runStatus, cell.trajectoryBadge.status);
-  }
-  if (cell.type === 'tool' || cell.type === 'subtool') {
-    parts.push(cell.toolName ?? '', cell.status);
-  }
-  if (cell.type === 'context') parts.push(cell.eventType);
-  return parts;
+  return '';
+}
+
+function messageMatchExcerpt(
+  messageText: string,
+  summary: string,
+  normalizedQuery: string,
+): string | null {
+  if (!messageText || normalizeSearch(summary).includes(normalizedQuery)) return null;
+  const normalizedMessage = messageText.toLocaleLowerCase();
+  const matchIndex = normalizedMessage.indexOf(normalizedQuery);
+  if (matchIndex < 0) return null;
+  const contextLength = 32;
+  const start = Math.max(0, matchIndex - contextLength);
+  const end = Math.min(messageText.length, matchIndex + normalizedQuery.length + contextLength);
+  return `${start > 0 ? '…' : ''}${messageText.slice(start, end)}${end < messageText.length ? '…' : ''}`;
 }
 
 function normalizeSearch(value: string): string {
@@ -244,6 +265,10 @@ function stripPrivateFields(rows: MutableTableRow[]): TrajectoryTableRow[] {
     durationMs: row.durationMs,
     searchText: row.searchText,
     matched: row.matched,
+    matchPending: row.matchPending,
+    matchFieldLabel: row.matchFieldLabel,
+    matchExcerpt: row.matchExcerpt,
     attemptCount: row.attemptCount,
+    aliasedCellKeys: row.aliasedCellKeys,
   }));
 }
