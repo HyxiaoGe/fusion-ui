@@ -170,7 +170,10 @@ function createTestStore(prefixSize: number, surface: 'chat' | 'trajectory') {
       }),
       models: staticReducer({ models: [], selectedModelId: null }),
     }),
-    middleware: getDefaultMiddleware => getDefaultMiddleware({ serializableCheck: false }),
+    middleware: getDefaultMiddleware => getDefaultMiddleware({
+      immutableCheck: false,
+      serializableCheck: false,
+    }),
   });
   store.dispatch(trajectoryRunListRequested({ conversationId: 'chat-a', requestId: 'runs' }));
   store.dispatch(trajectoryRunListReceived({
