@@ -25,6 +25,7 @@ import {
   type TrajectoryCell,
   type TrajectoryCellProjection,
 } from '@/lib/trajectory/TrajectoryCellProjection';
+import { settleTrajectoryLlmNodeDetail } from '@/lib/trajectory/settleTrajectoryLlmNodeDetail';
 import {
   projectTrajectoryNetworkView,
   resolveTrajectoryCellSpan,
@@ -43,6 +44,7 @@ import {
   selectTrajectoryRuns,
   selectTrajectoryTarget,
   setTrajectoryScrollMode,
+  trajectoryLlmRoundSummaryReceived,
   type TrajectorySnapshotResultIdentity,
 } from '@/redux/slices/trajectorySlice';
 import type { RootState } from '@/redux/store';
@@ -89,6 +91,7 @@ export interface TrajectoryTabViewProps {
   visible?: boolean;
   onRevealInChat?: (messageId: string) => void;
   runActions?: TrajectoryRunActionContext;
+  contentBottomInset?: number;
 }
 
 const EMPTY_PROJECTION: TrajectoryCellProjection = {
@@ -170,10 +173,14 @@ export function TrajectoryTabView({
   visible = true,
   onRevealInChat,
   runActions,
+  contentBottomInset = 0,
 }: TrajectoryTabViewProps) {
   const dispatch = useAppDispatch();
   const store = useStore<RootState>();
   const trajectory = useConversationTrajectory(conversationId);
+  const normalizedContentBottomInset = Number.isFinite(contentBottomInset)
+    ? Math.max(0, contentBottomInset)
+    : 0;
   const runActionsRef = useRef(runActions);
   runActionsRef.current = runActions;
   const [inspectFeedback, setInspectFeedback] = useState<InspectFeedback | null>(null);
@@ -190,6 +197,8 @@ export function TrajectoryTabView({
   const previousVisibleRef = useRef(visible);
   const tableScrollTopRef = useRef(0);
   const liveTailIdentityRef = useRef<{ identity: string; visible: boolean } | null>(null);
+  const llmSettleControllersRef = useRef(new Map<string, AbortController>());
+  const settledLlmIdentitiesRef = useRef(new Set<string>());
   const visibleProjection = useMemo(() => (
     visible
       ? projectTrajectoryCells({
@@ -255,6 +264,74 @@ export function TrajectoryTabView({
       ? [...selectedRunCell.records, ...selectedRunCell.liveTail]
       : []
   ), [selectedRunCell]);
+
+  useEffect(() => {
+    const controllers = llmSettleControllersRef.current;
+    const settled = settledLlmIdentitiesRef.current;
+    return () => {
+      for (const controller of controllers.values()) controller.abort();
+      controllers.clear();
+      settled.clear();
+    };
+  }, [conversationId]);
+
+  useEffect(() => {
+    const runId = trajectory.selectedRunId;
+    const run = runId ? trajectory.runSummariesById[runId] : null;
+    const snapshot = trajectory.snapshot;
+    if (!visible || !runId || !run || !snapshot || run.llm_detail_schema_version !== 1) return;
+
+    const previewIds = new Set(
+      (snapshot.llmRoundSummaries ?? []).map(summary => summary.llm_round_id),
+    );
+    const terminalRoundIds = new Set<string>();
+    for (const event of focusedRunEvents) {
+      if (
+        event.eventType !== 'llm_round_completed'
+        && event.eventType !== 'llm_round_failed'
+        && event.eventType !== 'llm_round_cancelled'
+      ) continue;
+      const llmRoundId = typeof event.payload.llm_round_id === 'string'
+        ? event.payload.llm_round_id
+        : null;
+      if (llmRoundId) terminalRoundIds.add(llmRoundId);
+    }
+
+    for (const llmRoundId of terminalRoundIds) {
+      const identity = `${conversationId}:${runId}:${llmRoundId}`;
+      if (previewIds.has(llmRoundId)) {
+        settledLlmIdentitiesRef.current.add(identity);
+        continue;
+      }
+      if (
+        settledLlmIdentitiesRef.current.has(identity)
+        || llmSettleControllersRef.current.has(identity)
+      ) continue;
+
+      const controller = new AbortController();
+      llmSettleControllersRef.current.set(identity, controller);
+      void settleTrajectoryLlmNodeDetail({
+        conversationId,
+        runId,
+        llmRoundId,
+        signal: controller.signal,
+      }).then(summary => {
+        if (!summary || controller.signal.aborted) return;
+        dispatch(trajectoryLlmRoundSummaryReceived({ conversationId, runId, summary }));
+      }).catch(() => undefined).finally(() => {
+        llmSettleControllersRef.current.delete(identity);
+        settledLlmIdentitiesRef.current.add(identity);
+      });
+    }
+  }, [
+    conversationId,
+    dispatch,
+    focusedRunEvents,
+    trajectory.runSummariesById,
+    trajectory.selectedRunId,
+    trajectory.snapshot,
+    visible,
+  ]);
   const overviewProjection = useMemo(() => projectTrajectoryOverview({
     runs: trajectory.runs,
     focusedRunId: trajectory.selectedRunId,
@@ -440,18 +517,21 @@ export function TrajectoryTabView({
     cell: TrajectoryCell,
     span: TrajectorySpan | null,
   ) => {
-    const domain = selectionDomainForCell(cell);
+    const current = selectTrajectoryConversation(store.getState(), conversationId);
+    const selectedRunId = cell.runId ?? current?.selectedRunId ?? null;
+    const messageId = cell.assistantMessageId ?? cell.userMessageId;
+    const domain = selectionDomain(selectedRunId, messageId);
     selectionDomainRef.current = domain;
     setLocalSelection({ cellKey: cell.key, domain });
     setLocalFocusTarget(null);
     clearInspectFeedback();
     dispatch(selectTrajectoryTarget({
       conversationId,
-      messageId: cell.assistantMessageId ?? cell.userMessageId,
-      runId: cell.runId,
+      messageId,
+      runId: selectedRunId,
       spanId: span?.span_id ?? null,
     }));
-  }, [clearInspectFeedback, conversationId, dispatch]);
+  }, [clearInspectFeedback, conversationId, dispatch, store]);
 
   const handleSelectCell = useCallback((cell: TrajectoryCell) => {
     const span = resolveTrajectoryCellSpan(cell, trajectory.snapshot?.spans ?? []);
@@ -715,7 +795,7 @@ export function TrajectoryTabView({
           </div>
         ) : null}
 
-        <div className="flex min-h-0 flex-1 flex-col overflow-y-auto p-4 xl:overflow-hidden">
+        <div className="flex min-h-0 flex-1 flex-col overflow-y-auto xl:overflow-hidden">
           <TrajectoryOverview
             runs={trajectory.runs}
             focusedRunId={trajectory.selectedRunId}
@@ -735,12 +815,12 @@ export function TrajectoryTabView({
           />
 
           {networkView.hasPendingRangeMatch ? (
-            <p role="status" className="mt-3 text-xs text-muted-foreground">
+            <p role="status" className="border-b border-border/50 px-3 py-1.5 text-xs text-muted-foreground">
               范围包含待水合运行，正在聚焦后补充匹配记录
             </p>
           ) : null}
 
-          <div className="mt-3 grid min-h-[24rem] flex-1 gap-3 xl:min-h-0 xl:grid-cols-[minmax(0,1fr)_clamp(22rem,28vw,28rem)]">
+          <div className="grid min-h-[24rem] flex-1 gap-0 pb-24 xl:min-h-0 xl:grid-cols-[minmax(0,1fr)_clamp(23rem,27vw,26rem)] xl:pb-0">
             <div className="min-h-80 xl:min-h-0">
               <TrajectoryTable
                 cells={cells}
@@ -755,6 +835,7 @@ export function TrajectoryTabView({
                 focusedCellKeys={networkView.rangeFocusedCellKeys}
                 projectedRows={networkView.rows}
                 initialScrollTop={tableScrollTopRef.current}
+                bottomInset={normalizedContentBottomInset}
                 restoreKey={conversationId}
                 followTailRequest={visible
                   && trajectory.scrollMode === 'follow-live'
@@ -766,16 +847,21 @@ export function TrajectoryTabView({
                 onInspectTargetResolved={handleInspectResolved}
                 onInspectTargetUnavailable={handleInspectUnavailable}
                 onViewportStateChange={handleViewportStateChange}
-                className="h-full"
+                className="h-full border-0"
               />
             </div>
 
-            <div className="min-h-0 overflow-y-auto pr-1">
+            <div className="min-h-0 overflow-y-auto border-l border-border/60">
               <TrajectoryNodeDetailPanel
                 conversationId={conversationId}
                 cell={selectedCell}
                 span={selectedSpan}
                 relatedCells={cells}
+              />
+              <div
+                aria-hidden="true"
+                data-testid="trajectory-detail-bottom-spacer"
+                style={{ height: `${normalizedContentBottomInset}px` }}
               />
             </div>
           </div>
@@ -790,14 +876,13 @@ export function TrajectoryTabView({
       data-conversation-id={conversationId}
       className="flex h-full min-h-0 flex-col"
     >
-      <header className="flex min-h-12 shrink-0 flex-wrap items-center justify-between gap-3 border-b border-border/60 px-4 py-2">
+      <header className="flex min-h-10 shrink-0 flex-wrap items-center justify-between gap-2 border-b border-border/60 px-3 py-1">
         <div className="min-w-0">
-          <h1 className="text-sm font-semibold text-foreground">会话轨迹（有界）</h1>
-          <p className="truncate text-xs text-muted-foreground">最近运行与所选运行的有限事件快照</p>
+          <h1 className="text-sm font-semibold text-foreground">会话轨迹</h1>
         </div>
         <div className="flex min-w-0 flex-1 flex-wrap items-center justify-end gap-2">
           <label className="flex min-w-56 max-w-md flex-1 items-center gap-2 text-xs text-muted-foreground">
-            <span className="shrink-0">搜索</span>
+            <span className="sr-only">搜索</span>
             <span className="flex min-w-0 flex-1 items-center rounded-md border border-border/60 bg-background px-2 focus-within:ring-2 focus-within:ring-ring">
               <Search className="h-4 w-4 shrink-0" aria-hidden="true" />
               <input
@@ -806,7 +891,7 @@ export function TrajectoryTabView({
                 placeholder="搜索类型、名称、状态或消息正文"
                 value={searchQuery}
                 onChange={event => setSearchQuery(event.currentTarget.value)}
-                className="h-9 min-w-0 flex-1 bg-transparent px-2 text-sm text-foreground outline-none placeholder:text-muted-foreground"
+                className="h-7 min-w-0 flex-1 bg-transparent px-2 text-xs text-foreground outline-none placeholder:text-muted-foreground"
               />
               {searchQuery ? (
                 <button

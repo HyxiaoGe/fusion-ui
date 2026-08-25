@@ -103,9 +103,40 @@ function contextSummary(cell: Extract<TrajectoryCell, { type: 'context' }>): str
   if (cell.eventType === 'context_result') {
     return formatTrajectoryStatus(stringValue(cell.payload.status) ?? 'complete');
   }
+  if (cell.eventType === 'context_status_updated') {
+    const status = stringValue(cell.payload.status);
+    const statusLabel = contextStatusLabel(status);
+    const actualTokens = finiteNumber(cell.payload.actual_prompt_tokens);
+    const windowTokens = finiteNumber(cell.payload.window_tokens);
+    if (stringValue(cell.payload.phase) === 'final' && actualTokens !== null) {
+      const actualLabel = actualTokens.toLocaleString('en-US');
+      const windowLabel = windowTokens === null ? null : windowTokens.toLocaleString('en-US');
+      return `${statusLabel} · 实际 ${actualLabel}${windowLabel ? ` / ${windowLabel}` : ''} Token`;
+    }
+    return statusLabel;
+  }
   return boundedSummary(stringValue(cell.payload.phase)
     ?? stringValue(cell.payload.status)
     ?? '上下文已更新');
+}
+
+function contextStatusLabel(status: string | null): string {
+  switch (status) {
+    case 'no_op_fast_path':
+    case 'no_op':
+      return '上下文充足';
+    case 'trimmed':
+    case 'trimmed_required_above_target':
+      return '上下文已压缩';
+    case 'required_context_over_budget':
+      return '上下文超出预算';
+    case 'estimator_unavailable':
+      return '上下文用量不可用';
+    case 'bypass_unknown_window':
+      return '上下文窗口未知';
+    default:
+      return '上下文已更新';
+  }
 }
 
 export function getTrajectoryCellPresentation(cell: TrajectoryCell): TrajectoryCellPresentation {
@@ -125,6 +156,20 @@ export function getTrajectoryCellPresentation(cell: TrajectoryCell): TrajectoryC
         statusLabel: cell.message.status === 'failed' ? '失败' : null,
         durationMs: null,
         tone: cell.message.status === 'failed' ? 'danger' : 'neutral',
+      };
+    case 'assistant_request':
+      return {
+        kindLabel: cell.requestIndex === null
+          ? '模型请求'
+          : `Request #${cell.requestIndex}`,
+        summary: boundedSummary(
+          cell.reasoningPreview
+          ?? cell.outputPreview
+          ?? [cell.provider, cell.model].filter(Boolean).join(' · '),
+        ) || '模型请求正文待生成',
+        statusLabel: formatTrajectoryStatus(cell.status),
+        durationMs: cell.durationMs,
+        tone: statusTone(cell.status),
       };
     case 'run':
       return {

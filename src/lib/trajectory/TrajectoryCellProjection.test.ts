@@ -5,6 +5,7 @@ import type { NormalizedTrajectoryEvent } from './normalizeTrajectoryEvent';
 import type { TrajectoryRunSummary } from '@/types/trajectory';
 import {
   projectTrajectoryCells,
+  type TrajectoryCell,
   type TrajectoryCellProjectionInput,
 } from './TrajectoryCellProjection';
 
@@ -35,6 +36,8 @@ function runSummary(
     duration_ms: 120,
     started_at: timestamp,
     ended_at: '2026-08-22T00:00:00.120Z',
+    llm_detail_schema_version: 1,
+    llm_round_count: 0,
     ...overrides,
   };
 }
@@ -398,6 +401,58 @@ describe('TrajectoryCellProjection', () => {
     ]);
   });
 
+  it('同一轮上下文状态按稳定 round 合并，保留完整序号但只生成一条记录', () => {
+    const selected = runSummary('context-merge', {
+      message_id: 'assistant-context-merge',
+      turn_message_id: 'user-context-merge',
+    });
+    const projection = projectTrajectoryCells(input({
+      messages: [
+        message('user-context-merge', 'user'),
+        message('assistant-context-merge', 'assistant'),
+      ],
+      runs: [selected],
+      runSummariesById: { 'context-merge': selected },
+      selectedRunId: 'context-merge',
+      snapshotsByRunId: {
+        'context-merge': {
+          snapshotRequestId: 'snapshot-context-merge',
+          run: selected,
+          spans: [],
+          completeness: {
+            status: 'complete',
+            degraded_reason: null,
+            event_count: 2,
+            expected_last_sequence: 1,
+            loaded_event_count: 2,
+            first_sequence: 0,
+            last_sequence: 1,
+          },
+          truncated: false,
+          durableLastSequence: 1,
+          events: [
+            event('context-merge', 0, 'context_status_updated', {
+              payload: { round_index: 1, phase: 'estimated' },
+            }),
+            event('context-merge', 1, 'context_status_updated', {
+              payload: { round_index: 1, phase: 'final' },
+            }),
+          ],
+        },
+      },
+    }));
+
+    const contexts = projection.cells.filter(
+      (cell): cell is Extract<TrajectoryCell, { type: 'context' }> => cell.type === 'context',
+    );
+    expect(contexts).toHaveLength(1);
+    expect(contexts[0]).toMatchObject({
+      contextId: 'context_status_updated:1',
+      sourceSequences: [0, 1],
+      payload: { round_index: 1, phase: 'final' },
+    });
+  });
+
   it('run 主状态与 trajectory badge 独立，并将 legacy/degraded/truncated 明确标注', () => {
     const legacy = runSummary('legacy', {
       message_id: 'assistant-legacy',
@@ -706,5 +761,154 @@ describe('TrajectoryCellProjection', () => {
     const projectedRun = projection.cells.find(cell => cell.type === 'run');
     expect(projectedRun?.records).toHaveLength(5000);
     expect(elapsedMs).toBeLessThanOrEqual(750);
+  });
+
+  it('将同一 LLM round 合并为会话级 Request 编号，并关联快照正文预览', () => {
+    const first = runSummary('first', {
+      message_id: 'assistant-first',
+      turn_message_id: 'user-first',
+      llm_round_count: 2,
+    });
+    const selected = runSummary('selected-llm', {
+      message_id: 'assistant-selected-llm',
+      turn_message_id: 'user-selected-llm',
+      llm_round_count: 1,
+    });
+    const projection = projectTrajectoryCells(input({
+      messages: [
+        message('user-first', 'user'),
+        message('assistant-first', 'assistant'),
+        message('user-selected-llm', 'user'),
+        message('assistant-selected-llm', 'assistant'),
+      ],
+      runs: [selected, first],
+      runSummariesById: { first, 'selected-llm': selected },
+      selectedRunId: 'selected-llm',
+      snapshotsByRunId: {
+        'selected-llm': {
+          snapshotRequestId: 'snapshot-selected-llm',
+          run: selected,
+          spans: [],
+          completeness: {
+            status: 'complete',
+            degraded_reason: null,
+            event_count: 3,
+            expected_last_sequence: 2,
+            loaded_event_count: 3,
+            first_sequence: 0,
+            last_sequence: 2,
+          },
+          truncated: false,
+          llmRoundSummaries: [{
+            llm_round_id: 'llm-round-1',
+            reasoning_preview: '先检索项目结构，再判断实现质量。',
+            output_preview: '项目结构清晰。',
+          }],
+          durableLastSequence: 2,
+          events: [
+            event('selected-llm', 0, 'llm_round_started', {
+              payload: {
+                llm_round_id: 'llm-round-1',
+                round_index: 1,
+                model: 'deepseek-chat',
+                provider: 'deepseek',
+              },
+            }),
+            event('selected-llm', 1, 'llm_round_first_output_delta', {
+              payload: { llm_round_id: 'llm-round-1', delta_kind: 'reasoning', ttft_ms: 90 },
+            }),
+            event('selected-llm', 2, 'llm_round_completed', {
+              payload: {
+                llm_round_id: 'llm-round-1',
+                status: 'success',
+                input_tokens: 100,
+                output_tokens: 40,
+                reasoning_tokens: 24,
+                duration_ms: 800,
+                ttft_ms: 90,
+              },
+            }),
+          ],
+        },
+      },
+    }));
+
+    expect(projection.cells.find(
+      (cell): cell is Extract<TrajectoryCell, { type: 'assistant_request' }> => (
+        cell.type === 'assistant_request'
+      ),
+    )).toMatchObject({
+      type: 'assistant_request',
+      llmRoundId: 'llm-round-1',
+      roundIndex: 1,
+      requestIndex: 3,
+      model: 'deepseek-chat',
+      provider: 'deepseek',
+      status: 'success',
+      reasoningPreview: '先检索项目结构，再判断实现质量。',
+      outputPreview: '项目结构清晰。',
+      inputTokens: 100,
+      outputTokens: 40,
+      reasoningTokens: 24,
+      durationMs: 800,
+      ttftMs: 90,
+      detailAvailable: true,
+      sourceSequences: [0, 1, 2],
+    });
+  });
+
+  it('重试旧 Turn 时仍按 Run 开始时间生成会话级 Request 编号', () => {
+    const laterRetry = runSummary('later-retry', {
+      message_id: 'assistant-first',
+      turn_message_id: 'user-first',
+      started_at: '2026-08-22T00:00:10.000Z',
+      llm_round_count: 1,
+    });
+    const earlierSecondTurn = runSummary('earlier-second-turn', {
+      message_id: 'assistant-second',
+      turn_message_id: 'user-second',
+      started_at: '2026-08-22T00:00:05.000Z',
+      llm_round_count: 2,
+    });
+    const projection = projectTrajectoryCells(input({
+      messages: [
+        message('user-first', 'user'),
+        message('assistant-first', 'assistant'),
+        message('user-second', 'user'),
+        message('assistant-second', 'assistant'),
+      ],
+      runs: [laterRetry, earlierSecondTurn],
+      runSummariesById: {
+        'later-retry': laterRetry,
+        'earlier-second-turn': earlierSecondTurn,
+      },
+      selectedRunId: 'later-retry',
+      snapshotsByRunId: {
+        'later-retry': {
+          snapshotRequestId: 'snapshot-later-retry',
+          run: laterRetry,
+          spans: [],
+          completeness: {
+            status: 'complete',
+            degraded_reason: null,
+            event_count: 1,
+            expected_last_sequence: 0,
+            loaded_event_count: 1,
+            first_sequence: 0,
+            last_sequence: 0,
+          },
+          truncated: false,
+          durableLastSequence: 0,
+          events: [event('later-retry', 0, 'llm_round_started', {
+            payload: { llm_round_id: 'retry-round', round_index: 1 },
+          })],
+        },
+      },
+    }));
+
+    expect(projection.cells.find(cell => cell.type === 'assistant_request')).toMatchObject({
+      runId: 'later-retry',
+      requestIndex: 3,
+    });
   });
 });

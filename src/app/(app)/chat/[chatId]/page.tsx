@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { Files } from 'lucide-react';
 import { ChatMessageListLazy } from '@/components/lazy/LazyComponents';
@@ -20,8 +20,6 @@ import {
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import TrajectoryTabView from '@/components/chat/trajectory/TrajectoryTabView';
-import type { TrajectoryRunActionLifecycle } from '@/components/chat/trajectory/TrajectoryRunActions';
-import type { TrajectoryRunActionTarget } from '@/lib/trajectory/trajectoryActionPolicy';
 import type { FileAttachment } from '@/lib/utils/fileHelpers';
 import ConfirmDialog from '@/components/ui/confirm-dialog';
 import { useAppDispatch, useAppSelector } from '@/redux/hooks';
@@ -66,7 +64,6 @@ import {
   shouldRecoverReasoningOnlyFinalBlocks,
 } from '@/lib/chat/contentBlocks';
 import { hasFormalTextContent } from '@/lib/chat/suggestedQuestionState';
-import { resolveSendModel } from '@/lib/chat/sendModelResolution';
 import { CHAT_NEW_PATH } from '@/lib/routes/chatRoutes';
 import { deleteFile, type FileInfo } from '@/lib/api/files';
 import {
@@ -160,6 +157,7 @@ export default function ChatPage() {
     fileIds: [],
   });
   const chatInputRef = useRef<HTMLDivElement>(null);
+  const [trajectoryComposerInset, setTrajectoryComposerInset] = useState(256);
   const trajectoryInspectSequenceRef = useRef(0);
   const reconnectControllerRef = useRef<AbortController | null>(null);
   const recoveryStreamModeRef = useRef<'initial' | 'retry' | 'continuation' | null>(null);
@@ -178,7 +176,7 @@ export default function ChatPage() {
     status: KnowledgeSelectionStatus;
   }>({ chatId, ids: [], status: 'ready' });
   const { sendMessage, stopStreaming, retryMessage } = useSendMessage(chatId);
-  const { continueAgentRun, stopContinueAgentRun } = useContinueAgentRun();
+  const { stopContinueAgentRun } = useContinueAgentRun();
   const {
     suggestedQuestions,
     isLoadingQuestions,
@@ -197,9 +195,6 @@ export default function ChatPage() {
   });
   const conversationError = useAppSelector((state) => state.conversation.globalError);
   const isStreaming = useAppSelector((state) => state.stream.isStreaming);
-  const isConversationModelAvailable = useAppSelector(
-    (state) => resolveSendModel(state, chatId).status === 'ready'
-  );
   const lastReadyConversationSnapshot = useAppSelector(
     (state) => state.conversation.lastReadyConversationSnapshot
   );
@@ -222,6 +217,21 @@ export default function ChatPage() {
   const composerKnowledgeSelectionStatus = composerKnowledgeSelection.chatId === chatId
     ? composerKnowledgeSelection.status
     : 'loading';
+
+  useLayoutEffect(() => {
+    if (activeSurface !== 'trajectory') return;
+    const composer = chatInputRef.current;
+    if (!composer) return;
+    const updateInset = () => {
+      const height = Math.ceil(composer.getBoundingClientRect().height);
+      if (height > 0) setTrajectoryComposerInset(current => current === height ? current : height);
+    };
+    updateInset();
+    if (typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(updateInset);
+    observer.observe(composer);
+    return () => observer.disconnect();
+  }, [activeSurface]);
 
   useEffect(() => {
     if (hydrationView !== 'ready') return;
@@ -613,45 +623,6 @@ export default function ChatPage() {
     ]
   );
 
-  const handleRetrySelectedRun = useCallback((
-    target: TrajectoryRunActionTarget,
-    lifecycle: TrajectoryRunActionLifecycle,
-  ) => {
-    if (!chatId) {
-      lifecycle.onRejected();
-      return;
-    }
-    return retryMessage(
-      target.retryMessageId,
-      chatId,
-      composerKnowledgeBaseIds,
-      target.previousRunId,
-      lifecycle,
-    );
-  }, [
-    chatId,
-    composerKnowledgeBaseIds,
-    retryMessage,
-  ]);
-
-  const handleContinueSelectedRun = useCallback((
-    target: TrajectoryRunActionTarget,
-    lifecycle: TrajectoryRunActionLifecycle,
-  ) => {
-    if (!chatId || !target.assistantMessageId) {
-      lifecycle.onRejected();
-      return;
-    }
-    return continueAgentRun({
-      conversationId: chatId,
-      assistantMessageId: target.assistantMessageId,
-      previousRunId: target.previousRunId,
-      canStart: lifecycle.canStart,
-      onAccepted: lifecycle.onAccepted,
-      onRejectedBeforeStart: lifecycle.onRejected,
-    });
-  }, [chatId, continueAgentRun]);
-
   const handleStopStreaming = useCallback(async () => {
     const recoveryController = reconnectControllerRef.current;
     if (recoveryController) {
@@ -1010,7 +981,7 @@ export default function ChatPage() {
             activationMode="manual"
             className="min-h-0 flex-1 gap-0"
           >
-            <div className="flex shrink-0 justify-center border-b border-border/60 px-4 py-2">
+            <div className="flex shrink-0 justify-center border-b border-border/60 px-4 py-1">
               <TabsList aria-label="会话视图">
                 <TabsTrigger value="chat">聊天</TabsTrigger>
                 <TabsTrigger value="trajectory">轨迹</TabsTrigger>
@@ -1058,55 +1029,60 @@ export default function ChatPage() {
                 conversationId={chatId}
                 messages={isHydratingWithoutContent ? [] : displayMessages}
                 visible={activeSurface === 'trajectory'}
+                contentBottomInset={trajectoryComposerInset}
                 onRevealInChat={handleRevealInChat}
-                runActions={{
-                  enabled: activeSurface === 'trajectory'
-                    && !shouldKeepPreviousContent
-                    && !isHydratingWithoutContent,
-                  hasActiveStream: isStreaming,
-                  modelAvailable: isConversationModelAvailable,
-                  knowledgeBaseStatus: composerKnowledgeSelectionStatus,
-                  knowledgeBaseIds: composerKnowledgeBaseIds,
-                  onRetry: handleRetrySelectedRun,
-                  onContinue: handleContinueSelectedRun,
-                }}
               />
             </TabsContent>
           </Tabs>
 
-          <div ref={chatInputRef} tabIndex={-1} className="flex-shrink-0 px-4 pb-4 pt-2">
-            {shouldShowFilesPanelButton ? (
-              <div className="mb-2 flex items-center justify-end">
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  className="h-8 gap-1.5"
-                  aria-label={filesPanelOpen ? '关闭会话资料' : '打开会话资料'}
-                  aria-expanded={filesPanelOpen}
-                  onClick={() => setFilesPanelConversationId((current) => current === chatId ? null : chatId)}
-                >
-                  <Files className="h-4 w-4" aria-hidden="true" />
-                  资料
-                </Button>
-              </div>
-            ) : null}
-            <ChatInput
-              onSendMessage={handleSendMessage}
-              onClearMessage={handleClearChat}
-              onStopStreaming={handleStopStreaming}
-              onModelChange={clearQuestions}
-              activeChatId={chatId}
-              disabled={isHydratingWithoutContent}
-              resetSignal={chatId}
-              conversationAttachments={conversationAttachments}
-              onRemoveConversationAttachment={handleRemoveConversationAttachment}
-              onClearConversationAttachments={handleClearConversationAttachments}
-              onUploadComplete={handleUploadComplete}
-              initialKnowledgeBaseIds={conversation?.knowledge_base_ids}
-              onKnowledgeBaseIdsChange={handleComposerKnowledgeBaseIdsChange}
-              onKnowledgeSelectionStatusChange={handleComposerKnowledgeSelectionStatusChange}
-            />
+          <div
+            ref={chatInputRef}
+            tabIndex={-1}
+            data-testid="chat-composer-shell"
+            data-placement={activeSurface === 'trajectory' ? 'overlay' : 'flow'}
+            className={activeSurface === 'trajectory'
+              ? 'pointer-events-none absolute inset-x-0 bottom-0 z-30 bg-gradient-to-t from-background via-background/95 to-transparent px-4 pb-3 pt-8'
+              : 'flex-shrink-0 px-4 pb-4 pt-2'}
+          >
+            <div
+              data-testid="chat-composer-interactive"
+              className={activeSurface === 'trajectory'
+              ? 'pointer-events-auto rounded-xl bg-background/95 shadow-[0_-8px_30px_rgba(0,0,0,0.08)] backdrop-blur-sm'
+              : undefined}
+            >
+              {shouldShowFilesPanelButton ? (
+                <div className="mb-2 flex items-center justify-end">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-8 gap-1.5"
+                    aria-label={filesPanelOpen ? '关闭会话资料' : '打开会话资料'}
+                    aria-expanded={filesPanelOpen}
+                    onClick={() => setFilesPanelConversationId((current) => current === chatId ? null : chatId)}
+                  >
+                    <Files className="h-4 w-4" aria-hidden="true" />
+                    资料
+                  </Button>
+                </div>
+              ) : null}
+              <ChatInput
+                onSendMessage={handleSendMessage}
+                onClearMessage={handleClearChat}
+                onStopStreaming={handleStopStreaming}
+                onModelChange={clearQuestions}
+                activeChatId={chatId}
+                disabled={isHydratingWithoutContent}
+                resetSignal={chatId}
+                conversationAttachments={conversationAttachments}
+                onRemoveConversationAttachment={handleRemoveConversationAttachment}
+                onClearConversationAttachments={handleClearConversationAttachments}
+                onUploadComplete={handleUploadComplete}
+                initialKnowledgeBaseIds={conversation?.knowledge_base_ids}
+                onKnowledgeBaseIdsChange={handleComposerKnowledgeBaseIdsChange}
+                onKnowledgeSelectionStatusChange={handleComposerKnowledgeSelectionStatusChange}
+              />
+            </div>
           </div>
         </div>
 

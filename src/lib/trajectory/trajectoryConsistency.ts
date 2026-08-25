@@ -241,9 +241,7 @@ function buildExpectedProjectionDigests(
   const groups = new Map<string, ExpectedDigestGroup>();
   for (const event of [...events].sort((left, right) => left.sequence - right.sequence)) {
     for (const identity of expectedCellIdentities(event)) {
-      const key = identity.cellKind === 'context'
-        ? `${identity.cellKind}:${identity.entityId}:${event.sequence}`
-        : `${identity.cellKind}:${identity.entityId}`;
+      const key = `${identity.cellKind}:${identity.entityId}`;
       const group = groups.get(key) ?? { ...identity, events: [] };
       group.events.push(event);
       groups.set(key, group);
@@ -265,6 +263,12 @@ function expectedCellIdentities(event: NormalizedTrajectoryEvent): Array<{
   cellKind: CanonicalProjectionDigest['cellKind'];
   entityId: string;
 }> {
+  if (event.eventType.startsWith('llm_round_')) {
+    const llmRoundId = stringValue(event.payload.llm_round_id);
+    return llmRoundId
+      ? [{ cellKind: 'assistant_request', entityId: llmRoundId }]
+      : [{ cellKind: 'run', entityId: event.runId }];
+  }
   if (event.eventType === 'plan_snapshot' || event.eventType === 'plan_step_updated') {
     return [{
       cellKind: 'plan',
@@ -330,6 +334,21 @@ function expectedNormalizedFields(group: ExpectedDigestGroup): Record<string, un
       stepId: first.stepId,
       toolName: latestStringValue(events, 'tool_name'),
       status: latestToolStatus(events),
+      events: events.map(canonicalEvent),
+    };
+  }
+  if (group.cellKind === 'assistant_request') {
+    return {
+      llmRoundId: group.entityId,
+      roundIndex: latestNumberValue(events, 'round_index'),
+      model: latestStringValue(events, 'model'),
+      provider: latestStringValue(events, 'provider'),
+      status: latestLlmRoundStatus(events),
+      inputTokens: latestNumberValue(events, 'input_tokens'),
+      outputTokens: latestNumberValue(events, 'output_tokens'),
+      reasoningTokens: latestNumberValue(events, 'reasoning_tokens'),
+      durationMs: latestNumberValue(events, 'duration_ms'),
+      ttftMs: latestNumberValue(events, 'ttft_ms'),
       events: events.map(canonicalEvent),
     };
   }
@@ -416,6 +435,27 @@ function buildProjectedDigests(
         },
       }];
     }
+    if (cell.type === 'assistant_request') {
+      return [{
+        ...base,
+        entityId: cell.llmRoundId,
+        normalizedFields: {
+          llmRoundId: cell.llmRoundId,
+          roundIndex: cell.roundIndex,
+          model: cell.model,
+          provider: cell.provider,
+          status: cell.status,
+          inputTokens: cell.inputTokens,
+          outputTokens: cell.outputTokens,
+          reasoningTokens: cell.reasoningTokens,
+          durationMs: cell.durationMs,
+          ttftMs: cell.ttftMs,
+          events: [...cell.events]
+            .sort((left, right) => left.sequence - right.sequence)
+            .map(canonicalEvent),
+        },
+      }];
+    }
     return [{
       ...base,
       entityId: cell.toolAttemptId,
@@ -476,8 +516,9 @@ function sortDigests(digests: CanonicalProjectionDigest[]): CanonicalProjectionD
     plan: 1,
     context: 2,
     compacted: 3,
-    tool: 4,
-    subtool: 5,
+    assistant_request: 4,
+    tool: 5,
+    subtool: 6,
   };
   return digests.sort((left, right) => {
     const sequence = (left.sequences[0] ?? Number.MAX_SAFE_INTEGER)
@@ -492,6 +533,30 @@ function latestStringValue(events: NormalizedTrajectoryEvent[], field: string): 
   let latest: string | null = null;
   for (const event of events) latest = stringValue(event.payload[field]) ?? latest;
   return latest;
+}
+
+function latestNumberValue(events: NormalizedTrajectoryEvent[], field: string): number | null {
+  for (let index = events.length - 1; index >= 0; index -= 1) {
+    const value = numberValue(events[index].payload[field]);
+    if (value !== null) return value;
+  }
+  return null;
+}
+
+function latestLlmRoundStatus(events: NormalizedTrajectoryEvent[]): string {
+  const latest = events.at(-1);
+  if (!latest || latest.eventType === 'llm_round_started'
+    || latest.eventType === 'llm_round_first_output_delta') return 'running';
+  if (latest.eventType === 'llm_round_completed') {
+    return stringValue(latest.payload.status) ?? 'success';
+  }
+  if (latest.eventType === 'llm_round_failed') {
+    return stringValue(latest.payload.status) ?? 'failed';
+  }
+  if (latest.eventType === 'llm_round_cancelled') {
+    return stringValue(latest.payload.status) ?? 'cancelled';
+  }
+  return 'running';
 }
 
 function latestToolStatus(events: NormalizedTrajectoryEvent[]): string {

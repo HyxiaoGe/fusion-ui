@@ -14,12 +14,18 @@ import { ApiError } from '@/types/api';
 import type { Message } from '@/types/conversation';
 import type { TrajectoryRunSummary, TrajectorySnapshot } from '@/types/trajectory';
 
-const { getTrajectoryRunsMock, getTrajectorySnapshotMock } = vi.hoisted(() => ({
+const {
+  getTrajectoryLlmNodeDetailMock,
+  getTrajectoryRunsMock,
+  getTrajectorySnapshotMock,
+} = vi.hoisted(() => ({
+  getTrajectoryLlmNodeDetailMock: vi.fn(),
   getTrajectoryRunsMock: vi.fn(),
   getTrajectorySnapshotMock: vi.fn(),
 }));
 
 vi.mock('@/lib/api/trajectory', () => ({
+  getTrajectoryLlmNodeDetail: getTrajectoryLlmNodeDetailMock,
   getTrajectoryRuns: getTrajectoryRunsMock,
   getTrajectorySnapshot: getTrajectorySnapshotMock,
 }));
@@ -53,6 +59,8 @@ function runSummary(overrides: Partial<TrajectoryRunSummary> = {}): TrajectoryRu
     duration_ms: 180,
     started_at: '2026-08-22T00:00:00.000Z',
     ended_at: '2026-08-22T00:00:00.180Z',
+    llm_detail_schema_version: 1,
+    llm_round_count: 0,
     ...overrides,
   };
 }
@@ -125,6 +133,7 @@ function snapshot(overrides: Partial<TrajectorySnapshot> = {}): TrajectorySnapsh
       last_sequence: 2,
     },
     truncated: false,
+    llm_round_summaries: [],
     ...overrides,
   };
 }
@@ -195,7 +204,7 @@ function snapshotWithTools(count: number): TrajectorySnapshot {
 }
 
 function snapshotWithModelSpan(): TrajectorySnapshot {
-  const run = runSummary({ total_steps: 1, total_tool_calls: 0 });
+  const run = runSummary({ total_steps: 1, total_tool_calls: 0, llm_round_count: 1 });
   const records: TrajectorySnapshot['records'] = [
     {
       ...snapshot().records[0],
@@ -408,6 +417,7 @@ function installCanvasMocks() {
 
 describe('TrajectoryTabView', () => {
   beforeEach(() => {
+    getTrajectoryLlmNodeDetailMock.mockReset();
     installCanvasMocks();
     getTrajectoryRunsMock.mockReset();
     getTrajectorySnapshotMock.mockReset();
@@ -428,7 +438,7 @@ describe('TrajectoryTabView', () => {
       { wrapper: wrapper(store) },
     );
 
-    expect(screen.getByRole('heading', { name: '会话轨迹（有界）' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: '会话轨迹' })).toBeInTheDocument();
     expect(screen.getByRole('status')).toHaveTextContent('正在加载轨迹运行');
     expect(getTrajectorySnapshotMock).not.toHaveBeenCalled();
 
@@ -438,6 +448,23 @@ describe('TrajectoryTabView', () => {
     });
 
     expect(await screen.findByText('当前会话暂无轨迹运行')).toBeInTheDocument();
+  });
+
+  it('详情面板为底部 Composer 浮层保留动态滚动尾部空间', async () => {
+    getTrajectoryRunsMock.mockResolvedValue({ items: [runSummary()], truncated: false });
+    getTrajectorySnapshotMock.mockResolvedValue(snapshot());
+
+    render(
+      <TrajectoryTabView
+        conversationId="chat-a"
+        messages={messages}
+        contentBottomInset={256}
+      />,
+      { wrapper: wrapper(createStore()) },
+    );
+
+    await screen.findByRole('listbox', { name: '轨迹记录表' });
+    expect(screen.getByTestId('trajectory-detail-bottom-spacer')).toHaveStyle({ height: '256px' });
   });
 
   it('run list 失败和不可用状态都提供真实且不同的结果', async () => {
@@ -555,6 +582,28 @@ describe('TrajectoryTabView', () => {
     expect(tool).toHaveAttribute('aria-selected', 'true');
   });
 
+  it('点击 Turn 级用户节点只更新详情，不卸载当前 Run 快照', async () => {
+    const store = createStore();
+    store.dispatch(setTrajectoryActiveSurface({ conversationId: 'chat-a', surface: 'trajectory' }));
+    getTrajectoryRunsMock.mockResolvedValue({ items: [runSummary()], truncated: false });
+    getTrajectorySnapshotMock.mockResolvedValue(snapshot());
+
+    render(
+      <TrajectoryTabView conversationId="chat-a" messages={messages} />,
+      { wrapper: wrapper(store) },
+    );
+
+    const tool = await screen.findByRole('option', { name: /搜索.*工具调用.*完成/ });
+    const user = screen.getByRole('option', { name: /用户提问.*查天气/ });
+    fireEvent.click(user);
+
+    expect(user).toHaveAttribute('aria-selected', 'true');
+    expect(within(screen.getByLabelText('轨迹节点详情'))
+      .getByRole('heading', { name: '用户提问' })).toBeInTheDocument();
+    expect(store.getState().trajectory.byConversationId['chat-a'].selectedRunId).toBe('run-1');
+    expect(tool).toBeInTheDocument();
+  });
+
   it('actual 时间空洞中的激活范围显示没有匹配记录，不回退全表', async () => {
     const store = createStore();
     store.dispatch(setTrajectoryActiveSurface({ conversationId: 'chat-a', surface: 'trajectory' }));
@@ -580,7 +629,7 @@ describe('TrajectoryTabView', () => {
     expect(screen.getByText('没有匹配记录')).toBeInTheDocument();
   });
 
-  it('Overview Model segment 定位 Run 行时仍用对应 P1 span 驱动 Detail Summary 与 Timing', async () => {
+  it('Overview Model segment 精确定位 LLM Request 行并用对应 P1 span 驱动详情', async () => {
     const store = createStore();
     store.dispatch(setTrajectoryActiveSurface({ conversationId: 'chat-a', surface: 'trajectory' }));
     const modelSnapshot = snapshotWithModelSpan();
@@ -592,19 +641,51 @@ describe('TrajectoryTabView', () => {
       { wrapper: wrapper(store) },
     );
 
-    const runRow = await screen.findByRole('option', { name: /第 1 次执行/ });
+    const modelRow = await screen.findByRole('option', { name: /模型.*deepseek-chat/ });
     const canvas = screen.getByRole('application', { name: /轨迹记录总览/ });
     fireEvent.keyDown(canvas, { key: 'End' });
     fireEvent.keyDown(canvas, { key: 'Enter' });
 
-    await waitFor(() => expect(runRow).toHaveFocus());
-    expect(runRow).toHaveAttribute('aria-selected', 'true');
+    await waitFor(() => expect(modelRow).toHaveFocus());
+    expect(modelRow).toHaveAttribute('aria-selected', 'true');
     const detail = screen.getByLabelText('轨迹节点详情');
     expect(within(detail).getByRole('heading', { name: '模型调用' })).toBeInTheDocument();
     expect(within(detail).getByText('模型阶段')).toBeInTheDocument();
     expect(within(detail).getByText('llm:round-1')).toBeInTheDocument();
-    fireEvent.click(within(detail).getByRole('tab', { name: '计时' }));
+    expect(within(detail).queryByRole('tab', { name: '计时' })).not.toBeInTheDocument();
+    expect(within(detail).getByText('请求计时')).toBeInTheDocument();
     expect(within(detail).getByText('40 毫秒')).toBeInTheDocument();
+  });
+
+  it('LLM 终态事件只补齐对应节点 preview，不重新请求轨迹快照', async () => {
+    const store = createStore();
+    store.dispatch(setTrajectoryActiveSurface({ conversationId: 'chat-a', surface: 'trajectory' }));
+    const modelSnapshot = snapshotWithModelSpan();
+    getTrajectoryRunsMock.mockResolvedValue({ items: [modelSnapshot.run], truncated: false });
+    getTrajectorySnapshotMock.mockResolvedValue(modelSnapshot);
+    getTrajectoryLlmNodeDetailMock.mockResolvedValue({
+      status: 'available',
+      node_type: 'llm',
+      available_sections: ['summary', 'thinking', 'output', 'timing'],
+      detail: {
+        llm_round_id: 'round-1',
+        reasoning_text: '先检查依赖，再验证核心实现。',
+        output_text: '验证完成。',
+      },
+      redacted_fields: [],
+      truncated_fields: [],
+      reason: null,
+    });
+
+    render(
+      <TrajectoryTabView conversationId="chat-a" messages={messages} />,
+      { wrapper: wrapper(store) },
+    );
+
+    expect(await screen.findByRole('option', { name: /先检查依赖，再验证核心实现/ }))
+      .toBeInTheDocument();
+    expect(getTrajectoryLlmNodeDetailMock).toHaveBeenCalledTimes(1);
+    expect(getTrajectorySnapshotMock).toHaveBeenCalledTimes(1);
   });
 
   it('同 Run 已选 A 时 one-shot inspect B 清除本地优先级并只消费一次', async () => {
@@ -748,7 +829,7 @@ describe('TrajectoryTabView', () => {
       }));
     });
 
-    await waitFor(() => expect(table.scrollTop).toBeGreaterThan(700));
+    await waitFor(() => expect(table.scrollTop).toBeGreaterThan(150));
     expect(within(screen.getByLabelText('轨迹节点详情')).getByText('tool:tool-0'))
       .toBeInTheDocument();
 

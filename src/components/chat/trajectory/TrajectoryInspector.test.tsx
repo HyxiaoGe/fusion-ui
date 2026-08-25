@@ -213,7 +213,7 @@ describe('TrajectoryInspector', () => {
     const ledger = screen.getByRole('listbox', { name: '轨迹账本' });
     const inspector = screen.getByRole('complementary', { name: '轨迹检查器' });
     expect(ledger).not.toContainElement(inspector);
-    expect(within(ledger).getByRole('option')).toHaveStyle({ height: '56px' });
+    expect(within(ledger).getByRole('option')).toHaveStyle({ height: '32px' });
   });
 
   it('没有选中项时预留稳定检查器空间', () => {

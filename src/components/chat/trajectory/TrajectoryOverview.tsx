@@ -56,18 +56,6 @@ interface CanvasViewport {
   viewStart: number;
 }
 
-interface CanvasPalette {
-  background: string;
-  foreground: string;
-  border: string;
-  muted: string;
-  input: string;
-  model: string;
-  tools: string;
-  selected: string;
-  search: string;
-}
-
 interface DragState {
   pointerId: number;
   startX: number;
@@ -79,15 +67,18 @@ type CanvasHit =
   | { kind: 'run'; band: RunBand }
   | null;
 
-const CANVAS_HEIGHT = 160;
-const RUN_BAND_TOP = 8;
-const RUN_BAND_HEIGHT = 26;
+const CANVAS_HEIGHT = 54;
+const RUN_BAND_TOP = 0;
+const RUN_BAND_HEIGHT = 8;
 const TRACK_TOP: Record<TrajectoryOverviewTrack, number> = {
-  input: 48,
-  model: 82,
-  tools: 116,
+  input: 8,
+  model: 23,
+  tools: 38,
 };
-const TRACK_HEIGHT = 24;
+const TRACK_HEIGHT = 14;
+const TRACK_LABEL_WIDTH = 48;
+const MAX_RENDERED_SEGMENTS = 400;
+const MAX_SEARCH_SEGMENTS = 48;
 const TRACK_LABEL: Record<TrajectoryOverviewTrack, string> = {
   input: 'Input',
   model: 'Model',
@@ -114,12 +105,11 @@ export function TrajectoryOverview({
   onRangeChange,
   className,
 }: TrajectoryOverviewProps) {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const interactionRef = useRef<HTMLDivElement>(null);
   const tooltipRef = useRef<HTMLDivElement>(null);
   const rangeStartHandleRef = useRef<HTMLInputElement>(null);
   const focusNewRangeRef = useRef(false);
   const frameRef = useRef<number | null>(null);
-  const drawRef = useRef<() => void>(() => {});
   const dragRef = useRef<DragState | null>(null);
   const hoveredKeyRef = useRef<string | null>(null);
   const previousSelectedCellKeyRef = useRef(selectedCellKey);
@@ -130,6 +120,7 @@ export function TrajectoryOverview({
   const [internalRange, setInternalRange] = useState<TrajectoryOverviewRange | null>(null);
   const [activeKey, setActiveKey] = useState<string | null>(null);
   const [pendingRunId, setPendingRunId] = useState<string | null>(null);
+  const [, setDragRenderVersion] = useState(0);
   const currentRange = controlledRange === undefined ? internalRange : controlledRange;
   const projection = useMemo(() => controlledProjection ?? projectTrajectoryOverview({
     runs,
@@ -142,6 +133,16 @@ export function TrajectoryOverview({
     const viewEnd = viewStart + 1 / zoom;
     return projection.segments.filter(segment => segment.end >= viewStart && segment.start <= viewEnd);
   }, [projection.segments, viewStart, zoom]);
+  const renderedSegments = useMemo(() => selectRenderedOverviewSegments({
+    segments: visibleSegments,
+    activeKey,
+    selectedCellKey,
+    searchMatchedCellKeys,
+  }), [activeKey, searchMatchedCellKeys, selectedCellKey, visibleSegments]);
+  const interactiveProjection = useMemo(() => ({
+    ...projection,
+    segments: renderedSegments,
+  }), [projection, renderedSegments]);
   const activeSegment = projection.segments.find(segment => segment.key === activeKey) ?? null;
 
   useEffect(() => {
@@ -190,44 +191,14 @@ export function TrajectoryOverview({
   }, [onRequestRunFocus, projection.runBands]);
 
   const canvasViewport = useCallback((): CanvasViewport => {
-    const rect = canvasRef.current?.getBoundingClientRect();
+    const rect = interactionRef.current?.getBoundingClientRect();
     return {
-      width: Math.max(1, rect?.width ?? 1),
-      height: Math.max(1, rect?.height ?? CANVAS_HEIGHT),
+      width: Math.max(1, rect?.width ? rect.width - TRACK_LABEL_WIDTH : 1_000),
+      height: Math.max(1, rect?.height || 160),
       zoom,
       viewStart,
     };
   }, [viewStart, zoom]);
-
-  const draw = useCallback(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const context = canvas.getContext('2d');
-    if (!context) return;
-    const viewport = canvasViewport();
-    const pixelRatio = window.devicePixelRatio || 1;
-    const desiredWidth = Math.max(1, Math.round(viewport.width * pixelRatio));
-    const desiredHeight = Math.max(1, Math.round(viewport.height * pixelRatio));
-    if (canvas.width !== desiredWidth || canvas.height !== desiredHeight) {
-      canvas.width = desiredWidth;
-      canvas.height = desiredHeight;
-    }
-    context.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
-    drawOverviewCanvas(context, projection, viewport, resolveCanvasPalette(canvas), {
-      activeKey,
-      selectedCellKey,
-      searchMatchedCellKeys,
-      range: currentRange,
-      drag: dragRef.current,
-    });
-  }, [
-    activeKey,
-    canvasViewport,
-    currentRange,
-    projection,
-    searchMatchedCellKeys,
-    selectedCellKey,
-  ]);
 
   const scheduleDraw = useCallback(() => {
     if (frameRef.current !== null) return;
@@ -235,34 +206,20 @@ export function TrajectoryOverview({
     const frameId = window.requestAnimationFrame(() => {
       completedSynchronously = true;
       frameRef.current = null;
-      drawRef.current();
+      setDragRenderVersion(current => current + 1);
     });
     if (!completedSynchronously) frameRef.current = frameId;
   }, []);
-
-  drawRef.current = draw;
-
-  useEffect(() => {
-    scheduleDraw();
-  }, [draw, scheduleDraw]);
-
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas || typeof ResizeObserver === 'undefined') return;
-    const observer = new ResizeObserver(scheduleDraw);
-    observer.observe(canvas);
-    return () => observer.disconnect();
-  }, [scheduleDraw]);
 
   useEffect(() => () => {
     if (frameRef.current !== null) window.cancelAnimationFrame(frameRef.current);
   }, []);
 
-  const completePointerInteraction = useCallback((event: ReactPointerEvent<HTMLCanvasElement>) => {
+  const completePointerInteraction = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
     const drag = dragRef.current;
     if (!drag) return;
     const rect = event.currentTarget.getBoundingClientRect();
-    drag.currentX = event.clientX - rect.left;
+    drag.currentX = pointerPlotX(event.clientX, rect);
     dragRef.current = null;
     event.currentTarget.releasePointerCapture?.(drag.pointerId);
     const viewport = canvasViewport();
@@ -276,7 +233,7 @@ export function TrajectoryOverview({
       return;
     }
     const hit = hitTestTrajectoryOverview(
-      projection,
+      interactiveProjection,
       drag.currentX,
       event.clientY - rect.top,
       viewport,
@@ -289,41 +246,51 @@ export function TrajectoryOverview({
   }, [
     canvasViewport,
     onSelectSegment,
-    projection,
+    interactiveProjection,
     requestFocusForRange,
     requestRunFocus,
     scheduleDraw,
     setRange,
   ]);
 
-  const onPointerDown = (event: ReactPointerEvent<HTMLCanvasElement>) => {
+  const onPointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
     if (event.button !== 0) return;
     const rect = event.currentTarget.getBoundingClientRect();
+    if (event.clientX - rect.left < TRACK_LABEL_WIDTH) return;
     const pointerId = Number.isFinite(event.pointerId) ? event.pointerId : 1;
+    const plotX = pointerPlotX(event.clientX, rect);
     dragRef.current = {
       pointerId,
-      startX: event.clientX - rect.left,
-      currentX: event.clientX - rect.left,
+      startX: plotX,
+      currentX: plotX,
     };
     event.currentTarget.setPointerCapture?.(pointerId);
   };
 
-  const onPointerMove = (event: ReactPointerEvent<HTMLCanvasElement>) => {
+  const onPointerMove = (event: ReactPointerEvent<HTMLDivElement>) => {
     const rect = event.currentTarget.getBoundingClientRect();
-    const x = event.clientX - rect.left;
+    const rootX = event.clientX - rect.left;
+    if (rootX < TRACK_LABEL_WIDTH) {
+      hoveredKeyRef.current = null;
+      if (tooltipRef.current) tooltipRef.current.hidden = true;
+      return;
+    }
+    const x = pointerPlotX(event.clientX, rect);
     const y = event.clientY - rect.top;
     if (dragRef.current) {
       dragRef.current.currentX = x;
       scheduleDraw();
       return;
     }
-    const hit = hitTestTrajectoryOverview(projection, x, y, canvasViewport());
+    const hit = hitTestTrajectoryOverview(interactiveProjection, x, y, canvasViewport());
     const segment = hit?.kind === 'segment' ? hit.segment : null;
     if (hoveredKeyRef.current === segment?.key) return;
     hoveredKeyRef.current = segment?.key ?? null;
     if (tooltipRef.current) {
       tooltipRef.current.hidden = segment === null;
       tooltipRef.current.textContent = segment ? segmentAccessibleText(segment) : '';
+      tooltipRef.current.style.left = `${Math.min(rect.width - 12, rootX + 12)}px`;
+      tooltipRef.current.style.top = `${Math.min(rect.height - 8, y + 8)}px`;
     }
   };
 
@@ -352,7 +319,7 @@ export function TrajectoryOverview({
     setViewStart(current => roundDomain(clamp(current + direction * step, 0, maximum)));
   }, [zoom]);
 
-  const onCanvasKeyDown = (event: KeyboardEvent<HTMLCanvasElement>) => {
+  const onCanvasKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     if (event.key === 'Escape') {
       event.preventDefault();
       clearRange();
@@ -368,23 +335,23 @@ export function TrajectoryOverview({
       panView(1);
       return;
     }
-    if (visibleSegments.length === 0) return;
-    const currentIndex = visibleSegments.findIndex(segment => segment.key === activeKey);
+    if (renderedSegments.length === 0) return;
+    const currentIndex = renderedSegments.findIndex(segment => segment.key === activeKey);
     let nextIndex = currentIndex < 0 ? 0 : currentIndex;
     if (event.key === 'Home') nextIndex = 0;
-    else if (event.key === 'End') nextIndex = visibleSegments.length - 1;
+    else if (event.key === 'End') nextIndex = renderedSegments.length - 1;
     else if (event.key === 'ArrowRight' || event.key === 'ArrowDown') {
-      nextIndex = Math.min(visibleSegments.length - 1, nextIndex + 1);
+      nextIndex = Math.min(renderedSegments.length - 1, nextIndex + 1);
     } else if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') {
       nextIndex = Math.max(0, nextIndex - 1);
     } else if (event.key === 'Enter' || event.key === ' ') {
       event.preventDefault();
-      const selected = visibleSegments[currentIndex < 0 ? 0 : currentIndex];
+      const selected = renderedSegments[currentIndex < 0 ? 0 : currentIndex];
       if (selected) onSelectSegment?.(selected);
       return;
     } else return;
     event.preventDefault();
-    setActiveKey(visibleSegments[nextIndex].key);
+    setActiveKey(renderedSegments[nextIndex].key);
   };
 
   const updateZoom = (nextZoom: number) => {
@@ -448,9 +415,9 @@ export function TrajectoryOverview({
   return (
     <section
       aria-label="轨迹记录总览"
-      className={cn('space-y-3 rounded-lg border border-border/60 bg-background p-3', className)}
+      className={cn('border-y border-border/60 bg-background', className)}
     >
-      <div className="flex flex-wrap items-center gap-2">
+      <div className="flex h-8 items-center gap-1.5 border-b border-border/50 px-2">
         <div className="inline-flex rounded-md border border-border/60 bg-muted/20 p-0.5" aria-label="投影模式">
           <ModeButton active={mode === 'sequence'} onClick={() => changeMode('sequence')}>顺序</ModeButton>
           <ModeButton active={mode === 'actual'} onClick={() => changeMode('actual')}>实际耗时</ModeButton>
@@ -473,14 +440,14 @@ export function TrajectoryOverview({
             <ChevronRight className="h-4 w-4" aria-hidden="true" />
           </ToolbarButton>
         </div>
-        <span className="text-xs text-muted-foreground">
+        <span className="ml-1 text-[11px] text-muted-foreground">
           {searchMatchedCellKeys.size > 0 ? `${searchMatchedCellKeys.size} 条搜索匹配` : '无搜索匹配'}
         </span>
         {currentRange ? (
           <button
             type="button"
             onClick={clearRange}
-            className="ml-auto inline-flex min-h-9 items-center gap-1 rounded-md border border-border/60 px-2.5 text-xs text-foreground outline-none hover:bg-muted/40 focus-visible:ring-2 focus-visible:ring-ring"
+            className="ml-auto inline-flex h-7 items-center gap-1 rounded border border-border/60 px-2 text-[11px] text-foreground outline-none hover:bg-muted/40 focus-visible:ring-2 focus-visible:ring-ring"
           >
             <X className="h-3.5 w-3.5" aria-hidden="true" />
             清除范围
@@ -489,62 +456,125 @@ export function TrajectoryOverview({
           <button
             type="button"
             onClick={createRange}
-            className="ml-auto inline-flex min-h-9 items-center rounded-md border border-border/60 px-2.5 text-xs text-foreground outline-none hover:bg-muted/40 focus-visible:ring-2 focus-visible:ring-ring"
+            className="ml-auto inline-flex h-7 items-center rounded border border-border/60 px-2 text-[11px] text-foreground outline-none hover:bg-muted/40 focus-visible:ring-2 focus-visible:ring-ring"
           >
             创建范围
           </button>
         )}
       </div>
 
-      <div className="relative overflow-hidden rounded-md border border-border/50 bg-muted/10">
-        <canvas
-          ref={canvasRef}
-          role="application"
-          tabIndex={0}
-          aria-label={`轨迹记录总览，${mode === 'sequence' ? '顺序模式' : '实际耗时模式'}`}
-          aria-describedby="trajectory-overview-instructions trajectory-overview-active"
-          className="block h-40 w-full touch-none outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
-          onKeyDown={onCanvasKeyDown}
-          onPointerDown={onPointerDown}
-          onPointerMove={onPointerMove}
-          onPointerUp={completePointerInteraction}
-          onPointerCancel={() => {
-            dragRef.current = null;
-            scheduleDraw();
-          }}
-          onPointerLeave={() => {
-            hoveredKeyRef.current = null;
-            if (tooltipRef.current) {
-              tooltipRef.current.hidden = true;
-              tooltipRef.current.textContent = '';
-            }
-          }}
-          onContextMenu={event => {
-            event.preventDefault();
-            clearRange();
-          }}
-        />
+      <div
+        ref={interactionRef}
+        role="application"
+        tabIndex={0}
+        aria-label={`轨迹记录总览，${mode === 'sequence' ? '顺序模式' : '实际耗时模式'}`}
+        aria-describedby="trajectory-overview-instructions trajectory-overview-active"
+        data-testid="trajectory-overview-tracks"
+        className="relative h-[54px] touch-none overflow-visible bg-muted/10 outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+        onKeyDown={onCanvasKeyDown}
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={completePointerInteraction}
+        onPointerCancel={() => {
+          dragRef.current = null;
+          scheduleDraw();
+        }}
+        onPointerLeave={() => {
+          hoveredKeyRef.current = null;
+          if (tooltipRef.current) {
+            tooltipRef.current.hidden = true;
+            tooltipRef.current.textContent = '';
+          }
+        }}
+        onContextMenu={event => {
+          event.preventDefault();
+          clearRange();
+        }}
+      >
+        <div className="pointer-events-none absolute inset-y-0 left-0 z-10 w-12 border-r border-border/50 bg-background/95">
+          {(['input', 'model', 'tools'] as const).map(track => (
+            <span
+              key={track}
+              className="absolute left-1.5 text-[10px] font-medium text-muted-foreground"
+              style={{ top: `${TRACK_TOP[track] + 1}px` }}
+            >
+              {TRACK_LABEL[track]}
+            </span>
+          ))}
+        </div>
+        <div className="pointer-events-none absolute inset-y-0 left-12 right-0 overflow-hidden">
+          {(['input', 'model', 'tools'] as const).map(track => (
+            <span
+              key={track}
+              aria-hidden="true"
+              className="absolute left-0 right-0 border-y border-border/20 bg-muted/25"
+              style={{ top: `${TRACK_TOP[track]}px`, height: `${TRACK_HEIGHT}px` }}
+            />
+          ))}
+          {projection.runBands.map(band => (
+            <span
+              key={band.runId}
+              aria-hidden="true"
+              className={cn(
+                'absolute inset-y-0 border-x border-border/40',
+                band.selected ? 'bg-primary/[0.035]' : 'bg-transparent',
+              )}
+              style={overviewBandStyle(band.start, band.end, viewStart, zoom)}
+            />
+          ))}
+          {renderedSegments.map(segment => (
+            <span
+              key={segment.key}
+              data-testid="trajectory-overview-segment"
+              data-track={segment.track}
+              aria-hidden="true"
+              title={segmentAccessibleText(segment)}
+              className={cn(
+                'absolute min-w-px rounded-[2px] border border-transparent shadow-[0_0_0_1px_rgba(0,0,0,0.04)]',
+                (segment.key === activeKey || segment.targetCellKey === selectedCellKey)
+                  && 'z-10 border-warn ring-1 ring-warn/70',
+                searchMatchedCellKeys.has(segment.targetCellKey)
+                  && 'z-10 border-info ring-1 ring-info/70',
+              )}
+              style={overviewSegmentStyle(segment, viewStart, zoom)}
+            />
+          ))}
+          {(dragRef.current || currentRange) ? (
+            <span
+              aria-hidden="true"
+              className="absolute inset-y-0 z-20 border-x-2 border-warn bg-warn/10"
+              style={overviewRangeStyle(
+                dragRef.current
+                  ? normalizeRange(
+                    canvasXToDomain(dragRef.current.startX, canvasViewport()),
+                    canvasXToDomain(dragRef.current.currentX, canvasViewport()),
+                  )
+                  : currentRange,
+                viewStart,
+                zoom,
+              )}
+            />
+          ) : null}
+        </div>
         <span id="trajectory-overview-instructions" className="sr-only">
           方向键移动活动记录，Home 和 End 跳到首尾，Enter 或空格选择。放大后按 Shift 加左右方向键平移。拖动可选择范围。
         </span>
+        <div
+          ref={tooltipRef}
+          role="tooltip"
+          hidden
+          className="pointer-events-none absolute z-30 max-w-80 rounded-md border border-border/60 bg-popover px-2.5 py-2 text-xs text-popover-foreground shadow-sm"
+        />
       </div>
 
-      <div className="flex items-start justify-between gap-3 text-xs text-muted-foreground">
+      <div className="sr-only">
         <p id="trajectory-overview-active" data-testid="trajectory-overview-active" aria-live="polite">
           {activeText}
         </p>
-        <span className="shrink-0">Input / Model / Tools</span>
       </div>
 
-      <div
-        ref={tooltipRef}
-        role="tooltip"
-        hidden
-        className="rounded-md border border-border/60 bg-popover px-2.5 py-2 text-xs text-popover-foreground shadow-sm"
-      />
-
       {currentRange && (
-        <div className="grid gap-2 sm:grid-cols-2" aria-label="范围键盘控制">
+        <div className="grid gap-2 border-t border-border/50 px-2 py-1.5 sm:grid-cols-2" aria-label="范围键盘控制">
           <RangeHandle
             inputRef={rangeStartHandleRef}
             label="范围起点"
@@ -562,7 +592,7 @@ export function TrajectoryOverview({
       )}
 
       {pendingRunId && (
-        <p role="status" className="rounded-md border border-info-border bg-info-bg px-2.5 py-2 text-xs text-info">
+        <p role="status" className="border-t border-info-border bg-info-bg px-2.5 py-1.5 text-xs text-info">
           正在聚焦运行 {pendingRunNumber || pendingRunId}，加载后再匹配详细记录
         </p>
       )}
@@ -585,7 +615,7 @@ function ModeButton({
       aria-pressed={active}
       onClick={onClick}
       className={cn(
-        'min-h-9 rounded px-3 text-xs font-medium text-muted-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring',
+        'h-6 rounded px-2 text-[11px] font-medium text-muted-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring',
         active && 'bg-background text-foreground shadow-sm',
       )}
     >
@@ -612,7 +642,7 @@ function ToolbarButton({
       title={label}
       disabled={disabled}
       onClick={onClick}
-      className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-border/60 text-muted-foreground outline-none hover:bg-muted/40 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-40"
+      className="inline-flex h-6 w-6 items-center justify-center rounded border border-border/60 text-muted-foreground outline-none hover:bg-muted/40 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-40"
     >
       {children}
     </button>
@@ -658,16 +688,17 @@ export function hitTestTrajectoryOverview(
   y: number,
   viewport: CanvasViewport,
 ): CanvasHit {
+  const logicalY = viewport.height > 0 ? y / viewport.height * CANVAS_HEIGHT : y;
   for (let index = projection.segments.length - 1; index >= 0; index -= 1) {
     const segment = projection.segments[index];
     const left = domainToCanvasX(segment.start, viewport);
     const right = domainToCanvasX(segment.end, viewport);
     const top = TRACK_TOP[segment.track];
-    if (x >= left && x <= right && y >= top && y <= top + TRACK_HEIGHT) {
+    if (x >= left && x <= right && logicalY >= top && logicalY <= top + TRACK_HEIGHT) {
       return { kind: 'segment', segment };
     }
   }
-  if (y >= RUN_BAND_TOP && y <= RUN_BAND_TOP + RUN_BAND_HEIGHT) {
+  if (logicalY >= RUN_BAND_TOP && logicalY <= RUN_BAND_TOP + RUN_BAND_HEIGHT) {
     const domain = canvasXToDomain(x, viewport);
     const band = projection.runBands.find(item => domain >= item.start && domain <= item.end);
     if (band) return { kind: 'run', band };
@@ -675,100 +706,57 @@ export function hitTestTrajectoryOverview(
   return null;
 }
 
-function drawOverviewCanvas(
-  context: CanvasRenderingContext2D,
-  projection: TrajectoryOverviewProjection,
-  viewport: CanvasViewport,
-  palette: CanvasPalette,
-  state: {
-    activeKey: string | null;
-    selectedCellKey: string | null;
-    searchMatchedCellKeys: ReadonlySet<string>;
-    range: TrajectoryOverviewRange | null;
-    drag: DragState | null;
-  },
-) {
-  context.clearRect(0, 0, viewport.width, viewport.height);
-  context.fillStyle = palette.background;
-  context.fillRect(0, 0, viewport.width, viewport.height);
-  context.font = '11px system-ui, sans-serif';
-  context.textBaseline = 'middle';
-
-  for (const band of projection.runBands) {
-    const left = domainToCanvasX(band.start, viewport);
-    const right = domainToCanvasX(band.end, viewport);
-    if (right < 0 || left > viewport.width) continue;
-    context.fillStyle = band.selected ? palette.selected : palette.muted;
-    context.fillRect(left, RUN_BAND_TOP, Math.max(1, right - left), RUN_BAND_HEIGHT);
-    context.strokeStyle = palette.border;
-    context.strokeRect(left, RUN_BAND_TOP, Math.max(1, right - left), RUN_BAND_HEIGHT);
-    context.fillStyle = palette.foreground;
-    const bandLabel = `Run · ${formatTrajectoryStatus(band.status)}${band.hydrated ? '' : ' · 待加载'}`;
-    context.fillText(bandLabel, left + 6, RUN_BAND_TOP + RUN_BAND_HEIGHT / 2);
-  }
-
-  for (const track of ['input', 'model', 'tools'] as const) {
-    const top = TRACK_TOP[track];
-    context.fillStyle = palette.muted;
-    context.fillRect(0, top, viewport.width, TRACK_HEIGHT);
-    context.fillStyle = palette.foreground;
-    context.fillText(TRACK_LABEL[track], 6, top + TRACK_HEIGHT / 2);
-  }
-
-  for (const segment of projection.segments) {
-    const left = domainToCanvasX(segment.start, viewport);
-    const right = domainToCanvasX(segment.end, viewport);
-    if (right < 0 || left > viewport.width) continue;
-    const width = Math.max(2, right - left);
-    const top = TRACK_TOP[segment.track];
-    context.fillStyle = palette[segment.track];
-    context.fillRect(left, top, width, TRACK_HEIGHT);
-    if (segment.key === state.activeKey || segment.targetCellKey === state.selectedCellKey) {
-      context.strokeStyle = palette.selected;
-      context.lineWidth = 2;
-      context.strokeRect(left + 1, top + 1, Math.max(1, width - 2), TRACK_HEIGHT - 2);
-    } else if (state.searchMatchedCellKeys.has(segment.targetCellKey)) {
-      context.strokeStyle = palette.search;
-      context.lineWidth = 2;
-      context.strokeRect(left + 1, top + 1, Math.max(1, width - 2), TRACK_HEIGHT - 2);
-    }
-    if (width >= 48) {
-      context.fillStyle = palette.foreground;
-      context.fillText(segment.label, left + 5, top + TRACK_HEIGHT / 2);
-    }
-  }
-
-  const visualRange = state.drag
-    ? normalizeRange(
-      canvasXToDomain(state.drag.startX, viewport),
-      canvasXToDomain(state.drag.currentX, viewport),
-    )
-    : state.range;
-  if (visualRange) {
-    const left = domainToCanvasX(visualRange.start, viewport);
-    const right = domainToCanvasX(visualRange.end, viewport);
-    context.strokeStyle = palette.selected;
-    context.lineWidth = 2;
-    context.strokeRect(left, 1, Math.max(1, right - left), viewport.height - 2);
-  }
+function pointerPlotX(clientX: number, rect: DOMRect): number {
+  return clamp(
+    clientX - rect.left - TRACK_LABEL_WIDTH,
+    0,
+    Math.max(1, rect.width - TRACK_LABEL_WIDTH),
+  );
 }
 
-function resolveCanvasPalette(canvas: HTMLCanvasElement): CanvasPalette {
-  const style = getComputedStyle(canvas);
-  const token = (name: string, fallback: string) => style.getPropertyValue(name).trim() || fallback;
-  const foreground = token('--foreground', style.color || 'CanvasText');
-  const primary = token('--primary', foreground);
-  return {
-    background: token('--background', style.backgroundColor || 'Canvas'),
-    foreground,
-    border: token('--border', 'GrayText'),
-    muted: token('--muted', token('--secondary', 'Canvas')),
-    input: token('--info', primary),
-    model: primary,
-    tools: token('--success', primary),
-    selected: token('--warn', primary),
-    search: token('--info', primary),
+function selectRenderedOverviewSegments(input: {
+  segments: readonly OverviewSegment[];
+  activeKey: string | null;
+  selectedCellKey: string | null;
+  searchMatchedCellKeys: ReadonlySet<string>;
+}): OverviewSegment[] {
+  if (input.segments.length <= MAX_RENDERED_SEGMENTS) return [...input.segments];
+  const selected = new Map<string, OverviewSegment>();
+  const add = (segment: OverviewSegment | undefined) => {
+    if (segment && selected.size < MAX_RENDERED_SEGMENTS) selected.set(segment.key, segment);
   };
+
+  add(input.segments.find(segment => segment.key === input.activeKey));
+  add(input.segments.find(segment => segment.targetCellKey === input.selectedCellKey));
+  for (const segment of evenlySampleSegments(
+    input.segments.filter(item => input.searchMatchedCellKeys.has(item.targetCellKey)),
+    MAX_SEARCH_SEGMENTS,
+  )) add(segment);
+  for (const segment of evenlySampleSegments(
+    input.segments,
+    MAX_RENDERED_SEGMENTS - selected.size,
+  )) add(segment);
+  if (selected.size < MAX_RENDERED_SEGMENTS) {
+    for (const segment of input.segments) add(segment);
+  }
+
+  const order = new Map(input.segments.map((segment, index) => [segment.key, index]));
+  return [...selected.values()].sort((left, right) => (
+    (order.get(left.key) ?? 0) - (order.get(right.key) ?? 0)
+  ));
+}
+
+function evenlySampleSegments(
+  segments: readonly OverviewSegment[],
+  maximum: number,
+): OverviewSegment[] {
+  const count = Math.min(Math.max(0, maximum), segments.length);
+  if (count === 0) return [];
+  if (count === segments.length) return [...segments];
+  if (count === 1) return [segments.at(-1) as OverviewSegment];
+  return Array.from({ length: count }, (_, index) => (
+    segments[Math.round(index * (segments.length - 1) / (count - 1))]
+  ));
 }
 
 function segmentAccessibleText(segment: OverviewSegment): string {
@@ -779,6 +767,44 @@ function segmentAccessibleText(segment: OverviewSegment): string {
     ? `，${formatExactTime(segment.startedAt)}${segment.endedAt && segment.endedAt !== segment.startedAt ? ` 至 ${formatExactTime(segment.endedAt)}` : ''}`
     : '';
   return `${TRACK_LABEL[segment.track]}，${segment.label}，${formatTrajectoryStatus(segment.status)}，${sequence}${time}`;
+}
+
+function overviewBandStyle(
+  start: number,
+  end: number,
+  viewStart: number,
+  zoom: number,
+): React.CSSProperties {
+  return {
+    left: `${(start - viewStart) * zoom * 100}%`,
+    width: `${Math.max(0.15, (end - start) * zoom * 100)}%`,
+  };
+}
+
+function overviewSegmentStyle(
+  segment: OverviewSegment,
+  viewStart: number,
+  zoom: number,
+): React.CSSProperties {
+  return {
+    ...overviewBandStyle(segment.start, segment.end, viewStart, zoom),
+    backgroundColor: segment.track === 'input'
+      ? 'var(--info)'
+      : segment.track === 'model'
+        ? 'var(--primary)'
+        : 'var(--success)',
+    top: `${TRACK_TOP[segment.track] + 1}px`,
+    height: `${TRACK_HEIGHT - 2}px`,
+  };
+}
+
+function overviewRangeStyle(
+  range: TrajectoryOverviewRange | null,
+  viewStart: number,
+  zoom: number,
+): React.CSSProperties {
+  if (!range) return { display: 'none' };
+  return overviewBandStyle(range.start, range.end, viewStart, zoom);
 }
 
 function formatExactTime(value: string): string {

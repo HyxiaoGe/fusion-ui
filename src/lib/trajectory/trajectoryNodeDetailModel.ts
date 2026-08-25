@@ -14,6 +14,11 @@ export interface TrajectoryNodeDiagnostic {
   value: string;
 }
 
+export interface TrajectoryNodeSummaryField {
+  label: string;
+  value: string;
+}
+
 export interface TrajectoryNodeDetailModel {
   title: string;
   nodeType: string;
@@ -26,6 +31,7 @@ export interface TrajectoryNodeDetailModel {
   attemptCount: number | null;
   attemptMode: 'count' | 'ordinal' | null;
   errorSummary: string | null;
+  summaryFields: TrajectoryNodeSummaryField[];
   diagnostics: TrajectoryNodeDiagnostic[];
 }
 
@@ -69,12 +75,13 @@ export function buildTrajectoryNodeDetailModel(
     status: presentation.statusLabel ?? '已记录',
     summary: presentation.summary,
     duration: formatTrajectoryDuration(localDuration(cell, events, presentation.durationMs)),
-    ttft: formatTrajectoryDuration(latestNumber(events, 'ttft_ms')),
+    ttft: formatTrajectoryDuration(localTtft(cell, events)),
     startedAt: localStartedAt(cell, events),
     endedAt: localEndedAt(cell, events),
     attemptCount: attemptCount(cell, relatedCells),
     attemptMode: cellAttemptMode(cell, relatedCells),
     errorSummary: cellError(cell, events),
+    summaryFields: cellSummaryFields(cell),
     diagnostics: cellDiagnostics(cell),
   };
 }
@@ -102,6 +109,7 @@ function buildSpanDetailModel(
     attemptCount: attemptOrdinal,
     attemptMode: attemptOrdinal === null ? null : 'ordinal',
     errorSummary: spanError(span, events),
+    summaryFields: cellSummaryFields(cell),
     diagnostics: spanDiagnostics(span),
   };
 }
@@ -160,6 +168,7 @@ function cellEvents(cell: TrajectoryCell): NormalizedTrajectoryEvent[] {
   if (cell.type === 'subtool') {
     return cell.events.filter(event => event.eventType.startsWith('tool_attempt_'));
   }
+  if (cell.type === 'assistant_request') return cell.events;
   return [];
 }
 
@@ -171,13 +180,84 @@ function localDuration(
   if (cell.type === 'tool' || cell.type === 'subtool') {
     return latestNumber(events, 'duration_ms');
   }
+  if (cell.type === 'assistant_request') return cell.durationMs;
   return presentationDuration;
+}
+
+function localTtft(
+  cell: TrajectoryCell,
+  events: readonly NormalizedTrajectoryEvent[],
+): number | null {
+  if (cell.type === 'assistant_request') return cell.ttftMs;
+  return latestNumber(events, 'ttft_ms');
+}
+
+function cellSummaryFields(cell: TrajectoryCell): TrajectoryNodeSummaryField[] {
+  if (cell.type === 'user' || cell.type === 'message') {
+    const fields: TrajectoryNodeSummaryField[] = [
+      { label: '来源', value: cell.type === 'user' ? '用户' : '助手' },
+    ];
+    if (cell.message.sequence !== undefined) {
+      fields.push({ label: '消息序号', value: `#${cell.message.sequence}` });
+    }
+    const recordedAt = formatTrajectoryTimestamp(cell.message.timestamp ?? null);
+    if (recordedAt) {
+      fields.push({
+        label: cell.type === 'user' ? '发送时间' : '生成时间',
+        value: recordedAt,
+      });
+    }
+    if (cell.type === 'message') {
+      if (cell.message.model_id) {
+        fields.push({ label: '模型', value: cell.message.model_id });
+      }
+      if (cell.message.usage) {
+        fields.push(
+          {
+            label: '输入 Token',
+            value: `${cell.message.usage.input_tokens.toLocaleString('en-US')} tok`,
+          },
+          {
+            label: '输出 Token',
+            value: `${cell.message.usage.output_tokens.toLocaleString('en-US')} tok`,
+          },
+        );
+      }
+    }
+    return fields;
+  }
+  if (cell.type === 'tool') {
+    return [
+      {
+        label: '来源',
+        value: `工具 · ${getToolMeta(cell.toolName ?? '').label}`,
+      },
+    ];
+  }
+  if (cell.type !== 'assistant_request') return [];
+  const fields: TrajectoryNodeSummaryField[] = [
+    {
+      label: '来源',
+      value: cell.requestIndex !== null ? `Request #${cell.requestIndex}` : '模型请求',
+    },
+  ];
+  const model = [cell.provider, cell.model].filter(Boolean).join(' · ');
+  if (model) fields.push({ label: '模型', value: model });
+  for (const [label, value] of [
+    ['输入 Token', cell.inputTokens],
+    ['输出 Token', cell.outputTokens],
+    ['推理 Token', cell.reasoningTokens],
+  ] as const) {
+    if (value !== null) fields.push({ label, value: `${value.toLocaleString('en-US')} tok` });
+  }
+  return fields;
 }
 
 function cellTypeLabel(type: TrajectoryCell['type']): string {
   switch (type) {
     case 'user': return '用户消息';
     case 'message': return '回答消息';
+    case 'assistant_request': return '模型请求';
     case 'run': return '运行';
     case 'plan': return '计划';
     case 'context': return '上下文';
@@ -262,6 +342,7 @@ function cellError(
   if (eventDetail) return eventDetail;
   if (cell.type === 'subtool' && cell.status === 'failed') return '工具尝试未能完成';
   if (cell.type === 'tool' && cell.status === 'failed') return '工具未能完成';
+  if (cell.type === 'assistant_request' && cell.status === 'failed') return '模型请求未能完成';
   if (cell.type === 'run' && cell.runStatus === 'failed') return '运行未能完成';
   return null;
 }
@@ -325,6 +406,9 @@ function cellDiagnostics(cell: TrajectoryCell): TrajectoryNodeDiagnostic[] {
   }
   if (cell.type === 'tool' && cell.stepId) items.push({ label: '步骤 ID', value: cell.stepId });
   if (cell.type === 'subtool') items.push({ label: '工具尝试 ID', value: cell.toolAttemptId });
+  if (cell.type === 'assistant_request') {
+    items.push({ label: '模型请求 ID', value: cell.llmRoundId });
+  }
   if (cell.sourceSequences.length > 0) {
     items.push({ label: '记录序号', value: sequenceReferences(cell.sourceSequences) });
   }

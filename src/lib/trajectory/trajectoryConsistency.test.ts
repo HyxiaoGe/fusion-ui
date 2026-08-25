@@ -51,6 +51,8 @@ function snapshot(
       duration_ms: 100,
       started_at: timestamp,
       ended_at: timestamp,
+      llm_detail_schema_version: 1,
+      llm_round_count: 0,
     },
     spans: [],
     completeness: {
@@ -466,7 +468,7 @@ describe('trajectoryConsistency', () => {
     expect(result.unexpectedDigests).toHaveLength(1);
   });
 
-  it('同一 request 的多条 context 事件保持逐事件 canonical cell parity', () => {
+  it('同一 request 的多条 context 事件合并后仍保持 canonical cell parity', () => {
     const events = [
       event(0, { eventType: 'run_started', payload: { message_id: 'assistant-a' } }),
       event(1, {
@@ -512,7 +514,7 @@ describe('trajectoryConsistency', () => {
     expect(result.status).toBe('pass');
     expect(result.expectedDigests.filter(digest => digest.cellKind === 'context').map(digest => (
       digest.sequences
-    ))).toEqual([[1], [2]]);
+    ))).toEqual([[1, 2]]);
   });
 
   it('live 与 durable 对账保留 durable overlap、识别冲突并只把更大 sequence 算作 tail', () => {

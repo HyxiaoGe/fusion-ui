@@ -18,6 +18,8 @@ function run(runId: string, durationMs = 1_000): TrajectoryRunSummary {
     duration_ms: durationMs,
     started_at: '2026-08-24T00:00:00.000Z',
     ended_at: new Date(Date.parse('2026-08-24T00:00:00.000Z') + durationMs).toISOString(),
+    llm_detail_schema_version: 1,
+    llm_round_count: 0,
   };
 }
 
@@ -83,45 +85,23 @@ function fixtureEvents(): NormalizedTrajectoryEvent[] {
   ];
 }
 
-const context = {
-  clearRect: vi.fn(),
-  fillRect: vi.fn(),
-  strokeRect: vi.fn(),
-  fillText: vi.fn(),
-  beginPath: vi.fn(),
-  moveTo: vi.fn(),
-  lineTo: vi.fn(),
-  stroke: vi.fn(),
-  save: vi.fn(),
-  restore: vi.fn(),
-  setTransform: vi.fn(),
-  fillStyle: '',
-  strokeStyle: '',
-  lineWidth: 1,
-  font: '',
-  textBaseline: 'alphabetic' as CanvasTextBaseline,
-};
+function mockOverviewRect(element: HTMLElement, width = 1_048, height = 54) {
+  vi.spyOn(element, 'getBoundingClientRect').mockReturnValue({
+    x: 0,
+    y: 0,
+    left: 0,
+    top: 0,
+    right: width,
+    bottom: height,
+    width,
+    height,
+    toJSON: () => ({}),
+  });
+}
 
 describe('TrajectoryOverview', () => {
   beforeEach(() => {
     vi.restoreAllMocks();
-    Object.values(context).forEach(value => {
-      if (typeof value === 'function' && 'mockClear' in value) value.mockClear();
-    });
-    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(
-      context as unknown as CanvasRenderingContext2D,
-    );
-    vi.spyOn(HTMLCanvasElement.prototype, 'getBoundingClientRect').mockReturnValue({
-      x: 0,
-      y: 0,
-      left: 0,
-      top: 0,
-      right: 1_000,
-      bottom: 160,
-      width: 1_000,
-      height: 160,
-      toJSON: () => ({}),
-    });
     vi.stubGlobal('ResizeObserver', class ResizeObserverMock {
       observe() {}
       unobserve() {}
@@ -137,7 +117,30 @@ describe('TrajectoryOverview', () => {
     vi.spyOn(window, 'cancelAnimationFrame').mockImplementation(() => {});
   });
 
-  it('使用 Canvas 真实坐标 hit-test 选择 segment，粗带点击先聚焦未水合 run', () => {
+  it('用可见 DOM 轨道呈现 Input、Model、Tools 和记录区段', () => {
+    render(
+      <TrajectoryOverview
+        runs={[run('run-a')]}
+        focusedRunId="run-a"
+        focusedRunEvents={fixtureEvents()}
+        cells={[runCell('run-a', true)]}
+      />,
+    );
+
+    const overview = screen.getByRole('application', { name: /轨迹记录总览/ });
+    expect(overview.tagName).toBe('DIV');
+    expect(overview).not.toHaveClass('overflow-hidden');
+    expect(screen.getByTestId('trajectory-overview-tracks')).toBeInTheDocument();
+    expect(screen.getAllByTestId('trajectory-overview-segment').length).toBeGreaterThan(0);
+    expect(screen.getAllByTestId('trajectory-overview-segment')
+      .find(segment => segment.getAttribute('data-track') === 'model'))
+      .toHaveStyle({ backgroundColor: 'var(--primary)' });
+    for (const label of ['Input', 'Model', 'Tools']) {
+      expect(screen.getByText(label)).toBeInTheDocument();
+    }
+  });
+
+  it('使用 DOM 轨道真实坐标 hit-test 选择 segment，粗带点击先聚焦未水合 run', () => {
     const onSelectSegment = vi.fn();
     const onSelectRun = vi.fn();
     const onRequestRunFocus = vi.fn();
@@ -151,9 +154,10 @@ describe('TrajectoryOverview', () => {
       />,
     );
     const canvas = screen.getByRole('application', { name: /轨迹记录总览/ });
+    mockOverviewRect(canvas);
 
-    fireEvent.pointerDown(canvas, { clientX: 500, clientY: 94, button: 0, pointerId: 1 });
-    fireEvent.pointerUp(canvas, { clientX: 500, clientY: 94, button: 0, pointerId: 1 });
+    fireEvent.pointerDown(canvas, { clientX: 548, clientY: 30, button: 0, pointerId: 1 });
+    fireEvent.pointerUp(canvas, { clientX: 548, clientY: 30, button: 0, pointerId: 1 });
     expect(onSelectSegment).toHaveBeenCalledWith(expect.objectContaining({
       track: 'model',
       targetCellKey: 'run:run-a',
@@ -169,8 +173,8 @@ describe('TrajectoryOverview', () => {
         onRequestRunFocus={onRequestRunFocus}
       />,
     );
-    fireEvent.pointerDown(canvas, { clientX: 750, clientY: 20, button: 0, pointerId: 2 });
-    fireEvent.pointerUp(canvas, { clientX: 750, clientY: 20, button: 0, pointerId: 2 });
+    fireEvent.pointerDown(canvas, { clientX: 798, clientY: 4, button: 0, pointerId: 2 });
+    fireEvent.pointerUp(canvas, { clientX: 798, clientY: 4, button: 0, pointerId: 2 });
     expect(onSelectRun).toHaveBeenCalledWith('run-b');
     expect(onRequestRunFocus).toHaveBeenCalledWith('run-b');
     expect(screen.getByRole('status')).toHaveTextContent('正在聚焦运行 2');
@@ -188,9 +192,10 @@ describe('TrajectoryOverview', () => {
       />,
     );
     const canvas = screen.getByRole('application', { name: /轨迹记录总览/ });
+    mockOverviewRect(canvas);
     canvas.focus();
 
-    fireEvent.pointerMove(canvas, { clientX: 500, clientY: 94 });
+    fireEvent.pointerMove(canvas, { clientX: 548, clientY: 30 });
     expect(screen.getByRole('tooltip')).toHaveTextContent(
       'Model，deepseek-chat，完成，sequence 1 至 4，08/24 08:00:00.100 至 08/24 08:00:00.400',
     );
@@ -217,10 +222,11 @@ describe('TrajectoryOverview', () => {
       />,
     );
     const canvas = screen.getByRole('application', { name: /轨迹记录总览/ });
+    mockOverviewRect(canvas);
 
-    fireEvent.pointerDown(canvas, { clientX: 200, clientY: 130, button: 0, pointerId: 1 });
-    fireEvent.pointerMove(canvas, { clientX: 700, clientY: 130, button: 0, pointerId: 1 });
-    fireEvent.pointerUp(canvas, { clientX: 700, clientY: 130, button: 0, pointerId: 1 });
+    fireEvent.pointerDown(canvas, { clientX: 248, clientY: 48, button: 0, pointerId: 1 });
+    fireEvent.pointerMove(canvas, { clientX: 748, clientY: 48, button: 0, pointerId: 1 });
+    fireEvent.pointerUp(canvas, { clientX: 748, clientY: 48, button: 0, pointerId: 1 });
     expect(onRangeChange).toHaveBeenLastCalledWith({ start: 0.2, end: 0.7 });
 
     const startHandle = screen.getByRole('slider', { name: '范围起点' });
@@ -230,13 +236,13 @@ describe('TrajectoryOverview', () => {
     fireEvent.keyDown(startHandle, { key: 'Escape' });
     expect(onRangeChange).toHaveBeenLastCalledWith(null);
 
-    fireEvent.pointerDown(canvas, { clientX: 100, clientY: 130, button: 0, pointerId: 2 });
-    fireEvent.pointerUp(canvas, { clientX: 400, clientY: 130, button: 0, pointerId: 2 });
+    fireEvent.pointerDown(canvas, { clientX: 148, clientY: 48, button: 0, pointerId: 2 });
+    fireEvent.pointerUp(canvas, { clientX: 448, clientY: 48, button: 0, pointerId: 2 });
     fireEvent.contextMenu(canvas);
     expect(onRangeChange).toHaveBeenLastCalledWith(null);
 
-    fireEvent.pointerDown(canvas, { clientX: 300, clientY: 130, button: 0, pointerId: 3 });
-    fireEvent.pointerUp(canvas, { clientX: 600, clientY: 130, button: 0, pointerId: 3 });
+    fireEvent.pointerDown(canvas, { clientX: 348, clientY: 48, button: 0, pointerId: 3 });
+    fireEvent.pointerUp(canvas, { clientX: 648, clientY: 48, button: 0, pointerId: 3 });
     fireEvent.click(screen.getByRole('button', { name: '清除范围' }));
     expect(onRangeChange).toHaveBeenLastCalledWith(null);
   });
@@ -283,9 +289,10 @@ describe('TrajectoryOverview', () => {
     fireEvent.click(screen.getByRole('button', { name: '实际耗时' }));
     fireEvent.click(screen.getByRole('button', { name: '放大' }));
     const canvas = screen.getByRole('application', { name: /轨迹记录总览/ });
+    mockOverviewRect(canvas);
     fireEvent.keyDown(canvas, { key: 'End' });
-    fireEvent.pointerDown(canvas, { clientX: 100, clientY: 130, button: 0, pointerId: 1 });
-    fireEvent.pointerUp(canvas, { clientX: 300, clientY: 130, button: 0, pointerId: 1 });
+    fireEvent.pointerDown(canvas, { clientX: 148, clientY: 48, button: 0, pointerId: 1 });
+    fireEvent.pointerUp(canvas, { clientX: 348, clientY: 48, button: 0, pointerId: 1 });
 
     const manyEvents = [
       ...initialEvents,
@@ -313,7 +320,53 @@ describe('TrajectoryOverview', () => {
     expect(screen.getByText('2×')).toBeInTheDocument();
     expect(screen.getByTestId('trajectory-overview-active')).toHaveTextContent('Tools');
     expect(screen.getByRole('slider', { name: '范围起点' })).toHaveValue('50');
-    expect(view.container.querySelectorAll('*').length).toBeLessThan(80);
+    expect(view.container.querySelectorAll('*').length).toBeLessThan(480);
+  });
+
+  it('长轨迹只挂载有界采样记录，键盘尾部活动项仍对应可见 DOM 区段', () => {
+    const segments = Array.from({ length: 1_000 }, (_, index) => ({
+      key: `segment-${index}`,
+      runId: 'run-a',
+      track: index % 2 === 0 ? 'model' as const : 'tools' as const,
+      start: index / 1_000,
+      end: (index + 1) / 1_000,
+      targetCellKey: `cell-${index}`,
+      label: `记录 ${index}`,
+      status: 'success',
+      startedAt: null,
+      endedAt: null,
+      startSequence: index,
+      endSequence: index,
+      spanIdentity: null,
+    }));
+    render(
+      <TrajectoryOverview
+        runs={[run('run-a')]}
+        focusedRunId="run-a"
+        focusedRunEvents={[]}
+        cells={[runCell('run-a', true)]}
+        projection={{
+          mode: 'sequence',
+          runBands: [{
+            runId: 'run-a',
+            start: 0,
+            end: 1,
+            hydrated: true,
+            selected: true,
+            status: 'completed',
+          }],
+          segments,
+        }}
+      />,
+    );
+
+    const overview = screen.getByRole('application', { name: /轨迹记录总览/ });
+    mockOverviewRect(overview);
+    fireEvent.keyDown(overview, { key: 'End' });
+    expect(screen.getByTestId('trajectory-overview-active')).toHaveTextContent('记录 999');
+    const renderedSegments = screen.getAllByTestId('trajectory-overview-segment');
+    expect(renderedSegments.length).toBeLessThanOrEqual(400);
+    expect(renderedSegments.some(segment => segment.title.includes('记录 999'))).toBe(true);
   });
 
   it('zoom 后可用可见按钮与键盘平移，边界夹紧且活动项和范围保持', () => {

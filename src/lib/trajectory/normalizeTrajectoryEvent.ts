@@ -33,7 +33,7 @@ const EVENT_PAYLOAD_FIELDS: Record<string, readonly string[]> = {
   llm_round_first_output_delta: ['llm_round_id', 'delta_kind', 'ttft_ms'],
   llm_round_completed: [
     'llm_round_id', 'status', 'finish_reason', 'input_tokens', 'output_tokens', 'total_tokens',
-    'cache_read_tokens', 'cache_write_tokens', 'ttft_ms', 'duration_ms',
+    'cache_read_tokens', 'cache_write_tokens', 'reasoning_tokens', 'ttft_ms', 'duration_ms',
   ],
   llm_round_failed: ['llm_round_id', 'status', 'error_code', 'message'],
   llm_round_cancelled: ['llm_round_id', 'status', 'reason'],

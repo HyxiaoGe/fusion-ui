@@ -449,6 +449,8 @@ describe('buildTrajectoryNodeDetailModel', () => {
       duration_ms: 120,
       started_at: '2026-08-23T00:00:00.000Z',
       ended_at: '2026-08-23T00:00:00.120Z',
+      llm_detail_schema_version: 1,
+      llm_round_count: 0,
     };
     const messages: Message[] = [
       {

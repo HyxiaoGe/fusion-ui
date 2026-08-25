@@ -50,6 +50,7 @@ function toolDetail(status: TrajectoryNodeDetailResponse['status']): TrajectoryN
       }
       : null,
     redacted_fields: [],
+    truncated_fields: [],
     reason: status === 'available' ? null : `tool detail is ${status}`,
   };
 }
@@ -199,7 +200,11 @@ describe('useTrajectoryToolNodeDetail', () => {
       { initialProps: { identity: toolIdentity('tool-a') } },
     );
     await waitFor(() => expect(result.current.status).toBe('ready'));
-    expect(result.current.response?.detail?.tool_call_id).toBe('tool-a');
+    expect(
+      result.current.response?.detail && 'tool_call_id' in result.current.response.detail
+        ? result.current.response.detail.tool_call_id
+        : null,
+    ).toBe('tool-a');
 
     rerender({ identity: toolIdentity('tool-b') });
     await waitFor(() => expect(result.current.status).toBe('failed'));

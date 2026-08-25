@@ -268,8 +268,8 @@ describe('TrajectoryLedger', () => {
 
     const ledger = screen.getByRole('listbox', { name: '轨迹账本' });
     const options = within(ledger).getAllByRole('option');
-    expect(ledger.scrollTop).toBe(5040);
-    expect(options[0]).toHaveAttribute('aria-posinset', '79');
+    expect(ledger.scrollTop).toBe(3088);
+    expect(options[0]).toHaveAttribute('aria-posinset', '85');
     expect(options.at(-1)).toHaveAttribute('aria-posinset', '100');
     expect(within(ledger).getByRole('option', {
       name: /第 91 轮.*第 91 条消息/,
@@ -302,7 +302,7 @@ describe('TrajectoryLedger', () => {
     );
 
     const ledger = screen.getByRole('listbox', { name: '轨迹账本' });
-    expect(ledger.scrollTop).toBe(5040);
+    expect(ledger.scrollTop).toBe(3088);
     expect(within(ledger).getByRole('option', {
       name: /第 91 轮.*第 91 条消息/,
     })).toBeInTheDocument();
@@ -321,7 +321,7 @@ describe('TrajectoryLedger', () => {
       );
 
       const ledger = screen.getByRole('listbox', { name: '轨迹账本' });
-      expect(ledger.scrollTop).toBe(5488);
+      expect(ledger.scrollTop).toBe(3088);
       expect(within(ledger).getByRole('option', {
         name: /第 100 轮.*第 100 条消息/,
       })).toBeInTheDocument();
@@ -362,7 +362,7 @@ describe('TrajectoryLedger', () => {
         } as ResizeObserverEntry], {} as ResizeObserver);
       });
 
-      expect(ledger.scrollTop).toBe(5488);
+      expect(ledger.scrollTop).toBe(3088);
       expect(within(ledger).getByRole('option', {
         name: /第 100 轮.*第 100 条消息/,
       })).toBeInTheDocument();
@@ -394,7 +394,7 @@ describe('TrajectoryLedger', () => {
       />,
     );
     const ledger = screen.getByRole('listbox', { name: '轨迹账本' });
-    expect(ledger.scrollTop).toBe(5040);
+    expect(ledger.scrollTop).toBe(3088);
 
     ledger.scrollTop = 1120;
     fireEvent.scroll(ledger);
@@ -410,7 +410,7 @@ describe('TrajectoryLedger', () => {
         onScrollTopChange={vi.fn()}
       />,
     );
-    expect(ledger.scrollTop).toBe(5488);
+    expect(ledger.scrollTop).toBe(3088);
 
     ledger.scrollTop = 2240;
     fireEvent.scroll(ledger);

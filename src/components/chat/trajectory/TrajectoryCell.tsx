@@ -3,6 +3,7 @@
 import {
   AlertTriangle,
   Bot,
+  BrainCircuit,
   CheckCircle2,
   CircleEllipsis,
   FileClock,
@@ -50,6 +51,7 @@ export interface TrajectoryCellProps {
   durationMs?: number | null;
   attemptCount?: number;
   collapsedAttemptCount?: number;
+  showTurnLabel?: boolean;
   searchQuery?: string;
   matched?: boolean;
   matchPending?: boolean;
@@ -91,6 +93,7 @@ export function TrajectoryCell({
   durationMs: providedDurationMs,
   attemptCount = 0,
   collapsedAttemptCount = 0,
+  showTurnLabel = false,
   searchQuery = '',
   matched = false,
   matchPending = false,
@@ -107,6 +110,13 @@ export function TrajectoryCell({
       ? `第 ${attemptNumber} 次尝试`
       : `第 ${attemptNumber} 次执行`;
   const turnAttemptLabel = [groupLabel, attemptLabel].filter(Boolean).join(' · ');
+  const visualTurnLabel = showTurnLabel && turnNumber !== null ? `Turn ${turnNumber}` : null;
+  const visualAttemptLabel = attemptNumber === null
+    ? null
+    : cell.type === 'subtool'
+      ? `Try ${attemptNumber}`
+      : `Run ${attemptNumber}`;
+  const visualGroupLabel = [visualTurnLabel, visualAttemptLabel].filter(Boolean).join(' · ');
   const kindLabel = providedKindLabel ?? presentation.kindLabel;
   const summary = providedSummary ?? presentation.summary;
   const statusLabel = providedStatusLabel === undefined
@@ -150,7 +160,7 @@ export function TrajectoryCell({
       onKeyDown={onKeyDown}
       style={{ height: `${TRAJECTORY_ROW_HEIGHT}px` }}
       className={cn(
-        'group grid w-full shrink-0 cursor-pointer grid-cols-[3rem_minmax(7.5rem,0.9fr)_minmax(4.5rem,0.55fr)_minmax(12rem,2.5fr)_minmax(8rem,1fr)_5.5rem] items-center gap-2 border-b border-border/40 px-3 text-left outline-none transition-colors',
+        'group grid w-full shrink-0 cursor-pointer grid-cols-[2.75rem_minmax(5.25rem,0.7fr)_minmax(4.75rem,0.6fr)_minmax(12rem,2.7fr)_minmax(7rem,0.9fr)_5rem] items-center gap-2 border-b border-border/35 px-2.5 text-left outline-none transition-colors',
         'hover:bg-muted/50 focus-visible:bg-muted/50 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring',
         selected && 'bg-primary/[0.08]',
         highlighted && 'bg-primary/[0.12] ring-2 ring-inset ring-primary/50',
@@ -159,8 +169,9 @@ export function TrajectoryCell({
       <span className="truncate text-xs tabular-nums text-muted-foreground">
         #{sourceNumber}
       </span>
-      <span className="min-w-0 truncate text-[11px] font-medium text-muted-foreground">
-        {turnAttemptLabel}
+      <span className="min-w-0 truncate text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+        {visualGroupLabel}
+        <span className="sr-only">{turnAttemptLabel}</span>
       </span>
       <span className={cn(
         'flex min-w-0 items-center gap-1.5 truncate text-xs font-medium',
@@ -252,6 +263,7 @@ function trajectoryCellIcon(cell: TrajectoryCellModel): LucideIcon {
   switch (cell.type) {
     case 'user': return UserRound;
     case 'message': return MessageSquare;
+    case 'assistant_request': return BrainCircuit;
     case 'run': return Bot;
     case 'plan': return ListChecks;
     case 'context': return FileClock;

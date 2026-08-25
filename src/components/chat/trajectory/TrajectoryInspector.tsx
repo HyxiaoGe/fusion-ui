@@ -70,7 +70,13 @@ function cellTtft(cell: TrajectoryCell): number | null {
 function cellEvents(cell: TrajectoryCell): NormalizedTrajectoryEvent[] {
   return cell.type === 'run'
     ? [...cell.records, ...cell.liveTail]
-    : (cell.type === 'tool' || cell.type === 'subtool' ? cell.events : []);
+    : (
+      cell.type === 'tool'
+      || cell.type === 'subtool'
+      || cell.type === 'assistant_request'
+        ? cell.events
+        : []
+    );
 }
 
 function safeEventDetail(event: NormalizedTrajectoryEvent): string | null {

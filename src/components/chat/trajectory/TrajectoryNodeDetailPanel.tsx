@@ -2,12 +2,15 @@
 
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
 
+import AdminSafeMarkdown from '@/components/admin/AdminSafeMarkdown';
+import { useTrajectoryLlmNodeDetail } from '@/hooks/useTrajectoryLlmNodeDetail';
 import { useTrajectoryToolNodeDetail } from '@/hooks/useTrajectoryToolNodeDetail';
 import {
   buildTrajectoryNodeDetailModel,
   type TrajectoryNodeDetailModel,
 } from '@/lib/trajectory/trajectoryNodeDetailModel';
 import type { TrajectoryCell } from '@/lib/trajectory/TrajectoryCellProjection';
+import { extractTextFromBlocks, type ContentBlock } from '@/types/conversation';
 import type { TrajectoryNodeDetailResponse, TrajectorySpan } from '@/types/trajectory';
 import { cn } from '@/lib/utils';
 
@@ -18,7 +21,16 @@ export interface TrajectoryNodeDetailPanelProps {
   relatedCells?: readonly TrajectoryCell[];
 }
 
-type DetailSection = 'summary' | 'payload' | 'result' | 'timing';
+type DetailSection =
+  | 'summary'
+  | 'preview'
+  | 'raw'
+  | 'source'
+  | 'payload'
+  | 'result'
+  | 'timing';
+type RemoteDetailSectionName = 'payload' | 'result' | 'preview' | 'raw';
+type DetailRequestStatus = 'idle' | 'loading' | 'ready' | 'failed';
 
 interface PendingWindow {
   deadline: number;
@@ -26,10 +38,15 @@ interface PendingWindow {
 }
 
 const TOOL_SECTIONS: readonly DetailSection[] = ['summary', 'payload', 'result', 'timing'];
+const LLM_SECTIONS: readonly DetailSection[] = ['summary', 'preview', 'raw'];
+const MESSAGE_SECTIONS: readonly DetailSection[] = ['summary', 'preview', 'raw', 'source'];
 const LOCAL_SECTIONS: readonly DetailSection[] = ['summary', 'timing'];
-const REMOTE_SECTIONS = new Set<DetailSection>(['payload', 'result']);
+const SUMMARY_ONLY_SECTIONS: readonly DetailSection[] = ['summary'];
 const SECTION_LABELS: Record<DetailSection, string> = {
   summary: '摘要',
+  preview: '预览',
+  raw: '原始',
+  source: '来源',
   payload: '载荷',
   result: '结果',
   timing: '计时',
@@ -48,7 +65,7 @@ export function TrajectoryNodeDetailPanel({
   return (
     <aside
       aria-label="轨迹节点详情"
-      className="min-h-48 rounded-lg border border-border/60 bg-background p-4"
+      className="min-h-full bg-background p-3"
     >
       {cell ? (
         <TrajectoryNodeDetailContent
@@ -78,8 +95,17 @@ function TrajectoryNodeDetailContent({
   span: TrajectorySpan | null;
   relatedCells: readonly TrajectoryCell[];
 }) {
+  const isUser = cell.type === 'user';
+  const isMessage = cell.type === 'message';
   const isTool = cell.type === 'tool';
-  const sections = isTool ? TOOL_SECTIONS : LOCAL_SECTIONS;
+  const isLlm = cell.type === 'assistant_request';
+  const sections = isUser || isMessage
+    ? MESSAGE_SECTIONS
+    : isTool
+      ? TOOL_SECTIONS
+      : isLlm
+        ? (cell.detailAvailable ? LLM_SECTIONS : SUMMARY_ONLY_SECTIONS)
+        : LOCAL_SECTIONS;
   const model = useMemo(
     () => buildTrajectoryNodeDetailModel(cell, span, relatedCells),
     [cell, relatedCells, span],
@@ -89,12 +115,7 @@ function TrajectoryNodeDetailContent({
   const [activeSection, setActiveSection] = useState<DetailSection>('summary');
   const [detailRequested, setDetailRequested] = useState(false);
   const [pendingWindow, setPendingWindow] = useState<PendingWindow | null>(null);
-  const {
-    status: requestStatus,
-    response,
-    error,
-    retry,
-  } = useTrajectoryToolNodeDetail(
+  const toolDetail = useTrajectoryToolNodeDetail(
     isTool
       ? {
         conversationId,
@@ -105,7 +126,23 @@ function TrajectoryNodeDetailContent({
       : null,
     isTool && detailRequested,
   );
-  const isRemoteSection = REMOTE_SECTIONS.has(activeSection);
+  const llmDetail = useTrajectoryLlmNodeDetail(
+    isLlm
+      ? {
+        conversationId,
+        runId: cell.runId,
+        llmRoundId: cell.llmRoundId,
+      }
+      : null,
+    isLlm && cell.detailAvailable && detailRequested,
+  );
+  const {
+    status: requestStatus,
+    response,
+    error,
+    retry,
+  } = isLlm ? llmDetail : toolDetail;
+  const isRemoteSection = needsRemoteDetail(cell, activeSection);
   const pendingStopped = isRemoteSection
     && requestStatus === 'ready'
     && response?.status === 'pending'
@@ -160,7 +197,7 @@ function TrajectoryNodeDetailContent({
 
   function selectSection(section: DetailSection, moveFocus = false) {
     setActiveSection(section);
-    if (REMOTE_SECTIONS.has(section)) {
+    if (needsRemoteDetail(cell, section)) {
       if (!detailRequested) {
         beginPendingWindow(1);
         setDetailRequested(true);
@@ -237,11 +274,22 @@ function TrajectoryNodeDetailContent({
         aria-labelledby={`${tabsId}-${activeSection}-tab`}
         className="min-w-0 pt-4"
       >
-        {activeSection === 'summary' && <SummarySection model={model} />}
+        {activeSection === 'summary' && (
+          <SummarySection cell={cell} model={model} onSelectSection={selectSection} />
+        )}
+        {activeSection === 'preview' && (cell.type === 'user' || cell.type === 'message') && (
+          <MessagePreviewSection cell={cell} />
+        )}
+        {activeSection === 'raw' && (cell.type === 'user' || cell.type === 'message') && (
+          <MessageRawSection cell={cell} />
+        )}
+        {activeSection === 'source' && (cell.type === 'user' || cell.type === 'message') && (
+          <MessageSourceSection cell={cell} model={model} />
+        )}
         {activeSection === 'timing' && <TimingSection model={model} />}
         {isRemoteSection && (
           <RemoteDetailSection
-            section={activeSection as 'payload' | 'result'}
+            section={activeSection as RemoteDetailSectionName}
             requestStatus={requestStatus}
             response={response}
             error={error}
@@ -274,20 +322,161 @@ function TrajectoryNodeDetailContent({
   );
 }
 
-function SummarySection({ model }: { model: TrajectoryNodeDetailModel }) {
+function needsRemoteDetail(cell: TrajectoryCell, section: DetailSection): boolean {
+  if (cell.type === 'tool') return section === 'payload' || section === 'result';
+  if (cell.type === 'assistant_request') return section === 'preview' || section === 'raw';
+  return false;
+}
+
+function MessagePreviewSection({
+  cell,
+}: {
+  cell: Extract<TrajectoryCell, { type: 'user' | 'message' }>;
+}) {
+  const text = extractTextFromBlocks(cell.message.content);
+  const files = cell.message.content.filter(
+    (block): block is Extract<ContentBlock, { type: 'file' }> => block.type === 'file',
+  );
+
   return (
-    <div className="space-y-3">
-      <dl className="grid gap-2 sm:grid-cols-2">
-        <DetailField label="状态" value={model.status} />
-        <DetailField label="摘要" value={model.summary} />
-        {model.attemptCount !== null && model.attemptMode && (
-          <DetailField
-            label={model.attemptMode === 'count' ? '尝试次数' : '尝试'}
-            value={model.attemptMode === 'count'
-              ? `${model.attemptCount} 次`
-              : `第 ${model.attemptCount} 次`}
-          />
-        )}
+    <div className="space-y-4">
+      {text.trim() ? (
+        <AdminSafeMarkdown content={text} className="text-sm" />
+      ) : (
+        <p className="text-sm text-muted-foreground">无文字内容</p>
+      )}
+      {files.length > 0 && (
+        <div
+          className="space-y-2"
+          aria-label={cell.type === 'user' ? '用户附件' : '回答附件'}
+        >
+          {files.map(file => (
+            <div
+              key={file.id}
+              className="rounded-md border border-border/60 bg-muted/15 px-3 py-2"
+            >
+              <p className="break-words text-sm font-medium text-foreground">{file.filename}</p>
+              <p className="mt-0.5 text-xs text-muted-foreground">{file.mime_type}</p>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function MessageRawSection({
+  cell,
+}: {
+  cell: Extract<TrajectoryCell, { type: 'user' | 'message' }>;
+}) {
+  const blocks = cell.message.content.filter(block => (
+    block.type !== 'thinking'
+    && (
+      cell.type !== 'message'
+      || !FINAL_MESSAGE_EVIDENCE_BLOCK_TYPES.has(block.type)
+    )
+  ));
+  if (blocks.length === 0) {
+    return <p className="text-sm text-muted-foreground">没有可展示的原始内容块</p>;
+  }
+
+  return (
+    <div className="space-y-4">
+      {blocks.map((block, index) => (
+        <section key={block.id} className="min-w-0 space-y-1.5">
+          <h3 className="text-xs font-medium text-muted-foreground">
+            Block #{index + 1} · {block.type}
+          </h3>
+          <pre className="max-h-96 whitespace-pre-wrap break-words overflow-auto rounded-md border border-border/60 bg-muted/20 p-3 text-xs text-foreground">
+            <code>{formatMessageRawBlock(block)}</code>
+          </pre>
+        </section>
+      ))}
+    </div>
+  );
+}
+
+const FINAL_MESSAGE_EVIDENCE_BLOCK_TYPES = new Set<ContentBlock['type']>([
+  'search',
+  'url_read',
+  'knowledge_evidence',
+]);
+
+function MessageSourceSection({
+  cell,
+  model,
+}: {
+  cell: Extract<TrajectoryCell, { type: 'user' | 'message' }>;
+  model: TrajectoryNodeDetailModel;
+}) {
+  const source = {
+    kind: cell.type === 'user' ? 'user' : 'assistant',
+    source: 'messages',
+    messageId: cell.message.id,
+    sequence: cell.message.sequence ?? null,
+    timestamp: model.startedAt,
+    ...(cell.type === 'message' ? { modelId: cell.message.model_id ?? null } : {}),
+  };
+
+  return (
+    <pre className="max-h-96 whitespace-pre-wrap break-words overflow-auto rounded-md border border-border/60 bg-muted/20 p-3 text-xs text-foreground">
+      <code>{JSON.stringify(source, null, 2)}</code>
+    </pre>
+  );
+}
+
+function formatMessageRawBlock(block: ContentBlock): string {
+  if (block.type === 'text') return block.text;
+  return JSON.stringify(sanitizeRawValue(block), null, 2);
+}
+
+const PRIVATE_RAW_KEYS = new Set(['id', 'file_id', 'thumbnail_url', 'tool_call_log_id']);
+
+function sanitizeRawValue(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(sanitizeRawValue);
+  if (!value || typeof value !== 'object') return value;
+  return Object.fromEntries(
+    Object.entries(value)
+      .filter(([key]) => !PRIVATE_RAW_KEYS.has(key))
+      .map(([key, entry]) => [key, sanitizeRawValue(entry)]),
+  );
+}
+
+function SummarySection({
+  cell,
+  model,
+  onSelectSection,
+}: {
+  cell: TrajectoryCell;
+  model: TrajectoryNodeDetailModel;
+  onSelectSection: (section: DetailSection) => void;
+}) {
+  const sourceFields = model.summaryFields.filter(field => field.label === '来源');
+  const otherFields = model.summaryFields.filter(field => field.label !== '来源');
+  const fields = [
+    ...sourceFields,
+    { label: '状态', value: model.status },
+    ...otherFields,
+    ...(model.attemptCount !== null && model.attemptMode
+      ? [{
+        label: model.attemptMode === 'count' ? '尝试次数' : '尝试',
+        value: model.attemptMode === 'count'
+          ? `${model.attemptCount} 次`
+          : `第 ${model.attemptCount} 次`,
+      }]
+      : []),
+    ...(!['user', 'message', 'assistant_request', 'tool'].includes(cell.type)
+      ? [{ label: '概览', value: model.summary }]
+      : []),
+  ];
+
+  return (
+    <div className="space-y-4">
+      <dl className="divide-y divide-border/45 border-y border-border/45">
+        {fields.map(field => (
+          <SummaryFieldRow key={field.label} label={field.label} value={field.value} />
+        ))}
       </dl>
       {model.errorSummary && (
         <div className="rounded-md border border-danger/30 bg-danger/5 p-3 text-sm text-foreground">
@@ -295,7 +484,107 @@ function SummarySection({ model }: { model: TrajectoryNodeDetailModel }) {
           <p>{model.errorSummary}</p>
         </div>
       )}
+      {cell.type === 'tool' && (
+        <ToolSummaryLinks
+          onOpenPayload={() => onSelectSection('payload')}
+          onOpenResult={() => onSelectSection('result')}
+        />
+      )}
+      {cell.type === 'assistant_request' && <RequestTimingSummary model={model} />}
     </div>
+  );
+}
+
+function SummaryFieldRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="grid grid-cols-[6rem_minmax(0,1fr)] gap-3 py-2 text-sm">
+      <dt className="text-muted-foreground">{label}</dt>
+      <dd className="min-w-0 break-words text-foreground">{value}</dd>
+    </div>
+  );
+}
+
+function ToolSummaryLinks({
+  onOpenPayload,
+  onOpenResult,
+}: {
+  onOpenPayload: () => void;
+  onOpenResult: () => void;
+}) {
+  return (
+    <div className="divide-y divide-border/45 border-y border-border/45">
+      <SummaryLinkRow
+        label="载荷"
+        description="按需读取本次工具调用参数"
+        actionLabel="查看完整载荷"
+        onClick={onOpenPayload}
+      />
+      <SummaryLinkRow
+        label="结果"
+        description="按需读取本次工具调用结果"
+        actionLabel="查看完整结果"
+        onClick={onOpenResult}
+      />
+    </div>
+  );
+}
+
+function SummaryLinkRow({
+  label,
+  description,
+  actionLabel,
+  onClick,
+}: {
+  label: string;
+  description: string;
+  actionLabel: string;
+  onClick: () => void;
+}) {
+  return (
+    <div className="py-2.5">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-sm font-medium text-foreground">{label}</p>
+          <p className="mt-0.5 text-xs text-muted-foreground">{description}</p>
+        </div>
+        <SummarySectionLink label={actionLabel} onClick={onClick} />
+      </div>
+    </div>
+  );
+}
+
+function SummarySectionLink({ label, onClick }: { label: string; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="cursor-pointer text-xs font-medium text-primary outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring"
+    >
+      {label}
+    </button>
+  );
+}
+
+function RequestTimingSummary({ model }: { model: TrajectoryNodeDetailModel }) {
+  const fields = [
+    ['总耗时', model.duration],
+    ['首次输出', model.ttft],
+    ['开始时间', model.startedAt],
+    ['结束时间', model.endedAt],
+  ].filter((entry): entry is [string, string] => entry[1] !== null);
+
+  if (fields.length === 0) return null;
+  return (
+    <details open className="border-b border-border/45 pb-2">
+      <summary className="cursor-pointer py-1 text-sm font-medium text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring">
+        请求计时
+      </summary>
+      <dl className="mt-1 divide-y divide-border/35">
+        {fields.map(([label, value]) => (
+          <SummaryFieldRow key={label} label={label} value={value} />
+        ))}
+      </dl>
+    </details>
   );
 }
 
@@ -334,8 +623,8 @@ function RemoteDetailSection({
   pendingStopped,
   onRetry,
 }: {
-  section: 'payload' | 'result';
-  requestStatus: ReturnType<typeof useTrajectoryToolNodeDetail>['status'];
+  section: RemoteDetailSectionName;
+  requestStatus: DetailRequestStatus;
   response: TrajectoryNodeDetailResponse | null;
   error: string | null;
   pendingStopped: boolean;
@@ -347,12 +636,12 @@ function RemoteDetailSection({
   if (requestStatus === 'failed') {
     return (
       <div className="space-y-3 text-sm text-danger">
-        <p role="alert">{error ?? '加载工具详情失败，请稍后重试'}</p>
+        <p role="alert">{error ?? '加载节点详情失败，请稍后重试'}</p>
         <RetryButton label="重试" onClick={onRetry} />
       </div>
     );
   }
-  if (!response) return <p role="alert" className="text-sm text-danger">工具详情不可用</p>;
+  if (!response) return <p role="alert" className="text-sm text-danger">节点详情不可用</p>;
 
   if (response.status === 'pending') {
     return (
@@ -369,31 +658,146 @@ function RemoteDetailSection({
     return <p className="text-sm text-muted-foreground">该运行生成时尚未记录 Payload/Result</p>;
   }
   if (response.status === 'degraded') {
-    return <p className="text-sm text-warn">运行已结束，但工具详情未能精确关联</p>;
+    return (
+      <p className="text-sm text-warn">
+        {response.node_type === 'llm'
+          ? '运行已结束，但模型正文未能完成记录'
+          : '运行已结束，但工具详情未能精确关联'}
+      </p>
+    );
   }
 
-  const value = response.available_sections.includes(section)
-    ? response.detail?.[section] ?? null
+  const redactedFields = response.redacted_fields ?? [];
+  const truncatedFields = response.truncated_fields ?? [];
+  if (response.node_type === 'llm') {
+    return (
+      <LlmAvailableDetailSection
+        section={section}
+        response={response}
+        redactedFields={redactedFields}
+        truncatedFields={truncatedFields}
+      />
+    );
+  }
+
+  const toolSection = section === 'payload' || section === 'result' ? section : null;
+  const value = toolSection && response.available_sections.includes(toolSection)
+    ? remoteSectionValue(response, toolSection)
     : null;
   return (
     <div className="space-y-3">
       {value === null ? (
         <p className="text-sm text-muted-foreground">该部分未提供</p>
       ) : (
-        <pre className="max-h-96 overflow-auto rounded-md border border-border/60 bg-muted/20 p-3 text-xs text-foreground">
+        <pre className="max-h-96 whitespace-pre-wrap overflow-auto rounded-md border border-border/60 bg-muted/20 p-3 text-xs text-foreground">
           <code>{JSON.stringify(value, null, 2)}</code>
         </pre>
       )}
-      {response.redacted_fields.length > 0 && (
+      <DetailWarnings redactedFields={redactedFields} truncatedFields={truncatedFields} />
+    </div>
+  );
+}
+
+function LlmAvailableDetailSection({
+  section,
+  response,
+  redactedFields,
+  truncatedFields,
+}: {
+  section: RemoteDetailSectionName;
+  response: TrajectoryNodeDetailResponse;
+  redactedFields: readonly string[];
+  truncatedFields: readonly string[];
+}) {
+  const detail = response.detail && 'llm_round_id' in response.detail
+    ? response.detail
+    : null;
+  if (!detail || (section !== 'preview' && section !== 'raw')) {
+    return <p className="text-sm text-muted-foreground">该部分未提供</p>;
+  }
+
+  const hasReasoning = response.available_sections.includes('thinking')
+    && Boolean(detail.reasoning_text?.trim());
+  const hasOutput = response.available_sections.includes('output')
+    && Boolean(detail.output_text?.trim());
+
+  return (
+    <div className="space-y-4">
+      {section === 'preview' ? (
+        <div className="space-y-5">
+          <section className="space-y-2">
+            <h3 className="text-sm font-semibold text-foreground">思考过程</h3>
+            {hasReasoning ? (
+              <AdminSafeMarkdown content={detail.reasoning_text ?? ''} className="text-sm" />
+            ) : (
+              <p className="text-sm text-muted-foreground">该轮未记录可见思考过程</p>
+            )}
+          </section>
+          <section className="space-y-2">
+            <h3 className="text-sm font-semibold text-foreground">模型输出</h3>
+            {hasOutput ? (
+              <AdminSafeMarkdown content={detail.output_text ?? ''} className="text-sm" />
+            ) : (
+              <p className="text-sm text-muted-foreground">
+                该轮未生成可见正文，可能仅产生了工具调用
+              </p>
+            )}
+          </section>
+        </div>
+      ) : (
+        <pre className="max-h-96 whitespace-pre-wrap break-words overflow-auto rounded-md border border-border/60 bg-muted/20 p-3 text-xs text-foreground">
+          <code>{JSON.stringify({
+            llm_round_id: detail.llm_round_id,
+            reasoning_text: hasReasoning ? detail.reasoning_text : null,
+            output_text: hasOutput ? detail.output_text : null,
+          }, null, 2)}</code>
+        </pre>
+      )}
+      <DetailWarnings redactedFields={redactedFields} truncatedFields={truncatedFields} />
+    </div>
+  );
+}
+
+function DetailWarnings({
+  redactedFields,
+  truncatedFields,
+}: {
+  redactedFields: readonly string[];
+  truncatedFields: readonly string[];
+}) {
+  return (
+    <>
+      {redactedFields.length > 0 && (
         <div className="rounded-md border border-warn/30 bg-warn/5 p-3 text-sm text-foreground">
           <p className="font-medium text-warn">部分字段已脱敏</p>
           <ul className="mt-1 list-disc pl-5 font-mono text-xs">
-            {response.redacted_fields.map(field => <li key={field}>{field}</li>)}
+            {redactedFields.map(field => <li key={field}>{field}</li>)}
           </ul>
         </div>
       )}
-    </div>
+      {truncatedFields.length > 0 && (
+        <div className="rounded-md border border-warn/30 bg-warn/5 p-3 text-sm text-foreground">
+          <p className="font-medium text-warn">部分正文已截断</p>
+          <ul className="mt-1 list-disc pl-5 font-mono text-xs">
+            {truncatedFields.map(field => <li key={field}>{field}</li>)}
+          </ul>
+        </div>
+      )}
+    </>
   );
+}
+
+function remoteSectionValue(
+  response: TrajectoryNodeDetailResponse,
+  section: RemoteDetailSectionName,
+): Record<string, unknown> | null {
+  if (!response.detail) return null;
+  if (response.node_type === 'tool' && 'tool_call_id' in response.detail) {
+    if (section === 'payload') return response.detail.payload;
+    if (section === 'result') return response.detail.result;
+    return null;
+  }
+  return null;
 }
 
 function RetryButton({ label, onClick }: { label: string; onClick: () => void }) {
