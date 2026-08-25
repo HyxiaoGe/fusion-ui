@@ -579,6 +579,8 @@ function trajectoryRun(runId = 'run-1'): TrajectoryRunSummary {
     duration_ms: 120,
     started_at: '2026-08-22T00:00:00.000Z',
     ended_at: '2026-08-22T00:00:00.120Z',
+    llm_detail_schema_version: 1,
+    llm_round_count: 0,
   };
 }
 
@@ -608,6 +610,7 @@ function trajectorySnapshot(run = trajectoryRun()): TrajectorySnapshot {
       last_sequence: 0,
     },
     truncated: false,
+    llm_round_summaries: [],
   };
 }
 
@@ -749,6 +752,32 @@ describe('ChatPage 会话切换体验', () => {
     );
     expect(screen.getByRole('tab', { name: '轨迹' })).toHaveAttribute('aria-selected', 'true');
     expect(screen.getAllByTestId('chat-input')).toHaveLength(1);
+  });
+
+  it('Composer 在聊天视图占据正常文档流，在轨迹视图改为底部浮层', () => {
+    conversationsById.set('chat-a', createConversation('chat-a', [textMessage('user-1')]));
+    hydrationById.set('chat-a', { view: 'ready' });
+    useConversationFilesState.files = [{
+      id: 'file-1',
+      filename: 'diagram.png',
+      mimetype: 'image/png',
+      size: 100,
+      created_at: '2026-07-03T10:00:00Z',
+      status: 'processed',
+      error_message: null,
+    }];
+
+    const { rerender } = render(<ChatPage />);
+    expect(screen.getByTestId('chat-composer-shell')).toHaveAttribute('data-placement', 'flow');
+
+    activateConversationTab('轨迹');
+    rerender(<ChatPage />);
+    expect(screen.getByTestId('chat-composer-shell')).toHaveAttribute('data-placement', 'overlay');
+    const interactiveComposer = screen.getByTestId('chat-composer-interactive');
+    expect(interactiveComposer).toHaveClass('pointer-events-auto');
+    expect(interactiveComposer).toContainElement(
+      screen.getByRole('button', { name: '打开会话资料' }),
+    );
   });
 
   it('同会话 Tab 往返保留轨迹选择、滚动和节点详情实例', () => {
@@ -1827,7 +1856,7 @@ describe('ChatPage 会话切换体验', () => {
     expect(continueAgentRunMock).not.toHaveBeenCalled();
   });
 
-  it('Trajectory 终态区域用 selected run id 发起 Agent retry/continue', async () => {
+  it('Trajectory 只读展示历史运行，不暴露 Agent retry/continue 入口', async () => {
     const assistant: Message = {
       id: 'assistant-1',
       role: 'assistant',
@@ -1845,18 +1874,11 @@ describe('ChatPage 会话切换体验', () => {
     activateConversationTab('轨迹');
     rerender(<ChatPage />);
 
-    fireEvent.click(await screen.findByRole('button', { name: '重试所选运行' }));
-    await waitFor(() => expect(retryMessageMock).toHaveBeenCalledWith(
-      'assistant-1',
-      'chat-a',
-      [],
-      'run-selected',
-      expect.objectContaining({
-        canStart: expect.any(Function),
-        onAccepted: expect.any(Function),
-        onRejected: expect.any(Function),
-      }),
-    ));
+    expect(screen.queryByRole('region', { name: '所选运行的终态操作' })).toBeNull();
+    expect(screen.queryByRole('button', { name: '重试所选运行' })).toBeNull();
+    expect(screen.queryByRole('button', { name: '继续所选运行' })).toBeNull();
+    expect(retryMessageMock).not.toHaveBeenCalled();
+    expect(continueAgentRunMock).not.toHaveBeenCalled();
 
     const limitRun = trajectoryRun('run-limit');
     limitRun.status = 'limit_reached';
@@ -1866,15 +1888,11 @@ describe('ChatPage 会话切换体验', () => {
     activateConversationTab('轨迹');
     rerender(<ChatPage />);
 
-    fireEvent.click(await screen.findByRole('button', { name: '继续所选运行' }));
-    await waitFor(() => expect(continueAgentRunMock).toHaveBeenCalledWith({
-      conversationId: 'chat-a',
-      assistantMessageId: 'assistant-1',
-      previousRunId: 'run-limit',
-      canStart: expect.any(Function),
-      onAccepted: expect.any(Function),
-      onRejectedBeforeStart: expect.any(Function),
-    }));
+    expect(screen.queryByRole('region', { name: '所选运行的终态操作' })).toBeNull();
+    expect(screen.queryByRole('button', { name: '重试所选运行' })).toBeNull();
+    expect(screen.queryByRole('button', { name: '继续所选运行' })).toBeNull();
+    expect(retryMessageMock).not.toHaveBeenCalled();
+    expect(continueAgentRunMock).not.toHaveBeenCalled();
   });
 
   it('流式中不下发 continuation handler，避免显示继续入口', async () => {

@@ -36,6 +36,7 @@ interface MutableTableRow extends TrajectoryTableRow {
 const KIND_LABELS: Record<TrajectoryCell['type'], string> = {
   user: '用户',
   message: '消息',
+  assistant_request: '模型',
   run: '运行',
   plan: '计划',
   context: '上下文',

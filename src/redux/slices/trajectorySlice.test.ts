@@ -23,6 +23,7 @@ import trajectoryReducer, {
   trajectoryRunListReceived,
   trajectoryRunListRequested,
   trajectoryRunListUnavailable,
+  trajectoryLlmRoundSummaryReceived,
   trajectorySnapshotFailed,
   trajectorySnapshotReceived,
   trajectorySnapshotRequested,
@@ -55,6 +56,8 @@ function runSummary(runId: string, overrides: Partial<TrajectoryRunSummary> = {}
     duration_ms: 100,
     started_at: '2026-08-22T00:00:00.000Z',
     ended_at: '2026-08-22T00:00:00.100Z',
+    llm_detail_schema_version: 1,
+    llm_round_count: 0,
     ...overrides,
   };
 }
@@ -87,6 +90,7 @@ function snapshot(runId: string, sequences: number[]): TrajectorySnapshot {
       last_sequence: sequences.at(-1) ?? null,
     },
     truncated: false,
+    llm_round_summaries: [],
   };
 }
 
@@ -115,6 +119,45 @@ function liveEvent(
 }
 
 describe('trajectorySlice', () => {
+  it('单节点 LLM settle 只更新目标快照的 preview 缓存', () => {
+    let state = reducer(undefined, trajectoryRunListRequested({
+      conversationId: 'conversation-a',
+      requestId: 'runs-a',
+    }));
+    state = reducer(state, trajectoryRunListReceived({
+      conversationId: 'conversation-a',
+      requestId: 'runs-a',
+      response: { items: [runSummary('run-a')], truncated: false },
+    }));
+    state = reducer(state, trajectorySnapshotRequested({
+      conversationId: 'conversation-a',
+      runId: 'run-a',
+      requestId: 'snapshot-a',
+    }));
+    state = reducer(state, trajectorySnapshotReceived({
+      conversationId: 'conversation-a',
+      requestId: 'snapshot-a',
+      snapshot: snapshot('run-a', [0]),
+    }));
+
+    state = reducer(state, trajectoryLlmRoundSummaryReceived({
+      conversationId: 'conversation-a',
+      runId: 'run-a',
+      summary: {
+        llm_round_id: 'round-1',
+        reasoning_preview: '先分析问题。',
+        output_preview: '分析完成。',
+      },
+    }));
+
+    expect(state.byConversationId['conversation-a'].snapshotsByRunId['run-a']
+      .llmRoundSummaries).toEqual([{
+      llm_round_id: 'round-1',
+      reasoning_preview: '先分析问题。',
+      output_preview: '分析完成。',
+    }]);
+  });
+
   it('认证作用域仅在 stable identity 真变化时原子清空全部轨迹状态', () => {
     let state = reducer(undefined, trajectoryAuthScopeChanged({ authScope: 'user-a' }));
     state = reducer(state, trajectoryRunListRequested({

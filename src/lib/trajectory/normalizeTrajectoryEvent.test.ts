@@ -106,6 +106,38 @@ describe('normalizeTrajectoryEvent', () => {
     expect(normalized?.payload).not.toBe(payload);
   });
 
+  it('保留 LLM 完成事件的推理 Token，同时丢弃未声明字段', () => {
+    const normalized = normalizeSseTrajectoryEvent({
+      type: 'llm_round_completed',
+      schema_version: 1,
+      run_id: 'run-1',
+      parent_run_id: null,
+      step_id: 'step-1',
+      parent_step_id: null,
+      tool_call_id: null,
+      sequence: 3,
+      trace_id: 'trace-1',
+      ts: Date.parse(timestamp) / 1000,
+      llm_round_id: 'round-1',
+      status: 'success',
+      input_tokens: 100,
+      output_tokens: 40,
+      reasoning_tokens: 24,
+      duration_ms: 800,
+      internal_usage_detail: { secret: true },
+    });
+
+    expect(normalized?.payload).toMatchObject({
+      llm_round_id: 'round-1',
+      status: 'success',
+      input_tokens: 100,
+      output_tokens: 40,
+      reasoning_tokens: 24,
+      duration_ms: 800,
+    });
+    expect(normalized?.payload).not.toHaveProperty('internal_usage_detail');
+  });
+
   it('对 plan_snapshot 的嵌套项应用字段白名单、脱敏和有界列表', () => {
     const normalized = normalizeSseTrajectoryEvent({
       type: 'plan_snapshot',

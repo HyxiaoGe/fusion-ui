@@ -94,6 +94,8 @@ function runSummary(runId: string, attemptIndex: number): TrajectoryRunSummary {
     duration_ms: 180,
     started_at: `2026-08-22T00:00:0${attemptIndex}.000Z`,
     ended_at: `2026-08-22T00:00:0${attemptIndex}.180Z`,
+    llm_detail_schema_version: 1,
+    llm_round_count: 0,
   };
 }
 
@@ -164,6 +166,7 @@ function snapshot(run: TrajectoryRunSummary, withToolSpan = true): TrajectorySna
       last_sequence: withToolSpan ? 2 : 0,
     },
     truncated: !withToolSpan,
+    llm_round_summaries: [],
   };
 }
 

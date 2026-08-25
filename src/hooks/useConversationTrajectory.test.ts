@@ -95,6 +95,8 @@ function runSummary(
     duration_ms: 100,
     started_at: '2026-08-22T00:00:00.000Z',
     ended_at: '2026-08-22T00:00:00.100Z',
+    llm_detail_schema_version: 1,
+    llm_round_count: 0,
     ...overrides,
   };
 }
@@ -131,6 +133,7 @@ function snapshot(
       last_sequence: sequences.at(-1) ?? null,
     },
     truncated: false,
+    llm_round_summaries: [],
     ...overrides,
   };
 }

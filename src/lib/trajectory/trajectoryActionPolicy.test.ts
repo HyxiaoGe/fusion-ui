@@ -23,6 +23,8 @@ function run(
     duration_ms: 120,
     started_at: '2026-08-22T00:00:01.000Z',
     ended_at: '2026-08-22T00:00:01.120Z',
+    llm_detail_schema_version: 1,
+    llm_round_count: 0,
     ...overrides,
   };
 }

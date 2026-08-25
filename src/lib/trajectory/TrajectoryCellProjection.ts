@@ -114,6 +114,26 @@ export interface SubtoolCell extends TrajectoryCellBase {
   events: NormalizedTrajectoryEvent[];
 }
 
+export interface LlmRoundCell extends TrajectoryCellBase {
+  type: 'assistant_request';
+  runId: string;
+  llmRoundId: string;
+  roundIndex: number | null;
+  requestIndex: number | null;
+  model: string | null;
+  provider: string | null;
+  status: string;
+  reasoningPreview: string | null;
+  outputPreview: string | null;
+  inputTokens: number | null;
+  outputTokens: number | null;
+  reasoningTokens: number | null;
+  durationMs: number | null;
+  ttftMs: number | null;
+  detailAvailable: boolean;
+  events: NormalizedTrajectoryEvent[];
+}
+
 export interface CompactedCell extends TrajectoryCellBase {
   type: 'compacted';
   runId: string;
@@ -131,6 +151,7 @@ export type TrajectoryCell =
   | ContextCell
   | ToolCell
   | SubtoolCell
+  | LlmRoundCell
   | CompactedCell;
 
 export interface TrajectoryRunJoin {
@@ -168,6 +189,8 @@ interface ProjectedRun {
   totalToolCalls: number;
   startedAt: string | null;
   endedAt: string | null;
+  llmDetailSchemaVersion: number | null;
+  llmRoundCount: number;
   summarySource: RunCell['summarySource'];
 }
 
@@ -177,6 +200,7 @@ interface DetailContext {
   snapshot: TrajectorySnapshotCacheEntry;
   durableEvents: NormalizedTrajectoryEvent[];
   liveTail: NormalizedTrajectoryEvent[];
+  requestOffset: number;
 }
 
 const normalizedEventArrayCache = new WeakMap<
@@ -203,6 +227,13 @@ export function projectTrajectoryCells(
     joinsByRunId,
     messageIndexes,
   ));
+  const requestOffsets = new Map<string, number>();
+  let requestOffset = 0;
+  const requestOrderedRuns = [...runs].sort(compareRequestRuns);
+  for (const run of requestOrderedRuns) {
+    requestOffsets.set(run.runId, requestOffset);
+    requestOffset += run.llmRoundCount;
+  }
   const runsByUserMessageId = groupRuns(sortedRuns, joinsByRunId, 'userMessageId');
   const runsByAssistantMessageId = groupRuns(sortedRuns, joinsByRunId, 'assistantMessageId', true);
   const cells: TrajectoryCell[] = [];
@@ -210,11 +241,23 @@ export function projectTrajectoryCells(
   for (const item of input.messages) {
     if (item.role === 'user') {
       cells.push(userCell(item));
-      appendRunCells(cells, runsByUserMessageId.get(item.id) ?? [], joinsByRunId, input);
+      appendRunCells(
+        cells,
+        runsByUserMessageId.get(item.id) ?? [],
+        joinsByRunId,
+        requestOffsets,
+        input,
+      );
       continue;
     }
 
-    appendRunCells(cells, runsByAssistantMessageId.get(item.id) ?? [], joinsByRunId, input);
+    appendRunCells(
+      cells,
+      runsByAssistantMessageId.get(item.id) ?? [],
+      joinsByRunId,
+      requestOffsets,
+      input,
+    );
     cells.push(assistantCell(item));
   }
 
@@ -222,7 +265,7 @@ export function projectTrajectoryCells(
   const unassociatedRuns = sortedRuns.filter(run => (
     joinsByRunId.get(run.runId)?.bucket === 'unassociated'
   ));
-  appendRunCells(unassociatedCells, unassociatedRuns, joinsByRunId, input);
+  appendRunCells(unassociatedCells, unassociatedRuns, joinsByRunId, requestOffsets, input);
 
   return {
     cells,
@@ -251,6 +294,8 @@ function collectProjectedRuns(input: TrajectoryCellProjectionInput): ProjectedRu
       totalToolCalls: fallback.totalToolCalls,
       startedAt: null,
       endedAt: null,
+      llmDetailSchemaVersion: null,
+      llmRoundCount: 0,
       summarySource: 'message.agent_run',
     });
   }
@@ -270,6 +315,8 @@ function fromRunSummary(summary: TrajectoryRunSummary): ProjectedRun {
     totalToolCalls: summary.total_tool_calls,
     startedAt: summary.started_at,
     endedAt: summary.ended_at,
+    llmDetailSchemaVersion: summary.llm_detail_schema_version,
+    llmRoundCount: summary.llm_round_count,
     summarySource: 'run-summary',
   };
 }
@@ -371,6 +418,11 @@ function compareRuns(
   return startedAt || left.runId.localeCompare(right.runId);
 }
 
+function compareRequestRuns(left: ProjectedRun, right: ProjectedRun): number {
+  const startedAt = (left.startedAt ?? '').localeCompare(right.startedAt ?? '');
+  return startedAt || left.runId.localeCompare(right.runId);
+}
+
 function joinedMessageIndex(
   join: TrajectoryRunJoin | undefined,
   messageIndexes: Map<string, number>,
@@ -430,6 +482,7 @@ function appendRunCells(
   target: TrajectoryCell[],
   runs: ProjectedRun[],
   joinsByRunId: Map<string, TrajectoryRunJoin>,
+  requestOffsets: Map<string, number>,
   input: TrajectoryCellProjectionInput,
 ): void {
   for (const run of runs) {
@@ -438,7 +491,13 @@ function appendRunCells(
     const snapshot = input.snapshotsByRunId[run.runId];
     const isSelected = input.selectedRunId === run.runId;
     const detail = isSelected && snapshot
-      ? createDetailContext(run, join, snapshot, input.liveEventsByRunId[run.runId] ?? [])
+      ? createDetailContext(
+        run,
+        join,
+        snapshot,
+        input.liveEventsByRunId[run.runId] ?? [],
+        requestOffsets.get(run.runId) ?? 0,
+      )
       : null;
     const runCell = createRunCell(run, join, snapshot, isSelected, detail);
     target.push(runCell);
@@ -451,13 +510,14 @@ function createDetailContext(
   join: TrajectoryRunJoin,
   snapshot: TrajectorySnapshotCacheEntry,
   liveEvents: NormalizedTrajectoryEvent[],
+  requestOffset: number,
 ): DetailContext {
   const durableEvents = uniqueSortedEvents(snapshot.events);
   const durableLastSequence = snapshot.durableLastSequence
     ?? durableEvents.at(-1)?.sequence
     ?? -1;
   const liveTail = uniqueSortedEvents(liveEvents.filter(item => item.sequence > durableLastSequence));
-  return { run, join, snapshot, durableEvents, liveTail };
+  return { run, join, snapshot, durableEvents, liveTail, requestOffset };
 }
 
 function uniqueSortedEvents(events: NormalizedTrajectoryEvent[]): NormalizedTrajectoryEvent[] {
@@ -589,14 +649,68 @@ function normalizeTrajectoryBadgeStatus(value: string | null): TrajectoryBadgeSt
 function projectDetailCells(detail: DetailContext, runCell: RunCell): TrajectoryCell[] {
   const cells: TrajectoryCell[] = [];
   const plans = new Map<string, PlanCell>();
+  const contexts = new Map<string, ContextCell>();
   const tools = new Map<string, ToolCell>();
   const subtools = new Map<string, SubtoolCell>();
+  const llmRounds = new Map<string, LlmRoundCell>();
+  const llmSummaries = new Map(
+    (detail.snapshot.llmRoundSummaries ?? []).map(summary => [summary.llm_round_id, summary]),
+  );
   const events = [
     ...detail.durableEvents.map(item => ({ item, source: 'durable-snapshot' as const })),
     ...detail.liveTail.map(item => ({ item, source: 'live-tail' as const })),
   ];
 
   for (const { item, source } of events) {
+    if (item.eventType.startsWith('llm_round_')) {
+      const llmRoundId = stringValue(item.payload.llm_round_id);
+      if (!llmRoundId) continue;
+      const summary = llmSummaries.get(llmRoundId);
+      const existing = llmRounds.get(llmRoundId);
+      if (existing) {
+        updateEventBackedCell(existing, item, source);
+        existing.events.push(item);
+        existing.roundIndex = numberValue(item.payload.round_index) ?? existing.roundIndex;
+        existing.requestIndex = existing.roundIndex === null
+          ? null
+          : detail.requestOffset + existing.roundIndex;
+        existing.model = stringValue(item.payload.model) ?? existing.model;
+        existing.provider = stringValue(item.payload.provider) ?? existing.provider;
+        existing.status = llmRoundStatus(item, existing.status);
+        existing.inputTokens = numberValue(item.payload.input_tokens) ?? existing.inputTokens;
+        existing.outputTokens = numberValue(item.payload.output_tokens) ?? existing.outputTokens;
+        existing.reasoningTokens = numberValue(item.payload.reasoning_tokens) ?? existing.reasoningTokens;
+        existing.durationMs = numberValue(item.payload.duration_ms) ?? existing.durationMs;
+        existing.ttftMs = numberValue(item.payload.ttft_ms) ?? existing.ttftMs;
+      } else {
+        const roundIndex = numberValue(item.payload.round_index);
+        const cell: LlmRoundCell = {
+          ...detailBase(runCell, source, item.sequence),
+          key: `run:${detail.run.runId}:llm:${llmRoundId}`,
+          type: 'assistant_request',
+          runId: detail.run.runId,
+          llmRoundId,
+          roundIndex,
+          requestIndex: roundIndex === null ? null : detail.requestOffset + roundIndex,
+          model: stringValue(item.payload.model),
+          provider: stringValue(item.payload.provider),
+          status: llmRoundStatus(item, 'running'),
+          reasoningPreview: summary?.reasoning_preview ?? null,
+          outputPreview: summary?.output_preview ?? null,
+          inputTokens: numberValue(item.payload.input_tokens),
+          outputTokens: numberValue(item.payload.output_tokens),
+          reasoningTokens: numberValue(item.payload.reasoning_tokens),
+          durationMs: numberValue(item.payload.duration_ms),
+          ttftMs: numberValue(item.payload.ttft_ms),
+          detailAvailable: detail.run.llmDetailSchemaVersion === 1,
+          events: [item],
+        };
+        llmRounds.set(llmRoundId, cell);
+        cells.push(cell);
+      }
+      continue;
+    }
+
     if (item.eventType === 'plan_snapshot' || item.eventType === 'plan_step_updated') {
       const planId = stringValue(item.payload.plan_id) ?? `sequence-${item.sequence}`;
       const existing = plans.get(planId);
@@ -625,15 +739,24 @@ function projectDetailCells(detail: DetailContext, runCell: RunCell): Trajectory
       || item.eventType === 'context_result') {
       const contextId = stringValue(item.payload.request_id)
         ?? `${item.eventType}:${numberValue(item.payload.round_index) ?? item.sequence}`;
-      cells.push({
-        ...detailBase(runCell, source, item.sequence),
-        key: `run:${detail.run.runId}:context:${contextId}:${item.sequence}`,
-        type: 'context',
-        runId: detail.run.runId,
-        contextId,
-        eventType: item.eventType,
-        payload: item.payload,
-      });
+      const existing = contexts.get(contextId);
+      if (existing) {
+        updateEventBackedCell(existing, item, source);
+        existing.eventType = item.eventType;
+        existing.payload = item.payload;
+      } else {
+        const cell: ContextCell = {
+          ...detailBase(runCell, source, item.sequence),
+          key: `run:${detail.run.runId}:context:${contextId}`,
+          type: 'context',
+          runId: detail.run.runId,
+          contextId,
+          eventType: item.eventType,
+          payload: item.payload,
+        };
+        contexts.set(contextId, cell);
+        cells.push(cell);
+      }
       if (item.eventType === 'context_status_updated' && isCompaction(item.payload)) {
         cells.push({
           ...detailBase(runCell, source, item.sequence),
@@ -731,6 +854,16 @@ function toolStatus(item: NormalizedTrajectoryEvent, fallback: string): string {
   return stringValue(item.payload.status) ?? fallback;
 }
 
+function llmRoundStatus(item: NormalizedTrajectoryEvent, fallback: string): string {
+  if (item.eventType === 'llm_round_started' || item.eventType === 'llm_round_first_output_delta') {
+    return 'running';
+  }
+  if (item.eventType === 'llm_round_completed') return stringValue(item.payload.status) ?? 'success';
+  if (item.eventType === 'llm_round_failed') return stringValue(item.payload.status) ?? 'failed';
+  if (item.eventType === 'llm_round_cancelled') return stringValue(item.payload.status) ?? 'cancelled';
+  return fallback;
+}
+
 function isCompaction(payload: Record<string, unknown>): boolean {
   return (numberValue(payload.removed_turns) ?? 0) > 0
     || (numberValue(payload.removed_messages) ?? 0) > 0
@@ -746,6 +879,7 @@ function numberValue(value: unknown): number | null {
 }
 
 function isSpecializedProjectableEvent(item: NormalizedTrajectoryEvent): boolean {
+  if (item.eventType.startsWith('llm_round_')) return true;
   if (item.eventType === 'plan_snapshot' || item.eventType === 'plan_step_updated') return true;
   if (item.eventType === 'context_status_updated'
     || item.eventType === 'context_required'

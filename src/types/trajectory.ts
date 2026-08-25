@@ -11,6 +11,8 @@ export interface TrajectoryRunSummary {
   duration_ms: number | null;
   started_at: string;
   ended_at: string | null;
+  llm_detail_schema_version: number | null;
+  llm_round_count: number;
 }
 
 export interface TrajectoryRunListResponse {
@@ -64,12 +66,31 @@ export interface TrajectorySnapshot {
   spans: TrajectorySpan[];
   completeness: TrajectoryCompleteness;
   truncated: boolean;
+  llm_round_summaries: TrajectoryLlmRoundSummary[];
+}
+
+export interface TrajectoryLlmRoundSummary {
+  llm_round_id: string;
+  reasoning_preview: string | null;
+  output_preview: string | null;
 }
 
 /** P3 普通用户 Tool Node Detail 端点的 wire DTO；字段保持后端 snake_case。 */
 export type TrajectoryNodeDetailStatus = 'available' | 'pending' | 'not_recorded' | 'degraded';
 
-export type TrajectoryToolNodeDetailSection = 'summary' | 'payload' | 'result' | 'timing' | 'schema';
+export type TrajectoryNodeDetailSection =
+  | 'summary'
+  | 'payload'
+  | 'result'
+  | 'timing'
+  | 'schema'
+  | 'thinking'
+  | 'output';
+
+export type TrajectoryToolNodeDetailSection = Extract<
+  TrajectoryNodeDetailSection,
+  'summary' | 'payload' | 'result' | 'timing' | 'schema'
+>;
 
 export interface TrajectoryToolNodeDetail {
   tool_call_id: string;
@@ -81,11 +102,18 @@ export interface TrajectoryToolNodeDetail {
   error: Record<string, string> | null;
 }
 
+export interface TrajectoryLlmNodeDetail {
+  llm_round_id: string;
+  reasoning_text: string | null;
+  output_text: string | null;
+}
+
 export interface TrajectoryNodeDetailResponse {
   status: TrajectoryNodeDetailStatus;
-  node_type: 'tool';
-  available_sections: TrajectoryToolNodeDetailSection[];
-  detail: TrajectoryToolNodeDetail | null;
+  node_type: 'tool' | 'llm';
+  available_sections: TrajectoryNodeDetailSection[];
+  detail: TrajectoryToolNodeDetail | TrajectoryLlmNodeDetail | null;
   redacted_fields: string[];
+  truncated_fields: string[];
   reason: string | null;
 }

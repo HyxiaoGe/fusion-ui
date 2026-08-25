@@ -112,6 +112,40 @@ function manyCells(count: number): TrajectoryCell[] {
 }
 
 describe('TrajectoryTable', () => {
+  it('以 32px 紧凑行展示同一 Turn，且视觉标签只在分组起点出现一次', () => {
+    render(
+      <TrajectoryTable
+        cells={[
+          userCell('user-1', '查询北京天气'),
+          runCell('run-1', 'user-1'),
+          toolCell('tool-1'),
+        ]}
+        selectedCellKey={null}
+        viewportHeight={160}
+      />,
+    );
+
+    const rows = screen.getAllByRole('option');
+    expect(rows).toHaveLength(3);
+    for (const row of rows) expect(row).toHaveStyle({ height: '32px' });
+    expect(screen.getAllByText('Turn 1')).toHaveLength(1);
+  });
+
+  it('为底部 Composer 浮层保留可滚动尾部空间，不压缩记录视口', () => {
+    render(
+      <TrajectoryTable
+        cells={manyCells(100)}
+        selectedCellKey={null}
+        viewportHeight={560}
+        bottomInset={256}
+      />,
+    );
+
+    expect(screen.getByTestId('trajectory-table-bottom-spacer')).toHaveStyle({
+      height: '2496px',
+    });
+  });
+
   it('以固定表头和高密度列展示稳定序号、Turn/Attempt、类型、摘要、状态与耗时', () => {
     render(
       <TrajectoryTable
@@ -511,10 +545,10 @@ describe('TrajectoryTable', () => {
     );
 
     const table = screen.getByRole('listbox', { name: '轨迹记录表' });
-    expect(table.scrollTop).toBe(5040);
+    expect(table.scrollTop).toBe(3088);
     expect(onViewportStateChange).toHaveBeenCalledWith({
-      scrollTop: 5040,
-      atTail: false,
+      scrollTop: 3088,
+      atTail: true,
       userInitiated: false,
     });
     onViewportStateChange.mockClear();
@@ -642,9 +676,9 @@ describe('TrajectoryTable', () => {
           contentRect: { height: 112 },
         } as ResizeObserverEntry], {} as ResizeObserver);
       });
-      expect(table.scrollTop).toBe(5488);
+      expect(table.scrollTop).toBe(3088);
       expect(onViewportStateChange).toHaveBeenLastCalledWith({
-        scrollTop: 5488,
+        scrollTop: 3088,
         atTail: true,
         userInitiated: false,
       });
@@ -694,9 +728,9 @@ describe('TrajectoryTable', () => {
     );
     const table = screen.getByRole('listbox', { name: '轨迹记录表' });
 
-    expect(table.scrollTop).toBe(5488);
+    expect(table.scrollTop).toBe(3088);
     expect(onViewportStateChange).toHaveBeenLastCalledWith({
-      scrollTop: 5488,
+      scrollTop: 3088,
       atTail: true,
       userInitiated: false,
     });
@@ -710,9 +744,9 @@ describe('TrajectoryTable', () => {
         onViewportStateChange={onViewportStateChange}
       />,
     );
-    expect(table.scrollTop).toBe(5544);
+    expect(table.scrollTop).toBe(3120);
     expect(onViewportStateChange).toHaveBeenLastCalledWith({
-      scrollTop: 5544,
+      scrollTop: 3120,
       atTail: true,
       userInitiated: false,
     });

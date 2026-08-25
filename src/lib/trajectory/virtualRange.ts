@@ -2,6 +2,7 @@ export interface VirtualRangeInput {
   itemCount: number;
   scrollTop: number;
   viewportHeight: number;
+  bottomInset?: number;
 }
 
 export interface VirtualRange {
@@ -17,10 +18,11 @@ export interface ScrollToIndexInput {
   index: number;
   currentScrollTop: number;
   viewportHeight: number;
+  bottomInset?: number;
   align?: 'auto' | 'start' | 'center' | 'end';
 }
 
-export const TRAJECTORY_ROW_HEIGHT = 56;
+export const TRAJECTORY_ROW_HEIGHT = 32;
 export const TRAJECTORY_OVERSCAN = 12;
 export const MAX_TRAJECTORY_DOM_ROWS = 200;
 
@@ -40,7 +42,8 @@ function clamp(value: number, minimum: number, maximum: number): number {
 export function clampTrajectoryScrollTop(input: VirtualRangeInput): number {
   const itemCount = normalizeItemCount(input.itemCount);
   const viewportHeight = finiteNonNegative(input.viewportHeight);
-  const totalHeight = itemCount * TRAJECTORY_ROW_HEIGHT;
+  const bottomInset = itemCount > 0 ? finiteNonNegative(input.bottomInset ?? 0) : 0;
+  const totalHeight = (itemCount * TRAJECTORY_ROW_HEIGHT) + bottomInset;
   return clamp(
     finiteNonNegative(input.scrollTop),
     0,
@@ -51,7 +54,8 @@ export function clampTrajectoryScrollTop(input: VirtualRangeInput): number {
 /** 计算固定行高账本当前需要挂载的半开区间。 */
 export function getVirtualRange(input: VirtualRangeInput): VirtualRange {
   const itemCount = normalizeItemCount(input.itemCount);
-  const totalHeight = itemCount * TRAJECTORY_ROW_HEIGHT;
+  const bottomInset = itemCount > 0 ? finiteNonNegative(input.bottomInset ?? 0) : 0;
+  const totalHeight = (itemCount * TRAJECTORY_ROW_HEIGHT) + bottomInset;
   if (itemCount === 0) {
     return {
       startIndex: 0,
@@ -67,6 +71,7 @@ export function getVirtualRange(input: VirtualRangeInput): VirtualRange {
     itemCount,
     scrollTop: input.scrollTop,
     viewportHeight,
+    bottomInset,
   });
   const visibleStartIndex = clamp(
     Math.floor(scrollTop / TRAJECTORY_ROW_HEIGHT),
@@ -90,7 +95,7 @@ export function getVirtualRange(input: VirtualRangeInput): VirtualRange {
     startIndex,
     endIndex,
     offsetTop: startIndex * TRAJECTORY_ROW_HEIGHT,
-    offsetBottom: (itemCount - endIndex) * TRAJECTORY_ROW_HEIGHT,
+    offsetBottom: ((itemCount - endIndex) * TRAJECTORY_ROW_HEIGHT) + bottomInset,
     totalHeight,
   };
 }
@@ -101,7 +106,12 @@ export function getScrollTopForIndex(input: ScrollToIndexInput): number {
   if (itemCount === 0) return 0;
 
   const viewportHeight = finiteNonNegative(input.viewportHeight);
-  const totalHeight = itemCount * TRAJECTORY_ROW_HEIGHT;
+  const bottomInset = finiteNonNegative(input.bottomInset ?? 0);
+  const visibleViewportHeight = Math.max(
+    TRAJECTORY_ROW_HEIGHT,
+    viewportHeight - bottomInset,
+  );
+  const totalHeight = (itemCount * TRAJECTORY_ROW_HEIGHT) + bottomInset;
   const maximumScrollTop = Math.max(0, totalHeight - viewportHeight);
   const index = clamp(Math.floor(finiteNonNegative(input.index)), 0, itemCount - 1);
   const currentScrollTop = clamp(
@@ -118,15 +128,15 @@ export function getScrollTopForIndex(input: ScrollToIndexInput): number {
       nextScrollTop = rowStart;
       break;
     case 'center':
-      nextScrollTop = rowStart - ((viewportHeight - TRAJECTORY_ROW_HEIGHT) / 2);
+      nextScrollTop = rowStart - ((visibleViewportHeight - TRAJECTORY_ROW_HEIGHT) / 2);
       break;
     case 'end':
-      nextScrollTop = rowEnd - viewportHeight;
+      nextScrollTop = rowEnd - visibleViewportHeight;
       break;
     case 'auto':
       if (rowStart < currentScrollTop) nextScrollTop = rowStart;
-      else if (rowEnd > currentScrollTop + viewportHeight) {
-        nextScrollTop = rowEnd - viewportHeight;
+      else if (rowEnd > currentScrollTop + visibleViewportHeight) {
+        nextScrollTop = rowEnd - visibleViewportHeight;
       } else nextScrollTop = currentScrollTop;
       break;
   }

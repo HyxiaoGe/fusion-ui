@@ -42,6 +42,8 @@ export interface TrajectoryTableProps {
   focusedCellKeys?: ReadonlySet<string> | null;
   projectedRows?: readonly TrajectoryTableRow[];
   viewportHeight?: number;
+  /** 底部浮层覆盖高度；作为滚动尾部留白，不压缩记录视口。 */
+  bottomInset?: number;
   initialScrollTop?: number;
   /** 新会话或新视图恢复事务必须更换 identity；同 identity 不会覆盖后续用户滚动。 */
   restoreKey?: string | number | null;
@@ -79,6 +81,7 @@ export function TrajectoryTable({
   focusedCellKeys = null,
   projectedRows,
   viewportHeight,
+  bottomInset = 0,
   initialScrollTop = 0,
   restoreKey = null,
   followTailRequest = null,
@@ -114,12 +117,14 @@ export function TrajectoryTable({
     : null;
   const [observedViewportHeight, setObservedViewportHeight] = useState<number | null>(null);
   const measuredHeight = explicitViewportHeight ?? observedViewportHeight ?? DEFAULT_VIEWPORT_HEIGHT;
+  const normalizedBottomInset = Number.isFinite(bottomInset) ? Math.max(0, bottomInset) : 0;
   const [focusRequest, setFocusRequest] = useState<FocusRequest | null>(null);
   const requestedActiveIndex = rows.findIndex(row => row.key === activeKey);
   const range = getVirtualRange({
     itemCount: rows.length,
     scrollTop,
     viewportHeight: measuredHeight,
+    bottomInset: normalizedBottomInset,
   });
   const activeIndex = requestedActiveIndex >= range.startIndex
     && requestedActiveIndex < range.endIndex
@@ -129,10 +134,10 @@ export function TrajectoryTable({
   const reportViewport = useCallback((nextScrollTop: number, userInitiated: boolean) => {
     onViewportStateChange?.({
       scrollTop: nextScrollTop,
-      atTail: isAtTail(rows.length, nextScrollTop, measuredHeight),
+      atTail: isAtTail(rows.length, nextScrollTop, measuredHeight, normalizedBottomInset),
       userInitiated,
     });
-  }, [measuredHeight, onViewportStateChange, rows.length]);
+  }, [measuredHeight, normalizedBottomInset, onViewportStateChange, rows.length]);
 
   const applyProgrammaticScroll = useCallback((nextScrollTop: number) => {
     const viewport = viewportRef.current;
@@ -171,6 +176,7 @@ export function TrajectoryTable({
       itemCount: rows.length,
       scrollTop: initialScrollTop,
       viewportHeight: restoreViewportHeight,
+      bottomInset: normalizedBottomInset,
     });
     restoredIdentityRef.current = { key: restoreKey };
     applyProgrammaticScroll(restoredScrollTop);
@@ -178,6 +184,7 @@ export function TrajectoryTable({
     applyProgrammaticScroll,
     explicitViewportHeight,
     initialScrollTop,
+    normalizedBottomInset,
     observedViewportHeight,
     restoreKey,
     rows.length,
@@ -190,10 +197,11 @@ export function TrajectoryTable({
       index,
       currentScrollTop: viewport?.scrollTop ?? scrollTopRef.current,
       viewportHeight: measuredHeight,
+      bottomInset: normalizedBottomInset,
       align,
     });
     applyProgrammaticScroll(nextScrollTop);
-  }, [applyProgrammaticScroll, measuredHeight, rows.length]);
+  }, [applyProgrammaticScroll, measuredHeight, normalizedBottomInset, rows.length]);
 
   useEffect(() => {
     if (selectedIndex < 0 || selectedCellKey === null) {
@@ -223,11 +231,13 @@ export function TrajectoryTable({
       itemCount: rows.length,
       scrollTop: Number.MAX_SAFE_INTEGER,
       viewportHeight: followViewportHeight,
+      bottomInset: normalizedBottomInset,
     }));
   }, [
     applyProgrammaticScroll,
     explicitViewportHeight,
     followTailRequest,
+    normalizedBottomInset,
     observedViewportHeight,
     rows.length,
   ]);
@@ -349,12 +359,12 @@ export function TrajectoryTable({
 
   return (
     <div className={cn(
-      'flex min-h-28 min-w-0 flex-col overflow-hidden rounded-lg border border-border/60 bg-background',
+      'flex min-h-28 min-w-0 flex-col overflow-hidden border border-border/60 bg-background',
       className,
     )}>
       <div
         aria-hidden="true"
-        className="grid h-9 shrink-0 grid-cols-[3rem_minmax(7.5rem,0.9fr)_minmax(4.5rem,0.55fr)_minmax(12rem,2.5fr)_minmax(8rem,1fr)_5.5rem] items-center gap-2 border-b border-border/70 bg-muted/60 px-3 text-[11px] font-medium text-muted-foreground"
+        className="grid h-8 shrink-0 grid-cols-[2.75rem_minmax(5.25rem,0.7fr)_minmax(4.75rem,0.6fr)_minmax(12rem,2.7fr)_minmax(7rem,0.9fr)_5rem] items-center gap-2 border-b border-border/70 bg-muted/45 px-2.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground"
       >
         <span>#</span>
         <span>Turn / Attempt</span>
@@ -399,6 +409,10 @@ export function TrajectoryTable({
                   durationMs={row.durationMs}
                   attemptCount={row.attemptCount}
                   collapsedAttemptCount={row.aliasedCellKeys.length}
+                  showTurnLabel={row.turnNumber !== null && (
+                    index === range.startIndex
+                    || rows[index - 1]?.turnNumber !== row.turnNumber
+                  )}
                   searchQuery={searchQuery}
                   matched={row.matched}
                   matchPending={row.matchPending}
@@ -412,7 +426,11 @@ export function TrajectoryTable({
                 />
               );
             })}
-            <div aria-hidden="true" style={{ height: `${range.offsetBottom}px` }} />
+            <div
+              aria-hidden="true"
+              data-testid="trajectory-table-bottom-spacer"
+              style={{ height: `${range.offsetBottom}px` }}
+            />
           </>
         )}
       </div>
@@ -420,8 +438,16 @@ export function TrajectoryTable({
   );
 }
 
-function isAtTail(itemCount: number, scrollTop: number, viewportHeight: number): boolean {
-  const maximumScrollTop = Math.max(0, (itemCount * TRAJECTORY_ROW_HEIGHT) - viewportHeight);
+function isAtTail(
+  itemCount: number,
+  scrollTop: number,
+  viewportHeight: number,
+  bottomInset: number,
+): boolean {
+  const maximumScrollTop = Math.max(
+    0,
+    (itemCount * TRAJECTORY_ROW_HEIGHT) + bottomInset - viewportHeight,
+  );
   return maximumScrollTop - scrollTop <= AT_TAIL_TOLERANCE_PX;
 }
 

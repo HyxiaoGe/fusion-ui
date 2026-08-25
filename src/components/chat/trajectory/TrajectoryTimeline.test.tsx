@@ -21,6 +21,8 @@ function run(
     duration_ms: durationMs,
     started_at: startedAt,
     ended_at: new Date(Date.parse(startedAt) + durationMs).toISOString(),
+    llm_detail_schema_version: 1,
+    llm_round_count: 0,
   };
 }
 

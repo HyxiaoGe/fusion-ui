@@ -42,5 +42,26 @@ export function getTrajectoryToolNodeDetail(
   return apiRequest<TrajectoryNodeDetailResponse>(
     `${BASE_PATH}/${encodeURIComponent(conversationId)}/runs/${encodeURIComponent(runId)}/node-detail/tool/${encodeURIComponent(toolCallId)}`,
     signal ? { signal } : {},
-  );
+  ).then(normalizeTrajectoryNodeDetailResponse);
+}
+
+/** 读取当前普通用户可访问的 LLM Round 正文详情。 */
+export function getTrajectoryLlmNodeDetail(
+  conversationId: string,
+  runId: string,
+  llmRoundId: string,
+  signal?: AbortSignal,
+): Promise<TrajectoryNodeDetailResponse> {
+  return apiRequest<TrajectoryNodeDetailResponse>(
+    `${BASE_PATH}/${encodeURIComponent(conversationId)}/runs/${encodeURIComponent(runId)}/node-detail/llm/${encodeURIComponent(llmRoundId)}`,
+    signal ? { signal } : {},
+  ).then(normalizeTrajectoryNodeDetailResponse);
+}
+
+/** 在传输边界补齐可选的展示元数据，避免详情正文因缺失数组而中断。 */
+function normalizeTrajectoryNodeDetailResponse(
+  response: TrajectoryNodeDetailResponse,
+): TrajectoryNodeDetailResponse {
+  if (Array.isArray(response.truncated_fields)) return response;
+  return { ...response, truncated_fields: [] };
 }

@@ -5,17 +5,17 @@ import {
 } from './virtualRange';
 
 describe('virtualRange', () => {
-  it('在列表开头按 56px 行高与 12 行 overscan 计算窗口', () => {
+  it('在列表开头按 32px 行高与 12 行 overscan 计算窗口', () => {
     expect(getVirtualRange({
       itemCount: 5000,
       scrollTop: 0,
       viewportHeight: 560,
     })).toEqual({
       startIndex: 0,
-      endIndex: 22,
+      endIndex: 30,
       offsetTop: 0,
-      offsetBottom: 278768,
-      totalHeight: 280000,
+      offsetBottom: 159040,
+      totalHeight: 160000,
     });
   });
 
@@ -25,23 +25,23 @@ describe('virtualRange', () => {
       scrollTop: 5600,
       viewportHeight: 560,
     })).toEqual({
-      startIndex: 88,
-      endIndex: 122,
-      offsetTop: 4928,
-      offsetBottom: 273168,
-      totalHeight: 280000,
+      startIndex: 163,
+      endIndex: 205,
+      offsetTop: 5216,
+      offsetBottom: 153440,
+      totalHeight: 160000,
     });
 
     expect(getVirtualRange({
       itemCount: 5000,
-      scrollTop: 279440,
+      scrollTop: 159440,
       viewportHeight: 560,
     })).toEqual({
-      startIndex: 4978,
+      startIndex: 4970,
       endIndex: 5000,
-      offsetTop: 278768,
+      offsetTop: 159040,
       offsetBottom: 0,
-      totalHeight: 280000,
+      totalHeight: 160000,
     });
   });
 
@@ -51,7 +51,7 @@ describe('virtualRange', () => {
       index: 2500,
       currentScrollTop: 0,
       viewportHeight: 560,
-    })).toBe(139496);
+    })).toBe(79472);
     expect(getScrollTopForIndex({
       itemCount: 5000,
       index: -20,
@@ -65,16 +65,16 @@ describe('virtualRange', () => {
       currentScrollTop: 0,
       viewportHeight: 560,
       align: 'end',
-    })).toBe(279440);
+    })).toBe(159440);
   });
 
   it('目标已完全可见时保持当前滚动位置', () => {
     expect(getScrollTopForIndex({
       itemCount: 100,
       index: 12,
-      currentScrollTop: 560,
+      currentScrollTop: 320,
       viewportHeight: 560,
-    })).toBe(560);
+    })).toBe(320);
   });
 
   it('空列表返回零尺寸，定位也不会产生负滚动值', () => {
@@ -97,6 +97,28 @@ describe('virtualRange', () => {
     })).toBe(0);
   });
 
+  it('把底部浮层占位计入滚动域，使尾部记录能滚到浮层上方', () => {
+    expect(getVirtualRange({
+      itemCount: 100,
+      scrollTop: Number.MAX_SAFE_INTEGER,
+      viewportHeight: 560,
+      bottomInset: 256,
+    })).toMatchObject({
+      startIndex: 78,
+      endIndex: 100,
+      offsetBottom: 256,
+      totalHeight: 3456,
+    });
+    expect(getScrollTopForIndex({
+      itemCount: 100,
+      index: 99,
+      currentScrollTop: 0,
+      viewportHeight: 560,
+      bottomInset: 256,
+      align: 'end',
+    })).toBe(2896);
+  });
+
   it('视口 resize 后重新扩大或收窄渲染窗口', () => {
     const compact = getVirtualRange({
       itemCount: 5000,
@@ -109,12 +131,12 @@ describe('virtualRange', () => {
       viewportHeight: 840,
     });
 
-    expect(compact).toMatchObject({ startIndex: 38, endIndex: 67 });
-    expect(expanded).toMatchObject({ startIndex: 38, endIndex: 77 });
+    expect(compact).toMatchObject({ startIndex: 75, endIndex: 109 });
+    expect(expanded).toMatchObject({ startIndex: 75, endIndex: 126 });
   });
 
   it('5000 行在常见桌面视口下始终挂载不超过 200 条记录', () => {
-    for (const scrollTop of [0, 56, 5600, 140000, 279440]) {
+    for (const scrollTop of [0, 32, 3200, 80000, 159440]) {
       const range = getVirtualRange({
         itemCount: 5000,
         scrollTop,

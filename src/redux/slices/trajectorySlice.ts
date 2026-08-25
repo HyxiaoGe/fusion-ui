@@ -66,6 +66,7 @@ export interface TrajectorySnapshotCacheEntry {
   spans: TrajectorySnapshot['spans'];
   completeness: TrajectorySnapshot['completeness'];
   truncated: TrajectorySnapshot['truncated'];
+  llmRoundSummaries?: TrajectorySnapshot['llm_round_summaries'];
   durableLastSequence: number | null;
   events: NormalizedTrajectoryEvent[];
   hasLegacyEvents?: boolean;
@@ -425,6 +426,8 @@ function provisionalRun(event: NormalizedTrajectoryEvent): TrajectoryRunSummary 
     duration_ms: null,
     started_at: event.timestamp,
     ended_at: null,
+    llm_detail_schema_version: null,
+    llm_round_count: 0,
   };
 }
 
@@ -571,6 +574,7 @@ const trajectorySlice = createSlice({
         spans: snapshot.spans,
         completeness: snapshot.completeness,
         truncated: snapshot.truncated || allEvents.length > MAX_EVENTS_PER_RUN,
+        llmRoundSummaries: snapshot.llm_round_summaries,
         durableLastSequence,
         events,
         hasLegacyEvents: allEvents.some(event => event.schemaVersion !== 1),
@@ -598,6 +602,22 @@ const trajectorySlice = createSlice({
       reconciliation.error = null;
       reconciliation.terminalResultRequestId = null;
       pruneRunCaches(conversation);
+    },
+    trajectoryLlmRoundSummaryReceived(state, action: PayloadAction<{
+      conversationId: string;
+      runId: string;
+      summary: TrajectorySnapshot['llm_round_summaries'][number];
+    }>) {
+      const snapshot = state.byConversationId[action.payload.conversationId]
+        ?.snapshotsByRunId[action.payload.runId];
+      if (!snapshot) return;
+      const summaries = snapshot.llmRoundSummaries ?? [];
+      const existingIndex = summaries.findIndex(
+        item => item.llm_round_id === action.payload.summary.llm_round_id,
+      );
+      if (existingIndex >= 0) summaries[existingIndex] = action.payload.summary;
+      else summaries.push(action.payload.summary);
+      snapshot.llmRoundSummaries = summaries;
     },
     trajectorySnapshotFailed(state, action: PayloadAction<{
       conversationId: string;
@@ -978,6 +998,7 @@ export const {
   trajectoryRunListReceived,
   trajectoryRunListRequested,
   trajectoryRunListUnavailable,
+  trajectoryLlmRoundSummaryReceived,
   trajectorySnapshotCancelled,
   trajectorySnapshotFailed,
   trajectorySnapshotReceived,

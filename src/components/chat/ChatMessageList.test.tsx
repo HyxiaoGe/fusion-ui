@@ -207,6 +207,8 @@ describe('ChatMessageList', () => {
       duration_ms: 1_000,
       started_at: '2026-08-23T00:00:00Z',
       ended_at: '2026-08-23T00:00:01Z',
+      llm_detail_schema_version: 1,
+      llm_round_count: 0,
     };
     let trajectory = trajectoryReducer(undefined, trajectoryRunListRequested({
       conversationId: 'chat-1',
@@ -239,6 +241,7 @@ describe('ChatMessageList', () => {
           last_sequence: null,
         },
         truncated: true,
+        llm_round_summaries: [],
       },
     }));
     selectorState.trajectory = trajectory;

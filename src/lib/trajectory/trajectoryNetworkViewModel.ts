@@ -107,7 +107,9 @@ export function resolveTrajectoryCellSpan(
     ? { spanId: `tool:${cell.toolCallId}`, kind: 'tool' }
     : cell.type === 'subtool'
       ? { spanId: `tool_attempt:${cell.toolAttemptId}`, kind: 'tool_attempt' }
-      : null;
+      : cell.type === 'assistant_request'
+        ? { spanId: `llm:${cell.llmRoundId}`, kind: 'llm' }
+        : null;
   if (!identity) return null;
   return spans.find(span => (
     span.span_id === identity.spanId && span.kind === identity.kind
@@ -165,7 +167,7 @@ function cellBelongsToSelection(
   selectedMessageId: string | null,
   selectedRunId: string | null,
 ): boolean {
-  if (selectedRunId) return cell.runId === selectedRunId;
+  if (cell.runId) return selectedRunId === cell.runId;
   if (!selectedMessageId) return false;
   return (cell.type === 'user' && cell.userMessageId === selectedMessageId)
     || (cell.type === 'message' && cell.assistantMessageId === selectedMessageId);

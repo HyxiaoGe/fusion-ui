@@ -9,6 +9,7 @@ vi.mock('./fetchWithAuth', () => ({
 }));
 
 import {
+  getTrajectoryLlmNodeDetail,
   getTrajectoryRuns,
   getTrajectorySnapshot,
   getTrajectoryToolNodeDetail,
@@ -17,6 +18,30 @@ import {
 describe('普通用户轨迹 API', () => {
   beforeEach(() => {
     apiRequestMock.mockReset();
+  });
+
+  it('通过普通 LLM Detail 端点编码路径并原样返回统一详情信封', async () => {
+    const response = {
+      status: 'available' as const,
+      node_type: 'llm' as const,
+      available_sections: ['summary', 'thinking', 'output', 'timing'] as const,
+      detail: {
+        llm_round_id: 'round/a b',
+        reasoning_text: '先分析依赖关系。',
+        output_text: '分析完成。',
+      },
+      redacted_fields: [],
+      truncated_fields: ['output_text'],
+      reason: null,
+    };
+    apiRequestMock.mockResolvedValue(response);
+
+    await expect(getTrajectoryLlmNodeDetail('conversation/a b', 'run/a b', 'round/a b'))
+      .resolves.toBe(response);
+    expect(apiRequestMock).toHaveBeenCalledWith(
+      '/api/conversations/conversation%2Fa%20b/runs/run%2Fa%20b/node-detail/llm/round%2Fa%20b',
+      {},
+    );
   });
 
   it('通过普通 run 列表端点保留后端截断标识', async () => {
@@ -71,6 +96,7 @@ describe('普通用户轨迹 API', () => {
         error: null,
       },
       redacted_fields: ['payload.api_key'],
+      truncated_fields: [],
       reason: null,
     };
     apiRequestMock.mockResolvedValue(response);
@@ -82,5 +108,33 @@ describe('普通用户轨迹 API', () => {
       '/api/conversations/conversation%2Fa%20b/runs/run%2Fa%20b/node-detail/tool/tool%2Fa%20b',
       { signal },
     );
+  });
+
+  it('Tool Detail 响应缺少新增的截断字段时在 API 边界补为空数组', async () => {
+    apiRequestMock.mockResolvedValue({
+      status: 'available',
+      node_type: 'tool',
+      available_sections: ['summary', 'payload', 'result', 'timing'],
+      detail: {
+        tool_call_id: 'tool-legacy-wire',
+        tool_name: 'web_search',
+        status: 'success',
+        duration_ms: 2186,
+        payload: { query: '国际金价' },
+        result: { result_count: 5 },
+        error: null,
+      },
+      redacted_fields: ['result.sources.0.url.query.id'],
+      reason: null,
+    });
+
+    await expect(getTrajectoryToolNodeDetail(
+      'conversation-1',
+      'run-1',
+      'tool-legacy-wire',
+    )).resolves.toMatchObject({
+      redacted_fields: ['result.sources.0.url.query.id'],
+      truncated_fields: [],
+    });
   });
 });
