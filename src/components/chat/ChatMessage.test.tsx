@@ -3,12 +3,17 @@ import { fireEvent, render, screen, within } from '@testing-library/react';
 import { act } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AgentRunState } from '@/types/agentRun';
+import trajectoryReducer, {
+  trajectoryRunListReceived,
+  trajectoryRunListRequested,
+} from '@/redux/slices/trajectorySlice';
 
 const dispatchMock = vi.fn();
 const toastMock = vi.fn();
 const initialScrollIntoView = Element.prototype.scrollIntoView;
 let originalScrollIntoView: typeof Element.prototype.scrollIntoView | undefined;
 const selectorState = {
+  trajectory: trajectoryReducer(undefined, { type: 'test/init' }),
   conversation: {
     byId: {
       'chat-1': { id: 'chat-1', model_id: 'model-1', messages: [] },
@@ -44,6 +49,7 @@ const selectorState = {
 };
 
 function resetSelectorState() {
+  selectorState.trajectory = trajectoryReducer(undefined, { type: 'test/init' });
   Object.assign(selectorState.conversation, {
     byId: {
       'chat-1': { id: 'chat-1', model_id: 'model-1', messages: [] },
@@ -120,6 +126,62 @@ vi.mock('../models/ProviderIcon', () => ({
 import ChatMessage from './ChatMessage';
 
 describe('ChatMessage', () => {
+  it('历史消息没有步骤时间时，从所属会话的精确 Run 摘要显示耗时', () => {
+    for (const [conversationId, duration] of [['chat-1', 19038], ['chat-2', 80000]] as const) {
+      selectorState.trajectory = trajectoryReducer(selectorState.trajectory, trajectoryRunListRequested({
+        conversationId,
+        requestId: conversationId,
+      }));
+      selectorState.trajectory = trajectoryReducer(selectorState.trajectory, trajectoryRunListReceived({
+        conversationId,
+        requestId: conversationId,
+        response: {
+          truncated: false,
+          items: [{
+            run_id: 'run-timing',
+            message_id: 'assistant-timing',
+            turn_message_id: 'user-timing',
+            attempt_index: 1,
+            status: 'completed',
+            trajectory_status: 'complete',
+            total_steps: 4,
+            total_tool_calls: 2,
+            duration_ms: duration,
+            started_at: '2026-08-26T02:27:58.000Z',
+            ended_at: '2026-08-26T02:28:17.038Z',
+            llm_detail_schema_version: 1,
+            llm_round_count: 4,
+          }],
+        },
+      }));
+    }
+
+    render(
+      <ChatMessage
+        message={{
+          id: 'assistant-timing',
+          role: 'assistant',
+          content: [{ type: 'text', id: 'answer', text: '历史回答' }],
+          timestamp: 1,
+          chatId: 'chat-1',
+        }}
+        agentRun={{
+          runId: 'run-timing',
+          messageId: 'assistant-timing',
+          status: 'completed',
+          config: { maxSteps: 8, maxToolCalls: 16, timeoutS: 300 },
+          totalSteps: 4,
+          totalToolCalls: 2,
+          steps: [],
+          lastSequence: 58,
+        }}
+        trajectoryStatus="complete"
+      />,
+    );
+
+    expect(within(screen.getByRole('group', { name: 'Agent 运行状态' })).getByText('耗时 19.04 秒')).toBeInTheDocument();
+  });
+
   it('为消息提供稳定 DOM 锚点，并从 Agent 状态行发起 inspect', () => {
     const onInspectTrajectory = vi.fn();
     const message = {

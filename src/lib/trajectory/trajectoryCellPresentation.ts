@@ -173,7 +173,7 @@ export function getTrajectoryCellPresentation(cell: TrajectoryCell): TrajectoryC
       };
     case 'run':
       return {
-        kindLabel: cell.attemptIndex === null ? '执行' : `第 ${cell.attemptIndex + 1} 次执行`,
+        kindLabel: cell.attemptIndex === null ? '执行' : `第 ${cell.attemptIndex} 次执行`,
         summary: cell.isHydrated
           ? `${cell.totalSteps} 步 · ${cell.totalToolCalls} 次工具`
           : '轨迹详情待加载',
@@ -216,7 +216,7 @@ export function getTrajectoryCellPresentation(cell: TrajectoryCell): TrajectoryC
       const meta = getToolMeta(cell.toolName ?? '');
       return {
         kindLabel: '工具尝试',
-        summary: `${meta.label}${cell.attemptIndex === null ? '' : ` · 第 ${cell.attemptIndex + 1} 次`}`,
+        summary: `${meta.label}${cell.attemptIndex === null ? '' : ` · 第 ${cell.attemptIndex} 次`}`,
         statusLabel: formatTrajectoryStatus(cell.status),
         durationMs: latestDuration(cell),
         tone: statusTone(cell.status),

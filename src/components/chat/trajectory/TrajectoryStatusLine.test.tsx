@@ -3,6 +3,7 @@ import { fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { AgentRunState } from '@/types/agentRun';
+import type { TrajectoryRunSummary } from '@/types/trajectory';
 import type { TrajectoryBadgeStatus } from '@/lib/trajectory/TrajectoryCellProjection';
 import TrajectoryStatusLine from './TrajectoryStatusLine';
 
@@ -28,8 +29,59 @@ function run(overrides: Partial<AgentRunState> = {}): AgentRunState {
   };
 }
 
+function summary(overrides: Partial<TrajectoryRunSummary> = {}): TrajectoryRunSummary {
+  return {
+    run_id: 'run-1', message_id: 'assistant-1', turn_message_id: 'user-1',
+    attempt_index: 1, status: 'completed', trajectory_status: 'complete',
+    total_steps: 4, total_tool_calls: 2, duration_ms: 19_038,
+    started_at: '2026-08-26T02:27:58.000Z', ended_at: '2026-08-26T02:28:17.038Z',
+    llm_detail_schema_version: 1, llm_round_count: 4,
+    ...overrides,
+  };
+}
+
 describe('TrajectoryStatusLine', () => {
   afterEach(() => vi.useRealTimers());
+
+  it('历史消息没有步骤时使用同一运行的服务端耗时，摘要补齐后更新', () => {
+    const historicalRun = run({ steps: [] });
+    const view = render(<TrajectoryStatusLine run={historicalRun} trajectoryStatus="complete" />);
+    expect(screen.getByText('耗时未知')).toBeInTheDocument();
+
+    view.rerender(<TrajectoryStatusLine run={historicalRun} trajectoryStatus="complete" runSummary={summary()} />);
+    expect(screen.getByText('耗时 19.04 秒')).toBeInTheDocument();
+  });
+
+  it('服务端总耗时优先于局部步骤时间且零毫秒合法', () => {
+    const view = render(<TrajectoryStatusLine run={run()} trajectoryStatus="complete" runSummary={summary()} />);
+    expect(screen.getByText('耗时 19.04 秒')).toBeInTheDocument();
+    view.rerender(<TrajectoryStatusLine run={run()} trajectoryStatus="complete" runSummary={summary({ duration_ms: 0 })} />);
+    expect(screen.getByText('耗时 0 毫秒')).toBeInTheDocument();
+  });
+
+  it('没有总耗时但有合法起止时间时可恢复历史计时', () => {
+    render(<TrajectoryStatusLine run={run({ steps: [] })} trajectoryStatus="complete" runSummary={summary({ duration_ms: null })} />);
+    expect(screen.getByText('耗时 19.04 秒')).toBeInTheDocument();
+  });
+
+  it('不借用另一个 attempt 的总耗时', () => {
+    render(<TrajectoryStatusLine run={run({ steps: [] })} trajectoryStatus="complete" runSummary={summary({ run_id: 'run-2' })} />);
+    expect(screen.getByText('耗时未知')).toBeInTheDocument();
+  });
+
+  it('终态摘要缺结束时间时不继续按当前时间计时', () => {
+    render(<TrajectoryStatusLine run={run({ steps: [] })} trajectoryStatus="complete" runSummary={summary({ duration_ms: null, ended_at: null })} />);
+    expect(screen.getByText('耗时未知')).toBeInTheDocument();
+  });
+
+  it('运行中只有服务端起点也能递增计时', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(Date.parse('2026-08-26T02:28:00.000Z'));
+    render(<TrajectoryStatusLine run={run({ status: 'running', steps: [] })} trajectoryStatus="recording" runSummary={summary({ status: 'running', duration_ms: null, ended_at: null })} />);
+    expect(screen.getByText('耗时 2 秒')).toBeInTheDocument();
+    act(() => vi.advanceTimersByTime(1_000));
+    expect(screen.getByText('耗时 3 秒')).toBeInTheDocument();
+  });
 
   it('running 耗时持续更新但不会把整行作为周期 live announcement', () => {
     vi.useFakeTimers();

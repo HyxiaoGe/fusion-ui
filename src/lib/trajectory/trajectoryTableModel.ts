@@ -7,6 +7,7 @@ export interface TrajectoryTableRow {
   cell: TrajectoryCell;
   sourceIndex: number;
   turnNumber: number | null;
+  /** 后端提供的 1 基尝试序号；未知时保持 null。 */
   attemptNumber: number | null;
   kindLabel: string;
   summary: string;
@@ -113,7 +114,7 @@ export function projectTrajectoryTableRows({
       sourceIndex,
       turnNumber: metadata[sourceIndex].turnNumber,
       attemptNumber: cell.type === 'run' || cell.type === 'subtool'
-        ? (cell.attemptIndex === null ? null : cell.attemptIndex + 1)
+        ? cell.attemptIndex
         : null,
       kindLabel,
       summary,

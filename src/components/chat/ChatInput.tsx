@@ -90,6 +90,7 @@ interface ChatInputProps {
   disabled?: boolean;
   placeholder?: string;
   activeChatId?: string | null;
+  showContextStatus?: boolean;
   resetSignal?: string | number | null;
   autoFocus?: boolean;
   focusSignal?: string | number | null;
@@ -194,6 +195,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
   disabled = false,
   placeholder,
   activeChatId,
+  showContextStatus = true,
   resetSignal,
   autoFocus = false,
   focusSignal = null,
@@ -1307,7 +1309,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
 
   return (
     <div className="flex flex-col space-y-2">
-      {activeChatId ? (
+      {activeChatId && showContextStatus ? (
         <div
           data-testid="context-status-row"
           className="flex min-h-7 items-center justify-end px-1"

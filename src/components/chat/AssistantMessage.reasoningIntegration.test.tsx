@@ -31,6 +31,7 @@ const { dispatchMock, selectorState } = vi.hoisted(() => {
   return {
     dispatchMock: vi.fn(),
     selectorState: {
+      trajectory: { byConversationId: {} },
       stream: {
         conversationId: 'chat-1',
         messageId: 'assistant-placeholder',

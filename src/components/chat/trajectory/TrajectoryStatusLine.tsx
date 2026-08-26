@@ -9,10 +9,12 @@ import { getToolErrorDisplay } from '@/lib/agent/toolErrorDisplay';
 import type { TrajectoryBadgeStatus } from '@/lib/trajectory/TrajectoryCellProjection';
 import { cn } from '@/lib/utils';
 import type { AgentRunState } from '@/types/agentRun';
+import type { TrajectoryRunSummary } from '@/types/trajectory';
 import { formatTrajectoryDuration } from './TrajectoryCell';
 
 export interface TrajectoryStatusLineProps {
   run: AgentRunState;
+  runSummary?: TrajectoryRunSummary;
   trajectoryStatus: TrajectoryBadgeStatus;
   onInspect?: () => void;
 }
@@ -87,7 +89,19 @@ function highestPriorityIssue(run: AgentRunState): string | null {
   return null;
 }
 
-function runDuration(run: AgentRunState, now: number): number | null {
+function runDuration(run: AgentRunState, now: number, summary?: TrajectoryRunSummary): number | null {
+  // 历史消息只有折叠状态，不包含步骤时间；优先复用同一 Run 的已加载摘要。
+  if (summary?.run_id === run.runId) {
+    if (typeof summary.duration_ms === 'number' && Number.isFinite(summary.duration_ms) && summary.duration_ms >= 0) {
+      return summary.duration_ms;
+    }
+    const startedAt = Date.parse(summary.started_at);
+    const endedAt = summary.ended_at ? Date.parse(summary.ended_at) : run.status === 'running' ? now : NaN;
+    if (Number.isFinite(startedAt) && Number.isFinite(endedAt) && endedAt >= startedAt) {
+      return endedAt - startedAt;
+    }
+  }
+
   const starts = run.steps
     .map(step => step.startedAt)
     .filter(value => Number.isFinite(value));
@@ -105,7 +119,7 @@ function runDuration(run: AgentRunState, now: number): number | null {
   return endedAt === null ? null : Math.max(0, endedAt - startedAt);
 }
 
-export function TrajectoryStatusLine({ run, trajectoryStatus, onInspect }: TrajectoryStatusLineProps) {
+export function TrajectoryStatusLine({ run, runSummary, trajectoryStatus, onInspect }: TrajectoryStatusLineProps) {
   const [now, setNow] = useState(() => Date.now());
 
   useEffect(() => {
@@ -115,7 +129,7 @@ export function TrajectoryStatusLine({ run, trajectoryStatus, onInspect }: Traje
     return () => window.clearInterval(timer);
   }, [run.status]);
 
-  const duration = formatTrajectoryDuration(runDuration(run, now)) ?? '未知';
+  const duration = formatTrajectoryDuration(runDuration(run, now, runSummary)) ?? '未知';
   const issue = useMemo(() => highestPriorityIssue(run), [run]);
   const statusTreatment = RUN_STATUS_TREATMENT[run.status];
 

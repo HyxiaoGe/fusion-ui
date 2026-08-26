@@ -4,8 +4,9 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Bot } from 'lucide-react';
 
 import type { FileWithPreview } from '@/lib/utils/fileHelpers';
-import { useAppDispatch } from '@/redux/hooks';
+import { useAppDispatch, useAppSelector } from '@/redux/hooks';
 import { toggleReasoningVisibility } from '@/redux/slices/conversationSlice';
+import { selectTrajectoryRunSummary } from '@/redux/slices/trajectorySlice';
 import type { AgentRunState } from '@/types/agentRun';
 import type { TrajectoryBadgeStatus } from '@/lib/trajectory/TrajectoryCellProjection';
 import type { Message } from '@/types/conversation';
@@ -161,6 +162,12 @@ function AssistantMessageFrame({
   viewModel,
 }: AssistantMessageProps & { viewModel: AssistantMessageViewModel }) {
   const dispatch = useAppDispatch();
+  const conversationId = message.chatId ?? activeChatId;
+  const trajectoryRunSummary = useAppSelector(state => (
+    conversationId && agentRun
+      ? selectTrajectoryRunSummary(state, conversationId, agentRun.runId)
+      : undefined
+  ));
   const [localReasoningVisible, setLocalReasoningVisible] = useState(message.isReasoningVisible || false);
   const [answerEvidenceSidebarOpen, setAnswerEvidenceSidebarOpen] = useState(false);
   const [citationHighlight, setCitationHighlight] = useState<{ index: number; tick: number }>({ index: -1, tick: 0 });
@@ -305,6 +312,7 @@ function AssistantMessageFrame({
             reasoning={reasoningProps}
             activity={activity}
             agentRun={agentRun}
+            trajectoryRunSummary={trajectoryRunSummary}
             trajectoryStatus={trajectoryStatus}
             onInspectTrajectory={handleInspectTrajectory}
             answerEvidence={answerEvidence}

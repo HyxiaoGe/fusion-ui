@@ -43,7 +43,7 @@ function toolCell(toolCallId = 'tool-1'): Extract<TrajectoryCell, { type: 'tool'
 
 function attemptCell(
   toolAttemptId = 'attempt-1',
-  attemptIndex = 0,
+  attemptIndex = 1,
   toolCallId = 'tool-1',
 ): Extract<TrajectoryCell, { type: 'subtool' }> {
   return {
@@ -452,8 +452,8 @@ describe('TrajectoryNodeDetailPanel', () => {
   });
 
   it('逻辑 Tool 显示 sibling attempt 总数，Attempt 自身只显示自己的序号且没有远端页签', () => {
-    const firstAttempt = attemptCell('attempt-1', 0);
-    const secondAttempt = attemptCell('attempt-2', 1);
+    const firstAttempt = attemptCell('attempt-1', 1);
+    const secondAttempt = attemptCell('attempt-2', 2);
     const unrelatedAttempt = attemptCell('attempt-other', 4, 'tool-other');
     const { rerender } = renderPanel(toolCell(), [firstAttempt, secondAttempt, unrelatedAttempt]);
 

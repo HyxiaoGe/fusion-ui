@@ -22,6 +22,9 @@ const {
 
 vi.mock('@/redux/hooks', () => ({
   useAppDispatch: () => dispatchMock,
+  useAppSelector: (selector: (state: { trajectory: { byConversationId: Record<string, never> } }) => unknown) => (
+    selector({ trajectory: { byConversationId: {} } })
+  ),
 }));
 
 vi.mock('../models/ProviderIcon', () => ({

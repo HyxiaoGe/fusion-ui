@@ -157,7 +157,7 @@ function matchingSpanAttemptOrdinal(
     || span.span_id !== `tool_attempt:${cell.toolAttemptId}`
     || !span.record_sequences.some(sequence => cell.sourceSequences.includes(sequence))
   ) return null;
-  return cell.attemptIndex === null ? null : cell.attemptIndex + 1;
+  return cell.attemptIndex;
 }
 
 function cellEvents(cell: TrajectoryCell): NormalizedTrajectoryEvent[] {
@@ -307,7 +307,7 @@ function attemptCount(
   relatedCells: readonly TrajectoryCell[],
 ): number | null {
   if (cell.type === 'run' || cell.type === 'subtool') {
-    return cell.attemptIndex === null ? null : cell.attemptIndex + 1;
+    return cell.attemptIndex;
   }
   if (cell.type !== 'tool') return null;
 

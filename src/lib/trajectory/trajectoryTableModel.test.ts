@@ -108,7 +108,7 @@ function attemptCell(
   key: string,
   toolCallId: string | null,
   status: string,
-  attemptIndex = 0,
+  attemptIndex = 1,
 ): Extract<TrajectoryCell, { type: 'subtool' }> {
   return {
     key,
@@ -149,7 +149,7 @@ describe('trajectoryTableModel', () => {
         runCell('run-1', 'user-1', 1),
         toolCell('tool-1'),
         messageCell('message-1', '北京今天晴朗'),
-        runCell('run-orphan', null, 0),
+        runCell('run-orphan', null, 1),
       ],
     });
 
@@ -160,7 +160,7 @@ describe('trajectoryTableModel', () => {
         durationMs: null, attemptCount: 0,
       },
       {
-        key: 'run-1', sourceIndex: 1, turnNumber: 1, attemptNumber: 2,
+        key: 'run-1', sourceIndex: 1, turnNumber: 1, attemptNumber: 1,
         kindLabel: '运行', summary: '2 步 · 1 次工具', statusLabel: '已完成',
         durationMs: 1250, attemptCount: 0,
       },
@@ -180,6 +180,34 @@ describe('trajectoryTableModel', () => {
         durationMs: 1250, attemptCount: 0,
       },
     ]);
+  });
+
+  it('Run 首次与重试直接使用后端 1 基序号，未知序号不按位置推断', () => {
+    const rows = projectTrajectoryTableRows({
+      cells: [
+        userCell('user-1', '查询天气'),
+        runCell('run-first', 'user-1', 1),
+        runCell('run-retry', 'user-1', 2),
+        runCell('run-unknown', 'user-1', null),
+      ],
+    });
+
+    expect(rows.map(row => row.attemptNumber)).toEqual([null, 1, 2, null]);
+    expect(rows.map(row => row.turnNumber)).toEqual([1, 1, 1, 1]);
+  });
+
+  it('工具 Attempt 首次与重试直接使用后端 1 基序号，未知序号保持未知', () => {
+    const rows = projectTrajectoryTableRows({
+      cells: [
+        toolCell('tool-1'),
+        attemptCell('attempt-1', 'tool-1', 'failed', 1),
+        attemptCell('attempt-2', 'tool-1', 'success', 2),
+        { ...attemptCell('attempt-unknown', 'tool-1', 'failed'), attemptIndex: null },
+      ],
+    });
+
+    expect(rows.map(row => row.attemptNumber)).toEqual([null, 1, 2, null]);
+    expect(rows[0].attemptCount).toBe(3);
   });
 
   it('搜索忽略大小写与首尾空白，并覆盖类型、注册表工具名、状态及安全消息文本', () => {
@@ -290,8 +318,8 @@ describe('trajectoryTableModel', () => {
     const multi = projectTrajectoryTableRows({
       cells: [
         toolCell('tool-1'),
-        attemptCell('attempt-1', 'tool-1', 'failed', 0),
-        attemptCell('attempt-2', 'tool-1', 'success', 1),
+        attemptCell('attempt-1', 'tool-1', 'failed', 1),
+        attemptCell('attempt-2', 'tool-1', 'success', 2),
       ],
     });
     expect(multi.map(row => row.key)).toEqual(['tool-1', 'attempt-1', 'attempt-2']);

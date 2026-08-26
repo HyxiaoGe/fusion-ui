@@ -1072,6 +1072,7 @@ export default function ChatPage() {
                 onStopStreaming={handleStopStreaming}
                 onModelChange={clearQuestions}
                 activeChatId={chatId}
+                showContextStatus={activeSurface === 'chat'}
                 disabled={isHydratingWithoutContent}
                 resetSignal={chatId}
                 conversationAttachments={conversationAttachments}

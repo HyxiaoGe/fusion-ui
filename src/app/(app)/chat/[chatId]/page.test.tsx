@@ -346,6 +346,7 @@ vi.mock('@/components/chat/ChatInput', () => ({
     activeChatId,
     resetSignal,
     disabled,
+    showContextStatus,
     onStopStreaming,
     onSendMessage,
     conversationAttachments = [],
@@ -359,6 +360,7 @@ vi.mock('@/components/chat/ChatInput', () => ({
     activeChatId?: string;
     resetSignal?: string;
     disabled?: boolean;
+    showContextStatus?: boolean;
     onStopStreaming?: () => void;
     onSendMessage?: (content: string, attachments?: any[]) => void;
     conversationAttachments?: any[];
@@ -373,6 +375,7 @@ vi.mock('@/components/chat/ChatInput', () => ({
       activeChatId,
       resetSignal,
       disabled,
+      showContextStatus,
       conversationAttachments,
       initialKnowledgeBaseIds,
     });
@@ -729,6 +732,7 @@ describe('ChatPage 会话切换体验', () => {
     chatInputMountMock.mockClear();
     chatInputUnmountMock.mockClear();
     dispatchMock.mockClear();
+    expect(chatInputRenderMock).toHaveBeenLastCalledWith(expect.objectContaining({ showContextStatus: true }));
 
     activateConversationTab('轨迹');
     expect(dispatchMock).toHaveBeenCalledWith(expect.objectContaining({
@@ -738,6 +742,7 @@ describe('ChatPage 会话切换体验', () => {
     rerender(<ChatPage />);
 
     expect(screen.getByRole('tab', { name: '轨迹' })).toHaveAttribute('aria-selected', 'true');
+    expect(chatInputRenderMock).toHaveBeenLastCalledWith(expect.objectContaining({ showContextStatus: false }));
     expect(chatInputMountMock).not.toHaveBeenCalled();
     expect(chatInputUnmountMock).not.toHaveBeenCalled();
     expect(dispatchMock.mock.calls.some(([action]) => action?.type === 'stream/endStream')).toBe(false);

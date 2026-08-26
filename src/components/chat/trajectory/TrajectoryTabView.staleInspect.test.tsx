@@ -236,8 +236,8 @@ describe('TrajectoryTabView stale inspect callback', () => {
 
   it('旧 fallback A 回调在手选 B 后不能抢回选择或写回 A 提示和高亮', async () => {
     const store = createStore();
-    const runA = runSummary('run-a', 0);
-    const runB = runSummary('run-b', 1);
+    const runA = runSummary('run-a', 1);
+    const runB = runSummary('run-b', 2);
     getTrajectoryRunsMock.mockResolvedValue({ items: [runA, runB], truncated: false });
     getTrajectorySnapshotMock.mockImplementation((_conversationId: string, runId: string) => (
       Promise.resolve(snapshot(runId === 'run-a' ? runA : runB, runId !== 'run-a'))
@@ -280,8 +280,8 @@ describe('TrajectoryTabView stale inspect callback', () => {
 
   it('旧成功 A 回调在新 request B 后不能留下随后可见的 A feedback', async () => {
     const store = createStore();
-    const runA = runSummary('run-a', 0);
-    const runB = runSummary('run-b', 1);
+    const runA = runSummary('run-a', 1);
+    const runB = runSummary('run-b', 2);
     getTrajectoryRunsMock.mockResolvedValue({ items: [runA, runB], truncated: false });
     getTrajectorySnapshotMock.mockImplementation((_conversationId: string, runId: string) => (
       Promise.resolve(snapshot(runId === 'run-a' ? runA : runB))
@@ -334,7 +334,7 @@ describe('TrajectoryTabView stale inspect callback', () => {
 
   it('同 request/run 的 S2 覆盖 S1 后旧 fallback callback 不消费请求，S2 继续正确定位', async () => {
     const store = createStore();
-    const runA = runSummary('run-a', 0);
+    const runA = runSummary('run-a', 1);
     getTrajectoryRunsMock.mockResolvedValue({ items: [runA], truncated: false });
     getTrajectorySnapshotMock.mockResolvedValue(snapshot(runA, false));
     store.dispatch(requestTrajectoryInspect({
