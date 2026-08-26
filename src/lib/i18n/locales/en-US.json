@@ -385,5 +385,17 @@
       "fontSize": "Font Size",
       "apiKeys": "API Keys",
       "about": "About"
+    },
+  "trajectory": {
+    "systemPrompt": {
+      "ready": "System prompt assembled",
+      "failed": "System prompt assembly failed",
+      "source": "Source",
+      "template_version": "Template version",
+      "section_ids": "Sections",
+      "fingerprint": "Assembly fingerprint",
+      "char_count": "Character count",
+      "requestFingerprint": "Effective system message fingerprint"
     }
   }
+}

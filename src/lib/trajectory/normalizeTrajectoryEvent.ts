@@ -29,7 +29,7 @@ const EVENT_PAYLOAD_FIELDS: Record<string, readonly string[]> = {
   run_interrupted: ['reason'],
   run_failed: ['error_code', 'message'],
   run_completed: ['total_steps', 'total_tool_calls', 'finish_reason'],
-  llm_round_started: ['llm_round_id', 'round_index', 'model', 'provider'],
+  llm_round_started: ['llm_round_id', 'round_index', 'model', 'provider', 'system_prompt_fingerprint'],
   llm_round_first_output_delta: ['llm_round_id', 'delta_kind', 'ttft_ms'],
   llm_round_completed: [
     'llm_round_id', 'status', 'finish_reason', 'input_tokens', 'output_tokens', 'total_tokens',
@@ -57,6 +57,10 @@ const EVENT_PAYLOAD_FIELDS: Record<string, readonly string[]> = {
   evidence_item_upserted: ['protocol_version', 'evidence'],
   content_block_upserted: ['protocol_version'],
   content_block_discarded: ['protocol_version', 'block_id'],
+  system_prompt_prepared: [
+    'protocol_version', 'status', 'source', 'template_version', 'section_ids',
+    'fingerprint', 'char_count', 'duration_ms', 'error_code', 'message',
+  ],
   context_status_updated: [
     'protocol_version', 'message_id', 'phase', 'status', 'round_index', 'window_tokens',
     'estimated_tokens_before', 'estimated_tokens_after', 'actual_prompt_tokens', 'removed_turns',
@@ -77,7 +81,7 @@ const EVIDENCE_FIELDS = new Set([
   'id', 'kind', 'status', 'title', 'url', 'domain', 'claim', 'snippet',
   'used_by_final_answer', 'citation_index',
 ]);
-const LIST_FIELDS = new Set(['tools', 'key_findings', 'source_refs']);
+const LIST_FIELDS = new Set(['tools', 'key_findings', 'source_refs', 'section_ids']);
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -180,10 +184,22 @@ function sanitizePayload(eventType: string, source: Record<string, unknown>): Re
   const fields = EVENT_PAYLOAD_FIELDS[eventType];
   if (!fields) return null;
 
+  if (eventType === 'system_prompt_prepared' && (
+    source.protocol_version !== 2 || (source.status !== 'ready' && source.status !== 'failed')
+    || source.source !== 'code' || typeof source.template_version !== 'string'
+    || !Array.isArray(source.section_ids) || !source.section_ids.every(item => typeof item === 'string')
+    || typeof source.duration_ms !== 'number' || !Number.isInteger(source.duration_ms) || source.duration_ms < 0
+  )) return null;
   const payload: Record<string, unknown> = {};
   for (const field of fields) {
     if (!(field in source)) continue;
-    if (field === 'items') payload[field] = sanitizePlanItems(source[field]);
+    if (field === 'fingerprint' || field === 'system_prompt_fingerprint') {
+      if (source[field] === null || (typeof source[field] === 'string' && /^[a-f0-9]{64}$/i.test(source[field]))) payload[field] = source[field];
+    } else if (eventType === 'system_prompt_prepared' && field === 'char_count') {
+      if (source[field] === null || (typeof source[field] === 'number' && Number.isInteger(source[field]) && source[field] >= 0)) payload[field] = source[field];
+    } else if (eventType === 'system_prompt_prepared' && field === 'message') {
+      if (source[field] === null || source[field] === '系统提示词组装失败') payload[field] = source[field];
+    } else if (field === 'items') payload[field] = sanitizePlanItems(source[field]);
     else if (field === 'item') payload[field] = sanitizePlanItem(source[field]);
     else if (field === 'evidence') payload[field] = sanitizeEvidence(source[field]);
     else if (LIST_FIELDS.has(field)) payload[field] = boundedList(source[field]);

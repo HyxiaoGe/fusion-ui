@@ -1010,13 +1010,14 @@ describe('createAgentStreamEventHandlers', () => {
     });
 
     handlers.onTrajectoryEvent?.(trajectoryEvent(0, 'run_started'));
-    handlers.onTrajectoryEvent?.(trajectoryEvent(1, 'run_completed'));
+    handlers.onTrajectoryEvent?.(trajectoryEvent(1, 'system_prompt_prepared'));
+    handlers.onTrajectoryEvent?.(trajectoryEvent(2, 'run_completed'));
 
     expect(selectMergedTrajectoryEvents(
       { trajectory: trajectoryState },
       'conversation-live',
       'run-live',
-    ).map(event => event.eventType)).toEqual(['run_started', 'run_completed']);
+    ).map(event => event.eventType)).toEqual(['run_started', 'system_prompt_prepared', 'run_completed']);
     expect(trajectoryState.byConversationId['conversation-progress']).toBeUndefined();
     expect(
       trajectoryState.byConversationId['conversation-live']

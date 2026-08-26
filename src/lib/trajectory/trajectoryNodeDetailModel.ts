@@ -1,3 +1,4 @@
+import i18n from '@/lib/i18n';
 import type { TrajectorySpan } from '@/types/trajectory';
 import { getToolMeta } from '@/lib/agent/toolRegistry';
 
@@ -234,6 +235,15 @@ function cellSummaryFields(cell: TrajectoryCell): TrajectoryNodeSummaryField[] {
       },
     ];
   }
+  if (cell.type === 'context' && cell.eventType === 'system_prompt_prepared') {
+    return ['source', 'template_version', 'section_ids', 'fingerprint', 'char_count'].flatMap(key => {
+      const value = cell.payload[key];
+      return value === undefined || value === null ? [] : [{
+        label: i18n.t(`trajectory.systemPrompt.${key}`),
+        value: Array.isArray(value) ? value.join(' · ') : String(value),
+      }];
+    });
+  }
   if (cell.type !== 'assistant_request') return [];
   const fields: TrajectoryNodeSummaryField[] = [
     {
@@ -241,6 +251,8 @@ function cellSummaryFields(cell: TrajectoryCell): TrajectoryNodeSummaryField[] {
       value: cell.requestIndex !== null ? `Request #${cell.requestIndex}` : '模型请求',
     },
   ];
+  const fingerprint = cell.events.find(event => event.eventType === 'llm_round_started' && event.payload.llm_round_id === cell.llmRoundId)?.payload.system_prompt_fingerprint;
+  if (typeof fingerprint === 'string') fields.push({ label: i18n.t('trajectory.systemPrompt.requestFingerprint'), value: fingerprint });
   const model = [cell.provider, cell.model].filter(Boolean).join(' · ');
   if (model) fields.push({ label: '模型', value: model });
   for (const [label, value] of [

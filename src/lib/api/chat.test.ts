@@ -1204,6 +1204,7 @@ describe('sendMessageStream — 新 envelope 协议', () => {
   it('仅供轨迹消费的已知 agent_event 进入受控回调且不误报未知事件', async () => {
     fetchWithAuthMock.mockResolvedValue(
       createStreamResponse([
+        agentEvent('system_prompt_prepared', { protocol_version: 2, status: 'ready', source: 'code', template_version: 'v1', section_ids: ['base'], duration_ms: 1 }, 4),
         agentEvent('llm_round_started', {
           llm_round_id: 'round-1',
           round_index: 0,
@@ -1238,6 +1239,7 @@ describe('sendMessageStream — 新 envelope 协议', () => {
         provider: 'litellm',
       },
     }));
+    expect(onTrajectoryEvent).toHaveBeenCalledWith(expect.objectContaining({ eventType: 'system_prompt_prepared' }));
     expect(warn).not.toHaveBeenCalledWith(
       expect.stringContaining('未知 agent_event'),
       'llm_round_started',

@@ -1,3 +1,6 @@
+import i18n from '@/lib/i18n';
+import { getTrajectoryCellPresentation } from './trajectoryCellPresentation';
+import { buildTrajectoryNodeDetailModel } from './trajectoryNodeDetailModel';
 import { describe, expect, it } from 'vitest';
 
 import type { Message } from '@/types/conversation';
@@ -911,4 +914,41 @@ describe('TrajectoryCellProjection', () => {
       requestIndex: 3,
     });
   });
+});
+
+
+it.each(['ready', 'failed'])('同 Run 的系统提示词 %s 只有一行', async status => {
+  await i18n.changeLanguage('zh-CN');
+  const run = runSummary('prompt');
+  const events = [0, 1].map(sequence => event('prompt', sequence, 'system_prompt_prepared', { payload: { status, source: 'code' } }));
+  const snapshot = { snapshotRequestId: 'prompt', run, spans: [], completeness: { status: 'complete' as const, degraded_reason: null, event_count: 0, expected_last_sequence: null, loaded_event_count: 0, first_sequence: null, last_sequence: null }, truncated: false, durableLastSequence: null, events: [] as NormalizedTrajectoryEvent[] };
+  const project = (history: boolean) => projectTrajectoryCells(input({ runs: [run], selectedRunId: 'prompt', snapshotsByRunId: { prompt: { ...snapshot, events: history ? events : [], durableLastSequence: history ? 1 : null } }, liveEventsByRunId: { prompt: history ? [] : events } }));
+  const projection = project(false);
+  const historical = project(true);
+  expect([...projection.cells, ...projection.unassociatedCells].some(cell => cell.type === 'compacted')).toBe(false);
+  expect([...historical.cells, ...historical.unassociatedCells].filter(cell => cell.type === 'context').map(cell => [cell.key, cell.payload])).toEqual([...projection.cells, ...projection.unassociatedCells].filter(cell => cell.type === 'context').map(cell => [cell.key, cell.payload]));
+  const cells = [...projection.cells, ...projection.unassociatedCells].filter(cell => cell.type === 'context');
+  expect(cells).toHaveLength(1);
+  expect(cells[0]).toMatchObject({ contextId: 'system_prompt', payload: { status } });
+  expect(getTrajectoryCellPresentation(cells[0]).summary).toBe(status === 'ready' ? '系统提示词已组装' : '系统提示词组装失败');
+  expect(buildTrajectoryNodeDetailModel(cells[0], null).summaryFields).toContainEqual({ label: '来源', value: 'code' });
+  await i18n.changeLanguage('en-US');
+  expect(getTrajectoryCellPresentation(cells[0]).summary).toBe(status === 'ready' ? 'System prompt assembled' : 'System prompt assembly failed');
+});
+
+
+it('请求详情只显示对应 started 的实际指纹，旧请求不推断', async () => {
+  await i18n.changeLanguage('zh-CN');
+  const base: Extract<TrajectoryCell, { type: 'assistant_request' }> = {
+    key: 'request', type: 'assistant_request', runId: 'r', userMessageId: null, assistantMessageId: null,
+    completenessSources: ['live-tail'], sourceSequences: [0], llmRoundId: 'selected', roundIndex: 1, requestIndex: 1,
+    model: null, provider: null, status: 'completed', reasoningPreview: null, outputPreview: null,
+    inputTokens: null, outputTokens: null, reasoningTokens: null, durationMs: null, ttftMs: null, detailAvailable: true,
+    events: [event('r', 0, 'system_prompt_prepared', { payload: { fingerprint: 'a'.repeat(64) } }),
+      event('r', 1, 'llm_round_started', { payload: { llm_round_id: 'other', system_prompt_fingerprint: 'b'.repeat(64) } }),
+      event('r', 2, 'llm_round_started', { payload: { llm_round_id: 'selected', system_prompt_fingerprint: 'c'.repeat(64) } })],
+  };
+  const field = { label: '实际系统消息指纹', value: 'c'.repeat(64) };
+  expect(buildTrajectoryNodeDetailModel(base, null).summaryFields).toContainEqual(field);
+  expect(buildTrajectoryNodeDetailModel({ ...base, llmRoundId: 'old' }, null).summaryFields.some(item => item.label === field.label)).toBe(false);
 });

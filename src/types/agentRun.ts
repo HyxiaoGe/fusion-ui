@@ -302,3 +302,28 @@ export interface AgentEventEnvelope {
   trace_id: string;
   ts: number;
 }
+
+
+/** 仅供轨迹展示的系统提示词组装元数据，不包含提示词正文。 */
+export interface AgentSystemPromptPreparedEvent extends AgentEventEnvelope {
+  type: 'system_prompt_prepared';
+  protocol_version: 2;
+  status: 'ready' | 'failed';
+  source: 'code';
+  template_version: string;
+  section_ids: string[];
+  fingerprint?: string | null;
+  char_count?: number | null;
+  duration_ms: number;
+  error_code?: string | null;
+  message?: string | null;
+}
+
+export interface AgentLlmRoundStartedEvent extends AgentEventEnvelope {
+  type: 'llm_round_started';
+  llm_round_id: string;
+  round_index: number;
+  model: string;
+  provider?: string | null;
+  system_prompt_fingerprint?: string | null;
+}
