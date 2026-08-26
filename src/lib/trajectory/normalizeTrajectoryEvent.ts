@@ -198,7 +198,9 @@ function sanitizePayload(eventType: string, source: Record<string, unknown>): Re
     } else if (eventType === 'system_prompt_prepared' && field === 'char_count') {
       if (source[field] === null || (typeof source[field] === 'number' && Number.isInteger(source[field]) && source[field] >= 0)) payload[field] = source[field];
     } else if (eventType === 'system_prompt_prepared' && field === 'message') {
-      if (source[field] === null || source[field] === '系统提示词组装失败') payload[field] = source[field];
+      if (source[field] === null
+        || source[field] === '系统提示词组装失败'
+        || source[field] === '系统提示词组装失败，请稍后重试。') payload[field] = source[field];
     } else if (field === 'items') payload[field] = sanitizePlanItems(source[field]);
     else if (field === 'item') payload[field] = sanitizePlanItem(source[field]);
     else if (field === 'evidence') payload[field] = sanitizeEvidence(source[field]);

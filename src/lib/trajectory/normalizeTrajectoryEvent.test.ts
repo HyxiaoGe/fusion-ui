@@ -338,6 +338,10 @@ describe('系统提示词元数据', () => {
   it.each(['preparing', 'unknown'])('不接受虚构状态 %s', status => {
     expect(normalizeSseTrajectoryEvent({ ...base, type: 'system_prompt_prepared', protocol_version: 2, status, source: 'code', template_version: 'v1', section_ids: [], duration_ms: 0 })).toBeNull();
   });
+  it('保留后端实际固定失败文案', () => {
+    const message = '系统提示词组装失败，请稍后重试。';
+    expect(normalizeSseTrajectoryEvent({ ...base, type: 'system_prompt_prepared', protocol_version: 2, status: 'failed', source: 'code', template_version: 'v1', section_ids: [], duration_ms: 1, message })?.payload.message).toBe(message);
+  });
   it('失败允许缺失或空元数据，不保留异常原文或非法指纹', () => {
     const payload = { protocol_version: 2, status: 'failed', source: 'code', template_version: 'v1', section_ids: [], duration_ms: 1 };
     expect(normalizeSseTrajectoryEvent({ ...base, type: 'system_prompt_prepared', ...payload, fingerprint: '私密内容', char_count: -1, message: '原始用户偏好' })?.payload).toEqual(payload);
