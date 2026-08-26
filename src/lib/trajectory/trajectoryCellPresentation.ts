@@ -1,3 +1,4 @@
+import i18n from '@/lib/i18n';
 import { getToolMeta } from '@/lib/agent/toolRegistry';
 import { extractTextFromBlocks } from '@/types/conversation';
 import type { TrajectoryCell } from './TrajectoryCellProjection';
@@ -97,6 +98,9 @@ function trajectoryBadgeTone(
 }
 
 function contextSummary(cell: Extract<TrajectoryCell, { type: 'context' }>): string {
+  if (cell.eventType === 'system_prompt_prepared') {
+    return i18n.t(`trajectory.systemPrompt.${cell.payload.status === 'failed' ? 'failed' : 'ready'}`);
+  }
   if (cell.eventType === 'context_required') {
     return boundedSummary(stringValue(cell.payload.purpose) ?? '等待补充信息');
   }
@@ -199,8 +203,8 @@ export function getTrajectoryCellPresentation(cell: TrajectoryCell): TrajectoryC
         kindLabel: '上下文',
         summary: contextSummary(cell),
         statusLabel: null,
-        durationMs: null,
-        tone: 'info',
+        durationMs: cell.eventType === 'system_prompt_prepared' ? finiteNumber(cell.payload.duration_ms) : null,
+        tone: cell.eventType === 'system_prompt_prepared' ? (cell.payload.status === 'failed' ? 'danger' : 'success') : 'info',
       };
     case 'tool': {
       const meta = getToolMeta(cell.toolName ?? '');

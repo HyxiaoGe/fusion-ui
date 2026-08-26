@@ -385,5 +385,17 @@
       "fontSize": "字体大小",
       "apiKeys": "API密钥",
       "about": "关于"
+    },
+  "trajectory": {
+    "systemPrompt": {
+      "ready": "系统提示词已组装",
+      "failed": "系统提示词组装失败",
+      "source": "来源",
+      "template_version": "模板版本",
+      "section_ids": "段落",
+      "fingerprint": "组装指纹",
+      "char_count": "字符数",
+      "requestFingerprint": "实际系统消息指纹"
     }
   }
+}

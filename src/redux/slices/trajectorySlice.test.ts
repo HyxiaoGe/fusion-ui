@@ -1438,3 +1438,17 @@ describe('trajectorySlice', () => {
     });
   });
 });
+
+
+it.each(['ready', 'failed'])('提示词 %s 实时 Redux 与历史 hydration 一致', status => {
+  const payload = { protocol_version: 2, status, source: 'code', template_version: 'v1', section_ids: ['base'], duration_ms: 1 };
+  const event = liveEvent('prompt', 0, { type: 'system_prompt_prepared', ...payload });
+  let state = reducer(undefined, mergeLiveTrajectoryEvent({ conversationId: 'conversation-a', event }));
+  state = reducer(state, trajectorySnapshotRequested({ conversationId: 'conversation-a', runId: 'prompt', requestId: 'snap' }));
+  const durable = snapshot('prompt', [0]);
+  durable.records[0] = { ...durable.records[0], event_type: 'system_prompt_prepared', payload };
+  state = reducer(state, trajectorySnapshotReceived({ conversationId: 'conversation-a', requestId: 'snap', snapshot: durable }));
+  const merged = selectMergedTrajectoryEvents({ trajectory: state }, 'conversation-a', 'prompt');
+  expect(merged).toHaveLength(1);
+  expect(merged[0].payload).toEqual(event.payload);
+});

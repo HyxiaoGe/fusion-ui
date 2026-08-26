@@ -325,3 +325,30 @@ describe('normalizeTrajectoryEvent', () => {
     expect(normalizeSseTrajectoryEvent(sse)?.schemaVersion).toBe(0);
   });
 });
+
+
+describe('系统提示词元数据', () => {
+  const base = { run_id: 'run-1', step_id: null, parent_step_id: null, tool_call_id: null, sequence: 1, trace_id: 'trace-1', ts: Date.parse(timestamp) / 1000 };
+  it.each(['ready', 'failed'])('实时与历史保留 %s 安全元数据', status => {
+    const payload = { protocol_version: 2, status, source: 'code', template_version: 'v1', section_ids: ['base'], fingerprint: 'a'.repeat(64), char_count: 123, duration_ms: 0 };
+    const live = normalizeSseTrajectoryEvent({ ...base, type: 'system_prompt_prepared', ...payload, prompt: '私密偏好' });
+    expect(live?.payload).toEqual(payload);
+    expect(normalizeTrajectoryRecord('run-1', { sequence: 1, event_type: 'system_prompt_prepared', timestamp, step_id: null, parent_step_id: null, tool_call_id: null, trace_id: 'trace-1', payload })).toEqual(live);
+  });
+  it.each(['preparing', 'unknown'])('不接受虚构状态 %s', status => {
+    expect(normalizeSseTrajectoryEvent({ ...base, type: 'system_prompt_prepared', protocol_version: 2, status, source: 'code', template_version: 'v1', section_ids: [], duration_ms: 0 })).toBeNull();
+  });
+  it('保留后端实际固定失败文案', () => {
+    const message = '系统提示词组装失败，请稍后重试。';
+    expect(normalizeSseTrajectoryEvent({ ...base, type: 'system_prompt_prepared', protocol_version: 2, status: 'failed', source: 'code', template_version: 'v1', section_ids: [], duration_ms: 1, message })?.payload.message).toBe(message);
+  });
+  it('失败允许缺失或空元数据，不保留异常原文或非法指纹', () => {
+    const payload = { protocol_version: 2, status: 'failed', source: 'code', template_version: 'v1', section_ids: [], duration_ms: 1 };
+    expect(normalizeSseTrajectoryEvent({ ...base, type: 'system_prompt_prepared', ...payload, fingerprint: '私密内容', char_count: -1, message: '原始用户偏好' })?.payload).toEqual(payload);
+    expect(normalizeSseTrajectoryEvent({ ...base, type: 'system_prompt_prepared', ...payload, fingerprint: null, char_count: null, message: null })?.payload).toEqual({ ...payload, fingerprint: null, char_count: null, message: null });
+  });
+  it('保留本次模型请求指纹，旧事件不补填', () => {
+    expect(normalizeSseTrajectoryEvent({ ...base, type: 'llm_round_started', llm_round_id: 'r', system_prompt_fingerprint: 'b'.repeat(64) })?.payload.system_prompt_fingerprint).toBe('b'.repeat(64));
+    expect(normalizeSseTrajectoryEvent({ ...base, type: 'llm_round_started', llm_round_id: 'old' })?.payload.system_prompt_fingerprint).toBeUndefined();
+  });
+});

@@ -1,3 +1,4 @@
+import i18n from '@/lib/i18n';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -673,4 +674,23 @@ describe('TrajectoryNodeDetailPanel', () => {
       .toHaveTextContent('选择一条记录查看详情');
     expect(getTrajectoryToolNodeDetailMock).not.toHaveBeenCalled();
   });
+});
+
+
+it.each(['ready', 'failed'])('系统提示词 %s 复用详情并只显示元数据', async status => {
+  await i18n.changeLanguage('zh-CN');
+  const cell: Extract<TrajectoryCell, { type: 'context' }> = {
+    key: 'prompt', type: 'context', runId: 'run-1', userMessageId: null, assistantMessageId: null,
+    completenessSources: ['durable-snapshot'], sourceSequences: [1], contextId: 'system_prompt', eventType: 'system_prompt_prepared',
+    payload: { status, source: 'code', template_version: 'v-test', section_ids: ['base', 'tools'], fingerprint: 'a'.repeat(64), char_count: 123, duration_ms: 7, prompt: '私密偏好不能显示' },
+  };
+  render(<TrajectoryNodeDetailPanel conversationId="c" cell={cell} span={null} />);
+  expect(screen.getByText(status === 'ready' ? '系统提示词已组装' : '系统提示词组装失败')).toBeInTheDocument();
+  expect(screen.getByText('v-test')).toBeInTheDocument();
+  expect(screen.getByText('base · tools')).toBeInTheDocument();
+  expect(screen.getByText('a'.repeat(64))).toBeInTheDocument();
+  expect(screen.getByText('123')).toBeInTheDocument();
+  expect(screen.queryByText('私密偏好不能显示')).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('tab', { name: '计时' }));
+  expect(screen.getByText('7 毫秒')).toBeInTheDocument();
 });
