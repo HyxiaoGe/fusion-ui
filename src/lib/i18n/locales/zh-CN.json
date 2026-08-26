@@ -388,6 +388,17 @@
     },
   "trajectory": {
     "systemPrompt": {
+      "title": "系统提示词",
+      "body": "正文",
+      "copyFull": "复制全文",
+      "copiedFull": "已复制全文",
+      "copyFailed": "复制失败，请手动选择正文",
+      "loadFailed": "加载系统提示词正文失败，请稍后重试",
+      "pending": "系统提示词正文仍在记录",
+      "notRecorded": "该运行生成时未记录系统提示词正文",
+      "assemblyFailed": "系统提示词组装失败，未生成正文",
+      "bodyMissing": "系统提示词正文未能完整记录",
+      "bodyInvalid": "系统提示词正文记录无效，暂时无法展示",
       "ready": "系统提示词已组装",
       "failed": "系统提示词组装失败",
       "source": "来源",

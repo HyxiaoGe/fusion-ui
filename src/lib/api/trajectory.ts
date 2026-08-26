@@ -58,6 +58,18 @@ export function getTrajectoryLlmNodeDetail(
   ).then(normalizeTrajectoryNodeDetailResponse);
 }
 
+/** 仅在查看系统提示词节点时读取组装正文，不使用快照或流式事件承载正文。 */
+export function getTrajectorySystemPromptNodeDetail(
+  conversationId: string,
+  runId: string,
+  signal?: AbortSignal,
+): Promise<TrajectoryNodeDetailResponse> {
+  return apiRequest<TrajectoryNodeDetailResponse>(
+    `${BASE_PATH}/${encodeURIComponent(conversationId)}/runs/${encodeURIComponent(runId)}/node-detail/system-prompt`,
+    { cache: 'no-store', ...(signal ? { signal } : {}) },
+  ).then(normalizeTrajectoryNodeDetailResponse);
+}
+
 /** 在传输边界补齐可选的展示元数据，避免详情正文因缺失数组而中断。 */
 function normalizeTrajectoryNodeDetailResponse(
   response: TrajectoryNodeDetailResponse,

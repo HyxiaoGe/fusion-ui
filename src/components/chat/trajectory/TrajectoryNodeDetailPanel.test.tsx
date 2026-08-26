@@ -7,10 +7,12 @@ import type { TrajectoryNodeDetailResponse, TrajectorySpan } from '@/types/traje
 
 const getTrajectoryToolNodeDetailMock = vi.hoisted(() => vi.fn());
 const getTrajectoryLlmNodeDetailMock = vi.hoisted(() => vi.fn());
+const getTrajectorySystemPromptNodeDetailMock = vi.hoisted(() => vi.fn());
 
 vi.mock('@/lib/api/trajectory', () => ({
   getTrajectoryLlmNodeDetail: getTrajectoryLlmNodeDetailMock,
   getTrajectoryToolNodeDetail: getTrajectoryToolNodeDetailMock,
+  getTrajectorySystemPromptNodeDetail: getTrajectorySystemPromptNodeDetailMock,
 }));
 
 import { TrajectoryNodeDetailPanel } from './TrajectoryNodeDetailPanel';
@@ -677,20 +679,233 @@ describe('TrajectoryNodeDetailPanel', () => {
 });
 
 
-it.each(['ready', 'failed'])('系统提示词 %s 复用详情并只显示元数据', async status => {
-  await i18n.changeLanguage('zh-CN');
-  const cell: Extract<TrajectoryCell, { type: 'context' }> = {
-    key: 'prompt', type: 'context', runId: 'run-1', userMessageId: null, assistantMessageId: null,
+function systemPromptCell(runId = 'run-1', status = 'ready'): Extract<TrajectoryCell, { type: 'context' }> {
+  return {
+    key: 'prompt', type: 'context', runId, userMessageId: null, assistantMessageId: null,
     completenessSources: ['durable-snapshot'], sourceSequences: [1], contextId: 'system_prompt', eventType: 'system_prompt_prepared',
-    payload: { status, source: 'code', template_version: 'v-test', section_ids: ['base', 'tools'], fingerprint: 'a'.repeat(64), char_count: 123, duration_ms: 7, prompt: '私密偏好不能显示' },
+    payload: { status, source: 'code', template_version: 'v-test', section_ids: ['base', 'tools'], fingerprint: 'a'.repeat(64), char_count: 123, duration_ms: 7, prompt: '事件中夹带的正文不能显示' },
   };
-  render(<TrajectoryNodeDetailPanel conversationId="c" cell={cell} span={null} />);
-  expect(screen.getByText(status === 'ready' ? '系统提示词已组装' : '系统提示词组装失败')).toBeInTheDocument();
-  expect(screen.getByText('v-test')).toBeInTheDocument();
-  expect(screen.getByText('base · tools')).toBeInTheDocument();
-  expect(screen.getByText('a'.repeat(64))).toBeInTheDocument();
-  expect(screen.getByText('123')).toBeInTheDocument();
-  expect(screen.queryByText('私密偏好不能显示')).not.toBeInTheDocument();
-  fireEvent.click(screen.getByRole('tab', { name: '计时' }));
-  expect(screen.getByText('7 毫秒')).toBeInTheDocument();
+}
+
+function systemPromptDetail(
+  overrides: Partial<TrajectoryNodeDetailResponse> = {},
+): TrajectoryNodeDetailResponse {
+  return {
+    status: 'available',
+    node_type: 'system_prompt',
+    available_sections: ['summary', 'prompt'],
+    detail: {
+      template_version: 'v-test',
+      fingerprint: 'a'.repeat(64),
+      char_count: 123,
+      sections: [
+        { section_id: 'z-base', content: '  # 原样标题\n\n<policy>不改写 **规则**</policy>\n' },
+        { section_id: 'a-tools', content: '后段第一行\r\n第二行  ' },
+      ],
+    },
+    redacted_fields: [],
+    truncated_fields: [],
+    reason: null,
+    ...overrides,
+  };
+}
+
+describe('系统提示词正文', () => {
+  const clipboardDescriptor = Object.getOwnPropertyDescriptor(navigator, 'clipboard');
+  const writeTextMock = vi.fn();
+
+  beforeEach(async () => {
+    await i18n.changeLanguage('zh-CN');
+    getTrajectorySystemPromptNodeDetailMock.mockReset();
+    writeTextMock.mockReset().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText: writeTextMock },
+    });
+  });
+
+  afterEach(() => {
+    vi.clearAllTimers();
+    vi.useRealTimers();
+    if (clipboardDescriptor) Object.defineProperty(navigator, 'clipboard', clipboardDescriptor);
+    else Reflect.deleteProperty(navigator, 'clipboard');
+  });
+
+  it('默认进入正文，按响应原顺序保留全部字符与换行，并以双换行拼接复制全文', async () => {
+    const request = deferred<TrajectoryNodeDetailResponse>();
+    getTrajectorySystemPromptNodeDetailMock.mockReturnValue(request.promise);
+    renderPanel(systemPromptCell());
+
+    expect(screen.getByRole('heading', { name: '系统提示词' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: '正文' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByRole('status')).toHaveTextContent('正在加载详情');
+    expect(getTrajectorySystemPromptNodeDetailMock).toHaveBeenCalledWith(
+      'conversation-1', 'run-1', expect.any(AbortSignal),
+    );
+    await act(async () => request.resolve(systemPromptDetail()));
+
+    const body = screen.getByRole('tabpanel', { name: '正文' });
+    const sections = body.querySelectorAll('pre');
+    expect(Array.from(sections, section => section.textContent)).toEqual([
+      '  # 原样标题\n\n<policy>不改写 **规则**</policy>\n',
+      '后段第一行\r\n第二行  ',
+    ]);
+    expect(screen.queryByRole('heading', { name: '原样标题' })).not.toBeInTheDocument();
+    expect(screen.queryByText('事件中夹带的正文不能显示')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: '复制全文' }));
+    await waitFor(() => expect(writeTextMock).toHaveBeenCalledWith(
+      '  # 原样标题\n\n<policy>不改写 **规则**</policy>\n\n\n后段第一行\r\n第二行  ',
+    ));
+    expect(await screen.findByRole('button', { name: '已复制全文' })).toBeInTheDocument();
+  });
+
+  it.each(['ready', 'failed'])('%s 保留摘要元数据与计时，不从事件载荷回填正文', async status => {
+    getTrajectorySystemPromptNodeDetailMock.mockResolvedValue(systemPromptDetail({
+      status: 'not_recorded', detail: null, reason: 'system_prompt_not_recorded',
+    }));
+    renderPanel(systemPromptCell('run-1', status));
+    expect(await screen.findByText('该运行生成时未记录系统提示词正文')).toBeInTheDocument();
+    expect(screen.queryByText('事件中夹带的正文不能显示')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('tab', { name: '摘要' }));
+    expect(screen.getByText(status === 'ready' ? '系统提示词已组装' : '系统提示词组装失败')).toBeInTheDocument();
+    expect(screen.getByText('v-test')).toBeInTheDocument();
+    expect(screen.getByText('base · tools')).toBeInTheDocument();
+    expect(screen.getByText('a'.repeat(64))).toBeInTheDocument();
+    expect(screen.getByText('123')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('tab', { name: '计时' }));
+    expect(screen.getByText('7 毫秒')).toBeInTheDocument();
+  });
+
+  it('重新挂载从服务器恢复正文，不复用上次挂载的正文缓存', async () => {
+    getTrajectorySystemPromptNodeDetailMock
+      .mockResolvedValueOnce(systemPromptDetail())
+      .mockResolvedValueOnce(systemPromptDetail({ detail: {
+        template_version: 'v-test', fingerprint: 'b'.repeat(64), char_count: 10,
+        sections: [{ section_id: 'base', content: '重新读取的完整正文' }],
+      } }));
+    const { unmount } = renderPanel(systemPromptCell());
+    expect(await screen.findByText('z-base')).toBeInTheDocument();
+    unmount();
+    renderPanel(systemPromptCell());
+
+    expect(await screen.findByText('重新读取的完整正文')).toBeInTheDocument();
+    expect(screen.queryByText('z-base')).not.toBeInTheDocument();
+    expect(getTrajectorySystemPromptNodeDetailMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('相同节点 key 切换 Run 时取消旧请求，迟到响应不能覆盖当前正文', async () => {
+    const requestA = deferred<TrajectoryNodeDetailResponse>();
+    const requestB = deferred<TrajectoryNodeDetailResponse>();
+    getTrajectorySystemPromptNodeDetailMock
+      .mockReturnValueOnce(requestA.promise)
+      .mockReturnValueOnce(requestB.promise);
+    const { rerender } = renderPanel(systemPromptCell('run-a'));
+    const signalA = getTrajectorySystemPromptNodeDetailMock.mock.calls[0]?.[2] as AbortSignal;
+    rerender(<TrajectoryNodeDetailPanel conversationId="conversation-1" cell={systemPromptCell('run-b')} span={null} />);
+
+    expect(signalA?.aborted).toBe(true);
+    expect(getTrajectorySystemPromptNodeDetailMock).toHaveBeenLastCalledWith(
+      'conversation-1', 'run-b', expect.any(AbortSignal),
+    );
+    await act(async () => requestB.resolve(systemPromptDetail({ detail: {
+      template_version: 'v-test', fingerprint: 'b'.repeat(64), char_count: 8,
+      sections: [{ section_id: 'base', content: '当前 Run 正文' }],
+    } })));
+    await act(async () => requestA.resolve(systemPromptDetail()));
+
+    expect(screen.getByText('当前 Run 正文')).toBeInTheDocument();
+    expect(screen.queryByText('z-base')).not.toBeInTheDocument();
+  });
+
+  it('切换 Run 后立即清除已经显示的旧正文', async () => {
+    const nextRequest = deferred<TrajectoryNodeDetailResponse>();
+    getTrajectorySystemPromptNodeDetailMock
+      .mockResolvedValueOnce(systemPromptDetail())
+      .mockReturnValueOnce(nextRequest.promise);
+    const { rerender } = renderPanel(systemPromptCell('run-a'));
+    expect(await screen.findByText('z-base')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('tab', { name: '摘要' }));
+    rerender(<TrajectoryNodeDetailPanel conversationId="conversation-1" cell={systemPromptCell('run-b')} span={null} />);
+
+    expect(screen.getByRole('tab', { name: '正文' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.queryByText('z-base')).not.toBeInTheDocument();
+    expect(screen.getByRole('status')).toHaveTextContent('正在加载详情');
+  });
+
+  it('切换到其他节点会取消正文请求，迟到正文不会出现在其他节点', async () => {
+    const request = deferred<TrajectoryNodeDetailResponse>();
+    getTrajectorySystemPromptNodeDetailMock.mockReturnValue(request.promise);
+    const { rerender } = renderPanel(systemPromptCell());
+    const signal = getTrajectorySystemPromptNodeDetailMock.mock.calls[0]?.[2] as AbortSignal;
+    rerender(<TrajectoryNodeDetailPanel conversationId="conversation-1" cell={toolCell()} span={null} />);
+    expect(signal?.aborted).toBe(true);
+    await act(async () => request.resolve(systemPromptDetail()));
+
+    expect(screen.queryByRole('tab', { name: '正文' })).not.toBeInTheDocument();
+    expect(screen.queryByText('z-base')).not.toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: '摘要' })).toHaveAttribute('aria-selected', 'true');
+  });
+
+  it.each([toolCell(), llmCell(), userCell(), messageCell(), {
+    ...systemPromptCell(), eventType: 'context_prepared', contextId: 'context',
+  }, null])('无关节点 $type 不请求系统提示词正文', cell => {
+    renderPanel(cell);
+    expect(getTrajectorySystemPromptNodeDetailMock).not.toHaveBeenCalled();
+    expect(screen.queryByRole('tab', { name: '正文' })).not.toBeInTheDocument();
+  });
+
+  it('正文加载错误可手动重试，成功后恢复正文', async () => {
+    getTrajectorySystemPromptNodeDetailMock
+      .mockRejectedValueOnce(new Error('请求失败'))
+      .mockResolvedValueOnce(systemPromptDetail());
+    renderPanel(systemPromptCell());
+    expect(await screen.findByRole('alert')).toHaveTextContent('加载系统提示词正文失败，请稍后重试');
+    expect(screen.queryByText('该运行生成时未记录系统提示词正文')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '重试' }));
+
+    expect(await screen.findByText('z-base')).toBeInTheDocument();
+    expect(getTrajectorySystemPromptNodeDetailMock).toHaveBeenCalledTimes(2);
+  });
+
+  it.each([
+    ['not_recorded', 'system_prompt_not_recorded', '该运行生成时未记录系统提示词正文'],
+    ['degraded', 'system_prompt_assembly_failed', '系统提示词组装失败，未生成正文'],
+    ['degraded', 'system_prompt_detail_missing', '系统提示词正文未能完整记录'],
+    ['degraded', 'system_prompt_detail_invalid', '系统提示词正文记录无效，暂时无法展示'],
+  ] as const)('%s / %s 显示对应空态且不允许复制未记录的正文', async (status, reason, message) => {
+    getTrajectorySystemPromptNodeDetailMock.mockResolvedValue(systemPromptDetail({ status, reason, detail: null }));
+    renderPanel(systemPromptCell());
+
+    expect(await screen.findByText(message)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '复制全文' })).not.toBeInTheDocument();
+    expect(screen.queryByText('事件中夹带的正文不能显示')).not.toBeInTheDocument();
+  });
+
+  it('正文 pending 沿用有界检查，落账后自动显示完整正文', async () => {
+    vi.useFakeTimers();
+    getTrajectorySystemPromptNodeDetailMock
+      .mockResolvedValueOnce(systemPromptDetail({ status: 'pending', detail: null, reason: 'system_prompt_detail_settling' }))
+      .mockResolvedValueOnce(systemPromptDetail());
+    renderPanel(systemPromptCell());
+    await act(async () => Promise.resolve());
+    expect(screen.getByRole('status')).toHaveTextContent('系统提示词正文仍在记录');
+    await act(async () => vi.advanceTimersByTimeAsync(1_000));
+
+    expect(screen.getByText('z-base')).toBeInTheDocument();
+    expect(getTrajectorySystemPromptNodeDetailMock).toHaveBeenCalledTimes(2);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('复制失败保持完整正文并明确提示，不伪装已复制', async () => {
+    writeTextMock.mockRejectedValueOnce(new Error('拒绝剪贴板权限'));
+    getTrajectorySystemPromptNodeDetailMock.mockResolvedValue(systemPromptDetail());
+    renderPanel(systemPromptCell());
+    fireEvent.click(await screen.findByRole('button', { name: '复制全文' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('复制失败，请手动选择正文');
+    expect(screen.queryByRole('button', { name: '已复制全文' })).not.toBeInTheDocument();
+    expect(screen.getByText('z-base')).toBeInTheDocument();
+  });
 });

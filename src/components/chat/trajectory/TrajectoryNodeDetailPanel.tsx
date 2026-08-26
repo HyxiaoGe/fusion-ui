@@ -1,9 +1,11 @@
 'use client';
 
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 
 import AdminSafeMarkdown from '@/components/admin/AdminSafeMarkdown';
 import { useTrajectoryLlmNodeDetail } from '@/hooks/useTrajectoryLlmNodeDetail';
+import { useTrajectorySystemPromptNodeDetail } from '@/hooks/useTrajectorySystemPromptNodeDetail';
 import { useTrajectoryToolNodeDetail } from '@/hooks/useTrajectoryToolNodeDetail';
 import {
   buildTrajectoryNodeDetailModel,
@@ -28,8 +30,9 @@ type DetailSection =
   | 'source'
   | 'payload'
   | 'result'
+  | 'prompt'
   | 'timing';
-type RemoteDetailSectionName = 'payload' | 'result' | 'preview' | 'raw';
+type RemoteDetailSectionName = 'payload' | 'result' | 'preview' | 'raw' | 'prompt';
 type DetailRequestStatus = 'idle' | 'loading' | 'ready' | 'failed';
 
 interface PendingWindow {
@@ -40,9 +43,10 @@ interface PendingWindow {
 const TOOL_SECTIONS: readonly DetailSection[] = ['summary', 'payload', 'result', 'timing'];
 const LLM_SECTIONS: readonly DetailSection[] = ['summary', 'preview', 'raw'];
 const MESSAGE_SECTIONS: readonly DetailSection[] = ['summary', 'preview', 'raw', 'source'];
+const SYSTEM_PROMPT_SECTIONS: readonly DetailSection[] = ['prompt', 'summary', 'timing'];
 const LOCAL_SECTIONS: readonly DetailSection[] = ['summary', 'timing'];
 const SUMMARY_ONLY_SECTIONS: readonly DetailSection[] = ['summary'];
-const SECTION_LABELS: Record<DetailSection, string> = {
+const SECTION_LABELS: Record<Exclude<DetailSection, 'prompt'>, string> = {
   summary: '摘要',
   preview: '预览',
   raw: '原始',
@@ -69,7 +73,7 @@ export function TrajectoryNodeDetailPanel({
     >
       {cell ? (
         <TrajectoryNodeDetailContent
-          key={`${conversationId ?? 'no-conversation'}:${cell.key}`}
+          key={`${conversationId ?? 'no-conversation'}:${cell.runId ?? 'no-run'}:${cell.key}`}
           conversationId={conversationId}
           cell={cell}
           span={span}
@@ -95,26 +99,34 @@ function TrajectoryNodeDetailContent({
   span: TrajectorySpan | null;
   relatedCells: readonly TrajectoryCell[];
 }) {
+  const { t } = useTranslation();
   const isUser = cell.type === 'user';
   const isMessage = cell.type === 'message';
   const isTool = cell.type === 'tool';
   const isLlm = cell.type === 'assistant_request';
-  const sections = isUser || isMessage
-    ? MESSAGE_SECTIONS
-    : isTool
-      ? TOOL_SECTIONS
-      : isLlm
-        ? (cell.detailAvailable ? LLM_SECTIONS : SUMMARY_ONLY_SECTIONS)
-        : LOCAL_SECTIONS;
+  const isSystemPrompt = cell.type === 'context' && cell.eventType === 'system_prompt_prepared';
+  const sections = isSystemPrompt
+    ? SYSTEM_PROMPT_SECTIONS
+    : isUser || isMessage
+      ? MESSAGE_SECTIONS
+      : isTool
+        ? TOOL_SECTIONS
+        : isLlm
+          ? (cell.detailAvailable ? LLM_SECTIONS : SUMMARY_ONLY_SECTIONS)
+          : LOCAL_SECTIONS;
   const model = useMemo(
     () => buildTrajectoryNodeDetailModel(cell, span, relatedCells),
     [cell, relatedCells, span],
   );
   const tabsId = useId();
   const tabRefs = useRef<Partial<Record<DetailSection, HTMLButtonElement | null>>>({});
-  const [activeSection, setActiveSection] = useState<DetailSection>('summary');
-  const [detailRequested, setDetailRequested] = useState(false);
-  const [pendingWindow, setPendingWindow] = useState<PendingWindow | null>(null);
+  const [activeSection, setActiveSection] = useState<DetailSection>(isSystemPrompt ? 'prompt' : 'summary');
+  const [detailRequested, setDetailRequested] = useState(isSystemPrompt);
+  const [pendingWindow, setPendingWindow] = useState<PendingWindow | null>(() => (
+    isSystemPrompt
+      ? { deadline: performance.now() + PENDING_RETRY_DEADLINE_MS, requestCount: 1 }
+      : null
+  ));
   const toolDetail = useTrajectoryToolNodeDetail(
     isTool
       ? {
@@ -136,12 +148,16 @@ function TrajectoryNodeDetailContent({
       : null,
     isLlm && cell.detailAvailable && detailRequested,
   );
+  const systemPromptDetail = useTrajectorySystemPromptNodeDetail(
+    isSystemPrompt ? { conversationId, runId: cell.runId } : null,
+    isSystemPrompt && detailRequested,
+  );
   const {
     status: requestStatus,
     response,
     error,
     retry,
-  } = isLlm ? llmDetail : toolDetail;
+  } = isSystemPrompt ? systemPromptDetail : isLlm ? llmDetail : toolDetail;
   const isRemoteSection = needsRemoteDetail(cell, activeSection);
   const pendingStopped = isRemoteSection
     && requestStatus === 'ready'
@@ -236,7 +252,9 @@ function TrajectoryNodeDetailContent({
     <div className="min-w-0">
       <div className="mb-4 min-w-0">
         <p className="text-xs font-medium text-muted-foreground">{model.nodeType}</p>
-        <h2 className="truncate text-base font-semibold text-foreground">{model.title}</h2>
+        <h2 className="truncate text-base font-semibold text-foreground">
+          {isSystemPrompt ? t('trajectory.systemPrompt.title') : model.title}
+        </h2>
       </div>
 
       <div
@@ -263,7 +281,7 @@ function TrajectoryNodeDetailContent({
                 : 'border-transparent text-muted-foreground hover:text-foreground',
             )}
           >
-            {SECTION_LABELS[section]}
+            {section === 'prompt' ? t('trajectory.systemPrompt.body') : SECTION_LABELS[section]}
           </button>
         ))}
       </div>
@@ -323,6 +341,7 @@ function TrajectoryNodeDetailContent({
 }
 
 function needsRemoteDetail(cell: TrajectoryCell, section: DetailSection): boolean {
+  if (cell.type === 'context' && cell.eventType === 'system_prompt_prepared') return section === 'prompt';
   if (cell.type === 'tool') return section === 'payload' || section === 'result';
   if (cell.type === 'assistant_request') return section === 'preview' || section === 'raw';
   return false;
@@ -630,6 +649,8 @@ function RemoteDetailSection({
   pendingStopped: boolean;
   onRetry: () => void;
 }) {
+  const { t } = useTranslation();
+  const isSystemPrompt = section === 'prompt';
   if (requestStatus === 'idle' || requestStatus === 'loading') {
     return <p role="status" className="text-sm text-muted-foreground">正在加载详情</p>;
   }
@@ -647,7 +668,7 @@ function RemoteDetailSection({
     return (
       <div className="space-y-2 text-sm text-muted-foreground">
         <div role="status">
-          <p>详情仍在落账</p>
+          <p>{isSystemPrompt ? t('trajectory.systemPrompt.pending') : '详情仍在落账'}</p>
           {pendingStopped && <p>自动检查已停止</p>}
         </div>
         <RetryButton label="重新检查" onClick={onRetry} />
@@ -655,9 +676,21 @@ function RemoteDetailSection({
     );
   }
   if (response.status === 'not_recorded') {
-    return <p className="text-sm text-muted-foreground">该运行生成时尚未记录 Payload/Result</p>;
+    return (
+      <p className="text-sm text-muted-foreground">
+        {isSystemPrompt ? t('trajectory.systemPrompt.notRecorded') : '该运行生成时尚未记录 Payload/Result'}
+      </p>
+    );
   }
   if (response.status === 'degraded') {
+    if (isSystemPrompt) {
+      const messageKey = response.reason === 'system_prompt_assembly_failed'
+        ? 'assemblyFailed'
+        : response.reason === 'system_prompt_detail_invalid'
+          ? 'bodyInvalid'
+          : 'bodyMissing';
+      return <p className="text-sm text-warn">{t(`trajectory.systemPrompt.${messageKey}`)}</p>;
+    }
     return (
       <p className="text-sm text-warn">
         {response.node_type === 'llm'
@@ -666,6 +699,8 @@ function RemoteDetailSection({
       </p>
     );
   }
+
+  if (isSystemPrompt) return <SystemPromptAvailableDetailSection response={response} />;
 
   const redactedFields = response.redacted_fields ?? [];
   const truncatedFields = response.truncated_fields ?? [];
@@ -694,6 +729,61 @@ function RemoteDetailSection({
         </pre>
       )}
       <DetailWarnings redactedFields={redactedFields} truncatedFields={truncatedFields} />
+    </div>
+  );
+}
+
+function SystemPromptAvailableDetailSection({ response }: { response: TrajectoryNodeDetailResponse }) {
+  const { t } = useTranslation();
+  const [copyStatus, setCopyStatus] = useState<'idle' | 'copied' | 'failed'>('idle');
+  const detail = response.node_type === 'system_prompt'
+    && response.available_sections.includes('prompt')
+    && response.detail && 'sections' in response.detail
+    ? response.detail
+    : null;
+
+  if (
+    !detail
+    || !Array.isArray(detail.sections)
+    || detail.sections.length === 0
+    || !detail.sections.every(section => (
+      section && typeof section.section_id === 'string' && typeof section.content === 'string'
+    ))
+  ) {
+    return <p className="text-sm text-warn">{t('trajectory.systemPrompt.bodyInvalid')}</p>;
+  }
+
+  const fullPrompt = detail.sections.map(section => section.content).join('\n\n');
+
+  async function copyFullPrompt() {
+    try {
+      await navigator.clipboard.writeText(fullPrompt);
+      setCopyStatus('copied');
+    } catch {
+      setCopyStatus('failed');
+    }
+  }
+
+  return (
+    <div className="min-w-0 space-y-4">
+      <button
+        type="button"
+        onClick={copyFullPrompt}
+        className="cursor-pointer rounded-md border border-border px-3 py-1.5 text-sm text-foreground outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring"
+      >
+        {t(`trajectory.systemPrompt.${copyStatus === 'copied' ? 'copiedFull' : 'copyFull'}`)}
+      </button>
+      {copyStatus === 'failed' && (
+        <p role="alert" className="text-sm text-danger">{t('trajectory.systemPrompt.copyFailed')}</p>
+      )}
+      {detail.sections.map((section, index) => (
+        <section key={`${index}:${section.section_id}`} className="min-w-0 space-y-2">
+          <h3 className="text-xs font-medium text-muted-foreground">{section.section_id}</h3>
+          <pre className="whitespace-pre-wrap break-words rounded-md border border-border/60 bg-muted/20 p-3 text-xs text-foreground">
+            {section.content}
+          </pre>
+        </section>
+      ))}
     </div>
   );
 }

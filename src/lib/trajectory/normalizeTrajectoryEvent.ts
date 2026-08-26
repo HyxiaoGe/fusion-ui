@@ -59,7 +59,7 @@ const EVENT_PAYLOAD_FIELDS: Record<string, readonly string[]> = {
   content_block_discarded: ['protocol_version', 'block_id'],
   system_prompt_prepared: [
     'protocol_version', 'status', 'source', 'template_version', 'section_ids',
-    'fingerprint', 'char_count', 'duration_ms', 'error_code', 'message',
+    'fingerprint', 'char_count', 'duration_ms', 'error_code', 'message', 'detail_status',
   ],
   context_status_updated: [
     'protocol_version', 'message_id', 'phase', 'status', 'round_index', 'window_tokens',
@@ -197,6 +197,8 @@ function sanitizePayload(eventType: string, source: Record<string, unknown>): Re
       if (source[field] === null || (typeof source[field] === 'string' && /^[a-f0-9]{64}$/i.test(source[field]))) payload[field] = source[field];
     } else if (eventType === 'system_prompt_prepared' && field === 'char_count') {
       if (source[field] === null || (typeof source[field] === 'number' && Number.isInteger(source[field]) && source[field] >= 0)) payload[field] = source[field];
+    } else if (eventType === 'system_prompt_prepared' && field === 'detail_status') {
+      if (source[field] === null || source[field] === 'available' || source[field] === 'degraded') payload[field] = source[field];
     } else if (eventType === 'system_prompt_prepared' && field === 'message') {
       if (source[field] === null
         || source[field] === '系统提示词组装失败'

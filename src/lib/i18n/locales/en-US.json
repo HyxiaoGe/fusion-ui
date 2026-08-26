@@ -388,6 +388,17 @@
     },
   "trajectory": {
     "systemPrompt": {
+      "title": "System prompt",
+      "body": "Prompt",
+      "copyFull": "Copy full prompt",
+      "copiedFull": "Full prompt copied",
+      "copyFailed": "Copy failed. Please select the prompt text manually.",
+      "loadFailed": "Failed to load the system prompt. Please try again.",
+      "pending": "The system prompt is still being recorded",
+      "notRecorded": "The system prompt was not recorded when this run was created",
+      "assemblyFailed": "System prompt assembly failed; no prompt was generated",
+      "bodyMissing": "The system prompt could not be fully recorded",
+      "bodyInvalid": "The recorded system prompt is invalid and cannot be displayed",
       "ready": "System prompt assembled",
       "failed": "System prompt assembly failed",
       "source": "Source",

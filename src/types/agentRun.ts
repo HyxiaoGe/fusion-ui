@@ -317,6 +317,7 @@ export interface AgentSystemPromptPreparedEvent extends AgentEventEnvelope {
   duration_ms: number;
   error_code?: string | null;
   message?: string | null;
+  detail_status?: 'available' | 'degraded' | null;
 }
 
 export interface AgentLlmRoundStartedEvent extends AgentEventEnvelope {
