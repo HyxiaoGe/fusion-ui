@@ -409,6 +409,32 @@ describe('ChatInput', () => {
     expect(screen.queryByRole('button', { name: /50%/ })).toBeNull();
   });
 
+  it('轨迹视图隐藏上下文入口和已打开弹层，往返不丢失输入草稿', async () => {
+    configureAuthenticatedVisionModel();
+    const onSendMessage = vi.fn();
+    const view = render(<ChatInput onSendMessage={onSendMessage} activeChatId="chat-a" />);
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: '保留这段草稿' } });
+    fireEvent.click(screen.getByTestId('context-status-trigger'));
+    expect(screen.getByRole('dialog', { name: '上下文状态' })).toBeInTheDocument();
+
+    view.rerender(<ChatInput onSendMessage={onSendMessage} activeChatId="chat-a" showContextStatus={false} />);
+    expect(screen.queryByTestId('context-status-row')).toBeNull();
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: '上下文状态' })).toBeNull());
+    expect(screen.getByRole('textbox')).toHaveValue('保留这段草稿');
+
+    view.rerender(<ChatInput onSendMessage={onSendMessage} activeChatId="chat-a" showContextStatus />);
+    expect(screen.getByTestId('context-status-trigger')).toBeInTheDocument();
+    expect(screen.getByRole('textbox')).toHaveValue('保留这段草稿');
+  });
+
+  it('轨迹视图不因聊天自动展开偏好而出现上下文弹层', () => {
+    configureAuthenticatedVisionModel();
+    localStorage.setItem(CONTEXT_STATUS_DEFAULT_OPEN_STORAGE_KEY, 'true');
+    render(<ChatInput onSendMessage={vi.fn()} activeChatId="chat-a" showContextStatus={false} />);
+    expect(screen.queryByTestId('context-status-trigger')).toBeNull();
+    expect(screen.queryByRole('dialog', { name: '上下文状态' })).toBeNull();
+  });
+
   it('窗口已展开时切换到上下文尚未水合或没有用量的对话仍保持展开', async () => {
     configureAuthenticatedVisionModel();
     currentState.conversation.byId = {

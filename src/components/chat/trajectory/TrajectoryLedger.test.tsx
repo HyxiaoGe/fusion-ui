@@ -96,8 +96,8 @@ describe('TrajectoryLedger', () => {
       <TrajectoryLedger
         cells={[
           userCell('user-1', '查询北京天气'),
-          runCell('run-1', 'user-1', 0),
-          runCell('run-2', 'user-1', 1, 'failed'),
+          runCell('run-1', 'user-1', 1),
+          runCell('run-2', 'user-1', 2, 'failed'),
           toolCell('tool-1', 'user-1'),
           userCell('user-2', '继续规划行程'),
         ]}
@@ -123,8 +123,8 @@ describe('TrajectoryLedger', () => {
   });
 
   it('run 主状态与轨迹完整性 badge 独立显示，未水合详情保留固定骨架空间', () => {
-    const completeRun = runCell('run-complete', 'user-1', 0);
-    const loadingRun = runCell('run-loading', 'user-1', 1);
+    const completeRun = runCell('run-complete', 'user-1', 1);
+    const loadingRun = runCell('run-loading', 'user-1', 2);
     if (completeRun.type !== 'run' || loadingRun.type !== 'run') throw new Error('fixture 类型错误');
     completeRun.trajectoryBadge = {
       status: 'degraded',

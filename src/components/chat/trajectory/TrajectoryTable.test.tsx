@@ -50,7 +50,7 @@ function runCell(key: string, userMessageId: string, isHydrated = true): Traject
     completenessSources: ['run-summary'],
     sourceSequences: [],
     summarySource: 'run-summary',
-    attemptIndex: 0,
+    attemptIndex: 1,
     runStatus: 'completed',
     totalSteps: 2,
     totalToolCalls: 1,
@@ -99,7 +99,7 @@ function attemptCell(
     toolCallId,
     toolAttemptId: key,
     toolName: 'web_search',
-    attemptIndex: 0,
+    attemptIndex: 1,
     status,
     events: [],
   };
@@ -163,6 +163,7 @@ describe('TrajectoryTable', () => {
       name: /#2.*第 1 轮.*第 1 次执行.*运行.*2 步.*已完成.*1.25 秒/,
     });
     expect(run).toHaveAttribute('aria-selected', 'true');
+    expect(within(run).getByText('Run 1')).toBeInTheDocument();
     expect(within(run).getByText('1.25 秒')).toHaveClass('tabular-nums');
   });
 

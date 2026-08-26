@@ -51,7 +51,7 @@ function runSummary(overrides: Partial<TrajectoryRunSummary> = {}): TrajectoryRu
     run_id: 'run-1',
     message_id: 'assistant-1',
     turn_message_id: 'user-1',
-    attempt_index: 0,
+    attempt_index: 1,
     status: 'completed',
     trajectory_status: 'complete',
     total_steps: 1,
@@ -493,10 +493,10 @@ describe('TrajectoryTabView', () => {
 
   it('已有 runs 后刷新失败保留旧列表，同时展示 stale alert 并可重试刷新', async () => {
     const store = createStore();
-    const runA = runSummary({ run_id: 'run-a', attempt_index: 0 });
+    const runA = runSummary({ run_id: 'run-a', attempt_index: 1 });
     const runB = runSummary({
       run_id: 'run-b',
-      attempt_index: 1,
+      attempt_index: 2,
       started_at: '2026-08-22T00:00:01.000Z',
       ended_at: '2026-08-22T00:00:01.180Z',
     });
@@ -983,10 +983,10 @@ describe('TrajectoryTabView', () => {
 
   it('inspect A 水合中手选 B 会取消旧请求，A/B 迟到快照都不再消费或抢回选择', async () => {
     const store = createStore();
-    const runA = runSummary({ run_id: 'run-a', attempt_index: 0 });
+    const runA = runSummary({ run_id: 'run-a', attempt_index: 1 });
     const runB = runSummary({
       run_id: 'run-b',
-      attempt_index: 1,
+      attempt_index: 2,
       started_at: '2026-08-22T00:00:01.000Z',
       ended_at: '2026-08-22T00:00:01.180Z',
     });
@@ -1047,10 +1047,10 @@ describe('TrajectoryTabView', () => {
 
   it('新 inspect B 成功后清除 fallback A 的旧提示和高亮', async () => {
     const store = createStore();
-    const runA = runSummary({ run_id: 'run-a', attempt_index: 0 });
+    const runA = runSummary({ run_id: 'run-a', attempt_index: 1 });
     const runB = runSummary({
       run_id: 'run-b',
-      attempt_index: 1,
+      attempt_index: 2,
       started_at: '2026-08-22T00:00:01.000Z',
       ended_at: '2026-08-22T00:00:01.180Z',
     });

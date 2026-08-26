@@ -84,7 +84,7 @@ function runSummary(): TrajectoryRunSummary {
     run_id: 'run-1',
     message_id: 'assistant-1',
     turn_message_id: 'user-1',
-    attempt_index: 0,
+    attempt_index: 1,
     status: 'completed',
     trajectory_status: 'complete',
     total_steps: 1,

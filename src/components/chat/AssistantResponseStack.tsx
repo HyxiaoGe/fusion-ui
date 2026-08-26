@@ -3,6 +3,7 @@
 import { memo } from 'react';
 import type { SearchSourceSummary, StructuredToolResultBlock } from '@/types/conversation';
 import type { AgentRunState } from '@/types/agentRun';
+import type { TrajectoryRunSummary } from '@/types/trajectory';
 import type { TrajectoryBadgeStatus } from '@/lib/trajectory/TrajectoryCellProjection';
 import ReasoningContent from './ReasoningContent';
 import AssistantActivityStatus from './AssistantActivityStatus';
@@ -26,6 +27,7 @@ interface AssistantResponseStackProps {
   };
   activity: AssistantActivity;
   agentRun?: AgentRunState | null;
+  trajectoryRunSummary?: TrajectoryRunSummary;
   trajectoryStatus?: TrajectoryBadgeStatus;
   onInspectTrajectory?: () => void;
   answerEvidence: AnswerEvidenceModel | null;
@@ -47,6 +49,7 @@ function AssistantResponseStack({
   reasoning,
   activity,
   agentRun,
+  trajectoryRunSummary,
   trajectoryStatus = 'unknown',
   onInspectTrajectory,
   answerEvidence,
@@ -84,6 +87,7 @@ function AssistantResponseStack({
         {agentRun ? (
           <TrajectoryStatusLine
             run={agentRun}
+            runSummary={trajectoryRunSummary}
             trajectoryStatus={trajectoryStatus}
             onInspect={onInspectTrajectory}
           />

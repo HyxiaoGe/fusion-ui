@@ -49,6 +49,37 @@ function baseCell(): {
 }
 
 describe('buildTrajectoryNodeDetailModel', () => {
+  it.each([
+    { attemptIndex: 1, expected: 1, expectedMode: 'ordinal' },
+    { attemptIndex: 2, expected: 2, expectedMode: 'ordinal' },
+    { attemptIndex: null, expected: null, expectedMode: null },
+  ])('Run 本地详情使用后端序号 $attemptIndex，未知时不猜测', ({ attemptIndex, expected, expectedMode }) => {
+    const run: Extract<TrajectoryCell, { type: 'run' }> = {
+      ...baseCell(),
+      key: 'run:run-1',
+      type: 'run',
+      summarySource: 'run-summary',
+      attemptIndex,
+      runStatus: 'completed',
+      totalSteps: 1,
+      totalToolCalls: 0,
+      startedAt: '2026-08-26T00:00:00.000Z',
+      endedAt: '2026-08-26T00:00:01.000Z',
+      isSelected: true,
+      isHydrated: true,
+      association: 'explicit',
+      trajectoryBadge: { status: 'complete', source: 'run-summary', reason: null },
+      records: [],
+      spans: [],
+      liveTail: [],
+    };
+
+    expect(buildTrajectoryNodeDetailModel(run, null)).toMatchObject({
+      attemptCount: expected,
+      attemptMode: expectedMode,
+    });
+  });
+
   it('从用户与回答 cell 生成本地摘要和上海时区时间，不依赖节点详情', () => {
     const user: TrajectoryCell = {
       ...baseCell(),
@@ -271,7 +302,11 @@ describe('buildTrajectoryNodeDetailModel', () => {
     expect(model.title).not.toContain('internal-sensitive-id');
   });
 
-  it('真实 tool_attempt span 与 SubtoolCell 身份精确匹配时保留自身 ordinal', () => {
+  it.each([
+    { attemptIndex: 1, expected: 1, expectedMode: 'ordinal' },
+    { attemptIndex: 2, expected: 2, expectedMode: 'ordinal' },
+    { attemptIndex: null, expected: null, expectedMode: null },
+  ])('工具 Attempt 本地详情及精确匹配 span 保留后端序号 $attemptIndex', ({ attemptIndex, expected, expectedMode }) => {
     const attempt: Extract<TrajectoryCell, { type: 'subtool' }> = {
       ...baseCell(),
       key: 'run:run-1:subtool:attempt-sensitive-id',
@@ -280,13 +315,13 @@ describe('buildTrajectoryNodeDetailModel', () => {
       toolCallId: 'tool-1',
       toolAttemptId: 'attempt-sensitive-id',
       toolName: 'web_search',
-      attemptIndex: 1,
+      attemptIndex,
       status: 'success',
       events: [
         event(5, 'tool_attempt_started', '2026-08-23T00:00:01.100Z', {
           tool_attempt_id: 'attempt-sensitive-id',
           tool_name: 'web_search',
-          attempt_index: 1,
+          attempt_index: attemptIndex,
         }),
         event(6, 'tool_attempt_completed', '2026-08-23T00:00:01.140Z', {
           tool_attempt_id: 'attempt-sensitive-id',
@@ -313,15 +348,20 @@ describe('buildTrajectoryNodeDetailModel', () => {
       record_sequences: [5, 6],
     };
 
-    expect(buildTrajectoryNodeDetailModel(attempt, span)).toMatchObject({
+    const localModel = buildTrajectoryNodeDetailModel(attempt, null);
+    const spanModel = buildTrajectoryNodeDetailModel(attempt, span);
+
+    expect([localModel.attemptCount, spanModel.attemptCount]).toEqual([expected, expected]);
+    expect(localModel.attemptMode).toBe(expectedMode);
+    expect(spanModel).toMatchObject({
       title: '工具尝试 · 搜索',
       nodeType: '工具尝试',
       status: '失败',
       summary: '工具尝试',
       duration: '40 毫秒',
       ttft: null,
-      attemptCount: 2,
-      attemptMode: 'ordinal',
+      attemptCount: expected,
+      attemptMode: expectedMode,
       errorSummary: '工具尝试未能完成',
     });
   });
@@ -429,7 +469,7 @@ describe('buildTrajectoryNodeDetailModel', () => {
       nodeType: '工具尝试',
       status: '失败',
       duration: '40 毫秒',
-      attemptCount: 2,
+      attemptCount: 1,
       attemptMode: 'ordinal',
       errorSummary: '工具尝试未能完成',
     });
