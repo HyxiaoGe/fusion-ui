@@ -85,7 +85,8 @@ export type TrajectoryNodeDetailSection =
   | 'timing'
   | 'schema'
   | 'thinking'
-  | 'output';
+  | 'output'
+  | 'prompt';
 
 export type TrajectoryToolNodeDetailSection = Extract<
   TrajectoryNodeDetailSection,
@@ -108,11 +109,18 @@ export interface TrajectoryLlmNodeDetail {
   output_text: string | null;
 }
 
+export interface TrajectorySystemPromptNodeDetail {
+  template_version: string;
+  fingerprint: string;
+  char_count: number;
+  sections: Array<{ section_id: string; content: string }>;
+}
+
 export interface TrajectoryNodeDetailResponse {
   status: TrajectoryNodeDetailStatus;
-  node_type: 'tool' | 'llm';
+  node_type: 'tool' | 'llm' | 'system_prompt';
   available_sections: TrajectoryNodeDetailSection[];
-  detail: TrajectoryToolNodeDetail | TrajectoryLlmNodeDetail | null;
+  detail: TrajectoryToolNodeDetail | TrajectoryLlmNodeDetail | TrajectorySystemPromptNodeDetail | null;
   redacted_fields: string[];
   truncated_fields: string[];
   reason: string | null;

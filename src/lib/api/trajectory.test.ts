@@ -12,12 +12,58 @@ import {
   getTrajectoryLlmNodeDetail,
   getTrajectoryRuns,
   getTrajectorySnapshot,
+  getTrajectorySystemPromptNodeDetail,
   getTrajectoryToolNodeDetail,
 } from './trajectory';
 
 describe('普通用户轨迹 API', () => {
   beforeEach(() => {
     apiRequestMock.mockReset();
+  });
+
+  it('系统提示词正文走普通用户专用详情端点，编码路径、透传取消信号且不写 HTTP 缓存', async () => {
+    const signal = new AbortController().signal;
+    const response = {
+      status: 'available' as const,
+      node_type: 'system_prompt' as const,
+      available_sections: ['summary', 'prompt'] as const,
+      detail: {
+        template_version: 'v1',
+        fingerprint: 'fingerprint-1',
+        char_count: 19,
+        sections: [{ section_id: 'base', content: '  # 原始正文\n\n末行  ' }],
+      },
+      redacted_fields: [],
+      truncated_fields: [],
+      reason: null,
+    };
+    apiRequestMock.mockResolvedValue(response);
+
+    await expect(getTrajectorySystemPromptNodeDetail('conversation/a b', 'run/a b', signal))
+      .resolves.toBe(response);
+    expect(apiRequestMock).toHaveBeenCalledWith(
+      '/api/conversations/conversation%2Fa%20b/runs/run%2Fa%20b/node-detail/system-prompt',
+      { signal, cache: 'no-store' },
+    );
+  });
+
+  it('系统提示词旧记录的 not_recorded 与权限或不存在的 404 保持区分', async () => {
+    const response = {
+      status: 'not_recorded',
+      node_type: 'system_prompt',
+      available_sections: ['summary'],
+      detail: null,
+      redacted_fields: [],
+      truncated_fields: [],
+      reason: 'system_prompt_not_recorded',
+    };
+    const notFound = new ApiError('NOT_FOUND', '会话或轨迹不存在，或无权访问', 'req-404');
+    apiRequestMock.mockResolvedValueOnce(response).mockRejectedValueOnce(notFound);
+
+    await expect(getTrajectorySystemPromptNodeDetail('conversation-1', 'run-legacy'))
+      .resolves.toBe(response);
+    await expect(getTrajectorySystemPromptNodeDetail('conversation-1', 'run-inaccessible'))
+      .rejects.toBe(notFound);
   });
 
   it('通过普通 LLM Detail 端点编码路径并原样返回统一详情信封', async () => {
