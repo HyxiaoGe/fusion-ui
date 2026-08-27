@@ -388,8 +388,9 @@
     },
   "trajectory": {
     "systemPrompt": {
-      "title": "系统提示词",
+      "title": "Run 初始系统提示词",
       "body": "正文",
+      "scopeNote": "这是 Run 创建时保存的初始系统提示词；后续模型请求可能追加语言、修复、研究或总结规则。",
       "copyFull": "复制全文",
       "copiedFull": "已复制全文",
       "copyFailed": "复制失败，请手动选择正文",
@@ -399,14 +400,14 @@
       "assemblyFailed": "系统提示词组装失败，未生成正文",
       "bodyMissing": "系统提示词正文未能完整记录",
       "bodyInvalid": "系统提示词正文记录无效，暂时无法展示",
-      "ready": "系统提示词已组装",
-      "failed": "系统提示词组装失败",
+      "ready": "Run 初始系统提示词已组装",
+      "failed": "Run 初始系统提示词组装失败",
       "source": "来源",
       "template_version": "模板版本",
       "section_ids": "段落",
       "fingerprint": "组装指纹",
       "char_count": "字符数",
-      "requestFingerprint": "实际系统消息指纹"
+      "requestFingerprint": "当轮实际系统消息指纹"
     }
   }
 }

@@ -736,7 +736,7 @@ describe('系统提示词正文', () => {
     getTrajectorySystemPromptNodeDetailMock.mockReturnValue(request.promise);
     renderPanel(systemPromptCell());
 
-    expect(screen.getByRole('heading', { name: '系统提示词' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Run 初始系统提示词' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: '正文' })).toHaveAttribute('aria-selected', 'true');
     expect(screen.getByRole('status')).toHaveTextContent('正在加载详情');
     expect(getTrajectorySystemPromptNodeDetailMock).toHaveBeenCalledWith(
@@ -745,6 +745,9 @@ describe('系统提示词正文', () => {
     await act(async () => request.resolve(systemPromptDetail()));
 
     const body = screen.getByRole('tabpanel', { name: '正文' });
+    expect(screen.getByText(
+      '这是 Run 创建时保存的初始系统提示词；后续模型请求可能追加语言、修复、研究或总结规则。',
+    )).toBeInTheDocument();
     const sections = body.querySelectorAll('pre');
     expect(Array.from(sections, section => section.textContent)).toEqual([
       '  # 原样标题\n\n<policy>不改写 **规则**</policy>\n',
@@ -769,7 +772,9 @@ describe('系统提示词正文', () => {
     expect(screen.queryByText('事件中夹带的正文不能显示')).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('tab', { name: '摘要' }));
-    expect(screen.getByText(status === 'ready' ? '系统提示词已组装' : '系统提示词组装失败')).toBeInTheDocument();
+    expect(screen.getByText(
+      status === 'ready' ? 'Run 初始系统提示词已组装' : 'Run 初始系统提示词组装失败',
+    )).toBeInTheDocument();
     expect(screen.getByText('v-test')).toBeInTheDocument();
     expect(screen.getByText('base · tools')).toBeInTheDocument();
     expect(screen.getByText('a'.repeat(64))).toBeInTheDocument();
