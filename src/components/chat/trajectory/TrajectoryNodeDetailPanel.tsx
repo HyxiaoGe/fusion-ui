@@ -115,8 +115,8 @@ function TrajectoryNodeDetailContent({
           ? (cell.detailAvailable ? LLM_SECTIONS : SUMMARY_ONLY_SECTIONS)
           : LOCAL_SECTIONS;
   const model = useMemo(
-    () => buildTrajectoryNodeDetailModel(cell, span, relatedCells),
-    [cell, relatedCells, span],
+    () => buildTrajectoryNodeDetailModel(cell, span, relatedCells, t),
+    [cell, relatedCells, span, t],
   );
   const tabsId = useId();
   const tabRefs = useRef<Partial<Record<DetailSection, HTMLButtonElement | null>>>({});

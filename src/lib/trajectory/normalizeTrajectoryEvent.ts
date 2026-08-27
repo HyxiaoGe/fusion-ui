@@ -157,6 +157,88 @@ const CAPABILITY_PLAN_MODES = new Set(['auto', 'on', 'off']);
 const ROUTER_VERSION_PATTERN = /^\d{4}-\d{2}-\d{2}\.\d+$/;
 const BUNDLE_FINGERPRINT_PATTERN = /^sha256:[0-9a-f]{64}$/;
 const TOOL_NAME_PATTERN = /^[A-Za-z_][A-Za-z0-9_-]{0,127}$/;
+const MCP_TOOL_ALIAS_PATTERN = /^mcp_[A-Za-z0-9_-]+$/;
+const CAPABILITY_PACKAGE_EXTERNAL_TOOL_NAMES: Record<
+  Exclude<TrajectoryCapabilityPackageId, 'mcp_explicit'>,
+  readonly string[]
+> = {
+  direct: [],
+  transform: [],
+  date: [],
+  fresh_web: ['web_search'],
+  verified_web: ['web_search', 'url_read'],
+  url_read: ['url_read'],
+  weather: ['weather_forecast'],
+  place_discovery: ['local_place_search'],
+  mobility_route: ['route_compare'],
+  flight: ['search_flights'],
+  train: ['search_trains'],
+  travel_air_rail: ['search_flights', 'search_trains'],
+  mobility_intercity: ['route_compare', 'search_flights', 'search_trains'],
+  mixed_itinerary: ['route_compare', 'search_flights', 'search_trains'],
+  deep_research: ['web_search', 'url_read'],
+  knowledge_grounded: [],
+  tools_unavailable: [],
+  clarification_only: [],
+};
+const CAPABILITY_AUTO_PLAN_PACKAGES = new Set<TrajectoryCapabilityPackageId>([
+  'verified_web',
+  'mobility_route',
+  'travel_air_rail',
+  'mobility_intercity',
+  'mixed_itinerary',
+]);
+const FIXED_INCLUDE_CURRENT_DATE: Partial<Record<TrajectoryCapabilityPackageId, boolean>> = {
+  direct: false,
+  transform: false,
+  date: true,
+  fresh_web: true,
+  verified_web: true,
+  url_read: false,
+  weather: true,
+  place_discovery: false,
+  flight: true,
+  train: true,
+  travel_air_rail: true,
+  mobility_intercity: true,
+  mixed_itinerary: true,
+  deep_research: true,
+  clarification_only: false,
+};
+const CAPABILITY_PACKAGE_REASON_CODE_OPTIONS: Record<
+  TrajectoryCapabilityPackageId,
+  readonly (readonly TrajectoryCapabilityReasonCode[])[]
+> = {
+  direct: [
+    ['direct_greeting'],
+    ['assistant_identity_question'],
+    ['stable_knowledge_question'],
+    ['simple_calculation'],
+  ],
+  transform: [['text_transform_request']],
+  date: [['current_date_question']],
+  fresh_web: [['fresh_external_fact']],
+  verified_web: [['verified_source_request']],
+  url_read: [['explicit_url_read']],
+  weather: [['explicit_weather_request']],
+  place_discovery: [['explicit_place_discovery']],
+  mobility_route: [['explicit_route_task'], ['adjacent_route_followup']],
+  flight: [['explicit_flight_request']],
+  train: [['explicit_train_request']],
+  travel_air_rail: [['air_rail_comparison']],
+  mobility_intercity: [['origin_destination_relation', 'intercity_locations']],
+  mixed_itinerary: [['mixed_itinerary_request']],
+  deep_research: [['deep_research_mode']],
+  knowledge_grounded: [['knowledge_grounded_mode']],
+  tools_unavailable: [
+    ['tools_disabled'],
+    ['function_calling_unavailable'],
+    ['search_capability_unavailable'],
+    ['required_tools_unavailable'],
+  ],
+  clarification_only: [['insufficient_capability_signal']],
+  mcp_explicit: [['explicit_authorized_tool_alias']],
+};
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -207,7 +289,7 @@ export function normalizeTrajectoryCapabilityResolution(
     || typeof value.bundle_fingerprint !== 'string'
     || !BUNDLE_FINGERPRINT_PATTERN.test(value.bundle_fingerprint)) return null;
 
-  return {
+  const resolution: TrajectoryCapabilityResolution = {
     schema_version: 1,
     router_version: value.router_version,
     package_id: value.package_id as TrajectoryCapabilityPackageId,
@@ -220,6 +302,62 @@ export function normalizeTrajectoryCapabilityResolution(
     network_boundary_required: value.network_boundary_required,
     bundle_fingerprint: value.bundle_fingerprint,
   };
+  return hasValidCapabilityResolutionSemantics(resolution) ? resolution : null;
+}
+
+function hasValidCapabilityResolutionSemantics(
+  resolution: TrajectoryCapabilityResolution,
+): boolean {
+  const tools = resolution.external_tool_names;
+  if (resolution.package_id === 'mcp_explicit') {
+    if (tools.length !== 1 || !MCP_TOOL_ALIAS_PATTERN.test(tools[0])) return false;
+  } else {
+    const allowedTools = CAPABILITY_PACKAGE_EXTERNAL_TOOL_NAMES[resolution.package_id];
+    if (allowedTools.length === 0 && tools.length > 0) return false;
+    if (allowedTools.length > 0 && tools.length === 0) return false;
+    if (tools.some(tool => !allowedTools.includes(tool))) return false;
+    if (resolution.package_id === 'deep_research'
+      && (tools.length !== allowedTools.length
+        || allowedTools.some(tool => !tools.includes(tool)))) return false;
+  }
+
+  if (resolution.package_id === 'deep_research') {
+    if (resolution.effective_plan_mode !== 'on') return false;
+  } else if (resolution.package_id === 'knowledge_grounded'
+    || resolution.package_id === 'tools_unavailable') {
+    if (resolution.effective_plan_mode !== 'off') return false;
+  } else if (!CAPABILITY_AUTO_PLAN_PACKAGES.has(resolution.package_id)
+    && resolution.effective_plan_mode === 'auto') return false;
+
+  const fixedDate = FIXED_INCLUDE_CURRENT_DATE[resolution.package_id];
+  if (fixedDate !== undefined && resolution.include_current_date !== fixedDate) return false;
+
+  if (resolution.package_id !== 'knowledge_grounded') {
+    const expectedBoundary = resolution.package_id === 'tools_unavailable';
+    if (resolution.network_boundary_required !== expectedBoundary) return false;
+  }
+
+  const allowedReasons = CAPABILITY_PACKAGE_REASON_CODE_OPTIONS[resolution.package_id];
+  if (!allowedReasons.some(reasonCodes => (
+    reasonCodes.length === resolution.reason_codes.length
+    && reasonCodes.every((reasonCode, index) => resolution.reason_codes[index] === reasonCode)
+  ))) return false;
+
+  const allowedConfidence = resolution.package_id === 'mobility_intercity'
+    ? resolution.confidence === 'medium'
+    : resolution.package_id === 'tools_unavailable'
+      ? resolution.confidence === 'high' || resolution.confidence === 'medium'
+      : resolution.package_id === 'clarification_only'
+        ? resolution.confidence === 'low'
+        : resolution.confidence === 'high';
+  if (!allowedConfidence) return false;
+
+  const expectedResolutionMode = resolution.package_id === 'tools_unavailable'
+    ? 'degraded'
+    : resolution.package_id === 'clarification_only'
+      ? 'clarification'
+      : 'routed';
+  return resolution.resolution_mode === expectedResolutionMode;
 }
 
 function nullableString(value: unknown): string | null | undefined {

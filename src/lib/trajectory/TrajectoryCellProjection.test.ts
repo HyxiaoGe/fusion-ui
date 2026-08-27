@@ -104,6 +104,38 @@ function input(overrides: Partial<TrajectoryCellProjectionInput> = {}): Trajecto
 }
 
 describe('TrajectoryCellProjection', () => {
+  it('Run summary 的非法跨字段组合保持未记录，不展示为执行事实', () => {
+    const unavailable: TrajectoryCapabilityResolution = {
+      ...capabilityResolution('fresh_web', 'web_search'),
+      package_id: 'tools_unavailable',
+      confidence: 'high',
+      resolution_mode: 'degraded',
+      reason_codes: ['tools_disabled'],
+      effective_plan_mode: 'off',
+      include_current_date: false,
+      network_boundary_required: true,
+    };
+    const invalidMcp: TrajectoryCapabilityResolution = {
+      ...capabilityResolution('fresh_web', 'web_search'),
+      package_id: 'mcp_explicit',
+      reason_codes: ['explicit_authorized_tool_alias'],
+      include_current_date: false,
+    };
+    const unavailableRun = runSummary('invalid-unavailable', { capability_resolution: unavailable });
+    const mcpRun = runSummary('invalid-mcp', { capability_resolution: invalidMcp });
+    const projection = projectTrajectoryCells(input({
+      runs: [unavailableRun, mcpRun],
+      runSummariesById: {
+        'invalid-unavailable': unavailableRun,
+        'invalid-mcp': mcpRun,
+      },
+    }));
+
+    expect(projection.unassociatedCells.filter(cell => cell.type === 'run').map(cell => (
+      cell.capabilityResolution
+    ))).toEqual([null, null]);
+  });
+
   it('Run summary 的合法能力路由优先于冲突的实时事件', () => {
     const summary = runSummary('summary-first', {
       capability_resolution: capabilityResolution('weather', 'weather_forecast'),

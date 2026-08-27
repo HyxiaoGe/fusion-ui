@@ -72,6 +72,135 @@ describe('normalizeTrajectoryEvent', () => {
     expect(normalizeTrajectoryCapabilityResolution(value)).toBeNull();
   });
 
+  it.each([
+    ['不可用工具包仍公告工具', {
+      ...capabilityResolution,
+      package_id: 'tools_unavailable',
+      confidence: 'high',
+      resolution_mode: 'degraded',
+      reason_codes: ['tools_disabled'],
+      external_tool_names: ['web_search'],
+      effective_plan_mode: 'off',
+      include_current_date: false,
+      network_boundary_required: true,
+    }],
+    ['显式 MCP 包使用普通工具', {
+      ...capabilityResolution,
+      package_id: 'mcp_explicit',
+      reason_codes: ['explicit_authorized_tool_alias'],
+      external_tool_names: ['web_search'],
+      include_current_date: false,
+    }],
+    ['Deep Research 缺少读取工具', {
+      ...capabilityResolution,
+      package_id: 'deep_research',
+      reason_codes: ['deep_research_mode'],
+      external_tool_names: ['web_search'],
+      effective_plan_mode: 'on',
+    }],
+    ['天气包使用 auto 计划', { ...capabilityResolution, effective_plan_mode: 'auto' }],
+    ['实时搜索缺少日期', {
+      ...capabilityResolution,
+      package_id: 'fresh_web',
+      reason_codes: ['fresh_external_fact'],
+      external_tool_names: ['web_search'],
+      include_current_date: false,
+    }],
+    ['天气包要求网络降级边界', { ...capabilityResolution, network_boundary_required: true }],
+    ['天气包使用其他原因码', { ...capabilityResolution, reason_codes: ['stable_knowledge_question'] }],
+    ['天气包使用低置信度', { ...capabilityResolution, confidence: 'low' }],
+    ['天气包标记为降级', { ...capabilityResolution, resolution_mode: 'degraded' }],
+  ])('拒绝跨字段语义矛盾：%s', (_label, value) => {
+    expect(normalizeTrajectoryCapabilityResolution(value)).toBeNull();
+  });
+
+  it('接受 API 可生成的零工具降级包与单一 MCP alias 包', () => {
+    expect(normalizeTrajectoryCapabilityResolution({
+      ...capabilityResolution,
+      package_id: 'tools_unavailable',
+      confidence: 'medium',
+      resolution_mode: 'degraded',
+      reason_codes: ['required_tools_unavailable'],
+      external_tool_names: [],
+      effective_plan_mode: 'off',
+      include_current_date: true,
+      network_boundary_required: true,
+    })).not.toBeNull();
+    expect(normalizeTrajectoryCapabilityResolution({
+      ...capabilityResolution,
+      package_id: 'mcp_explicit',
+      reason_codes: ['explicit_authorized_tool_alias'],
+      external_tool_names: ['mcp_calendar_lookup'],
+      include_current_date: false,
+    })).not.toBeNull();
+  });
+
+  it.each([
+    ['direct', { package_id: 'direct', reason_codes: ['direct_greeting'], external_tool_names: [], include_current_date: false }],
+    ['transform', { package_id: 'transform', reason_codes: ['text_transform_request'], external_tool_names: [], include_current_date: false }],
+    ['date', { package_id: 'date', reason_codes: ['current_date_question'], external_tool_names: [] }],
+    ['fresh_web', { package_id: 'fresh_web', reason_codes: ['fresh_external_fact'], external_tool_names: ['web_search'] }],
+    ['verified_web', { package_id: 'verified_web', reason_codes: ['verified_source_request'], external_tool_names: ['web_search', 'url_read'], effective_plan_mode: 'auto' }],
+    ['url_read', { package_id: 'url_read', reason_codes: ['explicit_url_read'], external_tool_names: ['url_read'], include_current_date: false }],
+    ['weather', {}],
+    ['place_discovery', { package_id: 'place_discovery', reason_codes: ['explicit_place_discovery'], external_tool_names: ['local_place_search'], include_current_date: false }],
+    ['mobility_route', { package_id: 'mobility_route', reason_codes: ['explicit_route_task'], external_tool_names: ['route_compare'], effective_plan_mode: 'auto', include_current_date: false }],
+    ['flight', { package_id: 'flight', reason_codes: ['explicit_flight_request'], external_tool_names: ['search_flights'] }],
+    ['train', { package_id: 'train', reason_codes: ['explicit_train_request'], external_tool_names: ['search_trains'] }],
+    ['travel_air_rail', { package_id: 'travel_air_rail', reason_codes: ['air_rail_comparison'], external_tool_names: ['search_flights', 'search_trains'], effective_plan_mode: 'auto' }],
+    ['mobility_intercity', { package_id: 'mobility_intercity', confidence: 'medium', reason_codes: ['origin_destination_relation', 'intercity_locations'], external_tool_names: ['route_compare', 'search_flights', 'search_trains'], effective_plan_mode: 'auto' }],
+    ['mixed_itinerary', { package_id: 'mixed_itinerary', reason_codes: ['mixed_itinerary_request'], external_tool_names: ['route_compare', 'search_flights', 'search_trains'], effective_plan_mode: 'auto' }],
+    ['deep_research', { package_id: 'deep_research', reason_codes: ['deep_research_mode'], external_tool_names: ['web_search', 'url_read'], effective_plan_mode: 'on' }],
+    ['knowledge_grounded', { package_id: 'knowledge_grounded', reason_codes: ['knowledge_grounded_mode'], external_tool_names: [], effective_plan_mode: 'off', include_current_date: false }],
+    ['tools_unavailable', { package_id: 'tools_unavailable', resolution_mode: 'degraded', reason_codes: ['tools_disabled'], external_tool_names: [], effective_plan_mode: 'off', include_current_date: false, network_boundary_required: true }],
+    ['clarification_only', { package_id: 'clarification_only', confidence: 'low', resolution_mode: 'clarification', reason_codes: ['insufficient_capability_signal'], external_tool_names: [], effective_plan_mode: 'off', include_current_date: false }],
+    ['mcp_explicit', { package_id: 'mcp_explicit', reason_codes: ['explicit_authorized_tool_alias'], external_tool_names: ['mcp_calendar_lookup'], include_current_date: false }],
+  ])('接受 API 契约中的合法 %s 能力包', (_packageId, overrides) => {
+    expect(normalizeTrajectoryCapabilityResolution({
+      ...capabilityResolution,
+      ...overrides,
+    })).not.toBeNull();
+  });
+
+  it.each([
+    ['tools_unavailable', {
+      ...capabilityResolution,
+      package_id: 'tools_unavailable',
+      confidence: 'high',
+      resolution_mode: 'degraded',
+      reason_codes: ['tools_disabled'],
+      external_tool_names: ['web_search'],
+      effective_plan_mode: 'off',
+      include_current_date: false,
+      network_boundary_required: true,
+    }],
+    ['mcp_explicit', {
+      ...capabilityResolution,
+      package_id: 'mcp_explicit',
+      reason_codes: ['explicit_authorized_tool_alias'],
+      external_tool_names: ['web_search'],
+      include_current_date: false,
+    }],
+  ])('SSE 丢弃 %s 的非法跨字段组合', (_label, resolution) => {
+    const event = normalizeSseTrajectoryEvent({
+      type: 'run_started',
+      schema_version: 1,
+      run_id: 'run-invalid',
+      parent_run_id: null,
+      step_id: null,
+      parent_step_id: null,
+      tool_call_id: null,
+      sequence: 0,
+      trace_id: 'trace-invalid',
+      ts: Date.parse(timestamp) / 1000,
+      tools: ['web_search'],
+      capability_resolution: resolution,
+    });
+
+    expect(event).not.toBeNull();
+    expect(event?.payload).not.toHaveProperty('capability_resolution');
+  });
+
   it('缺失 schema_version 的已知 SSE 事件按 legacy 版本归一化', () => {
     const tools = ['weather'];
     const normalized = normalizeSseTrajectoryEvent({
