@@ -104,6 +104,38 @@ function input(overrides: Partial<TrajectoryCellProjectionInput> = {}): Trajecto
 }
 
 describe('TrajectoryCellProjection', () => {
+  it('Run summary 拒绝倒序工具并保留合法 canonical 子序列', () => {
+    const reversed: TrajectoryCapabilityResolution = {
+      ...capabilityResolution('fresh_web', 'web_search'),
+      package_id: 'mobility_intercity',
+      confidence: 'medium',
+      reason_codes: ['origin_destination_relation', 'intercity_locations'],
+      external_tool_names: ['search_trains', 'route_compare'],
+      effective_plan_mode: 'auto',
+    };
+    const canonical: TrajectoryCapabilityResolution = {
+      ...reversed,
+      external_tool_names: ['route_compare', 'search_trains'],
+    };
+    const reversedRun = runSummary('reversed-summary', { capability_resolution: reversed });
+    const canonicalRun = runSummary('canonical-summary', { capability_resolution: canonical });
+    const projection = projectTrajectoryCells(input({
+      runs: [reversedRun, canonicalRun],
+      runSummariesById: {
+        'reversed-summary': reversedRun,
+        'canonical-summary': canonicalRun,
+      },
+    }));
+    const runs = projection.unassociatedCells.filter(
+      (cell): cell is Extract<TrajectoryCell, { type: 'run' }> => cell.type === 'run',
+    );
+
+    expect(Object.fromEntries(runs.map(cell => [cell.runId, cell.capabilityResolution]))).toEqual({
+      'reversed-summary': null,
+      'canonical-summary': canonical,
+    });
+  });
+
   it('Run summary 的非法跨字段组合保持未记录，不展示为执行事实', () => {
     const unavailable: TrajectoryCapabilityResolution = {
       ...capabilityResolution('fresh_web', 'web_search'),

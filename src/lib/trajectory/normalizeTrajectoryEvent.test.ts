@@ -201,6 +201,97 @@ describe('normalizeTrajectoryEvent', () => {
     expect(event?.payload).not.toHaveProperty('capability_resolution');
   });
 
+  it.each([
+    ['verified_web', {
+      ...capabilityResolution,
+      package_id: 'verified_web',
+      reason_codes: ['verified_source_request'],
+      external_tool_names: ['url_read', 'web_search'],
+      effective_plan_mode: 'auto',
+    }],
+    ['deep_research', {
+      ...capabilityResolution,
+      package_id: 'deep_research',
+      reason_codes: ['deep_research_mode'],
+      external_tool_names: ['url_read', 'web_search'],
+      effective_plan_mode: 'on',
+    }],
+    ['travel_air_rail', {
+      ...capabilityResolution,
+      package_id: 'travel_air_rail',
+      reason_codes: ['air_rail_comparison'],
+      external_tool_names: ['search_trains', 'search_flights'],
+      effective_plan_mode: 'auto',
+    }],
+    ['mobility_intercity', {
+      ...capabilityResolution,
+      package_id: 'mobility_intercity',
+      confidence: 'medium',
+      reason_codes: ['origin_destination_relation', 'intercity_locations'],
+      external_tool_names: ['search_trains', 'route_compare'],
+      effective_plan_mode: 'auto',
+    }],
+    ['mixed_itinerary', {
+      ...capabilityResolution,
+      package_id: 'mixed_itinerary',
+      reason_codes: ['mixed_itinerary_request'],
+      external_tool_names: ['search_trains', 'route_compare'],
+      effective_plan_mode: 'auto',
+    }],
+  ])('normalizer 与 SSE 都拒绝倒序 %s 工具', (_label, resolution) => {
+    expect(normalizeTrajectoryCapabilityResolution(resolution)).toBeNull();
+    const event = normalizeSseTrajectoryEvent({
+      type: 'run_started', schema_version: 1, run_id: 'run-reversed',
+      parent_run_id: null, step_id: null, parent_step_id: null, tool_call_id: null,
+      sequence: 0, trace_id: 'trace-reversed', ts: Date.parse(timestamp) / 1000,
+      tools: resolution.external_tool_names,
+      capability_resolution: resolution,
+    });
+    expect(event?.payload).not.toHaveProperty('capability_resolution');
+  });
+
+  it.each([
+    ['verified_web', {
+      ...capabilityResolution,
+      package_id: 'verified_web',
+      reason_codes: ['verified_source_request'],
+      external_tool_names: ['url_read'],
+      effective_plan_mode: 'auto',
+    }],
+    ['travel_air_rail', {
+      ...capabilityResolution,
+      package_id: 'travel_air_rail',
+      reason_codes: ['air_rail_comparison'],
+      external_tool_names: ['search_trains'],
+      effective_plan_mode: 'auto',
+    }],
+    ['mobility_intercity', {
+      ...capabilityResolution,
+      package_id: 'mobility_intercity',
+      confidence: 'medium',
+      reason_codes: ['origin_destination_relation', 'intercity_locations'],
+      external_tool_names: ['route_compare', 'search_trains'],
+      effective_plan_mode: 'auto',
+    }],
+    ['mixed_itinerary', {
+      ...capabilityResolution,
+      package_id: 'mixed_itinerary',
+      reason_codes: ['mixed_itinerary_request'],
+      external_tool_names: ['route_compare', 'search_flights'],
+      effective_plan_mode: 'auto',
+    }],
+  ])('normalizer 与 SSE 保留合法 %s canonical 子序列', (_label, resolution) => {
+    expect(normalizeTrajectoryCapabilityResolution(resolution)).toEqual(resolution);
+    const event = normalizeSseTrajectoryEvent({
+      type: 'run_started', schema_version: 1, run_id: 'run-canonical',
+      parent_run_id: null, step_id: null, parent_step_id: null, tool_call_id: null,
+      sequence: 0, trace_id: 'trace-canonical', ts: Date.parse(timestamp) / 1000,
+      tools: resolution.external_tool_names,
+      capability_resolution: resolution,
+    });
+    expect(event?.payload.capability_resolution).toEqual(resolution);
+  });
+
   it('缺失 schema_version 的已知 SSE 事件按 legacy 版本归一化', () => {
     const tools = ['weather'];
     const normalized = normalizeSseTrajectoryEvent({

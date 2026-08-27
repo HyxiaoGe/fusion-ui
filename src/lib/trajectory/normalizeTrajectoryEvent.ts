@@ -316,6 +316,9 @@ function hasValidCapabilityResolutionSemantics(
     if (allowedTools.length === 0 && tools.length > 0) return false;
     if (allowedTools.length > 0 && tools.length === 0) return false;
     if (tools.some(tool => !allowedTools.includes(tool))) return false;
+    const canonicalTools = allowedTools.filter(tool => tools.includes(tool));
+    if (tools.length !== canonicalTools.length
+      || tools.some((tool, index) => tool !== canonicalTools[index])) return false;
     if (resolution.package_id === 'deep_research'
       && (tools.length !== allowedTools.length
         || allowedTools.some(tool => !tools.includes(tool)))) return false;
