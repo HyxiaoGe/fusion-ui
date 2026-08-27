@@ -280,6 +280,27 @@ describe('normalizeTrajectoryEvent', () => {
       external_tool_names: ['route_compare', 'search_flights'],
       effective_plan_mode: 'auto',
     }],
+    ['mixed_itinerary_weather_flight', {
+      ...capabilityResolution,
+      package_id: 'mixed_itinerary',
+      reason_codes: ['mixed_itinerary_request'],
+      external_tool_names: ['weather_forecast', 'search_flights'],
+      effective_plan_mode: 'auto',
+    }],
+    ['mixed_itinerary_weather_place', {
+      ...capabilityResolution,
+      package_id: 'mixed_itinerary',
+      reason_codes: ['mixed_itinerary_request'],
+      external_tool_names: ['weather_forecast', 'local_place_search'],
+      effective_plan_mode: 'auto',
+    }],
+    ['mixed_itinerary_weather_route', {
+      ...capabilityResolution,
+      package_id: 'mixed_itinerary',
+      reason_codes: ['mixed_itinerary_request'],
+      external_tool_names: ['weather_forecast', 'route_compare'],
+      effective_plan_mode: 'auto',
+    }],
   ])('normalizer 与 SSE 保留合法 %s canonical 子序列', (_label, resolution) => {
     expect(normalizeTrajectoryCapabilityResolution(resolution)).toEqual(resolution);
     const event = normalizeSseTrajectoryEvent({
