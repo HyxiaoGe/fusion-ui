@@ -930,10 +930,14 @@ it.each(['ready', 'failed'])('同 Run 的系统提示词 %s 只有一行', async
   const cells = [...projection.cells, ...projection.unassociatedCells].filter(cell => cell.type === 'context');
   expect(cells).toHaveLength(1);
   expect(cells[0]).toMatchObject({ contextId: 'system_prompt', payload: { status } });
-  expect(getTrajectoryCellPresentation(cells[0]).summary).toBe(status === 'ready' ? '系统提示词已组装' : '系统提示词组装失败');
+  expect(getTrajectoryCellPresentation(cells[0]).summary).toBe(
+    status === 'ready' ? 'Run 初始系统提示词已组装' : 'Run 初始系统提示词组装失败',
+  );
   expect(buildTrajectoryNodeDetailModel(cells[0], null).summaryFields).toContainEqual({ label: '来源', value: 'code' });
   await i18n.changeLanguage('en-US');
-  expect(getTrajectoryCellPresentation(cells[0]).summary).toBe(status === 'ready' ? 'System prompt assembled' : 'System prompt assembly failed');
+  expect(getTrajectoryCellPresentation(cells[0]).summary).toBe(
+    status === 'ready' ? 'Initial Run system prompt assembled' : 'Initial Run system prompt assembly failed',
+  );
 });
 
 
@@ -948,7 +952,7 @@ it('请求详情只显示对应 started 的实际指纹，旧请求不推断', a
       event('r', 1, 'llm_round_started', { payload: { llm_round_id: 'other', system_prompt_fingerprint: 'b'.repeat(64) } }),
       event('r', 2, 'llm_round_started', { payload: { llm_round_id: 'selected', system_prompt_fingerprint: 'c'.repeat(64) } })],
   };
-  const field = { label: '实际系统消息指纹', value: 'c'.repeat(64) };
+  const field = { label: '当轮实际系统消息指纹', value: 'c'.repeat(64) };
   expect(buildTrajectoryNodeDetailModel(base, null).summaryFields).toContainEqual(field);
   expect(buildTrajectoryNodeDetailModel({ ...base, llmRoundId: 'old' }, null).summaryFields.some(item => item.label === field.label)).toBe(false);
 });

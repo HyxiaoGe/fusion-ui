@@ -388,8 +388,9 @@
     },
   "trajectory": {
     "systemPrompt": {
-      "title": "System prompt",
+      "title": "Initial Run system prompt",
       "body": "Prompt",
+      "scopeNote": "This is the initial system prompt saved when the Run was created. Later model requests may append language, repair, research, or summary rules.",
       "copyFull": "Copy full prompt",
       "copiedFull": "Full prompt copied",
       "copyFailed": "Copy failed. Please select the prompt text manually.",
@@ -399,14 +400,14 @@
       "assemblyFailed": "System prompt assembly failed; no prompt was generated",
       "bodyMissing": "The system prompt could not be fully recorded",
       "bodyInvalid": "The recorded system prompt is invalid and cannot be displayed",
-      "ready": "System prompt assembled",
-      "failed": "System prompt assembly failed",
+      "ready": "Initial Run system prompt assembled",
+      "failed": "Initial Run system prompt assembly failed",
       "source": "Source",
       "template_version": "Template version",
       "section_ids": "Sections",
       "fingerprint": "Assembly fingerprint",
       "char_count": "Character count",
-      "requestFingerprint": "Effective system message fingerprint"
+      "requestFingerprint": "Effective system message fingerprint for this round"
     }
   }
 }

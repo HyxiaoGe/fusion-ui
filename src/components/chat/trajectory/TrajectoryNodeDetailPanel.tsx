@@ -766,6 +766,9 @@ function SystemPromptAvailableDetailSection({ response }: { response: Trajectory
 
   return (
     <div className="min-w-0 space-y-4">
+      <p className="text-sm text-muted-foreground">
+        {t('trajectory.systemPrompt.scopeNote')}
+      </p>
       <button
         type="button"
         onClick={copyFullPrompt}
