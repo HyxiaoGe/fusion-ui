@@ -408,6 +408,54 @@
       "fingerprint": "Assembly fingerprint",
       "char_count": "Character count",
       "requestFingerprint": "Effective system message fingerprint for this round"
+    },
+    "capabilityResolution": {
+      "title": "Capability routing",
+      "notRecorded": "Capability routing was not recorded for this historical run",
+      "package": "Capability package",
+      "confidence": "Confidence",
+      "resolutionMode": "Routing result",
+      "initialExternalTools": "Initial external tools for Run",
+      "planMode": "Plan mode",
+      "routerVersion": "Router version",
+      "bundleFingerprint": "Capability bundle fingerprint",
+      "none": "None",
+      "confidenceValues": {
+        "high": "High",
+        "medium": "Medium",
+        "low": "Low"
+      },
+      "resolutionModes": {
+        "routed": "Routed",
+        "degraded": "Degraded",
+        "clarification": "Clarification required"
+      },
+      "planModes": {
+        "auto": "Auto",
+        "on": "On",
+        "off": "Off"
+      },
+      "packages": {
+        "direct": "Direct answer",
+        "transform": "Text transformation",
+        "date": "Date",
+        "fresh_web": "Fresh web search",
+        "verified_web": "Verified web research",
+        "url_read": "URL reading",
+        "weather": "Weather",
+        "place_discovery": "Place discovery",
+        "mobility_route": "Route planning",
+        "flight": "Flights",
+        "train": "Trains",
+        "travel_air_rail": "Air and rail comparison",
+        "mobility_intercity": "Intercity travel",
+        "mixed_itinerary": "Mixed itinerary",
+        "deep_research": "Deep research",
+        "knowledge_grounded": "Knowledge grounded answer",
+        "tools_unavailable": "Tools unavailable",
+        "clarification_only": "Clarification only",
+        "mcp_explicit": "Explicit MCP tool"
+      }
     }
   }
 }

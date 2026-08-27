@@ -1,3 +1,68 @@
+export type TrajectoryCapabilityPackageId =
+  | 'direct'
+  | 'transform'
+  | 'date'
+  | 'fresh_web'
+  | 'verified_web'
+  | 'url_read'
+  | 'weather'
+  | 'place_discovery'
+  | 'mobility_route'
+  | 'flight'
+  | 'train'
+  | 'travel_air_rail'
+  | 'mobility_intercity'
+  | 'mixed_itinerary'
+  | 'deep_research'
+  | 'knowledge_grounded'
+  | 'tools_unavailable'
+  | 'clarification_only'
+  | 'mcp_explicit';
+
+export type TrajectoryCapabilityReasonCode =
+  | 'direct_greeting'
+  | 'assistant_identity_question'
+  | 'stable_knowledge_question'
+  | 'simple_calculation'
+  | 'text_transform_request'
+  | 'current_date_question'
+  | 'fresh_external_fact'
+  | 'verified_source_request'
+  | 'explicit_url_read'
+  | 'explicit_weather_request'
+  | 'explicit_place_discovery'
+  | 'explicit_route_task'
+  | 'explicit_flight_request'
+  | 'explicit_train_request'
+  | 'air_rail_comparison'
+  | 'mixed_itinerary_request'
+  | 'origin_destination_relation'
+  | 'intercity_locations'
+  | 'adjacent_route_followup'
+  | 'deep_research_mode'
+  | 'knowledge_grounded_mode'
+  | 'tools_disabled'
+  | 'function_calling_unavailable'
+  | 'search_capability_unavailable'
+  | 'required_tools_unavailable'
+  | 'explicit_authorized_tool_alias'
+  | 'insufficient_capability_signal';
+
+/** Run 级能力路由的受控 wire DTO。 */
+export interface TrajectoryCapabilityResolution {
+  schema_version: 1;
+  router_version: string;
+  package_id: TrajectoryCapabilityPackageId;
+  confidence: 'high' | 'medium' | 'low';
+  resolution_mode: 'routed' | 'degraded' | 'clarification';
+  reason_codes: TrajectoryCapabilityReasonCode[];
+  external_tool_names: string[];
+  effective_plan_mode: 'auto' | 'on' | 'off';
+  include_current_date: boolean;
+  network_boundary_required: boolean;
+  bundle_fingerprint: string;
+}
+
 /** P1 普通用户轨迹读取端点的 wire DTO；字段保持后端 snake_case。 */
 export interface TrajectoryRunSummary {
   run_id: string;
@@ -13,6 +78,8 @@ export interface TrajectoryRunSummary {
   ended_at: string | null;
   llm_detail_schema_version: number | null;
   llm_round_count: number;
+  /** 旧 API/缓存可能缺失；新历史 Run 会显式返回 null。 */
+  capability_resolution?: TrajectoryCapabilityResolution | null;
 }
 
 export interface TrajectoryRunListResponse {

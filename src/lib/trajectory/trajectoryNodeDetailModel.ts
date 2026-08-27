@@ -235,6 +235,50 @@ function cellSummaryFields(cell: TrajectoryCell): TrajectoryNodeSummaryField[] {
       },
     ];
   }
+  if (cell.type === 'run') {
+    const resolution = cell.capabilityResolution;
+    if (!resolution) {
+      return [{
+        label: i18n.t('trajectory.capabilityResolution.title'),
+        value: i18n.t('trajectory.capabilityResolution.notRecorded'),
+      }];
+    }
+    const toolNames = resolution.external_tool_names.length > 0
+      ? resolution.external_tool_names.map(toolName => (
+        `${getToolMeta(toolName).label} (${toolName})`
+      )).join(' · ')
+      : i18n.t('trajectory.capabilityResolution.none');
+    return [
+      {
+        label: i18n.t('trajectory.capabilityResolution.package'),
+        value: `${i18n.t(`trajectory.capabilityResolution.packages.${resolution.package_id}`)} · ${resolution.package_id}`,
+      },
+      {
+        label: i18n.t('trajectory.capabilityResolution.confidence'),
+        value: i18n.t(`trajectory.capabilityResolution.confidenceValues.${resolution.confidence}`),
+      },
+      {
+        label: i18n.t('trajectory.capabilityResolution.resolutionMode'),
+        value: i18n.t(`trajectory.capabilityResolution.resolutionModes.${resolution.resolution_mode}`),
+      },
+      {
+        label: i18n.t('trajectory.capabilityResolution.initialExternalTools'),
+        value: toolNames,
+      },
+      {
+        label: i18n.t('trajectory.capabilityResolution.planMode'),
+        value: i18n.t(`trajectory.capabilityResolution.planModes.${resolution.effective_plan_mode}`),
+      },
+      {
+        label: i18n.t('trajectory.capabilityResolution.routerVersion'),
+        value: resolution.router_version,
+      },
+      {
+        label: i18n.t('trajectory.capabilityResolution.bundleFingerprint'),
+        value: `${resolution.bundle_fingerprint.slice(0, 19)}…`,
+      },
+    ];
+  }
   if (cell.type === 'context' && cell.eventType === 'system_prompt_prepared') {
     return ['source', 'template_version', 'section_ids', 'fingerprint', 'char_count'].flatMap(key => {
       const value = cell.payload[key];

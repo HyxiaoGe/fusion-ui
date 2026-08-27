@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import i18n from '@/lib/i18n';
 import type { Message } from '@/types/conversation';
 import type { TrajectoryRunSummary, TrajectorySpan } from '@/types/trajectory';
 
@@ -49,6 +50,80 @@ function baseCell(): {
 }
 
 describe('buildTrajectoryNodeDetailModel', () => {
+  it('Run 详情展示能力包、路由状态与可辨识的初始外部工具', async () => {
+    await i18n.changeLanguage('zh-CN');
+    const run: Extract<TrajectoryCell, { type: 'run' }> = {
+      ...baseCell(),
+      key: 'run:run-1',
+      type: 'run',
+      summarySource: 'run-summary',
+      attemptIndex: 1,
+      runStatus: 'completed',
+      totalSteps: 1,
+      totalToolCalls: 1,
+      startedAt: '2026-08-26T00:00:00.000Z',
+      endedAt: '2026-08-26T00:00:01.000Z',
+      isSelected: true,
+      isHydrated: true,
+      association: 'explicit',
+      trajectoryBadge: { status: 'complete', source: 'run-summary', reason: null },
+      capabilityResolution: {
+        schema_version: 1,
+        router_version: '2026-08-27.1',
+        package_id: 'weather',
+        confidence: 'high',
+        resolution_mode: 'routed',
+        reason_codes: ['explicit_weather_request'],
+        external_tool_names: ['weather_forecast'],
+        effective_plan_mode: 'off',
+        include_current_date: true,
+        network_boundary_required: false,
+        bundle_fingerprint: `sha256:${'a'.repeat(64)}`,
+      },
+      records: [],
+      spans: [],
+      liveTail: [],
+    };
+
+    expect(buildTrajectoryNodeDetailModel(run, null).summaryFields).toEqual([
+      { label: '能力包', value: '天气 · weather' },
+      { label: '置信度', value: '高' },
+      { label: '路由结果', value: '已路由' },
+      { label: 'Run 初始外部工具', value: '查询天气 (weather_forecast)' },
+      { label: '计划模式', value: '关闭' },
+      { label: '路由器版本', value: '2026-08-27.1' },
+      { label: '能力包指纹', value: `sha256:${'a'.repeat(12)}…` },
+    ]);
+  });
+
+  it('老 Run 精确显示能力路由未记录且不展示推断字段', async () => {
+    await i18n.changeLanguage('zh-CN');
+    const run: Extract<TrajectoryCell, { type: 'run' }> = {
+      ...baseCell(),
+      key: 'run:run-1',
+      type: 'run',
+      summarySource: 'run-summary',
+      attemptIndex: null,
+      runStatus: 'completed',
+      totalSteps: 1,
+      totalToolCalls: 1,
+      startedAt: null,
+      endedAt: null,
+      isSelected: true,
+      isHydrated: true,
+      association: 'explicit',
+      trajectoryBadge: { status: 'legacy', source: 'run-summary', reason: null },
+      capabilityResolution: null,
+      records: [event(0, 'run_started', '2026-08-23T00:00:00.000Z', { tools: ['web_search'] })],
+      spans: [],
+      liveTail: [],
+    };
+
+    expect(buildTrajectoryNodeDetailModel(run, null).summaryFields).toEqual([
+      { label: '能力路由', value: '该历史运行未记录能力路由' },
+    ]);
+  });
+
   it.each([
     { attemptIndex: 1, expected: 1, expectedMode: 'ordinal' },
     { attemptIndex: 2, expected: 2, expectedMode: 'ordinal' },

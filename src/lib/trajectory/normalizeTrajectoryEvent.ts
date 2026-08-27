@@ -1,3 +1,9 @@
+import type {
+  TrajectoryCapabilityPackageId,
+  TrajectoryCapabilityReasonCode,
+  TrajectoryCapabilityResolution,
+} from '@/types/trajectory';
+
 export interface NormalizedTrajectoryEvent {
   runId: string;
   sequence: number;
@@ -19,7 +25,7 @@ const SECRET_PATTERN = /\b(api[_-]?key|authorization|access[_-]?token|token|pass
 const ISO_TIMESTAMP_PATTERN = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.(\d+))?(Z|[+-](\d{2}):(\d{2}))$/;
 
 const EVENT_PAYLOAD_FIELDS: Record<string, readonly string[]> = {
-  run_started: ['conversation_id', 'message_id', 'task_id', 'model', 'tools'],
+  run_started: ['conversation_id', 'message_id', 'task_id', 'model', 'tools', 'capability_resolution'],
   step_started: ['step_number'],
   tool_call_started: ['tool_name', 'plan_item_id'],
   tool_call_delta: ['tool_name'],
@@ -82,9 +88,138 @@ const EVIDENCE_FIELDS = new Set([
   'used_by_final_answer', 'citation_index',
 ]);
 const LIST_FIELDS = new Set(['tools', 'key_findings', 'source_refs', 'section_ids']);
+const CAPABILITY_RESOLUTION_FIELDS = new Set([
+  'schema_version',
+  'router_version',
+  'package_id',
+  'confidence',
+  'resolution_mode',
+  'reason_codes',
+  'external_tool_names',
+  'effective_plan_mode',
+  'include_current_date',
+  'network_boundary_required',
+  'bundle_fingerprint',
+]);
+const CAPABILITY_PACKAGE_IDS = new Set<TrajectoryCapabilityPackageId>([
+  'direct',
+  'transform',
+  'date',
+  'fresh_web',
+  'verified_web',
+  'url_read',
+  'weather',
+  'place_discovery',
+  'mobility_route',
+  'flight',
+  'train',
+  'travel_air_rail',
+  'mobility_intercity',
+  'mixed_itinerary',
+  'deep_research',
+  'knowledge_grounded',
+  'tools_unavailable',
+  'clarification_only',
+  'mcp_explicit',
+]);
+const CAPABILITY_REASON_CODES = new Set<TrajectoryCapabilityReasonCode>([
+  'direct_greeting',
+  'assistant_identity_question',
+  'stable_knowledge_question',
+  'simple_calculation',
+  'text_transform_request',
+  'current_date_question',
+  'fresh_external_fact',
+  'verified_source_request',
+  'explicit_url_read',
+  'explicit_weather_request',
+  'explicit_place_discovery',
+  'explicit_route_task',
+  'explicit_flight_request',
+  'explicit_train_request',
+  'air_rail_comparison',
+  'mixed_itinerary_request',
+  'origin_destination_relation',
+  'intercity_locations',
+  'adjacent_route_followup',
+  'deep_research_mode',
+  'knowledge_grounded_mode',
+  'tools_disabled',
+  'function_calling_unavailable',
+  'search_capability_unavailable',
+  'required_tools_unavailable',
+  'explicit_authorized_tool_alias',
+  'insufficient_capability_signal',
+]);
+const CAPABILITY_CONFIDENCE = new Set(['high', 'medium', 'low']);
+const CAPABILITY_RESOLUTION_MODES = new Set(['routed', 'degraded', 'clarification']);
+const CAPABILITY_PLAN_MODES = new Set(['auto', 'on', 'off']);
+const ROUTER_VERSION_PATTERN = /^\d{4}-\d{2}-\d{2}\.\d+$/;
+const BUNDLE_FINGERPRINT_PATTERN = /^sha256:[0-9a-f]{64}$/;
+const TOOL_NAME_PATTERN = /^[A-Za-z_][A-Za-z0-9_-]{0,127}$/;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function isUniqueEnumList<T extends string>(
+  value: unknown,
+  allowed: ReadonlySet<T>,
+  minLength: number,
+  maxLength: number,
+): value is T[] {
+  return Array.isArray(value)
+    && value.length >= minLength
+    && value.length <= maxLength
+    && value.every(item => typeof item === 'string' && allowed.has(item as T))
+    && new Set(value).size === value.length;
+}
+
+/** 将实时与历史来源统一收敛为同一个有界能力路由对象。 */
+export function normalizeTrajectoryCapabilityResolution(
+  value: unknown,
+): TrajectoryCapabilityResolution | null {
+  if (!isRecord(value)) return null;
+  const keys = Object.keys(value);
+  if (keys.length !== CAPABILITY_RESOLUTION_FIELDS.size
+    || keys.some(key => !CAPABILITY_RESOLUTION_FIELDS.has(key))) return null;
+  if (value.schema_version !== 1
+    || typeof value.router_version !== 'string'
+    || value.router_version.length > 32
+    || !ROUTER_VERSION_PATTERN.test(value.router_version)
+    || typeof value.package_id !== 'string'
+    || !CAPABILITY_PACKAGE_IDS.has(value.package_id as TrajectoryCapabilityPackageId)
+    || typeof value.confidence !== 'string'
+    || !CAPABILITY_CONFIDENCE.has(value.confidence)
+    || typeof value.resolution_mode !== 'string'
+    || !CAPABILITY_RESOLUTION_MODES.has(value.resolution_mode)
+    || !isUniqueEnumList(value.reason_codes, CAPABILITY_REASON_CODES, 1, 4)
+    || !Array.isArray(value.external_tool_names)
+    || value.external_tool_names.length > 3
+    || value.external_tool_names.some(tool => (
+      typeof tool !== 'string' || !TOOL_NAME_PATTERN.test(tool) || tool === 'update_plan'
+    ))
+    || new Set(value.external_tool_names).size !== value.external_tool_names.length
+    || typeof value.effective_plan_mode !== 'string'
+    || !CAPABILITY_PLAN_MODES.has(value.effective_plan_mode)
+    || typeof value.include_current_date !== 'boolean'
+    || typeof value.network_boundary_required !== 'boolean'
+    || typeof value.bundle_fingerprint !== 'string'
+    || !BUNDLE_FINGERPRINT_PATTERN.test(value.bundle_fingerprint)) return null;
+
+  return {
+    schema_version: 1,
+    router_version: value.router_version,
+    package_id: value.package_id as TrajectoryCapabilityPackageId,
+    confidence: value.confidence as TrajectoryCapabilityResolution['confidence'],
+    resolution_mode: value.resolution_mode as TrajectoryCapabilityResolution['resolution_mode'],
+    reason_codes: [...value.reason_codes],
+    external_tool_names: [...value.external_tool_names],
+    effective_plan_mode: value.effective_plan_mode as TrajectoryCapabilityResolution['effective_plan_mode'],
+    include_current_date: value.include_current_date,
+    network_boundary_required: value.network_boundary_required,
+    bundle_fingerprint: value.bundle_fingerprint,
+  };
 }
 
 function nullableString(value: unknown): string | null | undefined {
@@ -203,6 +338,9 @@ function sanitizePayload(eventType: string, source: Record<string, unknown>): Re
       if (source[field] === null
         || source[field] === '系统提示词组装失败'
         || source[field] === '系统提示词组装失败，请稍后重试。') payload[field] = source[field];
+    } else if (field === 'capability_resolution') {
+      const resolution = normalizeTrajectoryCapabilityResolution(source[field]);
+      if (resolution) payload[field] = resolution;
     } else if (field === 'items') payload[field] = sanitizePlanItems(source[field]);
     else if (field === 'item') payload[field] = sanitizePlanItem(source[field]);
     else if (field === 'evidence') payload[field] = sanitizeEvidence(source[field]);

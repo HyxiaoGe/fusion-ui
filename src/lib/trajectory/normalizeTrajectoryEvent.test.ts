@@ -1,13 +1,77 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  normalizeTrajectoryCapabilityResolution,
   normalizeSseTrajectoryEvent,
   normalizeTrajectoryRecord,
 } from './normalizeTrajectoryEvent';
 
 const timestamp = '2026-08-22T00:00:00.000Z';
 
+const capabilityResolution = {
+  schema_version: 1,
+  router_version: '2026-08-27.1',
+  package_id: 'weather',
+  confidence: 'high',
+  resolution_mode: 'routed',
+  reason_codes: ['explicit_weather_request'],
+  external_tool_names: ['weather_forecast'],
+  effective_plan_mode: 'off',
+  include_current_date: true,
+  network_boundary_required: false,
+  bundle_fingerprint: `sha256:${'a'.repeat(64)}`,
+};
+
 describe('normalizeTrajectoryEvent', () => {
+  it('实时与历史 run_started 只保留完整合法的能力路由对象', () => {
+    const live = normalizeSseTrajectoryEvent({
+      type: 'run_started',
+      schema_version: 1,
+      run_id: 'run-1',
+      parent_run_id: null,
+      step_id: null,
+      parent_step_id: null,
+      tool_call_id: null,
+      sequence: 0,
+      trace_id: 'trace-1',
+      ts: Date.parse(timestamp) / 1000,
+      tools: ['weather_forecast'],
+      capability_resolution: capabilityResolution,
+    });
+    const durable = normalizeTrajectoryRecord('run-1', {
+      sequence: 0,
+      event_type: 'run_started',
+      schema_version: 1,
+      timestamp,
+      step_id: null,
+      tool_call_id: null,
+      parent_step_id: null,
+      trace_id: 'trace-1',
+      payload: {
+        type: 'run_started',
+        run_id: 'run-1',
+        tools: ['weather_forecast'],
+        capability_resolution: capabilityResolution,
+      },
+    });
+
+    expect(live?.payload.capability_resolution).toEqual(capabilityResolution);
+    expect(durable?.payload.capability_resolution).toEqual(capabilityResolution);
+    expect(live?.payload.capability_resolution).not.toBe(capabilityResolution);
+    expect(durable).toEqual(live);
+  });
+
+  it.each([
+    ['额外字段', { ...capabilityResolution, raw_query: '北京天气' }],
+    ['非法工具', { ...capabilityResolution, external_tool_names: ['update_plan'] }],
+    ['超界工具', { ...capabilityResolution, external_tool_names: ['a', 'b', 'c', 'd'] }],
+    ['重复理由', { ...capabilityResolution, reason_codes: ['explicit_weather_request', 'explicit_weather_request'] }],
+    ['非法版本', { ...capabilityResolution, router_version: 'latest' }],
+    ['非法指纹', { ...capabilityResolution, bundle_fingerprint: 'a'.repeat(64) }],
+  ])('拒绝%s的能力路由对象', (_label, value) => {
+    expect(normalizeTrajectoryCapabilityResolution(value)).toBeNull();
+  });
+
   it('缺失 schema_version 的已知 SSE 事件按 legacy 版本归一化', () => {
     const tools = ['weather'];
     const normalized = normalizeSseTrajectoryEvent({
