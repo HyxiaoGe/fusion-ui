@@ -408,6 +408,54 @@
       "fingerprint": "组装指纹",
       "char_count": "字符数",
       "requestFingerprint": "当轮实际系统消息指纹"
+    },
+    "capabilityResolution": {
+      "title": "能力路由",
+      "notRecorded": "该历史运行未记录能力路由",
+      "package": "能力包",
+      "confidence": "置信度",
+      "resolutionMode": "路由结果",
+      "initialExternalTools": "Run 初始外部工具",
+      "planMode": "计划模式",
+      "routerVersion": "路由器版本",
+      "bundleFingerprint": "能力包指纹",
+      "none": "无",
+      "confidenceValues": {
+        "high": "高",
+        "medium": "中",
+        "low": "低"
+      },
+      "resolutionModes": {
+        "routed": "已路由",
+        "degraded": "已降级",
+        "clarification": "等待澄清"
+      },
+      "planModes": {
+        "auto": "自动",
+        "on": "开启",
+        "off": "关闭"
+      },
+      "packages": {
+        "direct": "直接回答",
+        "transform": "文本转换",
+        "date": "日期",
+        "fresh_web": "实时搜索",
+        "verified_web": "查证搜索",
+        "url_read": "网页读取",
+        "weather": "天气",
+        "place_discovery": "地点发现",
+        "mobility_route": "路线规划",
+        "flight": "航班",
+        "train": "火车",
+        "travel_air_rail": "空铁比较",
+        "mobility_intercity": "跨城出行",
+        "mixed_itinerary": "综合行程",
+        "deep_research": "深度研究",
+        "knowledge_grounded": "知识库回答",
+        "tools_unavailable": "工具不可用",
+        "clarification_only": "仅澄清",
+        "mcp_explicit": "显式 MCP 工具"
+      }
     }
   }
 }

@@ -5,7 +5,10 @@ import { describe, expect, it } from 'vitest';
 
 import type { Message } from '@/types/conversation';
 import type { NormalizedTrajectoryEvent } from './normalizeTrajectoryEvent';
-import type { TrajectoryRunSummary } from '@/types/trajectory';
+import type {
+  TrajectoryCapabilityResolution,
+  TrajectoryRunSummary,
+} from '@/types/trajectory';
 import {
   projectTrajectoryCells,
   type TrajectoryCell,
@@ -13,6 +16,27 @@ import {
 } from './TrajectoryCellProjection';
 
 const timestamp = '2026-08-22T00:00:00.000Z';
+
+function capabilityResolution(
+  packageId: 'weather' | 'fresh_web',
+  toolName: 'weather_forecast' | 'web_search',
+): TrajectoryCapabilityResolution {
+  return {
+    schema_version: 1 as const,
+    router_version: '2026-08-27.1',
+    package_id: packageId,
+    confidence: 'high' as const,
+    resolution_mode: 'routed' as const,
+    reason_codes: [
+      packageId === 'weather' ? 'explicit_weather_request' : 'fresh_external_fact',
+    ],
+    external_tool_names: [toolName],
+    effective_plan_mode: 'off' as const,
+    include_current_date: true,
+    network_boundary_required: false,
+    bundle_fingerprint: `sha256:${(packageId === 'weather' ? 'a' : 'b').repeat(64)}`,
+  };
+}
 
 function message(id: string, role: Message['role'], agentRun: Message['agent_run'] = null): Message {
   return {
@@ -80,6 +104,172 @@ function input(overrides: Partial<TrajectoryCellProjectionInput> = {}): Trajecto
 }
 
 describe('TrajectoryCellProjection', () => {
+  it('Run summary 拒绝倒序工具并保留合法 canonical 子序列', () => {
+    const reversed: TrajectoryCapabilityResolution = {
+      ...capabilityResolution('fresh_web', 'web_search'),
+      package_id: 'mobility_intercity',
+      confidence: 'medium',
+      reason_codes: ['origin_destination_relation', 'intercity_locations'],
+      external_tool_names: ['search_trains', 'route_compare'],
+      effective_plan_mode: 'auto',
+    };
+    const canonical: TrajectoryCapabilityResolution = {
+      ...reversed,
+      external_tool_names: ['route_compare', 'search_trains'],
+    };
+    const reversedRun = runSummary('reversed-summary', { capability_resolution: reversed });
+    const canonicalRun = runSummary('canonical-summary', { capability_resolution: canonical });
+    const projection = projectTrajectoryCells(input({
+      runs: [reversedRun, canonicalRun],
+      runSummariesById: {
+        'reversed-summary': reversedRun,
+        'canonical-summary': canonicalRun,
+      },
+    }));
+    const runs = projection.unassociatedCells.filter(
+      (cell): cell is Extract<TrajectoryCell, { type: 'run' }> => cell.type === 'run',
+    );
+
+    expect(Object.fromEntries(runs.map(cell => [cell.runId, cell.capabilityResolution]))).toEqual({
+      'reversed-summary': null,
+      'canonical-summary': canonical,
+    });
+  });
+
+  it('Run summary 的非法跨字段组合保持未记录，不展示为执行事实', () => {
+    const unavailable: TrajectoryCapabilityResolution = {
+      ...capabilityResolution('fresh_web', 'web_search'),
+      package_id: 'tools_unavailable',
+      confidence: 'high',
+      resolution_mode: 'degraded',
+      reason_codes: ['tools_disabled'],
+      effective_plan_mode: 'off',
+      include_current_date: false,
+      network_boundary_required: true,
+    };
+    const invalidMcp: TrajectoryCapabilityResolution = {
+      ...capabilityResolution('fresh_web', 'web_search'),
+      package_id: 'mcp_explicit',
+      reason_codes: ['explicit_authorized_tool_alias'],
+      include_current_date: false,
+    };
+    const unavailableRun = runSummary('invalid-unavailable', { capability_resolution: unavailable });
+    const mcpRun = runSummary('invalid-mcp', { capability_resolution: invalidMcp });
+    const projection = projectTrajectoryCells(input({
+      runs: [unavailableRun, mcpRun],
+      runSummariesById: {
+        'invalid-unavailable': unavailableRun,
+        'invalid-mcp': mcpRun,
+      },
+    }));
+
+    expect(projection.unassociatedCells.filter(cell => cell.type === 'run').map(cell => (
+      cell.capabilityResolution
+    ))).toEqual([null, null]);
+  });
+
+  it('Run summary 的合法能力路由优先于冲突的实时事件', () => {
+    const summary = runSummary('summary-first', {
+      capability_resolution: capabilityResolution('weather', 'weather_forecast'),
+    });
+    const projection = projectTrajectoryCells(input({
+      runs: [summary],
+      runSummariesById: { 'summary-first': summary },
+      liveEventsByRunId: {
+        'summary-first': [event('summary-first', 0, 'run_started', {
+          payload: {
+            tools: ['web_search'],
+            capability_resolution: capabilityResolution('fresh_web', 'web_search'),
+          },
+        })],
+      },
+    }));
+
+    expect(projection.unassociatedCells[0]).toMatchObject({
+      type: 'run',
+      capabilityResolution: {
+        package_id: 'weather',
+        external_tool_names: ['weather_forecast'],
+      },
+    });
+  });
+
+  it('Run summary 尚未返回能力路由时使用当前 Run 的合法 run_started 值', () => {
+    const summary = runSummary('live-only');
+    const projection = projectTrajectoryCells(input({
+      runs: [summary],
+      runSummariesById: { 'live-only': summary },
+      liveEventsByRunId: {
+        'live-only': [event('live-only', 0, 'run_started', {
+          payload: {
+            tools: ['web_search'],
+            capability_resolution: capabilityResolution('fresh_web', 'web_search'),
+          },
+        })],
+      },
+    }));
+
+    expect(projection.unassociatedCells[0]).toMatchObject({
+      type: 'run',
+      capabilityResolution: {
+        package_id: 'fresh_web',
+        external_tool_names: ['web_search'],
+      },
+    });
+  });
+
+  it('显式 null 的历史 Run 不从 run_started tools、能力路由或 Prompt 元数据反推', () => {
+    const summary = runSummary('legacy-resolution', { capability_resolution: null });
+    const projection = projectTrajectoryCells(input({
+      runs: [summary],
+      runSummariesById: { 'legacy-resolution': summary },
+      liveEventsByRunId: {
+        'legacy-resolution': [
+          event('legacy-resolution', 0, 'run_started', {
+            payload: {
+              tools: ['web_search'],
+              capability_resolution: capabilityResolution('fresh_web', 'web_search'),
+            },
+          }),
+          event('legacy-resolution', 1, 'system_prompt_prepared', {
+            payload: { section_ids: ['tool_usage_contract'], fingerprint: 'c'.repeat(64) },
+          }),
+        ],
+      },
+    }));
+
+    expect(projection.unassociatedCells[0]).toMatchObject({
+      type: 'run',
+      capabilityResolution: null,
+    });
+  });
+
+  it('同一会话的两个 Run 分别保留自己的能力包与初始工具', () => {
+    const weather = runSummary('weather-run', {
+      capability_resolution: capabilityResolution('weather', 'weather_forecast'),
+    });
+    const web = runSummary('web-run', {
+      capability_resolution: capabilityResolution('fresh_web', 'web_search'),
+    });
+    const projection = projectTrajectoryCells(input({
+      runs: [weather, web],
+      runSummariesById: { 'weather-run': weather, 'web-run': web },
+      selectedRunId: 'web-run',
+    }));
+    const runCells = projection.unassociatedCells.filter(
+      (cell): cell is Extract<TrajectoryCell, { type: 'run' }> => cell.type === 'run',
+    );
+
+    expect(runCells.map(cell => [
+      cell.runId,
+      cell.capabilityResolution?.package_id,
+      cell.capabilityResolution?.external_tool_names,
+    ])).toEqual([
+      ['weather-run', 'weather', ['weather_forecast']],
+      ['web-run', 'fresh_web', ['web_search']],
+    ]);
+  });
+
   it('按新协议分别将 turn_message_id join 到 user、message_id join 到 assistant，并稳定排列同 turn attempts', () => {
     const messages = [
       message('user-turn-1', 'user'),

@@ -1,7 +1,14 @@
 import type { TrajectorySnapshotCacheEntry } from '@/redux/slices/trajectorySlice';
 import type { Message } from '@/types/conversation';
-import type { TrajectoryRunSummary, TrajectorySpan } from '@/types/trajectory';
-import type { NormalizedTrajectoryEvent } from './normalizeTrajectoryEvent';
+import type {
+  TrajectoryCapabilityResolution,
+  TrajectoryRunSummary,
+  TrajectorySpan,
+} from '@/types/trajectory';
+import {
+  normalizeTrajectoryCapabilityResolution,
+  type NormalizedTrajectoryEvent,
+} from './normalizeTrajectoryEvent';
 
 export type TrajectoryCompletenessSource =
   | 'message'
@@ -72,6 +79,8 @@ export interface RunCell extends TrajectoryCellBase {
   isHydrated: boolean;
   association: TrajectoryJoinStrategy;
   trajectoryBadge: TrajectoryBadge;
+  /** 手写 legacy 投影可能缺失；正式投影始终写入合法对象或 null。 */
+  capabilityResolution?: TrajectoryCapabilityResolution | null;
   records: NormalizedTrajectoryEvent[];
   spans: TrajectorySpan[];
   liveTail: NormalizedTrajectoryEvent[];
@@ -192,6 +201,8 @@ interface ProjectedRun {
   llmDetailSchemaVersion: number | null;
   llmRoundCount: number;
   summarySource: RunCell['summarySource'];
+  capabilityResolution: TrajectoryCapabilityResolution | null;
+  capabilityResolutionRecorded: boolean;
 }
 
 interface DetailContext {
@@ -297,6 +308,8 @@ function collectProjectedRuns(input: TrajectoryCellProjectionInput): ProjectedRu
       llmDetailSchemaVersion: null,
       llmRoundCount: 0,
       summarySource: 'message.agent_run',
+      capabilityResolution: null,
+      capabilityResolutionRecorded: false,
     });
   }
 
@@ -304,6 +317,10 @@ function collectProjectedRuns(input: TrajectoryCellProjectionInput): ProjectedRu
 }
 
 function fromRunSummary(summary: TrajectoryRunSummary): ProjectedRun {
+  const capabilityResolutionRecorded = Object.prototype.hasOwnProperty.call(
+    summary,
+    'capability_resolution',
+  );
   return {
     runId: summary.run_id,
     messageId: summary.message_id,
@@ -318,6 +335,8 @@ function fromRunSummary(summary: TrajectoryRunSummary): ProjectedRun {
     llmDetailSchemaVersion: summary.llm_detail_schema_version,
     llmRoundCount: summary.llm_round_count,
     summarySource: 'run-summary',
+    capabilityResolution: normalizeTrajectoryCapabilityResolution(summary.capability_resolution),
+    capabilityResolutionRecorded,
   };
 }
 
@@ -489,17 +508,18 @@ function appendRunCells(
     const join = joinsByRunId.get(run.runId);
     if (!join) continue;
     const snapshot = input.snapshotsByRunId[run.runId];
+    const liveEvents = input.liveEventsByRunId[run.runId] ?? [];
     const isSelected = input.selectedRunId === run.runId;
     const detail = isSelected && snapshot
       ? createDetailContext(
         run,
         join,
         snapshot,
-        input.liveEventsByRunId[run.runId] ?? [],
+        liveEvents,
         requestOffsets.get(run.runId) ?? 0,
       )
       : null;
-    const runCell = createRunCell(run, join, snapshot, isSelected, detail);
+    const runCell = createRunCell(run, join, snapshot, liveEvents, isSelected, detail);
     target.push(runCell);
     if (detail) target.push(...projectDetailCells(detail, runCell));
   }
@@ -547,6 +567,7 @@ function createRunCell(
   run: ProjectedRun,
   join: TrajectoryRunJoin,
   snapshot: TrajectorySnapshotCacheEntry | undefined,
+  liveEvents: NormalizedTrajectoryEvent[],
   isSelected: boolean,
   detail: DetailContext | null,
 ): RunCell {
@@ -579,10 +600,30 @@ function createRunCell(
     isHydrated: snapshot !== undefined,
     association: join.strategy,
     trajectoryBadge: deriveTrajectoryBadge(run, snapshot),
+    capabilityResolution: resolveCapabilityResolution(run, snapshot, liveEvents),
     records: detail?.durableEvents ?? [],
     spans: detail?.snapshot.spans ?? [],
     liveTail: detail?.liveTail ?? [],
   };
+}
+
+function resolveCapabilityResolution(
+  run: ProjectedRun,
+  snapshot: TrajectorySnapshotCacheEntry | undefined,
+  liveEvents: readonly NormalizedTrajectoryEvent[],
+): TrajectoryCapabilityResolution | null {
+  if (run.capabilityResolutionRecorded) return run.capabilityResolution;
+
+  if (snapshot && Object.prototype.hasOwnProperty.call(snapshot.run, 'capability_resolution')) {
+    return normalizeTrajectoryCapabilityResolution(snapshot.run.capability_resolution);
+  }
+
+  const events = [...(snapshot?.events ?? []), ...liveEvents];
+  for (const event of events) {
+    if (event.eventType !== 'run_started') continue;
+    return normalizeTrajectoryCapabilityResolution(event.payload.capability_resolution);
+  }
+  return null;
 }
 
 function deriveTrajectoryBadge(

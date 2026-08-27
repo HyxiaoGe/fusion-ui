@@ -1,6 +1,7 @@
 import i18n from '@/lib/i18n';
 import type { TrajectorySpan } from '@/types/trajectory';
 import { getToolMeta } from '@/lib/agent/toolRegistry';
+import type { TFunction } from 'i18next';
 
 import type { NormalizedTrajectoryEvent } from './normalizeTrajectoryEvent';
 import type { TrajectoryCell } from './TrajectoryCellProjection';
@@ -65,10 +66,11 @@ export function buildTrajectoryNodeDetailModel(
   cell: TrajectoryCell,
   span: TrajectorySpan | null,
   relatedCells: readonly TrajectoryCell[] = [],
+  translate: TFunction = i18n.t,
 ): TrajectoryNodeDetailModel {
   const presentation = getTrajectoryCellPresentation(cell);
   const events = cellEvents(cell);
-  if (span) return buildSpanDetailModel(cell, span, events);
+  if (span) return buildSpanDetailModel(cell, span, events, translate);
 
   return {
     title: presentation.kindLabel,
@@ -82,7 +84,7 @@ export function buildTrajectoryNodeDetailModel(
     attemptCount: attemptCount(cell, relatedCells),
     attemptMode: cellAttemptMode(cell, relatedCells),
     errorSummary: cellError(cell, events),
-    summaryFields: cellSummaryFields(cell),
+    summaryFields: cellSummaryFields(cell, translate),
     diagnostics: cellDiagnostics(cell),
   };
 }
@@ -91,6 +93,7 @@ function buildSpanDetailModel(
   cell: TrajectoryCell,
   span: TrajectorySpan,
   cellEvents: readonly NormalizedTrajectoryEvent[],
+  translate: TFunction,
 ): TrajectoryNodeDetailModel {
   const sequences = new Set(span.record_sequences);
   const events = cellEvents.filter(event => sequences.has(event.sequence));
@@ -110,7 +113,7 @@ function buildSpanDetailModel(
     attemptCount: attemptOrdinal,
     attemptMode: attemptOrdinal === null ? null : 'ordinal',
     errorSummary: spanError(span, events),
-    summaryFields: cellSummaryFields(cell),
+    summaryFields: cellSummaryFields(cell, translate),
     diagnostics: spanDiagnostics(span),
   };
 }
@@ -193,7 +196,10 @@ function localTtft(
   return latestNumber(events, 'ttft_ms');
 }
 
-function cellSummaryFields(cell: TrajectoryCell): TrajectoryNodeSummaryField[] {
+function cellSummaryFields(
+  cell: TrajectoryCell,
+  translate: TFunction,
+): TrajectoryNodeSummaryField[] {
   if (cell.type === 'user' || cell.type === 'message') {
     const fields: TrajectoryNodeSummaryField[] = [
       { label: '来源', value: cell.type === 'user' ? '用户' : '助手' },
@@ -235,11 +241,55 @@ function cellSummaryFields(cell: TrajectoryCell): TrajectoryNodeSummaryField[] {
       },
     ];
   }
+  if (cell.type === 'run') {
+    const resolution = cell.capabilityResolution;
+    if (!resolution) {
+      return [{
+        label: translate('trajectory.capabilityResolution.title'),
+        value: translate('trajectory.capabilityResolution.notRecorded'),
+      }];
+    }
+    const toolNames = resolution.external_tool_names.length > 0
+      ? resolution.external_tool_names.map(toolName => (
+        `${getToolMeta(toolName).label} (${toolName})`
+      )).join(' · ')
+      : translate('trajectory.capabilityResolution.none');
+    return [
+      {
+        label: translate('trajectory.capabilityResolution.package'),
+        value: `${translate(`trajectory.capabilityResolution.packages.${resolution.package_id}`)} · ${resolution.package_id}`,
+      },
+      {
+        label: translate('trajectory.capabilityResolution.confidence'),
+        value: translate(`trajectory.capabilityResolution.confidenceValues.${resolution.confidence}`),
+      },
+      {
+        label: translate('trajectory.capabilityResolution.resolutionMode'),
+        value: translate(`trajectory.capabilityResolution.resolutionModes.${resolution.resolution_mode}`),
+      },
+      {
+        label: translate('trajectory.capabilityResolution.initialExternalTools'),
+        value: toolNames,
+      },
+      {
+        label: translate('trajectory.capabilityResolution.planMode'),
+        value: translate(`trajectory.capabilityResolution.planModes.${resolution.effective_plan_mode}`),
+      },
+      {
+        label: translate('trajectory.capabilityResolution.routerVersion'),
+        value: resolution.router_version,
+      },
+      {
+        label: translate('trajectory.capabilityResolution.bundleFingerprint'),
+        value: `${resolution.bundle_fingerprint.slice(0, 19)}…`,
+      },
+    ];
+  }
   if (cell.type === 'context' && cell.eventType === 'system_prompt_prepared') {
     return ['source', 'template_version', 'section_ids', 'fingerprint', 'char_count'].flatMap(key => {
       const value = cell.payload[key];
       return value === undefined || value === null ? [] : [{
-        label: i18n.t(`trajectory.systemPrompt.${key}`),
+        label: translate(`trajectory.systemPrompt.${key}`),
         value: Array.isArray(value) ? value.join(' · ') : String(value),
       }];
     });
@@ -252,7 +302,7 @@ function cellSummaryFields(cell: TrajectoryCell): TrajectoryNodeSummaryField[] {
     },
   ];
   const fingerprint = cell.events.find(event => event.eventType === 'llm_round_started' && event.payload.llm_round_id === cell.llmRoundId)?.payload.system_prompt_fingerprint;
-  if (typeof fingerprint === 'string') fields.push({ label: i18n.t('trajectory.systemPrompt.requestFingerprint'), value: fingerprint });
+  if (typeof fingerprint === 'string') fields.push({ label: translate('trajectory.systemPrompt.requestFingerprint'), value: fingerprint });
   const model = [cell.provider, cell.model].filter(Boolean).join(' · ');
   if (model) fields.push({ label: '模型', value: model });
   for (const [label, value] of [
