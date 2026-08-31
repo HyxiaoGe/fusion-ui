@@ -294,6 +294,62 @@ function cellSummaryFields(
       }];
     });
   }
+  if (cell.type === 'context' && cell.eventType === 'skills_resolved') {
+    const status = typeof cell.payload.status === 'string' ? cell.payload.status : 'not_selected';
+    const skills = Array.isArray(cell.payload.skills)
+      ? cell.payload.skills.filter((skill): skill is Record<string, unknown> => (
+          typeof skill === 'object' && skill !== null && !Array.isArray(skill)
+        ))
+      : [];
+    const fields: TrajectoryNodeSummaryField[] = [
+      {
+        label: translate('trajectory.skills.status'),
+        value: translate(`trajectory.skills.statusValues.${status}`),
+      },
+      {
+        label: translate('trajectory.skills.activationSource'),
+        value: translate('trajectory.skills.activationSources.capability_package'),
+      },
+    ];
+    if (Array.isArray(cell.payload.requested_skill_ids) && cell.payload.requested_skill_ids.length > 0) {
+      fields.push({
+        label: translate('trajectory.skills.requestedSkills'),
+        value: cell.payload.requested_skill_ids.filter(skillId => typeof skillId === 'string').join(' · '),
+      });
+    }
+    for (const skill of skills) {
+      if (typeof skill.skill_id === 'string' && typeof skill.version === 'string') {
+        fields.push({ label: translate('trajectory.skills.skill'), value: `${skill.skill_id}@${skill.version}` });
+      }
+      if (Array.isArray(skill.allowed_tool_names)) {
+        fields.push({
+          label: translate('trajectory.skills.allowedTools'),
+          value: skill.allowed_tool_names.map(toolName => (
+            typeof toolName === 'string' ? `${getToolMeta(toolName).label} (${toolName})` : ''
+          )).filter(Boolean).join(' · '),
+        });
+      }
+      if (typeof skill.content_sha256 === 'string') {
+        fields.push({ label: translate('trajectory.skills.contentHash'), value: skill.content_sha256 });
+      }
+      if (typeof skill.section_id === 'string') {
+        fields.push({ label: translate('trajectory.skills.sectionId'), value: skill.section_id });
+      }
+      if (typeof skill.char_count === 'number') {
+        fields.push({ label: translate('trajectory.skills.charCount'), value: String(skill.char_count) });
+      }
+    }
+    if (typeof cell.payload.detail_status === 'string') {
+      fields.push({
+        label: translate('trajectory.skills.detailStatus'),
+        value: translate(`trajectory.skills.detailStatusValues.${cell.payload.detail_status}`),
+      });
+    }
+    if (typeof cell.payload.error_code === 'string') {
+      fields.push({ label: translate('trajectory.skills.errorCode'), value: cell.payload.error_code });
+    }
+    return fields;
+  }
   if (cell.type !== 'assistant_request') return [];
   const fields: TrajectoryNodeSummaryField[] = [
     {

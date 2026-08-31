@@ -409,6 +409,44 @@
       "char_count": "字符数",
       "requestFingerprint": "当轮实际系统消息指纹"
     },
+    "skills": {
+      "title": "Run Skills",
+      "body": "正文",
+      "scopeNote": "这是 Run 创建时冻结并实际加载的 Skill 正文。",
+      "copyFull": "复制 Skill 全文",
+      "copiedFull": "已复制 Skill 全文",
+      "copyFailed": "复制失败，请手动选择 Skill 正文",
+      "loadFailed": "加载 Skill 正文失败，请稍后重试",
+      "pending": "Skill 正文仍在记录",
+      "notRecorded": "该运行生成时未记录 Skill 正文",
+      "bodyMissing": "Skill 正文未能完整记录",
+      "bodyInvalid": "Skill 正文记录无效，暂时无法展示",
+      "notSelected": "本 Run 未选择 Skill",
+      "loaded": "已加载 {{count}} 个 Skill",
+      "loadFailedStatus": "Skill 加载失败",
+      "status": "状态",
+      "statusValues": {
+        "not_selected": "未选择",
+        "loaded": "已加载",
+        "load_failed": "加载失败"
+      },
+      "activationSource": "激活来源",
+      "activationSources": {
+        "capability_package": "Run 能力包"
+      },
+      "skill": "Skill",
+      "requestedSkills": "请求 Skill",
+      "allowedTools": "允许工具",
+      "contentHash": "内容哈希",
+      "sectionId": "Prompt 段落",
+      "charCount": "字符数",
+      "detailStatus": "正文状态",
+      "detailStatusValues": {
+        "available": "可用",
+        "degraded": "降级"
+      },
+      "errorCode": "错误码"
+    },
     "capabilityResolution": {
       "title": "能力路由",
       "notRecorded": "该历史运行未记录能力路由",

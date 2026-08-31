@@ -1130,6 +1130,67 @@ it.each(['ready', 'failed'])('同 Run 的系统提示词 %s 只有一行', async
   );
 });
 
+it.each([
+  ['not_selected', '本 Run 未选择 Skill'],
+  ['loaded', '已加载 1 个 Skill'],
+  ['load_failed', 'Skill 加载失败'],
+])('Skills %s 实时与历史投影为同一个聚合节点', async (status, summary) => {
+  await i18n.changeLanguage('zh-CN');
+  const run = runSummary('skills');
+  const payload = {
+    status,
+    activation_source: 'capability_package',
+    requested_skill_ids: status === 'not_selected' ? [] : ['verified-research'],
+    skills: status === 'loaded' ? [{
+      skill_id: 'verified-research',
+      version: '1.0.0',
+      content_sha256: 'b'.repeat(64),
+      allowed_tool_names: ['web_search', 'url_read'],
+      section_id: 'skill:verified-research@1.0.0',
+      char_count: 321,
+    }] : [],
+    duration_ms: 4,
+    detail_status: status === 'loaded' ? 'available' : null,
+    error_code: status === 'load_failed' ? 'skill_file_missing' : null,
+  };
+  const events = [event('skills', 1, 'skills_resolved', { payload })];
+  const snapshot = {
+    snapshotRequestId: 'skills', run, spans: [],
+    completeness: { status: 'complete' as const, degraded_reason: null, event_count: 1, expected_last_sequence: 1, loaded_event_count: 1, first_sequence: 1, last_sequence: 1 },
+    truncated: false, durableLastSequence: null, events: [] as NormalizedTrajectoryEvent[],
+  };
+  const project = (history: boolean) => projectTrajectoryCells(input({
+    runs: [run], selectedRunId: 'skills',
+    snapshotsByRunId: { skills: { ...snapshot, events: history ? events : [], durableLastSequence: history ? 1 : null } },
+    liveEventsByRunId: { skills: history ? [] : events },
+  }));
+  const liveCells = [...project(false).cells, ...project(false).unassociatedCells]
+    .filter(cell => cell.type === 'context');
+  const historyCells = [...project(true).cells, ...project(true).unassociatedCells]
+    .filter(cell => cell.type === 'context');
+
+  expect(liveCells.map(cell => [cell.key, cell.payload])).toEqual(
+    historyCells.map(cell => [cell.key, cell.payload]),
+  );
+  expect(liveCells).toHaveLength(1);
+  expect(liveCells[0]).toMatchObject({ contextId: 'skills', eventType: 'skills_resolved', payload });
+  expect(getTrajectoryCellPresentation(liveCells[0]).summary).toBe(summary);
+  if (status === 'loaded') {
+    expect(buildTrajectoryNodeDetailModel(liveCells[0], null).summaryFields).toEqual(expect.arrayContaining([
+      { label: 'Skill', value: 'verified-research@1.0.0' },
+      { label: '允许工具', value: '搜索 (web_search) · 读取 (url_read)' },
+      { label: '内容哈希', value: 'b'.repeat(64) },
+      { label: '正文状态', value: '可用' },
+    ]));
+  }
+  if (status === 'load_failed') {
+    expect(buildTrajectoryNodeDetailModel(liveCells[0], null).summaryFields).toEqual(expect.arrayContaining([
+      { label: '请求 Skill', value: 'verified-research' },
+      { label: '错误码', value: 'skill_file_missing' },
+    ]));
+  }
+});
+
 
 it('请求详情只显示对应 started 的实际指纹，旧请求不推断', async () => {
   await i18n.changeLanguage('zh-CN');

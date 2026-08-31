@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next';
 
 import AdminSafeMarkdown from '@/components/admin/AdminSafeMarkdown';
 import { useTrajectoryLlmNodeDetail } from '@/hooks/useTrajectoryLlmNodeDetail';
+import { useTrajectorySkillsNodeDetail } from '@/hooks/useTrajectorySkillsNodeDetail';
 import { useTrajectorySystemPromptNodeDetail } from '@/hooks/useTrajectorySystemPromptNodeDetail';
 import { useTrajectoryToolNodeDetail } from '@/hooks/useTrajectoryToolNodeDetail';
 import {
@@ -13,7 +14,11 @@ import {
 } from '@/lib/trajectory/trajectoryNodeDetailModel';
 import type { TrajectoryCell } from '@/lib/trajectory/TrajectoryCellProjection';
 import { extractTextFromBlocks, type ContentBlock } from '@/types/conversation';
-import type { TrajectoryNodeDetailResponse, TrajectorySpan } from '@/types/trajectory';
+import type {
+  TrajectoryNodeDetailResponse,
+  TrajectorySkillNodeDetail,
+  TrajectorySpan,
+} from '@/types/trajectory';
 import { cn } from '@/lib/utils';
 
 export interface TrajectoryNodeDetailPanelProps {
@@ -33,6 +38,7 @@ type DetailSection =
   | 'prompt'
   | 'timing';
 type RemoteDetailSectionName = 'payload' | 'result' | 'preview' | 'raw' | 'prompt';
+type RemoteDetailKind = 'tool' | 'llm' | 'system_prompt' | 'skills';
 type DetailRequestStatus = 'idle' | 'loading' | 'ready' | 'failed';
 
 interface PendingWindow {
@@ -44,6 +50,7 @@ const TOOL_SECTIONS: readonly DetailSection[] = ['summary', 'payload', 'result',
 const LLM_SECTIONS: readonly DetailSection[] = ['summary', 'preview', 'raw'];
 const MESSAGE_SECTIONS: readonly DetailSection[] = ['summary', 'preview', 'raw', 'source'];
 const SYSTEM_PROMPT_SECTIONS: readonly DetailSection[] = ['prompt', 'summary', 'timing'];
+const SKILLS_LOADED_SECTIONS: readonly DetailSection[] = ['prompt', 'summary', 'timing'];
 const LOCAL_SECTIONS: readonly DetailSection[] = ['summary', 'timing'];
 const SUMMARY_ONLY_SECTIONS: readonly DetailSection[] = ['summary'];
 const SECTION_LABELS: Record<Exclude<DetailSection, 'prompt'>, string> = {
@@ -105,8 +112,12 @@ function TrajectoryNodeDetailContent({
   const isTool = cell.type === 'tool';
   const isLlm = cell.type === 'assistant_request';
   const isSystemPrompt = cell.type === 'context' && cell.eventType === 'system_prompt_prepared';
+  const isSkills = cell.type === 'context' && cell.eventType === 'skills_resolved';
+  const isSkillsLoaded = isSkills && cell.payload.status === 'loaded';
   const sections = isSystemPrompt
     ? SYSTEM_PROMPT_SECTIONS
+    : isSkillsLoaded
+      ? SKILLS_LOADED_SECTIONS
     : isUser || isMessage
       ? MESSAGE_SECTIONS
       : isTool
@@ -120,10 +131,11 @@ function TrajectoryNodeDetailContent({
   );
   const tabsId = useId();
   const tabRefs = useRef<Partial<Record<DetailSection, HTMLButtonElement | null>>>({});
-  const [activeSection, setActiveSection] = useState<DetailSection>(isSystemPrompt ? 'prompt' : 'summary');
-  const [detailRequested, setDetailRequested] = useState(isSystemPrompt);
+  const startsWithPrompt = isSystemPrompt || isSkillsLoaded;
+  const [activeSection, setActiveSection] = useState<DetailSection>(startsWithPrompt ? 'prompt' : 'summary');
+  const [detailRequested, setDetailRequested] = useState(startsWithPrompt);
   const [pendingWindow, setPendingWindow] = useState<PendingWindow | null>(() => (
-    isSystemPrompt
+    startsWithPrompt
       ? { deadline: performance.now() + PENDING_RETRY_DEADLINE_MS, requestCount: 1 }
       : null
   ));
@@ -152,12 +164,29 @@ function TrajectoryNodeDetailContent({
     isSystemPrompt ? { conversationId, runId: cell.runId } : null,
     isSystemPrompt && detailRequested,
   );
+  const skillsDetail = useTrajectorySkillsNodeDetail(
+    isSkillsLoaded ? { conversationId, runId: cell.runId } : null,
+    isSkillsLoaded && detailRequested,
+  );
   const {
     status: requestStatus,
     response,
     error,
     retry,
-  } = isSystemPrompt ? systemPromptDetail : isLlm ? llmDetail : toolDetail;
+  } = isSystemPrompt
+    ? systemPromptDetail
+    : isSkillsLoaded
+      ? skillsDetail
+      : isLlm
+        ? llmDetail
+        : toolDetail;
+  const remoteDetailKind: RemoteDetailKind = isSystemPrompt
+    ? 'system_prompt'
+    : isSkillsLoaded
+      ? 'skills'
+      : isLlm
+        ? 'llm'
+        : 'tool';
   const isRemoteSection = needsRemoteDetail(cell, activeSection);
   const pendingStopped = isRemoteSection
     && requestStatus === 'ready'
@@ -253,7 +282,11 @@ function TrajectoryNodeDetailContent({
       <div className="mb-4 min-w-0">
         <p className="text-xs font-medium text-muted-foreground">{model.nodeType}</p>
         <h2 className="truncate text-base font-semibold text-foreground">
-          {isSystemPrompt ? t('trajectory.systemPrompt.title') : model.title}
+          {isSystemPrompt
+            ? t('trajectory.systemPrompt.title')
+            : isSkills
+              ? t('trajectory.skills.title')
+              : model.title}
         </h2>
       </div>
 
@@ -281,7 +314,9 @@ function TrajectoryNodeDetailContent({
                 : 'border-transparent text-muted-foreground hover:text-foreground',
             )}
           >
-            {section === 'prompt' ? t('trajectory.systemPrompt.body') : SECTION_LABELS[section]}
+            {section === 'prompt'
+              ? t(isSkills ? 'trajectory.skills.body' : 'trajectory.systemPrompt.body')
+              : SECTION_LABELS[section]}
           </button>
         ))}
       </div>
@@ -313,6 +348,7 @@ function TrajectoryNodeDetailContent({
             error={error}
             pendingStopped={pendingStopped}
             onRetry={retryDetail}
+            detailKind={remoteDetailKind}
           />
         )}
       </section>
@@ -342,6 +378,9 @@ function TrajectoryNodeDetailContent({
 
 function needsRemoteDetail(cell: TrajectoryCell, section: DetailSection): boolean {
   if (cell.type === 'context' && cell.eventType === 'system_prompt_prepared') return section === 'prompt';
+  if (cell.type === 'context' && cell.eventType === 'skills_resolved') {
+    return cell.payload.status === 'loaded' && section === 'prompt';
+  }
   if (cell.type === 'tool') return section === 'payload' || section === 'result';
   if (cell.type === 'assistant_request') return section === 'preview' || section === 'raw';
   return false;
@@ -472,7 +511,7 @@ function SummarySection({
   onSelectSection: (section: DetailSection) => void;
 }) {
   const sourceFields = model.summaryFields.filter(field => field.label === '来源');
-  const otherFields = model.summaryFields.filter(field => field.label !== '来源');
+  const otherFields = model.summaryFields.filter(field => field.label !== '来源' && field.label !== '状态');
   const fields = [
     ...sourceFields,
     { label: '状态', value: model.status },
@@ -641,6 +680,7 @@ function RemoteDetailSection({
   error,
   pendingStopped,
   onRetry,
+  detailKind,
 }: {
   section: RemoteDetailSectionName;
   requestStatus: DetailRequestStatus;
@@ -648,9 +688,11 @@ function RemoteDetailSection({
   error: string | null;
   pendingStopped: boolean;
   onRetry: () => void;
+  detailKind: RemoteDetailKind;
 }) {
   const { t } = useTranslation();
-  const isSystemPrompt = section === 'prompt';
+  const isSystemPrompt = detailKind === 'system_prompt';
+  const isSkills = detailKind === 'skills';
   if (requestStatus === 'idle' || requestStatus === 'loading') {
     return <p role="status" className="text-sm text-muted-foreground">正在加载详情</p>;
   }
@@ -668,7 +710,11 @@ function RemoteDetailSection({
     return (
       <div className="space-y-2 text-sm text-muted-foreground">
         <div role="status">
-          <p>{isSystemPrompt ? t('trajectory.systemPrompt.pending') : '详情仍在落账'}</p>
+          <p>{isSystemPrompt
+            ? t('trajectory.systemPrompt.pending')
+            : isSkills
+              ? t('trajectory.skills.pending')
+              : '详情仍在落账'}</p>
           {pendingStopped && <p>自动检查已停止</p>}
         </div>
         <RetryButton label="重新检查" onClick={onRetry} />
@@ -678,7 +724,11 @@ function RemoteDetailSection({
   if (response.status === 'not_recorded') {
     return (
       <p className="text-sm text-muted-foreground">
-        {isSystemPrompt ? t('trajectory.systemPrompt.notRecorded') : '该运行生成时尚未记录 Payload/Result'}
+        {isSystemPrompt
+          ? t('trajectory.systemPrompt.notRecorded')
+          : isSkills
+            ? t('trajectory.skills.notRecorded')
+            : '该运行生成时尚未记录 Payload/Result'}
       </p>
     );
   }
@@ -691,6 +741,10 @@ function RemoteDetailSection({
           : 'bodyMissing';
       return <p className="text-sm text-warn">{t(`trajectory.systemPrompt.${messageKey}`)}</p>;
     }
+    if (isSkills) {
+      const messageKey = response.reason === 'skills_detail_invalid' ? 'bodyInvalid' : 'bodyMissing';
+      return <p className="text-sm text-warn">{t(`trajectory.skills.${messageKey}`)}</p>;
+    }
     return (
       <p className="text-sm text-warn">
         {response.node_type === 'llm'
@@ -701,6 +755,7 @@ function RemoteDetailSection({
   }
 
   if (isSystemPrompt) return <SystemPromptAvailableDetailSection response={response} />;
+  if (isSkills) return <SkillsAvailableDetailSection response={response} />;
 
   const redactedFields = response.redacted_fields ?? [];
   const truncatedFields = response.truncated_fields ?? [];
@@ -784,6 +839,107 @@ function SystemPromptAvailableDetailSection({ response }: { response: Trajectory
           <h3 className="text-xs font-medium text-muted-foreground">{section.section_id}</h3>
           <pre className="whitespace-pre-wrap break-words rounded-md border border-border/60 bg-muted/20 p-3 text-xs text-foreground">
             {section.content}
+          </pre>
+        </section>
+      ))}
+    </div>
+  );
+}
+
+function isValidSkillDetail(value: unknown): value is TrajectorySkillNodeDetail {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const skill = value as Record<string, unknown>;
+  return typeof skill.skill_id === 'string'
+    && skill.skill_id.length <= 128
+    && /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(skill.skill_id)
+    && typeof skill.version === 'string'
+    && /^\d+\.\d+\.\d+$/.test(skill.version)
+    && typeof skill.content_sha256 === 'string'
+    && /^[0-9a-f]{64}$/.test(skill.content_sha256)
+    && Array.isArray(skill.allowed_tool_names)
+    && hasValidSkillAllowedToolNames(skill.allowed_tool_names)
+    && typeof skill.section_id === 'string'
+    && skill.section_id === `skill:${skill.skill_id}@${skill.version}`
+    && typeof skill.char_count === 'number'
+    && Number.isInteger(skill.char_count)
+    && skill.char_count >= 1
+    && skill.char_count <= 32_768
+    && typeof skill.content === 'string'
+    && skill.content.length >= 1
+    && skill.content.length <= 32_768;
+}
+
+const SKILL_DETAIL_TOOL_ORDER = [
+  'web_search',
+  'url_read',
+  'weather_forecast',
+  'local_place_search',
+  'route_compare',
+  'search_flights',
+  'search_trains',
+] as const;
+
+function hasValidSkillAllowedToolNames(value: unknown[]): value is string[] {
+  if (value.length === 0 || value.length > 3 || new Set(value).size !== value.length) return false;
+  if (!value.every(tool => typeof tool === 'string' && SKILL_DETAIL_TOOL_ORDER.includes(
+    tool as (typeof SKILL_DETAIL_TOOL_ORDER)[number],
+  ))) return false;
+  const selected = new Set(value as string[]);
+  const canonical = SKILL_DETAIL_TOOL_ORDER.filter(tool => selected.has(tool));
+  return canonical.length === value.length
+    && canonical.every((tool, index) => tool === value[index]);
+}
+
+function SkillsAvailableDetailSection({ response }: { response: TrajectoryNodeDetailResponse }) {
+  const { t } = useTranslation();
+  const [copyStatus, setCopyStatus] = useState<'idle' | 'copied' | 'failed'>('idle');
+  const detail = response.node_type === 'skills'
+    && response.available_sections.includes('prompt')
+    && response.detail
+    && 'skills' in response.detail
+    && 'status' in response.detail
+    && response.detail.status === 'loaded'
+    && 'activation_source' in response.detail
+    && response.detail.activation_source === 'capability_package'
+    ? response.detail
+    : null;
+  const skills = detail && Array.isArray(detail.skills) ? detail.skills : [];
+
+  if (skills.length === 0 || !skills.every(isValidSkillDetail)) {
+    return <p className="text-sm text-warn">{t('trajectory.skills.bodyInvalid')}</p>;
+  }
+
+  const fullContent = skills.map(skill => skill.content).join('\n\n');
+
+  async function copyFullContent() {
+    try {
+      await navigator.clipboard.writeText(fullContent);
+      setCopyStatus('copied');
+    } catch {
+      setCopyStatus('failed');
+    }
+  }
+
+  return (
+    <div className="min-w-0 space-y-4">
+      <p className="text-sm text-muted-foreground">{t('trajectory.skills.scopeNote')}</p>
+      <button
+        type="button"
+        onClick={copyFullContent}
+        className="cursor-pointer rounded-md border border-border px-3 py-1.5 text-sm text-foreground outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring"
+      >
+        {t(`trajectory.skills.${copyStatus === 'copied' ? 'copiedFull' : 'copyFull'}`)}
+      </button>
+      {copyStatus === 'failed' && (
+        <p role="alert" className="text-sm text-danger">{t('trajectory.skills.copyFailed')}</p>
+      )}
+      {skills.map(skill => (
+        <section key={`${skill.skill_id}@${skill.version}:${skill.content_sha256}`} className="min-w-0 space-y-2">
+          <h3 className="text-xs font-medium text-muted-foreground">
+            {skill.skill_id}@{skill.version}
+          </h3>
+          <pre className="whitespace-pre-wrap break-words rounded-md border border-border/60 bg-muted/20 p-3 text-xs text-foreground">
+            {skill.content}
           </pre>
         </section>
       ))}

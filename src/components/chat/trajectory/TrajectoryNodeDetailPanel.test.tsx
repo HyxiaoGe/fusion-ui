@@ -8,11 +8,13 @@ import type { TrajectoryNodeDetailResponse, TrajectorySpan } from '@/types/traje
 const getTrajectoryToolNodeDetailMock = vi.hoisted(() => vi.fn());
 const getTrajectoryLlmNodeDetailMock = vi.hoisted(() => vi.fn());
 const getTrajectorySystemPromptNodeDetailMock = vi.hoisted(() => vi.fn());
+const getTrajectorySkillsNodeDetailMock = vi.hoisted(() => vi.fn());
 
 vi.mock('@/lib/api/trajectory', () => ({
   getTrajectoryLlmNodeDetail: getTrajectoryLlmNodeDetailMock,
   getTrajectoryToolNodeDetail: getTrajectoryToolNodeDetailMock,
   getTrajectorySystemPromptNodeDetail: getTrajectorySystemPromptNodeDetailMock,
+  getTrajectorySkillsNodeDetail: getTrajectorySkillsNodeDetailMock,
 }));
 
 import { TrajectoryNodeDetailPanel } from './TrajectoryNodeDetailPanel';
@@ -974,5 +976,148 @@ describe('系统提示词正文', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('复制失败，请手动选择正文');
     expect(screen.queryByRole('button', { name: '已复制全文' })).not.toBeInTheDocument();
     expect(screen.getByText('z-base')).toBeInTheDocument();
+  });
+});
+
+function skillsCell(
+  runId = 'run-1',
+  status: 'not_selected' | 'loaded' | 'load_failed' = 'loaded',
+): Extract<TrajectoryCell, { type: 'context' }> {
+  return {
+    key: 'skills', type: 'context', runId, userMessageId: null, assistantMessageId: null,
+    completenessSources: ['durable-snapshot'], sourceSequences: [2], contextId: 'skills', eventType: 'skills_resolved',
+    payload: {
+      status,
+      activation_source: 'capability_package',
+      requested_skill_ids: status === 'not_selected' ? [] : ['verified-research'],
+      skills: status === 'loaded' ? [{
+        skill_id: 'verified-research', version: '1.0.0', content_sha256: 'b'.repeat(64),
+        allowed_tool_names: ['web_search', 'url_read'], section_id: 'skill:verified-research@1.0.0',
+        char_count: 32,
+      }] : [],
+      duration_ms: 4,
+      detail_status: status === 'loaded' ? 'available' : null,
+      error_code: status === 'load_failed' ? 'skill_file_missing' : null,
+      content: '事件中夹带的 Skill 正文不能显示',
+    },
+  };
+}
+
+function skillsDetail(
+  overrides: Partial<TrajectoryNodeDetailResponse> = {},
+): TrajectoryNodeDetailResponse {
+  return {
+    status: 'available',
+    node_type: 'skills',
+    available_sections: ['summary', 'prompt'],
+    detail: {
+      status: 'loaded',
+      activation_source: 'capability_package',
+      skills: [
+        {
+          skill_id: 'verified-research', version: '1.0.0', content_sha256: 'b'.repeat(64),
+          allowed_tool_names: ['web_search', 'url_read'], section_id: 'skill:verified-research@1.0.0',
+          char_count: 32, content: '  # 核验流程\n\n保留 **原文**\n',
+        },
+      ],
+    },
+    redacted_fields: [],
+    truncated_fields: [],
+    reason: null,
+    ...overrides,
+  } as unknown as TrajectoryNodeDetailResponse;
+}
+
+describe('Skills 解析正文', () => {
+  const clipboardDescriptor = Object.getOwnPropertyDescriptor(navigator, 'clipboard');
+  const writeTextMock = vi.fn();
+
+  beforeEach(async () => {
+    await i18n.changeLanguage('zh-CN');
+    getTrajectorySkillsNodeDetailMock.mockReset();
+    writeTextMock.mockReset().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText: writeTextMock },
+    });
+  });
+
+  afterEach(() => {
+    if (clipboardDescriptor) Object.defineProperty(navigator, 'clipboard', clipboardDescriptor);
+    else Reflect.deleteProperty(navigator, 'clipboard');
+  });
+
+  it('loaded 默认进入正文，完整展示并复制冻结的 SKILL.md 内容', async () => {
+    getTrajectorySkillsNodeDetailMock.mockResolvedValue(skillsDetail());
+    renderPanel(skillsCell());
+
+    expect(screen.getByRole('heading', { name: 'Run Skills' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: '正文' })).toHaveAttribute('aria-selected', 'true');
+    expect(getTrajectorySkillsNodeDetailMock).toHaveBeenCalledWith(
+      'conversation-1', 'run-1', expect.any(AbortSignal),
+    );
+    expect(await screen.findByText('verified-research@1.0.0')).toBeInTheDocument();
+    const body = screen.getByRole('tabpanel', { name: '正文' });
+    expect(body.querySelector('pre')?.textContent).toBe('  # 核验流程\n\n保留 **原文**\n');
+    expect(screen.queryByText('事件中夹带的 Skill 正文不能显示')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: '复制 Skill 全文' }));
+    await waitFor(() => expect(writeTextMock).toHaveBeenCalledWith('  # 核验流程\n\n保留 **原文**\n'));
+    expect(await screen.findByRole('button', { name: '已复制 Skill 全文' })).toBeInTheDocument();
+  });
+
+  it.each([
+    ['not_selected', '本 Run 未选择 Skill'],
+    ['load_failed', 'Skill 加载失败'],
+  ] as const)('%s 只展示实际最终状态，不请求或复制正文', (status, message) => {
+    renderPanel(skillsCell('run-1', status));
+
+    expect(screen.getByText(message)).toBeInTheDocument();
+    expect(screen.queryByRole('tab', { name: '正文' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '复制 Skill 全文' })).not.toBeInTheDocument();
+    expect(getTrajectorySkillsNodeDetailMock).not.toHaveBeenCalled();
+  });
+
+  it('切换 Run 后清空旧正文、取消旧请求并隔离迟到响应', async () => {
+    const requestA = deferred<TrajectoryNodeDetailResponse>();
+    const requestB = deferred<TrajectoryNodeDetailResponse>();
+    getTrajectorySkillsNodeDetailMock
+      .mockReturnValueOnce(requestA.promise)
+      .mockReturnValueOnce(requestB.promise);
+    const { rerender } = renderPanel(skillsCell('run-a'));
+    const signalA = getTrajectorySkillsNodeDetailMock.mock.calls[0]?.[2] as AbortSignal;
+    rerender(<TrajectoryNodeDetailPanel conversationId="conversation-1" cell={skillsCell('run-b')} span={null} />);
+
+    expect(signalA.aborted).toBe(true);
+    await act(async () => requestB.resolve(skillsDetail({
+      detail: {
+        status: 'loaded', activation_source: 'capability_package',
+        skills: [{
+          skill_id: 'verified-research', version: '2.0.0', content_sha256: 'c'.repeat(64),
+          allowed_tool_names: ['web_search', 'url_read'], section_id: 'skill:verified-research@2.0.0',
+          char_count: 9, content: '当前 Run 正文',
+        }],
+      } as never,
+    })));
+    await act(async () => requestA.resolve(skillsDetail()));
+
+    expect(screen.getByText('当前 Run 正文')).toBeInTheDocument();
+    expect(screen.queryByText('核验流程')).not.toBeInTheDocument();
+  });
+
+  it('详情无效和加载失败均不伪装为可复制正文', async () => {
+    getTrajectorySkillsNodeDetailMock.mockResolvedValue(skillsDetail({
+      detail: {
+        status: 'loaded', activation_source: 'capability_package',
+        skills: [{
+          skill_id: 'verified-research', version: '1.0.0', content_sha256: 'b'.repeat(64),
+          allowed_tool_names: [], section_id: 'skill:verified-research@1.0.0', char_count: 2,
+        }],
+      } as never,
+    }));
+    renderPanel(skillsCell());
+
+    expect(await screen.findByText('Skill 正文记录无效，暂时无法展示')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '复制 Skill 全文' })).not.toBeInTheDocument();
   });
 });

@@ -409,6 +409,44 @@
       "char_count": "Character count",
       "requestFingerprint": "Effective system message fingerprint for this round"
     },
+    "skills": {
+      "title": "Run Skills",
+      "body": "Prompt",
+      "scopeNote": "This is the Skill content frozen and loaded when the Run was created.",
+      "copyFull": "Copy full Skill",
+      "copiedFull": "Full Skill copied",
+      "copyFailed": "Copy failed. Please select the Skill content manually.",
+      "loadFailed": "Failed to load the Skill content. Please try again.",
+      "pending": "The Skill content is still being recorded",
+      "notRecorded": "Skill content was not recorded when this run was created",
+      "bodyMissing": "The Skill content could not be fully recorded",
+      "bodyInvalid": "The recorded Skill content is invalid and cannot be displayed",
+      "notSelected": "No Skill selected for this Run",
+      "loaded": "Loaded {{count}} Skill",
+      "loadFailedStatus": "Skill loading failed",
+      "status": "Status",
+      "statusValues": {
+        "not_selected": "Not selected",
+        "loaded": "Loaded",
+        "load_failed": "Load failed"
+      },
+      "activationSource": "Activation source",
+      "activationSources": {
+        "capability_package": "Run capability package"
+      },
+      "skill": "Skill",
+      "requestedSkills": "Requested Skill",
+      "allowedTools": "Allowed tools",
+      "contentHash": "Content hash",
+      "sectionId": "Prompt section",
+      "charCount": "Character count",
+      "detailStatus": "Content status",
+      "detailStatusValues": {
+        "available": "Available",
+        "degraded": "Degraded"
+      },
+      "errorCode": "Error code"
+    },
     "capabilityResolution": {
       "title": "Capability routing",
       "notRecorded": "Capability routing was not recorded for this historical run",

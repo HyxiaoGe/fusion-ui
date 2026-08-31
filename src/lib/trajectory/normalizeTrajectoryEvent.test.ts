@@ -22,6 +22,37 @@ const capabilityResolution = {
   bundle_fingerprint: `sha256:${'a'.repeat(64)}`,
 };
 
+const verifiedResearchSkill = {
+  skill_id: 'verified-research',
+  version: '1.0.0',
+  content_sha256: 'b'.repeat(64),
+  allowed_tool_names: ['web_search', 'url_read'],
+  section_id: 'skill:verified-research@1.0.0',
+  char_count: 321,
+};
+
+const capabilityResolutionV2 = {
+  schema_version: 2,
+  router_version: '2026-08-31.1',
+  package_id: 'verified_web',
+  confidence: 'high',
+  resolution_mode: 'routed',
+  reason_codes: ['verified_source_request'],
+  external_tool_names: ['web_search', 'url_read'],
+  effective_plan_mode: 'auto',
+  include_current_date: true,
+  network_boundary_required: false,
+  bundle_fingerprint: `sha256:${'c'.repeat(64)}`,
+  skill_resolution: {
+    status: 'loaded',
+    activation_source: 'capability_package',
+    requested_skill_ids: ['verified-research'],
+    skills: [verifiedResearchSkill],
+    duration_ms: 4,
+    error_code: null,
+  },
+};
+
 describe('normalizeTrajectoryEvent', () => {
   it('实时与历史 run_started 只保留完整合法的能力路由对象', () => {
     const live = normalizeSseTrajectoryEvent({
@@ -59,6 +90,121 @@ describe('normalizeTrajectoryEvent', () => {
     expect(durable?.payload.capability_resolution).toEqual(capabilityResolution);
     expect(live?.payload.capability_resolution).not.toBe(capabilityResolution);
     expect(durable).toEqual(live);
+  });
+
+  it('实时与历史 run_started 安全保留 schema v2 Skill 终态，且旧 v1 继续可读', () => {
+    const live = normalizeSseTrajectoryEvent({
+      type: 'run_started',
+      schema_version: 1,
+      run_id: 'run-v2',
+      parent_run_id: null,
+      step_id: null,
+      parent_step_id: null,
+      tool_call_id: null,
+      sequence: 0,
+      trace_id: 'trace-v2',
+      ts: Date.parse(timestamp) / 1000,
+      tools: ['web_search', 'url_read'],
+      capability_resolution: capabilityResolutionV2,
+    });
+    const durable = normalizeTrajectoryRecord('run-v2', {
+      sequence: 0,
+      event_type: 'run_started',
+      schema_version: 1,
+      timestamp,
+      step_id: null,
+      tool_call_id: null,
+      parent_step_id: null,
+      trace_id: 'trace-v2',
+      payload: {
+        type: 'run_started',
+        run_id: 'run-v2',
+        tools: ['web_search', 'url_read'],
+        capability_resolution: capabilityResolutionV2,
+      },
+    });
+
+    expect(live?.payload.capability_resolution).toEqual(capabilityResolutionV2);
+    expect(durable).toEqual(live);
+    expect(normalizeTrajectoryCapabilityResolution(capabilityResolution)).toEqual(capabilityResolution);
+  });
+
+  it('schema v2 缺少或伪造 Skill 终态时仅丢弃能力对象，不丢弃 run_started', () => {
+    const missingSkillResolution = Object.fromEntries(
+      Object.entries(capabilityResolutionV2).filter(([key]) => key !== 'skill_resolution'),
+    );
+    const malicious = {
+      ...capabilityResolutionV2,
+      skill_resolution: {
+        ...capabilityResolutionV2.skill_resolution,
+        skills: [{ ...verifiedResearchSkill, content: '不得进入 Run config 的正文' }],
+      },
+    };
+
+    for (const resolution of [missingSkillResolution, malicious]) {
+      const event = normalizeSseTrajectoryEvent({
+        type: 'run_started',
+        schema_version: 1,
+        run_id: 'run-v2-invalid',
+        parent_run_id: null,
+        step_id: null,
+        parent_step_id: null,
+        tool_call_id: null,
+        sequence: 0,
+        trace_id: 'trace-v2-invalid',
+        ts: Date.parse(timestamp) / 1000,
+        tools: ['web_search', 'url_read'],
+        capability_resolution: resolution,
+      });
+      expect(event).not.toBeNull();
+      expect(event?.payload).not.toHaveProperty('capability_resolution');
+    }
+  });
+
+  it('接受 Skill 加载失败后的 schema v2 受控降级', () => {
+    const resolution = {
+      ...capabilityResolutionV2,
+      package_id: 'tools_unavailable',
+      resolution_mode: 'degraded',
+      reason_codes: ['required_skill_unavailable'],
+      external_tool_names: [],
+      effective_plan_mode: 'off',
+      network_boundary_required: true,
+      skill_resolution: {
+        status: 'load_failed',
+        activation_source: 'capability_package',
+        requested_skill_ids: ['verified-research'],
+        skills: [],
+        duration_ms: 4,
+        error_code: 'skill_load_failed',
+      },
+    };
+
+    expect(normalizeTrajectoryCapabilityResolution(resolution)).toEqual(resolution);
+  });
+
+  it('schema v2 延续校验 bundle fingerprint', () => {
+    expect(normalizeTrajectoryCapabilityResolution({
+      ...capabilityResolutionV2,
+      bundle_fingerprint: 'c'.repeat(64),
+    })).toBeNull();
+  });
+
+  it('schema v2 接受 verified-research 的后续稳定版本', () => {
+    const nextSkill = {
+      ...verifiedResearchSkill,
+      version: '1.0.1',
+      section_id: 'skill:verified-research@1.0.1',
+    };
+    const resolution = {
+      ...capabilityResolutionV2,
+      skill_resolution: {
+        ...capabilityResolutionV2.skill_resolution,
+        skills: [nextSkill],
+      },
+    };
+
+    expect(normalizeTrajectoryCapabilityResolution(resolution)).toEqual(resolution);
   });
 
   it.each([
@@ -655,5 +801,131 @@ describe('系统提示词元数据', () => {
   it('保留本次模型请求指纹，旧事件不补填', () => {
     expect(normalizeSseTrajectoryEvent({ ...base, type: 'llm_round_started', llm_round_id: 'r', system_prompt_fingerprint: 'b'.repeat(64) })?.payload.system_prompt_fingerprint).toBe('b'.repeat(64));
     expect(normalizeSseTrajectoryEvent({ ...base, type: 'llm_round_started', llm_round_id: 'old' })?.payload.system_prompt_fingerprint).toBeUndefined();
+  });
+});
+
+describe('Skills 解析元数据', () => {
+  const base = {
+    run_id: 'run-1',
+    schema_version: 1,
+    step_id: null,
+    parent_step_id: null,
+    tool_call_id: null,
+    sequence: 2,
+    trace_id: 'trace-1',
+    ts: Date.parse(timestamp) / 1000,
+  };
+  const skill = {
+    skill_id: 'verified-research',
+    version: '1.0.0',
+    content_sha256: 'b'.repeat(64),
+    allowed_tool_names: ['web_search', 'url_read'],
+    section_id: 'skill:verified-research@1.0.0',
+    char_count: 321,
+  };
+
+  it.each([
+    ['not_selected', [], [], null],
+    ['loaded', ['verified-research'], [skill], 'available'],
+    ['load_failed', ['verified-research'], [], null],
+  ])('实时与历史保留 %s 的安全元数据且丢弃正文', (status, requestedSkillIds, skills, detailStatus) => {
+    const payload = {
+      protocol_version: 2,
+      status,
+      activation_source: 'capability_package',
+      requested_skill_ids: requestedSkillIds,
+      skills,
+      duration_ms: 4,
+      detail_status: detailStatus,
+      error_code: status === 'load_failed' ? 'skill_load_failed' : null,
+    };
+    const live = normalizeSseTrajectoryEvent({
+      ...base,
+      type: 'skills_resolved',
+      ...payload,
+      content: '不得进入事件的 Skill 正文',
+      filesystem_path: '/private/skills/verified-research/SKILL.md',
+    });
+    const durable = normalizeTrajectoryRecord('run-1', {
+      sequence: 2,
+      event_type: 'skills_resolved',
+      schema_version: 1,
+      timestamp,
+      step_id: null,
+      parent_step_id: null,
+      tool_call_id: null,
+      trace_id: 'trace-1',
+      payload,
+    });
+
+    expect(live?.payload).toEqual(payload);
+    expect(durable).toEqual(live);
+  });
+
+  it.each([
+    ['虚构中间态', { status: 'preparing' }],
+    ['协议版本缺失', { protocol_version: undefined }],
+    ['协议版本错误', { protocol_version: 1 }],
+    ['非法来源', { activation_source: 'model_guess' }],
+    ['loaded 缺少快照', { skills: [] }],
+    ['not_selected 仍请求 Skill', { status: 'not_selected', requested_skill_ids: ['verified-research'], skills: [], detail_status: null }],
+    ['正文哈希非法', { skills: [{ ...skill, content_sha256: 'latest' }] }],
+    ['预发布版本不在 MVP 契约', { skills: [{ ...skill, version: '1.0.0-beta', section_id: 'skill:verified-research@1.0.0-beta' }] }],
+    ['正文字符数为空', { skills: [{ ...skill, char_count: 0 }] }],
+    ['正文字符数超限', { skills: [{ ...skill, char_count: 32_769 }] }],
+    ['工具顺序不是 canonical', { skills: [{ ...skill, allowed_tool_names: ['url_read', 'web_search'] }] }],
+    ['未知工具', { skills: [{ ...skill, allowed_tool_names: ['unknown_tool'] }] }],
+    ['重复工具', { skills: [{ ...skill, allowed_tool_names: ['web_search', 'web_search'] }] }],
+  ])('拒绝%s', (_label, overrides) => {
+    expect(normalizeSseTrajectoryEvent({
+      ...base,
+      type: 'skills_resolved',
+      protocol_version: 2,
+      status: 'loaded',
+      activation_source: 'capability_package',
+      requested_skill_ids: ['verified-research'],
+      skills: [skill],
+      duration_ms: 4,
+      detail_status: 'available',
+      error_code: null,
+      ...overrides,
+    })).toBeNull();
+  });
+
+  it('Skill ID 长度与 API 128 字符上限一致', () => {
+    const longSkillId = Array.from({ length: 64 }, () => 'a').join('-');
+    const longSkill = {
+      ...skill,
+      skill_id: longSkillId,
+      section_id: `skill:${longSkillId}@1.0.0`,
+    };
+    expect(longSkillId).toHaveLength(127);
+    expect(normalizeSseTrajectoryEvent({
+      ...base,
+      type: 'skills_resolved',
+      protocol_version: 2,
+      status: 'loaded',
+      activation_source: 'capability_package',
+      requested_skill_ids: [longSkillId],
+      skills: [longSkill],
+      duration_ms: 4,
+      detail_status: 'available',
+      error_code: null,
+    })).not.toBeNull();
+  });
+
+  it('load_failed 只接受公开协议中的固定错误码', () => {
+    expect(normalizeSseTrajectoryEvent({
+      ...base,
+      type: 'skills_resolved',
+      protocol_version: 2,
+      status: 'load_failed',
+      activation_source: 'capability_package',
+      requested_skill_ids: ['verified-research'],
+      skills: [],
+      duration_ms: 4,
+      detail_status: null,
+      error_code: 'skill_file_missing',
+    })).toBeNull();
   });
 });

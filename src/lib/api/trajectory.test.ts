@@ -12,6 +12,7 @@ import {
   getTrajectoryLlmNodeDetail,
   getTrajectoryRuns,
   getTrajectorySnapshot,
+  getTrajectorySkillsNodeDetail,
   getTrajectorySystemPromptNodeDetail,
   getTrajectoryToolNodeDetail,
 } from './trajectory';
@@ -43,6 +44,33 @@ describe('普通用户轨迹 API', () => {
       .resolves.toBe(response);
     expect(apiRequestMock).toHaveBeenCalledWith(
       '/api/conversations/conversation%2Fa%20b/runs/run%2Fa%20b/node-detail/system-prompt',
+      { signal, cache: 'no-store' },
+    );
+  });
+
+  it('Skills 正文走普通用户专用详情端点，编码路径、透传取消信号且不写 HTTP 缓存', async () => {
+    const signal = new AbortController().signal;
+    const response = {
+      status: 'available' as const,
+      node_type: 'skills' as const,
+      available_sections: ['summary', 'prompt'] as const,
+      detail: {
+        status: 'loaded' as const,
+        activation_source: 'capability_package' as const,
+        skills: [{
+          skill_id: 'verified-research', version: '1.0.0', content_sha256: 'b'.repeat(64),
+          allowed_tool_names: ['web_search', 'url_read'], section_id: 'skill:verified-research@1.0.0',
+          char_count: 12, content: '# 研究流程\n',
+        }],
+      },
+      redacted_fields: [], truncated_fields: [], reason: null,
+    };
+    apiRequestMock.mockResolvedValue(response);
+
+    await expect(getTrajectorySkillsNodeDetail('conversation/a b', 'run/a b', signal))
+      .resolves.toBe(response);
+    expect(apiRequestMock).toHaveBeenCalledWith(
+      '/api/conversations/conversation%2Fa%20b/runs/run%2Fa%20b/node-detail/skills',
       { signal, cache: 'no-store' },
     );
   });
