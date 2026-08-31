@@ -2,6 +2,8 @@ import type {
   TrajectoryCapabilityPackageId,
   TrajectoryCapabilityReasonCode,
   TrajectoryCapabilityResolution,
+  TrajectoryCapabilitySkillResolution,
+  TrajectorySkillMetadata,
 } from '@/types/trajectory';
 
 export interface NormalizedTrajectoryEvent {
@@ -67,6 +69,10 @@ const EVENT_PAYLOAD_FIELDS: Record<string, readonly string[]> = {
     'protocol_version', 'status', 'source', 'template_version', 'section_ids',
     'fingerprint', 'char_count', 'duration_ms', 'error_code', 'message', 'detail_status',
   ],
+  skills_resolved: [
+    'protocol_version', 'status', 'activation_source', 'requested_skill_ids', 'skills', 'duration_ms',
+    'detail_status', 'error_code',
+  ],
   context_status_updated: [
     'protocol_version', 'message_id', 'phase', 'status', 'round_index', 'window_tokens',
     'estimated_tokens_before', 'estimated_tokens_after', 'actual_prompt_tokens', 'removed_turns',
@@ -88,7 +94,7 @@ const EVIDENCE_FIELDS = new Set([
   'used_by_final_answer', 'citation_index',
 ]);
 const LIST_FIELDS = new Set(['tools', 'key_findings', 'source_refs', 'section_ids']);
-const CAPABILITY_RESOLUTION_FIELDS = new Set([
+const CAPABILITY_RESOLUTION_COMMON_FIELDS = [
   'schema_version',
   'router_version',
   'package_id',
@@ -99,7 +105,15 @@ const CAPABILITY_RESOLUTION_FIELDS = new Set([
   'effective_plan_mode',
   'include_current_date',
   'network_boundary_required',
+] as const;
+const CAPABILITY_RESOLUTION_V1_FIELDS = new Set([
+  ...CAPABILITY_RESOLUTION_COMMON_FIELDS,
   'bundle_fingerprint',
+]);
+const CAPABILITY_RESOLUTION_V2_FIELDS = new Set([
+  ...CAPABILITY_RESOLUTION_COMMON_FIELDS,
+  'bundle_fingerprint',
+  'skill_resolution',
 ]);
 const CAPABILITY_PACKAGE_IDS = new Set<TrajectoryCapabilityPackageId>([
   'direct',
@@ -148,6 +162,7 @@ const CAPABILITY_REASON_CODES = new Set<TrajectoryCapabilityReasonCode>([
   'function_calling_unavailable',
   'search_capability_unavailable',
   'required_tools_unavailable',
+  'required_skill_unavailable',
   'explicit_authorized_tool_alias',
   'insufficient_capability_signal',
 ]);
@@ -158,6 +173,20 @@ const ROUTER_VERSION_PATTERN = /^\d{4}-\d{2}-\d{2}\.\d+$/;
 const BUNDLE_FINGERPRINT_PATTERN = /^sha256:[0-9a-f]{64}$/;
 const TOOL_NAME_PATTERN = /^[A-Za-z_][A-Za-z0-9_-]{0,127}$/;
 const MCP_TOOL_ALIAS_PATTERN = /^mcp_[A-Za-z0-9_-]+$/;
+const SKILL_ID_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+const SKILL_VERSION_PATTERN = /^\d+\.\d+\.\d+$/;
+const SKILL_ALLOWED_TOOL_ORDER = [
+  'web_search',
+  'url_read',
+  'weather_forecast',
+  'local_place_search',
+  'route_compare',
+  'search_flights',
+  'search_trains',
+] as const;
+const SKILL_METADATA_FIELDS = new Set([
+  'skill_id', 'version', 'content_sha256', 'allowed_tool_names', 'section_id', 'char_count',
+]);
 const CAPABILITY_PACKAGE_EXTERNAL_TOOL_NAMES: Record<
   Exclude<TrajectoryCapabilityPackageId, 'mcp_explicit'>,
   readonly string[]
@@ -241,6 +270,7 @@ const CAPABILITY_PACKAGE_REASON_CODE_OPTIONS: Record<
     ['function_calling_unavailable'],
     ['search_capability_unavailable'],
     ['required_tools_unavailable'],
+    ['required_skill_unavailable'],
   ],
   clarification_only: [['insufficient_capability_signal']],
   mcp_explicit: [['explicit_authorized_tool_alias']],
@@ -263,16 +293,31 @@ function isUniqueEnumList<T extends string>(
     && new Set(value).size === value.length;
 }
 
+function hasCanonicalSkillToolOrder(value: readonly unknown[]): value is string[] {
+  if (!value.every(tool => typeof tool === 'string' && SKILL_ALLOWED_TOOL_ORDER.includes(
+    tool as (typeof SKILL_ALLOWED_TOOL_ORDER)[number],
+  ))) return false;
+  const selected = new Set(value as string[]);
+  const canonical = SKILL_ALLOWED_TOOL_ORDER.filter(tool => selected.has(tool));
+  return canonical.length === value.length
+    && canonical.every((tool, index) => tool === value[index]);
+}
+
 /** 将实时与历史来源统一收敛为同一个有界能力路由对象。 */
 export function normalizeTrajectoryCapabilityResolution(
   value: unknown,
 ): TrajectoryCapabilityResolution | null {
   if (!isRecord(value)) return null;
   const keys = Object.keys(value);
-  if (keys.length !== CAPABILITY_RESOLUTION_FIELDS.size
-    || keys.some(key => !CAPABILITY_RESOLUTION_FIELDS.has(key))) return null;
-  if (value.schema_version !== 1
-    || typeof value.router_version !== 'string'
+  const fields = value.schema_version === 1
+    ? CAPABILITY_RESOLUTION_V1_FIELDS
+    : value.schema_version === 2
+      ? CAPABILITY_RESOLUTION_V2_FIELDS
+      : null;
+  if (!fields
+    || keys.length !== fields.size
+    || keys.some(key => !fields.has(key))) return null;
+  if (typeof value.router_version !== 'string'
     || value.router_version.length > 32
     || !ROUTER_VERSION_PATTERN.test(value.router_version)
     || typeof value.package_id !== 'string'
@@ -295,8 +340,7 @@ export function normalizeTrajectoryCapabilityResolution(
     || typeof value.bundle_fingerprint !== 'string'
     || !BUNDLE_FINGERPRINT_PATTERN.test(value.bundle_fingerprint)) return null;
 
-  const resolution: TrajectoryCapabilityResolution = {
-    schema_version: 1,
+  const common = {
     router_version: value.router_version,
     package_id: value.package_id as TrajectoryCapabilityPackageId,
     confidence: value.confidence as TrajectoryCapabilityResolution['confidence'],
@@ -308,7 +352,173 @@ export function normalizeTrajectoryCapabilityResolution(
     network_boundary_required: value.network_boundary_required,
     bundle_fingerprint: value.bundle_fingerprint,
   };
-  return hasValidCapabilityResolutionSemantics(resolution) ? resolution : null;
+  const resolution: TrajectoryCapabilityResolution | null = value.schema_version === 1
+    ? { schema_version: 1, ...common }
+    : (() => {
+        const skillResolution = normalizeTrajectoryCapabilitySkillResolution(value.skill_resolution);
+        return skillResolution
+          ? { schema_version: 2, ...common, skill_resolution: skillResolution }
+          : null;
+      })();
+  return resolution
+    && hasValidCapabilityResolutionSemantics(resolution)
+    && hasValidCapabilitySkillSemantics(resolution)
+    ? resolution
+    : null;
+}
+
+function normalizeTrajectorySkillMetadata(value: unknown): TrajectorySkillMetadata | null {
+  if (!isRecord(value)) return null;
+  const keys = Object.keys(value);
+  if (keys.length !== SKILL_METADATA_FIELDS.size
+    || keys.some(key => !SKILL_METADATA_FIELDS.has(key))
+    || typeof value.skill_id !== 'string'
+    || value.skill_id.length > 128
+    || !SKILL_ID_PATTERN.test(value.skill_id)
+    || typeof value.version !== 'string'
+    || !SKILL_VERSION_PATTERN.test(value.version)
+    || typeof value.content_sha256 !== 'string'
+    || !/^[0-9a-f]{64}$/.test(value.content_sha256)
+    || !Array.isArray(value.allowed_tool_names)
+    || value.allowed_tool_names.length === 0
+    || value.allowed_tool_names.length > 3
+    || value.allowed_tool_names.some(tool => (
+      typeof tool !== 'string' || !TOOL_NAME_PATTERN.test(tool) || tool === 'update_plan'
+    ))
+    || new Set(value.allowed_tool_names).size !== value.allowed_tool_names.length
+    || !hasCanonicalSkillToolOrder(value.allowed_tool_names)
+    || typeof value.section_id !== 'string'
+    || value.section_id !== `skill:${value.skill_id}@${value.version}`
+    || typeof value.char_count !== 'number'
+    || !Number.isInteger(value.char_count)
+    || value.char_count < 1
+    || value.char_count > 32_768) return null;
+  return {
+    skill_id: value.skill_id,
+    version: value.version,
+    content_sha256: value.content_sha256,
+    allowed_tool_names: [...value.allowed_tool_names],
+    section_id: value.section_id,
+    char_count: value.char_count,
+  };
+}
+
+const CAPABILITY_SKILL_RESOLUTION_FIELDS = new Set([
+  'status', 'activation_source', 'requested_skill_ids', 'skills', 'duration_ms', 'error_code',
+]);
+
+function normalizeTrajectoryCapabilitySkillResolution(
+  value: unknown,
+): TrajectoryCapabilitySkillResolution | null {
+  if (!isRecord(value)) return null;
+  const keys = Object.keys(value);
+  if (keys.length !== CAPABILITY_SKILL_RESOLUTION_FIELDS.size
+    || keys.some(key => !CAPABILITY_SKILL_RESOLUTION_FIELDS.has(key))
+    || (value.status !== 'not_selected'
+      && value.status !== 'loaded'
+      && value.status !== 'load_failed')
+    || value.activation_source !== 'capability_package'
+    || !Array.isArray(value.requested_skill_ids)
+    || value.requested_skill_ids.length > 1
+    || value.requested_skill_ids.some(skillId => (
+      typeof skillId !== 'string'
+      || skillId.length > 128
+      || !SKILL_ID_PATTERN.test(skillId)
+    ))
+    || new Set(value.requested_skill_ids).size !== value.requested_skill_ids.length
+    || !Array.isArray(value.skills)
+    || value.skills.length > 1
+    || typeof value.duration_ms !== 'number'
+    || !Number.isInteger(value.duration_ms)
+    || value.duration_ms < 0
+    || (value.error_code !== null && value.error_code !== 'skill_load_failed')) return null;
+  const skills = value.skills.map(normalizeTrajectorySkillMetadata);
+  if (skills.some(skill => skill === null)) return null;
+  const normalizedSkills = skills as TrajectorySkillMetadata[];
+  if (value.status === 'not_selected' && (
+    value.requested_skill_ids.length !== 0
+    || normalizedSkills.length !== 0
+    || value.error_code !== null
+  )) return null;
+  if (value.status === 'loaded' && (
+    value.requested_skill_ids.length !== 1
+    || normalizedSkills.length !== 1
+    || normalizedSkills[0].skill_id !== value.requested_skill_ids[0]
+    || value.error_code !== null
+  )) return null;
+  if (value.status === 'load_failed' && (
+    value.requested_skill_ids.length !== 1
+    || normalizedSkills.length !== 0
+    || value.error_code !== 'skill_load_failed'
+  )) return null;
+  return {
+    status: value.status,
+    activation_source: 'capability_package',
+    requested_skill_ids: [...value.requested_skill_ids],
+    skills: normalizedSkills,
+    duration_ms: value.duration_ms,
+    error_code: value.error_code,
+  };
+}
+
+function normalizeSkillsResolvedPayload(
+  value: Record<string, unknown>,
+): Record<string, unknown> | null {
+  const status = value.status;
+  if (value.protocol_version !== 2
+    || (status !== 'not_selected' && status !== 'loaded' && status !== 'load_failed')
+    || value.activation_source !== 'capability_package'
+    || !Array.isArray(value.requested_skill_ids)
+    || value.requested_skill_ids.length > 1
+    || value.requested_skill_ids.some(skillId => (
+      typeof skillId !== 'string'
+      || skillId.length > 128
+      || !SKILL_ID_PATTERN.test(skillId)
+    ))
+    || new Set(value.requested_skill_ids).size !== value.requested_skill_ids.length
+    || !Array.isArray(value.skills)
+    || value.skills.length > 1
+    || typeof value.duration_ms !== 'number'
+    || !Number.isInteger(value.duration_ms)
+    || value.duration_ms < 0
+    || (value.detail_status !== null
+      && value.detail_status !== 'available'
+      && value.detail_status !== 'degraded')
+    || (value.error_code !== null && value.error_code !== 'skill_load_failed')) {
+    return null;
+  }
+  const skills = value.skills.map(normalizeTrajectorySkillMetadata);
+  if (skills.some(skill => skill === null)) return null;
+  const normalizedSkills = skills as TrajectorySkillMetadata[];
+  if (status === 'not_selected' && (
+    value.requested_skill_ids.length !== 0
+    || normalizedSkills.length !== 0
+    || value.detail_status !== null
+    || value.error_code !== null
+  )) return null;
+  if (status === 'loaded' && (
+    value.requested_skill_ids.length !== 1
+    || normalizedSkills.length !== 1
+    || normalizedSkills[0].skill_id !== value.requested_skill_ids[0]
+    || (value.detail_status !== 'available' && value.detail_status !== 'degraded')
+    || value.error_code !== null
+  )) return null;
+  if (status === 'load_failed' && (
+    value.requested_skill_ids.length !== 1
+    || normalizedSkills.length !== 0
+    || value.detail_status !== null
+    || typeof value.error_code !== 'string'
+  )) return null;
+  return {
+    protocol_version: 2,
+    status,
+    activation_source: 'capability_package',
+    requested_skill_ids: [...value.requested_skill_ids],
+    skills: normalizedSkills,
+    duration_ms: value.duration_ms,
+    detail_status: value.detail_status,
+    error_code: value.error_code,
+  };
 }
 
 function hasValidCapabilityResolutionSemantics(
@@ -367,6 +577,28 @@ function hasValidCapabilityResolutionSemantics(
       ? 'clarification'
       : 'routed';
   return resolution.resolution_mode === expectedResolutionMode;
+}
+
+function hasValidCapabilitySkillSemantics(
+  resolution: TrajectoryCapabilityResolution,
+): boolean {
+  if (resolution.schema_version === 1) return true;
+  const skillResolution = resolution.skill_resolution;
+  if (skillResolution.status === 'not_selected') {
+    return resolution.package_id !== 'verified_web';
+  }
+  if (skillResolution.status === 'loaded') {
+    const skill = skillResolution.skills[0];
+    return resolution.package_id === 'verified_web'
+      && skillResolution.requested_skill_ids[0] === 'verified-research'
+      && skill.skill_id === 'verified-research'
+      && skill.allowed_tool_names.length === resolution.external_tool_names.length
+      && skill.allowed_tool_names.every((tool, index) => tool === resolution.external_tool_names[index]);
+  }
+  return resolution.package_id === 'tools_unavailable'
+    && resolution.reason_codes.length === 1
+    && resolution.reason_codes[0] === 'required_skill_unavailable'
+    && skillResolution.requested_skill_ids[0] === 'verified-research';
 }
 
 function nullableString(value: unknown): string | null | undefined {
@@ -465,6 +697,8 @@ function canonicalTimestamp(value: string): string | null {
 function sanitizePayload(eventType: string, source: Record<string, unknown>): Record<string, unknown> | null {
   const fields = EVENT_PAYLOAD_FIELDS[eventType];
   if (!fields) return null;
+
+  if (eventType === 'skills_resolved') return normalizeSkillsResolvedPayload(source);
 
   if (eventType === 'system_prompt_prepared' && (
     source.protocol_version !== 2 || (source.status !== 'ready' && source.status !== 'failed')

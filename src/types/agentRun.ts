@@ -320,6 +320,28 @@ export interface AgentSystemPromptPreparedEvent extends AgentEventEnvelope {
   detail_status?: 'available' | 'degraded' | null;
 }
 
+export interface AgentResolvedSkillMetadata {
+  skill_id: string;
+  version: string;
+  content_sha256: string;
+  allowed_tool_names: string[];
+  section_id: string;
+  char_count: number;
+}
+
+/** Run 级 Skills 最终解析结果；事件只承载安全元数据，不包含正文。 */
+export interface AgentSkillsResolvedEvent extends AgentEventEnvelope {
+  type: 'skills_resolved';
+  protocol_version: 2;
+  status: 'not_selected' | 'loaded' | 'load_failed';
+  activation_source: 'capability_package';
+  requested_skill_ids: string[];
+  skills: AgentResolvedSkillMetadata[];
+  duration_ms: number;
+  detail_status: 'available' | 'degraded' | null;
+  error_code: string | null;
+}
+
 export interface AgentLlmRoundStartedEvent extends AgentEventEnvelope {
   type: 'llm_round_started';
   llm_round_id: string;

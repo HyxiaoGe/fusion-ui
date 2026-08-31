@@ -70,6 +70,18 @@ export function getTrajectorySystemPromptNodeDetail(
   ).then(normalizeTrajectoryNodeDetailResponse);
 }
 
+/** 仅在查看已加载 Skills 节点时读取冻结正文，不让正文进入轨迹快照或 Redux。 */
+export function getTrajectorySkillsNodeDetail(
+  conversationId: string,
+  runId: string,
+  signal?: AbortSignal,
+): Promise<TrajectoryNodeDetailResponse> {
+  return apiRequest<TrajectoryNodeDetailResponse>(
+    `${BASE_PATH}/${encodeURIComponent(conversationId)}/runs/${encodeURIComponent(runId)}/node-detail/skills`,
+    { cache: 'no-store', ...(signal ? { signal } : {}) },
+  ).then(normalizeTrajectoryNodeDetailResponse);
+}
+
 /** 在传输边界补齐可选的展示元数据，避免详情正文因缺失数组而中断。 */
 function normalizeTrajectoryNodeDetailResponse(
   response: TrajectoryNodeDetailResponse,

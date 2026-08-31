@@ -45,12 +45,11 @@ export type TrajectoryCapabilityReasonCode =
   | 'function_calling_unavailable'
   | 'search_capability_unavailable'
   | 'required_tools_unavailable'
+  | 'required_skill_unavailable'
   | 'explicit_authorized_tool_alias'
   | 'insufficient_capability_signal';
 
-/** Run 级能力路由的受控 wire DTO。 */
-export interface TrajectoryCapabilityResolution {
-  schema_version: 1;
+interface TrajectoryCapabilityResolutionBase {
   router_version: string;
   package_id: TrajectoryCapabilityPackageId;
   confidence: 'high' | 'medium' | 'low';
@@ -60,8 +59,34 @@ export interface TrajectoryCapabilityResolution {
   effective_plan_mode: 'auto' | 'on' | 'off';
   include_current_date: boolean;
   network_boundary_required: boolean;
+}
+
+export interface TrajectoryCapabilitySkillResolution {
+  status: 'not_selected' | 'loaded' | 'load_failed';
+  activation_source: 'capability_package';
+  requested_skill_ids: string[];
+  skills: TrajectorySkillMetadata[];
+  duration_ms: number;
+  error_code: 'skill_load_failed' | null;
+}
+
+/** 旧 Run 的 v1 能力路由；当时尚未记录 Skill 终态。 */
+export interface TrajectoryCapabilityResolutionV1 extends TrajectoryCapabilityResolutionBase {
+  schema_version: 1;
   bundle_fingerprint: string;
 }
+
+/** 新 Run 的 v2 能力路由；Skill 终态在首次 LLM 前已经冻结。 */
+export interface TrajectoryCapabilityResolutionV2 extends TrajectoryCapabilityResolutionBase {
+  schema_version: 2;
+  bundle_fingerprint: string;
+  skill_resolution: TrajectoryCapabilitySkillResolution;
+}
+
+/** Run 级能力路由的受控 wire DTO，兼容历史 v1 与 Skills v2。 */
+export type TrajectoryCapabilityResolution =
+  | TrajectoryCapabilityResolutionV1
+  | TrajectoryCapabilityResolutionV2;
 
 /** P1 普通用户轨迹读取端点的 wire DTO；字段保持后端 snake_case。 */
 export interface TrajectoryRunSummary {
@@ -183,11 +208,30 @@ export interface TrajectorySystemPromptNodeDetail {
   sections: Array<{ section_id: string; content: string }>;
 }
 
+export interface TrajectorySkillMetadata {
+  skill_id: string;
+  version: string;
+  content_sha256: string;
+  allowed_tool_names: string[];
+  section_id: string;
+  char_count: number;
+}
+
+export interface TrajectorySkillNodeDetail extends TrajectorySkillMetadata {
+  content: string;
+}
+
+export interface TrajectorySkillsNodeDetail {
+  status: 'not_selected' | 'loaded' | 'load_failed';
+  activation_source: 'capability_package';
+  skills: TrajectorySkillNodeDetail[];
+}
+
 export interface TrajectoryNodeDetailResponse {
   status: TrajectoryNodeDetailStatus;
-  node_type: 'tool' | 'llm' | 'system_prompt';
+  node_type: 'tool' | 'llm' | 'system_prompt' | 'skills';
   available_sections: TrajectoryNodeDetailSection[];
-  detail: TrajectoryToolNodeDetail | TrajectoryLlmNodeDetail | TrajectorySystemPromptNodeDetail | null;
+  detail: TrajectoryToolNodeDetail | TrajectoryLlmNodeDetail | TrajectorySystemPromptNodeDetail | TrajectorySkillsNodeDetail | null;
   redacted_fields: string[];
   truncated_fields: string[];
   reason: string | null;

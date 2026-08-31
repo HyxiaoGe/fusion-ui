@@ -101,6 +101,15 @@ function contextSummary(cell: Extract<TrajectoryCell, { type: 'context' }>): str
   if (cell.eventType === 'system_prompt_prepared') {
     return i18n.t(`trajectory.systemPrompt.${cell.payload.status === 'failed' ? 'failed' : 'ready'}`);
   }
+  if (cell.eventType === 'skills_resolved') {
+    const status = stringValue(cell.payload.status);
+    if (status === 'loaded') {
+      const count = Array.isArray(cell.payload.skills) ? cell.payload.skills.length : 0;
+      return i18n.t('trajectory.skills.loaded', { count });
+    }
+    if (status === 'load_failed') return i18n.t('trajectory.skills.loadFailedStatus');
+    return i18n.t('trajectory.skills.notSelected');
+  }
   if (cell.eventType === 'context_required') {
     return boundedSummary(stringValue(cell.payload.purpose) ?? '等待补充信息');
   }
@@ -200,11 +209,17 @@ export function getTrajectoryCellPresentation(cell: TrajectoryCell): TrajectoryC
     }
     case 'context':
       return {
-        kindLabel: '上下文',
+        kindLabel: cell.eventType === 'skills_resolved' ? 'Skills' : '上下文',
         summary: contextSummary(cell),
         statusLabel: null,
-        durationMs: cell.eventType === 'system_prompt_prepared' ? finiteNumber(cell.payload.duration_ms) : null,
-        tone: cell.eventType === 'system_prompt_prepared' ? (cell.payload.status === 'failed' ? 'danger' : 'success') : 'info',
+        durationMs: cell.eventType === 'system_prompt_prepared' || cell.eventType === 'skills_resolved'
+          ? finiteNumber(cell.payload.duration_ms)
+          : null,
+        tone: cell.eventType === 'system_prompt_prepared'
+          ? (cell.payload.status === 'failed' ? 'danger' : 'success')
+          : cell.eventType === 'skills_resolved'
+            ? (cell.payload.status === 'load_failed' ? 'danger' : cell.payload.status === 'loaded' ? 'success' : 'neutral')
+            : 'info',
       };
     case 'tool': {
       const meta = getToolMeta(cell.toolName ?? '');
